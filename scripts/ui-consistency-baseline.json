@@ -28,46 +28,6 @@
     },
     {
       "rule": "components/no-native-select",
-      "path": "src/components/role-surfaces/research-evidence-ledger.tsx",
-      "excerpt": "<select value={source.status} disabled={busy} onChange={(event) => void act({ action: \"update-source\", sourceId: source.id, patch: { status: event.target.value as ResearchSourceRef[\"status\"] }, })} >"
-    },
-    {
-      "rule": "components/no-native-select",
-      "path": "src/components/role-surfaces/research-studio-modals.tsx",
-      "excerpt": "<select id=\"research-studio-config-guest-voice\" className=\"research-studio__select focus-ring\" value={mediaGuestVoice} aria-describedby=\"research-studio-config-guest-voice-help\" aria-invalid={mediaConfigurationError ? true : undefined} aria-errormessage={ mediaConfigurationError ? \"research-studio-config-media-error\" : undefined } onChange={(event) => onMediaGuestVoiceChange(event.target.value) } >"
-    },
-    {
-      "rule": "components/no-native-select",
-      "path": "src/components/role-surfaces/research-studio-modals.tsx",
-      "excerpt": "<select id=\"research-studio-config-length\" className=\"research-studio__select focus-ring\" value={mediaLength} aria-describedby=\"research-studio-config-length-help\" aria-invalid={mediaConfigurationError ? true : undefined} aria-errormessage={ mediaConfigurationError ? \"research-studio-config-media-error\" : undefined } onChange={(event) => onMediaLengthChange(event.target.value as ResearchMediaLength) } >"
-    },
-    {
-      "rule": "components/no-native-select",
-      "path": "src/components/role-surfaces/research-studio-modals.tsx",
-      "excerpt": "<select id=\"research-studio-config-local-voice\" className=\"research-studio__select focus-ring\" value={mediaVoice} aria-describedby=\"research-studio-config-voice-help\" aria-invalid={mediaConfigurationError ? true : undefined} aria-errormessage={ mediaConfigurationError ? \"research-studio-config-media-error\" : undefined } onChange={(event) => onMediaVoiceChange(event.target.value)} >"
-    },
-    {
-      "rule": "components/no-native-select",
-      "path": "src/components/role-surfaces/research-studio-modals.tsx",
-      "excerpt": "<select id=\"research-studio-config-provider\" className=\"research-studio__select focus-ring\" value={mediaProvider} aria-describedby=\"research-studio-config-provider-help\" aria-invalid={mediaConfigurationError ? true : undefined} aria-errormessage={ mediaConfigurationError ? \"research-studio-config-media-error\" : undefined } onChange={(event) => { const provider = event.target.value as ResearchMediaProvider; onMediaProviderChange(provider); onMediaVoiceChange( provider === \"local\" ? (readiness?.providers.local.voices[0]?.id ?? \"\") : (readiness?.providers.elevenlabs.defaultVoiceId ?? \"\"), ); }} >"
-    },
-    {
-      "rule": "components/no-native-select",
-      "path": "src/components/role-surfaces/research-studio-modals.tsx",
-      "excerpt": "<select id=\"research-studio-config-source\" className=\"research-studio__select focus-ring\" value={selectedSourceId ?? \"\"} onChange={(event) => onSelectSource(event.target.value)} >"
-    },
-    {
-      "rule": "components/no-native-select",
-      "path": "src/components/role-surfaces/research-studio-modals.tsx",
-      "excerpt": "<select id=\"research-studio-config-style\" className=\"research-studio__select focus-ring\" value={mediaStyle} aria-describedby=\"research-studio-config-style-help\" onChange={(event) => onMediaStyleChange(event.target.value as ResearchPodcastStyle) } >"
-    },
-    {
-      "rule": "components/no-native-select",
-      "path": "src/components/role-surfaces/research-tab-studio.tsx",
-      "excerpt": "<select id=\"research-studio-source\" className=\"research-studio__select focus-ring\" value={effectiveSourceId ?? \"\"} onChange={(event) => setSourceId(event.target.value)} >"
-    },
-    {
-      "rule": "components/no-native-select",
       "path": "src/components/salem/ask-salem-view.tsx",
       "excerpt": "<select className=\"ask-salem__picker-select focus-ring\" aria-label=\"Familiar whose connected model writes the answers\" value={selectedFamiliar.id} onChange={(e) => setPickedFamiliarId(e.target.value)} >"
     },

@@ -24,8 +24,8 @@ export async function register() {
     console.warn("[instrumentation] Research Resource restore recovery could not start:", error);
   }
   try {
-    const mediaJobs = await import("@/lib/server/research-media-jobs");
-    void mediaJobs.startResearchMediaJobs().catch((error) => {
+    const research = await import("@/lib/server/research-package");
+    void research.startOptionalResearch().catch((error) => {
       console.warn("[instrumentation] research media jobs failed to start:", error);
     });
   } catch (error) {

@@ -9,6 +9,12 @@ const workspaceConfig = parse(await readFile(new URL("../pnpm-workspace.yaml", i
 const exactVersion = /^(?:\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?|workspace:\*)$/;
 const depBlocks = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
 
+// Independently released Research: one reviewed URL with locked content integrity.
+// Do not allow arbitrary URL, git, or local-path dependencies.
+const researchPin = "https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz";
+const researchIntegrity = "sha512-3FkNXEyn7BDNdhAAeKOaELqB5RsncuKUJkBVzaOJMshM4iqjRvxydDu8E6uUrQ3T3n36gcQIPmGxpKiJGgKhIQ==";
+assert.equal(packageJson.optionalDependencies?.["@opencoven/research"], researchPin);
+
 // The selected SDK is not published. These two reviewed tarballs are immutable
 // source-pinned exceptions, not general permission for file/git dependencies.
 const sdkPins = {
@@ -32,7 +38,7 @@ for (const blockName of depBlocks) {
   const block = packageJson[blockName] ?? {};
   for (const [name, version] of Object.entries(block)) {
     assert.equal(
-      exactVersion.test(version) || (blockName === "dependencies" && Object.hasOwn(sdkPins, name) && version === `file:vendor/opencoven-sdk/${sdkPins[name][0]}`),
+      exactVersion.test(version) || (blockName === "optionalDependencies" && name === "@opencoven/research" && version === researchPin) || (blockName === "dependencies" && Object.hasOwn(sdkPins, name) && version === `file:vendor/opencoven-sdk/${sdkPins[name][0]}`),
       true,
       `${blockName}.${name} must be pinned to an exact version, got ${version}`,
     );
@@ -104,6 +110,10 @@ assert.equal(
 // forced to the same version. (PR #2263 dug out this root cause.)
 const lockfile = parse(await readFile(new URL("../pnpm-lock.yaml", import.meta.url), "utf8"));
 const lockPackages = lockfile.packages ?? lockfile.snapshots ?? {};
+const researchLocked = Object.values(lockPackages).filter(entry => entry.resolution?.tarball === researchPin);
+assert.equal(researchLocked.length, 1, "Research must have one published archive resolution");
+assert.equal(researchLocked[0].resolution.integrity, researchIntegrity, "Research archive content must match the verified release");
+assert.equal(lockfile.importers["."].optionalDependencies["@opencoven/research"].specifier, researchPin);
 
 const splitLockKey = (key) => {
   const at = key.lastIndexOf("@");

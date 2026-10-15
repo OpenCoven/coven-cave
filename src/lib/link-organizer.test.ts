@@ -248,34 +248,6 @@ test("/save (alias /link) is a first-class slash command", () => {
   );
 });
 
-test("the Research desk consumes the same links store", () => {
-  // The old collapsible shelf became two consumers of one shared hook: the
-  // Prompt tab's quick saves and the Resources tab's browser (cave-dl74).
-  const hook = readFileSync(
-    path.join(repoRoot, "src/components/role-surfaces/use-research-links.ts"),
-    "utf8",
-  );
-  assert.match(hook, /fetch\("\/api\/research\/links"/, "the hook is the one client for the store");
-  assert.match(hook, /source: "desk"/, "desk saves are attributed");
-
-  const resources = readFileSync(
-    path.join(repoRoot, "src/components/role-surfaces/research-tab-resources.tsx"),
-    "utf8",
-  );
-  assert.match(resources, /useResearchLinks/, "Resources reads through the shared hook");
-  assert.match(
-    resources,
-    /groupSavedLinksByUsage\(/,
-    "Resources renders workflow-first organized groups",
-  );
-
-  const prompt = readFileSync(
-    path.join(repoRoot, "src/components/role-surfaces/research-tab-prompt.tsx"),
-    "utf8",
-  );
-  assert.match(prompt, /useResearchLinks/, "quick saves read the same store");
-});
-
 test("unknown categories degrade to Other instead of crashing a surface", () => {
   // The store is shared across app versions — a category this build doesn't
   // know must never take down the Research Desk (it did once: reading .icon
@@ -292,15 +264,6 @@ test("unknown categories degrade to Other instead of crashing a surface", () => 
   const groups = groupSavedLinksByUsage([foreign], new Map());
   assert.equal(groups.length, 1);
   assert.equal(groups[0].id, "uncited");
-  // Surfaces go through the tolerant accessor, not raw table indexing.
-  for (const rel of [
-    "src/components/role-surfaces/research-tab-resources.tsx",
-    "src/components/role-surfaces/research-tab-prompt.tsx",
-  ]) {
-    const source = readFileSync(path.join(repoRoot, rel), "utf8");
-    assert.match(source, /linkCategoryMeta\(/);
-    assert.doesNotMatch(source, /LINK_CATEGORY_META\[/);
-  }
 });
 
 test("huggingface.co/papers is a paper, other HF paths are not", () => {

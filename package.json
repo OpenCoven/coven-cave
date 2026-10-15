@@ -77,7 +77,6 @@
     "test:client-v1:conformance": "node scripts/client-v1-conformance.mjs",
     "test:client-v1:compatibility-control": "node scripts/client-v1-compatibility-control.integration.test.mjs",
     "test:client-v1:authority-takeover": "node --experimental-strip-types scripts/client-v1-authority-takeover.mjs",
-    "test:research-media:ffmpeg": "node --experimental-strip-types scripts/research-media-ffmpeg.integration.test.mjs",
     "test:mobile": "node scripts/run-tests.mjs mobile",
     "test:conformance": "node scripts/run-tests.mjs conformance",
     "test:daemon-faults": "node --experimental-strip-types scripts/daemon-connectivity-faults.test.ts",
@@ -208,5 +207,8 @@
         "musl"
       ]
     }
+  },
+  "optionalDependencies": {
+    "@opencoven/research": "https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz"
   }
 }

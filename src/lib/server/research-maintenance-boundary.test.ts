@@ -17,6 +17,9 @@ test("backup recovery loads offline maintenance without ingestion workers", asyn
   assert.ok(inputs.includes("src/lib/server/research-resource-maintenance.ts"));
   assert.ok(inputs.includes("src/lib/server/research-resource-recovery.ts"));
   assert.deepEqual(inputs.filter((file) =>
-    /\/research-resource-(?:ingestion|fetch|extractors)\.ts$/.test(file)), [],
-  "backup recovery must remain usable when the optional ingestion engine is absent");
+    /\/research-resource-(?:ingestion|fetch|extractors|embedding-provider|semantic|retrieval)\.ts$/.test(file)), [],
+  "backup recovery must remain usable when optional ingestion, embedding and retrieval are absent");
+  assert.deepEqual(inputs.filter((file) =>
+    /\/research-(?:mission-runner|media-jobs)\.ts$/.test(file)), [],
+  "offline recovery must not load mission or media workers");
 });

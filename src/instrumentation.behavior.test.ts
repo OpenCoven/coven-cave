@@ -8,7 +8,7 @@ const jobs = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/server/cave-home-migration", () => ({ migrateCaveHomeOnce: jobs.migration }));
 vi.mock("@/lib/server/research-resource-recovery", () => ({ recoverInterruptedResearchResourceRestore: jobs.restore }));
-vi.mock("@/lib/server/research-media-jobs", () => ({ startResearchMediaJobs: jobs.media }));
+vi.mock("@/lib/server/research-package", () => ({ startOptionalResearch: jobs.media }));
 vi.mock("@/lib/server/x-sources", () => ({ sweepExpiredXCache: jobs.xCache }));
 vi.mock("@/lib/server/research-runtime-privacy", () => ({ sweepResearchMissionXRuntime: jobs.xRuntime }));
 vi.mock("@/lib/inbox-scheduler", () => ({ startScheduler: jobs.inbox }));

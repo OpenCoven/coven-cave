@@ -43,11 +43,6 @@ const browserPane = await read("./browser-pane.tsx");
 assert.doesNotMatch(browserPane, /title="Address bar \(⌘L\)"|^\s*⌘L address · ⌘K tabs/m, "BrowserPane no longer hard-codes its shortcut strip");
 assert.match(browserPane, /platformizeHint\("Address bar \(⌘L\)", keys\)[\s\S]*platformizeHint\("⌘L address · ⌘K tabs · ⌘\[ back · ⌘\] forward · ⌘R reload", keys\)/, "BrowserPane platformizes the address bar hint and footer strip");
 
-const repoViewer = await read("./role-surfaces/research-github-repo-viewer.tsx");
-assert.doesNotMatch(repoViewer, /<kbd>\{shortcut\.keys\}<\/kbd>|<kbd>⌘B<\/kbd>|<kbd>⌘⇧U<\/kbd>|title="[^"]*[⌘⌥⇧↵][^"]*"|: "Open on GitHub  ⌘↵";/, "ResearchGithubRepoViewer no longer renders a Mac glyph verbatim");
-assert.match(repoViewer, /platformizeHint\("⌘B", keys\)[\s\S]*platformizeHint\("⌘⇧U", keys\)[\s\S]*platformizeHint\(shortcut\.keys, keys\)/, "ResearchGithubRepoViewer platformizes the shortcuts sheet and overflow menu");
-assert.match(repoViewer, /platformizeHint\("Copy repository URL  ⌘⇧U", keys\)[\s\S]*platformizeHint\("Hide file browser  ⌘\\\\", keys\)[\s\S]*platformizeHint\("Show file browser  ⌘\\\\", keys\)[\s\S]*platformizeHint\("Copy path  ⌘⇧C", keys\)[\s\S]*platformizeHint\("Soft wrap  ⌥Z", keys\)/, "ResearchGithubRepoViewer platformizes every tooltip");
-
 const sidebarMinimal = await read("./sidebar-minimal.tsx");
 assert.doesNotMatch(sidebarMinimal, /newChatTitle="New chat \(⌘N\)"|rail-header__new-kbd">⌘N<|\(\$\{kbd\}\)/, "SidebarMinimal no longer hard-codes ⌘N or the raw destination kbd");
 assert.match(sidebarMinimal, /platformizeHint\(kbd, keys\)[\s\S]*platformizeHint\("New chat \(⌘N\)", keys\)[\s\S]*platformizeHint\("⌘N", keys\)/, "SidebarMinimal platformizes row titles and the New chat hint");

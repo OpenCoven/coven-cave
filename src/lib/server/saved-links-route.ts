@@ -11,7 +11,7 @@ import {
   MAX_GITHUB_REPOSITORIES_PER_INGEST,
 } from "@/lib/research-github-repo";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
-import { fetchGithubRepoView } from "./research-github-repo.ts";
+import { fetchOptionalGithubRepoView as fetchGithubRepoView } from "./research-package.ts";
 import { fetchHfPaperMetadata } from "@/lib/server/hf-paper-metadata";
 import {
   getSavedLinkById,

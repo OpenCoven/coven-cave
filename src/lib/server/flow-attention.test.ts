@@ -230,16 +230,6 @@ test("quiet same-iteration saves cannot acknowledge an explicit request or rearm
   assert.equal(await attention.emitFlowSessionAttention(marker), null, "late old delivery cannot rearm a handled request");
 });
 
-test("production Research persistence emits the checkpoint's parent notification", async () => {
-  const { createResearchMissionWorkspace } = await import("./research-mission-store.ts");
-  const { makeProductionResearchMissionRunner } = await import("./research-mission-runner.ts");
-  await createResearchMissionWorkspace(mission("production-research", { status: "paused" }));
-  const updated = await makeProductionResearchMissionRunner().act("production-research", { action: "resume" });
-  assert.equal(updated.status, "checkpoint");
-  const { items } = await loadInbox();
-  assert.equal(items.filter((item) => item.auto === "flow-attention:mission:production-research").length, 1);
-});
-
 test("the production direct Copilot finalizer emits one parent error without Chat completion", async () => {
   const { startCopilotFlowRun } = await import("./flow-copilot-session.ts");
   const { copilotStreamSpec } = await import("../copilot-stream.ts");

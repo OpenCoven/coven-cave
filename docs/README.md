@@ -120,6 +120,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 ## Program
 
 - [`research-core-boundary.md`](research-core-boundary.md) — proposed optional Research boundary, shared contracts to retain, and extraction acceptance criteria
+- [`research-extraction-verification.md`](research-extraction-verification.md) — candidate compatibility evidence, size and timing measurements, and remaining extraction acceptance
 
 Active initiatives. Parts have shipped; parts have not. Each states which.
 

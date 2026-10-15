@@ -28,7 +28,6 @@ import {
 } from "./flow-executor.ts";
 
 const source = readFileSync(new URL("./flow-executor.ts", import.meta.url), "utf8");
-const researchRunner = readFileSync(new URL("./research-mission-runner.ts", import.meta.url), "utf8");
 
 {
   const calls: string[] = [];
@@ -379,11 +378,6 @@ try {
 } finally {
   await rm(grantRoot, { recursive: true, force: true });
 }
-assert.match(
-  researchRunner,
-  /startFlowSession\(flow, \{\s*projectRoot: options\.projectRoot,\s*addDirs: options\.addDirs,\s*trustedLocalResearch: true,\s*offlinePolicy: options\.offlinePolicy,[\s\S]*?publishSessionOwner: options\.publishSessionOwner,\s*\}\)/,
-  "only the production Research mission adapter requests trusted launch policy and rejects offline replay",
-);
 assert.match(
   source,
   /const sessionAuthority: ResearchSessionAuthority \| undefined = cleanupTarget[\s\S]*socketPath: cleanupTarget\.socketPath[\s\S]*publishSessionOwner\([\s\S]*"owner-local-daemon"[\s\S]*\.\.\.await finishStart\(sessionId\),[\s\S]*sessionOwnerKind: "owner-local-daemon"[\s\S]*cleanupSession,[\s\S]*stopDaemonSessionAfterBookkeepingFailure\(sessionId, cleanupTarget\)/,

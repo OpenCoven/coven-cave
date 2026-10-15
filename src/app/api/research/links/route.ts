@@ -1,9 +1,16 @@
-import { createResearchLinksRouteHandlers } from "@/lib/server/saved-links-route";
-export { createResearchLinksRouteHandlers };
-export type { SaveBody, ResearchLinksRouteDependencies } from "@/lib/server/saved-links-route";
+import { dispatchResearchRequest } from "@/lib/server/research-package";
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-const handlers = createResearchLinksRouteHandlers();
-export const GET = handlers.GET;
-export const POST = handlers.POST;
-export const DELETE = handlers.DELETE;
+
+export function GET(request: Request): Promise<Response> {
+  return dispatchResearchRequest("research/links", "GET", request);
+}
+
+export function POST(request: Request): Promise<Response> {
+  return dispatchResearchRequest("research/links", "POST", request);
+}
+
+export function DELETE(request: Request): Promise<Response> {
+  return dispatchResearchRequest("research/links", "DELETE", request);
+}

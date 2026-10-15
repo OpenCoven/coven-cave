@@ -26,10 +26,6 @@ const expectedBoundaries = new Map([
     ["existsSync(/* turbopackIgnore: true */ file)", 5],
     ["existsSync(/* turbopackIgnore: true */ sidecar)", 2],
   ]],
-  ["../src/lib/server/research-topic-discovery-store.ts", [
-    ["readdir(/* turbopackIgnore: true */ layout.jobsDir)", 2],
-    ["readdir(/* turbopackIgnore: true */ layout.proposalsDir)", 1],
-  ]],
   ["../src/lib/server/skill-scan.ts", [
     ["realpath(/* turbopackIgnore: true */ candidate)", 2],
   ]],
