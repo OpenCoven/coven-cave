@@ -14,7 +14,7 @@ import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { parseGitHubDiffRevision, validateGitHubReviewBody } from "@/lib/github-review";
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
-import { sanitizeGithubObjectSha } from "@/lib/research-github-repo";
+import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

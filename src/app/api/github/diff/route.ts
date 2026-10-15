@@ -21,7 +21,7 @@
 // routes do.
 import { NextResponse } from "next/server.js";
 import { resolveGitHubToken } from "@/lib/github-token";
-import { sanitizeGithubObjectSha } from "@/lib/research-github-repo";
+import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
 import { GitHubRevisionError, readGitHubPullRevision } from "@/lib/server/github-review-revision";
 
 export const dynamic = "force-dynamic";

@@ -72,7 +72,7 @@ import type {
 import {
   RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC,
   assertResearchSessionOwnerOutsideWriteRoots,
-} from "@/lib/server/research-mission-store";
+} from "@/lib/server/research-runtime-contract";
 
 export type StartFlowSessionResult = {
   ok: boolean;
