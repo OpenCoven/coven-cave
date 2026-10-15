@@ -440,6 +440,22 @@ assert.match(nativeRunner, /if \(!unitSuite\) \{\s*const uiTarget/,
   "routine CI leaves the separate native UI gate opt-in");
 assert.ok(runScripts.some((run) => run.includes("pnpm build") && run.includes("installPinnedRelease")),
   "CI prepares a production server and the existing integrity-verified pinned CLI");
+// The fixture build may skip Next's own TypeScript pass (the typecheck job
+// covers types), and nothing else may: every other job and step keeps it.
+const fixtureStep = iosSteps.find((step) => step.name === "Prepare the native TCP fixture");
+assert.equal(fixtureStep?.env?.COVEN_CAVE_SKIP_BUILD_TYPECHECK, "1",
+  "the iOS fixture build skips Next's build-time TypeScript pass (#5991: ~32 min under swap)");
+const skipSites = Object.entries(ci.jobs ?? {}).flatMap(([jobId, job]) => [
+  ...(job.env?.COVEN_CAVE_SKIP_BUILD_TYPECHECK !== undefined ? [`${jobId} (job env)`] : []),
+  ...(job.steps ?? []).filter((step) => step.env?.COVEN_CAVE_SKIP_BUILD_TYPECHECK !== undefined).map((step) => `${jobId}: ${step.name}`),
+]);
+assert.deepEqual(skipSites, ["ios: Prepare the native TCP fixture"],
+  "only the iOS fixture build may skip Next's build-time TypeScript pass");
+const nextConfig = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
+assert.match(nextConfig, /const skipBuildTypecheck = process\.env\.COVEN_CAVE_SKIP_BUILD_TYPECHECK === "1";/,
+  "the skip is opt-in by an exact env value");
+assert.match(nextConfig, /typescript: \{ ignoreBuildErrors: skipBuildTypecheck \}/,
+  "next.config ties ignoreBuildErrors to that opt-in only");
 assert.match(nativeRunner, /await run\('native-transport', 'xcodebuild', \['test-without-building'/,
   "the fixture actually runs XCTest instead of only compiling it");
 

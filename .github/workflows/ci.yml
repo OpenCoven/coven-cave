@@ -238,6 +238,11 @@ jobs:
         env:
           # The hosted ARM typecheck worker exhausts its default ~2 GiB heap.
           NODE_OPTIONS: --max-old-space-size=4096
+          # This build only serves the native TCP fixture. Types are enforced by
+          # the "Frontend validation (typecheck)" job on the same PR; Next's own
+          # TypeScript pass here grew to ~32 min under swap on macos-15 and
+          # pushed the iOS job past 45 min before any XCTest ran (#5991).
+          COVEN_CAVE_SKIP_BUILD_TYPECHECK: "1"
         run: |
           set -euo pipefail
           # Keep the production build out of the booted simulator's memory budget.

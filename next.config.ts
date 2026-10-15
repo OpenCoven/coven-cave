@@ -11,6 +11,13 @@ const withBundleAnalyzer = bundleAnalyzer({
 
 const daemonlessE2E = process.env.COVEN_CAVE_E2E === "1";
 
+// Fixture-only builds (the iOS job's native TCP server) may skip Next's own
+// TypeScript pass: the dedicated "Frontend validation (typecheck)" job runs
+// `tsc --noEmit` on the same PR, and on the memory-bound macOS runner that
+// pass alone grew to ~32 minutes and pushed the job past its limit (#5991).
+// Every other build keeps it.
+const skipBuildTypecheck = process.env.COVEN_CAVE_SKIP_BUILD_TYPECHECK === "1";
+
 const nextConfig: NextConfig = {
   env: {
     COVEN_CAVE_X_PRODUCTION_CLIENT_ID:
@@ -18,6 +25,7 @@ const nextConfig: NextConfig = {
     COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED:
       process.env.COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL === "1" ? "1" : "0",
   },
+  typescript: { ignoreBuildErrors: skipBuildTypecheck },
   // The Next.js dev tools launcher renders in a portal at bottom-left by
   // default, which intercepts taps on Cave's mobile bottom tabs in local dev.
   devIndicators: false,
