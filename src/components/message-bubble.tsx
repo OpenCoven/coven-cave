@@ -954,6 +954,33 @@ function useStableAssistantMarkdownRenderContext(
   return valueRef.current;
 }
 
+/**
+ * Gives assistant prose rendered outside a MessageBubble the same treatment
+ * MessageBubble gives Main Chat's `assistantBody`: response decoration,
+ * footnote citations, and a non-text placeholder until a block's markdown
+ * lands. Quick Chat wraps its StreamingTurnResponse in this (#5840). Without
+ * it, a newly committed block painted its raw source in a fallback span that
+ * the rendered markdown then replaced, dropping any selection inside it.
+ */
+export function AssistantMarkdownRenderProvider({
+  content,
+  onOpenUrl,
+  children,
+}: {
+  /** The reply's visible text, parsed for footnote citations. */
+  content: string;
+  onOpenUrl?: (url: string) => void;
+  children: ReactNode;
+}) {
+  const parsedCitations = useMemo(() => parseCitations(content), [content]);
+  const value = useStableAssistantMarkdownRenderContext(onOpenUrl, parsedCitations);
+  return (
+    <AssistantMarkdownRenderContext.Provider value={value}>
+      {children}
+    </AssistantMarkdownRenderContext.Provider>
+  );
+}
+
 function MarkdownContent({
   text,
   pending,
