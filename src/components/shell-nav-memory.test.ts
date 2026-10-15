@@ -491,8 +491,8 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;\s*applyPanelOpenState\(navRef\.current, rememberedNavOpen\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
-  "normal destination restoration applies the remembered state before paint while retaining the expanded layout",
+  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;[\s\S]{0,200}?applyPanelOpenState\(\s*navRef\.current,\s*rememberedNavOpen && !chatRailNavRef\.current\.autoCollapsed,\s*\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
+  "normal destination restoration applies the remembered state before paint (unless the nav is yielding to the chat list) while retaining the expanded layout",
 );
 assert.match(
   destinationLayoutEffect,
@@ -611,10 +611,11 @@ assert.match(
 );
 
 // Writes are user-driven only: the group must be armed (group-swap layout
-// churn is programmatic) and the code-rail auto-collapse must not be active.
+// churn is programmatic), and neither the code-rail auto-collapse nor the
+// chat-list yield (#5956) may be holding the nav closed.
 assert.match(
   shell,
-  /navPolicy === "remembered" &&\s*\n\s*navPrefArmedGroupRef\.current === groupId &&\s*\n\s*!railAutoCollapsedNavRef\.current\s*\n?\s*\) \{[\s\S]*?writeNavOpenPref\(open, "user"\);/,
+  /navPolicy === "remembered" &&\s*\n\s*navPrefArmedGroupRef\.current === groupId &&\s*\n\s*!railAutoCollapsedNavRef\.current &&\s*\n\s*!chatRailNavRef\.current\.autoCollapsed\s*\n?\s*\) \{[\s\S]*?writeNavOpenPref\(open, "user"\);/,
   "onResize persists the state only for user-driven changes on the armed group",
 );
 // The code-rail coupling raises its flag BEFORE collapsing, so the resulting
