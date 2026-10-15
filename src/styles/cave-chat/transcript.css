@@ -29,6 +29,19 @@
   contain-intrinsic-size: auto 160px;
 }
 
+/* Runtime and control status chips under a reply (#6011). They borrow the
+   ui-pill look, but a pill is white-space: nowrap at a fixed height, so one
+   long reason ("Coven forwarded the selected model; downstream acceptance was
+   not confirmed.") ran past the reading column on a narrow pane. Long text
+   wraps inside the column; one-line chips keep the pill's height. */
+.ui-pill.cave-response-status-chip {
+  height: auto;
+  min-height: 26px;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* No hover tint on chat turns — hovering a message must not shift its
    background; the per-message action row is the only hover affordance. */
 
