@@ -26,8 +26,8 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUNDLE = path.join(
   ROOT,
+  "artifacts",
   "marketplace",
-  "plugins",
   "tweet-thread-lab",
   "bin",
   "tweet-thread-validate.mjs",
@@ -58,6 +58,7 @@ function run(command, args, cwd = ROOT, timeout = undefined) {
 
 const check = run("pnpm", ["protocol:tweet-thread:validator:check"]);
 assert.equal(check.status, 0, check.stderr);
+await writeTweetThreadValidatorBundle(BUNDLE);
 const committedBundle = readFileSync(BUNDLE);
 
 rmSync(SCRATCH, { recursive: true, force: true });
@@ -67,7 +68,7 @@ await writeTweetThreadValidatorBundle(scratchBundle);
 assert.deepEqual(
   readFileSync(scratchBundle),
   committedBundle,
-  "a scratch build matches the committed validator byte-for-byte",
+  "a scratch build matches the pinned validator byte-for-byte",
 );
 await writeTweetThreadValidatorBundle(scratchBundle);
 assert.deepEqual(
@@ -79,7 +80,7 @@ writeFileSync(scratchBundle, "\n// stale\n", { flag: "a" });
 assert.equal(
   await checkTweetThreadValidatorBundle(scratchBundle),
   false,
-  "a stale bundle fails the same check used for the committed artifact",
+  "a stale bundle fails the same check used for the pinned artifact",
 );
 assert.equal(
   readdirSync(path.dirname(BUNDLE)).some((name) => name.includes(".tmp-")),

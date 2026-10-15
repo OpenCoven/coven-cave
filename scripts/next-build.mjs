@@ -7,6 +7,7 @@
 // 'useContext')" while CI, with NODE_ENV unset, stayed green. A build is a
 // production build, so this pins NODE_ENV and says so when it overrides one.
 
+import { applyInstrumentationTraceExclusions } from "./instrumentation-trace.mjs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
@@ -23,7 +24,7 @@ export function nodeEnvOverrideNotice(env) {
   return `next-build: NODE_ENV=${current} is ignored; building with NODE_ENV=production (#5701).`;
 }
 
-function main() {
+async function main() {
   const notice = nodeEnvOverrideNotice(process.env);
   if (notice) console.warn(notice);
   const nextBin = createRequire(import.meta.url).resolve("next/dist/bin/next");
@@ -32,7 +33,8 @@ function main() {
     env: productionBuildEnv(process.env),
   });
   if (result.error) throw result.error;
+  if (result.status === 0) await applyInstrumentationTraceExclusions(process.cwd());
   process.exit(result.status ?? 1);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

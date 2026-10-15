@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const layout = await readFile(new URL("./layout.tsx", import.meta.url), "utf8");
 const instrumentation = await readFile(
-  new URL("../../instrumentation.ts", import.meta.url),
+  new URL("../instrumentation.ts", import.meta.url),
   "utf8",
 );
 

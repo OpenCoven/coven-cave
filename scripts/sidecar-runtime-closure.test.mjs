@@ -72,6 +72,7 @@ try {
   await write(projectRoot, "vault.yaml", "{}\n");
   await write(projectRoot, ".agents/skills/runtime/SKILL.md", "# Runtime skill\n");
   await write(projectRoot, "marketplace/catalog.json", "{}\n");
+  await write(projectRoot, "marketplace/payloads.json", "{}\n");
   await write(projectRoot, "marketplace/exports/mcp/mcp.json", "{}\n");
   await write(projectRoot, "marketplace/marketplace.json", "{}\n");
   await write(projectRoot, "marketplace/plugins/example/plugin.json", "{}\n");

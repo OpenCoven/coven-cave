@@ -41,6 +41,7 @@ function readSidecarFileCountBudget() {
 export const SIDECAR_RUNTIME_ROOTS = Object.freeze([
   ".agents/skills",
   "marketplace/catalog.json",
+  "marketplace/payloads.json",
   "marketplace/exports",
   "marketplace/marketplace.json",
   "marketplace/plugins",
@@ -771,6 +772,7 @@ export async function verifySidecarRuntime(root) {
     ".next/BUILD_ID",
     ".next/required-server-files.json",
     "marketplace/catalog.json",
+  "marketplace/payloads.json",
     "marketplace/marketplace.json",
     "node_modules/@hpke/common/esm/mod.js",
     "node_modules/@hpke/common/package.json",

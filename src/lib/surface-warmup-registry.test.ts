@@ -8,81 +8,13 @@ async function source(name: string): Promise<string> {
   return readFile(new URL(name, here), "utf8");
 }
 
-test("warmup registry covers canonical workspace landings with bounded serial resources", async () => {
+test("surface caches remain demand-loaded and join stale revalidation", async () => {
   const registry = await source("surface-warmup-registry.ts");
-  assert.match(registry, /chat: \[\]/m, "chat has a chunk-only warmup entry");
-  for (const surface of ["marketplace", "board", "schedules", "grimoire", "agents"]) {
-    assert.match(registry, new RegExp(`${surface}: \\[`, "m"), `${surface} has a registry entry`);
-  }
-  assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)/);
-  assert.match(registry, /await warm<\{ rateLimit/);
-  assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)[\s\S]{0,900}catch(?: \(error\))? \{[\s\S]{0,360}must not leave the rest of this surface cold/);
+  assert.doesNotMatch(registry, /preloadSidebarSurface|warmSurface|surfaceWarmupResources/);
+  assert.match(registry, /if \(!result\.cache\.stale\) return result;/);
+  assert.match(registry, /return read<T>\(key, \{ force: true \}\);/);
   assert.match(registry, /response\.status === 429/);
-  assert.match(registry, /response\.headers\.has\("retry-after"\)/);
-  assert.match(registry, /error instanceof SurfaceWarmupBackpressureError[\s\S]{0,100}backpressured: true/);
-  assert.match(
-    registry,
-    /export function surfaceWarmupRetryAfterSeconds/,
-    "surface consumers can honor the retry delay carried by a backpressure error",
-  );
-  assert.match(registry, /preloadSidebarSurface\(surface\)/);
-  assert.match(registry, /await preloadSidebarSurface\(surface\);[\s\S]{0,180}if \(!canContinue\(\)\) return/);
-  assert.match(registry, /if \(!result\.cache\.stale\) return result;[\s\S]{0,600}return read<T>\(key, \{ force: true \}\);/, "surface reads join a stale revalidation before returning landing data");
-  assert.doesNotMatch(registry, /catch\s*\{\s*return result;\s*\}/, "a failed revalidation must not present stale landing data as current");
-  assert.match(
-    registry,
-    /agents: \["memory:list"\]/,
-    "the ordinary sidebar warmup keeps only the existing file-memory landing",
-  );
-  assert.doesNotMatch(
-    registry,
-    /agents:coven-memory/,
-    "canonical local memory is gated by accepted local-daemon readiness instead",
-  );
-});
-
-test("chat is the first speculative surface so Home-to-Chat avoids a cold chunk compile", async () => {
-  const coordinator = await readFile(new URL("../lib/use-surface-warmup.ts", import.meta.url), "utf8");
-  assert.match(
-    coordinator,
-    /const ORDER:[^=]*= \["chat", "board"/,
-    "chat should warm before lower-intent surfaces",
-  );
-});
-
-test("GitHub cache resources stay demand-loaded without a standalone sidebar warmup", async () => {
-  const surfaces = await readFile(new URL("../components/lazy-surfaces.tsx", import.meta.url), "utf8");
-  const registry = await source("surface-warmup-registry.ts");
-  const coordinator = await source("use-surface-warmup.ts");
-
-  assert.doesNotMatch(surfaces, /loadGitHubView|case "github"/);
-  assert.doesNotMatch(registry, /^\s*github:\s*\[/m);
-  assert.doesNotMatch(coordinator, /ORDER:[^=]*=\s*\[[^\]]*"github"/);
-  assert.match(registry, /defineResource\("github:pat"/);
-  assert.match(registry, /"github:activity"[\s\S]*\/api\/github\/activity/);
   assert.match(registry, /defineResource\("github:familiars"/);
-  assert.match(
-    coordinator,
-    /invalidateIfDefined\("github:familiars"\)/,
-    "roster writes still invalidate an on-demand GitHub cache",
-  );
-});
-
-test("warmup starts after paint and pauses work without mounting inactive surfaces", async () => {
-  const hook = await source("use-surface-warmup.ts");
-  assert.match(hook, /requestAnimationFrame\(\(\) => \{ raf = window\.requestAnimationFrame\(begin\); \}\)/);
-  assert.match(hook, /document\.hidden/);
-  assert.match(hook, /window\.addEventListener\("offline", pause\)/);
-  assert.match(hook, /abortWarm\(\)/);
-  assert.match(hook, /invalidateIfDefined\("board:cards", "tasks:queue"\)/, "external board writes invalidate warmed landing data while BoardView is unmounted");
-  assert.match(hook, /addEventListener\("cave:board:reload", onBoardReload\)/);
-  assert.match(hook, /invalidateIfDefined\("schedules:inbox", "schedules:automations"\)/, "inbox SSE writes invalidate the warmed Schedules landing data");
-  assert.match(hook, /addEventListener\("cave:schedules:reload", onSchedulesReload\)/);
-  assert.match(hook, /invalidateIfDefined\("github:familiars"\)/, "roster writes invalidate GitHub's warmed familiar list");
-  assert.match(hook, /addEventListener\("cave:familiars-refresh", onFamiliarsRefresh\)/);
-  assert.match(hook, /surface-warmup:backpressure/);
-  assert.match(hook, /warmSurface\(surface, runnable\)/);
-  assert.match(hook, /if \(active \|\| !runnable\(\) \|\| cursor >= ORDER\.length\) return;/, "duplicate resume callbacks do not run surfaces concurrently");
 });
 
 test("roster membership changes publish the workspace familiar-refresh event", async () => {

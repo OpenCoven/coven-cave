@@ -105,7 +105,7 @@ import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useCaveEventPlane } from "@/lib/use-cave-event-plane";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
-import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
+import { useSurfaceCacheInvalidation } from "@/lib/use-surface-cache-invalidation";
 import { invalidateSurfaceResourcesFor, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { noteCaveEventPollAvoided } from "@/lib/cave-event-plane-client";
 import { isLatestFamiliarRosterRequest } from "@/lib/familiar-roster-request";
@@ -345,7 +345,23 @@ const SESSIONS_SCOPE_SNAPSHOTS = 8;
 export function Workspace() {
   const nextRouter = useRouter();
   const tauriPlatform = useTauriPlatform();
-  useSurfaceWarmup();
+  useSurfaceCacheInvalidation();
+  useEffect(() => {
+    // Shell readiness belongs to hydration, independently of optional surface
+    // loading. Preserve two paint opportunities before publishing the marker.
+    let secondFrame: number | undefined;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        if (performance.getEntriesByName("cave:first-interactive").length === 0) {
+          performance.mark("cave:first-interactive");
+        }
+      });
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame !== undefined) cancelAnimationFrame(secondFrame);
+    };
+  }, []);
   const { announce } = useAnnouncer();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
