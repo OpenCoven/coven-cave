@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { SHELL_NAV_MIN_PX } from "../src/components/shell-layout";
 
 // #5956 (G2): on a desktop window too narrow for the nav, the Chat list and a
 // readable conversation together, the open nav yields to the list for the
@@ -24,7 +25,7 @@ async function expectNavSettled(page: Page, expected: "open" | "closed") {
       const expanded = await toggle.getAttribute("aria-expanded");
       const width = (await navPanel.boundingBox())?.width ?? (expected === "open" ? 0 : 1);
       return expected === "open"
-        ? expanded === "true" && width >= 220
+        ? expanded === "true" && width >= SHELL_NAV_MIN_PX
         : expanded === "false" && width <= 1;
     })
     .toBe(true);
