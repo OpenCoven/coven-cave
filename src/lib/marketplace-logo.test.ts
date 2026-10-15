@@ -39,7 +39,11 @@ assert.ok(registry.brandCount >= 35, "the curated brand set must not silently re
 for (const plugin of catalog.plugins) {
   const logo = resolveMarketplaceLogo(plugin.name, plugin.displayName ?? plugin.name);
   assert.ok(logo.monogram.length >= 1 && logo.monogram.length <= 2, `${plugin.name} has a usable fallback`);
-  if (logo.kind === "brand") {
+  if (/^(?:open)?coven-/.test(plugin.name)) {
+    assert.equal(logo.kind, "brand", `${plugin.name} uses the OpenCoven mark`);
+    assert.equal(logo.title, "OpenCoven");
+    assert.equal(marketplaceLogoForTransport(logo).assetPath, "/marketplace-logos/opencoven.png");
+  } else if (logo.kind === "brand") {
     assert.ok(logo.svgPath, `${plugin.name} brand mark has an inline SVG path`);
     assert.equal(logo.assetPath, `/marketplace-logos/${plugin.name}.png`);
   }
@@ -65,10 +69,14 @@ assert.deepEqual(githubTransport, {
 assert.equal("svgPath" in githubTransport, false, "API identities omit large inline SVG paths");
 assert.equal("source" in githubTransport, false, "API identities omit generator-only metadata");
 
-const expectedAssets = Object.entries(registry.entries)
-  .filter(([, logo]) => logo.kind === "brand")
-  .map(([id]) => `${id}.png`)
-  .sort();
+const expectedAssets = [...new Set(Object.values(registry.entries)
+  .filter((logo) => logo.kind === "brand")
+  .map((logo) => path.basename(logo.assetPath)))].sort();
+assert.deepEqual(
+  await readFile(path.join(root, "public/marketplace-logos/opencoven.png")),
+  await readFile(path.join(root, "assets/brand/coven-logo.png")),
+  "Coven listings reuse the canonical OpenCoven logo without modification",
+);
 const actualAssets = (await readdir(path.join(root, "public/marketplace-logos")))
   .filter((name) => name.endsWith(".png"))
   .sort();
