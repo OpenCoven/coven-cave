@@ -17,8 +17,10 @@ export const ICON_IMAGE_VAULT_KEYS: Record<IconImageProvider, string> = {
   gemini: "GOOGLE_API_KEY",
 };
 
+// Icons render at 16–28px from a low-quality pass, so OpenAI's small fast
+// GPT Image 2.5 model fits better than the full Sunburst model chat uses.
 export const ICON_IMAGE_MODELS: Record<IconImageProvider, string> = {
-  openai: "gpt-image-1",
+  openai: "gpt-image-2.5-flare",
   gemini: "imagen-3.0-generate-002",
 };
 
