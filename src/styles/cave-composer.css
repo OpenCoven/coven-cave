@@ -1208,7 +1208,11 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  flex: 1 1 auto;
+  /* Fill the row from a zero basis (#6014): the band wraps, and an auto
+     basis claimed the chips' full width, which pushed "Create task" onto its
+     own line on a narrow pane even though the chips scroll inside
+     .cave-context-controls. */
+  flex: 1 1 0;
 }
 
 .cave-context-chip {

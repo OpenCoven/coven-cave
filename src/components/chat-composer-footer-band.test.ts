@@ -254,8 +254,8 @@ assert.match(
 // ── Chip chrome: shared quiet 28px chips in the composer sheet ──────────────
 assert.match(
   css,
-  /\.cave-composer-footer-band__cluster \{[\s\S]{0,200}?min-width: 0;[\s\S]{0,120}?flex: 1 1 auto;/,
-  "the band's chip cluster flexes and allows shrinking so three chips coexist with the linked strip",
+  /\.cave-composer-footer-band__cluster \{[\s\S]{0,200}?min-width: 0;[\s\S]{0,400}?flex: 1 1 0;/,
+  "the band's chip cluster fills the row from a zero basis, so its chips scroll inside it instead of pushing the linked strip onto its own line (#6014)",
 );
 assert.match(
   css,
