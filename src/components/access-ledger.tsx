@@ -109,6 +109,7 @@ export function AccessRow({
   tags,
   meta,
   actions,
+  revealActions = false,
   children,
   className,
   titleAs = "h3",
@@ -125,6 +126,9 @@ export function AccessRow({
   tags?: ReactNode;
   meta?: ReactNode;
   actions?: ReactNode;
+  /** Quiet destructive actions (Revoke) earn visibility on hover or focus of
+   *  the row; touch shows them always (design language §8). */
+  revealActions?: boolean;
   children?: ReactNode;
   className?: string;
   titleAs?: "h3" | "h4" | "div";
@@ -146,7 +150,9 @@ export function AccessRow({
         {meta}
         {children}
       </div>
-      {actions ? <div className="access-ledger__actions">{actions}</div> : null}
+      {actions ? (
+        <div className={`access-ledger__actions${revealActions ? " reveal-on-hover" : ""}`}>{actions}</div>
+      ) : null}
     </article>
   );
 }

@@ -573,11 +573,11 @@ function CredentialRow({
           ]}
         />
       )}
+      revealActions
       actions={!revoked ? (
         <Button
           size="sm"
           variant="danger-ghost"
-          className="reveal-on-hover"
           disabled={action !== null}
           loading={action?.kind === "revoke" && action.id === credential.id}
           aria-label={`Revoke access for ${actionIdentity}`}

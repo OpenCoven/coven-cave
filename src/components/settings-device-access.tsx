@@ -110,6 +110,7 @@ function DeviceRow({
           ]}
         />
       )}
+      revealActions={!pending && device.status === "allowed"}
       actions={pending ? (
         <>
           <Button size="sm" variant="primary" disabled={busy} onClick={() => onDecide(device, "allowed")}>
@@ -123,7 +124,6 @@ function DeviceRow({
         <Button
           size="sm"
           variant="danger-ghost"
-          className="reveal-on-hover"
           disabled={busy}
           onClick={() => onDecide(device, "revoked")}
         >

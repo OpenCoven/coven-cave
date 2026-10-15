@@ -184,7 +184,7 @@
 }
 
 /* A revoke that is mid-flight stays visible even when the pointer leaves. */
-.access-ledger__actions .reveal-on-hover[aria-busy="true"] {
+.access-ledger__actions.reveal-on-hover:has([aria-busy="true"]) {
   opacity: 1;
 }
 
