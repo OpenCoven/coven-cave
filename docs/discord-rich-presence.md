@@ -134,12 +134,18 @@ for the `CovenCave` executable (see below), shown when Rich Presence is not
 connected. It always has a placeholder icon. Check the connection directly:
 
 ```bash
-lsof -nP -p "$(pgrep -f '/CovenCave.app/Contents/MacOS/app$')" | grep discord-ipc
+cave=$(pgrep -f '/CovenCave.app/Contents/MacOS/app$')
+peers=$(lsof -nP -a -U -p "$cave" | awk 'NR > 1 { sub(/^->/, "", $NF); print $NF }')
+lsof -nP -U | awk '/discord-ipc/ { print $6 }' | grep -F -x -f <(printf '%s\n' "$peers")
 ```
 
-No line means Cave holds no Discord IPC connection. On a build with the #6021
-recovery, it reconnects within its backoff. An older build stays disconnected
-until Cave is quit and reopened.
+On macOS, the connecting side of a Unix socket shows only its peer's address
+(`->0x…`), never the path, so `lsof -p <cave> | grep discord-ipc` finds
+nothing even while Cave is connected. The check above matches Cave's peer
+addresses against Discord's `discord-ipc-*` sockets instead. A printed address
+means Cave is connected; no output means it isn't. On a build with the #6021
+recovery (v0.5.14 or later), Cave reconnects within its backoff. An older
+build stays disconnected until Cave is quit and reopened.
 
 ## What Rich Presence does not control
 
