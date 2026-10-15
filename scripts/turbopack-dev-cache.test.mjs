@@ -41,6 +41,13 @@ assert.equal(
   "full",
   "daemon-less E2E evicts every persisted snapshot instead of exhausting the runner",
 );
+for (const [label, config] of [["local", localConfig], ["E2E", e2eConfig]]) {
+  assert.equal(
+    config.experimental.turbopackFileSystemCacheForBuild,
+    false,
+    `${label} production builds skip Turbopack's build cache write: nothing reuses it, and next build waits on it (44 min on macos-15, #6005)`,
+  );
+}
 assert.match(
   playwrightConfig,
   /TURBO_ENGINE_SNAPSHOT_IDLE_TIMEOUT_MILLIS:\s*"1000"/,
