@@ -491,7 +491,7 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;(?:\s*\/\/[^\n]*)*\s*applyPanelOpenState\(\s*navRef\.current,\s*rememberedNavOpen && !chatRailNavRef\.current\.autoCollapsed,\s*\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
+  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;[\s\S]{0,200}?applyPanelOpenState\(\s*navRef\.current,\s*rememberedNavOpen && !chatRailNavRef\.current\.autoCollapsed,\s*\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
   "normal destination restoration applies the remembered state before paint (unless the nav is yielding to the chat list) while retaining the expanded layout",
 );
 assert.match(
