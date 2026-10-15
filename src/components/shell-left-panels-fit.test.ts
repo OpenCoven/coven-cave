@@ -7,10 +7,10 @@ const shellLayout = await readFile(new URL("./shell-layout.ts", import.meta.url)
 const foundations = await readFile(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
 
 // The left panels are PIXEL-sized so they stop scaling with monitor width —
-// a 24%-wide nav is 826px on a 3440px ultrawide for a ~240px rail of labels.
+// a 24%-wide nav is 826px on a 3440px ultrawide for a ~190px rail of labels.
 // The detail panel has no size props and absorbs everything the left releases.
 // Normal navigation hydrates fully closed, then restores the shared
-// 240px expanded size before paint. Chat's contextual sidebar uses that width.
+// 188px expanded size before paint. Chat's contextual sidebar uses that width.
 assert.match(
   shell,
   /const defaultNavSize =\s*chatContextual \|\| mounted \? `\$\{NAV_OPEN_PX\}px` : `\$\{NAV_COLLAPSED_PX\}px`/,
@@ -19,20 +19,20 @@ assert.match(
 assert.match(
   shell,
   /id="nav"[\s\S]{0,700}?defaultSize=\{defaultNavSize\}[\s\S]{0,120}?minSize=\{`\$\{SHELL_NAV_MIN_PX\}px`\}[\s\S]{0,60}?maxSize=\{`\$\{SHELL_NAV_MAX_PX\}px`\}/,
-  "Home and Chat share the 220–300px nav width band",
+  "Home and Chat share the 188–220px nav width band",
 );
 assert.match(
   shell,
   /SHELL_NAV_DEFAULT_PX,[\s\S]*?SHELL_NAV_MAX_PX,[\s\S]*?SHELL_NAV_MIN_PX,/,
-  "the shell imports the shared 240px default and 220–300px bounds",
+  "the shell imports the shared 188px default and 188–220px bounds",
 );
-assert.match(shellLayout, /export const SHELL_NAV_MIN_PX = 220;/, "shared nav minimum stays 220px");
-assert.match(shellLayout, /export const SHELL_NAV_MAX_PX = 300;/, "shared nav maximum stays 300px: tight to the sidebar's content");
-assert.match(shellLayout, /export const SHELL_NAV_DEFAULT_PX = 240;/, "shared nav default stays 240px");
+assert.match(shellLayout, /export const SHELL_NAV_MIN_PX = 188;/, "shared nav minimum stays 188px: the widest measured content never clips");
+assert.match(shellLayout, /export const SHELL_NAV_MAX_PX = 220;/, "shared nav maximum stays 220px: tight to the sidebar's content");
+assert.match(shellLayout, /export const SHELL_NAV_DEFAULT_PX = 188;/, "shared nav default stays 188px");
 assert.match(
   shell,
   /const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;/,
-  "the shell uses the shared 240px default as its nav expansion target",
+  "the shell uses the shared 188px default as its nav expansion target",
 );
 // Minimized by default via the group's setLayout (sets ALL panels at once) —
 // NOT a single-panel collapse(). Applied ONCE per group per browser via a
@@ -141,7 +141,7 @@ assert.match(
 
 // The CSS vars mirror the panel props (React props can't read CSS vars) —
 // if one side changes, this keeps the other honest.
-assert.match(foundations, /--shell-nav-width:\s*240px/, "--shell-nav-width mirrors the nav's expanded width");
+assert.match(foundations, /--shell-nav-width:\s*188px/, "--shell-nav-width mirrors the nav's expanded width");
 assert.match(foundations, /--shell-list-width:\s*260px/, "--shell-list-width should match the list panel default");
 
 console.log("shell-left-panels-fit.test.ts OK");
