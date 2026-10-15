@@ -12,11 +12,12 @@ const withBundleAnalyzer = bundleAnalyzer({
 
 const daemonlessE2E = process.env.COVEN_CAVE_E2E === "1";
 
-// Fixture-only builds (the iOS job's native TCP server) may skip Next's own
-// TypeScript pass: the dedicated "Frontend validation (typecheck)" job runs
-// `tsc --noEmit` on the same PR, and on the memory-bound macOS runner that
-// pass alone grew to ~32 minutes and pushed the job past its limit (#5991).
-// Every other build keeps it.
+// Fixture-only builds (the iOS job's native TCP server, and the Client v1
+// compatibility test's two launch fixtures) may skip Next's own TypeScript
+// pass: a dedicated typecheck job runs `tsc --noEmit` on the same commit, and
+// on the memory-bound macOS runner that pass alone grew to ~32 minutes and
+// pushed those jobs past their limits (#5991, #6036). Every other build,
+// including every packaged release artifact, keeps it.
 const skipBuildTypecheck = process.env.COVEN_CAVE_SKIP_BUILD_TYPECHECK === "1";
 
 const researchPackage = researchPackageConfig();

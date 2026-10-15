@@ -177,7 +177,10 @@ jobs:
   runtime:
     name: Validate candidate runtime (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # 90, not 60: on macos-15 this job builds three times (two Client v1
+    # fixtures, then the sidecar bundle, which keeps Next's TypeScript pass),
+    # and that pass now takes ~33 min there (#6036). Lower it when that's fixed.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
