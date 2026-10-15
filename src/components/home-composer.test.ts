@@ -316,6 +316,11 @@ assert.match(
   /if \(!projectRequestPending\) return;\s*if \(!familiarsLoaded \|\| accessibleGateProjectsLoading\) return;[\s\S]*?const candidate = preferredFirstProjectGateFamiliarId\(activeId, visibleFamiliars\);[\s\S]*?if \(candidate && accessKnownEmpty\) \{\s*setRequestedGateFamiliarId\(candidate\);\s*return;\s*\}\s*setProjectPickerOpenRequest\(\(count\) => count \+ 1\);/,
   "a project request waits for the roster and access read, then a familiar without projects gets the gate; otherwise the titlebar picker opens",
 );
+assert.match(
+  workspaceSource,
+  /if \(!familiarsLoaded \|\| accessibleGateProjectsLoading\) return;[\s\S]{0,600}?if \(!accessibleGateProjectsLoadedSuccessfully && !accessibleGateProjectsError\) return;[\s\S]*?const candidate = preferredFirstProjectGateFamiliarId/,
+  "a project request is decided only once the candidate familiar's scoped read has succeeded or failed, not merely stopped loading (#5890 CI race)",
+);
 assert.match(workspaceSource, /requestedFamiliarId: requestedGateFamiliarId,/, "the explicit request feeds the gate policy");
 assert.match(workspaceSource, /projectOpenRequest=\{projectPickerOpenRequest\}/, "the picker request reaches the titlebar switcher");
 
