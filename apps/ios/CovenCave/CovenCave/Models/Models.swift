@@ -296,14 +296,69 @@ struct ChatRuntimeActivity: Codable, Hashable {
         return self
     }
 
+    /// Plain words for the reader, mirroring src/lib/chat-runtime-activity.ts
+    /// (#6039, #6042): what they will see, not the adapter's support vocabulary.
     var statusLines: [String] {
-        guard validated != nil else { return ["Activity support: not recorded"] }
+        guard validated != nil else { return ["Activity: not recorded for this turn"] }
         let paths = ["direct": "Direct runtime", "coven": "Coven relay", "ssh": "SSH relay", "api": "API",
                      "gateway": "Gateway", "cli": "CLI bridge", "unknown": "Not yet selected"]
-        let states = ["supported": "supported on this path", "partial": "partially supported on this path",
-                      "unsupported": "not supported on this path", "unknown": "support unverified on this path",
-                      "disabled": "decoding disabled for this turn"]
+        let states = ["supported": "available", "partial": "partly available",
+                      "unsupported": "not available on this path", "unknown": "not verified on this path",
+                      "disabled": "off for this turn"]
         return ["Runtime path: \(paths[path]!)", "Tool details: \(states[tools]!)", "Reasoning summaries: \(states[reasoning]!)"]
+    }
+}
+
+/// The Run details rows under a reply, mirroring src/lib/chat-run-details.ts
+/// (#6039, #6042). One Model row carries the model fact: the model the runtime
+/// reported when it did, otherwise the selection with its state and source in
+/// plain words. The other rows appear only when they differ from it, and the
+/// reason only where it adds something the state phrase does not.
+enum ChatRunDetails {
+    static let statePhrases: [String: String] = [
+        "unknown": "not confirmed", "saved": "saved, waiting for the runtime", "pending": "pending confirmation",
+        "applied": "applied, not reported back", "unsupported": "not supported by the runtime", "failed": "failed to apply",
+    ]
+    static let sourcePhrases: [String: String] = [
+        "runtime-default": "runtime default", "global-default": "global default", "familiar-default": "familiar default",
+        "session": "this session", "next-message": "this message only",
+    ]
+
+    static func lines(identity: ChatRuntimeIdentity?, requested: String?, desired: String?, forwarded: String?,
+                      confirmed: String?, state: String?, source: String?, reason: String?) -> [String] {
+        func present(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
+        let desired = present(desired), forwarded = present(forwarded), confirmed = present(confirmed)
+        let state = present(state), source = present(source), reason = present(reason)
+        let reported = present(identity?.model)
+        var lines: [String] = []
+        if let identity {
+            lines.append("Runtime: " + (present(identity.version).map { "\(identity.harness) \($0)" } ?? "\(identity.harness) · Version not reported"))
+        } else {
+            lines.append("Runtime: Identity not recorded in this response")
+        }
+        if let reported {
+            lines.append("Model: \(reported) · reported by the runtime")
+            if let desired, desired != reported { lines.append("Selected model: \(desired)") }
+        } else if identity == nil, let confirmed {
+            // A transcript from before runtime reports: the recorded model is
+            // labeled as such and never promoted to a reported model.
+            lines.append("Recorded model: \(confirmed)")
+            if let desired, desired != confirmed { lines.append("Selected model: \(desired)") }
+        } else if desired == nil, state == nil {
+            lines.append("Model: not reported")
+        } else {
+            let phrase = state.map { statePhrases[$0] ?? $0 } ?? "not confirmed by the runtime"
+            let parts = [desired ?? "Runtime default", phrase, source.map { sourcePhrases[$0] ?? $0 }].compactMap { $0 }
+            lines.append("Model: " + parts.joined(separator: " · "))
+        }
+        if let requested, requested != (desired ?? "") {
+            lines.append("Requested model: \(requested.isEmpty ? "Runtime default" : requested)")
+        }
+        if let forwarded, forwarded != desired { lines.append("Forwarded model: \(forwarded)") }
+        let reasonAdds = !["pending", "saved", "applied"].contains(state ?? "")
+        if let reason, confirmed == nil, reasonAdds { lines.append(reason) }
+        lines += identity?.activity?.statusLines ?? ["Activity: not recorded for this turn"]
+        return lines
     }
 }
 

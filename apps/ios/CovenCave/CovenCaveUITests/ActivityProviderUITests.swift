@@ -40,13 +40,13 @@ final class ActivityProviderUITests: XCTestCase {
             notificationPrompt.buttons.matching(NSPredicate(format: "label IN %@", ["Don’t Allow", "Don't Allow"])).firstMatch.tap()
         }
         let identity = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@",
-            "Runtime: \(harness) \(version)", "Runtime-reported model: \(model)")).firstMatch
+            "Runtime: \(harness) \(version)", "Model: \(model) · reported by the runtime")).firstMatch
         let tool = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", "Tool activity:", "Succeeded")).firstMatch
         guard identity.waitForExistence(timeout: 120), tool.waitForExistence(timeout: 20) else {
             XCTFail("The actual provider did not report the expected identity and a successful tool")
             return
         }
-        XCTAssertTrue(identity.label.contains("Tool details: supported on this path"))
+        XCTAssertTrue(identity.label.contains("Tool details: available"))
         XCTAssertFalse(system.alerts.firstMatch.exists)
         attachScreenshot("native-provider-live")
         try await checkOutput(app, tool: tool, marker: marker)

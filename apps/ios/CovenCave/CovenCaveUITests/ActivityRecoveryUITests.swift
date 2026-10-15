@@ -88,8 +88,8 @@ final class ActivityRecoveryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Done: \(marker)"].exists)
         let identity = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Runtime: hermes")).firstMatch
         XCTAssertTrue(identity.exists)
-        XCTAssertTrue(identity.label.contains("Runtime-reported model: served-fixture-v3"))
-        XCTAssertTrue(identity.label.contains("Tool details: supported on this path"))
+        XCTAssertTrue(identity.label.contains("Model: served-fixture-v3 · reported by the runtime"))
+        XCTAssertTrue(identity.label.contains("Tool details: available"))
         attachScreenshot("native-recovered-activity")
 
         tool.tap()

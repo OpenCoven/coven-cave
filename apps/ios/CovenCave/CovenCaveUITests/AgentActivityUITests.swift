@@ -274,11 +274,11 @@ final class AgentActivityUITests: XCTestCase {
             chip.identifier, "Model application status", "Runtime:"
         )).firstMatch
         XCTAssertTrue(identity.waitForExistence(timeout: 5), "the response exposes its identity status")
-        XCTAssertTrue(identity.label.contains("Runtime: not recorded"),
+        XCTAssertTrue(identity.label.contains("Runtime: Identity not recorded in this response"),
                       "legacy history does not invent a runtime: \(identity.label)")
-        XCTAssertTrue(identity.label.contains("Runtime-reported model: unavailable"),
+        XCTAssertTrue(identity.label.contains("Model: not reported"),
                       "unavailable model evidence is accessible: \(identity.label)")
-        XCTAssertTrue(identity.label.contains("Activity support: not recorded"),
+        XCTAssertTrue(identity.label.contains("Activity: not recorded for this turn"),
                       "unavailable activity support is accessible: \(identity.label)")
 
         // The argument summary — the whole point of the fix. Before it, every
@@ -384,11 +384,11 @@ final class AgentActivityUITests: XCTestCase {
 
     @MainActor
     private func assertReportedIdentity(_ identity: XCUIElement) {
-        XCTAssertTrue(identity.label.contains("Runtime-reported model: claude-opus-5-5"))
+        XCTAssertTrue(identity.label.contains("Model: claude-opus-5-5 · reported by the runtime"))
         XCTAssertTrue(identity.label.contains("Requested model: claude-sonnet-5"))
         XCTAssertTrue(identity.label.contains("Runtime path: Coven relay"))
-        XCTAssertTrue(identity.label.contains("Tool details: supported on this path"))
-        XCTAssertTrue(identity.label.contains("Reasoning summaries: support unverified on this path"))
+        XCTAssertTrue(identity.label.contains("Tool details: available"))
+        XCTAssertTrue(identity.label.contains("Reasoning summaries: not verified on this path"))
         XCTAssertFalse(identity.label.contains("gpt-5.6"), "the familiar's current model cannot overwrite a response report")
     }
 
