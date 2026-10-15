@@ -9,6 +9,7 @@
 /* ── Toolbar ──────────────────────────────────────────────────────────────── */
 .chat-canvas-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-5);
@@ -16,12 +17,11 @@
   flex: none;
 }
 .chat-canvas-toolbar__search {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 16rem;
+  min-width: min(100%, 12rem);
   max-width: 640px;
 }
 .chat-canvas-toolbar__search .ui-search-input {
-  height: 36px;
   background: var(--bg-panel);
 }
 /* Segmented kind filter — a padded track with a lozenge rider, so the active

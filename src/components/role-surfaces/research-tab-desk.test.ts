@@ -449,31 +449,20 @@ test("lifecycle-mismatched mission overlays remain readable but expose no mutati
 
 // ── Responsive collapses re-declared for the desk-tab overrides ─────────────
 
-test("desk-tab responsive collapses match the existing container breakpoints", () => {
-  // Both the open and the collapsed grid must flatten together — flattening
-  // only one leaves a 36px spine stacked above a full-width run.
-  assert.match(css, /@container research-desk \(max-width: 900px\) \{[\s\S]*?\.research-desk-tab \.research-desk__workspace,\s*\.research-desk-tab \.research-desk__workspace\[data-queue-collapsed="true"\] \{\s*grid-template-columns: 1fr;/);
-  assert.match(css, /@container research-desk \(max-width: 900px\) \{[\s\S]*?\.research-desk-handle \{ display: none; \}/);
-  assert.match(css, /@container research-desk \(max-width: 760px\) \{[\s\S]*?\.research-desk-tab \.research-mission-detail__body,\s*\.research-desk-tab \.research-mission-detail__body\[data-evidence-spine="true"\] \{\s*grid-template-columns: 1fr;/);
-  assert.match(
-    css,
-    /\.research-desk-rail \{[\s\S]*?border-left: 0;[\s\S]*?border-top: 1px solid var\(--border\);/,
-  );
+test("compact desks expose one selected pane with reachable navigation", () => {
+  assert.match(deskTab, /aria-label="Desk panes"/);
+  assert.match(deskTab, /data-compact-pane=\{compactPane\}/);
+  assert.match(css, /@container research-desk \(max-width: 1100px\)/);
+  assert.match(css, /\[data-compact-pane="run"\] > \.research-mission-nav/);
+  assert.match(css, /\[data-compact-pane="queue"\] > \.research-desk__main \{ display: none; \}/);
 });
 
-test("narrow desks bound secondary rails while preserving the run surface", () => {
-  assert.match(
-    css,
-    /@container research-desk \(max-width: 900px\)[\s\S]*?max-height: calc\(var\(--space-10\) \* 4\)/,
-  );
-  assert.match(
-    css,
-    /@container research-desk \(max-width: 760px\)[\s\S]*?\.research-desk-rail \{[\s\S]*?max-height: 44vh/,
-  );
-  assert.match(
-    css,
-    /@container research-desk \(max-width: 560px\)[\s\S]*?\.research-desk-toolbar__main/,
-  );
+test("evidence is disclosed within the detail pane when two readable columns cannot fit", () => {
+  assert.match(deskTab, /\[evidenceOpen, setEvidenceOpen\] = useState\(false\)/);
+  assert.match(css, /container: research-run \/ inline-size/);
+  assert.match(css, /@container research-run \(max-width: 1000px\)/);
+  assert.match(css, /\[data-evidence-open="true"\] > \.research-desk-center \{ display: none; \}/);
+  assert.match(css, /\.research-desk-rail \{ max-height: none;/);
 });
 
 // ── Artifact actions: shared component mounted on rail + saved summary ──────

@@ -15,6 +15,8 @@ import { buildNextPathsDirective } from "@/lib/next-paths";
 import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
 import { buildCitationsDirective } from "@/lib/citations-directive";
 import type { ModelControlValues } from "@/lib/model-control-capabilities";
+import { isProjectlessGenerationOrigin } from "@/lib/chat-origins";
+import type { SessionOrigin } from "@/lib/types";
 
 type ModelRequest = {
   familiarId: string;
@@ -313,7 +315,11 @@ export function turnRetryModel(input: {
 
 /** Add only explicitly selected prompt-only guidance. Native controls must
  * never be duplicated as prose, and unsupported controls never reach here. */
-export function buildPromptWithResponseControls(prompt: string, body: ResponseControlRequest): string {
+export function buildPromptWithResponseControls(
+  prompt: string,
+  body: ResponseControlRequest,
+  opts: { origin?: SessionOrigin | null } = {},
+): string {
   const controls = Object.entries(body.modelControls ?? {});
   const guidance = controls.length > 0
     ? [
@@ -324,6 +330,9 @@ export function buildPromptWithResponseControls(prompt: string, body: ResponseCo
         "",
       ]
     : [];
+  if (isProjectlessGenerationOrigin(opts.origin)) {
+    return [...guidance, prompt].join("\n");
+  }
   return [
     ...guidance,
     buildNextPathsDirective(),

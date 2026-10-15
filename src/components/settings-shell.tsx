@@ -30,6 +30,7 @@ import { formatHostWorkspaceText, parseHostWorkspaceText } from "./settings-mult
 import { showSettingsSavedAfterPreferencesFlush, showSettingsSavedToast } from "@/lib/settings-save-feedback";
 
 import { SettingsPage, SettingsRow } from "./settings-layout";
+import { SetupStatusRow } from "./settings-setup";
 import { GeneralSettingsDataProvider, useGeneralSettingsData, type BackupSyncOverview } from "./settings-general-data";
 const AppearanceSection = dynamic(() => import("./settings-appearance").then((m) => m.AppearanceSection), { loading: SettingsSectionFallback });
 
@@ -183,6 +184,10 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
       if (target?.isContentEditable) return;
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      // A dialog open over Settings (the "Set up Cave" overlay, #5982) owns
+      // Escape through its own focus trap; it must close the dialog, not
+      // also pop the Settings route from under it.
+      if (e.defaultPrevented || target?.closest('[role="dialog"]')) return;
       if (e.key === "Escape") {
         e.preventDefault();
         if (embedded) {
@@ -365,6 +370,9 @@ function GeneralSection() {
         <div className="settings-progression-card">
           <CelebrationsToggle />
         </div>
+      </SettingsGroup>
+      <SettingsGroup label="Setup" variant="ruled" panel={false}>
+        <SetupStatusRow />
       </SettingsGroup>
       <BackupSettingsGroup />
     </SettingsPage>

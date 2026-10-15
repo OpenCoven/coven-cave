@@ -9,6 +9,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-view";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { SearchInput } from "@/components/ui/search-input";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
   buildFamiliarCardStats,
@@ -360,26 +361,14 @@ export function FamiliarsView({
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[240px] flex-1">
-            <Icon
-              name="ph:magnifying-glass"
-              width={12}
-              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-            />
-            <input
+          <div className="relative min-w-0 flex-1 basis-60">
+            <SearchInput
               ref={searchRef}
-              type="search"
               aria-label="Filter familiars"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && query) {
-                  event.preventDefault();
-                  setQuery("");
-                }
-              }}
+              onValueChange={setQuery}
+              onClear={() => setQuery("")}
               placeholder="Filter familiars…"
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-7 font-mono text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
             {!query && (
               <kbd

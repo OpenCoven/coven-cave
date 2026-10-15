@@ -1,6 +1,7 @@
 "use client";
 
 import "@/styles/cave-composer.css";
+import { ModelInventoryFeedback } from "@/components/model-inventory-feedback";
 
 import { useCallback, useRef, useState } from "react";
 // The slash menu popover reuses the home composer's .hc-slash-* affordance —
@@ -18,6 +19,8 @@ import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 import { IconButton } from "@/components/ui/icon-button";
 import { attachmentIcon, type ChatAttachment } from "@/lib/chat-attachments";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
+import { ComposerAttachmentFeedback } from "@/components/composer-attachment-feedback";
+import { useAnnouncer } from "@/components/ui/live-region";
 import type { QueuedQuickChatMessage, QuickChatMessage } from "@/lib/use-quick-chat";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import type {
@@ -284,6 +287,7 @@ export function QuickChatComposer({
   // Prompt enhancement (cave-b6c2): the shared model-backed hook, mounted
   // internally so every quick-chat surface (dropdown, tray tab, standalone
   // window) gets Enhance with zero consumer wiring.
+  const { announce } = useAnnouncer();
   const promptEnhance = usePromptEnhance({
     draft,
     setDraft: onDraftChange,
@@ -311,7 +315,7 @@ export function QuickChatComposer({
 
   // Attachment staging (shared hook — same capture behavior as the home/chat
   // composers): drag-and-drop anywhere on the composer footer, paste-to-attach
-  // on the textarea, paperclip-free (drop/paste only) at 10 files max.
+  // on the textarea, paperclip-free (drop/paste only) at 50 total, 10 non-images.
   const {
     attachments,
     removeAttachment,
@@ -319,7 +323,11 @@ export function QuickChatComposer({
     handlePaste,
     dropActive,
     dropHandlers,
+    notice: attachmentNotice,
+    dismissNotice: dismissAttachmentNotice,
+    isReading: attachmentsReading,
   } = useAttachmentStaging({
+    onAdded: (count) => announce(`Attached ${count} file${count === 1 ? "" : "s"}.`),
     focus: () => composerRef?.current?.focus(),
   });
 
@@ -522,6 +530,7 @@ export function QuickChatComposer({
   );
 
   const send = useCallback(() => {
+    if (attachmentsReading) return;
     // A leading slash is a command, never a message — same contract as the
     // home/chat composers (only when the host wired the slash handlers).
     // Staged files stay staged across a command (e.g. /model then send).
@@ -540,6 +549,7 @@ export function QuickChatComposer({
     clearAttachments();
   }, [
     attachments,
+    attachmentsReading,
     clearAttachments,
     draft,
     launchReady,
@@ -550,7 +560,7 @@ export function QuickChatComposer({
   ]);
   // Sendable = something to say (text or files). While a reply streams the
   // same action QUEUES — the hook parks it and auto-sends on settle.
-  const canSend = Boolean(draft.trim() || attachments.length > 0);
+  const canSend = !attachmentsReading && Boolean(draft.trim() || attachments.length > 0);
   const canDispatch =
     canSend && (launchReady || (slashEnabled && draft.trim().startsWith("/")));
   const onKeyDown = useCallback(
@@ -624,7 +634,7 @@ export function QuickChatComposer({
           ariaLabel={`Models · ${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}`}
           items={menu.modelOptions.map((m) => ({ key: m.id, name: m.label, desc: m.id }))}
           activeIndex={menu.slashIdx}
-          footer={`${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)} · ↑↓ navigate · Enter switch · Esc cancel`}
+          footer={<><ModelInventoryFeedback runtime={modelHarness} modelInventory={runtimeModelInventory} modelCount={runtimeModelOptions.length} /><span>↑↓ navigate · Enter switch · Esc cancel</span></>}
           onHover={menu.setSlashIdx}
           onPick={(i) => {
             const m = menu.modelOptions?.[i];
@@ -757,6 +767,11 @@ export function QuickChatComposer({
         placeholder={familiar ? `Message @${familiar.id}…` : "@sage summarize what needs attention"}
         className="quick-chat-overlay__input"
       />
+      <ComposerAttachmentFeedback
+        notice={attachmentNotice}
+        reading={attachmentsReading}
+        onDismiss={() => { dismissAttachmentNotice(); composerRef?.current?.focus(); }}
+      />
       {attachments.length > 0 ? (
         <div className="quick-chat-attachments" role="group" aria-label="Attached files">
           {attachments.map((attachment) => (
@@ -766,9 +781,14 @@ export function QuickChatComposer({
               <IconButton
                 icon="ph:x"
                 size="xs"
+                className="composer-attachment-remove"
                 aria-label={`Remove ${attachment.name}`}
                 title={`Remove ${attachment.name}`}
-                onClick={() => removeAttachment(attachment.id)}
+                onClick={() => {
+                  removeAttachment(attachment.id);
+                  announce(`Removed ${attachment.name}.`);
+                  composerRef?.current?.focus();
+                }}
               />
             </span>
           ))}

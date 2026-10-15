@@ -138,6 +138,97 @@ assert.match(
   /a\.push\("--permission", forwardPermission\)/,
   "coven run argv forwards --permission when enabled",
 );
+
+// Speed control (#5896): `coven run --speed fast|balanced|thorough` is mapped by
+// the daemon onto Claude's `--effort`. It is forwarded only for a local Claude
+// binding whose installed CLI advertises the flag, and only from an explicit,
+// validated `performance` pick — never from the legacy responseSpeed default.
+const modelStateRoute = await readFile(
+  new URL("../model-state/route.ts", import.meta.url),
+  "utf8",
+);
+const capabilityProbes = await readFile(
+  new URL("./chat-send-capabilities.ts", import.meta.url),
+  "utf8",
+);
+const harnessAdapters = await readFile(
+  new URL("../../../../lib/harness-adapters.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  harnessAdapters,
+  /export function covenRunSupportsSpeedFlag\(helpText: string\): boolean \{[\s\S]*?--speed\(\?!\[\\w-\]\)/,
+  "the --speed probe parses coven run --help like the --permission and --add-dir probes",
+);
+assert.match(
+  capabilityProbes,
+  /export function covenRunSupportsSpeed\(\): Promise<boolean> \{[\s\S]*?covenRunSupportsSpeedFlag/,
+  "the Speed probe is a cached coven run --help probe",
+);
+assert.match(
+  chatRoute,
+  /const speedForwardingEnabled =\s*\n\s*!sshRuntime &&\s*\n\s*binding\.harness === "claude" &&\s*\n\s*\(\(await probeCovenCapability\(covenRunSupportsSpeed\)\) \?\? false\);/,
+  "Speed forwarding is gated on a local Claude binding and the ready-plan coven run --speed probe",
+);
+assert.match(
+  chatRoute,
+  /withForwardableRuntimeCliControls\(\s*\n\s*modelControlCapabilities\(binding\.harness, desiredModel\)[\s\S]*?forwardableControlParameters,\s*\n\s*\);/,
+  "the send route drops the Speed control when it cannot forward it, so a pick is rejected rather than silently ignored",
+);
+assert.match(
+  modelStateRoute,
+  /withForwardableRuntimeCliControls\([\s\S]*?speedForwardable \? \[COVEN_SPEED_CONTROL_PARAMETER\] : \[\]/,
+  "the model-state route offers the Speed control on the same probe, so a client never renders a chip the send route would reject",
+);
+assert.match(
+  modelStateRoute,
+  /const localBinding =\s*\n\s*canonicalHarnessId\(binding\.harness\) === state\.harness &&\s*\n\s*!isSshRuntime\(binding\.runtime\) &&[\s\S]*?const speedForwardable =\s*\n\s*state\.harness === "claude" &&\s*\n\s*localBinding &&/,
+  "the model-state Speed gate matches the send route's local Claude binding condition",
+);
+assert.match(
+  chatRoute,
+  /const forwardSpeed = speedForwardingEnabled \? controlValidation\.values\.performance \?\? null : null;/,
+  "only a validated explicit performance pick is forwarded",
+);
+assert.match(
+  chatRoute,
+  /if \(forwardSpeed\) a\.push\("--speed", forwardSpeed\);/,
+  "coven run argv forwards --speed when enabled",
+);
+
+// Thinking for Codex and Copilot (#5905): forwardable exactly when the direct
+// transport was selected with the flag in its probed contract; the model-state
+// route asks the same routing helpers through direct-transport-reasoning-gates.
+assert.match(
+  chatRoute,
+  /const codexReasoningForwardingEnabled =\s*\n\s*codexDirect && codexReasoningForwardable\(codexDirectCapabilities, Boolean\(codexResumeTarget\)\);/,
+  "Codex Thinking forwarding follows the direct routing decision and the launch shape's --config capability",
+);
+assert.match(
+  chatRoute,
+  /const copilotReasoningForwardingEnabled =\s*\n\s*Boolean\(copilotStream\) && copilotSupportsReasoningEffort\(copilotCapability\?\.version \?\? null\);/,
+  "Copilot Thinking forwarding follows the direct JSONL routing decision and the probed CLI version",
+);
+assert.match(
+  chatRoute,
+  /const forwardableControlParameters = new Set<string>\(\[[\s\S]*?COVEN_SPEED_CONTROL_PARAMETER[\s\S]*?CODEX_REASONING_CONTROL_PARAMETER[\s\S]*?COPILOT_REASONING_CONTROL_PARAMETER[\s\S]*?\]\);/,
+  "every runtime-cli control is gated by its own wire flag",
+);
+assert.match(
+  chatRoute,
+  /buildCodexExecArgs\(\{[\s\S]*?reasoningEffort: forwardReasoning,[\s\S]*?\}\);/,
+  "the direct Codex argv carries the validated Thinking pick",
+);
+assert.match(
+  chatRoute,
+  /buildCopilotStreamArgs\(\{[\s\S]*?reasoningEffort: forwardReasoning,[\s\S]*?\}\);/,
+  "the direct Copilot argv carries the validated Thinking pick",
+);
+assert.match(
+  modelStateRoute,
+  /directTransportReasoningGates\(\{ familiarId, harness: state\.harness, resumeSessionId \}\)/,
+  "the model-state route offers Codex/Copilot Thinking only when the direct transport could forward it",
+);
 assert.match(
   chatRoute,
   /body\.permissionMode === "read"[\s\S]*?!directReadOnlyEnforcement && \(!permissionForwardingEnabled \|\| Boolean\(sshRuntime\)\)[\s\S]*?code: "read_only_unavailable"[\s\S]*?status: 501/,

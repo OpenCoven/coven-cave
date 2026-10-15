@@ -144,6 +144,7 @@ async function seedChat(
   };
   let model = INITIAL_MODEL;
   let chatReplySent = false;
+  await page.route("**/api/inbox**", route => route.fulfill({ json: { ok: true, items: [] } }));
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
@@ -247,19 +248,21 @@ async function seedChat(
   return fixture;
 }
 
-async function openChat(page: Page) {
+async function openChat(page: Page, engageComposer = false) {
   await page.goto(`/?mode=chat#chat-${CHAT_SESSION.id}`, { waitUntil: "domcontentloaded" });
   const chat = page.getByTestId("chat-main");
   const draft = chat.getByRole("textbox", { name: "Message" });
   await expect(draft).toBeVisible({ timeout: 45_000 });
-  await expect(chat.getByText("I found the failing login path.")).toBeVisible();
+  if (engageComposer) await draft.focus();
+  await expect(chat.getByText("I found the failing login path.")).toBeVisible({ timeout: 45_000 });
   await expect(chat.getByRole("button", { name: /^Project: E2E Project · Full/ })).toBeVisible({
     timeout: 45_000,
   });
-  await expect(chat.getByRole("button", { name: `Runtime: Codex · Model: ${INITIAL_MODEL} — change model`, exact: true })).toBeVisible({
+  await expect(chat.getByRole("button", { name: `Selected model: ${INITIAL_MODEL} — change model`, exact: true })).toBeVisible({
     timeout: 45_000,
   });
-  await expect(chat.getByRole("button", { name: "Open linked task: Fix the login regression" })).toBeVisible({
+  await expect(chat.locator(".cave-composer-task-tab")).toHaveAccessibleName("Open linked task: Fix the login regression");
+  await expect(chat.locator(".cave-composer-task-tab")).toBeVisible({
     timeout: 45_000,
   });
   return { chat, draft };
@@ -273,7 +276,7 @@ async function clickChatEnhance(page: Page, chat: Locator) {
 }
 
 function chatEnhanceStatus(chat: Locator, text: string) {
-  return chat.getByRole("status").filter({ hasText: text });
+  return chat.locator(".composer-enhance-strip").filter({ hasText: text });
 }
 
 function waitForPoliteAnnouncement(page: Page, expected: string) {
@@ -503,8 +506,8 @@ test.describe("Chat agentic prompt enhancement", () => {
     const why = applied.getByText("Why this?", { exact: true });
     await why.click();
     await expect(applied.getByText("Smart enhance was selected to improve the current draft without changing its objective.")).toBeVisible();
-    await expect(applied.getByLabel("Evidence")).toContainText("message: Recent chat message");
-    await expect(applied.getByLabel("Evidence")).toContainText("task: Linked task");
+    await expect(applied.getByLabel("Evidence")).toContainText("Recent chat message");
+    await expect(applied.getByLabel("Evidence")).toContainText("Linked task");
 
     const revert = applied.getByRole("button", { name: "Revert enhanced prompt" });
     await revert.focus();
@@ -577,6 +580,8 @@ test.describe("Chat agentic prompt enhancement", () => {
     await page.keyboard.press("Tab");
     await expect(dismiss).toBeFocused();
     await page.keyboard.press("Tab");
+    await expect(suggested.getByRole("region", { name: "Enhanced prompt preview" })).toBeFocused();
+    await page.keyboard.press("Tab");
     await expect(why).toBeFocused();
 
     await apply.click();
@@ -612,7 +617,7 @@ test.describe("Chat agentic prompt enhancement", () => {
     const toolsMenu = page.getByRole("menu", { name: "Tools" });
     await expect(toolsMenu.getByRole("menuitem", { name: "Model & tuning…" })).toBeVisible();
     await toolsMenu.getByRole("menuitem", { name: "Model & tuning…" }).click();
-    const runtimeMenu = page.getByRole("menu", { name: "Runtime and model" });
+    const runtimeMenu = page.getByRole("menu", { name: "Model", exact: true });
     await expect(runtimeMenu.getByRole("menuitemradio", { name: ALTERNATE_MODEL, exact: true })).toBeVisible();
     await runtimeMenu.getByRole("menuitemradio", { name: ALTERNATE_MODEL, exact: true }).click();
     expect(fixture.modelPatches).toHaveLength(1);
@@ -663,7 +668,7 @@ test.describe("Chat agentic prompt enhancement", () => {
     await clickChatEnhance(page, chat);
     const loading = chatEnhanceStatus(chat, "Enhancing…");
     await expect(loading).toBeVisible();
-    await expect(loading).toHaveAttribute("role", "status");
+    await expect(loading.getByRole("status")).toContainText("Enhancing…");
     await expect(() => expect(fixture.enhancementRequests).toHaveLength(1)).toPass({ timeout: 10_000 });
     await loading.getByRole("button", { name: "Cancel enhance" }).click();
     release();
@@ -702,4 +707,172 @@ test.describe("Chat agentic prompt enhancement", () => {
     await expect(draft).toHaveValue("Verify the login flow");
     expect(fixture.chatRequests).toHaveLength(1);
   });
+});
+
+
+for (const variant of [
+  { name: "desktop dark", width: 1440, height: 900, mode: "dark", theme: "coven" },
+  { name: "narrow light", width: 760, height: 900, mode: "light", theme: "coven" },
+  { name: "phone tide", width: 390, height: 844, mode: "dark", theme: "tide" },
+]) {
+  test(`enhancement keeps status, actions and details readable: ${variant.name}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: variant.width, height: variant.height });
+    await seedChat(page, async (route) => fulfillSse(route, ENHANCED));
+    const { chat, draft } = await openChat(page);
+    await page.evaluate(({ mode, theme }) => {
+      document.documentElement.dataset.mode = mode;
+      document.documentElement.dataset.theme = theme;
+    }, variant);
+    await draft.fill("fix login bug");
+    await clickChatEnhance(page, chat);
+    const strip = chatEnhanceStatus(chat, "Prompt improved.");
+    await expect(strip).toBeVisible();
+    await strip.getByText("Why this?", { exact: true }).click();
+    const message = strip.getByText("Prompt improved.", { exact: true });
+    const revert = strip.getByRole("button", { name: "Revert enhanced prompt" });
+    await expect(message).toBeVisible();
+    await expect(revert).toBeVisible();
+    const rects = await Promise.all([strip.boundingBox(), message.boundingBox(), revert.boundingBox()]);
+    const [outer, label, action] = rects;
+    expect(outer).not.toBeNull(); expect(label).not.toBeNull(); expect(action).not.toBeNull();
+    expect(label!.width).toBeGreaterThan(90);
+    expect(label!.x + label!.width).toBeLessThanOrEqual(action!.x);
+    expect(action!.x + action!.width).toBeLessThanOrEqual(outer!.x + outer!.width);
+    expect(await strip.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("chat-enhance.png"), fullPage: false });
+    await revert.click();
+    await expect(draft).toHaveValue("fix login bug");
+    await expect(draft).toBeFocused();
+  });
+}
+
+test("enhance long press and pointer cancellation never submit a rewrite", async ({ page }) => {
+  const fixture = await seedChat(page, async (route) => fulfillSse(route, ENHANCED));
+  const { chat, draft } = await openChat(page);
+  await draft.fill("fix login bug");
+  const control = chat.getByRole("button", { name: "Enhance prompt", exact: true });
+  await expect(control).toBeEnabled();
+  await control.hover();
+  await page.mouse.down();
+  // Reproduce the footer's observed 28px layout shift during a stationary hold.
+  await control.evaluate(element => { element.style.transform = "translateY(-28px)"; });
+  await expect(page.getByRole("menu", { name: "Enhance options" })).toBeVisible();
+  await page.mouse.up();
+  await control.evaluate(element => { element.style.transform = ""; });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu", { name: "Enhance options" })).toBeHidden();
+  await expect(control).toBeFocused();
+  expect(fixture.enhancementRequests).toHaveLength(0);
+  await control.hover();
+  await page.mouse.down();
+  const box = await control.boundingBox();
+  await page.mouse.move(box!.x + box!.width + 64, box!.y + box!.height / 2);
+  await page.mouse.up();
+  await expect(page.getByRole("menu", { name: "Enhance options" })).toBeHidden();
+  expect(fixture.enhancementRequests).toHaveLength(0);
+  await control.hover();
+  await page.mouse.down();
+  await control.dispatchEvent("pointercancel", { pointerId: 1 });
+  await page.mouse.up();
+  // Deliberately cross the documented 420ms gesture threshold.
+  await page.waitForTimeout(500);
+  await expect(page.getByRole("menu", { name: "Enhance options" })).toBeHidden();
+  expect(fixture.enhancementRequests).toHaveLength(0);
+  await chat.getByRole("button", { name: "Enhance options", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(chat.getByRole("button", { name: "Enhance options", exact: true })).toBeFocused();
+});
+
+test("enhance intent choices support keyboard entry, navigation and focus return", async ({ page }) => {
+  const fixture = await seedChat(page, async (route) => fulfillSse(route, ENHANCED));
+  const { chat, draft } = await openChat(page);
+  await draft.fill("fix login bug");
+  const control = chat.getByRole("button", { name: "Enhance prompt", exact: true });
+  const options = chat.getByRole("button", { name: "Enhance options", exact: true });
+  const items = page.getByRole("menu", { name: "Enhance options" }).getByRole("menuitem");
+  await control.press("ArrowDown");
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(items.last()).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(items.last()).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(control).toBeFocused();
+  await options.press("Enter");
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(options).toBeFocused();
+  expect(fixture.enhancementRequests).toHaveLength(0);
+  await expect(draft).toHaveValue("fix login bug");
+});
+
+test("an empty chat does not report missing response identity before its first response", async ({ page }) => {
+  await seedChat(page, async (route) => fulfillSse(route, ENHANCED));
+  await page.route("**/api/chat/conversation/**", (route) => route.fulfill({
+    json: { ok: true, conversation: { turns: [] }, context: CHAT_CONTEXT },
+  }));
+  await page.goto(`/?mode=chat#chat-${CHAT_SESSION.id}`);
+  const chat = page.getByTestId("chat-main");
+  await expect(chat.locator("textarea").first()).toBeVisible({ timeout: 45_000 });
+  const header = chat.locator(".cave-chat-meta-line");
+  await expect(header).toBeVisible();
+  await expect(header).not.toContainText("Runtime not recorded");
+  await expect(header).not.toContainText("Model not reported");
+  // The actual offline recovery remains actionable before a first response.
+  await expect(header.getByRole("button", { name: /Start daemon/ })).toBeVisible();
+});
+
+test("estimated context stays labelled and visible at the high-usage threshold", async ({ page }, testInfo) => {
+  await seedChat(page, async (route) => fulfillSse(route, ENHANCED));
+  await page.route("**/api/chat/conversation/**", (route) => route.fulfill({
+    json: { ok: true, conversation: { turns: [{
+      id: "a-evidence", role: "assistant", createdAt: ISO,
+      text: "I found the failing login path.",
+      usage: { inputTokens: 200_000, outputTokens: 10 },
+    }] }, context: CHAT_CONTEXT },
+  }));
+  const { chat, draft } = await openChat(page, true);
+  const context = chat.locator(".cave-composer-context-meter");
+  await expect(context).toContainText("Context ≈100%");
+  await expect(context).toHaveAttribute("data-level", "high");
+  const meter = context.getByRole("meter");
+  await expect(meter).toHaveAccessibleName(/Context 100% full.*window size estimated/);
+  await expect(meter).toBeVisible();
+  expect(await context.evaluate(el => getComputedStyle(el).justifySelf)).toBe("start");
+  // A full context window still matters when composing on a phone. Keep the
+  // warning visible without squeezing the draft or the primary action row.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await draft.fill("Continue the investigation");
+  await expect(context).toBeInViewport();
+  await expect(meter).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Send message", exact: true })).toBeInViewport();
+  expect(await draft.evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(200);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("phone-context-warning.png") });
+});
+
+test("choosing an enhancement intent keeps keyboard focus on its active cancel control", async ({ page }) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const fixture = await seedChat(page, async (route) => {
+    await gate;
+    await fulfillSse(route, ENHANCED);
+  });
+  const { chat, draft } = await openChat(page);
+  await draft.fill("fix login bug");
+  await chat.getByRole("button", { name: "Enhance options", exact: true }).press("Enter");
+  try {
+    await page.getByRole("menu", { name: "Enhance options" }).getByRole("menuitem").first().press("Enter");
+    await expect(chat.getByRole("button", { name: "Cancel enhancement", exact: true })).toBeFocused();
+    await expect.poll(() => fixture.enhancementRequests.length).toBe(1);
+    expect(fixture.chatRequests).toHaveLength(0);
+  } finally {
+    release();
+  }
+  await expect(chatEnhanceStatus(chat, "Prompt improved.")).toBeVisible();
 });

@@ -49,7 +49,17 @@ export type StreamEvent =
       /** Assistant identity confirmed by the transcript store, not the harness. */
       persistedTurnId?: string;
     }
-  | { kind: "error"; message: string; code?: string; /** Server-selected runtime for an auth recovery action. */ harness?: string };
+  | {
+      kind: "error";
+      message: string;
+      code?: string;
+      /** Server-selected runtime for an auth recovery action. */
+      harness?: string;
+      /** The Cave model id the failed send asked for, so a usage-limit
+       *  recovery can exclude it from the one-turn switch (#5938). Null when
+       *  the runtime default was used. */
+      model?: string | null;
+    };
 
 /** Discriminator literal for every {@link StreamEvent} variant. */
 export type StreamEventKind = StreamEvent["kind"];

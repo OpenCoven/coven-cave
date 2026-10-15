@@ -10,6 +10,10 @@ export type FirstProjectGatePolicyInput = {
   /** Projects the target familiar can launch chat in, resolved server-side. */
   accessibleProjects?: readonly CaveProject[];
   pendingGrant: PendingFirstProjectAccessSnapshot | null;
+  /** A familiar Home explicitly asked a project for (#5982). Lets the gate
+   *  open for the candidate familiar even when none is active; it never
+   *  pre-selects one on its own. */
+  requestedFamiliarId?: string | null;
   onboardingResolved: boolean;
   onboardingOpen: boolean;
   mode: string;
@@ -36,7 +40,9 @@ export function resolveFirstProjectGatePolicy(
   input: FirstProjectGatePolicyInput,
 ): FirstProjectGatePolicy {
   const familiarId = input.pendingGrant?.familiarId
-    ?? input.activeFamiliarId;
+    ?? input.activeFamiliarId
+    ?? input.requestedFamiliarId
+    ?? null;
   const accessibleProjects = input.accessibleProjects ?? input.registeredProjects;
   const accessibleProjectsInitiallyResolved = input.accessibleProjectsInitiallyResolved ?? true;
   const blockChatLaunch = input.onboardingResolved

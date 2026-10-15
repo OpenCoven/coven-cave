@@ -1,17 +1,5 @@
-export interface DockedComposerVisibilityInput {
-  following: boolean;
-  hasStagedInput: boolean;
-  releasedScrollDistance: number;
-  composerHeight: number;
-}
-
-export function shouldShowDockedComposer({
-  following,
-  hasStagedInput,
-  releasedScrollDistance,
-  composerHeight,
-}: DockedComposerVisibilityInput): boolean {
-  if (following || hasStagedInput) return true;
-  if (composerHeight <= 0) return false;
-  return Math.max(0, releasedScrollDistance) <= composerHeight;
+/** Reading history must never unmount the input or resize its scroll viewport.
+ * Flow executions remain read-only; new chats choose inline placement upstream. */
+export function shouldShowDockedComposer({ readOnly }: { readOnly: boolean }): boolean {
+  return !readOnly;
 }

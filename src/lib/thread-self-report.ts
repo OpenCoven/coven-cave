@@ -113,7 +113,7 @@ Return ONLY a valid JSON object matching this exact shape - no prose, no markdow
   "skillsUsed": ["<skill id>", ...],
   "skillsNeedingClarity": [{ "skillId": "<id>", "reason": "<why>" }],
   "skillsNeedingAccess": [{ "skillId": "<id>", "reason": "<why>" }],
-  "capabilitiesLacking": [{ "name": "<name>", "importance": "<nice-to-have|important|blocking>", "detail": "<detail>" }],
+  "capabilitiesLacking": [{ "name": "<name>", "importance": "<nice-to-have|important|blocking>", "detail": "<detail>", "blockerId": "<optional: id of the persistentBlockers entry this gap causes>" }],
   "capabilitiesVital": [{ "name": "<name>", "currentState": "<available|degraded|missing>", "notes": "<optional>" }],
   "memoryRecallScore": <0-100>,
   "memoryRecallNotes": "<optional>",
@@ -157,6 +157,9 @@ Signal classification and terminal-state rules:
   blocker, report the exact human input still needed in the response, but do not
   re-file that dependency in "persistentBlockers" unless it also prevented the
   remediation thread's own requested deliverable.
+- Report each root cause once. If a missing capability is the reason for a
+  "persistentBlockers" entry, set that capability's "blockerId" to the blocker's
+  id; list a capability on its own only when no blocker covers it.
 
 Delivery evidence rule:
 - Do NOT infer completion from plans, narration, or intent ("I will push", "about
@@ -211,6 +214,10 @@ export type ThreadSelfReport = {
     name: string;
     importance: CapabilityImportance;
     detail: string;
+    /** The persistentBlockers id this gap is the root cause of, when it is
+     *  one. Review surfaces fold such a capability into its blocker instead
+     *  of listing the same root cause twice (#5938). */
+    blockerId?: string;
   }[];
   capabilitiesVital: {
     name: string;
@@ -306,7 +313,8 @@ export function isThreadSelfReport(value: unknown): value is ThreadSelfReport {
       reportRequiredText(item.name) &&
       reportText(item.importance) &&
       CAPABILITY_IMPORTANCE.has(item.importance) &&
-      reportRequiredText(item.detail)) &&
+      reportRequiredText(item.detail) &&
+      reportOptionalText(item.blockerId)) &&
     reportObjectArray(report.capabilitiesVital, (item) =>
       reportRequiredText(item.name) &&
       reportText(item.currentState) &&
@@ -584,7 +592,9 @@ export type ThreadSignalScoreTile = {
   formula?: string;
 };
 
-const SCORE_FORMULA = "conf x .35 + tools x .25 + memory x .20 + files x .20";
+// Read as English, not code: "x .20" on the rationale chip read like an
+// expression (#5898).
+const SCORE_FORMULA = "Confidence 35% + Tools 25% + Memory 20% + Files 20%";
 
 function toolRationale(report: ThreadSelfReport): string {
   const tools = report.toolReliability;
@@ -632,7 +642,7 @@ export function buildThreadSignalScoreTiles(report: ThreadSelfReport): ThreadSig
       value: String(Math.round(report.overallConfidence)),
       tone: metricTone(report.overallConfidence),
       percent: report.overallConfidence,
-      weight: "x .35",
+      weight: "35% of score",
       rationale: report.overallConfidenceReason?.trim() || "No confidence reason reported.",
     },
     {
@@ -641,7 +651,7 @@ export function buildThreadSignalScoreTiles(report: ThreadSelfReport): ThreadSig
       value: String(Math.round(report.toolReliability.score)),
       tone: metricTone(report.toolReliability.score),
       percent: report.toolReliability.score,
-      weight: "x .25",
+      weight: "25% of score",
       rationale: toolRationale(report),
     },
     {
@@ -650,7 +660,7 @@ export function buildThreadSignalScoreTiles(report: ThreadSelfReport): ThreadSig
       value: String(Math.round(report.memoryRecallScore)),
       tone: metricTone(report.memoryRecallScore),
       percent: report.memoryRecallScore,
-      weight: "x .20",
+      weight: "20% of score",
       rationale: report.memoryRecallNotes?.trim() || "No memory-recall notes reported.",
     },
     {
@@ -659,7 +669,7 @@ export function buildThreadSignalScoreTiles(report: ThreadSelfReport): ThreadSig
       value: String(Math.round(report.fileLocatabilityScore)),
       tone: metricTone(report.fileLocatabilityScore),
       percent: report.fileLocatabilityScore,
-      weight: "x .20",
+      weight: "20% of score",
       rationale: report.fileLocatabilityNotes?.trim() || "No file-locatability notes reported.",
     },
     {
@@ -705,21 +715,30 @@ export function buildThreadSignalRows(report: ThreadSelfReport): ThreadSignalRow
     rows.push({ ...row, kindLabel: REVIEW_KIND_SHORT_LABEL[row.kind] });
   };
 
+  // Every blocker of a single report is a candidate row, so a capability that
+  // names one of them folds into it (#5938); the six-row cap applies after.
+  const folded = foldLinkedCapabilities(
+    report.capabilitiesLacking,
+    new Set(report.persistentBlockers.map((blocker) => blocker.id)),
+  );
+
   for (const blocker of report.persistentBlockers) {
-    const critical = blocker.impact === "blocking" || blocker.impact === "high";
+    const fold = folded.byBlocker.get(blocker.id);
+    const critical = blocker.impact === "blocking" || blocker.impact === "high" || Boolean(fold?.blocking);
+    const note = foldedCapabilityNote(fold);
     push({
       kind: "blocker",
       severity: critical ? "critical" : "warning",
       sourceId: blocker.id,
       title: blocker.title,
       meta: `${blocker.category} · ${blocker.impact} impact`,
-      detail: blocker.detail,
+      detail: note ? `${blocker.detail.trim()} ${note}.` : blocker.detail,
       resolution: blocker.suggestedResolution?.trim() ?? "",
       rank: critical ? 100 : 70,
     });
   }
 
-  for (const capability of report.capabilitiesLacking) {
+  for (const capability of folded.standalone) {
     if (capability.importance === "nice-to-have") continue;
     const critical = capability.importance === "blocking";
     push({
@@ -925,17 +944,63 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
   };
 }
 
+type LinkedCapabilityFold = {
+  /** Capability names folded into each listed blocker, with whether any of
+   *  them was itself blocking (which raises the blocker to critical). */
+  byBlocker: Map<string, { names: string[]; blocking: boolean }>;
+};
+
+/**
+ * Fold a capability gap into the blocker it names as its cause (#5938). A
+ * reflection that lists "Model usage headroom" AND a `model-usage-limit`
+ * blocker is one root cause; showing both doubles the queue. Only a blocker
+ * that is actually in the list absorbs its capability — a capability whose
+ * blocker was cut (or never existed) stays visible on its own.
+ */
+function foldLinkedCapabilities<T extends { name: string; importance: CapabilityImportance; blockerId?: string }>(
+  capabilities: readonly T[],
+  listedBlockerIds: ReadonlySet<string>,
+): LinkedCapabilityFold & { standalone: T[] } {
+  const byBlocker: LinkedCapabilityFold["byBlocker"] = new Map();
+  const standalone: T[] = [];
+  for (const capability of capabilities) {
+    const blockerId = capability.blockerId?.trim();
+    if (blockerId && listedBlockerIds.has(blockerId)) {
+      const entry = byBlocker.get(blockerId) ?? { names: [], blocking: false };
+      if (!entry.names.includes(capability.name)) entry.names.push(capability.name);
+      if (capability.importance === "blocking") entry.blocking = true;
+      byBlocker.set(blockerId, entry);
+    } else {
+      standalone.push(capability);
+    }
+  }
+  return { byBlocker, standalone };
+}
+
+function foldedCapabilityNote(fold: { names: string[] } | undefined): string {
+  return fold ? `Also reported as a capability gap: ${fold.names.join(", ")}` : "";
+}
+
 export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate): ThreadSignalReviewItem[] {
   const items: (ThreadSignalReviewItem & { rank: number })[] = [];
 
-  for (const blocker of aggregate.persistentBlockers.slice(0, 5)) {
+  const listedBlockers = aggregate.persistentBlockers.slice(0, 5);
+  const folded = foldLinkedCapabilities(
+    aggregate.capabilitiesLacking,
+    new Set(listedBlockers.map((blocker) => blocker.id)),
+  );
+
+  for (const blocker of listedBlockers) {
+    const fold = folded.byBlocker.get(blocker.id);
+    const critical = blocker.crit || blocker.impact === "blocking" || Boolean(fold?.blocking);
+    const note = foldedCapabilityNote(fold);
     items.push({
       kind: "blocker",
-      severity: blocker.crit || blocker.impact === "blocking" ? "critical" : "warning",
+      severity: critical ? "critical" : "warning",
       sourceId: blocker.id,
       title: blocker.title,
-      detail: `${blocker.frequency}x - ${blocker.impact}${blocker.suggestedResolution ? ` - ${blocker.suggestedResolution}` : ""}`,
-      rank: blocker.crit || blocker.impact === "blocking" ? 100 + blocker.rankScore : 70 + blocker.rankScore,
+      detail: `${blocker.frequency}x - ${blocker.impact}${blocker.suggestedResolution ? ` - ${blocker.suggestedResolution}` : ""}${note ? ` - ${note}` : ""}`,
+      rank: critical ? 100 + blocker.rankScore : 70 + blocker.rankScore,
     });
   }
 
@@ -950,7 +1015,7 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     });
   }
 
-  for (const capability of aggregate.capabilitiesLacking.filter((item) => item.importance === "blocking").slice(0, 4)) {
+  for (const capability of folded.standalone.filter((item) => item.importance === "blocking").slice(0, 4)) {
     items.push({
       kind: "capability",
       severity: "critical",

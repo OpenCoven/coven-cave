@@ -164,6 +164,14 @@
   text-wrap: pretty;
 }
 
+/* Zero-familiar hearth (#5982): the one primary action under the guidance.
+   Creation lives in the Summoning Circle, never in the setup wizard. */
+.home-composer-summon {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-4);
+}
+
 .home-composer-card-wrap {
   position: relative;
   width: 100%;

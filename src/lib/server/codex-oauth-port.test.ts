@@ -17,7 +17,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { createServer, connect } from "node:net";
+import { once } from "node:events";
+import { spawnSync } from "node:child_process";
 import {
   CODEX_OAUTH_PORT,
   descriptorLooksLikeCodex,
@@ -110,6 +112,36 @@ test("pidHoldingPort returns null when no process holds the port", async () => {
   // observable result, which is the right behavior for the caller.
   const result = await pidHoldingPort(ephemeral);
   assert.equal(result, null);
+});
+
+test("pidHoldingPort identifies listeners but ignores established connections", {
+  skip: process.platform === "win32" || spawnSync("lsof", ["-v"], { stdio: "ignore" }).error?.code === "ENOENT",
+}, async () => {
+  const server = createServer();
+  let client;
+  let accepted;
+  let closed;
+  try {
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const port = server.address().port;
+    assert.equal(await pidHoldingPort(port), process.pid, "identify our actual listener");
+    const connection = once(server, "connection");
+    client = connect(port, "127.0.0.1");
+    const connected = once(client, "connect");
+    [accepted] = await connection;
+    await connected;
+    // Stop accepting, retaining the established sockets until after the probe.
+    closed = new Promise((resolve) => server.close(resolve));
+    assert.equal(server.listening, false);
+    assert.equal(await portIsFree(port), true);
+    assert.equal(await pidHoldingPort(port), null, "an established connection is not an OAuth listener");
+  } finally {
+    client?.destroy();
+    accepted?.destroy();
+    if (closed) await closed;
+    else await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("the POSIX-only probes are platform-guarded (cave-drb8w)", () => {

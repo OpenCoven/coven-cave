@@ -7,6 +7,93 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.13] - 2026-10-13
+
+> Windows MSI builds return, and the chat layout is easier to read and control.
+
+Patch release on top of v0.5.12. The Windows MSI publishing path again builds,
+checks its component and size budget, uploads, and signs the updater artifact.
+**The MSI is not Authenticode-signed in this cut.** Its checksum and updater
+signature are separate from Windows code signing.
+
+### Added
+- **Thinking and Speed controls** (#5902, #5905). Home and Chat expose the
+  controls supported by the selected runtime; Codex and Copilot forward the
+  chosen reasoning effort on their direct transports.
+- **iOS model choice.** Claude and Codex model lists are available on iOS, and
+  the Chats title stays on one line at accessibility text sizes.
+- **Activity-backed daily notes.** Daily notes derive from recorded activity.
+
+### Changed
+- **Chat reading layout.** The desktop chat uses one frosted surface, a compact
+  composer and title row, clearer author boundaries, and more consistent
+  context and activity summaries.
+- **Research Desk and Studio.** Navigation and workflows have been polished;
+  Familiar Settings and the reading pane also receive layout refinements.
+
+### Fixed
+- **Windows releases** (#5964, #5967, #5971). Partial release pages list only
+  assets actually uploaded. A new complete release can use v0.5.7 as its
+  rollback target without replaying intervening tags. MSI builds no longer
+  depend on the unconfigured eSigner credentials.
+- **Chat and integration recovery.** Codex chats keep their own model choice;
+  reflection and journal generation are isolated; X publishing failures retain
+  drafts; OAuth callbacks identify only listeners on the callback port.
+- **Release and dependency maintenance.** CI recovery retries eligible PR
+  runs, protocol assets are smaller, and Next.js moves from 16.3.6 to 16.3.8.
+
+## [0.5.12] - 2026-10-09
+
+> The Thread Signal card uses its whole width, and the chat composer splits Runtime and Model.
+
+Patch release on top of v0.5.11. Headline: the in-chat Thread Signal card no
+longer leaves most of its width empty when a report has no signals, its weights
+read as percentages, and the "New response content" pill stops covering it.
+
+### Added
+- **Composer chips** (#5896, #5899). The combined "Runtime · Model" chip is now
+  separate Runtime and Model chips, and Thinking and Speed chips appear when the
+  selected model reports those controls. For Claude Code, Speed maps to the
+  runtime's effort setting.
+
+### Fixed
+- **Thread Signal card** (#5898, #5900). A report with no signals puts the
+  rationale beside the score tiles instead of leaving an empty column; with no
+  tile selected the tiles span the card. Weights read "20% of score" and the
+  formula "Confidence 35% + Tools 25% + Memory 20% + Files 20%". The transcript's
+  "New response content" pill steps aside while a card is open.
+
+## [0.5.11] - 2026-10-09
+
+> A calmer left sidebar: one label column, a straight active marker, no redundant headings.
+
+Patch release on top of v0.5.10. Headline: the left navigation sidebar is
+cleaned up. Every label shares one column, the active row's marker no longer
+bends around its corners, and the redundant "Navigation" heading and Rooms
+count are gone. The iOS chat list also learns to show what each chat is doing.
+
+### Added
+- **iOS chat status** (#5850, #5852). Rows on the Chats home carry a status
+  pill when there is something to say: Running, Blocked · credentials,
+  Awaiting you · decision, Failed, or Ready to archive, each with a glyph and a
+  word.
+
+### Fixed
+- **Left sidebar** (#5888, #5889). New chat, destinations and footer rows share
+  one label column; the active marker is a short straight bar; section labels
+  use the design language's 0.08em tracking; the "Navigation" heading is kept
+  for screen readers but not drawn; Rooms no longer counts the rows beneath it;
+  the footer shares the 32px row pitch under a divider that matches the rows;
+  and Dashboard has its own icon instead of Canvas's.
+- **iOS project filters** (#5877, #5886). The chat list's project filter and
+  its accessibility menu offer only projects that have matching chats.
+- **iOS transcript** (#5881, #5882). Short system notes render as compact
+  notices, runs open a Run details view, and repeated steps fold together.
+
+### Changed
+- The iOS simulator script picks an available iPhone automatically when
+  `SIMULATOR_NAME` is unset and prefers the simulator's UDID for `xcodebuild`.
+
 ## [0.5.10] - 2026-10-08
 
 > Voice calls say "Thinking…" while your familiar works on its reply, instead of looking dead.

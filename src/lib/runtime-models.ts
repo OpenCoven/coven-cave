@@ -55,6 +55,13 @@ export type RuntimeModelInventoryScope = {
   providerConfiguration: "familiar" | "global" | "runtime-managed" | "unavailable";
 };
 
+export type RuntimeModelDiscoveryIssue =
+  | "discovery-failed"
+  | "runtime-managed"
+  | "remote-runtime"
+  | "local-only"
+  | "profile-managed";
+
 export type RuntimeModelInventory = {
   runtime: string;
   models: RuntimeModelOption[];
@@ -65,6 +72,8 @@ export type RuntimeModelInventory = {
   defaultOwner: "cave" | "runtime";
   allowCustom: boolean;
   scope: RuntimeModelInventoryScope;
+  /** Safe recovery guidance; never CLI stderr, credentials, or provider URLs. */
+  discoveryIssue?: RuntimeModelDiscoveryIssue;
 };
 
 type RuntimeModelTransformMetadata = {

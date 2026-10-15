@@ -218,9 +218,9 @@
 }
 
 .drd-ship-search:focus-within {
-  border-color: var(--accent-presence);
-  outline: 2px solid var(--accent-presence);
-  outline-offset: 2px;
+  border-color: var(--ring-focus);
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
 }
 
 .drd-ship-search-glyph {

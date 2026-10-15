@@ -480,7 +480,7 @@ export function MobileHandoffModal({
               ) : null}
               <p className="mobile-handoff__hint">
                 The QR opens the Tailscale-served desktop page; the host is what the native app needs.
-                Don’t type your Mac’s 127.0.0.1 or Wi‑Fi LAN address into the phone — it can’t reach
+                Don’t type this computer’s 127.0.0.1 or Wi‑Fi LAN address into the phone — it can’t reach
                 your desktop that way.
               </p>
               {displaySteps ? <PairingStepsList steps={displaySteps} className="mobile-handoff__steps" /> : null}

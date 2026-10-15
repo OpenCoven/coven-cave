@@ -87,6 +87,41 @@ import { readFile } from "node:fs/promises";
   );
 }
 
+// ── Chat view: UsageLimitFixRow (#5938) ──────────────────────────────────────
+// A spent plan allowance must not end at a Retry that re-sends the exhausted
+// model. The strip swaps Retry for a one-turn model switch, and the row never
+// renders the provider's notice (which can carry a tracking URL).
+{
+  const source = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+  assert.match(source, /const usageLimit = code === "harness_usage_limit";/, "the strip recognizes the usage-limit code");
+  assert.match(source, /\{canRetry && !usageLimit \? \(/, "a quota failure hides the plain Retry");
+  assert.match(
+    source,
+    /code !== "harness_auth_configuration_required" && !usageLimit \? \(/,
+    "a quota failure hides the raw code badge",
+  );
+  assert.match(source, /\(\) => code === "harness_auth_required" \|\| usageLimit \? null : parseHarnessFailure\(recoveryText\)/, "the harness-switch row is skipped for a quota");
+  assert.match(source, /\(\) => usageLimit \? null : parseHarnessAuthFailure\(/, "the sign-in row is skipped for a quota");
+  assert.match(source, /\{usageLimit && onRetryWithModel \? \(\s*<UsageLimitFixRow/, "the strip renders the usage-limit row");
+  assert.match(source, /modelOptions\.filter\(\(option\) => option\.id !== model\)/, "the exhausted model is left out of the switch menu");
+  assert.match(source, /<ComposerModelPopover[\s\S]{0,400}modelOptions=\{otherModels\}/, "the switch reuses the composer's model menu");
+  assert.match(source, /Use another model…/, "the primary action uses the single ellipsis character");
+  assert.match(source, /Use runtime default/, "the secondary action falls back to the runtime default");
+  assert.match(source, /harnessId === "claude" && onManageUsage \?/, "Manage usage is offered for Claude only");
+  assert.match(source, /const CLAUDE_USAGE_SETTINGS_URL = "https:\/\/claude\.ai\/settings\/usage";/, "the usage page is a fixed URL, never one parsed from provider text");
+  assert.match(source, /if \(onOpenUrl\) onOpenUrl\(CLAUDE_USAGE_SETTINGS_URL\);/, "Manage usage opens through the host's URL path");
+  assert.match(
+    source,
+    /\(modelId\) => retryFailedSend\(\{ modelOverride: modelId, modelOverrideScope: "next-message" \}\)/,
+    "a picked model retries the failed send for the next message only",
+  );
+  assert.match(source, /announce\(`Retrying with \$\{label\} for this message\.`\)/, "the switch is announced");
+  assert.match(source, /You&apos;ve used up the quota for \{exhaustedModel\}\. Pick another model for this message, or try\s+again after the limit resets\./, "the row copy names the exhausted model and the next step");
+  const row = source.slice(source.indexOf("function UsageLimitFixRow"), source.indexOf("function AuthFixRow"));
+  assert.doesNotMatch(row, /\{message\}|recoveryText|detailText/, "the row renders no provider text");
+  assert.match(source, /raiseDebugError\(\{ turnId: assistantId, code: ev\.code, harness: ev\.harness, model: ev\.model \}\)/, "the failed send's model reaches the strip");
+}
+
 // ── Group chat: error replies ────────────────────────────────────────────────
 {
   // The coven redesign moved the failure CARD (and its harness recovery

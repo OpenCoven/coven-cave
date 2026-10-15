@@ -21,7 +21,8 @@
 // sheet ships with this chunk rather than with every route.
 import "@/styles/settings-familiars.css";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useVisualViewport } from "@/lib/use-viewport";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -91,15 +92,16 @@ function FamiliarIdentityHero({
   harnesses,
   daemonRunning,
   onStartChat,
+  settingsOpen = false,
 }: {
   familiar: Familiar;
   harnesses: AdapterReport[];
   daemonRunning?: boolean;
   onStartChat?: (familiarId: string) => void;
+  settingsOpen?: boolean;
 }) {
   const heroList = useMemo(() => [familiar], [familiar]);
   const resolved = useResolvedFamiliars(heroList, { includeArchived: true })[0];
-  const [saveError, setSaveError] = useState<string | null>(null);
 
   const activeSessions = familiar.active_sessions ?? 0;
   const roleLine = [resolved?.role || familiar.role, familiar.pronouns].filter(Boolean).join(" · ");
@@ -107,6 +109,77 @@ function FamiliarIdentityHero({
   // comes from the daemon, recency from the familiar's own activity record.
   const lastSeen = daemonRunning ? "" : relativeTime(familiar.last_seen);
 
+  return (
+    <header className="familiar-tab__hero">
+      {resolved ? (
+        <span className="familiar-tab__avatar">
+          <FamiliarAvatar familiar={resolved} size="xl" expandable />
+        </span>
+      ) : null}
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <h2 className="familiar-tab__name">{resolved?.display_name ?? familiar.display_name}</h2>
+          {roleLine ? (
+            <span className="truncate font-mono text-[length:var(--text-2xs)] uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              {roleLine}
+            </span>
+          ) : null}
+          <span className="familiar-tab__presence" data-online={daemonRunning ? "true" : "false"}>
+            <span
+              aria-hidden="true"
+              className={`inline-flex h-1.5 w-1.5 rounded-full ${
+                daemonRunning ? "bg-[var(--accent-presence)]" : "bg-[var(--text-muted)]"
+              }`}
+            />
+            {daemonRunning ? "online" : "offline"}
+            {lastSeen ? (
+              <>
+                {" · last seen "}
+                <time dateTime={familiar.last_seen ?? undefined}>{lastSeen}</time>
+              </>
+            ) : null}
+          </span>
+          {activeSessions > 0 ? (
+            <span className="rounded-[var(--radius-pill)] bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--accent-presence)]">
+              {activeSessions} active session{activeSessions === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </div>
+        {familiar.description ? (
+          <p className="mt-1 max-w-[64ch] text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)]">
+            {familiar.description}
+          </p>
+        ) : null}
+        {!settingsOpen ? <FamiliarBindingControls familiar={familiar} harnesses={harnesses} /> : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {!settingsOpen ? <Button
+          variant="secondary"
+          size="sm"
+          trailingIcon="ph:arrow-square-out"
+          onClick={() => openFamiliarStudioSettingsTab("identity", familiar.id)}
+          aria-label={`Edit ${familiar.display_name} in the Familiar Studio`}
+        >
+          Edit in Studio
+        </Button> : null}
+        {onStartChat ? (
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon="ph:plus"
+            onClick={() => onStartChat(familiar.id)}
+          >
+            New chat
+          </Button>
+        ) : null}
+      </div>
+    </header>
+  );
+}
+
+/** Quick binding controls are absent while their canonical Settings editor is open. */
+function FamiliarBindingControls({ familiar, harnesses }: { familiar: Familiar; harnesses: AdapterReport[] }) {
+  const [saveError, setSaveError] = useState<string | null>(null);
   // Runtime select: "" inherits the cave default; anything else is a
   // per-familiar override (binding key: harness).
   const defaultHarnessId = canonicalHarnessId(familiar.defaultHarness ?? familiar.harness ?? "");
@@ -175,47 +248,7 @@ function FamiliarIdentityHero({
     if (error) setSaveError(`Couldn't save: ${error}`);
   }
 
-  return (
-    <header className="familiar-tab__hero">
-      {resolved ? (
-        <span className="familiar-tab__avatar">
-          <FamiliarAvatar familiar={resolved} size="xl" expandable />
-        </span>
-      ) : null}
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <h2 className="familiar-tab__name">{resolved?.display_name ?? familiar.display_name}</h2>
-          {roleLine ? (
-            <span className="truncate font-mono text-[length:var(--text-2xs)] uppercase tracking-[0.08em] text-[var(--text-muted)]">
-              {roleLine}
-            </span>
-          ) : null}
-          <span className="familiar-tab__presence" data-online={daemonRunning ? "true" : "false"}>
-            <span
-              aria-hidden="true"
-              className={`inline-flex h-1.5 w-1.5 rounded-full ${
-                daemonRunning ? "bg-[var(--accent-presence)]" : "bg-[var(--text-muted)]"
-              }`}
-            />
-            {daemonRunning ? "online" : "offline"}
-            {lastSeen ? (
-              <>
-                {" · last seen "}
-                <time dateTime={familiar.last_seen ?? undefined}>{lastSeen}</time>
-              </>
-            ) : null}
-          </span>
-          {activeSessions > 0 ? (
-            <span className="rounded-[var(--radius-pill)] bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--accent-presence)]">
-              {activeSessions} active session{activeSessions === 1 ? "" : "s"}
-            </span>
-          ) : null}
-        </div>
-        {familiar.description ? (
-          <p className="mt-1 max-w-[64ch] text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)]">
-            {familiar.description}
-          </p>
-        ) : null}
+  return <>
         <div className="familiar-tab__props">
           <StandardSelect
             label="Runtime"
@@ -241,30 +274,7 @@ function FamiliarIdentityHero({
             {saveError}
           </p>
         ) : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          trailingIcon="ph:arrow-square-out"
-          onClick={() => openFamiliarStudioSettingsTab("identity", familiar.id)}
-          aria-label={`Edit ${familiar.display_name} in the Familiar Studio`}
-        >
-          Edit in Studio
-        </Button>
-        {onStartChat ? (
-          <Button
-            variant="primary"
-            size="sm"
-            leadingIcon="ph:plus"
-            onClick={() => onStartChat(familiar.id)}
-          >
-            New chat
-          </Button>
-        ) : null}
-      </div>
-    </header>
-  );
+  </>;
 }
 
 // ── Capability panel ─────────────────────────────────────────────────────────
@@ -479,6 +489,16 @@ function FamiliarScopeOverview({
 
 type FamiliarSectionId = "identity" | "skills" | "mcp" | "analytics" | "memory" | "settings";
 
+function revealPanelFocus(panel: HTMLElement | null, target: Element | null, visualViewport: { height: number; offsetTop: number }) {
+  if (!panel || !(target instanceof HTMLElement) || !panel.contains(target)) return;
+  const viewport = panel.getBoundingClientRect();
+  const bounds = target.getBoundingClientRect();
+  const top = Math.max(viewport.top, visualViewport.offsetTop);
+  const bottom = Math.min(viewport.bottom, visualViewport.offsetTop + visualViewport.height);
+  if (bounds.top < top) panel.scrollTop += Math.floor(bounds.top - top);
+  else if (bounds.bottom > bottom) panel.scrollTop += Math.ceil(bounds.bottom - bottom);
+}
+
 function FamiliarCapabilityPanel({
   familiar,
   familiars,
@@ -505,6 +525,26 @@ function FamiliarCapabilityPanel({
     show: setSection,
   } = useSurfaceHistory<FamiliarSectionId>({ id: "familiar:capability", initial: "skills" });
   const [settingsTab, setSettingsTab] = useState<FamiliarSettingsTab | undefined>();
+  const sectionTabsRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const viewport = useVisualViewport();
+  const shortViewport = section === "settings" && viewport.height > 0 && viewport.height < 480;
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!panel || !shortViewport) return;
+    const fit = () => {
+      // Safari's keyboard shrinks the visual viewport, not the CSS viewport.
+      // Bound one outer scroller so all chrome and fields stay reachable.
+      const available = Math.max(0, viewport.offsetTop + viewport.height - panel.getBoundingClientRect().top);
+      panel.style.maxHeight = `${available}px`;
+      revealPanelFocus(panel, document.activeElement, viewport);
+    };
+    fit();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    observer?.observe(panel.parentElement ?? panel);
+    return () => { observer?.disconnect(); panel.style.removeProperty("max-height"); };
+  }, [shortViewport, viewport.height, viewport.offsetTop]);
 
   useEffect(() => {
     const target = consumeFamiliarSettingsPending();
@@ -527,17 +567,41 @@ function FamiliarCapabilityPanel({
     [familiar, snapshot, daemonRunning],
   );
 
+  useLayoutEffect(() => {
+    const band = sectionTabsRef.current;
+    if (!band) return;
+    // Keep the keyboard exploration target (or selected destination) visible
+    // after a pane resize. Scroll only this strip, leaving focus and the editor
+    // position untouched. The shared tabs activate separately from arrow focus.
+    const revealCurrent = () => {
+      const current = band.querySelector<HTMLElement>('[role="tab"]:focus')
+        ?? band.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      if (!current || band.clientWidth === 0) return;
+      const viewport = band.getBoundingClientRect();
+      const target = current.getBoundingClientRect();
+      if (target.left < viewport.left) band.scrollLeft += target.left - viewport.left;
+      else if (target.right > viewport.right) band.scrollLeft += target.right - viewport.right;
+    };
+    revealCurrent();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(revealCurrent);
+    observer.observe(band);
+    return () => observer.disconnect();
+  }, [section, snapshot.loading, data.skillCount]);
+
   // Identity/Skills/MCP wait on the capability snapshot; Analytics and Memory
   // own their fetches, so switching to them never shows a stale shimmer.
   const sectionNeedsSnapshot = section === "identity" || section === "skills" || section === "mcp";
 
   return (
-    <div className="familiar-tab__main">
+    <div ref={panelRef} className="familiar-tab__main" data-short-viewport={shortViewport ? "true" : undefined}
+      onFocusCapture={event => { if (shortViewport) revealPanelFocus(panelRef.current, event.target, viewport); }}>
       <FamiliarIdentityHero
         familiar={familiar}
         harnesses={snapshot.harnesses}
         daemonRunning={daemonRunning}
         onStartChat={onStartChat}
+        settingsOpen={section === "settings"}
       />
 
       {snapshot.errors.length > 0 ? (
@@ -554,7 +618,7 @@ function FamiliarCapabilityPanel({
         </div>
       ) : null}
 
-      <div className="familiar-tab__tabs">
+      <div ref={sectionTabsRef} className="familiar-tab__tabs">
         <Tabs<FamiliarSectionId>
           items={[
             { id: "identity", label: "Identity" },
@@ -593,6 +657,7 @@ function FamiliarCapabilityPanel({
             allFamiliars={allFamiliars}
             initialTab={settingsTab}
             onRosterChanged={onRosterChanged}
+            scrollWithPanel={shortViewport}
           />
         ) : null}
       </div>

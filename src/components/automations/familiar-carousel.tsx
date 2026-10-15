@@ -6,6 +6,7 @@ import { Popover, PopoverBody, PopoverItem, usePopoverInitialFocus } from "@/com
 import { Icon } from "@/lib/icon";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { selectAll, toggleFamiliarSelection } from "@/lib/familiar-multiselect";
+import { useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
   familiars: ResolvedFamiliar[];
@@ -39,6 +40,7 @@ type Props = {
  * particle effect on the surface.
  */
 export function FamiliarCarousel({ familiars, selected, onChange, countById, totalCount }: Props) {
+  const keys = useKeySymbols();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const combineRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -161,7 +163,7 @@ export function FamiliarCarousel({ familiars, selected, onChange, countById, tot
               key={familiar.id}
               type="button"
               aria-pressed={active}
-              aria-label={`${familiar.display_name} — ${count} cron${count === 1 ? "" : "s"}. Click to scope, ⌘-click to combine.`}
+              aria-label={`${familiar.display_name} — ${count} cron${count === 1 ? "" : "s"}. Click to scope, ${keys.mod}-click to combine.`}
               className="rituals-fam-card focus-ring"
               onClick={(event) =>
                 onChange(toggleFamiliarSelection(selected, familiar.id, event.metaKey || event.ctrlKey))
@@ -206,7 +208,7 @@ export function FamiliarCarousel({ familiars, selected, onChange, countById, tot
               <span className="rituals-fam-card__body">
                 <span className="rituals-fam-card__name">combine</span>
                 <span className="rituals-fam-card__meta">
-                  <span className="rituals-fam-card__role">⌘-click cards</span>
+                  <span className="rituals-fam-card__role">{keys.mod}-click cards</span>
                 </span>
               </span>
             </button>

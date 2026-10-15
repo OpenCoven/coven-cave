@@ -79,7 +79,7 @@ assert.doesNotMatch(
 );
 assert.match(
   chat,
-  /disabled=\{!projectLaunchReady \|\| \(!input\.trim\(\) && attachments\.length === 0\)\}/,
+  /disabled=\{attachmentsReading \|\| !projectLaunchReady \|\| \(!input\.trim\(\) && attachments\.length === 0\)\}/,
   "the typed send control should be disabled without a launchable project",
 );
 assert.match(
@@ -111,7 +111,9 @@ assert.match(
 );
 assert.match(
   home,
-  /if \(!project\) \{[\s\S]{0,160}?return;\s*\}[\s\S]{0,260}?resolveActionFamiliar\("Start voice call"\)[\s\S]{0,300}?onValidateActingFamiliar[\s\S]{0,180}?setVoiceCallPending\(true\)/,
+  // The no-project block also asks the shell for a project (#5982), so the
+  // window before `return` allows for that one extra call.
+  /if \(!project\) \{[\s\S]{0,220}?return;\s*\}[\s\S]{0,260}?resolveActionFamiliar\("Start voice call"\)[\s\S]{0,300}?onValidateActingFamiliar[\s\S]{0,180}?setVoiceCallPending\(true\)/,
   "Home voice should require the shell project and validated actor before setting mint state",
 );
 

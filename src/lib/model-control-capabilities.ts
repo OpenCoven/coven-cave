@@ -56,16 +56,38 @@ const MODEL_CONTROL_FAMILIES = new Set<ModelControlFamily>([
   "tool-support",
 ]);
 
-const reasoning = (delivery: ModelControlDelivery, parameter?: string): ModelControlCapability => ({
+const DEFAULT_REASONING_VALUES: readonly ModelControlValue[] = [
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
+/** `codex exec -c model_reasoning_effort=<value>`: Codex's own documented
+ * levels (CLI 0.162 accepts the key on fresh and resume launches). */
+export const CODEX_REASONING_CONTROL_PARAMETER = "model_reasoning_effort";
+const CODEX_REASONING_VALUES: readonly ModelControlValue[] = [
+  ...DEFAULT_REASONING_VALUES,
+  { value: "xhigh", label: "Extra high" },
+];
+
+/** `copilot --reasoning-effort <level>` (CLI 1.0.94 help). "none" is not
+ * offered: Auto already means "send nothing". */
+export const COPILOT_REASONING_CONTROL_PARAMETER = "--reasoning-effort";
+const COPILOT_REASONING_VALUES: readonly ModelControlValue[] = [
+  ...CODEX_REASONING_VALUES,
+  { value: "max", label: "Max" },
+];
+
+const reasoning = (
+  delivery: ModelControlDelivery,
+  parameter?: string,
+  values: readonly ModelControlValue[] = DEFAULT_REASONING_VALUES,
+): ModelControlCapability => ({
   family: "reasoning",
   label: delivery === "prompt-only" ? "Reasoning guidance" : "Reasoning",
   delivery,
-  values: [
-    { value: "minimal", label: "Minimal" },
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High" },
-  ],
+  values,
   validation: {},
   ...(parameter ? { parameter } : {}),
 });
@@ -82,6 +104,27 @@ const verbosity = (delivery: ModelControlDelivery, parameter?: string): ModelCon
   validation: {},
   ...(parameter ? { parameter } : {}),
 });
+
+/** The values are `coven run --speed`'s own vocabulary: the daemon maps them
+ * onto the harness's native effort flag (Claude `--effort low|medium|high`),
+ * so Cave never has to translate a Cave-only word at the launch boundary. */
+const performance = (delivery: ModelControlDelivery, parameter?: string): ModelControlCapability => ({
+  family: "performance",
+  label: delivery === "prompt-only" ? "Speed guidance" : "Speed",
+  delivery,
+  values: [
+    { value: "fast", label: "Fast" },
+    { value: "balanced", label: "Balanced" },
+    { value: "thorough", label: "Thorough" },
+  ],
+  validation: {},
+  ...(parameter ? { parameter } : {}),
+});
+
+/** The one runtime-CLI control Cave forwards today, and the wire flag the
+ * send route and the model-state route both gate on the same `coven run`
+ * help probe. */
+export const COVEN_SPEED_CONTROL_PARAMETER = "speed";
 
 /**
  * Return only controls Cave can truthfully deliver for this runtime/model.
@@ -113,14 +156,51 @@ export function modelControlCapabilities(
     ];
   }
 
-  // Claude currently has no verified non-interactive per-turn CLI flag in the
-  // Cave launch contract. Keep an opt-in guidance control distinct from a
-  // native setting until that capability is explicitly probed and mapped.
-  if (canonicalRuntime === "claude" && isModelInCatalog("claude", canonicalModel)) {
-    return [reasoning("prompt-only")];
+  // Claude launches through `coven run claude`, whose `--speed fast|balanced|
+  // thorough` the daemon maps onto Claude's own `--effort low|medium|high`
+  // (verified in coven-cli's harness tests). That flag is CLI-level, so it is
+  // offered for every Claude selection, including the runtime default. The
+  // route still gates it on the installed CLI advertising `--speed`.
+  //
+  // Thinking guidance stays prompt-only: Cave has no verified per-turn flag
+  // for Claude's extended thinking. It applies to the runtime default and to
+  // catalog models, never to a free-typed id whose behaviour is unknown.
+  if (canonicalRuntime === "claude") {
+    return [
+      ...(canonicalModel === "" || isModelInCatalog("claude", canonicalModel)
+        ? [reasoning("prompt-only")]
+        : []),
+      performance("runtime-cli", COVEN_SPEED_CONTROL_PARAMETER),
+    ];
+  }
+
+  // Codex and Copilot take a native reasoning level on the direct transports
+  // Cave spawns itself (`codex exec -c model_reasoning_effort=…`,
+  // `copilot --reasoning-effort …`). Both are CLI-level, so they are offered
+  // for every model id; the routes gate them on the direct transport being
+  // selected with the flag available (#5905).
+  if (canonicalRuntime === "codex") {
+    return [reasoning("runtime-cli", CODEX_REASONING_CONTROL_PARAMETER, CODEX_REASONING_VALUES)];
+  }
+  if (canonicalRuntime === "copilot") {
+    return [reasoning("runtime-cli", COPILOT_REASONING_CONTROL_PARAMETER, COPILOT_REASONING_VALUES)];
   }
 
   return [];
+}
+
+/** Drop runtime-CLI controls whose wire flag the selected transport cannot
+ * forward, so a client never renders (or sends) a setting the launch could
+ * not deliver. `forwardable` names the parameters the launch will honour;
+ * the model-state and send routes compute it from the same probes. */
+export function withForwardableRuntimeCliControls(
+  capabilities: readonly ModelControlCapability[],
+  forwardable: ReadonlySet<string>,
+): readonly ModelControlCapability[] {
+  return capabilities.filter((capability) =>
+    capability.delivery !== "runtime-cli" ||
+    (capability.parameter !== undefined && forwardable.has(capability.parameter)),
+  );
 }
 
 export function validateModelControlValues(
@@ -164,10 +244,14 @@ export function validateModelControlValues(
 }
 
 /**
- * Translate the two historical request fields only when the selected model
- * advertises a matching typed capability. This keeps old clients useful for
- * verified reasoning controls while preventing legacy Speed from becoming a
- * universal latency promise. Explicit typed values win over the legacy field.
+ * Translate the historical `reasoningEffort` request field only when the
+ * selected model advertises a matching typed capability. This keeps old
+ * clients useful for verified reasoning controls. The legacy `responseSpeed`
+ * field is never migrated: older clients send its default ("fast") on every
+ * turn, and now that Speed is a real runtime flag for Claude, migrating it
+ * would silently pin every such turn to the lowest effort. Only an explicit
+ * typed `performance` value reaches the launch. Explicit typed values win
+ * over the legacy field.
  */
 export function modelControlInputWithLegacy(
   capabilities: readonly ModelControlCapability[],
@@ -182,14 +266,6 @@ export function modelControlInputWithLegacy(
     reasoningCapability.values.some((option) => option.value === legacy.reasoningEffort)
   ) {
     migrated.reasoning = legacy.reasoningEffort;
-  }
-  const performanceCapability = capabilities.find((capability) => capability.family === "performance");
-  if (
-    performanceCapability &&
-    typeof legacy.responseSpeed === "string" &&
-    performanceCapability.values.some((option) => option.value === legacy.responseSpeed)
-  ) {
-    migrated.performance = legacy.responseSpeed;
   }
   if (typed === undefined) return migrated;
   if (!typed || typeof typed !== "object" || Array.isArray(typed)) return typed;

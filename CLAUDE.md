@@ -143,8 +143,12 @@ a live daemon.
 
 For missing CI delivery, use `pnpm ci:recovery` in read-only mode with the
 documented repository/token environment. Apply mode requires operator
-authorization and exact-head revalidation. A legacy workflow dispatch can
-resolve a newer branch head; it does not promise exact-SHA coverage.
+authorization. It requests at most one full retry of a cancelled
+`pull_request` run after checking the exact head, live base, merge parents,
+workflow guards and current attempt. It never uses `workflow_dispatch` to
+recover required PR checks: those job checks are ineligible for protection.
+Missing events, approval gates and stale snapshots produce a named maintainer
+action. See [PR CI recovery](docs/cross-environment.md#pr-ci-recovery).
 
 Use `pnpm main:health` to identify the oldest known failing commit after the
 last green commit. Cancelled runs and unavailable associations are not proof

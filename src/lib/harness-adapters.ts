@@ -316,6 +316,15 @@ export function covenRunSupportsAddDirFlag(helpText: string): boolean {
   return /(^|\s)--add-dir(?![\w-])/m.test(helpText);
 }
 
+// Gated-forwarding probe for `coven run --speed <fast|balanced|thorough>`, the
+// latency/reasoning hint the daemon maps onto the harness's native effort flag
+// (Claude `--effort low|medium|high`). Forwarding stays a no-op on CLIs that
+// predate the flag, since `coven run` rejects unknown flags.
+export function covenRunSupportsSpeedFlag(helpText: string): boolean {
+  if (typeof helpText !== "string" || !helpText) return false;
+  return /(^|\s)--speed(?![\w-])/m.test(helpText);
+}
+
 export function mergeAdapterReports(
   localReports: Array<
     Partial<AdapterReport> & {

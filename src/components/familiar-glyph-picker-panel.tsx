@@ -1,7 +1,8 @@
 "use client";
 
+import { SearchInput } from "@/components/ui/search-input";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Icon } from "@/lib/icon";
 import type { GlyphCatalogEntry } from "@/lib/glyph-catalog";
 import {
   clearGlyphOverride,
@@ -72,18 +73,6 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
     active?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeIndex]);
 
-  // Cmd/Ctrl+Backspace clears the current override.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Backspace") {
-        e.preventDefault();
-        clearGlyphOverride(familiar.id);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [familiar.id]);
-
   const resolved = useResolvedFamiliars([familiar])[0];
   const currentGlyph: FamiliarGlyph = resolved?.glyph ?? { kind: "icon", name: "ph:sparkle-fill" };
 
@@ -139,25 +128,24 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
   }
 
   return (
-    <div className="familiar-glyph-picker-panel flex min-h-[22rem] flex-1 flex-col">
+    <div className="familiar-glyph-picker-panel flex min-h-[22rem] flex-1 flex-col" onKeyDown={event => {
+      // Reset belongs to a focused glyph button, never another editor or search.
+      if (event.defaultPrevented || event.altKey || event.shiftKey ||
+          !(event.metaKey || event.ctrlKey) || event.key !== "Backspace" ||
+          !(event.target instanceof HTMLElement) || !event.target.closest('[data-glyph-button="true"]')) return;
+      event.preventDefault();
+      clearGlyphOverride(familiar.id);
+    }}>
       {/* Search */}
       <div className="border-b border-[var(--border-hairline)] px-4 py-2.5">
-        <div className="relative">
-          <Icon
-            name="ph:magnifying-glass-bold"
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-            width="0.9rem"
-            height="0.9rem"
-          />
-          <input
-            ref={inputRef}
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search cat, wand, sparkle…"
-            className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 py-1.5 pl-8 pr-3 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)]"
-          />
-        </div>
+        <SearchInput
+          ref={inputRef}
+          value={query}
+          onValueChange={setQuery}
+          onClear={() => setQuery("")}
+          placeholder="Search cat, wand, sparkle…"
+          aria-label="Search familiar glyphs"
+        />
       </div>
 
       {/* Recent */}

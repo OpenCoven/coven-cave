@@ -225,7 +225,14 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
   }
 
   return (
-    <article className="tsc-card" aria-label="Thread Signal">
+    <article
+      // The wide layout puts tiles + rationale left and the signal queue right.
+      // A report with no signals has nothing for the right column (#5898), so
+      // it moves the rationale there; with no rationale open either, the tiles
+      // take the whole width.
+      className={`tsc-card${rows.length === 0 ? " tsc-card--no-signals" : ""}${selected ? "" : " tsc-card--no-detail"}`}
+      aria-label="Thread Signal"
+    >
       {launchError ? <ErrorState compact headline="Couldn't open the Chat panel" subtitle={launchError} /> : null}
       <div className="tsc-head">
         <span className={`tsc-ring tsc-tone--${compositeTone(score)}`}>

@@ -1,149 +1,119 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { FamiliarStudioBrainTab } from "@/components/familiar-studio-brain-tab";
-import { FamiliarStudioIdentityTab } from "@/components/familiar-studio-identity-tab";
-import { FamiliarStudioMemoryTab } from "@/components/familiar-studio-memory-tab";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { VaultPanel } from "@/components/vault-panel";
 import { Tabs } from "@/components/ui/tabs";
+import { Icon } from "@/lib/icon";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import type { FamiliarSettingsTab } from "@/lib/chat-tab-events";
 import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat-tab-events";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
+import "@/styles/familiar-settings-navigation.css";
 
 export type { FamiliarSettingsTab } from "@/lib/chat-tab-events";
 
-// Projects is deliberately absent: project access, access groups, and the
-// access history all live on Chat → Projects now. A `projects` target
-// redirects there (see the effect below) rather than rendering a second copy
-// of the grant matrix here.
-const SETTINGS_TABS: Array<{ id: FamiliarSettingsTab; label: string }> = [
-  { id: "chat", label: "Chat" },
-  { id: "identity", label: "Identity" },
-  { id: "brain", label: "Brain" },
-  { id: "memory", label: "Memory" },
-  { id: "vault", label: "Vault" },
-];
+const SETTINGS_TABS = [
+  { id: "identity", label: "Identity", description: "Name, role, and appearance." },
+  { id: "brain", label: "Brain", description: "Runtime, model, voice, and tools." },
+  { id: "memory", label: "Memory", description: "Durable memory and daily notes." },
+  { id: "vault", label: "Vault", description: "Credentials available to this familiar." },
+  { id: "chat", label: "Chat", description: "Shared chat preferences for your Cave." },
+] as const;
+type VisibleTab = typeof SETTINGS_TABS[number]["id"];
 
-const ChatSettingsView = dynamic(
-  () =>
-    import("@/components/chat-settings-view").then(
-      (module) => module.ChatSettingsView,
-    ),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex min-h-0 flex-col gap-3 p-6" aria-hidden>
-        <SkeletonRows count={6} />
-      </div>
-    ),
-  },
-);
+function SettingsLoading() {
+  return <div role="status" aria-label="Loading settings"><SkeletonRows count={4} /></div>;
+}
+const FamiliarStudioIdentityTab = dynamic(() => import("@/components/familiar-studio-identity-tab").then(module => module.FamiliarStudioIdentityTab), { loading: SettingsLoading, ssr: false });
+const FamiliarStudioBrainTab = dynamic(() => import("@/components/familiar-studio-brain-tab").then(module => module.FamiliarStudioBrainTab), { loading: SettingsLoading, ssr: false });
+const FamiliarStudioMemoryTab = dynamic(() => import("@/components/familiar-studio-memory-tab").then(module => module.FamiliarStudioMemoryTab), { loading: SettingsLoading, ssr: false });
+const VaultPanel = dynamic(() => import("@/components/vault-panel").then(module => module.VaultPanel), { loading: SettingsLoading, ssr: false });
+const ChatSettingsView = dynamic(() => import("@/components/chat-settings-view").then(module => module.ChatSettingsView), { loading: SettingsLoading, ssr: false });
 
-/**
- * The selected familiar's editable Studio controls, embedded in Chat's
- * Familiar tab. The Chat roster owns selection; these bodies remain the
- * canonical settings writers shared with the retired Settings → Familiars
- * surface.
- */
-export function FamiliarSettingsSection({
-  familiar,
-  familiars,
-  allFamiliars,
-  initialTab,
-  onRosterChanged,
-}: {
+type Props = {
   familiar: ResolvedFamiliar;
   familiars: Familiar[];
   allFamiliars: ResolvedFamiliar[];
   initialTab?: FamiliarSettingsTab;
   onRosterChanged?: () => void;
-}) {
-  const [tab, setTab] = useState<FamiliarSettingsTab>(
-    initialTab && initialTab !== "projects" ? initialTab : "identity",
-  );
-  // Contract is a focused handoff into the Grimoire section of Identity, not
-  // a second editor or a fabricated route. Keep the internal destination
-  // distinct while the visible tablist remains the canonical five tabs.
-  const displayedTab = tab === "contract" ? "identity" : tab;
+  scrollWithPanel?: boolean;
+};
+
+export function FamiliarSettingsSection(props: Props) {
+  // A familiar switch never carries another familiar's drafts or disclosures.
+  return <FamiliarSettingsBody key={props.familiar.id} {...props} />;
+}
+
+function FamiliarSettingsBody({ familiar, familiars, allFamiliars, initialTab, onRosterChanged, scrollWithPanel = false }: Props) {
+  const { value: tab, select, show } = useSurfaceHistory<FamiliarSettingsTab>({
+    id: `familiar:settings:${familiar.id}`,
+    initial: initialTab && initialTab !== "projects" ? initialTab : "identity",
+  });
+  const displayedTab: VisibleTab = tab === "contract" || tab === "projects" ? "identity" : tab;
+  const current = SETTINGS_TABS.find(item => item.id === displayedTab)!;
+  const idPrefix = useId();
+  const body = useRef<HTMLDivElement>(null);
+  const identityScroll = useRef(0);
+  useLayoutEffect(() => {
+    if (body.current && !scrollWithPanel) body.current.scrollTop = displayedTab === "identity" ? identityScroll.current : 0;
+  }, [displayedTab, scrollWithPanel]);
+  // Identity owns explicit-save drafts and an undoable lifecycle transaction.
+  // Keep it mounted when hidden: effect cleanup must not commit a pending
+  // removal on a section switch. It has no background polling. Other editors
+  // retain their existing autosave/unmount contract while absent.
+  const [identityVisited, setIdentityVisited] = useState(displayedTab === "identity");
   useEffect(() => {
-    // `projects` no longer names a tab here. Rather than silently landing on
-    // Identity, hand the request to the surface that owns project access now.
+    if (displayedTab === "identity") setIdentityVisited(true);
+  }, [displayedTab]);
+  useEffect(() => {
     if (initialTab === "projects") {
       markProjectsTabPending();
       window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
-      return;
-    }
-    if (initialTab) setTab(initialTab);
-  }, [initialTab]);
-  useEffect(() => {
-    if (tab !== "contract") return;
-    const focusFrame = requestAnimationFrame(() => {
-      const grimoire = document.querySelector<HTMLElement>(".familiar-studio-grimoire");
-      grimoire?.scrollIntoView({ block: "nearest" });
-      grimoire?.focus({ preventScroll: true });
-    });
-    return () => cancelAnimationFrame(focusFrame);
-  }, [tab]);
-  const raw = useMemo(
-    () => familiars.find((item) => item.id === familiar.id),
-    [familiars, familiar.id],
-  );
+    } else if (initialTab) show(initialTab);
+  }, [initialTab, show]);
+  const raw = useMemo(() => familiars.find(item => item.id === familiar.id), [familiars, familiar.id]);
 
   return (
     <section className="familiar-tab__settings" aria-label={`Settings for ${familiar.display_name}`}>
-      <div className="familiar-tab__settings-heading">
-        <div>
-          <h3 className="familiar-tab__card-title">Settings</h3>
-          <p className="familiar-tab__settings-copy">
-            Tune {familiar.display_name} without leaving Chat.
-          </p>
+      <div className="familiar-settings-nav">
+        <h3 className="familiar-tab__card-title">Settings</h3>
+        <div className="familiar-settings-nav__wide">
+          <Tabs<FamiliarSettingsTab> orientation="vertical" size="sm" idPrefix={idPrefix}
+            ariaLabel="Familiar settings" value={displayedTab} onChange={select} items={SETTINGS_TABS} />
         </div>
+        <label className="familiar-settings-nav__compact">
+          <span className="sr-only">Settings section</span>
+          <select className="focus-ring" value={displayedTab} onChange={event => select(event.target.value as VisibleTab)}>
+            {SETTINGS_TABS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+          <Icon name="ph:caret-down" width={16} aria-hidden />
+        </label>
       </div>
-
-      <div className="familiar-tab__settings-tabs">
-        <Tabs<FamiliarSettingsTab>
-          variant="underline"
-          idPrefix="familiar-settings"
-          ariaLabel="Familiar settings"
-          value={displayedTab}
-          onChange={setTab}
-          items={SETTINGS_TABS}
-        />
-      </div>
-
-      <div
-        role="tabpanel"
-        id={`familiar-settings-panel-${displayedTab}`}
-        aria-labelledby={`familiar-settings-tab-${displayedTab}`}
-        className="familiar-tab__settings-body familiar-studio__body"
-      >
-        {tab === "chat" ? <ChatSettingsView /> : null}
-        {tab === "identity" || tab === "contract" ? (
-          <FamiliarStudioIdentityTab
-            key={`${familiar.id}:identity`}
-            familiar={familiar}
-            rawDaemonValues={{
-              display_name: raw?.display_name,
-              role: raw?.role,
-              pronouns: raw?.pronouns,
-              description: raw?.description,
-            }}
-            allFamiliars={allFamiliars}
-            onRosterChanged={onRosterChanged}
-          />
-        ) : null}
-        {tab === "brain" ? <FamiliarStudioBrainTab key={`${familiar.id}:brain`} familiar={familiar} /> : null}
-        {tab === "memory" ? (
-          <FamiliarStudioMemoryTab
-            key={`${familiar.id}:memory`}
-            familiar={familiar}
-            allFamiliars={familiars}
-          />
-        ) : null}
-        {tab === "vault" ? <VaultPanel key={`${familiar.id}:vault`} familiarId={familiar.id} /> : null}
+      <div className="familiar-settings-content">
+        <header className="familiar-settings-content__heading">
+          <h4>{current.label}</h4>
+          <p>{current.description}</p>
+        </header>
+        <div ref={body} className="familiar-tab__settings-body familiar-studio__body"
+          onScroll={event => { if (!scrollWithPanel && displayedTab === "identity") identityScroll.current = event.currentTarget.scrollTop; }}>
+          {SETTINGS_TABS.map(item => (
+            <div key={item.id} role="tabpanel" id={`${idPrefix}-panel-${item.id}`}
+              aria-label={item.label} hidden={displayedTab !== item.id} tabIndex={0} className="familiar-settings-panel focus-ring-inset">
+              {item.id === "identity" && (identityVisited || displayedTab === "identity") ? (
+                  <FamiliarStudioIdentityTab familiar={familiar}
+                    focusContract={tab === "contract"}
+                    rawDaemonValues={{ display_name: raw?.display_name, role: raw?.role, pronouns: raw?.pronouns, description: raw?.description }}
+                    allFamiliars={allFamiliars} onRosterChanged={onRosterChanged} />
+              ) : null}
+              {item.id === displayedTab && item.id === "brain" ? <FamiliarStudioBrainTab familiar={familiar} /> : null}
+              {item.id === displayedTab && item.id === "memory" ? <FamiliarStudioMemoryTab familiar={familiar} allFamiliars={familiars} /> : null}
+              {item.id === displayedTab && item.id === "vault" ? <VaultPanel familiarId={familiar.id} /> : null}
+              {item.id === displayedTab && item.id === "chat" ? <ChatSettingsView /> : null}
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

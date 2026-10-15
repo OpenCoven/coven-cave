@@ -507,8 +507,8 @@ assert.match(
 );
 assert.match(
   css,
-  /@container document-reader \(max-width: 65rem\)[\s\S]*?--research-evidence-edge-reserve:\s*0/,
-  "compact readers remove the hidden evidence-edge reserve",
+  /@container document-reader \(max-width: 65rem\)[\s\S]*?--research-evidence-edge-reserve:\s*0px;/,
+  "compact readers remove the evidence reserve with a length valid inside calc()",
 );
 const wideInlineReferenceRule = css.match(/^\.rr-wide-ref \{([^}]*)\}/m);
 assert.ok(wideInlineReferenceRule, "wide visual reference tokens have a dedicated rule");

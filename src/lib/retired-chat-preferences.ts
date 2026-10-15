@@ -25,6 +25,9 @@
 const RETIRED_KEYS = [
   // Retired with the thread minimap and the activity-map toggle (cave-5m5hv).
   "cave:chat:thread-instruments",
+  // Retired with the floating Environment HUD's collapse control (#5958): the
+  // card now opens from the composer's branch chip and has no collapsed state.
+  "cave:chat-env-panel:collapsed:v1",
 ] as const;
 
 /** Delete every retired chat preference key. Returns the keys actually removed

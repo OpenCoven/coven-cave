@@ -76,10 +76,15 @@ export function keySymbolsNow(): KeySymbols {
  * at render time, so we don't have to thread a function through every const.
  */
 export function platformizeHint(hint: string, keys: KeySymbols): string {
+  // Mac glyphs sit side by side ("⌘⇧A"). Word labels need a separator, or
+  // Windows and Linux read "CtrlShiftA" (#5970). A modifier label is a word
+  // whenever it is longer than one glyph, so a custom symbol set still works.
+  const sep = keys.mod.length > 1 ? "+" : "";
   return hint
-    .replaceAll("⌘", keys.mod)
-    .replaceAll("⌥", keys.alt)
-    .replaceAll("⌃", keys.ctrl)
-    .replaceAll("⇧", keys.shift)
-    .replaceAll("↵", keys.enter);
+    .replaceAll("⌘", `${keys.mod}${sep}`)
+    .replaceAll("⌥", `${keys.alt}${sep}`)
+    .replaceAll("⌃", `${keys.ctrl}${sep}`)
+    .replaceAll("⇧", `${keys.shift}${sep}`)
+    .replaceAll("↵", keys.enter)
+    .replace(/\+$/, "");
 }

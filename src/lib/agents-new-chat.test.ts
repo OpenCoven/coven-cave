@@ -57,6 +57,28 @@ function withWindow<T>(win: FakeWindow, fn: () => T): T {
   }
 }
 
+describe("pending request typed controls (#5902)", () => {
+  it("round-trips Home Thinking · Speed picks through the persisted request", () => {
+    const { win, store } = makeWindow("/");
+    store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify({
+      familiarId: "cody",
+      initialPrompt: "start thorough",
+      initialControls: { modelOverride: "", modelOverrideScope: "next-message", modelControls: { performance: "thorough" } },
+    }));
+    const pending = withWindow(win, () => readPendingAgentsNewChat());
+    assert.deepEqual(pending?.initialControls?.modelControls, { performance: "thorough" });
+  });
+
+  it("rejects a malformed modelControls payload instead of handing it to the chat", () => {
+    const { win, store } = makeWindow("/");
+    store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify({
+      familiarId: "cody",
+      initialControls: { modelControls: { performance: 3 } },
+    }));
+    assert.equal(withWindow(win, () => readPendingAgentsNewChat()), null);
+  });
+});
+
 describe("requestAgentsNewChat", () => {
   it("dispatches the live event on the main workspace page", () => {
     const { win, store, dispatched, assigned } = makeWindow("/");

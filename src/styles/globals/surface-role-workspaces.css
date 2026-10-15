@@ -792,7 +792,7 @@
    six real Flow phases form the central spine between intent and artifacts. */
 
 .research-desk {
-  --research-accent: oklch(0.74 0.11 278);
+  --research-accent: var(--accent-presence);
   --research-accent-soft: color-mix(in oklch, var(--research-accent) 14%, transparent);
   display: flex;
   flex: 1;

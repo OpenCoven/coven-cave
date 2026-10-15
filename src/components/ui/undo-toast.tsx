@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Icon, type IconName } from "@/lib/icon";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
   /** The toast body (e.g. "Deleted <strong>X</strong>" or "Moved X to Y"). */
@@ -38,6 +39,7 @@ export function UndoToast({
   // durationMs) rather than a per-frame requestAnimationFrame loop, so the toast
   // doesn't re-render every frame for a decorative bar. autoDismiss is a single
   // setTimeout — which, unlike rAF, still fires in a backgrounded tab.
+  const keys = useKeySymbols();
   const [collapsed, setCollapsed] = useState(false);
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
@@ -62,7 +64,7 @@ export function UndoToast({
         <button className="ui-undo-toast__undo" onClick={onUndo} aria-label={undoAriaLabel}>
           Undo
           {/* The same action is bound to ⌘Z while the toast is up (useUndoDelete). */}
-          <kbd className="ui-undo-toast__kbd" aria-hidden>⌘Z</kbd>
+          <kbd className="ui-undo-toast__kbd" aria-hidden>{platformizeHint("⌘Z", keys)}</kbd>
         </button>
         <button className="ui-undo-toast__dismiss" onClick={onDismiss} aria-label="Dismiss">
           <Icon name="ph:x-bold" aria-hidden />

@@ -61,6 +61,8 @@ export async function register() {
   }
   const mod = await import("@/lib/inbox-scheduler");
   mod.startScheduler();
+  const scheduledChat = await import("@/lib/server/scheduled-chat-scheduler");
+  scheduledChat.startScheduledChatScheduler();
   const watcher = await import("@/lib/github-watcher");
   watcher.startGithubWatcher();
   const backupSync = await import("@/lib/server/backup-sync");

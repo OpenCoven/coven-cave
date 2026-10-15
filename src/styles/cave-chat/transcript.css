@@ -248,12 +248,6 @@
   line-height: 1.2;
 }
 
-.cave-linear-turn-badge--op {
-  background: color-mix(in oklch, var(--accent-presence) 35%, var(--bg-raised));
-  color: color-mix(in oklch, var(--accent-presence) 30%, var(--text-primary));
-  text-transform: uppercase;
-}
-
 .cave-linear-turn-recency {
   color: var(--text-muted);
   /* Chat-revamp 1b: 11px muted timestamp beside the name. */
@@ -360,6 +354,15 @@
 
 .cave-chat-linear .cave-composer-dock {
   padding: var(--space-5) clamp(16px, 3vw, 34px) var(--space-4);
+}
+
+/* The top padding is headroom for the floating Tools tab. On desktop Tools
+   lives in the action cluster (#5954), so with nothing overhanging the panel
+   the dock keeps only a small gap above it. */
+@media (min-width: 1024px) {
+  .cave-chat-linear .cave-composer-dock:not(:has(.cave-composer-edge-actions:not(:empty))) {
+    padding-top: var(--space-3);
+  }
 }
 
 /* Typed assistant suggestions keep their effect legible before activation.
@@ -540,9 +543,20 @@
 }
 
 
+/* The composer caps at the reading column and centers under it, so the input
+   lines up with the conversation instead of spanning an ultrawide pane
+   (#5950, reversing the full-pane composer). Below the measure it is the
+   full dock width, as before. */
 .cave-chat-linear .cave-composer-shell {
   width: 100%;
-  max-width: 100%;
+  max-width: var(--cave-chat-measure);
+}
+
+/* Prose keeps a readable line length inside the wide column; code blocks,
+   tables and other wide blocks still use the full measure. The narrower
+   reading-width settings cap the whole .cave-md and still win. */
+.cave-chat-linear .cave-chat-thread .cave-md > :is(p, ul, ol, blockquote) {
+  max-width: 72ch;
 }
 
 .cave-chat-linear .cave-composer-panel {
@@ -655,6 +669,11 @@
     box-shadow var(--duration-fast) var(--ease-standard);
 }
 
+/* Latest sits at the reading column's right edge, not the pane's. */
+.cave-chat-linear .cave-new-response-content {
+  margin-right: max(0px, calc((100% - var(--cave-chat-measure)) / 2));
+}
+
 .cave-new-response-content:hover {
   border-color: color-mix(in oklch, var(--accent-presence) 70%, transparent);
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
@@ -739,7 +758,9 @@
      yields to the header's MobileHeaderTask chip (the band keeps project ·
      runtime · git, which have no mobile twin). */
   .cave-chat-meta-line,
-  .cave-chat-linked-context {
+  .cave-chat-linked-context,
+  .cave-chat-header-row > .cave-chat-meta-line,
+  .cave-chat-header-row > .cave-chat-session-actions {
     display: none;
   }
 

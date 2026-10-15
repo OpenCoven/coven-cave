@@ -174,7 +174,7 @@ export function ShippedPanel({
               </span>
               <input
                 type="search"
-                className="drd-ship-search-input"
+                className="ui-search-field drd-ship-search-input"
                 value={query}
                 placeholder="Filter shipped work…"
                 onChange={(event) => setQuery(event.target.value)}

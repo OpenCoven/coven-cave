@@ -43,8 +43,11 @@ const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 // on purpose: the toast-over-chrome collision it guards exists at desktop
 // widths too (cave-lcxc6), so it has to run on all three viewport projects —
 // tests/mobile/ is excluded from the desktop project.
+// composer-environment-popover joins it for the same reason (#5958): the
+// branch chip's Environment popover opens at every width, and the phone
+// cases (rest-state chips, 44px rows, viewport containment) only run there.
 const MOBILE_SURFACE_SPECS =
-  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance)\.spec\.ts/;
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 

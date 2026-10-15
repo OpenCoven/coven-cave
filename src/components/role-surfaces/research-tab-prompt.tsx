@@ -577,7 +577,7 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode, 
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search saves…"
               aria-label="Search saves"
-              className="research-quick-saves__search"
+              className="ui-search-field research-quick-saves__search"
             />
             <button
               type="button"

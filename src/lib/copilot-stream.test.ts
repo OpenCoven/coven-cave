@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   buildCopilotStreamArgs,
+  copilotSupportsReasoningEffort,
   compareRuntimeClientVersions,
   copilotDirectStreamConfigured,
   copilotIdentityPreamble,
@@ -138,6 +139,34 @@ assert.deepEqual(
   ["copilot-jsonl-v2-fixture"],
   "a validated registry schema can extend support without a new normalized event implementation",
 );
+
+// ── Thinking control (#5905): `--reasoning-effort <level>` ─────────────────
+const reasoningArgs = buildCopilotStreamArgs({
+  spec,
+  prompt: "safe prompt",
+  resumeSessionId: null,
+  newSessionId: null,
+  model: null,
+  permissionMode: "full",
+  addDirs: [],
+  reasoningEffort: "high",
+});
+assert.deepEqual(
+  reasoningArgs.slice(reasoningArgs.indexOf("--reasoning-effort"), reasoningArgs.indexOf("--reasoning-effort") + 2),
+  ["--reasoning-effort", "high"],
+  "a validated Thinking pick rides the direct Copilot launch",
+);
+assert.ok(
+  !buildCopilotStreamArgs({
+    spec, prompt: "p", resumeSessionId: null, newSessionId: null, model: null, permissionMode: "full", addDirs: [],
+    reasoningEffort: "--allow-all",
+  }).includes("--reasoning-effort"),
+  "a flag-shaped level never reaches argv",
+);
+assert.equal(copilotSupportsReasoningEffort("1.0.94"), true, "the verified version accepts --reasoning-effort");
+assert.equal(copilotSupportsReasoningEffort("1.1.0"), true);
+assert.equal(copilotSupportsReasoningEffort("1.0.70"), false, "older clients keep their own default");
+assert.equal(copilotSupportsReasoningEffort(null), false, "an unknown version fails closed");
 
 const flagShapedModelArgs = buildCopilotStreamArgs({
   spec,

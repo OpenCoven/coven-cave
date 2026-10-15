@@ -57,7 +57,7 @@ export type ContextMeterLevel = "ok" | "warn" | "high";
 export type ContextMeter = {
   usedTokens: number;
   windowTokens: number;
-  /** 0..1, clamped. */
+  /** 0..1. */
   fraction: number;
   /** 0..100, rounded. */
   percent: number;
@@ -68,7 +68,10 @@ export type ContextMeter = {
 
 /** Build the meter for a turn's usage against a model's window. Returns null
  *  when there's nothing to show (no usage / zero tokens — e.g. the OpenClaw
- *  bridge emits no usage). */
+ *  bridge emits no usage), or when the usage is larger than the window. A
+ *  prompt cannot outgrow the window that holds it, so that usage is a run total
+ *  (every model call summed, as Codex reports it), not a fill reading. Clamping
+ *  it showed a red, full window that never existed (#5944). */
 export function computeContextMeter(
   usage: TurnUsage | undefined,
   modelId: unknown,
@@ -76,7 +79,8 @@ export function computeContextMeter(
   const usedTokens = contextUsedTokens(usage);
   if (usedTokens <= 0) return null;
   const { tokens: windowTokens, known } = contextWindowForModel(modelId);
-  const fraction = windowTokens > 0 ? Math.min(1, usedTokens / windowTokens) : 0;
+  if (windowTokens <= 0 || usedTokens > windowTokens) return null;
+  const fraction = usedTokens / windowTokens;
   const percent = Math.round(fraction * 100);
   const level: ContextMeterLevel = fraction >= 0.9 ? "high" : fraction >= 0.7 ? "warn" : "ok";
   return { usedTokens, windowTokens, fraction, percent, known, level };

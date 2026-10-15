@@ -2,15 +2,16 @@ import type { ToolStatus } from "./chat-tool-state.ts";
 // Pure model for the chat session's slim context row (Chat.dc.html 2a ③).
 //
 // The row states what a machine decided about the last run — done, elapsed,
-// context window, tokens, cost — beneath the human title row (serif title +
-// lifecycle actions). It used to also carry project/branch/model/cwd chips,
-// but those duplicated the header's identity line one row up and were
-// dropped as redundant chrome.
+// tokens, cost — beneath the human title row (serif title + lifecycle
+// actions). It used to also carry project/branch/model/cwd chips, but those
+// duplicated the header's identity line one row up and were dropped as
+// redundant chrome. Context-window fill lives in the composer meter alone
+// (#5944): this row repeated it, and on a run total each copy read a different
+// red.
 //
 // Kept free of React so the stat derivation is unit-testable and so the row
 // never invents facts: every stat is dropped when its fact is unknown.
 
-import { computeContextMeter } from "./context-meter.ts";
 import { formatCost, formatTokens, type TurnUsage } from "./usage-format.ts";
 
 /** Accent used for the stat dot. Maps to a CSS custom property in the
@@ -18,13 +19,11 @@ import { formatCost, formatTokens, type TurnUsage } from "./usage-format.ts";
 export type ChatContextTint = "accent" | "success" | "warning" | "danger" | "muted";
 
 export type ChatContextStat = {
-  id: "done" | "elapsed" | "context" | "tokens" | "cost";
+  id: "done" | "elapsed" | "tokens" | "cost";
   label: string;
   value: string;
   title: string;
   tint: ChatContextTint;
-  /** Present only on the context-window stat: 0–100, drives the mini meter. */
-  percent?: number;
   detail?: ChatContextDetail;
 };
 
@@ -33,13 +32,11 @@ export type ChatContextDetailRow = {
   label: string;
   value: string;
   tint: ChatContextTint;
-  percent?: number;
 };
 
 export type ChatContextDetail = {
   heading: string;
   rows: ChatContextDetailRow[];
-  note?: string;
 };
 
 export type ChatContextTurn = {
@@ -57,7 +54,6 @@ export type ChatContextTurn = {
 export type ChatContextDetails = {
   done: (ChatContextDetail & { value: string }) | null;
   elapsed: (ChatContextDetail & { value: string }) | null;
-  context: (ChatContextDetail & { value: string; percent: number }) | null;
 };
 
 /** Duration in the row's compact grammar: 38s · 4m 12s · 1h 03m. */
@@ -112,8 +108,6 @@ function contextToolCategory(name: string, input?: string): ToolCategory {
 
 export function chatContextDetails(args: {
   turns?: ChatContextTurn[];
-  usage?: TurnUsage;
-  model?: string | null;
 }): ChatContextDetails {
   const assistantTurns = (args.turns ?? []).filter((turn) => turn.role === "assistant");
   const completedTools = assistantTurns
@@ -174,33 +168,7 @@ export function chatContextDetails(args: {
     ? { heading: "Active", value: elapsedValue, rows: elapsedRows }
     : null;
 
-  const meter = computeContextMeter(args.usage, args.model ?? undefined);
-  let context: ChatContextDetails["context"] = null;
-  if (meter) {
-    const usage = args.usage;
-    const cacheRead = Math.max(0, usage?.cacheReadTokens ?? 0);
-    const cacheCreation = Math.max(0, usage?.cacheCreationTokens ?? 0);
-    const input = Math.max(0, usage?.inputTokens ?? 0);
-    const free = Math.max(0, meter.windowTokens - meter.usedTokens);
-    const contextParts: ChatContextDetailRow[] = [
-      { id: "transcript", label: "transcript", value: formatTokens(input) ?? String(input), tint: "accent", percent: input / meter.windowTokens * 100 },
-      { id: "cached", label: "cached", value: formatTokens(cacheRead) ?? String(cacheRead), tint: "success", percent: cacheRead / meter.windowTokens * 100 },
-      { id: "cache-write", label: "cache write", value: formatTokens(cacheCreation) ?? String(cacheCreation), tint: "warning", percent: cacheCreation / meter.windowTokens * 100 },
-      { id: "free", label: "free", value: formatTokens(free) ?? String(free), tint: "muted", percent: free / meter.windowTokens * 100 },
-    ];
-    const contextRows = contextParts.filter((row) => row.id === "free" || (row.percent ?? 0) > 0);
-    const used = formatTokens(meter.usedTokens) ?? String(meter.usedTokens);
-    const window = formatTokens(meter.windowTokens) ?? String(meter.windowTokens);
-    context = {
-      heading: "Context",
-      value: `${used} / ${window}`,
-      percent: meter.percent,
-      rows: contextRows,
-      note: meter.known ? undefined : "Window size estimated",
-    };
-  }
-
-  return { done, elapsed, context };
+  return { done, elapsed };
 }
 
 export function chatContextStats(args: {
@@ -208,13 +176,12 @@ export function chatContextStats(args: {
   usage?: TurnUsage;
   costUsd?: number;
   durationMs?: number;
-  model?: string | null;
 }): ChatContextStat[] {
   const stats: ChatContextStat[] = [];
   const turns = args.turns ?? (args.durationMs
     ? [{ role: "assistant" as const, durationMs: args.durationMs }]
     : []);
-  const details = chatContextDetails({ turns, usage: args.usage, model: args.model });
+  const details = chatContextDetails({ turns });
   if (details.done) {
     // "28 steps", not "done 28" (cave-dkdev). The old label named a state the
     // pill one row up already owns, so the band appeared to report status a
@@ -243,17 +210,6 @@ export function chatContextStats(args: {
       tint: "accent",
       title: `Active ${details.elapsed.value} — time spent working, not time since the chat opened`,
       detail: details.elapsed,
-    });
-  }
-  if (details.context) {
-    stats.push({
-      id: "context",
-      label: "context",
-      value: details.context.value,
-      percent: details.context.percent,
-      tint: details.context.percent >= 90 ? "danger" : details.context.percent >= 70 ? "warning" : "success",
-      title: `Context ${details.context.percent}% full — ${details.context.value} tokens`,
-      detail: details.context,
     });
   }
   const total = args.usage ? args.usage.inputTokens + args.usage.outputTokens : 0;

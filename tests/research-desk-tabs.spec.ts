@@ -1,4 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+
+test.use({ serviceWorkers: "block" });
 
 // Research Desk five-tab surface (cave-dl74) — Prompt / Desk / Library /
 // Studio / Resources inside the researcher role room (surface:researcher-desk).
@@ -10,9 +13,8 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 // only stays open when the active familiar holds the researcher role, so the
 // mocked familiar's role label is "Researcher" (familiarRoleIds tokenizes it).
 //
-// Mocks are stateless (no call counters): dev-mode StrictMode double-mounts
-// effects, so the number of initial fetches is unpredictable. The one POST
-// (Studio diagram create) records its body into a variable instead.
+// Fixtures model server mutations; GET responses reflect created/removed records.
+// Request logs assert user actions without depending on effect fetch counts.
 
 const FAMILIAR_ID = "researcher";
 const NOW = Date.now();
@@ -748,6 +750,14 @@ async function mockResearchApis(page: Page, options: MockResearchApiOptions = {}
     }
     return route.fulfill({ status: 405, json: { ok: false, error: "method not allowed" } });
   });
+  const generatedRecords: Array<Record<string, unknown>> = [];
+  const extractiveContent: Record<string, Record<string, unknown>> = {
+    diagram: DIAGRAM_GENERATION.content,
+    blog: { kind: "blog", title: "Research article", markdown: "# Research article\n\nCited findings from the completed research." },
+    slides: { kind: "slides", slides: [{ title: "First finding", bullets: ["Cited evidence"] }, { title: "Second finding", bullets: ["Supporting evidence"] }] },
+    infographic: { kind: "infographic", stats: [{ value: "42%", context: "A cited research finding" }] },
+    thread: { kind: "thread", posts: [{ pre: "1/2", text: "First cited finding" }, { pre: "2/2", text: "Second cited finding" }] },
+  };
   await page.route(/\/api\/research\/generations/, async (route) => {
     if (route.request().url().includes("/readiness")) {
       await route.fulfill({
@@ -785,12 +795,24 @@ async function mockResearchApis(page: Page, options: MockResearchApiOptions = {}
       });
       return;
     }
+    if (route.request().url().includes("/infographic")) {
+      return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="white"/><text x="24" y="80" fill="black" font-size="32">42% — cited finding</text></svg>' });
+    }
     if (route.request().method() === "POST") {
-      handles.createdGenerationBodies.push(route.request().postDataJSON());
-      await route.fulfill({ json: { ok: true, generation: DIAGRAM_GENERATION } });
+      const body = route.request().postDataJSON() as { kind: string; sourceMissionId: string };
+      handles.createdGenerationBodies.push(body);
+      const generation = { ...DIAGRAM_GENERATION, id: `gen-${body.kind}-1`, kind: body.kind, sourceMissionId: body.sourceMissionId, content: extractiveContent[body.kind] };
+      generatedRecords.push(generation);
+      await route.fulfill({ json: { ok: true, generation } });
       return;
     }
-    await route.fulfill({ json: { ok: true, generations: [] } });
+    if (route.request().method() === "DELETE") {
+      const { id } = route.request().postDataJSON() as { id: string };
+      const index = generatedRecords.findIndex(record => record.id === id);
+      if (index >= 0) generatedRecords.splice(index, 1);
+      return route.fulfill({ json: { ok: true } });
+    }
+    await route.fulfill({ json: { ok: true, generations: generatedRecords } });
   });
   return handles;
 }
@@ -801,7 +823,8 @@ async function mockResearchApis(page: Page, options: MockResearchApiOptions = {}
  *  waits on the dev server compiling its chunk — observed ~15s cold, worse
  *  with several workers booting in parallel; hence the generous budget. */
 async function enterResearchDesk(page: Page) {
-  await page.getByRole("navigation").first().waitFor({ timeout: 60_000 });
+  // The primary navigation is intentionally hidden on phone and tablet.
+  await page.locator("#shell-main-content").waitFor({ timeout: 60_000 });
   await expect(async () => {
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "surface:researcher-desk" } })),
@@ -830,6 +853,133 @@ test.describe("research desk tabs", () => {
   // `next dev` under parallel workers. The default 60s test budget reads
   // slow-compile as failure; triple it (same pattern as other cold-boot specs).
   test.describe.configure({ timeout: 180_000 });
+
+  test("Desk preserves readable title width with stored rail sizes", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.addInitScript(() => {
+      localStorage.setItem("cave:research:desk-queue-width", "440");
+      localStorage.setItem("cave:research:desk-rail-width", "520");
+    });
+    await openResearchDesk(page);
+    const title = page.locator("#research-mission-title");
+    await expect(title).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("desk-stored-widths.png") });
+    const bounds = await title.boundingBox();
+    expect(bounds!.width).toBeGreaterThanOrEqual(400);
+    await expect(page.locator(".research-mission-detail__body")).toHaveAttribute("data-evidence-open", "false");
+  });
+
+  test("removing a resizing divider restores the cursor without leaving Desk", async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await openResearchDesk(page);
+    await page.getByRole("button", { name: /^Open the evidence inspector/ }).click();
+    const divider = page.getByRole("separator", { name: "Resize the evidence inspector" });
+    const previous = await page.evaluate(() => ({ cursor: document.body.style.cursor, userSelect: document.body.style.userSelect }));
+    const bounds = await divider.boundingBox();
+    expect(bounds).not.toBeNull();
+    await page.mouse.move(bounds!.x + bounds!.width / 2, bounds!.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(bounds!.x - 24, bounds!.y + 40);
+    await expect.poll(() => page.evaluate(() => document.body.style.cursor)).toBe("col-resize");
+    // Keyboard activation can remove the captured separator before mouseup.
+    const collapse = page.getByRole("button", { name: "Back to run — collapse evidence inspector" });
+    await collapse.focus();
+    await page.keyboard.press("Enter");
+    await expect(divider).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => ({ cursor: document.body.style.cursor, userSelect: document.body.style.userSelect }))).toEqual(previous);
+    await page.mouse.up();
+    await expect(page.locator("#research-mission-title")).toBeVisible();
+  });
+
+  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }, { width: 1920, height: 1080 }]) {
+    test(`all Research Desk views fit ${viewport.width}px`, async ({ page }, testInfo) => {
+      await page.setViewportSize(viewport);
+      await openResearchDesk(page);
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.evaluate(({ theme, mode }) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, { theme: viewport.width === 768 ? "tide" : "coven", mode: viewport.width === 390 || viewport.width === 1920 ? "light" : "dark" });
+      for (const name of ["Prompt", "Desk", "Library", "Studio", "Resources"]) {
+        await deskTab(page, new RegExp(`^${name}`)).click();
+        const panel = page.getByRole("tabpanel", { name: new RegExp(`^${name}`) }).first();
+        await expect(panel).toBeVisible();
+        const content = name === "Desk" ? panel.locator("#research-mission-title")
+          : name === "Prompt" ? panel.getByRole("heading", { name: "Turn a question into durable knowledge." })
+          : panel.getByRole("heading", { name, exact: true });
+        await expect(content).toBeVisible();
+        if (name === "Studio") await expect(panel.locator(".research-studio-card")).toHaveCount(8);
+        await expect.poll(() => panel.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+        await page.screenshot({ path: testInfo.outputPath(`${name.toLowerCase()}-${viewport.width}.png`) });
+      }
+      await deskTab(page, /^Resources/).focus();
+      await page.keyboard.press("Home");
+      await expect(deskTab(page, /^Prompt/)).toHaveAttribute("tabindex", "0");
+      await page.keyboard.press("ArrowRight");
+      await expect(deskTab(page, /^Desk/)).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(deskTab(page, /^Desk/)).toHaveAttribute("aria-selected", "true");
+      await deskTab(page, /^Desk/).click();
+      const compact = page.getByRole("group", { name: "Desk panes", exact: true });
+      if (viewport.width <= 768) {
+        await expect(compact).toBeVisible();
+        await compact.getByRole("button", { name: /^Runs/ }).click();
+        await expect(page.getByRole("navigation", { name: "Research missions" })).toBeVisible();
+        await page.getByRole("navigation", { name: "Research missions" }).getByRole("button", { name: new RegExp(CHECKPOINT_MISSION.title) }).click();
+        await expect(page.locator("#research-mission-title")).toBeVisible();
+      }
+      await page.getByRole("button", { name: /^Open the evidence inspector/ }).click();
+      await expect(page.getByLabel("Run evidence and links")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Back to run — collapse evidence inspector" })).toBeFocused();
+      await page.getByRole("button", { name: "Back to run — collapse evidence inspector" }).click();
+      await expect(page.locator("#research-mission-title")).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Open the evidence inspector/ })).toBeFocused();
+      const continueButton = page.locator(".research-mission-actions button", { hasText: "Continue to iteration" });
+      await continueButton.scrollIntoViewIfNeeded();
+      await expect(continueButton).toBeInViewport();
+      if (await page.evaluate(() => matchMedia("(pointer: coarse)").matches)) {
+        expect((await continueButton.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+        expect((await deskTab(page, /^Desk/).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      }
+    });
+  }
+
+  test("all Research Desk views remain navigable with doubled text size", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openResearchDesk(page);
+    const title = page.locator("#research-mission-title");
+    await expect(title).toBeVisible();
+    let originalTitleSize = Number.NaN;
+    await expect.poll(async () => {
+      originalTitleSize = await title.evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+      return originalTitleSize;
+    }).toBeGreaterThan(0);
+    await page.locator("html").evaluate(node => {
+      const styles = getComputedStyle(node);
+      const rootSize = parseFloat(styles.fontSize);
+      const tokens = ["2xs", "xs", "sm", "base", "md", "lg", "xl", "display"]
+        .map(size => [`--text-${size}`, parseFloat(styles.getPropertyValue(`--text-${size}`))] as const);
+      node.style.fontSize = `${rootSize * 2}px`;
+      for (const [token, size] of tokens) node.style.setProperty(token, `${size * 2}px`);
+    });
+    await expect.poll(() => title.evaluate(node => parseFloat(getComputedStyle(node).fontSize))).toBe(originalTitleSize * 2);
+    for (const name of ["Prompt", "Desk", "Library", "Studio", "Resources"]) {
+      await deskTab(page, new RegExp(`^${name}`)).click();
+      const panel = page.getByRole("tabpanel", { name: new RegExp(`^${name}`) }).first();
+      await expect(panel).toBeVisible();
+      await expect.poll(() => panel.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+      await page.screenshot({ path: testInfo.outputPath(`${name.toLowerCase()}-doubled-text.png`) });
+    }
+    await deskTab(page, /^Desk/).click();
+    await page.getByRole("button", { name: /^Open the evidence inspector/ }).click();
+    await expect(page.getByLabel("Run evidence and links")).toBeVisible();
+    const collapse = page.getByRole("button", { name: "Back to run — collapse evidence inspector" });
+    await expect(collapse).toBeFocused();
+    await page.keyboard.press("Enter");
+    const continueButton = page.locator(".research-mission-actions button", { hasText: "Continue to iteration" });
+    await continueButton.scrollIntoViewIfNeeded();
+    await expect(continueButton).toBeInViewport();
+  });
 
   test("tab strip has five tabs and the Desk shows runs rail, stepper, and checkpoint actions", async ({ page }) => {
     const handles = await openResearchDesk(page);
@@ -892,6 +1042,7 @@ test.describe("research desk tabs", () => {
 
     // The rail is one Artifacts|Sources toggle over a single pane. A run at a
     // checkpoint opens on Sources, where the conflicting source can be triaged.
+    await desk.getByRole("button", { name: /^Open the evidence inspector/ }).click();
     const railTabs = desk.getByRole("tablist", { name: "Rail contents" });
     await expect(railTabs.getByRole("tab", { name: /^Sources/ })).toHaveAttribute("aria-selected", "true");
     const sourcesPane = desk.getByRole("tabpanel", { name: /^Sources/ });
@@ -905,6 +1056,7 @@ test.describe("research desk tabs", () => {
     await expect(artifactsPane.getByText("Working synthesis")).toBeVisible();
     await expect(sourcesPane).toBeHidden();
 
+    await desk.getByRole("button", { name: "Back to run — collapse evidence inspector" }).click();
     // Selecting the failed run surfaces its lastError and a Retry action.
     await rail.getByRole("button", { name: /Rust GUI toolkit scan/ }).click();
     await expect(desk.locator(".research-mission-stop")).toContainText(
@@ -937,6 +1089,7 @@ test.describe("research desk tabs", () => {
     await filter.press("Escape");
     await expect(filter).toHaveValue("");
 
+    await desk.getByRole("button", { name: /^Open the evidence inspector/ }).click();
     const railTabs = desk.getByRole("tablist", { name: "Rail contents" });
     await railTabs.getByRole("tab", { name: /^Artifacts/ }).click();
     await desk.getByRole("button", { name: "View Working synthesis" }).click();
@@ -996,6 +1149,7 @@ test.describe("research desk tabs", () => {
     ).toBeVisible();
     await desk.getByRole("button", { name: "Show workspace" }).click();
     await expect(rail).toBeVisible();
+    await desk.getByRole("button", { name: /^Open the evidence inspector/ }).click();
     await expect(desk.getByLabel("Run evidence and links")).toBeVisible();
 
     await desk.getByRole("button", { name: "New research" }).click();
@@ -1103,6 +1257,78 @@ test.describe("research desk tabs", () => {
     await expect(viewer.locator(".research-studio__code")).toContainText("graph TD;");
   });
 
+  test("Studio creates, opens, exports and removes every extractive format", async ({ page, browserName }) => {
+    await openResearchDesk(page);
+    await deskTab(page, /^Studio/).click();
+    const studio = page.locator(".research-studio");
+    for (const kind of ["diagram", "blog", "slides", "infographic", "thread"]) {
+      await studio.locator(`button.research-studio-card[data-kind="${kind}"]`).click();
+      const config = page.getByRole("dialog");
+      await config.getByLabel("Research run").selectOption(COMPLETED_MISSION.id);
+      await config.getByRole("button", { name: /Generate / }).click();
+      const row = studio.locator(`[data-generation-id="gen-${kind}-1"]`);
+      await expect(row).toBeVisible();
+      await row.locator("button.research-studio-row__title").focus();
+      await page.keyboard.press("Enter");
+      const viewer = page.getByRole("dialog");
+      await expect(viewer).toBeVisible();
+      if (kind === "diagram") {
+        const summary = viewer.locator("summary");
+        await viewer.getByRole("button", { name: "Close viewer", exact: true }).focus();
+        for (let index = 0; index < 16 && !await summary.evaluate((node) => node === document.activeElement); index += 1) {
+          await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
+        }
+        await expect(summary).toBeFocused();
+        await page.keyboard.press("Enter");
+        await expect(viewer.locator("details")).toHaveAttribute("open", "");
+      }
+      if (kind === "blog") {
+        await viewer.getByRole("button", { name: /Open in Markdown editor/ }).focus();
+        await page.keyboard.press("Enter");
+        const editor = page.getByRole("dialog");
+        await editor.getByRole("textbox", { name: "Draft markdown" }).fill("# Edited findings\n\nMy local revision.");
+        await editor.getByRole("button", { name: "Rich preview", exact: true }).click();
+        await expect(editor.getByRole("heading", { name: "Edited findings" })).toBeVisible();
+        const editedDownload = page.waitForEvent("download");
+        await editor.getByRole("button", { name: /Download .md/ }).click();
+        const edited = await editedDownload;
+        expect(await edited.failure()).toBeNull();
+        expect(await readFile((await edited.path())!, "utf8")).toBe("# Edited findings\n\nMy local revision.");
+        await page.keyboard.press("Escape");
+        await expect(viewer.getByRole("button", { name: /Open in Markdown editor/ })).toBeFocused();
+        await expect(viewer).toContainText("Cited findings from the completed research.");
+      }
+      if (kind === "slides") {
+        await viewer.getByRole("button", { name: "Next slide" }).click();
+        await expect(viewer.locator(".research-studio-viewer__slide-title")).toHaveText("Second finding");
+      }
+      if (kind === "infographic") {
+        await expect(viewer.getByRole("img", { name: /Infographic poster/ })).toBeVisible();
+        const svg = page.waitForEvent("download");
+        await viewer.getByRole("button", { name: /Download .svg/ }).click();
+        const completedSvg = await svg;
+        expect(completedSvg.suggestedFilename()).toMatch(/\.svg$/);
+        expect(await completedSvg.failure()).toBeNull();
+        expect(await readFile((await completedSvg.path())!, "utf8")).toContain("42% — cited finding");
+      }
+      const download = page.waitForEvent("download");
+      await viewer.getByRole("button", { name: /Download .md/ }).click();
+      const completedMarkdown = await download;
+      expect(completedMarkdown.suggestedFilename()).toMatch(/\.md$/);
+      expect(await completedMarkdown.failure()).toBeNull();
+      const expectedContent: Record<string, string> = {
+        diagram: "graph TD;", blog: "Cited findings from the completed research.",
+        slides: "Second finding", infographic: "42%", thread: "Second cited finding",
+      };
+      expect(await readFile((await completedMarkdown.path())!, "utf8")).toContain(expectedContent[kind]);
+      await page.keyboard.press("Escape");
+      await expect(row.locator("button.research-studio-row__title")).toBeFocused();
+      await row.getByRole("button", { name: "✕ Remove", exact: true }).click();
+      await row.getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(row).toHaveCount(0);
+    }
+  });
+
   test("Resources previews URL batches, groups by workflow, filters by type, and restores detail focus", async ({ page }) => {
     await openResearchDesk(page);
     await deskTab(page, /^Resources/).click();
@@ -1151,7 +1377,8 @@ test.describe("research desk tabs", () => {
 
     // Detail overlay: opens focus-trapped, closes back to the trigger.
     const opener = uncited.getByRole("button", { name: /acme\/vector-bench — open details/ });
-    await opener.click();
+    await opener.focus();
+    await page.keyboard.press("Enter");
     const overlay = page.getByRole("dialog", { name: "acme/vector-bench" });
     await expect(overlay).toBeVisible();
     // Focus moved into the dialog (focus trap active).
@@ -1174,7 +1401,10 @@ test.describe("research desk tabs", () => {
       }
     });
     const previewTrigger = overlay.getByRole("button", { name: "Preview in browser" });
-    await previewTrigger.click();
+    // Safari pointer activation does not focus buttons. Exercise the
+    // keyboard path when asserting where keyboard focus returns.
+    await previewTrigger.focus();
+    await page.keyboard.press("Enter");
     const browserDialog = page.getByRole("dialog", { name: /Resource browser.*acme\/vector-bench/ });
     await expect(browserDialog).toContainText("Remote content is off");
     await expect(browserDialog.locator("iframe")).toHaveCount(0);
@@ -1201,7 +1431,8 @@ test.describe("research desk tabs", () => {
     const opener = page.getByRole("button", {
       name: /Efficient ANN search — open details/,
     });
-    await opener.click();
+    await opener.focus();
+    await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog", { name: "Efficient ANN search" });
     await dialog.getByRole("button", { name: "Read", exact: true }).click();
 
@@ -1220,11 +1451,16 @@ test.describe("research desk tabs", () => {
         (canvas) => (canvas as HTMLCanvasElement).width,
       ))
       .toBeGreaterThan(100);
-    for (let index = 0; index < 8; index += 1) {
-      await page.keyboard.press("Tab");
-      await expect
-        .poll(() => dialog.evaluate((node) => node.contains(document.activeElement)))
-        .toBe(true);
+    // Plain Tab must stay contained even when WebKit's native navigation skips
+    // buttons. Start inside the cycle, not at a first/last wrapping boundary.
+    for (const key of ["Tab", "Shift+Tab"]) {
+      await exitFocus.focus();
+      for (let index = 0; index < 8; index += 1) {
+        await page.keyboard.press(key);
+        await expect
+          .poll(() => dialog.evaluate((node) => node.contains(document.activeElement)))
+          .toBe(true);
+      }
     }
 
     const viewport = page.viewportSize();
@@ -1687,7 +1923,7 @@ test.describe("research desk tabs", () => {
       });
     });
 
-    test("coalesces revision checks while keyboard focus moves inside suggested topics", async ({ page }) => {
+    test("coalesces revision checks while keyboard focus moves inside suggested topics", async ({ page, browserName }) => {
       const handles = await openResearchDesk(page);
       handles.recommendationResponse = {
         recommendations: [START_TOPIC_RECOMMENDATION],
@@ -1710,7 +1946,7 @@ test.describe("research desk tabs", () => {
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await expect.poll(() => handles.recommendationRevisionRequests).toBe(revisionRequests + 1);
       await refresh.focus();
-      await page.keyboard.press("Tab");
+      await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
       await expect(topics.getByText("View verification checks").first()).toBeFocused();
       await page.evaluate(() => {
         window.dispatchEvent(new Event("focus"));

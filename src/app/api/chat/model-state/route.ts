@@ -10,7 +10,18 @@ import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
-import { modelControlCapabilities } from "@/lib/model-control-capabilities";
+import {
+  CODEX_REASONING_CONTROL_PARAMETER,
+  COPILOT_REASONING_CONTROL_PARAMETER,
+  COVEN_SPEED_CONTROL_PARAMETER,
+  modelControlCapabilities,
+  withForwardableRuntimeCliControls,
+} from "@/lib/model-control-capabilities";
+import { covenRunSupportsSpeed } from "@/app/api/chat/send/chat-send-capabilities";
+import {
+  NO_DIRECT_REASONING,
+  directTransportReasoningGates,
+} from "@/lib/server/direct-transport-reasoning-gates";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { harnessSpawnEnv, warmHarnessSpawnPath } from "@/lib/harness-spawn-env";
 import { hermesApiConfig } from "@/lib/hermes-responses-stream";
@@ -135,11 +146,9 @@ export async function GET(req: Request) {
     return jsonError("invalid model", 400);
   }
 
-  if (sessionId) {
-    const conversation = await loadConversation(sessionId);
-    if (conversation && conversation.familiarId !== familiarId) {
-      return jsonError("not found", 404);
-    }
+  const conversation = sessionId ? await loadConversation(sessionId) : null;
+  if (conversation && conversation.familiarId !== familiarId) {
+    return jsonError("not found", 404);
   }
 
   const state = await currentState(familiarId, sessionId, previewModel);
@@ -163,14 +172,21 @@ export async function GET(req: Request) {
     !isSshRuntime(binding.runtime) &&
     !state.runtime?.startsWith("ssh:");
   const canReadHermesInventory = bareLocalHermes && localInventoryRequest;
-  const canReadCliInventory = localInventoryRequest &&
-    canonicalHarnessId(binding.harness) === state.harness &&
+  // Claude and Codex discovery only opens the CLI's control protocol: no
+  // thread, prompt, or tool runs, and results are capped and cached.
+  // Authenticated remote callers can read the same catalog. Conversations
+  // retain their own harness after rebind; discovery follows that harness.
+  const canReadCliInventory =
     !isSshRuntime(binding.runtime) && !state.runtime?.startsWith("ssh:");
   const inventory = await listRuntimeModelInventory(
     state.harness,
     familiarId,
     {
       allowCliInventory: canReadCliInventory,
+      inventoryRestriction: !canReadCliInventory ? "remote-runtime"
+        : (state.harness === "hermes" || state.harness === "opencode") && !localInventoryRequest ? "local-only"
+        : state.harness === "hermes" && !bareLocalHermes ? "profile-managed"
+        : undefined,
       allowOpenCodeInventory: canReadOpenCodeInventory,
       allowHermesInventory: canReadHermesInventory,
     },
@@ -186,8 +202,40 @@ export async function GET(req: Request) {
       })
     : null;
   const hermesDirect = bareLocalHermes;
-  const controls = modelControlCapabilities(state.harness, state.effectiveModel)
-    .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
+  // The Speed control is offered only when the send route could forward it:
+  // a local Claude binding whose installed `coven run` advertises `--speed`.
+  // Offering it anywhere else would render a chip whose pick the send route
+  // then rejects as unsupported.
+  const localBinding =
+    canonicalHarnessId(binding.harness) === state.harness &&
+    !isSshRuntime(binding.runtime) &&
+    !state.runtime?.startsWith("ssh:");
+  const speedForwardable =
+    state.harness === "claude" &&
+    localBinding &&
+    (await covenRunSupportsSpeed().catch(() => false));
+  // Codex and Copilot carry Thinking on their direct transports (#5905). Ask
+  // the same routing helpers the send route uses, with the native session
+  // this chat would resume, so the chip is offered only when the launch can
+  // forward the flag. A pending handoff starts a fresh native session.
+  const resumeSessionId =
+    conversation && !conversation.pendingRuntimeHandoff
+      ? conversation.harnessSessionId ?? sessionId
+      : null;
+  const reasoningGates =
+    localBinding && (state.harness === "codex" || state.harness === "copilot")
+      ? await directTransportReasoningGates({ familiarId, harness: state.harness, resumeSessionId })
+          .catch(() => NO_DIRECT_REASONING)
+      : NO_DIRECT_REASONING;
+  const controls = withForwardableRuntimeCliControls(
+    modelControlCapabilities(state.harness, state.effectiveModel)
+      .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null)),
+    new Set<string>([
+      ...(speedForwardable ? [COVEN_SPEED_CONTROL_PARAMETER] : []),
+      ...(reasoningGates.codex ? [CODEX_REASONING_CONTROL_PARAMETER] : []),
+      ...(reasoningGates.copilot ? [COPILOT_REASONING_CONTROL_PARAMETER] : []),
+    ]),
+  );
   return NextResponse.json({
     ok: true,
     state,

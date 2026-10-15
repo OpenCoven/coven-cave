@@ -44,8 +44,8 @@ assert.match(
 );
 assert.match(
   submitRow,
-  /disabled=\{!projectLaunchReady \|\| \(!input\.trim\(\) && attachments\.length === 0\)\}/,
-  "the send control stays disabled until the draft or an attachment is present",
+  /disabled=\{attachmentsReading \|\| !projectLaunchReady \|\| \(!input\.trim\(\) && attachments\.length === 0\)\}/,
+  "the send control waits for reads and requires a draft or an attachment",
 );
 
 // Queue: while busy with a staged draft, the same circle becomes a queue-send

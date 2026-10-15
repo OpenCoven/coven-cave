@@ -425,6 +425,34 @@
   .cave-thread-signal-overlay .tsc-foot {
     grid-area: foot;
   }
+
+  /* No signals means no section and no queue, so the right column would be
+     60% of the card with nothing in it (issue 5898). The rationale moves up
+     beside the tiles instead. */
+  .cave-thread-signal-overlay > .tsc-card--no-signals {
+    grid-template-areas:
+      "head head"
+      "tiles why"
+      "foot foot";
+  }
+
+  /* With no rationale open either, the tiles take the whole width. */
+  .cave-thread-signal-overlay > .tsc-card--no-signals.tsc-card--no-detail {
+    grid-template-areas:
+      "head"
+      "tiles"
+      "foot";
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The transcript's "New response content" pill is sticky at the bottom of the
+   scroller, and the Thread Signal card floats over that same bottom edge, so
+   the pill painted over the card's corner, where its primary "Fix N critical"
+   action sits (issue 5898). New content is under the card anyway; the pill
+   returns once the card is dismissed. */
+.cave-chat-overlay-host:has(> .cave-thread-signal-overlay) .cave-new-response-content {
+  display: none;
 }
 
 /* Recommended follow-up: the agent lists next steps best-first, so the top

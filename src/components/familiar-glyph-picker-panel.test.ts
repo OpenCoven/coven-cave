@@ -26,3 +26,6 @@ assert.match(source, /clearGlyphOverride/, "Must support clearing the override")
 assert.match(source, /Recent/, "Recent strip must be present");
 
 console.log("familiar-glyph-picker-panel.test.ts: ok");
+
+assert.doesNotMatch(source, /window.addEventListener\("keydown"/, "a retained hidden picker cannot capture another editor's shortcuts");
+assert.match(source, /event.target.closest\('\[data-glyph-button="true"\]'\)/, "reset requires a focused glyph button inside this picker");

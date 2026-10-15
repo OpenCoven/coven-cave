@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test.use({ serviceWorkers: "block" });
 test.describe.configure({ mode: "serial" });
 
 const FAMILIARS = Array.from({ length: 60 }, (_, index) => ({
@@ -36,7 +37,7 @@ async function gotoChatFamiliarSettings(page: Page) {
     const nav = page.locator('aside[aria-label="Sidebar"]');
     const chatDestination = nav.getByRole("button", { name: /^Chat\b/ }).first();
     if (!(await chatDestination.isVisible().catch(() => false))) {
-      const openNav = page.getByRole("button", { name: /^Open navigation \((?:⌘|Ctrl)B\)$/ });
+      const openNav = page.getByRole("button", { name: /^Open navigation \((?:⌘|Ctrl\+)B\)$/ });
       if (await openNav.isVisible().catch(() => false)) await openNav.click();
     }
     // The Chat row lives in the rail's second section (cave-24d2r); when the
@@ -91,16 +92,66 @@ test("Chat Familiar Settings remains reachable in a keyboard-shrunk viewport", a
   await gotoChatFamiliarSettings(page);
 
   const settings = page.getByRole("region", { name: "Settings for Familiar 01" });
-  await expect(settings.getByRole("tablist", { name: "Familiar settings" })).toBeVisible();
-  await expect(settings.getByRole("tab", { name: "Identity", exact: true })).toBeVisible();
-  await expect(settings.getByRole("tab", { name: "Memory", exact: true })).toBeVisible();
-  await expect(settings.getByText("Tune Familiar 01 without leaving Chat.")).toBeVisible();
+  const panel = page.locator(".familiar-tab__main");
+  await expect(panel).toHaveAttribute("data-short-viewport", "true");
+  const section = settings.getByRole("combobox", { name: "Settings section" });
+  await expect(section).toBeVisible();
+  await section.focus();
+  await expect(section).toBeFocused();
+  const bounds = await section.boundingBox();
+  const visualViewport = await page.evaluate(() => ({
+    top: window.visualViewport!.offsetTop,
+    bottom: window.visualViewport!.offsetTop + window.visualViewport!.height,
+  }));
+  expect(bounds!.y).toBeGreaterThanOrEqual(visualViewport.top);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(visualViewport.bottom);
+  await expect(section).toHaveValue("identity");
+  await expect(section.locator("option")).toHaveText(["Identity", "Brain", "Memory", "Vault", "Chat"]);
+  await expect(settings.getByRole("heading", { name: "Identity", exact: true })).toBeVisible();
 
-  await settings.getByRole("tab", { name: "Memory", exact: true }).click();
-  await expect(settings.getByRole("tab", { name: "Memory", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  const name = settings.getByRole("textbox", { name: "Display name", exact: true });
+  await name.fill("Keyboard draft");
+  const inputBounds = await name.boundingBox();
+  expect(inputBounds!.y).toBeGreaterThanOrEqual(visualViewport.top);
+  expect(inputBounds!.y + inputBounds!.height).toBeLessThanOrEqual(visualViewport.bottom);
+  const resizeVisualViewport = (height: number) => page.evaluate(nextHeight => {
+    Object.assign(window.visualViewport!, { height: nextHeight });
+    window.visualViewport!.dispatchEvent(new Event("resize"));
+  }, height);
+  // iOS may also pan the visual viewport after opening the keyboard.
+  await page.evaluate(() => {
+    Object.assign(window.visualViewport!, { offsetTop: 200 });
+    window.visualViewport!.dispatchEvent(new Event("scroll"));
+  });
+  await section.focus();
+  await expect.poll(async () => (await section.boundingBox())!.y).toBeGreaterThanOrEqual(200);
+  const pannedBounds = await section.boundingBox();
+  expect(pannedBounds!.y + pannedBounds!.height).toBeLessThanOrEqual(470);
+  await name.focus();
+  const pannedInput = await name.boundingBox();
+  expect(pannedInput!.y).toBeGreaterThanOrEqual(200);
+  expect(pannedInput!.y + pannedInput!.height).toBeLessThanOrEqual(470);
+  await page.evaluate(() => { Object.assign(window.visualViewport!, { offsetTop: 0 }); });
+  await resizeVisualViewport(720);
+  await expect(panel).not.toHaveAttribute("data-short-viewport", "true");
+  await expect(name).toHaveValue("Keyboard draft");
+  const body = settings.locator(".familiar-tab__settings-body");
+  const savedScroll = await body.evaluate(element => {
+    element.scrollTop = 80;
+    element.dispatchEvent(new Event("scroll"));
+    return element.scrollTop;
+  });
+  expect(savedScroll).toBeGreaterThan(0);
+  await resizeVisualViewport(270);
+  await expect(panel).toHaveAttribute("data-short-viewport", "true");
+  await resizeVisualViewport(720);
+  await expect(panel).not.toHaveAttribute("data-short-viewport", "true");
+  await expect.poll(() => body.evaluate(element => element.scrollTop)).toBe(savedScroll);
+  await expect(name).toHaveValue("Keyboard draft");
+
+  await section.selectOption("memory");
+  await expect(section).toHaveValue("memory");
+  await expect(settings.getByRole("heading", { name: "Memory", exact: true })).toBeVisible();
 });
 
 test("the migrated Familiar Settings surface keeps its nested controls", async ({ page }) => {

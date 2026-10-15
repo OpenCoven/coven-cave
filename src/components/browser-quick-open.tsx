@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { BrowserTab } from "@/components/browser-pane";
+import { useKeySymbols } from "@/lib/platform-keys";
 
 // ── BrowserQuickOpen ──────────────────────────────────────────────────────────
 //
@@ -43,6 +44,7 @@ function favicon(tab: BrowserTab): string {
 }
 
 export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
+  const keys = useKeySymbols();
   const [query, setQuery] = useState("");
   const [highlightIdx, setHighlightIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -116,7 +118,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
       >
         {/* Search input */}
         <div className="flex items-center gap-2.5 border-b border-[var(--border-hairline)] px-4 py-3">
-          <span className="text-sm text-[var(--text-muted)]">⌘</span>
+          <span className="text-sm text-[var(--text-muted)]">{keys.mod}</span>
           <input
             ref={inputRef}
             type="text"
@@ -207,7 +209,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
 
                     {/* Highlight arrow */}
                     {isHighlighted && !isActive && (
-                      <span className="shrink-0 text-xs text-[var(--text-muted)]">↵</span>
+                      <span className="shrink-0 text-xs text-[var(--text-muted)]">{keys.enter}</span>
                     )}
                   </button>
                 </li>
@@ -219,7 +221,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
         {/* Footer hint */}
         <div className="flex items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[var(--text-muted)]">
           <span className="text-[length:var(--text-2xs)]">↑↓ navigate</span>
-          <span className="text-[length:var(--text-2xs)]">↵ open</span>
+          <span className="text-[length:var(--text-2xs)]">{keys.enter} open</span>
           <span className="text-[length:var(--text-2xs)]">esc close</span>
         </div>
       </div>

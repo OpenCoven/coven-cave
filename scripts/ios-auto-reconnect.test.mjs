@@ -10,6 +10,7 @@ const app = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
 const chatView = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
 const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
+const coordinator = await read("apps/ios/CovenCave/CovenCave/State/ConnectionRefreshCoordinator.swift");
 
 // --- One supervisor owns automatic backoff + heartbeat ----------------------
 assert.match(
@@ -68,8 +69,23 @@ assert.match(
 // --- Live transport failures feed the same single-flight supervisor ----------
 assert.match(
   model,
-  /connectionMonitor\.pathUpdateHandler[\s\S]*?path\.status == \.satisfied[\s\S]*?updateConnectionPath\(available: pathAvailable\)[\s\S]*?func updateConnectionPath[\s\S]*?requestConnectionRecovery\(\.networkAvailable\)[\s\S]*?connectionState = \.unreachable\(\.diagnosis\(for: \.offline\)\)/,
-  "NWPath loss should make the state honest immediately and recovery should wait for the satisfied edge",
+  /connectionMonitor\.pathUpdateHandler[\s\S]*?ConnectionPathPolicy\.allowsAttempt\(path\.status\)[\s\S]*?updateConnectionPath\(available: pathAvailable\)[\s\S]*?func updateConnectionPath[\s\S]*?requestConnectionRecovery\(\.networkAvailable\)[\s\S]*?connectionState = \.unreachable\(\.diagnosis\(for: \.offline\)\)/,
+  "NWPath loss should make the state honest immediately and recovery should wait for an attemptable edge",
+);
+// An on-demand path ("a new connection may activate the path") is not offline:
+// refusing to attempt it is what kept iPhones offline for good.
+assert.match(
+  coordinator,
+  /enum ConnectionPathPolicy[\s\S]*?case \.satisfied, \.requiresConnection: return true[\s\S]*?case \.unsatisfied: return false/,
+  "only an unsatisfied path should refuse a connection attempt",
+);
+// A desktop that answered a refresh started while the path flag already read
+// unavailable outranks that flag; otherwise Retry can never reconnect. A path
+// lost mid-probe still wins.
+assert.match(
+  model,
+  /let pathUnavailableAtLaunch = !connectionPathAvailable[\s\S]*?if connectionPathAvailable \{[\s\S]{0,80}pathRecoveredByProbe = false[\s\S]{0,80}\} else \{[\s\S]{0,40}guard pathUnavailableAtLaunch, case \.found = refresh\.result else \{[\s\S]{0,80}connectionState = \.unreachable\(\.diagnosis\(for: \.offline\)\)[\s\S]{0,60}connectionPathAvailable = true[\s\S]*?connectionState = \.connected\s+if pathRecoveredByProbe \{\s+requestConnectionRecovery\(\.networkAvailable\)/,
+  "only a found probe may override the offline path flag, and it must re-arm supervision",
 );
 assert.match(
   model,

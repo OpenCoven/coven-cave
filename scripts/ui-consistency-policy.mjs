@@ -129,6 +129,14 @@ export const FUTURE_RULE_IDS = Object.freeze([
 export const SEMANTIC_EXCEPTIONS = Object.freeze([
   {
     rule: "components/no-native-select",
+    path: "src/components/familiar-tab-settings.tsx",
+    excerpt:
+      '<select className="focus-ring" value={displayedTab} onChange={event => select(event.target.value as VisibleTab)}>',
+    reason:
+      "Compact Familiar Settings navigation intentionally retains the native platform picker and keyboard selection behavior in narrow panes.",
+  },
+  {
+    rule: "components/no-native-select",
     path: "src/components/role-surfaces/chart-room-parts.tsx",
     excerpt:
       '<select className="focus-ring" value={value} aria-label={label} disabled={disabled} onChange={(event) => onChange(event.target.value)} >',

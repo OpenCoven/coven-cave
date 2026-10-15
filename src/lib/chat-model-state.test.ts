@@ -7,13 +7,17 @@ import {
   modelApplicationFromRun,
   modelRejectionInError,
   resolveChatModelState,
+  USAGE_LIMIT_APPLICATION_REASON,
+  usageLimitInError,
 } from "./chat-model-state.ts";
 
 const base = {
   familiarId: "salem",
   harness: "claude",
   runtime: "local:/tmp/coven-cave",
-  globalDefaultModel: "openai/gpt-5.5",
+  // Same provider as the harness: a Claude familiar's fallback must be a model
+  // Claude Code can run (#5954 — cross-provider defaults now fall through).
+  globalDefaultModel: "anthropic/claude-opus-5",
   familiarModel: "anthropic/claude-sonnet-4-6",
 };
 
@@ -70,7 +74,7 @@ assert.equal(
   resolveChatModelState({
     ...base,
     sessionModel: "anthropic/claude-opus-4-7",
-    nextMessageModel: "openai/gpt-5.5",
+    nextMessageModel: "anthropic/claude-haiku-4-5",
   }).source,
   "next-message",
 );
@@ -328,6 +332,39 @@ assert.deepEqual(
   "echo + run errored for a NON-model reason ⇒ pending (model was forwarded, not confirmed)",
 );
 
+// #5938: a spent plan allowance is NOT a model rejection. Claude Code's quota
+// notice names no model-rejection word, and a provider line that says "model
+// unavailable: usage limit reached" names the model only incidentally — the id
+// was accepted; the plan is spent. The usage-limit check runs first.
+{
+  const CLAUDE_NOTICE =
+    "You've reached your Fable limit. Switch to another model, or manage usage credits at " +
+    "claude.ai/settings/usage?from=cc_cli_limit_message, to continue.";
+  assert.equal(modelRejectionInError(CLAUDE_NOTICE), false, "the Claude quota notice is not a model rejection");
+  assert.equal(usageLimitInError(CLAUDE_NOTICE)?.kind, "quota", "the Claude quota notice is a usage limit");
+  assert.equal(usageLimitInError("401 Unauthorized: missing API key"), null, "an auth failure is not a usage limit");
+
+  const ambiguous = "model unavailable: usage limit reached";
+  assert.equal(modelRejectionInError(ambiguous), true, "fixture: the rejection matcher alone would call this failed");
+  const limited = modelApplicationFromRun({
+    confirmedModel: "anthropic/claude-fable-5-1",
+    isError: true,
+    errorText: ambiguous,
+  });
+  assert.deepEqual(
+    limited,
+    { supported: true, reason: USAGE_LIMIT_APPLICATION_REASON },
+    "the usage-limit check precedes the rejection check: pending with the limit reason, not failed",
+  );
+  assert.equal(modelApplicationForHarness(limited).state, "pending", "a quota keeps the model pending");
+  assert.equal(USAGE_LIMIT_APPLICATION_REASON, "Usage limit reached for the selected model.");
+  assert.deepEqual(
+    modelApplicationFromRun({ confirmedModel: "openai/gpt-5.6-sol", isError: true, errorText: "429 Too Many Requests: rate limit" }),
+    { supported: true },
+    "throttling keeps the model pending with the generic reason",
+  );
+}
+
 // Round-trip guard: coven echoes the namespaced id verbatim, so the application
 // pipeline confirms an exact match against the id Cave sent. If anyone later
 // normalizes one side (strips provider/), this applied-state path breaks.
@@ -341,6 +378,40 @@ assert.deepEqual(
     ),
     { state: "applied", reason: "Runtime confirmed the selected model." },
     "a verbatim namespaced echo round-trips to applied",
+  );
+}
+
+// #5954: a familiar rebound to another runtime (cody: codex → claude) keeps
+// its chats saved on the old runtime. A model from another provider never
+// reaches a single-provider runtime — send rejects it as
+// model_runtime_mismatch — so it falls through to the next source instead of
+// leaking into the composer ("Codex · anthropic/claude-opus-5-5") and failing
+// the next send.
+{
+  const codexChat = {
+    familiarId: "cody",
+    harness: "codex",
+    runtime: "local:/tmp/river-oaks",
+    familiarModel: "anthropic/claude-opus-5-5",
+  };
+  const leaked = resolveChatModelState({ ...codexChat, globalDefaultModel: "openai/gpt-6-astra" });
+  assert.equal(leaked.effectiveModel, "openai/gpt-6-astra", "the Claude default skips to a Codex-compatible fallback");
+  assert.equal(leaked.source, "global-default");
+  assert.equal(leaked.familiarDefaultModel, null, "a cross-provider familiar default is not offered as this runtime's default");
+
+  const noCompatible = resolveChatModelState({ ...codexChat, globalDefaultModel: "anthropic/claude-opus-5" });
+  assert.equal(noCompatible.effectiveModel, "", "with no compatible fallback, the runtime's own default applies");
+  assert.equal(noCompatible.source, "runtime-default");
+
+  assert.equal(
+    resolveChatModelState({ ...codexChat, globalDefaultModel: "openai/gpt-6-astra", sessionModel: "anthropic/claude-opus-5-5" }).source,
+    "global-default",
+    "a cross-provider session intent is skipped the same way",
+  );
+  assert.equal(
+    resolveChatModelState({ ...codexChat, familiarModel: "gpt-6-astra" }).effectiveModel,
+    "gpt-6-astra",
+    "a bare id carries no provider claim and still applies",
   );
 }
 

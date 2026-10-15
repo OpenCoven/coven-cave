@@ -237,6 +237,12 @@ export function ComposerActionsMenu({
                 <PopoverSeparator />
                 <AddMenuRow
                   icon="ph:sliders-horizontal"
+                  label="Runtime…"
+                  hint={context.runtimeName}
+                  onSelect={() => openContextPicker("runtime")}
+                />
+                <AddMenuRow
+                  icon="ph:sliders-horizontal"
                   label="Model & tuning…"
                   title={context.summary}
                   onSelect={() => openContextPicker("model")}

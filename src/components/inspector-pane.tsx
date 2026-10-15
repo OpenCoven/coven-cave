@@ -419,7 +419,7 @@ function MemoryTab({
           onChange={(event) => setQuery(event.target.value)}
           aria-label="Filter memory files"
           placeholder="Filter memory files…"
-          className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+          className="ui-search-field focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2 text-[length:var(--text-xs)]">

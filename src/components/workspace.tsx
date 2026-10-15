@@ -236,6 +236,8 @@ import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-type
 import { fetchProjectsFromCache } from "@/lib/use-projects-cache";
 import { FirstProjectGate } from "@/components/first-project-gate";
 import { resolveFirstProjectGatePolicy } from "@/lib/first-project-gate-policy";
+import { preferredFirstProjectGateFamiliarId } from "@/lib/first-project-gate-policy";
+import { readSetupOpenOrigin, registerSetupHost, type SetupOpenOrigin } from "@/lib/setup-events";
 import {
   clearPendingFirstProjectAccessSnapshot,
   readPendingFirstProjectAccessSnapshot,
@@ -1258,6 +1260,13 @@ export function Workspace() {
   const activeChatSessionIdRef = useRef<string | null>(null);
   activeChatSessionIdRef.current = activeChatSessionId;
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  // Who opened the setup dialog (#5982); decides whether closing it redirects.
+  const onboardingOriginRef = useRef<SetupOpenOrigin>("surface");
+  // Home asked for a project while its candidate familiar has none (#5982):
+  // the explicit request lets the gate open without an active familiar.
+  const [requestedGateFamiliarId, setRequestedGateFamiliarId] = useState<string | null>(null);
+  // Monotonic counter: each increment asks the titlebar ProjectPicker to open.
+  const [projectPickerOpenRequest, setProjectPickerOpenRequest] = useState(0);
   const onboardingResolved = true;
   // Lazy-load onboarding on first use, then keep its host mounted while closed.
   // Server-owned bootstrap progress persists independently; keeping the host
@@ -1658,8 +1667,18 @@ export function Workspace() {
     const openCreate = () => {
       setOnboardingOpen(true);
     };
-    window.addEventListener("cave:onboarding-open", openCreate);
-    return () => window.removeEventListener("cave:onboarding-open", openCreate);
+    // The event detail says who asked (#5982): the banner and Settings reopen
+    // setup for its own sake, so closing it must not redirect to Familiars.
+    const onOpenRequest = (event: Event) => {
+      onboardingOriginRef.current = readSetupOpenOrigin(event);
+      openCreate();
+    };
+    const unregisterHost = registerSetupHost();
+    window.addEventListener("cave:onboarding-open", onOpenRequest);
+    return () => {
+      window.removeEventListener("cave:onboarding-open", onOpenRequest);
+      unregisterHost();
+    };
   }, []);
 
   useEffect(() => {
@@ -2407,20 +2426,72 @@ export function Workspace() {
 
   const openOnboarding = useCallback(() => {
     setOnboardingOpen(true);
+    onboardingOriginRef.current = "surface";
   }, []);
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
     void loadFamiliars();
+    const origin = onboardingOriginRef.current;
+    onboardingOriginRef.current = "surface";
     // Familiar creation lives in the app now (the Summoning Circle on the
     // Familiars surface), not in the wizard. A user who leaves setup with a
     // live daemon and an empty roster can't chat yet — walk them to the
     // circle's invitation instead of dropping them on a familiar-less Home.
-    if (daemonRunning && familiars.length === 0) setMode("agents");
+    // Re-entry from the progress banner or Settings (#5982) stays put: the
+    // person came back to setup on purpose and expects to land where they were.
+    if (origin === "surface" && daemonRunning && familiars.length === 0) setMode("agents");
   }, [loadFamiliars, daemonRunning, familiars.length, setMode]);
 
   useEffect(() => {
     if (!projectsLoading) setProjectsInitiallyResolved(true);
   }, [projectsLoading]);
+
+  // Home's "Choose a project…" toast now also acts (#5982): when the familiar
+  // that would run the chat has no accessible project, open the first-project
+  // gate for it; otherwise open the titlebar project picker. Never auto-select.
+  // The decision waits for the roster and the candidate's access read to
+  // settle — a send during a cold boot must not fall through to the picker
+  // just because the familiar-scoped projects fetch is still in flight.
+  const [projectRequestPending, setProjectRequestPending] = useState(false);
+  const requestProjectForHome = useCallback(() => {
+    setProjectRequestPending(true);
+  }, []);
+  useEffect(() => {
+    if (!projectRequestPending) return;
+    if (!familiarsLoaded || accessibleGateProjectsLoading) return;
+    // "Not loading" is not "settled": when the roster lands the candidate
+    // flips from none to a familiar, and for one render the scoped read has
+    // neither started nor finished for it. Deciding then sent a first-run send
+    // to the picker instead of the gate (#5890 CI). Wait for this familiar's
+    // read to succeed or fail.
+    if (!accessibleGateProjectsLoadedSuccessfully && !accessibleGateProjectsError) return;
+    setProjectRequestPending(false);
+    const candidate = preferredFirstProjectGateFamiliarId(activeId, visibleFamiliars);
+    const accessKnownEmpty =
+      !accessibleGateProjectsError && accessibleGateProjectsLoadedSuccessfully && accessibleGateProjects.length === 0;
+    if (candidate && accessKnownEmpty) {
+      setRequestedGateFamiliarId(candidate);
+      return;
+    }
+    setProjectPickerOpenRequest((count) => count + 1);
+  }, [
+    accessibleGateProjects.length,
+    accessibleGateProjectsError,
+    accessibleGateProjectsLoadedSuccessfully,
+    accessibleGateProjectsLoading,
+    activeId,
+    familiarsLoaded,
+    projectRequestPending,
+    visibleFamiliars,
+  ]);
+  useEffect(() => {
+    if (!requestedGateFamiliarId) return;
+    const stillCandidate = preferredFirstProjectGateFamiliarId(activeId, visibleFamiliars) === requestedGateFamiliarId;
+    const offHomeOrChat = mode !== "home" && mode !== "chat";
+    if (offHomeOrChat || !stillCandidate || accessibleGateProjects.length > 0) {
+      setRequestedGateFamiliarId(null);
+    }
+  }, [accessibleGateProjects.length, activeId, mode, requestedGateFamiliarId, visibleFamiliars]);
 
   const canReconcilePendingFirstProjectGrant = familiarsLoaded && familiarRosterLoadedSuccessfully && projectsLoadedSuccessfully;
   const reconciledPendingFirstProjectGrant = resolvePendingFirstProjectAccessSnapshot({
@@ -4097,6 +4168,7 @@ export function Workspace() {
     registeredProjects,
     accessibleProjects: accessibleGateProjects,
     pendingGrant: reconciledPendingFirstProjectGrant,
+    requestedFamiliarId: requestedGateFamiliarId,
     onboardingResolved,
     onboardingOpen,
     mode,
@@ -4647,7 +4719,9 @@ export function Workspace() {
     ) : (
       <HomeComposer
         familiars={resolvedFamiliars}
+        rosterReady={familiarsLoaded && familiarRosterLoadedSuccessfully}
         project={selectedWorkspaceProject}
+        onRequestProject={requestProjectForHome}
         taskOrigin={homeTaskOrigin}
         actingFamiliarId={
           actingFamiliar.kind === "resolved" ? actingFamiliar.familiarId : null
@@ -4697,8 +4771,10 @@ export function Workspace() {
   const statusPr = sessionPrStatus(statusSession?.pullRequest);
   const primaryStatusPageId = primaryPaneRequest?.requestedPageId ?? mode;
   const statusBarVisibility = statusContextPolicy(primaryStatusPageId);
+  // One home per scope item (#5954): in Chat the composer owns the selected
+  // model and the project, so the status bar keeps branch, PR and Tasks.
   const statusModel =
-    mode === "home" || mode === "chat"
+    mode === "home"
       ? statusSession?.model ?? active?.model ?? null
       : null;
   const statusBarHasContext = Boolean(
@@ -4716,7 +4792,7 @@ export function Workspace() {
       ? null
       : statusBarVisibility === "persistent" || (statusBarVisibility === "contextual" && statusBarHasContext) ? (
       <StatusBar
-        projectName={statusProject?.name ?? selectedWorkspaceProject?.name ?? null}
+        projectName={mode === "chat" ? null : statusProject?.name ?? selectedWorkspaceProject?.name ?? null}
         model={statusModel}
         branch={statusSession ? statusSession.workBranch ?? statusSession.git?.branch ?? null : null}
         cwd={statusSession?.project_root ?? null}
@@ -5005,6 +5081,7 @@ export function Workspace() {
                 onSelectFamiliar={selectFamiliarScope}
                 sessions={sessions}
                 responseNeeded={responseNeeded}
+                projectOpenRequest={projectPickerOpenRequest}
                 variant="titlebar"
               />
             </div>

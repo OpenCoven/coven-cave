@@ -8,43 +8,38 @@
 // Persisted conversations keep owning their provenance on resume.
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 
-const home = await mkdtemp(path.join(homedir(), "cave-origin-server-mint-"));
+const home = await mkdtemp(path.join(tmpdir(), "cave-origin-server-mint-"));
 const caveHome = path.join(home, "cave");
-const missingHermes = path.join(home, "bin", process.platform === "win32" ? "missing-hermes.exe" : "missing-hermes");
-
-const previousHome = process.env.COVEN_HOME;
-const previousCaveHome = process.env.COVEN_CAVE_HOME;
-const previousHermesBin = process.env.HERMES_BIN;
-const previousHermesApiUrl = process.env.HERMES_API_URL;
-const previousHermesApiKey = process.env.HERMES_API_KEY;
-
+const previousEnvironment = { ...process.env };
+process.env.HOME = home;
+process.env.USERPROFILE = home;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = caveHome;
-process.env.HERMES_BIN = missingHermes;
-delete process.env.HERMES_API_URL;
-delete process.env.HERMES_API_KEY;
+process.env.COVEN_WORKSPACES_ROOT = path.join(home, "workspaces");
+process.env.PATH = path.join(home, "bin");
+process.env.SHELL = path.join(home, "missing-shell");
+process.env.COVEN_BIN = path.join(home, "missing-coven");
+process.env.CODEX_BIN = path.join(home, "missing-codex");
+delete process.env.Path;
+delete process.env.COVEN_SOCKET;
 
 const { saveConfig } = await import(new URL("../../../../lib/cave-config.ts", import.meta.url).href);
 const { POST } = await import("./route.ts");
 const { POST: generatePOST } = await import("../generate/[origin]/route.ts");
 
-await saveConfig({ familiars: { ember: { harness: "hermes" } } });
+// Codex reaches the project admission boundary without Hermes' earlier
+// read-only refusal, so these tests continue to isolate origin minting.
+await saveConfig({ familiars: { ember: { harness: "codex" } } });
 
 after(async () => {
-  if (previousHome === undefined) delete process.env.COVEN_HOME;
-  else process.env.COVEN_HOME = previousHome;
-  if (previousCaveHome === undefined) delete process.env.COVEN_CAVE_HOME;
-  else process.env.COVEN_CAVE_HOME = previousCaveHome;
-  if (previousHermesBin === undefined) delete process.env.HERMES_BIN;
-  else process.env.HERMES_BIN = previousHermesBin;
-  if (previousHermesApiUrl === undefined) delete process.env.HERMES_API_URL;
-  else process.env.HERMES_API_URL = previousHermesApiUrl;
-  if (previousHermesApiKey === undefined) delete process.env.HERMES_API_KEY;
-  else process.env.HERMES_API_KEY = previousHermesApiKey;
+  for (const key of Object.keys(process.env)) {
+    if (!(key in previousEnvironment)) delete process.env[key];
+  }
+  Object.assign(process.env, previousEnvironment);
   await rm(home, { recursive: true, force: true });
 });
 
@@ -125,7 +120,7 @@ test("resume keeps the persisted origin — a spoofed body origin cannot relabel
     JSON.stringify({
       sessionId,
       familiarId: "ember",
-      harness: "hermes",
+      harness: "codex",
       // A typed/voice conversation: NOT a hidden generation.
       origin: "call",
       createdAt: now,
