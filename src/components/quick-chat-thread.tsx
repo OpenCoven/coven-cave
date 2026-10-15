@@ -6,6 +6,7 @@ import {
   ProgressiveMarkdownBlock,
 } from "@/components/message-bubble";
 import { ResearchRunInlineCard } from "@/components/research-run-surface";
+import { ResponseRunDetails } from "@/components/response-run-details";
 import { SkillRunSummary } from "@/components/skill-stage-card";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { Button } from "@/components/ui/button";
@@ -20,63 +21,6 @@ import { useStickToBottom } from "@/lib/use-stick-to-bottom";
 import type { QuickChatMessage } from "@/lib/use-quick-chat";
 import { FamiliarMark, QUICK_CHAT_SUGGESTIONS } from "./quick-chat-primitives";
 import { lastRegenerableQuickChatMessageId } from "@/lib/quick-chat-thread-state";
-
-function quickChatResponseMetadataLines(
-  metadata?: QuickChatMessage["responseMetadata"],
-): string[] {
-  if (!metadata) return [];
-  const lines: string[] = [];
-  if (metadata.requestedModel !== undefined) {
-    lines.push(`Requested model: ${metadata.requestedModel || "Runtime default"}`);
-  }
-  if (metadata.desiredModel) lines.push(`Effective model: ${metadata.desiredModel}`);
-  if (metadata.forwardedModel && metadata.forwardedModel !== metadata.desiredModel) {
-    lines.push(`Forwarded model: ${metadata.forwardedModel}`);
-  }
-  if (metadata.confirmedModel) lines.push(`Applied model: ${metadata.confirmedModel}`);
-  else if (metadata.modelApplicationState) lines.push(`Model: ${metadata.modelApplicationState}`);
-  if (metadata.modelSource) lines.push(`Source: ${metadata.modelSource}`);
-  if (metadata.modelApplicationReason && !metadata.confirmedModel) {
-    lines.push(metadata.modelApplicationReason);
-  }
-  const promptOnly = new Set(Object.keys(metadata.promptGuidanceControls ?? {}));
-  const forwarded = new Set(Object.keys(metadata.forwardedControls ?? {}));
-  const applied = new Set(Object.keys(metadata.appliedControls ?? {}));
-  const rejected = new Set(metadata.rejectedControlFamilies ?? []);
-  for (const [family, value] of Object.entries(metadata.requestedControls ?? {})) {
-    const status = rejected.has(family)
-      ? "Rejected"
-      : promptOnly.has(family)
-        ? "Prompt guidance"
-        : applied.has(family)
-          ? "Applied"
-          : forwarded.has(family)
-            ? "Forwarded — not confirmed"
-            : "Requested — not confirmed";
-    lines.push(`${status}: ${family} ${value}`);
-  }
-  return lines;
-}
-
-function QuickChatResponseMetadata({ lines }: { lines: string[] }) {
-  if (lines.length === 0) return null;
-  return (
-    <div
-      className="mt-2 flex flex-wrap gap-1.5"
-      role="group"
-      aria-label={`Response model and controls: ${lines.join(". ")}`}
-    >
-      {lines.map((line) => (
-        <span
-          key={line}
-          className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--fg-muted)]"
-        >
-          {line}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function QuickChatBubble({
   message,
@@ -134,7 +78,6 @@ function QuickChatBubble({
   const suggestions = typedSuggestions
     .filter((path) => path.kind === "reply")
     .map((path) => path.prompt);
-  const responseMetadataLines = quickChatResponseMetadataLines(message.responseMetadata);
   const streamingModel = createStreamingTurnViewModel({
     turnId: message.id,
     visibleText: presentedVisible,
@@ -196,7 +139,8 @@ function QuickChatBubble({
 
       {message.error ? <p className="quick-chat-turn__error">{message.error}</p> : null}
 
-      <QuickChatResponseMetadata lines={responseMetadataLines} />
+      {/* The same Run details disclosure as the main chat (#6034). */}
+      <ResponseRunDetails metadata={message.responseMetadata} />
 
       {canAct && isLastAssistant && onRegenerate && !message.error ? (
         <div className="quick-chat-turn__actions">
