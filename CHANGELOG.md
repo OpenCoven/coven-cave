@@ -34,8 +34,9 @@ checksum and updater signature are separate from Windows code signing.
   open nav gives way to the Chat list when both don't fit. The transcript,
   title, runtime status chips, composer footer and reply author line stay
   inside a narrowed pane.
-- **Run details** (#6032). The runtime and model chips under each reply fold
-  into one muted Run details line that opens to show the full trail.
+- **Run details** (#6032, #6037). The runtime and model chips under each reply
+  fold into one muted Run details line that opens to show the full trail, in
+  Chat and Quick Chat.
 - **Sidebar sized to its content** (#6010): 188px by default, 220px at most.
 - **Image generation defaults to GPT Image 2.5** (#6020).
 - **Leaner startup** (#5996). Cave no longer warms every surface or preloads
