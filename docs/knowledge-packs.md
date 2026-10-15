@@ -1,5 +1,10 @@
 # Knowledge Packs
 
+Package authoring paths and sync commands in this guide belong to the
+[OpenCoven/marketplace](https://github.com/OpenCoven/marketplace) repository.
+Cave keeps catalog metadata and verified release pins; it downloads payloads
+on demand and reuses the local cache offline.
+
 A **knowledge pack** is a marketplace-distributed starter kit for a linked
 knowledge base: seeded folders with entity schemas, entry templates, a bundled
 agent **skill**, cadence **prompts**, and audit **workflows**. It is Coven

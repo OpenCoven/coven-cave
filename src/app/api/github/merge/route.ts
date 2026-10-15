@@ -24,7 +24,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
-import { sanitizeGithubObjectSha } from "@/lib/research-github-repo";
+import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
 import { parseGitHubDiffRevision } from "@/lib/github-review";
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 import { branchPrCache } from "@/lib/branch-pr-context";

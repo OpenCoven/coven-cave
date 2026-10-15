@@ -1,11 +1,7 @@
 "use client";
 
-import { preloadSidebarSurface, type WarmableSidebarSurface } from "@/components/lazy-surfaces";
-import { defineResource, invalidate, read, warm, type SurfaceWarmCacheRead } from "@/lib/surface-warm-cache";
+import { defineResource, invalidate, read, type SurfaceWarmCacheRead } from "@/lib/surface-warm-cache";
 import { createInvalidateOnce } from "@/lib/invalidate-once";
-
-export type SurfaceWarmupSurface = WarmableSidebarSurface;
-export type SurfaceWarmResult = { backpressured: boolean };
 
 class SurfaceWarmupBackpressureError extends Error {
   readonly retryAfterSeconds: number;
@@ -33,17 +29,6 @@ function responseRetryAfterSeconds(response: Response, payload: unknown): number
 export function surfaceWarmupRetryAfterSeconds(error: unknown): number {
   return error instanceof SurfaceWarmupBackpressureError ? error.retryAfterSeconds : 0;
 }
-
-export const surfaceWarmupResources = {
-  // Chat is chunk-only here. Its session list is already owned by Workspace,
-  // so warming that request speculatively would duplicate the boot load.
-  chat: [],
-  marketplace: ["marketplace:catalog", "marketplace:skills"],
-  board: ["board:cards"],
-  schedules: ["schedules:inbox", "schedules:automations"],
-  grimoire: ["grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal"],
-  agents: ["memory:list"],
-} as const satisfies Record<SurfaceWarmupSurface, readonly string[]>;
 
 async function json(
   signal: AbortSignal,
@@ -119,28 +104,3 @@ export function invalidateSurfaceResources(...keys: string[]): void {
  * the first invalidates, so the rest join its fetch instead of cancelling it.
  */
 export const invalidateSurfaceResourcesFor = createInvalidateOnce(invalidate);
-
-/** Warm a complete canonical landing surface without rendering it. */
-export async function warmSurface(
-  surface: SurfaceWarmupSurface,
-  canContinue: () => boolean = () => true,
-): Promise<SurfaceWarmResult> {
-  if (!canContinue()) return { backpressured: false };
-  await preloadSidebarSurface(surface);
-  // Chunk imports cannot be aborted. Re-check after they settle so a tab that
-  // was hidden or taken offline during the import never starts its data warm.
-  if (!canContinue()) return { backpressured: false };
-  // Serial landing requests keep background pressure bounded. Every individual
-  // resource is coalesced with a concurrent navigation/read by the cache.
-  for (const resource of surfaceWarmupResources[surface]) {
-    if (!canContinue()) return { backpressured: false };
-    try {
-      await warm<{ rateLimit?: { remaining?: number } | null }>(resource);
-    } catch (error) {
-      if (error instanceof SurfaceWarmupBackpressureError) return { backpressured: true };
-      // Landing resources are independent. A transient failure in one API
-      // must not leave the rest of this surface cold until a visibility cycle.
-    }
-  }
-  return { backpressured: false };
-}

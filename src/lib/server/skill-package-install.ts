@@ -3,7 +3,7 @@ import path from "node:path";
 import { homedir } from "node:os";
 import { covenHome } from "../coven-paths.ts";
 import { isValidPackSlug } from "../knowledge-pack-types.ts";
-import { marketplacePluginsRoot } from "./knowledge-packs.ts";
+import { ensureMarketplacePlugin } from "./marketplace-payload.ts";
 
 export type SkillPackageInstallTarget = "coven" | "agents";
 
@@ -23,14 +23,13 @@ function assertSkillPackageId(value: string, label: string): void {
   if (!isValidPackSlug(value)) throw new Error(`invalid ${label} id`);
 }
 
-function sourceSkillDir(packId: string, skillId: string): string {
+async function sourceSkillDir(packId: string, skillId: string): Promise<string> {
   assertSkillPackageId(packId, "pack");
   assertSkillPackageId(skillId, "skill");
-  const pluginsRoot = path.resolve(marketplacePluginsRoot());
-  const packDir = path.resolve(pluginsRoot, packId);
+  const packDir = path.resolve(await ensureMarketplacePlugin(packId));
   const skillsRoot = path.resolve(packDir, "skills");
   const source = path.resolve(skillsRoot, skillId);
-  if (!packDir.startsWith(pluginsRoot + path.sep) || !source.startsWith(skillsRoot + path.sep)) {
+  if (!source.startsWith(skillsRoot + path.sep)) {
     throw new Error("invalid skill source");
   }
   return source;
@@ -70,7 +69,7 @@ function targetDir(target: SkillPackageInstallTarget, skillId: string): string {
 }
 
 export async function installSkillPackage(request: SkillPackageInstallRequest): Promise<SkillPackageInstallResult> {
-  const source = sourceSkillDir(request.packId, request.skillId);
+  const source = await sourceSkillDir(request.packId, request.skillId);
   await requireSkillMd(source);
   const targets = normalizeTargets(request.targets);
   const installedTo = targets.map((target) => targetDir(target, request.skillId));

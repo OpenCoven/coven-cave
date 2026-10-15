@@ -23,17 +23,11 @@ import { XApiError, type NormalizedXPost, type XErrorCode } from "../x-api.ts";
 import {
   RESEARCH_MISSION_X_RUNTIME_DIR,
   removeResearchMissionXRuntime,
-  sweepResearchMissionXRuntimeResidue,
   writeResearchMissionXRuntimeFiles,
-} from "./research-mission-store.ts";
+} from "./research-runtime-privacy.ts";
 import type { SavedXSource, XSourceAvailability } from "./x-sources.ts";
 
-/**
- * Crash residue older than this belongs to a dead process. It matches the X
- * post cache TTL on purpose: hydrated text is derived from that cache, so this
- * window promises hydrated content never outlives the cache entry it came from.
- */
-export const X_RUNTIME_RESIDUE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+export { X_RUNTIME_RESIDUE_MAX_AGE_MS, sweepResearchMissionXRuntime } from "./research-runtime-privacy.ts";
 
 /** Statuses in which a mission may legitimately hold hydrated post text. */
 const ACTIVE_RESEARCH_STATUSES: ReadonlySet<ResearchMission["status"]> = new Set([
@@ -365,13 +359,4 @@ export function mergeXSourceRefs(
  */
 export async function dropMissionXRuntime(missionId: string): Promise<void> {
   await removeResearchMissionXRuntime(missionId);
-}
-
-/**
- * Application-startup sweep for runtime residue a killed process left behind.
- */
-export async function sweepResearchMissionXRuntime(
-  now: Date = new Date(),
-): Promise<string[]> {
-  return sweepResearchMissionXRuntimeResidue(X_RUNTIME_RESIDUE_MAX_AGE_MS, now);
 }

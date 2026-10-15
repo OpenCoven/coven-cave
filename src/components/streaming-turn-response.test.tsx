@@ -1427,6 +1427,65 @@ describe("StreamingTurnResponse", () => {
     ).toHaveLength(1);
   });
 
+  it("mounts streamed Quick Chat prose straight into the markdown node that keeps the selection", async () => {
+    // #5840: without the assistant response context, a newly committed Quick
+    // Chat block first painted its raw source in a throwaway fallback span and
+    // swapped it for the rendered markdown once mdToHtml landed, dropping any
+    // selection inside it. Main Chat's MessageBubble supplies this context, so
+    // its blocks only ever show text in the node that stays.
+    const streamingMessage = (text: string) => ({
+      id: "quick-selection",
+      role: "assistant" as const,
+      lifecycle: "streaming" as const,
+      pending: true,
+      text,
+    });
+    const settledText = "Settled paragraph keeps its selection.";
+    const settledBlockId = partitionStreamingMarkdown(`${settledText}\n\nLive`, {
+      turnId: "quick-selection",
+      settled: false,
+    }).committedBlocks[0]?.id;
+    expect(settledBlockId).toBeTruthy();
+
+    markdownRenderer.blocked = true;
+    const pendingRender = await render(
+      <QuickChatThread familiar={null} messages={[streamingMessage(`${settledText}\n\nLive`)]} />,
+    );
+    const unrendered = pendingRender.root.findByProps({ "data-stream-block-id": settledBlockId });
+    expect(textContent(unrendered)).not.toContain(settledText);
+    expect(textContent(unrendered)).toContain("Rendering response");
+    await act(async () => pendingRender.unmount());
+
+    markdownRenderer.blocked = false;
+    const renderer = await render(
+      <QuickChatThread familiar={null} messages={[streamingMessage(`${settledText}\n\nLive`)]} />,
+    );
+    await flushMarkdown();
+    const markdownNode = () =>
+      renderer.root
+        .findByProps({ "data-stream-block-id": settledBlockId })
+        .find((node) => node.props.dangerouslySetInnerHTML !== undefined);
+    const before = markdownNode();
+    expect(before.props.dangerouslySetInnerHTML.__html).toContain(settledText);
+
+    await act(async () => {
+      renderer.update(
+        <QuickChatThread
+          familiar={null}
+          messages={[streamingMessage(`${settledText}\n\nLive text grows`)]}
+        />,
+      );
+    });
+    await flushMarkdown();
+
+    expect(markdownNode()).toBe(before);
+    expect(responseDecorator.decorate).toHaveBeenCalled();
+    // The presentation buffer keeps revealing the new tokens on timers; stop
+    // it and drain in-flight renders so none land in a later test.
+    await act(async () => renderer.unmount());
+    await flushMarkdown();
+  });
+
   it("renders a settled bare GitHub URL only as a card without duplicate URL prose", async () => {
     const url = "https://github.com/OpenCoven/coven-cave/issues/42";
     const renderer = await render(

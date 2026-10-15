@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { GitHubCard } from "@/components/github-card";
-import { ProgressiveMarkdownBlock } from "@/components/message-bubble";
+import {
+  AssistantMarkdownRenderProvider,
+  ProgressiveMarkdownBlock,
+} from "@/components/message-bubble";
 import { ResearchRunInlineCard } from "@/components/research-run-surface";
 import { SkillRunSummary } from "@/components/skill-stage-card";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
@@ -235,25 +238,31 @@ function QuickChatBubble({
             {quickChatSupplementaryContent}
           </>
         ) : (
-          <StreamingTurnResponse
-            turnId={message.id}
-            familiarName={familiar?.display_name ?? "Unknown familiar"}
-            model={streamingModel}
-            density="compact"
-            announceLifecycle={announceLifecycle}
-            startedAt={message.startedAt}
-            durationMs={message.durationMs}
-            proseContent={orderedProseContent}
-            onStop={streaming ? onStop : undefined}
-            onRetry={message.error && isLastAssistant ? onRegenerate : undefined}
-            canContinue={false}
-            onCopyCompleted={
-              streamingModel.committedText
-                ? () => copyText(streamingModel.committedText)
-                : undefined
-            }
-            supplementaryContent={quickChatSupplementaryContent}
-          />
+          // Same assistant markdown context MessageBubble gives Main Chat's
+          // StreamingTurnResponse: a committed block shows text only in the
+          // rendered node that stays, so a selection survives new tokens
+          // (#5840), and status tokens and citations render as they do there.
+          <AssistantMarkdownRenderProvider content={visible}>
+            <StreamingTurnResponse
+              turnId={message.id}
+              familiarName={familiar?.display_name ?? "Unknown familiar"}
+              model={streamingModel}
+              density="compact"
+              announceLifecycle={announceLifecycle}
+              startedAt={message.startedAt}
+              durationMs={message.durationMs}
+              proseContent={orderedProseContent}
+              onStop={streaming ? onStop : undefined}
+              onRetry={message.error && isLastAssistant ? onRegenerate : undefined}
+              canContinue={false}
+              onCopyCompleted={
+                streamingModel.committedText
+                  ? () => copyText(streamingModel.committedText)
+                  : undefined
+              }
+              supplementaryContent={quickChatSupplementaryContent}
+            />
+          </AssistantMarkdownRenderProvider>
         )}
       </div>
     </div>

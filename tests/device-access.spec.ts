@@ -74,6 +74,9 @@ test("desktop requires migration consent, then offers Allow, Deny and Revoke", a
   await expect(panel.getByRole("button", { name: "Deny", exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "Allow", exact: true }).click();
   await panel.getByRole("button", { name: "Revoke access", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "Revoke access for My phone?" });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "Revoke access", exact: true }).click();
   await expect(panel.getByText(/My phone.*revoked/)).toBeVisible();
   await expect(panel.getByRole("button", { name: "Revoke access", exact: true })).toHaveCount(0);
 });

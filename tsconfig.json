@@ -28,6 +28,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@opencoven/research-host/*": [
+        "./src/lib/research-host/*"
       ]
     }
   },

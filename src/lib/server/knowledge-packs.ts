@@ -1,3 +1,4 @@
+import { ensureMarketplacePlugin } from "./marketplace-payload.ts";
 import { constants as fsConstants } from "node:fs";
 import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -108,7 +109,8 @@ export async function readKnowledgePack(packId: string): Promise<KnowledgePackMa
 }
 
 export async function readPackTemplate(packId: string, templateMeta: KnowledgePackTemplateMeta): Promise<string> {
-  const dir = pluginDir(packId);
+  if (!isValidPackSlug(packId)) throw new Error("invalid pack id");
+  const dir = await ensureMarketplacePlugin(packId);
   if (!isValidPackSlug(templateMeta.id)) throw new Error("invalid template id");
   const expectedRelative = path.join(/* turbopackIgnore: true */ "templates", `${templateMeta.id}.md`);
   if (path.normalize(templateMeta.path) !== expectedRelative) throw new Error("invalid template path");

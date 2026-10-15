@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
   mergeCatalog,
@@ -427,9 +428,28 @@ assert.equal(packCard.kind, "prompt");
 assert.ok((packCard.prompts?.length ?? 0) >= 5, "pack card lists its template ids");
 for (const pid of packCard.prompts ?? []) {
   // Each declared template must exist where /api/prompts scans installed packs.
-  const md = readFileSync(new URL(`../../marketplace/plugins/prompt-pack-essentials/prompts/${pid}.md`, import.meta.url), "utf8");
-  assert.match(md, /^---\nname: /, `${pid}.md carries scanner-readable frontmatter`);
-  assert.ok(md.split("---")[2]?.trim().length > 0, `${pid}.md has a body to insert`);
+  const pins = JSON.parse(readFileSync(new URL("../../marketplace/payloads.json", import.meta.url), "utf8"));
+  assert.match(pins.plugins["prompt-pack-essentials"].fileSha256["prompts/" + pid + ".md"], /^[a-f0-9]{64}$/, "each advertised prompt has a pinned payload");
+
 }
 
 console.log("marketplace-catalog.test.ts: ok");
+
+// The split repositories must ship one coherent snapshot: UI/install metadata
+// cannot describe a different version or manifest than the downloaded package.
+{
+  const root = new URL("../../marketplace/", import.meta.url);
+  const catalog = JSON.parse(readFileSync(new URL("catalog.json", root), "utf8"));
+  const index = JSON.parse(readFileSync(new URL("payloads.json", root), "utf8"));
+  assert.deepEqual(Object.keys(index.plugins).sort(), catalog.plugins.map(plugin => plugin.name).sort());
+  for (const plugin of catalog.plugins) {
+    const pin = index.plugins[plugin.name];
+    assert.equal(pin.version, plugin.version, plugin.name + " version must match its payload");
+    assert.match(pin.fileSha256["plugin.json"], /^[a-f0-9]{64}$/);
+    for (const filename of ["plugin.json", "pack.json"]) {
+      if (!pin.fileSha256[filename]) continue;
+      const metadata = readFileSync(new URL("plugins/" + plugin.name + "/" + filename, root));
+      assert.equal(createHash("sha256").update(metadata).digest("hex"), pin.fileSha256[filename], plugin.name + "/" + filename + " must match the pinned package");
+    }
+  }
+}

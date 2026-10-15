@@ -5,7 +5,7 @@ compatibility exports. The in-app Marketplace is intentionally narrower: it
 shows items the current user already installed or authored. Unowned publisher
 entries do not appear in the product and are not fetched as discovery inventory.
 
-Coven Cave is the canonical user-facing marketplace surface for first-party OpenCoven plugins and MCP integrations. The seeded package catalog lives in `marketplace/catalog.json`, and `scripts/sync-marketplace.py` expands that catalog into:
+Coven Cave is the canonical user-facing marketplace surface for first-party OpenCoven plugins and MCP integrations. Payload authoring lives in [OpenCoven/marketplace](https://github.com/OpenCoven/marketplace). In that repository, `scripts/sync-marketplace.py` expands `marketplace/catalog.json` into:
 
 - `marketplace/plugins/<name>/plugin.json`
 - `marketplace/plugins/<name>/skills/<name>/SKILL.md`
@@ -25,7 +25,7 @@ preview tab is retired; older Skills destinations open Yours filtered to Skills.
 
 ## Design
 
-The Cave catalog is the canonical package metadata because Cave is where familiars, roles, skills, and setup state meet. Generated package directories keep Coven Code, Codex, MCP-only clients, and role-affinity views from drifting away from that Cave-owned source.
+The marketplace repository owns package authoring and releases. Cave retains a reviewed snapshot of catalog metadata, compatibility exports, and `marketplace/payloads.json`. Payloads are fetched on demand from the pinned release, checked against their SHA-256 and byte length, and cached under the Cave home directory. Cached payloads work offline; a first fetch requires network access. The core `coven-memory` skill remains bundled for offline startup.
 
 Each catalog entry includes:
 
@@ -114,12 +114,12 @@ Preview → verify/install → equip → resolve → detach → remove:
   `marketplace.installed` with `runtime`, `verifiedAt`, and `craftVersion`.
   Failures roll back under a keyed transaction lock, preserving diagnostics.
   The generic `/api/marketplace/install` track-only route refuses Crafts.
-  Installs require the `opencoven-first-party` Codex marketplace to be
-  registered once — current Codex CLIs read the manifest from
-  `.claude-plugin/marketplace.json` inside the registered root:
+  Cave supplies a command-local Codex registry containing the verified selected
+  payloads. It does not change the user's global marketplace registrations.
+  For standalone CLI authoring, register the dedicated repository:
 
   ```bash
-  codex plugin marketplace add /path/to/coven-cave/marketplace
+  codex plugin marketplace add OpenCoven/marketplace
   ```
 
 - **Equip / detach.** `POST /api/roles/crafts` attaches or detaches an
@@ -167,7 +167,7 @@ below.
 
 ### Human-Reviewed Upstream Updates
 
-Craft content is vendored, pinned, and only updated by humans:
+Craft content is vendored, pinned, and only updated by humans in `OpenCoven/marketplace`:
 
 - Upstream sources are vendored under `marketplace/craft-sources/<craft>/`,
   and each bundled resource records its `sourcePath` and `contentHash`.
@@ -192,7 +192,7 @@ Craft content is vendored, pinned, and only updated by humans:
 
 ## Updating
 
-Edit `marketplace/catalog.json`, then run:
+In an `OpenCoven/marketplace` checkout, edit `marketplace/catalog.json`, then run:
 
 ```bash
 python3 scripts/sync-marketplace.py
@@ -200,6 +200,13 @@ python3 scripts/sync-marketplace.py --check
 ```
 
 The check command fails if generated packages or exports are missing or stale.
+Run `npm run package` to produce immutable payload assets. Publish those assets
+under a new release tag, then update Cave’s metadata snapshot and payload pins
+in a reviewed PR. Never replace assets behind an existing pin.
+
+For local integration work, `COVEN_MARKETPLACE_PLUGINS_DIR` can point to that
+checkout’s `marketplace/plugins` directory. This explicit override bypasses
+downloads; normal installs always use the pinned release.
 
 ## Local Install State
 

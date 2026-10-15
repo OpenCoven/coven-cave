@@ -154,6 +154,57 @@
   --response-status-color: var(--color-danger);
 }
 
+/* The placeholder a response block shows until its markdown lands. Here, not
+   in cave-chat/bubbles.css, because every surface that renders responses
+   loads this sheet through MessageBubble's cave-md.css, and Quick Chat does
+   not load cave-chat.css (#5890). */
+.cave-response-rendering,
+.cave-response-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.cave-response-typing {
+  margin-top: var(--space-3);
+}
+
+.cave-response-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.cave-response-typing-dots i {
+  width: var(--space-1);
+  height: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  animation: cave-response-dot var(--duration-slow) var(--ease-standard) infinite alternate;
+}
+
+.cave-response-typing-dots i:nth-child(2) {
+  animation-delay: calc(var(--duration-fast) * -1);
+}
+
+.cave-response-typing-dots i:nth-child(3) {
+  animation-delay: calc(var(--duration-fast) * -2);
+}
+
+@keyframes cave-response-dot {
+  from { opacity: 0.35; }
+  to { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-response-typing-dots i {
+    animation: none;
+  }
+}
+
 .cave-md a {
   /* A bare URL is one unbreakable word; let it wrap instead of widening the reply. */
   overflow-wrap: anywhere;

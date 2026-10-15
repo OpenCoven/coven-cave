@@ -3,7 +3,7 @@ import {
   type GitHubDiffRevision,
   type GitHubPullRevision,
 } from "../github-review";
-import { sanitizeGithubObjectSha } from "../research-github-repo";
+import { sanitizeGithubObjectSha } from "../github-object-sha";
 
 export class GitHubRevisionError extends Error {
   readonly status: number;

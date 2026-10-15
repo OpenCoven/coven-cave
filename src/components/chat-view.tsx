@@ -5175,7 +5175,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return true;
       }
       setInput("");
-      void fetch("/api/research/links", {
+      void fetch("/api/links", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ urls, source: "chat" }),

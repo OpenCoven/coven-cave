@@ -30,9 +30,3 @@ export async function resolveCatalogPlugin(id: string): Promise<MarketplaceJsonP
 export async function resolveCatalogName(id: string): Promise<string | null> {
   return (await resolveCatalogPlugin(id))?.name ?? null;
 }
-
-/** Absolute path to an installed/catalog plugin's directory — built from the
- *  file-derived name only. Callers MUST pass a name from resolveCatalogName. */
-export function pluginDir(name: string): string {
-  return path.join(MARKETPLACE_DIR, "plugins", name);
-}

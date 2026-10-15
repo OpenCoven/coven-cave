@@ -11,7 +11,7 @@ import {
   RESEARCH_ARTIFACT_KINDS,
 } from "./research-missions.ts";
 import type { AutomationStatus } from "./codex-automations-types.ts";
-import type { ResearchAutomationScheduleInput } from "./server/research-mission-runner.ts";
+import type { ResearchAutomationScheduleInput } from "./research-automation-contract.ts";
 import { publishSchedulesChanged } from "./board-cache-events.ts";
 
 export type ResearchMissionListResponse = {

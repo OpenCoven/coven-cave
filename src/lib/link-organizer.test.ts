@@ -243,8 +243,8 @@ test("/save (alias /link) is a first-class slash command", () => {
   );
   assert.match(
     chat,
-    /fetch\("\/api\/research\/links", \{\s*method: "POST"/,
-    "saves flow through the research links API",
+    /fetch\("\/api\/links", \{\s*method: "POST"/,
+    "saves flow through the core links API",
   );
 });
 

@@ -26,12 +26,12 @@ import { BUILTIN_PROMPTS } from "@/lib/prompt-defaults";
 import { writeFileAtomic } from "@/lib/server/atomic-write";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 import { PROMPT_SLUG_RE, promptSlug, serializePromptTemplate } from "@/lib/server/prompt-file";
+import { ensureMarketplacePlugin, marketplacePluginHasDirectory } from "@/lib/server/marketplace-payload";
 import { mergePrompts, scanPromptsDir } from "@/lib/server/prompt-scan";
 import type { PromptOption } from "@/lib/slash-prompt";
 
 export const dynamic = "force-dynamic";
 
-const MARKETPLACE_PLUGINS_DIR = path.join(process.cwd(), "marketplace", "plugins");
 
 export async function GET() {
   const user: PromptOption[] = [];
@@ -44,8 +44,8 @@ export async function GET() {
     // the shape guard keeps a hand-edited config from escaping the plugins dir.
     const installed = Object.keys(cfg.marketplace.installed).filter((id) => /^[\w.-]+$/.test(id));
     await Promise.all(
-      installed.map((id) =>
-        scanPromptsDir(path.join(MARKETPLACE_PLUGINS_DIR, id, "prompts"), `pack:${id}`, packs),
+      installed.map(async (id) =>
+        await marketplacePluginHasDirectory(id, "prompts") && scanPromptsDir(path.join(await ensureMarketplacePlugin(id), "prompts"), `pack:${id}`, packs),
       ),
     );
   } catch {

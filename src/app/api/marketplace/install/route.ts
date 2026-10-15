@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { ensureMarketplacePlugin } from "@/lib/server/marketplace-payload";
 import { installMarketplacePlugin } from "@/lib/cave-config";
 import { resolveCatalogPlugin } from "@/lib/server/marketplace-catalog-resolve";
 
@@ -56,6 +57,11 @@ export async function POST(req: Request) {
       { ok: false, error: "Crafts require a verified Codex installation", code: "craft_transaction_required" },
       { status: 409 },
     );
+  }
+  try {
+    await ensureMarketplacePlugin(name);
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Could not download plugin payload" }, { status: 503 });
   }
   const installedAt = await installMarketplacePlugin(name, manifest.version, "catalog");
   return NextResponse.json({ ok: true, installedAt });

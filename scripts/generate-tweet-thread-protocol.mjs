@@ -6,7 +6,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -32,7 +32,7 @@ export const PROTOCOL_SCHEMA_FILES = new Map([
 ]);
 
 export const PROTOCOL_SCHEMA_DIRECTORY = new URL(
-  "../marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/schemas/",
+  "../artifacts/marketplace/tweet-thread-lab/skills/tweet-thread-lab/references/schemas/",
   import.meta.url,
 );
 
@@ -51,6 +51,13 @@ export function serializeProtocolSchema(schema) {
 }
 
 export function checkProtocolSchemas(outputDirectory = PROTOCOL_SCHEMA_DIRECTORY) {
+  if (outputDirectory === PROTOCOL_SCHEMA_DIRECTORY) {
+    const pins = JSON.parse(readFileSync(new URL("../marketplace/payloads.json", import.meta.url), "utf8"));
+    return [...PROTOCOL_SCHEMA_FILES].flatMap(([filename, schema]) => {
+      const expected = pins.plugins["tweet-thread-lab"].fileSha256["skills/tweet-thread-lab/references/schemas/" + filename];
+      return createHash("sha256").update(serializeProtocolSchema(schema)).digest("hex") === expected ? [] : [{ filename, status: "drifted" }];
+    });
+  }
   const problems = [];
   for (const [filename, schema] of PROTOCOL_SCHEMA_FILES) {
     const fileUrl = new URL(filename, outputDirectory);

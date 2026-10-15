@@ -302,6 +302,7 @@ import {
   isSshRuntime,
 } from "@/lib/familiar-runtime";
 import { resolveRequestedRuntime, sshHostRegistry } from "@/lib/chat-hosts";
+import { parseConnectorIds, prepareTurnConnectors } from "@/lib/connectors";
 import {
   parseCostUsd,
   parseStreamJsonUsage,
@@ -474,6 +475,10 @@ type SendBody = {
    *  familiar's own runtime binding decides. */
   runtimeHost?: string;
   attachments?: ChatAttachment[];
+  /** Connectors the user turned on for this chat (allowlisted ids such as
+   *  "github"). Credentials never travel in the body; see
+   *  src/lib/connectors.ts. Unknown ids are dropped. */
+  connectors?: string[];
   /** Repo-relative paths the user @-mentioned in the composer (CHAT-D1-04). */
   mentionedFiles?: string[];
   /** Project root the mentions are relative to — resumed sessions don't carry
@@ -2724,6 +2729,13 @@ async function postAdmittedChat(
       availability: launch,
     });
   }
+  // Connectors use credentials already granted to this familiar's spawn
+  // env. Only a local launch has that env; ssh hosts, the Hermes API, and
+  // OpenClaw report the connector unavailable rather than pretend it is on.
+  const turnConnectors = prepareTurnConnectors(
+    parseConnectorIds(body.connectors),
+    !sshRuntime && localRuntimePlan ? localRuntimePlan.env : null,
+  );
   const grokCapabilities = grokDirect
     ? await probeReadyLocalRuntimeCapability({
         plan: localRuntimePlan,
@@ -3282,7 +3294,7 @@ async function postAdmittedChat(
                       filesSupported: imagesSupported,
                       attachmentFilePaths,
                     }),
-                    { modelControls: promptModelControls },
+                    { modelControls: promptModelControls, connectors: turnConnectors },
                     { origin: generationOrigin },
                   ),
                   mentionedFiles,

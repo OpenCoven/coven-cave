@@ -1,3 +1,4 @@
+import type { ResearchAutomationScheduleInput } from "../research-automation-contract.ts";
 import type { ConversationFile } from "../cave-conversations.ts";
 import type { FlowDoc } from "../flow/flow-doc.ts";
 import type { FlowRunRecord } from "../flows.ts";
@@ -133,13 +134,7 @@ const TERMINAL_RESEARCH_MUTATION_ACTIONS: ReadonlySet<ResearchMissionActionInput
  */
 export const RESEARCH_RUN_RECOVERY_GRACE_MS = 10 * 60_000;
 
-export type ResearchAutomationScheduleInput = {
-  rrule: string;
-  model?: string;
-  reasoningEffort?: string;
-  executionEnvironment?: string;
-  skillPath?: string | null;
-};
+export type { ResearchAutomationScheduleInput } from "../research-automation-contract.ts";
 
 type ResearchAutomationRecord = Pick<ResearchAutomationLink, "id" | "status"> & {
   rrule: string | null;

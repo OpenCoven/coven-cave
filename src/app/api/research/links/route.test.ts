@@ -11,6 +11,8 @@ import type { NormalizedXArticle } from "@/lib/x-articles";
 import type { XArticleProvider } from "@/lib/server/x-article-provider";
 import { createResearchLinksRouteHandlers } from "./route.ts";
 
+import * as coreLinksRoute from "../../links/route.ts";
+
 const ARTICLE_BODY_SENTINEL = "ARTICLE_BODY_SENTINEL";
 const GITHUB_COMMIT_SHA = "a".repeat(40);
 const GITHUB_BLOB_SHA = "b".repeat(40);
@@ -166,11 +168,24 @@ test("real handlers repair before response, commit deletes, and bound migration 
   process.env.CAVE_RESEARCH_RESOURCES_PATH_OVERRIDE = resourceRoot;
   try {
     const route = createResearchLinksRouteHandlers();
-    const saved = await route.POST(post({ urls: ["https://example.com/route-barrier"] }));
+    const saved = await coreLinksRoute.POST(localRequest("/api/links", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ urls: ["https://example.com/route-barrier"] }),
+    }));
     assert.equal(saved.status, 200);
     const savedBody = await saved.json() as { added: SavedLink[] };
     const id = savedBody.added[0]?.id;
     assert.ok(id);
+    const coreDetail = await coreLinksRoute.GET(localRequest(`/api/links?id=${encodeURIComponent(id)}`));
+    assert.equal(coreDetail.status, 200);
+    assert.equal((await coreDetail.json() as { link: SavedLink }).link.id, id);
+    for (const method of ["GET", "POST", "DELETE"] as const) {
+      const denied = await coreLinksRoute[method](new Request("https://evil.example/api/links", {
+        method, headers: { host: "evil.example", origin: "https://evil.example" },
+      }));
+      assert.equal(denied.status, 403);
+    }
 
     const listed = await route.GET(localRequest("/api/research/links"));
     assert.equal(listed.status, 200);
@@ -185,6 +200,7 @@ test("real handlers repair before response, commit deletes, and bound migration 
     }));
     assert.equal(removed.status, 200);
     assert.deepEqual(await removed.json(), { ok: true });
+    assert.equal((await coreLinksRoute.GET(localRequest(`/api/links?id=${encodeURIComponent(id)}`))).status, 404);
     assert.deepEqual(
       (JSON.parse(await readFile(legacyPath, "utf8")) as { links: unknown[] }).links,
       [],

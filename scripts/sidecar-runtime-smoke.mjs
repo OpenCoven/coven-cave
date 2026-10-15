@@ -384,6 +384,7 @@ async function main() {
     ".agents/skills/run-cave-app/SKILL.md",
     ".next/BUILD_ID",
     "marketplace/catalog.json",
+    "marketplace/payloads.json",
     "marketplace/marketplace.json",
     "marketplace/plugins/github/plugin.json",
     "marketplace/plugins/prompt-pack-essentials/plugin.json",
@@ -611,7 +612,7 @@ async function main() {
     const promptPackResponse = await fetch(`${baseUrl}/api/marketplace/pack-prompts?id=prompt-pack-essentials`, {
       headers: { "x-coven-cave-token": token },
     });
-    assert.equal(promptPackResponse.status, 200, "packaged prompt packs must resolve from marketplace/plugins");
+    assert.equal(promptPackResponse.status, 200, "packaged prompt packs must resolve their pinned payloads");
     const promptPack = await promptPackResponse.json();
     assert.ok(promptPack.ok && promptPack.prompts.length > 0, "packaged prompt pack content must not be empty");
 
@@ -620,7 +621,7 @@ async function main() {
       headers: authenticatedHeaders(baseUrl, "application/json"),
       body: JSON.stringify({ id: "github" }),
     });
-    assert.equal(installResponse.status, 200, "packaged marketplace install must read the retained plugin manifest");
+    assert.equal(installResponse.status, 200, "packaged marketplace install must verify its pinned payload");
     assert.equal((await installResponse.json()).ok, true);
     const uninstallResponse = await fetch(`${baseUrl}/api/marketplace/uninstall`, {
       method: "POST",
