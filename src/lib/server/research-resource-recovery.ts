@@ -6,7 +6,7 @@ import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import type { ResourceManifestV1 } from "../research-resource-contracts.ts";
 import { migrateCaveHomeOnce } from "./cave-home-migration.ts";
-import { createResearchResourceIngestion } from "./research-resource-ingestion.ts";
+import { createResearchResourceMaintenance } from "./research-resource-maintenance.ts";
 import {
   rebuildResearchResourceLexicalIndex,
   openResearchResourceLexicalIndex,
@@ -222,7 +222,7 @@ async function reconcileRestoredResearchResourcesLocked(
     `.restore-recovery-${process.pid}-${randomBytes(8).toString("hex")}.sqlite`,
   );
   const disposableIndex = await openResearchResourceLexicalIndex({ file: disposableIndexFile });
-  const ingestion = createResearchResourceIngestion({
+  const maintenance = createResearchResourceMaintenance({
     root,
     store,
     index: disposableIndex,
@@ -235,9 +235,9 @@ async function reconcileRestoredResearchResourcesLocked(
     recoveryAlreadyHeld: true,
   });
   try {
-    await ingestion.reconcileStartup();
+    await maintenance.reconcileStartup();
   } finally {
-    await ingestion.close();
+    await maintenance.close();
     for (const suffix of ["", "-wal", "-shm"]) {
       await rm(`${disposableIndexFile}${suffix}`, { force: true });
     }

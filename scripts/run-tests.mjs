@@ -520,6 +520,7 @@ export const SUITES = {
     "src/lib/server/research-resource-fetch.test.ts",
     "src/lib/server/research-resource-ingestion.test.ts",
     "src/lib/server/research-resource-recovery.test.ts",
+    "src/lib/server/research-maintenance-boundary.test.ts",
     "src/lib/server/backup-research-resource-restore.test.ts",
     "src/lib/server/research-resource-lexical-index.test.ts",
     "src/lib/server/research-resource-retrieval.test.ts",
