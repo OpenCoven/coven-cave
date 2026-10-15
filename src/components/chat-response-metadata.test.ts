@@ -167,11 +167,10 @@ assert.doesNotMatch(
   /showEmptySuccessfulFallback[\s\S]*responseModelStatusCount|showEmptySuccessfulFallback[\s\S]*responseControlStatusCount/,
   "Routine model/control provenance metadata must not suppress empty-response treatment",
 );
-assert.match(
-  runDetails,
-  /function runtimeAndModelGroups\([\s\S]*?"Requested model"[\s\S]*?"Selected model"[\s\S]*?"Forwarded model"[\s\S]*?"Recorded model"/,
-  "Run details carry requested, forwarded, and effective model state through the shared builder",
-);
+for (const row of ['"Model"', '"Selected model"', '"Requested model"', '"Forwarded model"', '"Recorded model"']) {
+  assert.ok(runDetails.includes(row), `Run details carry the ${row} row through the shared builder`);
+}
+assert.match(runDetails, /"reported by the runtime"|reported by the runtime/, "a runtime-reported model is labeled as such on the one Model row (#6039)");
 const runDetailsComponent = await readFile(new URL("./response-run-details.tsx", import.meta.url), "utf8");
 const quickChatThread = await readFile(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
 assert.match(

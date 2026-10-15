@@ -1415,7 +1415,8 @@ describe("StreamingTurnResponse", () => {
     expect(renderer.root.findAllByType(StreamingTurnResponse)).toHaveLength(0);
     expect(textContent(renderer.root)).toContain("No response.");
     expect(textContent(renderer.root)).toContain("Retry");
-    expect(textContent(renderer.root)).toContain("The runtime did not confirm the selected model.");
+    // #6039: one Model row carries the selection and its state; the pending reason sentence no longer restates it.
+    expect(textContent(renderer.root)).toContain("anthropic/claude-sonnet-4-6 · pending confirmation");
     expect(
       renderer.root.findAll(
         (node) => node.type === "details" && node.props["data-turn-run-details"] === true,
