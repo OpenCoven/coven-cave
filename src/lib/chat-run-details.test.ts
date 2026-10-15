@@ -3,15 +3,17 @@ import { responseRunDetails, runDetailsLineTexts, runDetailsSummaryText } from "
 
 // #6026: the per-turn trail folds into one disclosure. Its closed line names
 // the runtime, the model state when it is not applied, and how many facts the
-// runtime did not report or confirm; the open list keeps every line.
+// runtime did not report or confirm; the open list keeps every fact.
+// #6039: one Model row carries the model fact, and the activity rows read in
+// plain words.
 
 assert.equal(responseRunDetails(undefined), null, "no metadata, no disclosure");
 
 const base = { familiarId: "astra", harness: "claude", model: "anthropic/claude-fable-5-1", runtime: "local:/repo" };
 
 {
-  // The screenshot that opened the issue: a claude turn whose model is saved
-  // but not confirmed, on the Coven relay with reasoning support unverified.
+  // The screenshot that opened #6026: a claude turn whose model is saved but
+  // not confirmed, on the Coven relay with reasoning support unverified.
   const details = responseRunDetails({
     ...base,
     runtimeIdentity: {
@@ -26,29 +28,25 @@ const base = { familiarId: "astra", harness: "claude", model: "anthropic/claude-
   assert.ok(details);
   assert.equal(runDetailsSummaryText(details), "Run details · claude 2.1.289 · model pending · 2 unverified");
   assert.deepEqual(details.groups.map((group) => group.id), ["runtime", "model", "activity"]);
+  // One Model row says selection, state and source; the pending reason
+  // sentence restated the state and is gone.
   assert.deepEqual(runDetailsLineTexts(details), [
     "Runtime: claude 2.1.289",
-    "Runtime-reported model: Unavailable",
-    "Selected model: anthropic/claude-fable-5-1",
-    "Model: pending",
-    "Source: familiar-default",
-    "Cave saved the model intent and is waiting for runtime confirmation.",
+    "Model: anthropic/claude-fable-5-1 · pending confirmation · familiar default",
     "Runtime path: Coven relay",
-    "Tool details: supported on this path",
-    "Reasoning summaries: support unverified on this path",
+    "Tool details: available",
+    "Reasoning summaries: not verified on this path",
   ]);
-  // The gaps are the unreported model and the unverified reasoning support;
-  // the pending state is its own summary fact, not a second count.
+  // The unconfirmed Model row is the gap; the state is its own summary fact.
   assert.deepEqual(
     details.groups.flatMap((group) => group.lines.filter((line) => line.gap).map((line) => line.label)),
-    ["Runtime-reported model", "Reasoning summaries"],
+    ["Model", "Reasoning summaries"],
   );
-  const note = details.groups.find((group) => group.id === "model")?.lines.at(-1);
-  assert.equal(note?.label, undefined, "the application reason is a note, not a labeled row");
 }
 
 {
-  // A fully confirmed turn: no state fact, no count.
+  // A fully confirmed turn: the reported model, no state or source noise, no
+  // count.
   const details = responseRunDetails({
     ...base,
     runtimeIdentity: {
@@ -65,28 +63,52 @@ const base = { familiarId: "astra", harness: "claude", model: "anthropic/claude-
   assert.equal(runDetailsSummaryText(details), "Run details · claude 2.1.289");
   assert.equal(details.unverified, 0);
   assert.equal(details.rejected, 0);
-  assert.deepEqual(details.groups.find((group) => group.id === "controls")?.lines, [{ label: "Applied", value: "reasoning high" }]);
+  assert.deepEqual(runDetailsLineTexts(details), [
+    "Runtime: claude 2.1.289",
+    "Model: claude-opus-5-5 · reported by the runtime",
+    "Applied: reasoning high",
+    "Runtime path: Direct runtime",
+    "Tool details: available",
+    "Reasoning summaries: available",
+  ]);
+}
+
+{
+  // The runtime reported a different model than the one selected: both show.
+  const details = responseRunDetails({
+    ...base,
+    runtimeIdentity: { schemaVersion: 1, harness: "claude", version: "2.1.289", model: "claude-sonnet-5-5" },
+    desiredModel: "anthropic/claude-fable-5-1",
+    modelApplicationState: "applied",
+  });
+  assert.ok(details);
+  assert.deepEqual(runDetailsLineTexts(details).slice(1, 3), [
+    "Model: claude-sonnet-5-5 · reported by the runtime",
+    "Selected model: anthropic/claude-fable-5-1",
+  ]);
 }
 
 {
   // No runtime report at all (a legacy transcript): the recorded model is
-  // labeled as such, nothing is promoted to the confirmed model, and every
-  // unreported fact counts.
+  // labeled as such and never promoted to a reported model; the selection
+  // shows because it differs; every unreported fact counts.
   const details = responseRunDetails({ ...base, confirmedModel: "legacy-inferred-model", modelApplicationState: "applied" });
   assert.ok(details);
-  assert.equal(runDetailsSummaryText(details), "Run details · runtime not recorded · 3 unverified");
+  assert.equal(runDetailsSummaryText(details), "Run details · runtime not recorded · 2 unverified");
   assert.deepEqual(runDetailsLineTexts(details), [
     "Runtime: Identity not recorded in this response",
-    "Runtime-reported model: Unavailable",
-    "Selected model: anthropic/claude-fable-5-1",
     "Recorded model: legacy-inferred-model",
-    "Activity support: Not recorded",
+    "Selected model: anthropic/claude-fable-5-1",
+    "Activity: not recorded for this turn",
   ]);
 }
 
 {
   // Controls: a forwarded-but-unconfirmed family is a gap; a rejected family
-  // gets its own count, including one rejected without a request value.
+  // gets its own count, including one rejected without a request value. An
+  // unsupported model keeps its reason, because the phrase alone does not
+  // say why; the explicit runtime-default request shows because it differs
+  // from the resolved selection; the forwarded id shows because it differs.
   const details = responseRunDetails({
     ...base,
     harness: "codex",
@@ -98,29 +120,50 @@ const base = { familiarId: "astra", harness: "claude", model: "anthropic/claude-
     desiredModel: "openai/gpt-6-astra",
     forwardedModel: "gpt-6-astra",
     modelApplicationState: "unsupported",
+    modelApplicationReason: "Runtime rejected the selected model.",
     requestedControls: { reasoning: "high", performance: "fast" },
     forwardedControls: { reasoning: "high" },
     rejectedControlFamilies: ["performance", "verbosity"],
   });
   assert.ok(details);
-  // Version not reported, model unavailable, reasoning forwarded, path unknown.
+  // Version not reported, model unconfirmed, reasoning forwarded, path unknown.
   assert.equal(runDetailsSummaryText(details), "Run details · codex · model unsupported · 4 unverified · 2 rejected");
   assert.deepEqual(runDetailsLineTexts(details), [
     "Runtime: codex · Version not reported",
-    "Runtime-reported model: Unavailable",
+    "Model: openai/gpt-6-astra · not supported by the runtime",
     "Requested model: Runtime default",
-    "Selected model: openai/gpt-6-astra",
     "Forwarded model: gpt-6-astra",
-    "Model: unsupported",
+    "Runtime rejected the selected model.",
     "Forwarded — not confirmed: reasoning high",
     "Rejected: performance fast",
     "Rejected: verbosity",
     "Runtime path: Not yet selected",
-    "Tool details: not supported on this path",
-    "Reasoning summaries: decoding disabled for this turn",
+    "Tool details: not available on this path",
+    "Reasoning summaries: off for this turn",
   ]);
+  const note = details.groups.find((group) => group.id === "model")?.lines.at(-1);
+  assert.equal(note?.label, undefined, "the rejection reason is a note, not a labeled row");
   assert.equal(details.groups.find((group) => group.id === "activity")?.lines.filter((line) => line.gap).length, 1,
     "unsupported and disabled are facts, only an unknown state is a gap");
+}
+
+{
+  // A request that matches the selection, and a pending reason, add no rows.
+  const details = responseRunDetails({
+    ...base,
+    runtimeIdentity: { schemaVersion: 1, harness: "claude", version: "2.1.289", model: null },
+    requestedModel: "anthropic/claude-fable-5-1",
+    desiredModel: "anthropic/claude-fable-5-1",
+    modelApplicationState: "saved",
+    modelSource: "next-message",
+    modelApplicationReason: "Selected for the next message only.",
+  });
+  assert.ok(details);
+  assert.deepEqual(runDetailsLineTexts(details).slice(0, 2), [
+    "Runtime: claude 2.1.289",
+    "Model: anthropic/claude-fable-5-1 · saved, waiting for the runtime · this message only",
+  ]);
+  assert.equal(details.groups.find((group) => group.id === "model")?.lines.length, 1);
 }
 
 console.log("chat-run-details.test.ts: ok");

@@ -50,7 +50,9 @@ async function openChat(page: Page) {
               familiarId: "nova", harness: "codex", model: "openai/gpt-6-astra", runtime: `local:${PROJECT_ROOT}`,
               runtimeIdentity: { schemaVersion: 1, harness: "codex" },
               desiredModel: "openai/gpt-6-astra",
-              modelApplicationState: "pending",
+              // #6039: an unsupported model keeps its reason as a full-width note,
+              // which is the long value this spec wraps inside the column.
+              modelApplicationState: "unsupported",
               modelSource: "familiar-default",
               modelApplicationReason: LONG_REASON,
             },
@@ -92,8 +94,8 @@ for (const viewport of [{ width: 1024, height: 768 }, { width: 1100, height: 800
       const summary = details.locator("summary");
       // Closed: the trail is one line naming the runtime, the state and the
       // gaps; the long reason is not on screen.
-      // Gaps: version not reported, model unavailable, activity not recorded.
-      await expect(summary).toHaveText("Run details · codex · model pending · 3 unverified");
+      // Gaps: version not reported, model unconfirmed, activity not recorded.
+      await expect(summary).toHaveText("Run details · codex · model unsupported · 3 unverified");
       await expect(page.getByText(LONG_REASON)).toBeHidden();
       await expect.poll(async () => {
         const g = await geometry(page);
@@ -105,11 +107,11 @@ for (const viewport of [{ width: 1024, height: 768 }, { width: 1100, height: 800
       await page.keyboard.press("Enter");
       await expect(details).toHaveAttribute("open", "");
       await expect(page.getByText(LONG_REASON)).toBeVisible();
-      await expect(details.locator("dt", { hasText: "Runtime-reported model" })).toBeVisible();
-      await expect(details.locator("dt", { hasText: "Activity support" })).toBeVisible();
+      await expect(details.locator("dd", { hasText: "openai/gpt-6-astra · not supported by the runtime · familiar default" })).toBeVisible();
+      await expect(details.locator("dt", { hasText: "Activity" })).toBeVisible();
       await expect.poll(async () => {
         const g = await geometry(page);
-        return g.values.length >= 7 && g.values.every((value) => value.right <= g.transcriptRight + 1);
+        return g.values.length >= 4 && g.values.every((value) => value.right <= g.transcriptRight + 1);
       }, "every opened value ends inside the reading column").toBe(true);
       // The long reason is a full-width note row; whether it takes one line or
       // two depends on the pane, and either way it ends inside the column.

@@ -1,4 +1,5 @@
 import { responseMetadataIdentity, type ChatResponseMetadata } from "./chat-response-metadata.ts";
+import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import { normalizeRuntimeActivity, runtimeActivityStatusLines } from "./chat-runtime-activity.ts";
 
 /** One row of the Run details disclosure. A row without a label is a note
@@ -27,39 +28,67 @@ function modelLabel(model: string): string {
   return model;
 }
 
+/** Plain words for a model that the runtime has not reported back. */
+const statePhrases: Record<ModelApplicationState, string> = {
+  unknown: "not confirmed",
+  saved: "saved, waiting for the runtime",
+  pending: "pending confirmation",
+  applied: "applied, not reported back",
+  unsupported: "not supported by the runtime",
+  failed: "failed to apply",
+};
+
+const sourcePhrases: Record<ModelScope, string> = {
+  "runtime-default": "runtime default",
+  "global-default": "global default",
+  "familiar-default": "familiar default",
+  session: "this session",
+  "next-message": "this message only",
+};
+
 /** The model application trail is separate from controls: a runtime echo can
  *  prove forwarding without proving provider application, and a runtime-owned
- *  default may intentionally have no model id at all. */
+ *  default may intentionally have no model id at all. One Model row carries
+ *  the fact (#6039): the model the runtime reported when it did, otherwise
+ *  the selection with its state and source in plain words. The other rows
+ *  appear only when they differ from it. */
 function runtimeAndModelGroups(metadata: ChatResponseMetadata): { runtime: RunDetailLine[]; model: RunDetailLine[]; stateFact: string | null } {
   const requested = metadata.requestedModel;
   const desired = metadata.desiredModel ?? metadata.model;
   const forwarded = metadata.forwardedModel;
   const confirmed = metadata.confirmedModel;
+  const state = metadata.modelApplicationState;
   const identity = responseMetadataIdentity(metadata);
+  const reported = identity?.model ?? null;
+  const legacy = Boolean(confirmed && !identity);
   const runtime: RunDetailLine[] = [
     identity
       ? { label: "Runtime", value: identity.version ? `${identity.harness} ${identity.version}` : `${identity.harness} · Version not reported`, gap: !identity.version }
       : { label: "Runtime", value: "Identity not recorded in this response", gap: true },
-    identity?.model
-      ? { label: "Runtime-reported model", value: identity.model }
-      : { label: "Runtime-reported model", value: "Unavailable", gap: true },
   ];
   const model: RunDetailLine[] = [];
-  if (requested !== undefined) model.push({ label: "Requested model", value: requested ? modelLabel(requested) : "Runtime default" });
-  if (desired) model.push({ label: "Selected model", value: modelLabel(desired) });
-  if (forwarded && forwarded !== desired) model.push({ label: "Forwarded model", value: modelLabel(forwarded) });
-  let stateFact: string | null = null;
-  if (confirmed && !identity) {
-    model.push({ label: "Recorded model", value: modelLabel(confirmed) });
-  } else if (metadata.modelApplicationState) {
-    const state = metadata.modelApplicationState;
-    // The state is its own summary fact ("model pending"), so it is not also
-    // counted among the unverified lines.
-    model.push({ label: "Model", value: state });
-    if (state !== "applied") stateFact = `model ${state}`;
+  if (reported) {
+    model.push({ label: "Model", value: `${modelLabel(reported)} · reported by the runtime` });
+    if (desired && desired !== reported) model.push({ label: "Selected model", value: modelLabel(desired) });
+  } else if (legacy) {
+    model.push({ label: "Recorded model", value: modelLabel(confirmed!) });
+    if (desired && desired !== confirmed) model.push({ label: "Selected model", value: modelLabel(desired) });
+  } else {
+    const phrase = state ? statePhrases[state] : "not confirmed by the runtime";
+    const source = metadata.modelSource ? sourcePhrases[metadata.modelSource] : null;
+    model.push({ label: "Model", value: [desired ? modelLabel(desired) : "Runtime default", phrase, source].filter(Boolean).join(" · "), gap: true });
   }
-  if (metadata.modelSource) model.push({ label: "Source", value: metadata.modelSource });
-  if (metadata.modelApplicationReason && !confirmed) model.push({ value: metadata.modelApplicationReason });
+  // The state is its own summary fact ("model pending"); the unconfirmed
+  // Model row is the one gap it leaves in the list.
+  const stateFact = state && state !== "applied" && !legacy ? `model ${state}` : null;
+  if (requested !== undefined && requested !== desired && (requested || desired)) {
+    model.push({ label: "Requested model", value: requested ? modelLabel(requested) : "Runtime default" });
+  }
+  if (forwarded && forwarded !== desired) model.push({ label: "Forwarded model", value: modelLabel(forwarded) });
+  // The reason explains a rejection or a failure; for a pending, saved or
+  // applied model the state phrase already says it.
+  const reasonAdds = state !== "pending" && state !== "saved" && state !== "applied";
+  if (metadata.modelApplicationReason && !confirmed && reasonAdds) model.push({ value: metadata.modelApplicationReason });
   return { runtime, model, stateFact };
 }
 
@@ -89,7 +118,7 @@ function controlLines(metadata: ChatResponseMetadata): { lines: RunDetailLine[];
 function activityLines(activity: unknown): RunDetailLine[] {
   const normalized = normalizeRuntimeActivity(activity);
   const texts = runtimeActivityStatusLines(activity);
-  if (!normalized) return [{ label: "Activity support", value: "Not recorded", gap: true }];
+  if (!normalized) return [{ label: "Activity", value: "not recorded for this turn", gap: true }];
   const gaps = [normalized.path === "unknown", normalized.tools === "unknown", normalized.reasoning === "unknown"];
   return texts.map((text, index) => {
     const separator = text.indexOf(": ");
