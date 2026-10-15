@@ -147,6 +147,13 @@ const nextConfig: NextConfig = {
     // in-memory copy after each snapshot instead of retaining every compile.
     turbopackFileSystemCacheForDev: daemonlessE2E,
     turbopackMemoryEviction: daemonlessE2E ? "full" : false,
+    // Next 16.3 also persists Turbopack's cache at the end of every production
+    // build (1.52 GB, ~100 s locally), and `next build` waits for that write
+    // after printing the route table. Nothing reuses it: CI and release builds
+    // start from a clean checkout and no workflow restores `.next/cache`. On
+    // macos-15 the write took 44 min and timed out the iOS job and the
+    // release candidate's Client v1 conformance build (#6005).
+    turbopackFileSystemCacheForBuild: false,
     // Tree-shake the icon + syntax-highlight kitchens so the per-route
     // bundle only includes the icons and grammars actually referenced.
     // @iconify/react in particular has a flat icon-name surface that
