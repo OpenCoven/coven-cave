@@ -1259,9 +1259,7 @@ describe("StreamingTurnResponse", () => {
     expect(textContent(renderer.root)).toContain("No response.");
     expect(
       renderer.root.findAll(
-        (node) =>
-          node.props.role === "group" &&
-          String(node.props["aria-label"]).startsWith("Response model and controls:"),
+        (node) => node.type === "details" && node.props["data-turn-run-details"] === true,
       ),
     ).toHaveLength(4);
   });
@@ -1420,9 +1418,7 @@ describe("StreamingTurnResponse", () => {
     expect(textContent(renderer.root)).toContain("The runtime did not confirm the selected model.");
     expect(
       renderer.root.findAll(
-        (node) =>
-          node.props.role === "group" &&
-          String(node.props["aria-label"]).startsWith("Response model and controls:"),
+        (node) => node.type === "details" && node.props["data-turn-run-details"] === true,
       ),
     ).toHaveLength(1);
   });

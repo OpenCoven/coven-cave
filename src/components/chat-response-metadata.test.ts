@@ -172,11 +172,16 @@ assert.match(
   /function runtimeAndModelGroups\([\s\S]*?"Requested model"[\s\S]*?"Selected model"[\s\S]*?"Forwarded model"[\s\S]*?"Recorded model"/,
   "Run details carry requested, forwarded, and effective model state through the shared builder",
 );
+const runDetailsComponent = await readFile(new URL("./response-run-details.tsx", import.meta.url), "utf8");
+const quickChatThread = await readFile(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
 assert.match(
-  chatView,
-  /function ResponseRunDetails\([\s\S]*?const details = responseRunDetails\(metadata\);[\s\S]*?<details\s+className="cave-run-details"[\s\S]*?<ResponseRunDetails metadata=\{turn\.responseMetadata\} \/>/,
-  "Assistant turn rows render the model, control and activity trail as one Run details disclosure (#6026)",
+  runDetailsComponent,
+  /import "@\/styles\/response-run-details\.css";[\s\S]*?export function ResponseRunDetails\([\s\S]*?const details = responseRunDetails\(metadata\);[\s\S]*?<details\s+className="cave-run-details"/,
+  "the shared Run details component owns its stylesheet and renders one disclosure (#6026, #6034)",
 );
+assert.match(chatView, /<ResponseRunDetails metadata=\{turn\.responseMetadata\} \/>/, "assistant turn rows render the shared Run details disclosure");
+assert.match(quickChatThread, /<ResponseRunDetails metadata=\{message\.responseMetadata\} \/>/, "Quick Chat renders the same disclosure instead of its own chip row (#6034)");
+assert.doesNotMatch(quickChatThread, /quickChatResponseMetadataLines|QuickChatResponseMetadata|Response model and controls/, "Quick Chat's private metadata chip row is gone");
 assert.doesNotMatch(chatView, /ResponseModelStatus|ResponseControlStatus/, "the two chip rows are gone");
 
 // #6026: the trail is a muted disclosure, not pills. Closed, it is one line
@@ -184,14 +189,15 @@ assert.doesNotMatch(chatView, /ResponseModelStatus|ResponseControlStatus/, "the 
 // the #6011 wrapping chip class has no caller.
 assert.doesNotMatch(chatView, /cave-response-status-chip/, "no status chip class remains in the chat view");
 const transcriptCss = await readFile(new URL("../styles/cave-chat/transcript.css", import.meta.url), "utf8");
-assert.doesNotMatch(transcriptCss, /cave-response-status-chip/, "the wrapping chip rule left with the chips");
+assert.doesNotMatch(transcriptCss, /cave-response-status-chip|cave-run-details/, "the chip rule left with the chips; the disclosure's rules live with its component");
+const runDetailsCss = await readFile(new URL("../styles/response-run-details.css", import.meta.url), "utf8");
 assert.match(
-  transcriptCss,
+  runDetailsCss,
   /\.cave-run-details > summary \{[^}]*max-width: 100%;[^}]*list-style: none;/,
   "the closed Run details line stays inside the reading column with no native marker",
 );
 assert.match(
-  transcriptCss,
+  runDetailsCss,
   /\.cave-run-details dd \{[^}]*min-width: 0;[^}]*overflow-wrap: anywhere;/,
   "an open Run details value wraps inside the column",
 );

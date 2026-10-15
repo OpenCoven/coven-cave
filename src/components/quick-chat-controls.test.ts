@@ -77,12 +77,13 @@ assert.match(
   /messages\.findLast\([\s\S]*message\.role === "assistant" && message\.local !== true[\s\S]*announceLifecycle=\{message\.id === latestAssistantId\}/,
   "only Quick Chat's latest non-local assistant turn can announce lifecycle changes",
 );
-const responseMetadataComponent =
-  /function QuickChatResponseMetadata[\s\S]*?\n\}/.exec(thread)?.[0] ?? "";
+// #6034: Quick Chat renders the shared Run details disclosure, so the
+// response metadata is a native <details> with a focusable summary.
+const responseMetadataComponent = readFileSync(new URL("./response-run-details.tsx", import.meta.url), "utf8");
 assert.match(
   responseMetadataComponent,
-  /role="group"/,
-  "response metadata is a labelled semantic group",
+  /<details[\s\S]*?data-turn-run-details=\{true\}[\s\S]*?<summary className="focus-ring">/,
+  "response metadata is a native disclosure with a focusable summary",
 );
 assert.doesNotMatch(
   responseMetadataComponent,
@@ -603,10 +604,13 @@ assert.match(
     /\.\.\.\(opts\.attachments\?\.length \? \{ attachments: opts\.attachments \} : \{\}\)/,
     "streamFamiliarText forwards attachments to the chat bridge (native support)",
   );
+  const runDetails = readFileSync(new URL("../lib/chat-run-details.ts", import.meta.url), "utf8");
+  assert.match(runDetails, /"Requested model"[\s\S]*?"Forwarded model"[\s\S]*?"Applied"[\s\S]*?"Forwarded — not confirmed"/,
+    "the shared builder carries requested, forwarded, and applied model/control outcomes");
   assert.match(
     thread,
-    /quickChatResponseMetadataLines[\s\S]*?Forwarded — not confirmed[\s\S]*?<QuickChatResponseMetadata lines=\{responseMetadataLines\}/,
-    "quick chat renders requested, forwarded, and applied model/control outcomes",
+    /<ResponseRunDetails metadata=\{message\.responseMetadata\} \/>/,
+    "quick chat renders those outcomes through the shared Run details disclosure (#6034)",
   );
   assert.doesNotMatch(
     /hasRichBlocks:[\s\S]*?resultCount:/.exec(thread)?.[0] ?? "",
