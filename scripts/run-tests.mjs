@@ -233,6 +233,7 @@ export const SUITES = {
     "src/lib/server/x-credentials.test.ts",
     "src/lib/server/x-access.test.ts",
     "src/lib/server/x-sources.test.ts",
+    "src/lib/server/research-privacy-boundary.test.ts",
     "src/lib/server/x-publications.test.ts",
     "src/lib/x-publish-composer.test.ts",
     "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
