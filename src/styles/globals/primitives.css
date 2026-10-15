@@ -1214,14 +1214,20 @@
 }
 
 /* ---- SearchInput -------------------------------------------- */
+.ui-search-control {
+  min-width: 0;
+  max-width: 100%;
+}
 .ui-search-input {
   position: relative;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   width: 100%;
-  height: 30px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: calc(var(--space-8) + var(--space-1));
   border-radius: var(--radius-control);
-  border: 1px solid var(--border-hairline);
+  border: 1px solid var(--border-strong);
   background: var(--bg-raised);
   transition:
     border-color var(--duration-fast) var(--ease-standard),
@@ -1231,6 +1237,8 @@
   border-color: var(--border-strong);
 }
 .ui-search-input:focus-within {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
   border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
   background: var(--bg-elevated);
 }
@@ -1243,7 +1251,10 @@
   flex-shrink: 0;
 }
 .ui-search-input-field {
-  flex: 1;
+  flex: 1 1 0%;
+  width: 100%;
+  min-height: var(--space-8);
+  appearance: none;
   min-width: 0;
   background: transparent;
   border: none;
@@ -1255,6 +1266,7 @@
 }
 .ui-search-input-field::placeholder {
   color: var(--text-muted);
+  opacity: 1;
 }
 /* type="search" draws a native clear glyph that doubles up with our own
    .ui-search-input-clear button — suppress it so there's a single clear. */
@@ -1264,10 +1276,13 @@
   -webkit-appearance: none;
 }
 
+@media (max-width: 767px), (pointer: coarse) {
+  .ui-search-input { min-height: var(--touch-target); }
+  .ui-search-input-field { min-height: var(--touch-target); font-size: var(--text-lg); }
+  .ui-search-input .ui-search-input-clear { width: var(--touch-target); height: var(--touch-target); }
+}
+
 @media (max-width: 767px) {
-  .ui-search-input-field {
-    min-height: var(--touch-target);
-  }
 
   .command-palette-row,
   .notification-bell__action,
@@ -1286,6 +1301,7 @@
 }
 
 .ui-search-input-clear {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1682,4 +1698,23 @@ html[data-backdrop-on] .glass-overlay {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: var(--text-2xs);
   color: var(--text-muted);
+}
+
+/* Session search keeps its specialized shortcut while sharing search focus. */
+.chat-list-search-control { border-color:var(--border-strong); }
+.chat-list-search-control:focus-within { outline:var(--ring-width) solid var(--ring-focus); outline-offset:var(--ring-offset); }
+@media (max-width:767px), (pointer:coarse) {
+  .chat-list-search-control { min-height:var(--touch-target); }
+  .chat-list-search-control input { font-size:var(--text-lg); }
+}
+
+/* Native filter inputs that retain surface-specific keyboard/combobox behavior. */
+input.ui-search-field {
+  min-width: 0;
+  min-height: var(--space-8);
+  border-color: var(--border-strong);
+}
+@media (max-width: 767px), (pointer: coarse) {
+  input.ui-search-field { min-height: var(--touch-target); font-size: var(--text-lg); }
+  .ui-search-action { min-width: var(--touch-target); min-height: var(--touch-target); }
 }

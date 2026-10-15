@@ -16,6 +16,8 @@ import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
 import { buildCitationsDirective } from "@/lib/citations-directive";
 import { buildConnectorsDirective, type TurnConnector } from "@/lib/connectors";
 import type { ModelControlValues } from "@/lib/model-control-capabilities";
+import { isProjectlessGenerationOrigin } from "@/lib/chat-origins";
+import type { SessionOrigin } from "@/lib/types";
 
 type ModelRequest = {
   familiarId: string;
@@ -321,7 +323,11 @@ export function turnRetryModel(input: {
 
 /** Add only explicitly selected prompt-only guidance. Native controls must
  * never be duplicated as prose, and unsupported controls never reach here. */
-export function buildPromptWithResponseControls(prompt: string, body: PromptResponseControls): string {
+export function buildPromptWithResponseControls(
+  prompt: string,
+  body: PromptResponseControls,
+  opts: { origin?: SessionOrigin | null } = {},
+): string {
   const controls = Object.entries(body.modelControls ?? {});
   const guidance = controls.length > 0
     ? [
@@ -332,6 +338,11 @@ export function buildPromptWithResponseControls(prompt: string, body: PromptResp
         "",
       ]
     : [];
+  // Projectless generation surfaces (canvas, journal, enhance) take only the
+  // response controls: no chat directives and no per-chat connectors.
+  if (isProjectlessGenerationOrigin(opts.origin)) {
+    return [...guidance, prompt].join("\n");
+  }
   const connectorsBlock = buildConnectorsDirective(body.connectors ?? []);
   return [
     ...guidance,

@@ -45,6 +45,7 @@ import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import { type WorkspaceNavMode } from "@/lib/workspace-navigation";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import type { CreateProjectOptions } from "@/lib/chat-add-project";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
    *  interprets it, only round-trips it through navigation callbacks. */
@@ -144,6 +145,7 @@ function FolderRow({
   quietLead?: boolean;
   onClick: () => void;
 }) {
+  const keys = useKeySymbols();
   const active = state === "active";
   const split = state === "split";
   // Splittable pages can be dragged into the main area to open beside the
@@ -156,7 +158,7 @@ function FolderRow({
   const splitHint = split ? " · open in split" : "";
   const title = description
     ? kbd
-      ? `${label} — ${description} (${kbd})${dragHint}${splitHint}`
+      ? `${label} — ${description} (${platformizeHint(kbd, keys)})${dragHint}${splitHint}`
       : `${label} — ${description}${dragHint}${splitHint}`
     : undefined;
   return (
@@ -204,6 +206,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     sessions,
     responseNeeded,
   } = props;
+  const keys = useKeySymbols();
 
   // Arrow-key navigation across the flat nav rows: one tab stop, Up/Down moves
   // focus, Home/End jumps. Uses the shared roving-tabindex hook.
@@ -270,8 +273,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         // header is gone with the swap (cave-fh9so), and the shortcut is not —
         // so it moves onto the one rail that is now always mounted, rather
         // than disappearing with the component that happened to host it.
-        newChatTitle="New chat (⌘N)"
-        newChatTrailing={<kbd className="rail-header__new-kbd">⌘N</kbd>}
+        newChatTitle={platformizeHint("New chat (⌘N)", keys)}
+        newChatTrailing={<kbd className="rail-header__new-kbd">{platformizeHint("⌘N", keys)}</kbd>}
         projects={props.projects}
         projectId={props.projectId}
         project={props.project}
@@ -294,7 +297,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       />
 
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
-          <SidebarSection id="navigation" label="Navigation">
+          <SidebarSection id="navigation" label="Navigation" labelHidden>
             {primaryDestinations.map((destination) => renderDestination(destination))}
           </SidebarSection>
 
@@ -319,7 +322,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           <SidebarSection
             id="rooms"
             label="Rooms"
-            count={rooms.length}
             hideWhenEmpty
             isEmpty={rooms.length === 0}
           >

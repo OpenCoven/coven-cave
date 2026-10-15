@@ -1387,3 +1387,25 @@ describe("FamiliarXSection async ownership", () => {
     expect(JSON.stringify(renderer.toJSON())).not.toContain("Couldn't save X research.");
   });
 });
+
+test.each([false, true])("connection repair preserves publishing scope when grant is already enabled (connected=%s)", async (connected) => {
+  const starts: Array<Record<string, unknown>> = [];
+  globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/api/x/connection" && !init?.method) return jsonResponse(connected
+      ? { configured: true, connected: true, activeFlow: false, account: { id: "42", username: "cave", name: "Cave" }, scopes: ["tweet.read", "users.read", "offline.access"] }
+      : { configured: true, connected: false, activeFlow: false });
+    if (url === "/api/x/oauth/start" && init?.method === "POST") {
+      starts.push(JSON.parse(String(init.body)));
+      return jsonResponse({ ok: false, error: "Stop after checking requested scopes" }, false);
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(<FamiliarXSection familiar={{ ...familiarA, xPublishEnabled: true }} />); });
+  const action = renderer.root.find(node => node.type === "button" && node.children.includes(connected ? "Reconnect" : "Connect X"));
+  await act(async () => { await action.props.onClick(); });
+  expect(starts).toHaveLength(1);
+  expect(starts[0].capability).toBe("publish");
+  expect(browserMocks.open).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});

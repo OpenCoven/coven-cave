@@ -9,14 +9,29 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatModelState } from "@/lib/chat-model-state";
+import type { ModelControlCapability } from "@/lib/model-control-capabilities";
 import {
   createModelSelectionMutationQueue,
   type ModelSelectionMutationQueue,
 } from "@/lib/model-selection-mutation-queue";
 import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 
+type ModelStateResponse = {
+  ok?: boolean;
+  state?: ChatModelState;
+  /** Selected-model controls the chat composer renders as Thinking · Speed
+   *  chips. Home keeps them too (#5902) so the same chips show before the
+   *  first send; a pick rides the handoff into the opened chat. */
+  controls?: ModelControlCapability[];
+};
+
+function responseCapabilities(json: ModelStateResponse): readonly ModelControlCapability[] {
+  return json.ok && Array.isArray(json.controls) ? json.controls : [];
+}
+
 export function useHomeModelState(selectedFamiliarId: string) {
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
+  const [modelCapabilities, setModelCapabilities] = useState<readonly ModelControlCapability[]>([]);
   // A Home selection can be followed by an immediate Chat handoff, before the
   // familiar-default PATCH has completed. Keep the selected wire value so the
   // first send can carry it independently of the soon-to-unmount Home state.
@@ -41,6 +56,7 @@ export function useHomeModelState(selectedFamiliarId: string) {
     // request is pending. The same guard also protects a late response from a
     // familiar that was selected before this one.
     setModelState(null);
+    setModelCapabilities([]);
     setPendingModelOverride(undefined);
     runtimeWriteRef.current = null;
     if (!selectedFamiliarId) {
@@ -53,7 +69,7 @@ export function useHomeModelState(selectedFamiliarId: string) {
           `/api/chat/model-state?familiarId=${encodeURIComponent(familiarId)}`,
           { cache: "no-store" },
         );
-        const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
+        const json = (await res.json()) as ModelStateResponse;
         if (
           cancelled
           || familiarId !== selectedFamiliarIdRef.current
@@ -61,13 +77,17 @@ export function useHomeModelState(selectedFamiliarId: string) {
           || requestId !== modelStateRequestRef.current
         ) return;
         setModelState(json.ok && json.state ? json.state : null);
+        setModelCapabilities(responseCapabilities(json));
       } catch {
         if (
           !cancelled
           && familiarId === selectedFamiliarIdRef.current
           && selectionRevision === selectionRevisionRef.current
           && requestId === modelStateRequestRef.current
-        ) setModelState(null);
+        ) {
+          setModelState(null);
+          setModelCapabilities([]);
+        }
       }
     })();
     return () => {
@@ -87,14 +107,17 @@ export function useHomeModelState(selectedFamiliarId: string) {
           `/api/chat/model-state?familiarId=${encodeURIComponent(familiarId)}`,
           { cache: "no-store" },
         );
-        const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
+        const json = (await res.json()) as ModelStateResponse;
         if (
           familiarId === selectedFamiliarIdRef.current
           && expectedSelectionRevision === selectionRevisionRef.current
           && requestId === modelStateRequestRef.current
           && json.ok
           && json.state
-        ) setModelState(json.state);
+        ) {
+          setModelState(json.state);
+          setModelCapabilities(responseCapabilities(json));
+        }
       } catch {
         /* keep the optimistic value */
       }
@@ -144,7 +167,9 @@ export function useHomeModelState(selectedFamiliarId: string) {
           || selectionRevision !== selectionRevisionRef.current
         ) return;
         if (json.ok && json.state) setModelState(json.state);
-        else refetchModelState(selectionRevision, familiarId);
+        // The PATCH answers with the saved state only; the controls for the
+        // newly saved model come from the GET, so re-read either way.
+        refetchModelState(selectionRevision, familiarId);
       }).catch(() => {
         if (
           familiarId === selectedFamiliarIdRef.current
@@ -230,6 +255,7 @@ export function useHomeModelState(selectedFamiliarId: string) {
 
   return {
     modelState,
+    modelCapabilities,
     pendingModelOverride,
     waitForRuntimeWrite,
     selectModel: handleSelectModel,

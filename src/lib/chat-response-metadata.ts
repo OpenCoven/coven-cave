@@ -67,6 +67,17 @@ export function responseMetadataModel(metadata?: ChatResponseMetadata): string |
   return responseMetadataIdentity(metadata)?.model ?? null;
 }
 
+/** What the runtime did not report about itself, in reading order. The chat
+ *  header shows one muted "unverified" marker for any gap and names the gaps
+ *  on hover (#5953): the facts stay honest, the presentation stays short. */
+export function runtimeIdentityGaps(identity: ChatRuntimeIdentity | undefined): string[] {
+  if (!identity) return ["Runtime not recorded"];
+  const gaps: string[] = [];
+  if (!identity.version) gaps.push("Runtime version not reported");
+  if (!identity.model) gaps.push("Model not reported");
+  return gaps;
+}
+
 /** Collapse a user home prefix to "~" so the directory reads as a location the
  *  user can place, not a machine-specific absolute path. Matches the macOS
  *  /Users/<name> and Linux /home/<name> conventions the daemon emits. */

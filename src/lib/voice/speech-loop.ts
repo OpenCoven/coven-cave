@@ -153,7 +153,7 @@ export function resolveSpeechRecognition(): (new () => SpeechRecognitionLike) | 
 }
 
 export const STT_UNAVAILABLE_HINT =
-  "This window has no speech recognition engine. The desktop app hears through native macOS recognition; on the web this voice mode needs a Chromium browser. The sidecar Whisper engine is on the roadmap — or pick a cloud voice provider in Familiar Studio → Brain.";
+  "This window has no speech recognition engine. The macOS desktop app hears through native recognition. On Windows and Linux, and in a browser without one, pick the Whisper engine or a cloud voice provider in Familiar Studio → Brain.";
 
 /** Callbacks the loop hands to an ears implementation. */
 export type SpeechEarsHandlers = {
@@ -409,15 +409,27 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     brainBusy = true;
     const epoch = speechEpoch;
     const itemKey = nextItemKey();
+    // The brain can run for tens of seconds before its first sentence reaches
+    // the mouth. Say so, so the call does not read "Listening" over a turn
+    // that is already in flight.
+    let thinking = true;
+    const settleThinking = () => {
+      if (!thinking) return;
+      thinking = false;
+      if (!closed) callbacks.onThinking?.(false);
+    };
+    callbacks.onThinking?.(true);
     try {
       const finalText = await opts.brain(userText, (chunk) => {
         if (epoch !== speechEpoch) return;
         enqueueSpeech(chunk);
       }, itemKey);
+      settleThinking();
       if (closed) return;
       callbacks.onAssistantTranscriptFinal(finalText, itemKey);
       await queueDrained();
     } catch (err) {
+      settleThinking();
       // A typed barge-in supersedes the old runtime turn as well as its audio.
       // Its eventual rejection must not fail the replacement call/turn.
       if (!closed && epoch === speechEpoch) {
@@ -429,6 +441,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
         );
       }
     } finally {
+      settleThinking();
       brainBusy = false;
       const next = pendingUser.shift();
       if (next && !closed) void askBrain(next);

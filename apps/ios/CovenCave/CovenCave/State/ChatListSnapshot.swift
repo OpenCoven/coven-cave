@@ -32,6 +32,10 @@ struct ChatListSnapshot {
         /// project). Nil is Unassigned.
         let projectId: String?
         let searchText: String
+        /// Running, needs you, merged, ready to archive… derived from the
+        /// server's status, attention and PR evidence (#5850). Never reads
+        /// transcripts; a live local stream is folded in by the row.
+        let status: ChatStatusSummary
     }
 
     private struct SessionIdentity: Hashable {
@@ -52,17 +56,23 @@ struct ChatListSnapshot {
     /// or archived), so the familiar filter offers only names that select
     /// something. Unaffected by filtering, like `archivedCount`.
     let familiarIds: Set<String>
-    /// Every registered project bound to at least one conversation (active or
-    /// archived), so the project filter offers only choices that select
-    /// something. Unaffected by filtering, like `familiarIds`.
+    /// Projects with chats matching the current search, familiar and archive
+    /// settings. Ignore the project selection so other nonempty choices remain
+    /// available when switching projects.
     let projectIds: Set<String>
-    /// Whether any conversation (active or archived) is Unassigned.
+    /// Whether any chat matching those same settings is Unassigned.
     let hasUnassigned: Bool
+    /// Active conversations per status filter, counted after search and the
+    /// familiar/project filters but BEFORE the status filter, so switching
+    /// chips never changes the numbers under the others.
+    let statusCounts: [ChatStatusFilter: Int]
 
     private init(
         entries: [Entry], reflections: [Entry], archivedCount: Int,
-        familiarIds: Set<String>, projectIds: Set<String>, hasUnassigned: Bool
+        familiarIds: Set<String>, projectIds: Set<String>, hasUnassigned: Bool,
+        statusCounts: [ChatStatusFilter: Int]
     ) {
+        self.statusCounts = statusCounts
         self.entries = entries
         self.reflections = reflections
         self.archivedCount = archivedCount
@@ -77,17 +87,53 @@ struct ChatListSnapshot {
     /// `projectFilter` keeps only conversations bound to that project.
     func filtered(
         query: String, includeArchived: Bool, familiarId: String? = nil,
-        projectFilter: ProjectFilter? = nil
+        projectFilter: ProjectFilter? = nil, statusFilter: ChatStatusFilter? = nil
     ) -> ChatListSnapshot {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return ChatListSnapshot(entries: entries.filter {
+        // Project choices come from chats matching search, familiar and
+        // archive settings, ignoring the project selection itself (#5877).
+        let matching = entries.filter {
             Self.matches($0, search: search, includeArchived: includeArchived,
-                         familiarId: familiarId, projectFilter: projectFilter)
-        }, reflections: reflections.filter {
+                         familiarId: familiarId, projectFilter: nil)
+        }
+        let narrowed = matching.filter { Self.matches($0, projectFilter: projectFilter) }
+        return ChatListSnapshot(entries: Self.applying(statusFilter, to: narrowed),
+           reflections: statusFilter != nil ? [] : reflections.filter {
             Self.matches($0, search: search, includeArchived: false,
                          familiarId: familiarId, projectFilter: projectFilter)
         }, archivedCount: archivedCount, familiarIds: familiarIds,
-           projectIds: projectIds, hasUnassigned: hasUnassigned)
+           projectIds: Set(matching.compactMap(\.projectId)),
+           hasUnassigned: matching.contains { $0.projectId == nil },
+           statusCounts: Self.countStatuses(narrowed))
+    }
+
+    static func countStatuses(_ entries: [Entry]) -> [ChatStatusFilter: Int] {
+        var counts: [ChatStatusFilter: Int] = [:]
+        for entry in entries where !entry.archived {
+            for filter in ChatStatusFilter.allCases where filter.matches(entry.status) {
+                counts[filter, default: 0] += 1
+            }
+        }
+        return counts
+    }
+
+    /// The status filter keeps archived rows out (an archived chat wants
+    /// nothing), and orders Needs you by urgency — blocked, failed, awaiting —
+    /// then by how long it has waited. Other filters keep the list's order.
+    static func applying(_ filter: ChatStatusFilter?, to entries: [Entry]) -> [Entry] {
+        guard let filter else { return entries }
+        let kept = entries.filter { !$0.archived && filter.matches($0.status) }
+        guard filter == .needsYou else { return kept }
+        return kept.enumerated().sorted { lhs, rhs in
+            let a = lhs.element.status, b = rhs.element.status
+            if a.lifecycle.urgencyRank != b.lifecycle.urgencyRank {
+                return a.lifecycle.urgencyRank < b.lifecycle.urgencyRank
+            }
+            let aSince = a.since ?? lhs.element.updatedAt
+            let bSince = b.since ?? rhs.element.updatedAt
+            if aSince != bSince { return aSince < bSince }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
     }
 
     private static func matches(
@@ -117,7 +163,8 @@ struct ChatListSnapshot {
         query: String = "",
         includeArchived: Bool = false,
         familiarId: String? = nil,
-        projectFilter: ProjectFilter? = nil
+        projectFilter: ProjectFilter? = nil,
+        statusFilter: ChatStatusFilter? = nil
     ) {
         var names: [String: String] = [:]
         for familiar in familiars {
@@ -140,12 +187,13 @@ struct ChatListSnapshot {
                 ? .distantPast
                 : caveParseISO(session.updatedAt) ?? caveParseISO(session.createdAt) ?? .distantPast
         }
-        var serverMetadata: [SessionIdentity: (title: String, activity: Date)] = [:]
+        var serverMetadata: [SessionIdentity: (title: String, activity: Date, status: ChatStatusSummary)] = [:]
         for (index, session) in sessions.enumerated() where !session.isGeneratedRun {
             if let familiarId = session.familiarId {
                 serverMetadata[SessionIdentity(familiarId: familiarId, sessionId: session.id)] = (
                     session.title,
-                    sessionActivity[index]
+                    sessionActivity[index],
+                    ChatStatusSummary.derive(session)
                 )
             }
         }
@@ -170,6 +218,7 @@ struct ChatListSnapshot {
             }
             var titles = [thread.title]
             var activity = thread.updatedAt
+            var statuses: [ChatStatusSummary] = []
             for (familiarId, sessionId) in thread.sessionIds
             where thread.familiarIds.contains(familiarId) {
                 let identity = SessionIdentity(familiarId: familiarId, sessionId: sessionId)
@@ -177,8 +226,14 @@ struct ChatListSnapshot {
                 if let metadata = serverMetadata[identity] {
                     titles.append(metadata.title)
                     activity = max(activity, metadata.activity)
+                    statuses.append(metadata.status)
                 }
             }
+            // The thread's own archive/pin outrank its sessions': archiving
+            // here settles it, pinning here keeps it out of Ready to archive.
+            let threadStatus = thread.archived
+                ? ChatStatusSummary.settled
+                : (ChatStatusSummary.combine(statuses) ?? .settled).pinned(thread.pinned)
             all.append(Entry(
                 id: "local:\(thread.id)",
                 conversation: .local(thread),
@@ -188,7 +243,8 @@ struct ChatListSnapshot {
                 familiarIds: thread.familiarIds,
                 projectId: projectId(for: thread.projectRoot),
                 searchText: (titles + thread.familiarIds.compactMap { names[$0] })
-                    .joined(separator: " ").lowercased()
+                    .joined(separator: " ").lowercased(),
+                status: threadStatus
             ))
         }
         for (index, session) in sessions.enumerated() where !session.isGeneratedRun {
@@ -205,15 +261,22 @@ struct ChatListSnapshot {
                 familiarIds: session.familiarId.map { [$0] } ?? [],
                 projectId: projectId(for: session.projectRoot),
                 searchText: [session.title, session.familiarId.flatMap { names[$0] } ?? ""]
-                    .joined(separator: " ").lowercased()
+                    .joined(separator: " ").lowercased(),
+                status: ChatStatusSummary.derive(session)
             ))
         }
         archivedCount = all.lazy.filter(\.archived).count
         familiarIds = Set(all.flatMap(\.familiarIds))
-        projectIds = Set(all.compactMap(\.projectId))
-        hasUnassigned = all.contains { $0.projectId == nil }
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        reflections = reflectionRows.compactMap { session -> Entry? in
+        // Project choices come from chats matching search, familiar and
+        // archive settings, ignoring the project selection itself (#5877).
+        let matching = all.filter {
+            Self.matches($0, search: search, includeArchived: includeArchived,
+                         familiarId: familiarId, projectFilter: nil)
+        }
+        projectIds = Set(matching.compactMap(\.projectId))
+        hasUnassigned = matching.contains { $0.projectId == nil }
+        let reflectionEntries = reflectionRows.compactMap { session -> Entry? in
             guard session.archivedAt == nil, session.status != "archived" else { return nil }
             let entry = Entry(
                 id: "reflection:\(session.id)",
@@ -224,7 +287,8 @@ struct ChatListSnapshot {
                 familiarIds: session.familiarId.map { [$0] } ?? [],
                 projectId: projectId(for: session.projectRoot),
                 searchText: [session.title, session.familiarId.flatMap { names[$0] } ?? ""]
-                    .joined(separator: " ").lowercased()
+                    .joined(separator: " ").lowercased(),
+                status: .settled
             )
             return Self.matches(entry, search: search, includeArchived: false,
                                 familiarId: familiarId, projectFilter: projectFilter)
@@ -233,14 +297,16 @@ struct ChatListSnapshot {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.id < $1.id
         }
-        entries = all.filter {
-            Self.matches($0, search: search, includeArchived: includeArchived,
-                         familiarId: familiarId, projectFilter: projectFilter)
+        let narrowed = matching.filter {
+            Self.matches($0, projectFilter: projectFilter)
         }.sorted {
             if $0.pinned != $1.pinned { return $0.pinned }
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
             return $0.id < $1.id
         }
+        statusCounts = Self.countStatuses(narrowed)
+        entries = Self.applying(statusFilter, to: narrowed)
+        reflections = statusFilter != nil ? [] : reflectionEntries
     }
 }
 
@@ -278,6 +344,7 @@ final class ChatListSnapshotCache {
         let includeArchived: Bool
         let familiarId: String?
         let projectFilter: ChatListSnapshot.ProjectFilter?
+        let statusFilter: ChatStatusFilter?
     }
 
     private var threadKeys: [ThreadKey] = []
@@ -297,7 +364,8 @@ final class ChatListSnapshotCache {
                  projects: [ProjectInfo] = [],
                  reflections: [SessionRow] = [],
                  query: String, includeArchived: Bool, familiarId: String? = nil,
-                 projectFilter: ChatListSnapshot.ProjectFilter? = nil) -> ChatListSnapshot {
+                 projectFilter: ChatListSnapshot.ProjectFilter? = nil,
+                 statusFilter: ChatStatusFilter? = nil) -> ChatListSnapshot {
         let nextThreads = threads.map {
             ThreadKey(identity: ObjectIdentifier($0), title: $0.title,
                       familiarIds: $0.familiarIds, sessionIds: $0.sessionIds,
@@ -322,11 +390,13 @@ final class ChatListSnapshotCache {
             filtered.removeAll(keepingCapacity: true)
         }
         let key = FilterKey(query: query, includeArchived: includeArchived,
-                            familiarId: familiarId, projectFilter: projectFilter)
+                            familiarId: familiarId, projectFilter: projectFilter,
+                            statusFilter: statusFilter)
         if let cached = filtered[key] { return cached }
         if filtered.count >= 16 { filtered.removeAll(keepingCapacity: true) }
         let projection = snapshot!.filtered(query: query, includeArchived: includeArchived,
-                                            familiarId: familiarId, projectFilter: projectFilter)
+                                            familiarId: familiarId, projectFilter: projectFilter,
+                                            statusFilter: statusFilter)
         filtered[key] = projection
         return projection
     }

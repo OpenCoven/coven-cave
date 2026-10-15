@@ -79,30 +79,28 @@
   color: var(--text-muted);
 }
 
-/* Responsive hiding lives here, not on a Tailwind `@max-[…]:hidden` utility.
-   `.ui-btn` and `.rituals-crons-chip` set `display` from a plain class, and a
-   component-imported sheet has no guaranteed order against the utility bundle,
-   so the utility silently lost and the chips/toggle never collapsed. Two
-   classes of specificity settles it regardless of order.
-
-   Below 780px the two readouts drop and the failing TOGGLE stays: it is the one
-   that costs something to miss. Below 700px the filter field collapses to its
-   magnifier so the CTA is never what wraps. */
+/* Keep frequent search visible while secondary status readouts collapse. */
 @container (max-width: 780px) {
   .rituals-crons-chips .rituals-crons-chip--readout {
     display: none;
   }
 }
 
-@container (min-width: 700px) {
-  .surface-compact-actions .rituals-crons-search-toggle {
-    display: none;
-  }
+.rituals-search-actions {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.rituals-search-actions .surface-compact-search {
+  flex: 1 1 12rem;
+  min-width: min(100%, 12rem);
 }
 
 @container (max-width: 700px) {
-  .surface-compact-actions .rituals-crons-search-field {
-    display: none;
+  .rituals-search-actions {
+    width: 100%;
+    margin-left: 0;
   }
 }
 
@@ -754,4 +752,57 @@
   .rituals-fam-card:hover {
     transform: none;
   }
+}
+
+/* Rituals · Overview · Needs you — the Finished group (#5873). Every
+   session-finished notification collapses into one row at the end of Needs
+   you; opening it lists them a page at a time. Quieter than the asks above it:
+   no presence dot, muted label, and the nested list sits on a hairline inset. */
+
+.rituals-overview__finished-caret {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.rituals-overview__finished-label {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rituals-overview__finished-latest {
+  color: var(--text-muted);
+  font-weight: 450;
+}
+
+/* Scoped under __needs so it outranks `.rituals-overview__needs ul`. */
+.rituals-overview__needs .rituals-overview__finished-list {
+  margin: 0 0 var(--space-1) var(--space-4);
+  padding: 0;
+  border-left: 1px solid color-mix(in oklch, var(--border-hairline) 68%, transparent);
+  list-style: none;
+}
+
+.rituals-overview__finished-list .rituals-overview__need-main {
+  padding-left: var(--space-2);
+}
+
+.rituals-overview__finished-more {
+  padding: var(--space-1) var(--space-2);
+}
+
+.rituals-overview__finished-more button {
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.rituals-overview__finished-more button:hover {
+  color: var(--text-primary);
 }

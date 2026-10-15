@@ -1,0 +1,24 @@
+/* Invoked find controls must fit independently resized terminal panes. */
+.bottom-terminal-find {
+  box-sizing: border-box;
+  max-width: calc(100% - var(--space-4));
+  flex-wrap: wrap;
+}
+
+.bottom-terminal-find__input {
+  flex: 1 1 10rem;
+  width: 0;
+  min-width: min(100%, 8rem);
+  min-height: var(--space-6);
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .bottom-terminal-find__input {
+    min-height: var(--touch-target);
+    font-size: var(--text-lg);
+  }
+  .bottom-terminal-find button {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+}

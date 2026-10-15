@@ -4,6 +4,7 @@ import { CAVE_EVENT_CLOSE } from "../cave-event-plane-protocol.ts";
 import {
   boundedPositiveInt,
   createEventBroker,
+  summarizeEventPlaneDiagnostics,
   type EventBrokerOptions,
   type EventSocket,
   type EventSocketHandlers,
@@ -234,4 +235,36 @@ test("boundedPositiveInt accepts only positive safe integers and clamps", () => 
   assert.equal(boundedPositiveInt("1.5", 2048, 16384), 2048);
   assert.equal(boundedPositiveInt("4096", 2048, 16384), 4096);
   assert.equal(boundedPositiveInt("999999", 2048, 16384), 16384);
+});
+
+test("the diagnostics summary is aggregate counts only (#5862)", () => {
+  const { broker, connect } = fixture({ bufferedAmountLimit: 10 });
+  const ready = connect();
+  ready.receive(hello(["board"]));
+  connect(); // open, no hello yet
+  const slow = connect();
+  slow.receive(hello(["sessions"]));
+  slow.bufferedAmount = 11;
+  broker.publish("board", ["card-secret"]);
+  broker.publish("sessions");
+  const summary = summarizeEventPlaneDiagnostics(broker.diagnostics());
+  assert.deepEqual(summary, {
+    enabled: true,
+    activeConnections: 2,
+    readyConnections: 1,
+    subscriptions: { sessions: 0, board: 1, runs: 0, familiars: 0, daemon: 0 },
+    invalidations: { sessions: 1, board: 1, runs: 0, familiars: 0, daemon: 0 },
+    replayGaps: 0,
+    slowConsumerCloses: 1,
+  });
+  const text = JSON.stringify(summary);
+  assert.equal(text.includes("card-secret"), false, "no entity ids");
+  assert.equal(text.includes("boot-1"), false, "no epoch");
+});
+
+test("a disabled plane summarizes as off with zero counts", () => {
+  const summary = summarizeEventPlaneDiagnostics(null);
+  assert.equal(summary.enabled, false);
+  assert.equal(summary.activeConnections, 0);
+  assert.deepEqual(Object.values(summary.invalidations), [0, 0, 0, 0, 0]);
 });

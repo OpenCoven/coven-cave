@@ -40,8 +40,9 @@ until intentionally migrated by the active program.
   as a local thread and again as a server row. Pins, archive visibility,
   title/familiar search, and the familiar and project filters organize the
   list without a global project filter. The project strip appears when chats
-  span more than one project; it narrows only the visible list and never
-  changes a chat's binding or the application's scope.
+  span more than one project, as one menu at accessibility text sizes; it
+  narrows only the visible list and never changes a chat's binding or the
+  application's scope.
 - The drawer contains Chats, recent conversations, New chat, Search chats, and
   Settings. There is no Tasks, Automations, Projects, Needs You, standalone
   Familiar hub, workspace browser, global search, or terminal destination.
@@ -67,7 +68,9 @@ until intentionally migrated by the active program.
   web terminal surfaces are unaffected.
 - Chats and Settings retain one editorial title language while keeping
   the controls and navigation behavior specific to each destination.
-- Chats continues to protect conversation context at accessibility sizes and
+- Chats continues to protect conversation context at accessibility sizes
+  (its header title moves below the controls instead of wrapping mid-word
+  when a narrow column leaves no room) and
   uses a floating Search/New Chat dock that compacts in landscape and caps its
   width on iPad; the active program changes the row organization, not those
   quality requirements.

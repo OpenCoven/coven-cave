@@ -28,6 +28,7 @@
  * for path resolution + the note format, keeping it from drifting.)
  */
 import { request } from "node:http";
+import { isProjectlessGenerationOrigin } from "../src/lib/chat-origins.ts";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { covenHome, familiarIds, familiarWorkspace } from "../src/lib/coven-paths.ts";
@@ -89,7 +90,7 @@ function daemonGet(reqPath) {
 /** Sessions the daemon recorded for `familiarId`, updated on the target day. */
 function sessionsForDay(allSessions, familiarId, slug) {
   return allSessions
-    .filter((s) => s.familiar_id === familiarId && localDateSlug(new Date(s.updated_at)) === slug)
+    .filter((s) => s.familiar_id === familiarId && !isProjectlessGenerationOrigin(s.origin) && localDateSlug(new Date(s.updated_at)) === slug)
     .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
     .map((s) => ({ title: s.title, harness: s.harness }));
 }
@@ -159,7 +160,14 @@ async function main() {
       continue;
     }
 
-    const digest = buildActivityDigest(sessionsForDay(sessionList, id, dateArg), await memoryActivity(workspace, dateArg));
+    const sessions = sessionsForDay(sessionList, id, dateArg);
+    const memory = await memoryActivity(workspace, dateArg);
+    if (!sessions.length && !memory.length) {
+      console.log(`skip   ${id} (${dateArg}: no recorded activity)`);
+      skipped += 1;
+      continue;
+    }
+    const digest = buildActivityDigest(sessions, memory);
     const seededReflection = existing.reflection.trim() ? existing.reflection : REFLECTION_SEED;
 
     // Decide each section per the targeting flag (default writes both for a fresh note).

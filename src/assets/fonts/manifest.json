@@ -467,25 +467,25 @@
           "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
         },
         {
-          "file": "fredoka-normal-400.woff2",
+          "file": "fredoka-normal-300.woff2",
           "weight": "400",
           "style": "normal",
           "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
         },
         {
-          "file": "fredoka-normal-500.woff2",
+          "file": "fredoka-normal-300.woff2",
           "weight": "500",
           "style": "normal",
           "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
         },
         {
-          "file": "fredoka-normal-600.woff2",
+          "file": "fredoka-normal-300.woff2",
           "weight": "600",
           "style": "normal",
           "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
         },
         {
-          "file": "fredoka-normal-700.woff2",
+          "file": "fredoka-normal-300.woff2",
           "weight": "700",
           "style": "normal",
           "sha256": "27d49d7c8362279bf81267c615481f4be9548d7568d58889aeb1a6395dd6c070"
@@ -503,25 +503,25 @@
               "sha256": "4eb357133c42c52eca85b20cf43c0bb0e7d4d2febb53a6ed6b28bf5d7673cce7"
             },
             {
-              "file": "fredoka-hebrew-normal-400.woff2",
+              "file": "fredoka-hebrew-normal-300.woff2",
               "weight": "400",
               "style": "normal",
               "sha256": "4eb357133c42c52eca85b20cf43c0bb0e7d4d2febb53a6ed6b28bf5d7673cce7"
             },
             {
-              "file": "fredoka-hebrew-normal-500.woff2",
+              "file": "fredoka-hebrew-normal-300.woff2",
               "weight": "500",
               "style": "normal",
               "sha256": "4eb357133c42c52eca85b20cf43c0bb0e7d4d2febb53a6ed6b28bf5d7673cce7"
             },
             {
-              "file": "fredoka-hebrew-normal-600.woff2",
+              "file": "fredoka-hebrew-normal-300.woff2",
               "weight": "600",
               "style": "normal",
               "sha256": "4eb357133c42c52eca85b20cf43c0bb0e7d4d2febb53a6ed6b28bf5d7673cce7"
             },
             {
-              "file": "fredoka-hebrew-normal-700.woff2",
+              "file": "fredoka-hebrew-normal-300.woff2",
               "weight": "700",
               "style": "normal",
               "sha256": "4eb357133c42c52eca85b20cf43c0bb0e7d4d2febb53a6ed6b28bf5d7673cce7"
@@ -539,25 +539,25 @@
               "sha256": "337681f6b85d3ea22d9dd48c593d32a3a2588755a76ad9e3a4c64d014db51db1"
             },
             {
-              "file": "fredoka-latin-ext-normal-400.woff2",
+              "file": "fredoka-latin-ext-normal-300.woff2",
               "weight": "400",
               "style": "normal",
               "sha256": "337681f6b85d3ea22d9dd48c593d32a3a2588755a76ad9e3a4c64d014db51db1"
             },
             {
-              "file": "fredoka-latin-ext-normal-500.woff2",
+              "file": "fredoka-latin-ext-normal-300.woff2",
               "weight": "500",
               "style": "normal",
               "sha256": "337681f6b85d3ea22d9dd48c593d32a3a2588755a76ad9e3a4c64d014db51db1"
             },
             {
-              "file": "fredoka-latin-ext-normal-600.woff2",
+              "file": "fredoka-latin-ext-normal-300.woff2",
               "weight": "600",
               "style": "normal",
               "sha256": "337681f6b85d3ea22d9dd48c593d32a3a2588755a76ad9e3a4c64d014db51db1"
             },
             {
-              "file": "fredoka-latin-ext-normal-700.woff2",
+              "file": "fredoka-latin-ext-normal-300.woff2",
               "weight": "700",
               "style": "normal",
               "sha256": "337681f6b85d3ea22d9dd48c593d32a3a2588755a76ad9e3a4c64d014db51db1"
@@ -1147,19 +1147,19 @@
           "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
         },
         {
-          "file": "ibm-plex-sans-normal-500.woff2",
+          "file": "ibm-plex-sans-normal-400.woff2",
           "weight": "500",
           "style": "normal",
           "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
         },
         {
-          "file": "ibm-plex-sans-normal-600.woff2",
+          "file": "ibm-plex-sans-normal-400.woff2",
           "weight": "600",
           "style": "normal",
           "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
         },
         {
-          "file": "ibm-plex-sans-normal-700.woff2",
+          "file": "ibm-plex-sans-normal-400.woff2",
           "weight": "700",
           "style": "normal",
           "sha256": "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"
@@ -1177,19 +1177,19 @@
               "sha256": "c01b3de8c8058462caadd044a6b874a9f4d7098d7d71d6c70e6a278096b8640e"
             },
             {
-              "file": "ibm-plex-sans-cyrillic-ext-normal-500.woff2",
+              "file": "ibm-plex-sans-cyrillic-ext-normal-400.woff2",
               "weight": "500",
               "style": "normal",
               "sha256": "c01b3de8c8058462caadd044a6b874a9f4d7098d7d71d6c70e6a278096b8640e"
             },
             {
-              "file": "ibm-plex-sans-cyrillic-ext-normal-600.woff2",
+              "file": "ibm-plex-sans-cyrillic-ext-normal-400.woff2",
               "weight": "600",
               "style": "normal",
               "sha256": "c01b3de8c8058462caadd044a6b874a9f4d7098d7d71d6c70e6a278096b8640e"
             },
             {
-              "file": "ibm-plex-sans-cyrillic-ext-normal-700.woff2",
+              "file": "ibm-plex-sans-cyrillic-ext-normal-400.woff2",
               "weight": "700",
               "style": "normal",
               "sha256": "c01b3de8c8058462caadd044a6b874a9f4d7098d7d71d6c70e6a278096b8640e"
@@ -1207,19 +1207,19 @@
               "sha256": "5bac72520e0a9a5669e08b15fa1e15be6f4da74aa0b2d4315a97c11e1465120a"
             },
             {
-              "file": "ibm-plex-sans-cyrillic-normal-500.woff2",
+              "file": "ibm-plex-sans-cyrillic-normal-400.woff2",
               "weight": "500",
               "style": "normal",
               "sha256": "5bac72520e0a9a5669e08b15fa1e15be6f4da74aa0b2d4315a97c11e1465120a"
             },
             {
-              "file": "ibm-plex-sans-cyrillic-normal-600.woff2",
+              "file": "ibm-plex-sans-cyrillic-normal-400.woff2",
               "weight": "600",
               "style": "normal",
               "sha256": "5bac72520e0a9a5669e08b15fa1e15be6f4da74aa0b2d4315a97c11e1465120a"
             },
             {
-              "file": "ibm-plex-sans-cyrillic-normal-700.woff2",
+              "file": "ibm-plex-sans-cyrillic-normal-400.woff2",
               "weight": "700",
               "style": "normal",
               "sha256": "5bac72520e0a9a5669e08b15fa1e15be6f4da74aa0b2d4315a97c11e1465120a"
@@ -1237,19 +1237,19 @@
               "sha256": "a29d4e6345cdb7e2b6daabf4961a6dcafcbc7ed1eac26186ca4a004cd32d64d8"
             },
             {
-              "file": "ibm-plex-sans-greek-normal-500.woff2",
+              "file": "ibm-plex-sans-greek-normal-400.woff2",
               "weight": "500",
               "style": "normal",
               "sha256": "a29d4e6345cdb7e2b6daabf4961a6dcafcbc7ed1eac26186ca4a004cd32d64d8"
             },
             {
-              "file": "ibm-plex-sans-greek-normal-600.woff2",
+              "file": "ibm-plex-sans-greek-normal-400.woff2",
               "weight": "600",
               "style": "normal",
               "sha256": "a29d4e6345cdb7e2b6daabf4961a6dcafcbc7ed1eac26186ca4a004cd32d64d8"
             },
             {
-              "file": "ibm-plex-sans-greek-normal-700.woff2",
+              "file": "ibm-plex-sans-greek-normal-400.woff2",
               "weight": "700",
               "style": "normal",
               "sha256": "a29d4e6345cdb7e2b6daabf4961a6dcafcbc7ed1eac26186ca4a004cd32d64d8"
@@ -1267,19 +1267,19 @@
               "sha256": "526a4dd36c3af41f73a623e852302d8947d7fd4c00ee3026d82ef1f24a412fcd"
             },
             {
-              "file": "ibm-plex-sans-vietnamese-normal-500.woff2",
+              "file": "ibm-plex-sans-vietnamese-normal-400.woff2",
               "weight": "500",
               "style": "normal",
               "sha256": "526a4dd36c3af41f73a623e852302d8947d7fd4c00ee3026d82ef1f24a412fcd"
             },
             {
-              "file": "ibm-plex-sans-vietnamese-normal-600.woff2",
+              "file": "ibm-plex-sans-vietnamese-normal-400.woff2",
               "weight": "600",
               "style": "normal",
               "sha256": "526a4dd36c3af41f73a623e852302d8947d7fd4c00ee3026d82ef1f24a412fcd"
             },
             {
-              "file": "ibm-plex-sans-vietnamese-normal-700.woff2",
+              "file": "ibm-plex-sans-vietnamese-normal-400.woff2",
               "weight": "700",
               "style": "normal",
               "sha256": "526a4dd36c3af41f73a623e852302d8947d7fd4c00ee3026d82ef1f24a412fcd"
@@ -1297,19 +1297,19 @@
               "sha256": "ae1d854fefa1167a79071f1afe01d4d51b60c5840c1be36dd74bd5fe7375b405"
             },
             {
-              "file": "ibm-plex-sans-latin-ext-normal-500.woff2",
+              "file": "ibm-plex-sans-latin-ext-normal-400.woff2",
               "weight": "500",
               "style": "normal",
               "sha256": "ae1d854fefa1167a79071f1afe01d4d51b60c5840c1be36dd74bd5fe7375b405"
             },
             {
-              "file": "ibm-plex-sans-latin-ext-normal-600.woff2",
+              "file": "ibm-plex-sans-latin-ext-normal-400.woff2",
               "weight": "600",
               "style": "normal",
               "sha256": "ae1d854fefa1167a79071f1afe01d4d51b60c5840c1be36dd74bd5fe7375b405"
             },
             {
-              "file": "ibm-plex-sans-latin-ext-normal-700.woff2",
+              "file": "ibm-plex-sans-latin-ext-normal-400.woff2",
               "weight": "700",
               "style": "normal",
               "sha256": "ae1d854fefa1167a79071f1afe01d4d51b60c5840c1be36dd74bd5fe7375b405"

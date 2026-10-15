@@ -117,6 +117,23 @@ async function installDaemonlessFixture(page: Page): Promise<FixtureState> {
     const url = new URL(request.url());
     throw new Error(`Unexpected API request: ${request.method()} ${url.pathname}${url.search}`);
   });
+  // The event plane reads its capability once on load (#5854). Off, as the
+  // server advertises by default, so nothing connects and polling is unchanged.
+  await page.route(/\/api\/events\/capability(?:\?.*)?$/, (route) => {
+    expect(route.request().method()).toBe("GET");
+    return route.fulfill({
+      json: {
+        ok: true,
+        eventPlane: {
+          enabled: false,
+          protocolVersion: 1,
+          path: "/api/events-ws",
+          topics: ["sessions", "board", "runs", "familiars", "daemon"],
+          rolloutMode: { web: "off", ios: "off" },
+        },
+      },
+    });
+  });
   await page.route(/\/api\/running-activity(?:\?.*)?$/, (route) => {
     expect(route.request().method()).toBe("GET");
     return route.fulfill({ json: EMPTY_RUNNING_ACTIVITY });

@@ -7,6 +7,134 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.13] - 2026-10-13
+
+> Windows MSI builds return, and the chat layout is easier to read and control.
+
+Patch release on top of v0.5.12. The Windows MSI publishing path again builds,
+checks its component and size budget, uploads, and signs the updater artifact.
+**The MSI is not Authenticode-signed in this cut.** Its checksum and updater
+signature are separate from Windows code signing.
+
+### Added
+- **Thinking and Speed controls** (#5902, #5905). Home and Chat expose the
+  controls supported by the selected runtime; Codex and Copilot forward the
+  chosen reasoning effort on their direct transports.
+- **iOS model choice.** Claude and Codex model lists are available on iOS, and
+  the Chats title stays on one line at accessibility text sizes.
+- **Activity-backed daily notes.** Daily notes derive from recorded activity.
+
+### Changed
+- **Chat reading layout.** The desktop chat uses one frosted surface, a compact
+  composer and title row, clearer author boundaries, and more consistent
+  context and activity summaries.
+- **Research Desk and Studio.** Navigation and workflows have been polished;
+  Familiar Settings and the reading pane also receive layout refinements.
+
+### Fixed
+- **Windows releases** (#5964, #5967, #5971). Partial release pages list only
+  assets actually uploaded. A new complete release can use v0.5.7 as its
+  rollback target without replaying intervening tags. MSI builds no longer
+  depend on the unconfigured eSigner credentials.
+- **Chat and integration recovery.** Codex chats keep their own model choice;
+  reflection and journal generation are isolated; X publishing failures retain
+  drafts; OAuth callbacks identify only listeners on the callback port.
+- **Release and dependency maintenance.** CI recovery retries eligible PR
+  runs, protocol assets are smaller, and Next.js moves from 16.3.6 to 16.3.8.
+
+## [0.5.12] - 2026-10-09
+
+> The Thread Signal card uses its whole width, and the chat composer splits Runtime and Model.
+
+Patch release on top of v0.5.11. Headline: the in-chat Thread Signal card no
+longer leaves most of its width empty when a report has no signals, its weights
+read as percentages, and the "New response content" pill stops covering it.
+
+### Added
+- **Composer chips** (#5896, #5899). The combined "Runtime · Model" chip is now
+  separate Runtime and Model chips, and Thinking and Speed chips appear when the
+  selected model reports those controls. For Claude Code, Speed maps to the
+  runtime's effort setting.
+
+### Fixed
+- **Thread Signal card** (#5898, #5900). A report with no signals puts the
+  rationale beside the score tiles instead of leaving an empty column; with no
+  tile selected the tiles span the card. Weights read "20% of score" and the
+  formula "Confidence 35% + Tools 25% + Memory 20% + Files 20%". The transcript's
+  "New response content" pill steps aside while a card is open.
+
+## [0.5.11] - 2026-10-09
+
+> A calmer left sidebar: one label column, a straight active marker, no redundant headings.
+
+Patch release on top of v0.5.10. Headline: the left navigation sidebar is
+cleaned up. Every label shares one column, the active row's marker no longer
+bends around its corners, and the redundant "Navigation" heading and Rooms
+count are gone. The iOS chat list also learns to show what each chat is doing.
+
+### Added
+- **iOS chat status** (#5850, #5852). Rows on the Chats home carry a status
+  pill when there is something to say: Running, Blocked · credentials,
+  Awaiting you · decision, Failed, or Ready to archive, each with a glyph and a
+  word.
+
+### Fixed
+- **Left sidebar** (#5888, #5889). New chat, destinations and footer rows share
+  one label column; the active marker is a short straight bar; section labels
+  use the design language's 0.08em tracking; the "Navigation" heading is kept
+  for screen readers but not drawn; Rooms no longer counts the rows beneath it;
+  the footer shares the 32px row pitch under a divider that matches the rows;
+  and Dashboard has its own icon instead of Canvas's.
+- **iOS project filters** (#5877, #5886). The chat list's project filter and
+  its accessibility menu offer only projects that have matching chats.
+- **iOS transcript** (#5881, #5882). Short system notes render as compact
+  notices, runs open a Run details view, and repeated steps fold together.
+
+### Changed
+- The iOS simulator script picks an available iPhone automatically when
+  `SIMULATOR_NAME` is unset and prefers the simulator's UDID for `xcodebuild`.
+
+## [0.5.10] - 2026-10-08
+
+> Voice calls say "Thinking…" while your familiar works on its reply, instead of looking dead.
+
+Patch release on top of v0.5.9. Headline: during a voice call with a
+harness-backed familiar (ElevenLabs or the familiar brain), the call screen
+read "Listening" for the whole time the familiar worked on its reply, which
+can take 20 seconds or more, so calls looked dead and were hung up before the
+reply arrived. The call now shows "Thinking…" until the familiar starts
+speaking.
+
+### Added
+- **iOS composer menus** (#5846, #5875, #5876, #5878, #5879, #5880). Typing
+  `/model ` or `/familiar ` opens an argument picker instead of dead-ending;
+  `/skill` and `/prompt` are native pickers backed by the desktop's skills and
+  prompts; and commands, arguments and mentions share one suggestion menu with
+  hardware-keyboard navigation on iPad.
+- **Event plane, still off by default** (#5838, #5844, #5855, #5860, #5863,
+  #5866, #5868, #5872). Board and session invalidations publish after durable
+  writes; daemon and familiar-roster watchers start only when
+  `COVEN_CAVE_EVENT_PLANE_ENABLED=1`; web surfaces connect in shadow mode; the
+  board can hand its refresh to the plane in primary mode; server and debug-pane
+  diagnostics report the plane's counters; iOS gains the wire contract and a
+  socket wired into the app model; and conformance tests and a request-count
+  gate close out the plan. With the plane off, nothing connects and polling is
+  unchanged.
+
+### Fixed
+- **Voice call status** (#5856, #5857). A brain turn in flight shows
+  "Thinking…"; speech still shows "Replying…", and muted or non-live states
+  keep their own labels.
+- **iOS Chats** (#5849). At accessibility text sizes the project strip
+  becomes one full-width menu instead of chips that fit one per screen.
+- **Rituals → Needs you** (#5873, #5874). Session-finished notifications
+  collapse into one "Finished · N" row with Dismiss all, so the items that ask
+  for something are no longer buried.
+
+### Changed
+- The Coding Desk switch-announcement test reads live regions every 50 ms, so
+  it no longer misses a message cleared after 250 ms (#5859, #5861).
+
 ## [0.5.9] - 2026-10-07
 
 > Chats stop sending a model to a runtime that can't run it, and the Coding Desk handles very large change lists.

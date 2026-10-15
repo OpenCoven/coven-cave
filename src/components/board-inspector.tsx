@@ -1,5 +1,7 @@
 "use client";
 
+import { SearchInput } from "@/components/ui/search-input";
+
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -362,20 +364,15 @@ function GitHubAttachSection({
 
       {open && (
         <div className="[border:1px_solid_var(--border-hairline)]! [border-radius:var(--radius-control)]! [overflow:hidden]! [background:var(--bg-raised)]!">
-          <div className="[display:flex]! [align-items:center]! [gap:6px]! [padding:7px_10px]! [border-bottom:1px_solid_var(--border-hairline)]!">
-            <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" />
-            <input
+          <div className="border-b border-[var(--border-hairline)] p-2">
+            <SearchInput
               autoFocus={!coarse}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onValueChange={setQuery}
+              onClear={() => setQuery("")}
               placeholder="Search PRs, issues…"
-              className="[flex:1]! [background:transparent]! [border:none]! [outline:none]! [font-size:var(--text-sm)]! [color:var(--text-primary)]!"
+              aria-label="Search PRs, issues"
             />
-            {query && (
-              <button type="button" onClick={() => setQuery("")} className="[background:none]! [border:none]! [cursor:pointer]! [color:var(--text-muted)]! [display:flex]!">
-                <Icon name="ph:x" width={11} />
-              </button>
-            )}
           </div>
 
           <div className="[max-height:240px]! [overflow-y:auto]!">
@@ -634,20 +631,15 @@ function AsanaAttachSection({
 
       {open && (
         <div className="[border:1px_solid_var(--border-hairline)]! [border-radius:var(--radius-control)]! [overflow:hidden]! [background:var(--bg-raised)]!">
-          <div className="[display:flex]! [align-items:center]! [gap:6px]! [padding:7px_10px]! [border-bottom:1px_solid_var(--border-hairline)]!">
-            <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" />
-            <input
+          <div className="border-b border-[var(--border-hairline)] p-2">
+            <SearchInput
               autoFocus={!coarse}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onValueChange={setQuery}
+              onClear={() => setQuery("")}
               placeholder="Search tasks, projects…"
-              className="[flex:1]! [background:transparent]! [border:none]! [outline:none]! [font-size:var(--text-sm)]! [color:var(--text-primary)]!"
+              aria-label="Search tasks, projects"
             />
-            {query && (
-              <button type="button" onClick={() => setQuery("")} className="[background:none]! [border:none]! [cursor:pointer]! [color:var(--text-muted)]! [display:flex]!">
-                <Icon name="ph:x" width={11} />
-              </button>
-            )}
           </div>
 
           <div className="[max-height:240px]! [overflow-y:auto]!">

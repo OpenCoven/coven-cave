@@ -132,7 +132,7 @@ function loopFixture({ brain, earsEngine, mouthEngine, mouth: injected, onError 
   const ears = fakeEars();
   const mic = fakeMic();
   const mouth = injected ?? fakeMouth();
-  const events = { userFinals: [], assistantFinals: [], errors: [], speaking: [] };
+  const events = { userFinals: [], assistantFinals: [], errors: [], speaking: [], thinking: [] };
   const session = connectSpeechLoop({
     mic: mic.stream,
     ears: ears.factory,
@@ -144,6 +144,7 @@ function loopFixture({ brain, earsEngine, mouthEngine, mouth: injected, onError 
       onAssistantTranscriptFinal: (t) => events.assistantFinals.push(t),
       onPartialTranscript: () => {},
       onSpeaking: (utterance) => events.speaking.push(utterance),
+      onThinking: (busy) => events.thinking.push(busy),
       onError: (err) => { events.errors.push(err); onError?.(err); },
       onDisconnect: () => {},
     },
@@ -688,4 +689,76 @@ test("a barged-in brain cannot refill the queue it was cut off from", async () =
     mouth.spoken.filter((s) => !s.startsWith("<")),
     ["Once upon a time."],
   );
+});
+
+// #5856: a harness brain can take tens of seconds before its first sentence.
+// The call must say it is thinking, not "Listening", for that whole stretch.
+test("a brain turn is reported as thinking until it answers", async () => {
+  let answer;
+  const { ears, events, mouth } = loopFixture({
+    brain: async (_text, speak) => {
+      await new Promise((resolve) => { answer = resolve; });
+      speak("Here I am.");
+      return "Here I am.";
+    },
+  });
+  ears.handlers.onFinal("are you there");
+  await tick();
+  assert.deepEqual(events.thinking, [true], "thinking starts with the turn");
+  assert.deepEqual(mouth.spoken, []);
+
+  answer();
+  await tick();
+  await tick();
+  assert.deepEqual(events.thinking, [true, false], "thinking ends once the brain answers");
+  assert.deepEqual(mouth.spoken, ["Here I am."]);
+});
+
+test("a failed brain turn stops thinking before the error surfaces", async () => {
+  const order = [];
+  const { ears, events } = loopFixture({
+    onError: () => order.push(`error after thinking=${events.thinking.at(-1)}`),
+    brain: async () => { throw new VoiceConnectError("familiar_brain_failed"); },
+  });
+  ears.handlers.onFinal("hello");
+  await tick();
+  assert.deepEqual(events.thinking, [true, false]);
+  assert.deepEqual(order, ["error after thinking=false"]);
+});
+
+test("each queued turn reports its own thinking span", async () => {
+  const answers = [];
+  const { ears, events } = loopFixture({
+    brain: async (text, speak) => {
+      await new Promise((resolve) => answers.push(resolve));
+      speak(`re: ${text}`);
+      return `re: ${text}`;
+    },
+  });
+  ears.handlers.onFinal("first");
+  ears.handlers.onFinal("second");
+  await tick();
+  assert.deepEqual(events.thinking, [true], "the queued turn waits without a second span");
+  answers.shift()();
+  await tick(); await tick(); await tick();
+  assert.deepEqual(events.thinking, [true, false, true]);
+  answers.shift()();
+  await tick(); await tick(); await tick();
+  assert.deepEqual(events.thinking, [true, false, true, false]);
+});
+
+test("closing mid-turn does not report thinking after the call ends", async () => {
+  let answer;
+  const { ears, events, session } = loopFixture({
+    brain: async () => {
+      await new Promise((resolve) => { answer = resolve; });
+      return "late";
+    },
+  });
+  ears.handlers.onFinal("bye");
+  await tick();
+  await session.close();
+  answer();
+  await tick();
+  assert.deepEqual(events.thinking, [true]);
 });

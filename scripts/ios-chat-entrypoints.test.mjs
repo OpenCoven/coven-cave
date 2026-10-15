@@ -120,7 +120,8 @@ test("readable chat history does not authorize sends while project access is una
       "the captured endpoint, root and recipients are rechecked at the actual dispatch");
   }
   assert.match(chat, /private func dispatchIsCurrent[\s\S]{0,600}connectionDispatchLeaseIsCurrent\(lease\)[\s\S]*binding\.matches\(target\)[\s\S]*app\.chatAccessIsCurrent\(projectRoot: binding\.projectRoot, familiarIds: binding\.familiarIds\)/);
-  assert.match(commands, /case \.sendAsPrompt, \.startDiagram: return true/);
+  // A skill invocation sends a chat message too (#5876).
+  assert.match(commands, /case \.sendAsPrompt, \.startDiagram, \.invokeSkill: return true/);
   assert.match(chat, /if command\.sendsChatMessage \{\s*guard requireChatAccess\(\)/,
     "typed message commands keep the draft intact when authorization is unavailable");
   assert.match(chat, /if case \.command\(let command, _\) = SlashInput\.parse\(draft\), !command\.sendsChatMessage \{\s*return true/,

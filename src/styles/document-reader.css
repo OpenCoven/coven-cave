@@ -7,13 +7,7 @@
   --reader-text-scale: var(--cave-reading-size-scale, 1);
   --document-reader-prose-measure: var(--cave-reading-width, 66ch);
   --document-reader-column-gutter: var(--space-8);
-  --document-reader-wide-measure: min(
-    88ch,
-    calc(
-      100cqw - var(--document-reader-column-gutter) -
-        var(--document-reader-column-gutter)
-    )
-  );
+  --document-reader-wide-measure: min(88ch, 100cqw);
 
   min-height: 0;
   height: 100%;
@@ -122,6 +116,8 @@
 }
 
 .document-reader__scroll {
+  /* Wide blocks measure this pane, excluding the Contents rail and gutters. */
+  container-type: inline-size;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -270,6 +266,13 @@
   text-align: var(--cave-reading-align, left);
   -webkit-hyphens: var(--cave-reading-hyphens, manual);
   hyphens: var(--cave-reading-hyphens, manual);
+}
+
+/* Hyphenation is for words: code keeps its exact spelling (#5944). */
+.document-reader__prose code,
+.document-reader__prose pre {
+  -webkit-hyphens: manual;
+  hyphens: manual;
 }
 
 .document-reader__kicker {
@@ -447,10 +450,7 @@ h6.document-reader__heading {
 
 .document-reader__wide-block {
   width: var(--document-reader-wide-measure);
-  max-width: calc(
-    100cqw - var(--document-reader-column-gutter) -
-      var(--document-reader-column-gutter)
-  );
+  max-width: 100cqw;
   margin-inline: 50%;
   transform: translateX(-50%);
 }
@@ -464,7 +464,7 @@ h6.document-reader__heading {
 }
 
 .document-reader__table-frame table {
-  width: max-content;
+  width: 100%;
   min-width: 100%;
   border-collapse: collapse;
   font-size: calc(var(--text-base) * var(--reader-text-scale));
@@ -472,6 +472,8 @@ h6.document-reader__heading {
 
 .document-reader__table-frame th,
 .document-reader__table-frame td {
+  /* Wrap prose columns before scrolling, but keep dense tables readable. */
+  min-width: 16ch;
   max-width: 42ch;
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border-hairline);

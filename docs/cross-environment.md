@@ -38,6 +38,49 @@ that diverge. It pairs with the conformance suite that enforces them.
   tailnet, so they print an explicit skip for the missing Tailscale precondition
   rather than a silent pass.
 
+## PR CI recovery
+
+Run `pnpm ci:recovery` with `GITHUB_REPOSITORY=OpenCoven/coven-cave` and an
+authorized `GITHUB_TOKEN` to inspect missing or interrupted PR validation.
+The default is read-only. `pnpm ci:recovery:apply` requires explicit operator
+authority and Actions write access.
+
+Automatic recovery requests one **full rerun** of the latest cancelled
+`pull_request` run bound to the exact current PR head. It waits an hour after
+the run's last update and refuses a run that already has a second attempt.
+It rechecks PR state, the live base ref (the PR API's base SHA can be stale),
+the advertised merge commit and both parents, the workflow's content-freshness
+and attempt guards, and the run immediately before the request. It never
+retries only failed jobs: the aggregate requires evidence from one complete
+attempt. Concurrent movement can still make CI refuse the checkout; the job's
+freshness checks remain authoritative.
+
+Other cases remain visible for a maintainer:
+
+- **No eligible PR run:** trigger a fresh `pull_request` event using an
+  authorized credential. If using close/reopen, record the exact PR/head,
+  preserve draft state, restore open state, and verify the resulting event,
+  head, live base and merge-tree contents. A stale cached merge is not a valid
+  recovery. Do not add an empty contributor commit just to trigger CI.
+- **Approval required:** obtain the required human workflow approval.
+- **Queued or pending:** inspect runner availability and the concurrency
+  holder. Recovery does not cancel existing work.
+- **Changed base or stale merge snapshot:** obtain a fresh PR event/snapshot;
+  do not repeatedly rerun the old event.
+- **Failed tests or an exhausted retry:** inspect the failure and repair it
+  through the PR. A failed verdict is not missing CI.
+
+GitHub excludes manual-dispatch job checks from required PR checks, even when
+they pass on the head SHA. Repository-token PR events also have approval
+requirements; recovery does not approve them or change tokens or protection.
+See [GitHub's required-check rules](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#checks-from-some-workflow-jobs-are-not-evaluated)
+and [workflow-trigger rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
+
+A recovery request only starts verification. Before merging, inspect every
+required context on the exact current head and the complete fresh attempt,
+then use the protected merge workflow. Manual dispatch remains useful for
+diagnostics; it is not a substitute for an eligible PR event.
+
 ## Neutral defaults
 
 | Concern | Default | Override |
@@ -102,8 +145,8 @@ source of truth shared by `scripts/sidecar-bundle.sh` (via
 Notes:
 - `sharp` must remain a **runtime** dependency (not dev) so the production
   sidecar install includes it — the familiar avatar route transcodes raster
-  avatars at request time. Root cause: #2010. The `Sidecar runtime (<os>)`
-  matrix now proves this end-to-end by booting the packaged sidecar and fetching
+  avatars at request time. Root cause: #2010. The `Validate candidate runtime (<os>)`
+  matrix in `full-validation.yml` now proves this end-to-end by booting the packaged sidecar and fetching
   a seeded JPEG avatar as PNG on every target OS.
 - `fsevents` is kept only on darwin.
 - The release DMG/installer must be built **on the matching host arch** — the

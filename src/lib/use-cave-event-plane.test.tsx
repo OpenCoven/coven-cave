@@ -26,6 +26,7 @@ function createFakeClient(initial: { ready?: CaveEventTopic[]; mode?: CaveEventR
       return () => changes.delete(listener);
     },
     diagnostics: () => { throw new Error("unused"); },
+    notePollAvoided: () => {},
     refreshCapabilities: async () => {},
     dispose: () => {},
   };

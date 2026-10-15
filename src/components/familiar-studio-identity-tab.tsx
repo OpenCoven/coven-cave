@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { IconButton } from "@/components/ui/icon-button";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
@@ -15,7 +15,11 @@ import { FAMILIAR_TYPES, parseFamiliarTypeIds, type FamiliarTypeSpec } from "@/l
 import { roomEnabledInBuild } from "@/lib/room-flags";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { FamiliarStudioLookTab } from "@/components/familiar-studio-look-tab";
+import dynamic from "next/dynamic";
+import { FamiliarSettingsDisclosure } from "@/components/familiar-settings-disclosure";
+const FamiliarStudioLookTab = dynamic(() => import("@/components/familiar-studio-look-tab").then(module => module.FamiliarStudioLookTab), {
+  loading: () => <div role="status" aria-label="Loading appearance"><SkeletonRows count={3} /></div>,
+});
 import { FamiliarLifecycleSection } from "@/components/familiar-lifecycle-section";
 import type { ContractReport } from "@/lib/familiar-contract";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -29,6 +33,7 @@ type Props = {
   allFamiliars: ResolvedFamiliar[];
   /** Re-fetch the roster after the lifecycle section removes/restores a familiar. */
   onRosterChanged?: () => void;
+  focusContract?: boolean;
 };
 
 const FIELDS: Array<{
@@ -47,16 +52,24 @@ export function FamiliarStudioIdentityTab({
   rawDaemonValues,
   allFamiliars,
   onRosterChanged,
+  focusContract = false,
 }: Props) {
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focusContract) return;
+    const frame = requestAnimationFrame(() => {
+      const grimoire = root.current?.querySelector<HTMLElement>(".familiar-studio-grimoire");
+      grimoire?.scrollIntoView({ block: "nearest" });
+      grimoire?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusContract]);
   const overrides = useFamiliarOverrides();
   const current = overrides[familiar.id] ?? {};
 
-  // One continuous page: who the familiar is (type + identity fields), how it
-  // looks (the merged Look sections — avatar, icon, backdrop, accent), then the
-  // lifecycle verbs (archive / remove) last, in the classic danger-zone slot.
+  // Core identity stays in view; optional editors load on explicit intent.
   return (
-    <div className="familiar-studio-identity">
-      <FamiliarTypePicker familiar={familiar} />
+    <div ref={root} className="familiar-studio-identity">
       {FIELDS.map((f) => (
         <IdentityField
           key={`${familiar.id}:${f.key}`}
@@ -75,9 +88,18 @@ export function FamiliarStudioIdentityTab({
           }}
         />
       ))}
-      <FamiliarGrimoireFiles familiarId={familiar.id} />
-      <FamiliarStudioLookTab familiar={familiar} allFamiliars={allFamiliars} />
-      <FamiliarLifecycleSection familiar={familiar} onRosterChanged={onRosterChanged} />
+      <FamiliarSettingsDisclosure title="Type and rooms" description="Choose the kinds of work this familiar can do.">
+        <FamiliarTypePicker familiar={familiar} />
+      </FamiliarSettingsDisclosure>
+      <FamiliarSettingsDisclosure title="Appearance" description="Avatar, icon, backdrop, and accent color.">
+        <FamiliarStudioLookTab familiar={familiar} allFamiliars={allFamiliars} />
+      </FamiliarSettingsDisclosure>
+      <FamiliarSettingsDisclosure title="Grimoire files" description="Check identity, memory, and guardrail files." reveal={focusContract}>
+        <FamiliarGrimoireFiles familiarId={familiar.id} />
+      </FamiliarSettingsDisclosure>
+      <FamiliarSettingsDisclosure title="Lifecycle" description="Archive or remove this familiar from your Cave.">
+        <FamiliarLifecycleSection familiar={familiar} onRosterChanged={onRosterChanged} />
+      </FamiliarSettingsDisclosure>
     </div>
   );
 }
@@ -347,6 +369,7 @@ function IdentityField({
   onSave: (v: string) => void;
   onReset: () => void;
 }) {
+  const inputId = useId();
   const [draft, setDraft] = useState(value ?? "");
   const placeholder = daemonValue ?? "—";
   const hasOverride = value !== undefined;
@@ -368,6 +391,7 @@ function IdentityField({
   }
 
   const sharedProps = {
+    id: inputId,
     value: draft,
     placeholder,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -383,8 +407,8 @@ function IdentityField({
   };
 
   return (
-    <label className="familiar-studio-identity__row">
-      <span className="familiar-studio-identity__label">{label}</span>
+    <div className="familiar-studio-identity__row">
+      <label htmlFor={inputId} className="familiar-studio-identity__label">{label}</label>
       <div className="familiar-studio-identity__control">
         {textarea ? (
           <textarea rows={3} {...(sharedProps as any)} />
@@ -412,6 +436,6 @@ function IdentityField({
           Save
         </Button>
       </div>
-    </label>
+    </div>
   );
 }

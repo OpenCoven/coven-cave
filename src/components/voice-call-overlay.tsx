@@ -93,6 +93,9 @@ export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initial
   // The live transcript (cave-zr9dx). Kept outside the call reducer because it
   // is high-frequency, append-mostly data with its own pure model.
   const [transcript, setTranscript] = useState<CallTranscript>(emptyTranscript);
+  // A loop provider's brain turn in flight (#5856): shown as "Thinking…" until
+  // the familiar either speaks or the turn settles.
+  const [thinking, setThinking] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
   const transcriptScrollRef = useRef<HTMLOListElement | null>(null);
@@ -122,6 +125,7 @@ export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initial
       if (state.state === "requesting-mic") {
         attemptRef.current.active = false;
         attemptRef.current = { active: true };
+        setThinking(false);
         try {
           const stream = await requestMicrophoneStream();
           if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -202,6 +206,9 @@ export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initial
               if (!attempt.active) return;
               setTranscript((t) => applyInterrupted(t, role, itemKey));
             },
+            onThinking: (busy) => {
+              if (attempt.active) setThinking(busy);
+            },
             onSpeaking: (utterance) => {
               if (!attempt.active) return;
               setTranscript((t) => applySpeaking(t, utterance));
@@ -276,6 +283,12 @@ export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initial
   // away by the next sentence.
   const turnCount = transcript.turns.length;
   const speakingNow = transcript.speaking;
+  // Speech outranks thinking: once the first sentence plays the familiar is
+  // replying, even while the rest of its turn is still streaming in.
+  const liveUnmuted = state.state === "live" && !state.muted;
+  const statusLabel = liveUnmuted && transcript.speaking
+    ? "Replying…"
+    : liveUnmuted && thinking ? "Thinking…" : labelFor(state);
   useEffect(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
@@ -419,7 +432,7 @@ export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initial
         <header className="voice-call-overlay__header">
           <div className="voice-call-overlay__heading">
             <strong id="voice-call-overlay-title">{familiar.display_name}</strong>
-            <span className="voice-call-overlay__state" role="status" aria-live="polite">{state.state === "live" && transcript.speaking && !state.muted ? "Replying…" : labelFor(state)}</span>
+            <span className="voice-call-overlay__state" role="status" aria-live="polite">{statusLabel}</span>
           </div>
           <div className="voice-call-overlay__header-actions">
             {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}

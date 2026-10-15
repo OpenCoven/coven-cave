@@ -391,3 +391,11 @@ test("dispose closes everything", async () => {
   assert.equal(fx.client.state(), "idle");
   assert.equal(fx.clock.pending(), 0);
 });
+
+test("polls avoided are counted for diagnostics (#5862)", () => {
+  const fx = createFixture();
+  assert.equal(fx.client.diagnostics().pollsAvoided, 0);
+  fx.client.notePollAvoided();
+  fx.client.notePollAvoided();
+  assert.equal(fx.client.diagnostics().pollsAvoided, 2);
+});

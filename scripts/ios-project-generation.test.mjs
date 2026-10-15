@@ -83,6 +83,16 @@ assert.match(
   /ios-xcodegen\.sh/,
   "ios-simulator.sh should invoke the wrapper",
 );
+assert.match(
+  simulator,
+  /ios-select-simulator\.mjs/,
+  "ios-simulator.sh should select an available iPhone instead of requiring a fixed model",
+);
+assert.match(
+  simulator,
+  /SIMULATOR_NAME=/,
+  "ios-simulator.sh should retain an explicit simulator-name override",
+);
 
 // --- the documented path is the enforced one ----------------------------------
 assert.match(

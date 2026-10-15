@@ -11,6 +11,7 @@ import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { VISIBLE_WORKSPACE_NAV_ITEMS } from "@/lib/workspace-navigation";
 import "@/styles/analytics-page-shell.css";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 function activeFooterDestination(pathname: string): SidebarFooterDestination {
   if (pathname.startsWith("/dashboard")) return "dashboard";
@@ -35,6 +36,7 @@ function destinationTitle(pathname: string): string {
 
 function DestinationSidebar({ pathname }: { pathname: string }) {
   const router = useRouter();
+  const keys = useKeySymbols();
   const navScrollRef = useRef<HTMLDivElement | null>(null);
   useRovingTabIndex({
     containerRef: navScrollRef,
@@ -62,7 +64,7 @@ function DestinationSidebar({ pathname }: { pathname: string }) {
       // and keeping both would read as a gap inside a titled group.
       className={`sidebar-folder-row focus-ring${item.quiet ? " sidebar-folder-row--quiet" : ""}`}
       href={`/?mode=${item.id}`}
-      title={`${item.label} — ${item.description}${item.kbd ? ` (${item.kbd})` : ""}`}
+      title={`${item.label} — ${item.description}${item.kbd ? ` (${platformizeHint(item.kbd, keys)})` : ""}`}
     >
       <Icon
         name={item.iconName}
@@ -100,7 +102,7 @@ function DestinationSidebar({ pathname }: { pathname: string }) {
         </Link>
       </div>
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
-        <SidebarSection id="navigation" label="Navigation">
+        <SidebarSection id="navigation" label="Navigation" labelHidden>
           {primaryRows.map(renderRow)}
         </SidebarSection>
         <SidebarSection

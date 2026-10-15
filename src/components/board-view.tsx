@@ -6,6 +6,8 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import { useCaveEventPlane } from "@/lib/use-cave-event-plane";
+import { noteCaveEventPollAvoided } from "@/lib/cave-event-plane-client";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
@@ -43,7 +45,7 @@ import { BoardKanbanSkeleton } from "@/components/board-view-display";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
-import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { invalidateSurfaceResources, invalidateSurfaceResourcesFor, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 
 type Props = {
@@ -287,7 +289,6 @@ export function BoardView({
   // change made while the window was in the background) doesn't sit stale until
   // a manual reload — most visibly in the installed desktop app, where the OS
   // window manager doesn't fire the web visibility events that browser tabs do.
-  useRefreshOnFocus(() => load({ force: true }));
 
   // Light background poll so a card that flips status (e.g. a familiar moving a
   // task running -> done) reflects without a manual reload while the board is
@@ -302,10 +303,44 @@ export function BoardView({
     clearedBanner !== null ||
     rescheduleUndo !== null ||
     (deletePending?.item?.length ?? 0) > 0;
+  // Event plane (#5854). A board invalidation drops the warm card cache and
+  // reloads quietly. If the user is mid-interaction, the board is marked dirty
+  // instead and reloads exactly once when the interaction ends, so an
+  // invalidation never clobbers an optimistic edit or a drag.
+  const interactingRef = useRef(interacting);
+  interactingRef.current = interacting;
+  const boardEventDirtyRef = useRef(false);
+  const boardEvents = useCaveEventPlane("board", (event) => {
+    // Once per event: the workspace's Tasks badge shares this resource (#5869).
+    invalidateSurfaceResourcesFor(event, "board:cards");
+    if (interactingRef.current) {
+      boardEventDirtyRef.current = true;
+      return;
+    }
+    void load({ quiet: true, force: true });
+  });
+  useEffect(() => {
+    if (interacting || !boardEventDirtyRef.current) return;
+    boardEventDirtyRef.current = false;
+    void load({ quiet: true, force: true });
+  }, [interacting, load]);
+
+  // While the event plane covers the board in `primary` mode, invalidations
+  // replace the poll and the manager flushes dirty topics on return, so the
+  // interval and the focus refresh pause (#5858). Off, shadow, connecting or
+  // unhealthy: both run exactly as before.
+  const boardEventPrimary = boardEvents.rolloutMode === "primary" && boardEvents.ready;
+  useRefreshOnFocus(() => load({ force: true }), { enabled: !boardEventPrimary });
   usePausablePoll(
     () => { void load({ quiet: true, force: true }); },
     15_000,
-    { enabled: !interacting, pauseWhileInputActive: true },
+    {
+      enabled: !interacting,
+      pauseWhileInputActive: true,
+      intervalEnabled: !boardEventPrimary,
+      // Each skipped tick is a poll the plane saved, for the debug pane (#5862).
+      onIntervalPaused: noteCaveEventPollAvoided,
+    },
   );
 
   // Honour `#card-<id>` in the URL: workspace's `focus-card` palette intent

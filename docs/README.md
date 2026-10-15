@@ -38,6 +38,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 - [`client-v1-release.md`](client-v1-release.md) — the compatibility metadata a release advertises on `/api/client/v1/health`, and the fixture-check and release-smoke gates that protect it
 - [`client-v1-settings.md`](client-v1-settings.md) — approving, denying, auditing, and revoking native client access in Cave Settings
+- [`event-plane-operations.md`](event-plane-operations.md) — the invalidation WebSocket: switches, rollout modes, what each platform pauses, security, recovery and diagnostics
 - [`device-access.md`](device-access.md) — opt-in tailnet allowlists, desktop-managed browser/iOS pairing, durable grants, revocation, and audit
 - [`cross-environment.md`](cross-environment.md) — neutral defaults across Linux, macOS, and Windows, plus the per-OS deltas and the suite that enforces them
 - [`runtime-startup-supervision.md`](runtime-startup-supervision.md) — why a reachable socket is transport availability, not runtime readiness

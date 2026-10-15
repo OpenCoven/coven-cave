@@ -60,6 +60,9 @@ struct ChatsHomeView: View {
     /// (or to Unassigned history). List organisation only, like the familiar
     /// filter: it never changes a chat's binding or the app's scope.
     @State private var projectFilter: ChatListSnapshot.ProjectFilter?
+    /// Needs you / Running / Ready to archive (#5850). List organisation only,
+    /// like the project filter; nil is All.
+    @State private var statusFilter: ChatStatusFilter?
     /// The Reflections section starts collapsed so review runs never push
     /// live chats down; opening it once is remembered across launches. It is
     /// read once and written on toggle rather than held in `@AppStorage`, so
@@ -169,13 +172,15 @@ struct ChatsHomeView: View {
                 query: query,
                 includeArchived: showArchived,
                 familiarId: familiarFilter,
-                projectFilter: projectFilter
+                projectFilter: projectFilter,
+                statusFilter: statusFilter
             )
         }
         return NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
             Group {
                 if snapshot.entries.isEmpty && query.isEmpty && familiarFilter == nil
-                    && snapshot.archivedCount == 0 && projectFilter == nil && snapshot.reflections.isEmpty {
+                    && snapshot.archivedCount == 0 && projectFilter == nil && statusFilter == nil
+                    && snapshot.reflections.isEmpty {
                     if let error = app.familiarsError ?? app.sessionsError {
                         loadFailure(error)
                     } else {
@@ -403,50 +408,91 @@ struct ChatsHomeView: View {
         presentNewChat()
     }
 
+    private var navigationButton: some View {
+        CircularIconButton(systemImage: "line.3.horizontal",
+                           label: "Open navigation") {
+            app.navigationDrawerOpen = true
+        }
+    }
+
+    /// The header title at accessibility sizes. Inline it is held to one
+    /// line so `ViewThatFits` sees "does not fit" rather than a wrapped
+    /// word; on its own line it may wrap like any other text.
+    private func accessibilityTitle(oneLine: Bool) -> some View {
+        Text("Chats")
+            .font(.system(.title2, design: .serif).weight(.semibold))
+            .lineLimit(oneLine ? 1 : nil)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func listOptionsMenu(_ snapshot: ChatListSnapshot) -> some View {
+        Menu {
+            familiarFilterPicker(snapshot)
+            Divider()
+            Button { showArchived.toggle() } label: {
+                Label(
+                    showArchived ? "Hide archived" : "Show archived (\(snapshot.archivedCount))",
+                    systemImage: "archivebox"
+                )
+            }
+        } label: {
+            // The same round glass well as the navigation button, so
+            // the header's two controls read as a matched pair.
+            Image(systemName: familiarFilter == nil ? "ellipsis" : "line.3.horizontal.decrease")
+                .font(.system(size: ChatChrome.control * 0.44, weight: .semibold))
+                .foregroundStyle(familiarFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(chrome.accent))
+                .scaledControlFrame(ChatChrome.control)
+                .glass(.control, in: Circle())
+                .accentGlow(active: familiarFilter != nil)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(familiarFilter == nil ? "Chat list options" : "Chat list options, filtered by familiar")
+        .accessibilityIdentifier("Chat list options")
+    }
+
     private func header(_ snapshot: ChatListSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                CircularIconButton(systemImage: "line.3.horizontal",
-                                   label: "Open navigation") {
-                    app.navigationDrawerOpen = true
+            if dynamicTypeSize.isAccessibilitySize {
+                // The serif title grows with the text size but the room
+                // between the two round controls does not: an iPad sidebar
+                // column at the largest size leaves about 80pt for a 140pt
+                // word, and "Chats" broke into "Ch / ats". Keep the title
+                // inline where it fits (an iPhone) and otherwise give it its
+                // own full-width line under the controls, rather than
+                // shrinking the size the reader asked for.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        navigationButton
+                        accessibilityTitle(oneLine: true)
+                            .fixedSize()
+                        Spacer(minLength: 0)
+                        listOptionsMenu(snapshot)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 12) {
+                            navigationButton
+                            Spacer(minLength: 0)
+                            listOptionsMenu(snapshot)
+                        }
+                        accessibilityTitle(oneLine: false)
+                    }
                 }
-                if dynamicTypeSize.isAccessibilitySize {
-                    Text("Chats")
-                        .font(.system(.title2, design: .serif).weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                } else if sizeClass == .regular {
-                    EditorialSurfaceTitle(title: "Chats", large: true)
-                } else {
-                    EditorialSurfaceTitle(
-                        title: "Chats",
-                        detail: visibleConversationLabel(snapshot.entries.count),
-                        large: true
-                    )
-                }
-                Spacer(minLength: 0)
-                Menu {
-                    familiarFilterPicker(snapshot)
-                    Divider()
-                    Button { showArchived.toggle() } label: {
-                        Label(
-                            showArchived ? "Hide archived" : "Show archived (\(snapshot.archivedCount))",
-                            systemImage: "archivebox"
+            } else {
+                HStack(spacing: 12) {
+                    navigationButton
+                    if sizeClass == .regular {
+                        EditorialSurfaceTitle(title: "Chats", large: true)
+                    } else {
+                        EditorialSurfaceTitle(
+                            title: "Chats",
+                            detail: visibleConversationLabel(snapshot.entries.count),
+                            large: true
                         )
                     }
-                } label: {
-                    // The same round glass well as the navigation button, so
-                    // the header's two controls read as a matched pair.
-                    Image(systemName: familiarFilter == nil ? "ellipsis" : "line.3.horizontal.decrease")
-                        .font(.system(size: ChatChrome.control * 0.44, weight: .semibold))
-                        .foregroundStyle(familiarFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(chrome.accent))
-                        .scaledControlFrame(ChatChrome.control)
-                        .glass(.control, in: Circle())
-                        .accentGlow(active: familiarFilter != nil)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(Rectangle())
+                    Spacer(minLength: 0)
+                    listOptionsMenu(snapshot)
                 }
-                .accessibilityLabel(familiarFilter == nil ? "Chat list options" : "Chat list options, filtered by familiar")
-                .accessibilityIdentifier("Chat list options")
             }
             if dynamicTypeSize.isAccessibilitySize || sizeClass == .regular,
                let detail = visibleConversationLabel(snapshot.entries.count) {
@@ -455,9 +501,23 @@ struct ChatsHomeView: View {
                     .foregroundStyle(chrome.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if ChatStatusFilterStrip.isVisible(counts: snapshot.statusCounts, selection: statusFilter) {
+                ChatStatusFilterStrip(counts: snapshot.statusCounts, selection: $statusFilter)
+            }
             let projectChoices = projectFilterChoices(snapshot)
             if projectChoices.count > 1 || projectFilter != nil {
-                projectFilterStrip(projectChoices)
+                // At accessibility sizes one chip fills the screen width, so
+                // the strip becomes a single menu naming the current choice.
+                if dynamicTypeSize.isAccessibilitySize {
+                    projectFilterMenu(projectChoices)
+                } else {
+                    projectFilterStrip(projectChoices)
+                }
+            }
+            // Sticky in the header, right above the list it acts on, so it
+            // stays in reach however far the ready list scrolls.
+            if statusFilter == .readyToArchive, !snapshot.entries.isEmpty {
+                archiveReadyRow(count: snapshot.entries.count)
             }
             if let familiarId = familiarFilter {
                 familiarFilterChip(familiarId)
@@ -524,20 +584,17 @@ struct ChatsHomeView: View {
         .accessibilityIdentifier("Familiar filter chip")
     }
 
-    /// Projects offered by the filter: every registered project bound to at
-    /// least one conversation (active or archived), by name, then Unassigned
-    /// history when there is any. A filter that names a project with no chats
-    /// left, or one no longer registered, stays listed so it can be cleared.
+    /// Offer only projects with chats under the current search, familiar and
+    /// archive settings. All projects remains available to clear a selection
+    /// whose last matching chat disappeared.
     private func projectFilterChoices(_ snapshot: ChatListSnapshot) -> [ChatListSnapshot.ProjectFilter] {
-        var ids = snapshot.projectIds
-        if case .project(let id)? = projectFilter { ids.insert(id) }
-        var choices: [ChatListSnapshot.ProjectFilter] = ids
+        var choices: [ChatListSnapshot.ProjectFilter] = snapshot.projectIds
             .sorted {
                 let order = projectDisplayName($0).localizedCaseInsensitiveCompare(projectDisplayName($1))
                 return order == .orderedSame ? $0 < $1 : order == .orderedAscending
             }
             .map { .project(id: $0) }
-        if snapshot.hasUnassigned || projectFilter == .unassigned {
+        if snapshot.hasUnassigned {
             choices.append(.unassigned)
         }
         return choices
@@ -554,6 +611,10 @@ struct ChatsHomeView: View {
         }
     }
 
+    private func projectFilterSymbol(_ filter: ChatListSnapshot.ProjectFilter) -> String {
+        filter == .unassigned ? "tray" : "folder"
+    }
+
     /// One-tap project filter: "All" first, then each project with chats. It
     /// appears only when there is more than one place to choose between.
     private func projectFilterStrip(_ choices: [ChatListSnapshot.ProjectFilter]) -> some View {
@@ -564,7 +625,7 @@ struct ChatsHomeView: View {
                     projectFilterChip(
                         choice,
                         label: projectFilterName(choice),
-                        systemImage: choice == .unassigned ? "tray" : "folder"
+                        systemImage: projectFilterSymbol(choice)
                     )
                 }
             }
@@ -575,6 +636,51 @@ struct ChatsHomeView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Filter by project")
         .accessibilityIdentifier("Project filter")
+    }
+
+    /// The strip at accessibility text sizes. There each chip is about as
+    /// wide as the screen, so reaching a project meant swiping chip by chip;
+    /// one full-width control names the current choice and opens every choice
+    /// at once. Same filter, same choices, same order.
+    private func projectFilterMenu(_ choices: [ChatListSnapshot.ProjectFilter]) -> some View {
+        let current = projectFilter.map(projectFilterName) ?? "All projects"
+        let active = projectFilter != nil
+        return Menu {
+            Picker("Filter by project", selection: $projectFilter) {
+                Label("All projects", systemImage: "square.grid.2x2")
+                    .tag(ChatListSnapshot.ProjectFilter?.none)
+                ForEach(choices, id: \.self) { choice in
+                    Label(projectFilterName(choice), systemImage: projectFilterSymbol(choice))
+                        .tag(Optional(choice))
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: projectFilter.map(projectFilterSymbol) ?? "square.grid.2x2")
+                    .accessibilityHidden(true)
+                Text(current)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.up.chevron.down")
+                    .accessibilityHidden(true)
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(active ? chrome.accent : chrome.textSecondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .glass(.control, cornerRadius: 22)
+            .accentGlow(active: active)
+            .contentShape(Rectangle())
+        }
+        // Rigid height, so the menu never competes with the title row for
+        // vertical room in the header.
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityLabel("Filter by project")
+        .accessibilityValue(current)
+        .accessibilityIdentifier("Project filter menu")
     }
 
     private func projectFilterChip(
@@ -726,7 +832,8 @@ struct ChatsHomeView: View {
                         ThreadRow(
                             thread: thread,
                             activityAt: entry.updatedAt,
-                            isSelected: sizeClass == .regular && selection == .thread(thread)
+                            isSelected: sizeClass == .regular && selection == .thread(thread),
+                            status: entry.status
                         )
                             .tag(ChatRoute.thread(thread))
                             .matchedTransitionSource(id: thread.id, in: zoomNamespace)
@@ -780,7 +887,13 @@ struct ChatsHomeView: View {
                 }
                 .accessibilityIdentifier("Chat row \(entry.id)")
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                .listRowBackground(sizeClass == .compact ? Color.clear : nil)
+                .listRowBackground(rowBackground(for: entry))
+                // A tinted field is its own card: separators would cut
+                // through its rounded edges.
+                .listRowSeparator(
+                    ChatStatusTint.rowField(entry.status, accent: chrome.accent) != nil ? .hidden : .automatic,
+                    edges: .all
+                )
             }
             if snapshot.entries.isEmpty && snapshot.archivedCount > 0 {
                 Button("Show archived chats (\(snapshot.archivedCount))") { showArchived = true }
@@ -792,6 +905,132 @@ struct ChatsHomeView: View {
         }
         .listStyle(.plain)
         .themedListBackground()
+        .overlay {
+            if let statusFilter, snapshot.entries.isEmpty {
+                statusFilterEmptyState(statusFilter)
+            }
+        }
+    }
+
+    /// Phones draw rows on the themed list background; iPad keeps the system
+    /// background so its selection highlight shows. Either way a chat that is
+    /// stopped on you gets its status field — except the selected iPad row,
+    /// whose highlight already says where you are.
+    private func rowBackground(for entry: ChatListSnapshot.Entry) -> AnyView? {
+        let selected: Bool = switch entry.conversation {
+        case .local(let thread): sizeClass == .regular && selection == .thread(thread)
+        case .server: false
+        }
+        let flags = ChatStatusTint.rowField(entry.status, accent: chrome.accent) != nil
+            || entry.status.lifecycle == .failed
+        guard flags, !selected else { return sizeClass == .compact ? AnyView(Color.clear) : nil }
+        return AnyView(ChatStatusRowBackground(
+            status: entry.status,
+            plain: sizeClass == .compact ? .clear : Color(uiColor: .systemBackground)
+        ))
+    }
+
+    /// The Ready-to-archive view's one bulk action. Archiving is reversible,
+    /// so it acts at once and offers Undo in the toast (the iOS pattern for a
+    /// reversible bulk action) rather than asking first.
+    private func archiveReadyRow(count: Int) -> some View {
+        let tint = ChatStatusTint.color(.readyToArchive, accent: chrome.accent)
+        return Button {
+            archiveReadyChats()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "archivebox.fill")
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(count == 1 ? "Archive this chat" : "Archive all \(count)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(chrome.textPrimary)
+                    Text("Their pull requests merged")
+                        .font(.caption)
+                        .foregroundStyle(chrome.textSecondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(tint.opacity(0.22), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.glassPress)
+        .accessibilityLabel(count == 1 ? "Archive this chat" : "Archive all \(count) ready chats")
+        .accessibilityHint("Their pull requests merged. Undo is offered afterwards.")
+        .accessibilityIdentifier("Archive ready chats")
+    }
+
+    /// Re-resolves at confirm time, so a chat that started running or asked
+    /// something since the dialog opened is left alone.
+    private func archiveReadyChats() {
+        let ready = app.chatListSnapshotCache.resolve(
+            threads: app.chatThreads,
+            sessions: app.chatServerSessions + app.chatArchivedServerSessions,
+            familiars: app.familiars,
+            projects: app.projects,
+            reflections: app.threadReflectionSessions,
+            query: query,
+            includeArchived: false,
+            familiarId: familiarFilter,
+            projectFilter: projectFilter,
+            statusFilter: .readyToArchive
+        ).entries
+        var threads: [ChatThread] = []
+        var sessions: [SessionRow] = []
+        for entry in ready {
+            switch entry.conversation {
+            case .local(let thread):
+                if thread.isStreaming { continue }
+                threads.append(thread)
+            case .server(let session):
+                sessions.append(session)
+            }
+        }
+        let total = threads.count + sessions.count
+        guard total > 0 else { return }
+        for thread in threads { app.setThreadArchived(thread, true) }
+        for session in sessions { app.setServerSessionArchived(session, true) }
+        Haptics.success()
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { statusFilter = nil }
+        app.showToast(
+            total == 1 ? "Archived 1 chat" : "Archived \(total) chats",
+            systemImage: "archivebox.fill",
+            actionTitle: "Undo"
+        ) { [app] in
+            for thread in threads { app.setThreadArchived(thread, false) }
+            for session in sessions { app.setServerSessionArchived(session, false) }
+        }
+    }
+
+    private func statusFilterEmptyState(_ filter: ChatStatusFilter) -> some View {
+        let copy: (title: String, symbol: String, detail: String) = switch filter {
+        case .needsYou: ("Nothing needs you", "checkmark.seal",
+                         "No chat is blocked, failed, or waiting on your answer.")
+        case .running: ("Nothing running", "moon.zzz",
+                        "No familiar is working on a chat right now.")
+        case .readyToArchive: ("Nothing to archive", "archivebox",
+                               "Chats whose pull request merged show up here.")
+        }
+        return ContentUnavailableView {
+            Label(copy.title, systemImage: copy.symbol)
+        } description: {
+            Text(copy.detail)
+        } actions: {
+            Button("Show all chats") {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { statusFilter = nil }
+            }
+        }
     }
 
     /// Thread-reflection review runs, apart from live chats and collapsed by
@@ -1083,6 +1322,15 @@ struct ThreadRow: View {
     let thread: ChatThread
     var activityAt: Date? = nil
     var isSelected = false
+    /// From the list snapshot (#5850); a live local turn folds in here, ahead
+    /// of the next list poll reporting it.
+    var status: ChatStatusSummary? = nil
+
+    private var effectiveStatus: ChatStatusSummary? {
+        let streaming = lastMessage?.streaming == true
+        guard let status else { return streaming ? ChatStatusSummary.settled.streaming(true) : nil }
+        return status.streaming(streaming)
+    }
 
     private var familiars: [Familiar] { thread.familiarIds.compactMap(app.familiar) }
     private var lastMessage: DisplayMessage? { thread.messages.last }
@@ -1117,10 +1365,11 @@ struct ThreadRow: View {
                         relativeTime
                     }
                 }
-                Text(familiars.map(\.displayName).joined(separator: ", "))
-                    .font(.caption)
-                    .foregroundStyle(secondaryColor)
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                ChatStatusCaption(
+                    status: effectiveStatus,
+                    names: familiars.map(\.displayName).joined(separator: ", "),
+                    nameColor: secondaryColor
+                )
                 if let draftText = app.threadDrafts[thread.id] {
                     // A persisted unsent draft outranks the last-message
                     // preview (standard messenger affordance — makes drafts
@@ -1150,6 +1399,9 @@ struct ThreadRow: View {
     private var accessibilityText: String {
         var parts: [String] = [thread.title]
         parts.append(contentsOf: familiars.map(\.displayName))
+        if let effectiveStatus, effectiveStatus.lifecycle != .completed || effectiveStatus.pullRequest != nil {
+            parts.append(effectiveStatus.accessibilityText)
+        }
         if hasUnread { parts.append("unread") }
         if thread.archived { parts.append("archived") }
         if thread.isGroup { parts.append("group chat") }

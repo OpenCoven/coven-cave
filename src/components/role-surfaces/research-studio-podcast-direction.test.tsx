@@ -387,3 +387,25 @@ describe("Studio review gate", () => {
     expect(rows.Delivery).toBe("Custom");
   });
 });
+
+test("blog controls count their saved choices toward the directions cap", () => {
+  const { renderer } = renderConfig({
+    kind: "blog", directions: "x".repeat(5000),
+    blogDirections: { visual: ["Minimal"], tone: ["Technical"], audience: [] },
+    onBlogDirectionsChange: () => {},
+  });
+  expect(renderer.root.findAllByProps({ "aria-label": "Tone" })).toHaveLength(1);
+  const submit = renderer.root.findAllByType("button").find((node) => textOf(node).includes("Generate"));
+  expect(submit?.props.disabled).toBe(true);
+  expect(textOf(byId(renderer, "research-studio-directions-error"))).toContain("5,000");
+  act(() => renderer.unmount());
+});
+
+test("blog-specific choices never appear in another generation kind", () => {
+  const { renderer } = renderConfig({
+    kind: "slides", blogDirections: { visual: ["Minimal"], tone: [], audience: [] },
+    onBlogDirectionsChange: () => {},
+  });
+  expect(renderer.root.findAllByProps({ "aria-label": "Tone" })).toHaveLength(0);
+  act(() => renderer.unmount());
+});

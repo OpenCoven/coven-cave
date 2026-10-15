@@ -14,7 +14,8 @@
   flex-direction: column;
   flex: none;
   width: 280px;
-  min-width: 280px;
+  min-width: 220px;
+  position: relative;
   min-height: 0;
   overflow: hidden;
   border-inline-end: 1px solid var(--border-hairline);
@@ -452,4 +453,37 @@
     padding-inline: var(--space-3);
     border-bottom: 1px solid var(--border-hairline);
   }
+}
+
+/* A quiet divider with an eight-pixel pointer target inside the rail. */
+.chat-inner-rail__resize {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: var(--space-2);
+  flex: none;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+.chat-inner-rail__resize::after {
+  content: "";
+  position: absolute;
+  inset-block: var(--space-3);
+  inset-inline-end: 0;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  transition: background var(--duration-fast) ease;
+}
+.chat-inner-rail__resize:is(:hover, :focus-visible, [data-dragging])::after {
+  background: var(--ring-focus);
+}
+.chat-surface { container: chat-surface / inline-size; }
+@container chat-surface (max-width: 679px) {
+  .chat-inner-rail, .chat-inner-rail__spine { display: none; }
+  .mobile-threads-toggle { display: inline-grid; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-inner-rail__resize::after { transition: none; }
 }

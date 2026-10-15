@@ -57,6 +57,12 @@ export type VoiceCallbacks = {
    *  the overlay highlight the words being spoken. Realtime providers, whose
    *  audio and transcript stream together, pass the accumulated turn text. */
   onSpeaking?: (utterance: string | null) => void;
+  /** True while a loop provider's brain is working on a reply and false once
+   *  that turn settles, whether it answered or failed. A harness turn can take
+   *  tens of seconds before its first sentence is spoken; without this the
+   *  call reads "Listening" the whole time and looks dead. Realtime providers,
+   *  whose replies start within a second, need not report it. */
+  onThinking?: (thinking: boolean) => void;
   onError: (err: Error) => void;
   onDisconnect: () => void;
 };

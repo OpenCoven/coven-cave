@@ -242,8 +242,8 @@ assert.match(
 assert.match(source, /onFocus=\{\(\) => setComposerEngaged\(true\)\}/, "focusing the input engages the composer");
 assert.match(
   source,
-  /if \(!dock\.contains\(event\.relatedTarget as Node \| null\)\) setComposerEngaged\(false\);/,
-  "only focus leaving the composer dock disengages it",
+  /const next = event\.relatedTarget as Node \| null;[\s\S]{0,400}if \(next instanceof Element && next\.closest\("\.ui-popover-portal"\)\) return;\s*if \(!dock\.contains\(next\)\) setComposerEngaged\(false\);/,
+  "only focus leaving the composer dock disengages it; focus moving into a chip's portaled popover does not (#5958)",
 );
 
 console.log("chat-view-mobile-command-center.test.ts: ok");

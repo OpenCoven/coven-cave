@@ -241,7 +241,7 @@ test("interrupted responses preserve partial text and keep Retry visible", async
   await expect(bubble.getByRole("button", { name: "Retry response" })).toBeVisible();
 });
 
-test("run skills open one complete ledger and reading older output hides the composer", async ({
+test("run skills open one complete ledger and return focus after closing", async ({
   page,
 }) => {
   await setup(page);
@@ -251,6 +251,7 @@ test("run skills open one complete ledger and reading older output hides the com
     name: /Open details for skill verification-before-completion/,
   });
   await expect(verificationCard).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("textbox", { name: "Message", exact: true }).focus();
   await verificationCard.click();
 
   const dialog = page.getByRole("dialog");
@@ -263,16 +264,37 @@ test("run skills open one complete ledger and reading older output hides the com
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(verificationCard).toBeFocused();
+});
+
+test("reading older output retains the same visible composer", async ({ page }) => {
+  await setup(page);
+  await page.goto("/?mode=chat#chat-s-response-complete", { waitUntil: "domcontentloaded" });
 
   const mainChat = page.getByTestId("chat-main");
   const transcript = mainChat.locator(".cave-chat-transcript");
   const composer = mainChat.locator(".cave-composer-dock");
-  await expect(composer).toBeVisible();
+  await expect(composer).toBeVisible({ timeout: 30_000 });
+  const originalComposer = await composer.elementHandle();
   await transcript.hover();
   await page.mouse.wheel(0, -900);
-  await expect(composer).toHaveCount(0);
+  await expect(mainChat.getByRole("button", { name: "Latest" })).toBeVisible();
+  await expect(composer).toBeVisible();
+  expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true);
+  // Failed drops remain recoverable while reading earlier output, without
+  // replacing the persistent composer or losing its focus-return destination.
+  await mainChat.locator(".cave-chat-linear").evaluate(element => {
+    const data = new DataTransfer();
+    data.items.add(new File([new Uint8Array(6 * 1024 * 1024)], "oversized.png", { type: "image/png" }));
+    element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
+  });
+  await expect(mainChat.getByRole("region", { name: "Attachment notice" })).toContainText("oversized.png is too large");
+  await mainChat.getByRole("button", { name: "Dismiss attachment notice" }).click();
+  await expect(composer).toBeVisible();
+  expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true);
+  await expect(mainChat.getByRole("textbox", { name: "Message", exact: true })).toBeFocused();
   await mainChat.getByRole("button", { name: "Latest" }).click();
   await expect(composer).toBeVisible();
+  expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true);
 });
 
 test("the header archive button sends one archive mutation and leaves the session", async ({

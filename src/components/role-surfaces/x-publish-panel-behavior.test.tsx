@@ -54,11 +54,11 @@ beforeEach(() => {
   }) as typeof fetch;
 });
 
-async function render() {
+async function render(props = {}) {
   let renderer;
   await act(async () => {
     renderer = create(
-      createElement(LiveRegionProvider, null, createElement(XPublishPanel, { familiarId: "nyx" })),
+      createElement(LiveRegionProvider, null, createElement(XPublishPanel, { familiarId: "nyx", ...props })),
     );
   });
   return renderer;
@@ -116,9 +116,10 @@ function previews(renderer): string[] {
 }
 
 function button(renderer, label: string) {
+  const textOf = (node) => typeof node === "string" ? node : (node.children ?? []).map(textOf).join("");
   return renderer.root
     .findAll((node) => node.type === "button")
-    .find((node) => JSON.stringify(node.children).includes(label));
+    .find((node) => textOf(node).includes(label));
 }
 
 test("a refused grant is stated, and no composer is offered underneath it", async () => {
@@ -693,4 +694,103 @@ test("a draft is never rendered among sent posts", async () => {
   expect(button(renderer, "Retire")).toBeTruthy();
   // Only the sent row carries the post id.
   expect(panelText(renderer)).toContain("1234567890123456789");
+});
+
+
+test("a disconnected post offers in-place settings and preserves wording and fresh review", async () => {
+  handler = (url, init) => {
+    if (init?.method !== "POST") return { body: { ok: true, publications: [DRAFT] } };
+    const body = JSON.parse(String(init.body));
+    if (body.action === "draft") return { body: { ok: true, publication: DRAFT, confirmationToken: "t", account: { username: "val" } } };
+    return { status: 409, body: { ok: false, code: "not-connected", error: "X account is not connected" } };
+  };
+  const renderer = await render({ connectionSettings: createElement("p", null, "Existing X settings") });
+  await draftAndPublish(renderer, "ship it");
+  expect(panelText(renderer)).toContain("Connect X to publish");
+  await act(async () => button(renderer, "Open X settings").props.onClick());
+  expect(panelText(renderer)).toContain("Existing X settings");
+  expect(textarea(renderer).props.value).toBe("ship it");
+  await act(async () => button(renderer, "Back to draft").props.onClick());
+  expect(button(renderer, "Publish to X")).toBeUndefined();
+  expect(button(renderer, "Review again")).toBeTruthy();
+  expect(requests.filter(r => r.body?.action === "publish")).toHaveLength(1);
+  await act(async () => button(renderer, "Review again").props.onClick());
+  expect(button(renderer, "Publish to X")).toBeTruthy();
+  expect(requests.filter(r => r.body?.action === "publish")).toHaveLength(1);
+});
+
+test.each([
+  ["unauthorized", "Reconnect X to continue", true],
+  ["missing-scope", "Allow publishing on X", true],
+  ["billing-unavailable", "X needs a billing update", false],
+  ["rate-limited", "X is limiting requests", false],
+  ["upstream-unavailable", "X is temporarily unavailable", false],
+  ["ambiguous-write", "Check whether your post appeared", false],
+])("%s gives an actionable recovery without reposting", async (code, headline, settings) => {
+  handler = (url, init) => {
+    if (init?.method !== "POST") return { body: { ok: true, publications: [DRAFT] } };
+    const body = JSON.parse(String(init.body));
+    if (body.action === "draft") return { body: { ok: true, publication: DRAFT, confirmationToken: "t" } };
+    return { status: 429, body: { ok: false, code, error: "Provider detail", retryAt: "2030-01-01T12:30:00.000Z" } };
+  };
+  const renderer = await render({ connectionSettings: createElement("p", null, "Existing X settings") });
+  await draftAndPublish(renderer, "ship it");
+  expect(panelText(renderer)).toContain(headline);
+  expect(Boolean(button(renderer, "Open X settings"))).toBe(settings);
+  if (code === "rate-limited") expect(renderer.root.findByType("time").props.dateTime).toBe("2030-01-01T12:30:00.000Z");
+  expect(textarea(renderer).props.value).toBe("ship it");
+  expect(requests.filter(r => r.body?.action === "publish")).toHaveLength(1);
+});
+
+test("lost post response and history outage keep wording visible and publishing held until refreshed", async () => {
+  let postAttempted = false;
+  let historyAvailable = false;
+  handler = (url, init) => {
+    if (init?.method !== "POST") {
+      if (postAttempted && !historyAvailable) return { status: 503, body: null };
+      return { body: { ok: true, publications: postAttempted ? [{ ...DRAFT, status: "uncertain" }] : [] } };
+    }
+    const body = JSON.parse(String(init.body));
+    if (body.action === "draft") return { body: { ok: true, publication: DRAFT, confirmationToken: "t" } };
+    postAttempted = true;
+    throw new TypeError("Failed to fetch");
+  };
+  const renderer = await render();
+  await draftAndPublish(renderer, "ship it");
+  expect(textarea(renderer).props.value).toBe("ship it");
+  expect(panelText(renderer)).toContain("Post history is unavailable");
+  expect(panelText(renderer)).not.toContain("Failed to fetch");
+  expect(button(renderer, "Review again").props.disabled).toBe(true);
+  historyAvailable = true;
+  await act(async () => button(renderer, "Refresh post history").props.onClick());
+  expect(textarea(renderer).props.disabled).toBe(true);
+  expect(button(renderer, "Review this wording").props.disabled).toBe(true);
+  expect(requests.filter(r => r.body?.action === "publish")).toHaveLength(1);
+});
+
+
+test("a revoked publish grant retains wording and settings without offering a composer until refreshed", async () => {
+  let revoked = false;
+  const refusal = { status: 403, body: { ok: false, code: "capability-disabled", error: "Enable X publishing for this familiar" } };
+  handler = (url, init) => {
+    if (init?.method !== "POST") return revoked ? refusal : { body: { ok: true, publications: [DRAFT] } };
+    const body = JSON.parse(String(init.body));
+    if (body.action === "draft") return { body: { ok: true, publication: DRAFT, confirmationToken: "t" } };
+    revoked = true;
+    return refusal;
+  };
+  const renderer = await render({ connectionSettings: createElement("p", null, "Existing X settings") });
+  await draftAndPublish(renderer, "ship it");
+  expect(panelText(renderer)).toContain("Allow publishing on X");
+  expect(previews(renderer)).toContain("ship it");
+  expect(renderer.root.findAll(node => node.type === "textarea")).toHaveLength(0);
+  await act(async () => button(renderer, "Open X settings").props.onClick());
+  expect(panelText(renderer)).toContain("Existing X settings");
+  await act(async () => button(renderer, "Back to draft").props.onClick());
+  revoked = false;
+  await act(async () => button(renderer, "Refresh post history").props.onClick());
+  expect(textarea(renderer).props.value).toBe("ship it");
+  expect(button(renderer, "Publish to X")).toBeUndefined();
+  expect(button(renderer, "Review again")).toBeTruthy();
+  expect(requests.filter(r => r.body?.action === "publish")).toHaveLength(1);
 });

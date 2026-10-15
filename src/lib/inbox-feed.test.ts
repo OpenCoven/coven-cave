@@ -8,6 +8,7 @@ import {
   inboxActivityTime,
   inboxKindLabel,
   inboxSeriesKey,
+  splitFinishedNeeds,
   isInboxItemPastDue,
   isInboxItemUnread,
   unreadInboxCount,
@@ -269,3 +270,18 @@ const item = (over = {}) => ({
 }
 
 console.log("inbox-feed.test.ts passed");
+
+// ── Finished notifications split out of Needs you (#5873) ───────────────────
+{
+  const needs = [
+    item({ id: "f1", kind: "agent", status: "fired", auto: "session-finished" }),
+    item({ id: "ask", kind: "response-needed", status: "pending" }),
+    item({ id: "f2", kind: "agent", status: "fired", auto: "session-finished" }),
+    item({ id: "mission", kind: "agent", status: "fired", auto: "auto-mission" }),
+    item({ id: "plain", status: "fired" }),
+  ];
+  const { asks, finished } = splitFinishedNeeds(needs);
+  assert.deepEqual(finished.map((i) => i.id), ["f1", "f2"], "only session-finished items are grouped, in order");
+  assert.deepEqual(asks.map((i) => i.id), ["ask", "mission", "plain"], "everything else stays an ask, in order");
+  assert.deepEqual(splitFinishedNeeds([]), { asks: [], finished: [] });
+}

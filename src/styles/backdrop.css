@@ -202,10 +202,39 @@ html[data-backdrop-on] .cave-chat-linear .cave-chat-thread {
   padding-inline: clamp(14px, 2vw, 22px);
 }
 
-/* The header bar's 74%-raised wash shimmers over a busy photo — blur what's
-   behind it so the title and session actions stay steady. */
-html[data-backdrop-on] .cave-chat-linear-header {
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+/* One frosted surface for the bands across Chat (issue 5956). The pane tabs, the
+   title row and the composer dock each painted the photo differently — a 72%
+   fill, bare blur, an opaque gradient — so the top of the pane read as
+   stripes. They share the top bar's scrim + blur instead; the vivid image
+   stays in the side margins beside the reading column's glass. Desktop only:
+   the phone's sticky header keeps its denser fill over scrolled text. */
+@media (min-width: 768px) {
+  html[data-backdrop-on] .chat-scope-tabs,
+  html[data-backdrop-on] .cave-chat-linear-header,
+  html[data-backdrop-on] .cave-chat-linear .cave-composer-dock {
+    background: color-mix(in oklch, var(--bg-base) 46%, transparent);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+}
+
+/* Same opaque fallbacks as the top bar above. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  @media (min-width: 768px) {
+    html[data-backdrop-on] .chat-scope-tabs,
+    html[data-backdrop-on] .cave-chat-linear-header,
+    html[data-backdrop-on] .cave-chat-linear .cave-composer-dock {
+      background: var(--bg-base);
+    }
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) and (min-width: 768px) {
+  html[data-backdrop-on] .chat-scope-tabs,
+  html[data-backdrop-on] .cave-chat-linear-header,
+  html[data-backdrop-on] .cave-chat-linear .cave-composer-dock {
+    background: var(--bg-base);
+    backdrop-filter: none;
+  }
 }
 
 /* One-step contrast lift for the quiet text while the image is on — meta

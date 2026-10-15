@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { buildServer } from "../scripts/build-server.mjs";
 
 const src = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -729,41 +729,15 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
   if (slow.detachTimer) clearTimeout(slow.detachTimer);
 }
 
-// Twin parity: `pnpm start` runs the committed server.mjs, not server.ts, so a
-// server.ts security fix that skips `pnpm build:server` silently ships nothing
-// (PR #3200's sidecar-token gate initially missed the twin exactly this way).
-// Transpile server.ts with the same flags as the build:server script and
-// require the committed artifact to match byte-for-byte.
+// The packaged server is generated during the build. Check its emitted PTY
+// credential gate without depending on a pre-existing artifact in the checkout.
 {
-  const { buildSync } = await import("esbuild");
-  const serverTsUrl = new URL("../server.ts", import.meta.url);
-  const out = buildSync({
-    // fileURLToPath, never .pathname: on Windows a file:// pathname is
-    // `/C:/…`, and esbuild resolves that leading slash as an absolute path
-    // from the drive root, so the entry point does not exist. That threw
-    // before any assertion in this file could run, which meant the whole
-    // suite — every parity and security check below — was silently absent on
-    // Windows rather than failing loudly.
-    entryPoints: [fileURLToPath(serverTsUrl)],
-    absWorkingDir: fileURLToPath(new URL("../", import.meta.url)),
-    bundle: true,
-    packages: "external",
-    alias: { yaml: "./node_modules/yaml/dist/index.js" },
-    banner: {
-      js: "import { createRequire as __covenCreateRequire } from 'node:module'; const require = __covenCreateRequire(import.meta.url);",
-    },
-    platform: "node",
-    target: "node24",
-    format: "esm",
-    write: false,
-  });
-  const generated = out.outputFiles[0].text;
-  const committed = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
-  assert.equal(
-    committed,
-    generated,
-    "server.mjs must be regenerated from server.ts (run `pnpm build:server` and commit the result)",
-  );
+  const generated = (await buildServer({ write: false })).outputFiles[0].text;
+  assert.match(generated, /function isPtyAuthRequired\(\) \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/,
+    "the packaged server requires PTY authentication when either credential is configured");
+  assert.match(generated,
+    /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,\s*directLoopback: isDirectLoopbackRequest\(req\),?/,
+    "the packaged PTY upgrade preserves the source credential and loopback gate");
 }
 
 // ── Heap telemetry (cave-ksjt) ────────────────────────────────────────────────

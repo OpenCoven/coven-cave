@@ -7,8 +7,8 @@ const src = readFileSync(new URL("./use-pausable-poll.ts", import.meta.url), "ut
 // ── Signature ────────────────────────────────────────────────────────────────
 assert.match(
   src,
-  /export function usePausablePoll\(\s*callback: \(\) => void \| Promise<void>,\s*intervalMs: number,\s*opts\?: \{ enabled\?: boolean; pauseWhileInputActive\?: boolean; serialize\?: boolean \},\s*\): void/,
-  "usePausablePoll(callback, intervalMs, { enabled, pauseWhileInputActive, serialize }) returns void",
+  /export function usePausablePoll\(\s*callback: \(\) => void \| Promise<void>,\s*intervalMs: number,\s*opts\?: \{\s*enabled\?: boolean;\s*pauseWhileInputActive\?: boolean;\s*serialize\?: boolean;[\s\S]*?intervalEnabled\?: boolean;[\s\S]*?refreshOnFocusEnabled\?: boolean;[\s\S]*?onIntervalPaused\?: \(\) => void;\s*\},\s*\): void/,
+  "usePausablePoll(callback, intervalMs, { enabled, pauseWhileInputActive, serialize, intervalEnabled, refreshOnFocusEnabled, onIntervalPaused }) returns void",
 );
 
 // ── Recurring poll pauses while the tab is hidden ────────────────────────────
@@ -51,13 +51,13 @@ assert.match(src, /if \(!enabled\) return;/, "passing { enabled: false } suspend
 assert.match(src, /import \{ runRefreshSafely, useRefreshOnFocus \} from "@\/lib\/use-refresh-on-focus"/, "composes the existing focus hook and its async rejection guard");
 assert.match(
   src,
-  /useRefreshOnFocus\(run, \{ enabled \}\)/,
+  /useRefreshOnFocus\(run, \{ enabled: refreshOnFocusEnabled \}\)/,
   "foreground refresh also respects active input composition",
 );
 assert.doesNotMatch(src, /addEventListener\("visibilitychange"/, "no hand-rolled visibilitychange listener — that lives in useRefreshOnFocus");
 
 // ── Stable interval across callback identity changes ─────────────────────────
 assert.match(src, /const cbRef = useRef\(callback\);\s*cbRef\.current = callback;/, "the callback is read via a ref so the interval isn't torn down each render");
-assert.match(src, /\}, \[enabled, intervalMs, run\]\)/, "the poll effect depends on its stable shared callback");
+assert.match(src, /if \(!intervalEnabled\) return;\s*const id = setInterval\(run, intervalMs\);[\s\S]*?\}, \[intervalEnabled, intervalMs, run\]\)/, "the poll effect depends on its stable shared callback and pauses on intervalEnabled (#5858)");
 
 console.log("use-pausable-poll.test.ts: ok");

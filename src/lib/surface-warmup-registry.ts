@@ -2,6 +2,7 @@
 
 import { preloadSidebarSurface, type WarmableSidebarSurface } from "@/components/lazy-surfaces";
 import { defineResource, invalidate, read, warm, type SurfaceWarmCacheRead } from "@/lib/surface-warm-cache";
+import { createInvalidateOnce } from "@/lib/invalidate-once";
 
 export type SurfaceWarmupSurface = WarmableSidebarSurface;
 export type SurfaceWarmResult = { backpressured: boolean };
@@ -34,6 +35,9 @@ export function surfaceWarmupRetryAfterSeconds(error: unknown): number {
 }
 
 export const surfaceWarmupResources = {
+  // Chat is chunk-only here. Its session list is already owned by Workspace,
+  // so warming that request speculatively would duplicate the boot load.
+  chat: [],
   marketplace: ["marketplace:catalog", "marketplace:skills"],
   board: ["board:cards"],
   schedules: ["schedules:inbox", "schedules:automations"],
@@ -108,6 +112,13 @@ export async function readSurfaceResource<T>(key: string, force = false): Promis
 export function invalidateSurfaceResources(...keys: string[]): void {
   for (const key of keys) invalidate(key);
 }
+
+/**
+ * Invalidate `keys` once per event-plane event (#5869). Every listener of a
+ * topic calls this with the event it received, then reads with `force`; only
+ * the first invalidates, so the rest join its fetch instead of cancelling it.
+ */
+export const invalidateSurfaceResourcesFor = createInvalidateOnce(invalidate);
 
 /** Warm a complete canonical landing surface without rendering it. */
 export async function warmSurface(

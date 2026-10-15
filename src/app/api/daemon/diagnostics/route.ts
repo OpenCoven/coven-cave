@@ -4,6 +4,7 @@ import {
   buildDaemonDiagnosticBundle,
   listDaemonDiagnosticEvents,
 } from "@/lib/server/daemon-diagnostics";
+import { readEventPlaneDiagnostics } from "@/lib/server/cave-event-plane-publisher";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,7 +19,9 @@ export async function GET() {
       caveVersion: await installedCovenVersion(),
     },
   });
-  return NextResponse.json(bundle, {
+  // Aggregate event-plane counters only (#5862): no credentials, entity ids,
+  // cursors or payloads.
+  return NextResponse.json({ ...bundle, eventPlane: readEventPlaneDiagnostics() }, {
     headers: {
       "cache-control": "no-store",
       "content-disposition": 'attachment; filename="coven-cave-daemon-diagnostics.json"',

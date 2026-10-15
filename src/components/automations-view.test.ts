@@ -156,7 +156,18 @@ assert.match(source, /type AutomationTab = "overview" \| "calendar" \| "crons"/,
 assert.doesNotMatch(source, /bulkPatchReminders|bulkDeleteReminders|ReminderTaskList|reminderSelect/, "the orphaned reminder bulk-select machinery stays deleted");
 assert.match(source, /const \[deepLinkTab, setDeepLinkTab\] = useState<AutomationTab \| null>/, "Calendar and Crons deep links override the saved tab for one visit");
 assert.match(source, /aria-label="Toggle events ribbon"/, "the overview includes a collapsible week ribbon");
-assert.match(source, /Needs you · \{inboxFeed\.needsYou\.length\}/, "the only raised work queue is the Needs-you tier");
+assert.match(source, /Needs you · \{needs\.asks\.length\}/, "the only raised work queue is the Needs-you tier, counting its asks (#5873)");
+assert.match(source, /const needs = useMemo\(\(\) => splitFinishedNeeds\(inboxFeed\.needsYou\), \[inboxFeed\.needsYou\]\);/, "finished notifications are split out of the asks");
+assert.match(
+  source,
+  /\{needs\.asks\.map\(\(item\) => \([\s\S]*?<RitualNeedsRow[\s\S]*?<RitualFinishedGroup\s+items=\{needs\.finished\}[\s\S]*?onDismissAll=\{\(list\) => void dismissFinished\(list\)\}/,
+  "the Finished group follows the asks inside Needs you",
+);
+assert.match(
+  source,
+  /const dismissFinished = async \(list: InboxItem\[\]\) => \{[\s\S]*?filter\(\(id\) => !id\.startsWith\("eph:"\)\)[\s\S]*?fetch\("\/api\/inbox\/bulk", \{[\s\S]*?action: "dismiss", ids[\s\S]*?await reloadAfterMutation\(\);/,
+  "Dismiss all is one bulk request over the server-backed finished items",
+);
 assert.match(source, /aria-label="Show ritual log"/, "the overview exposes the activity log");
 assert.match(source, /aria-label="Show agenda thread"/, "the overview exposes the agenda thread");
 assert.match(source, /overviewSwipeStartRef/, "Log and Agenda support a manual swipe gesture");
@@ -267,10 +278,11 @@ assert.match(automationsView, /<InboxFeedList[\s\S]*?onSelect=\{openInboxItem\}/
 assert.match(automationsView, /<RitualNeedsRow[\s\S]*?onSelect=\{openInboxItem\}/, "Needs you uses the daily-summary navigation boundary");
 assert.match(automationsView, /<RitualItemRow[\s\S]*?onSelect=\{openInboxItem\}/, "the ritual log uses the daily-summary navigation boundary");
 assert.match(automationsView, /<RitualAgendaThread[\s\S]*?onSelect=\{openInboxItem\}/, "the agenda thread uses the daily-summary navigation boundary");
+assert.match(automationsView, /<RitualFinishedGroup[\s\S]*?onSelect=\{openInboxItem\}/, "the Finished group uses the daily-summary navigation boundary (#5873)");
 assert.equal(
   [...automationsView.matchAll(/onSelect=\{openInboxItem\}/g)].length,
-  4,
-  "all four Rituals inbox presentations use the shared navigation boundary",
+  5,
+  "all five Rituals inbox presentations use the shared navigation boundary",
 );
 
 // ── 2026-07-03 a11y batch ─────────────────────────────────────────────────────
@@ -342,11 +354,11 @@ assert.match(source, /fetch\(`\/api\/codex-automation-last-runs\?\$\{query\}`\)/
 assert.doesNotMatch(source, /codexAutos\.map\(\(a\) =>\s*\n?\s*fetch\(/, "last-run badges no longer fan out one request per automation");
 
 // ── Rituals UI/UX debug pass (cave-v1x6) ─────────────────────────────────────
-// Overview search must never dead-end: the input renders whenever search is
-// open (items.length gating made both the input AND the toggle icon vanish
-// when the list was empty), and the Log pane shows activity time (firedAt ??
-// updatedAt), not a future fireAt, so its timestamps read monotonically.
-assert.match(source, /activeTab === "overview" && searchOpen && initialLoadDone \? \(/, "overview search input is not gated on items.length");
+// Search stays visible even before loading or when no items match; clearing
+// the filter never hides it. Log timestamps use activity time, not a future fireAt.
+assert.doesNotMatch(automationsView, /searchOpen|rituals-crons-search-toggle/, "search does not collapse behind a magnifier");
+assert.match(automationsView, /activeTab === "overview" \? \([\s\S]*?<SearchInput/, "overview search is visible without an item or loading gate");
+assert.match(automationsView, /activeTab === "crons" \? \([\s\S]*?<SearchInput/, "cron search is visible without an item or loading gate");
 assert.match(source, /timeMode="log"/, "the Log pane renders rows in log time mode");
 assert.match(source, /timeMode = "agenda"/, "RitualItemRow defaults to agenda time");
 assert.match(source, /item\.firedAt \?\? item\.updatedAt \?\? item\.createdAt\s*:/, "log mode shows last-activity time (same key ritualLogItems sorts by)");

@@ -25,8 +25,9 @@ assert.match(chatView, /"Explain something to me"/);
 assert.doesNotMatch(chatView, /"What tasks need attention\?"|"Work on the next priority"|app\.tasks/,
   "conversation starters do not depend on task dashboards");
 assert.doesNotMatch(chatView, /"Board unavailable"|"Load the live board"|"New Messages"/);
-assert.match(chatView, /TextField\("Write a message…", text: \$draft, axis: \.vertical\)/);
-assert.match(chatView, /TextField\("Write a message…"[\s\S]{0,120}\.accessibilityLabel\("Message"\)/);
+// The placeholder also says how to reach the menus (#5879).
+assert.match(chatView, /"Write a message… \/ for commands, @ to mention" : "Write a message… \/ for commands"/);
+assert.match(chatView, /TextField\(composerPlaceholder, text: \$draft, axis: \.vertical\)[\s\S]{0,60}\.accessibilityLabel\("Message"\)/);
 assert.match(newChat, /Button\(isGroup \? "Create group" : "Start chat"\)/);
 assert.match(newChat, /Button\("Refresh access"\)/);
 assert.match(newChat, /Section\("Group name \(Optional\)"\)/);
@@ -77,8 +78,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /onKeyPress\(keys: \[\.escape\]\) \{ _ in\s*\n\s*guard showActionMenu else \{ return \.ignored \}\s*\n\s*showActionMenu = false/,
-  "hardware Escape dismisses the + menu",
+  /onKeyPress\(keys: \[\.escape\]\) \{ _ in[\s\S]{0,200}suggestionsDismissedFor = draft[\s\S]{0,120}guard showActionMenu else \{ return \.ignored \}\s*\n\s*showActionMenu = false/,
+  "hardware Escape closes the suggestion menu first, then dismisses the + menu",
 );
 assert.match(chatView, /\.photosPicker\(isPresented: \$showPhotosPicker/, "Photos presents via the programmatic photosPicker modifier");
 assert.match(chatView, /\.fileImporter\(isPresented: \$showFileImporter/, "Files presents via fileImporter");

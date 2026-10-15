@@ -1,9 +1,21 @@
 import {
+  childPath,
+  hasOwn,
+  parseObject,
+  parseRequiredField,
+  parseOpaqueIdentifier,
+  indexPath,
+  parseEnumValue,
+  parseBoolean,
+  parseUtc,
+  parseString,
+  parseSchema,
+  parseSafeIntegerInRange,
+  parsePositiveSafeInteger,
+  parseNonNegativeFiniteNumber,
   compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
-  isOpaqueId,
-  isRecord,
   isSha256,
   isUtcTimestamp,
   parseResearchContextBindingV1,
@@ -202,20 +214,6 @@ export type RunEventV1 = {
   at: string;
   data: Record<string, unknown>;
 } & UnknownFields;
-
-function childPath(path: string, key: string): string {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
-    ? `${path}.${key}`
-    : `${path}[${JSON.stringify(key)}]`;
-}
-
-function indexPath(path: string, index: number): string {
-  return `${path}[${index}]`;
-}
-
-function hasOwn(record: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(record, key);
-}
 
 function contextBindingsMatch(
   runContext: ResearchContextBindingV1 | undefined,
@@ -1052,135 +1050,6 @@ export function validateResearchRunContextPackV1(
     );
   }
   return pass(run);
-}
-
-function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
-  if (!isRecord(value)) {
-    return fail("invalid_type", path, "Expected an object");
-  }
-  return pass(value);
-}
-
-function parseRequiredField(
-  record: Record<string, unknown>,
-  key: string,
-  path: string,
-): ProtocolParseResult<unknown> {
-  if (!hasOwn(record, key)) {
-    return fail("missing_field", childPath(path, key), `Missing required field ${key}`);
-  }
-  return pass(record[key]);
-}
-
-function parseString(value: unknown, path: string, label: string): ProtocolParseResult<string> {
-  if (typeof value !== "string") {
-    return fail("invalid_type", path, `${label} must be a string`);
-  }
-  return pass(value);
-}
-
-function parseBoolean(value: unknown, path: string, label: string): ProtocolParseResult<boolean> {
-  if (typeof value !== "boolean") {
-    return fail("invalid_type", path, `${label} must be a boolean`);
-  }
-  return pass(value);
-}
-
-function parseEnumValue<const T extends readonly string[]>(
-  value: unknown,
-  allowed: T,
-  path: string,
-  label: string,
-): ProtocolParseResult<T[number]> {
-  if (typeof value !== "string") {
-    return fail("invalid_type", path, `${label} must be a string`);
-  }
-  if (!allowed.includes(value as T[number])) {
-    return fail("invalid_value", path, `${label} must be one of ${allowed.join(", ")}`);
-  }
-  return pass(value as T[number]);
-}
-
-function parseSafeIntegerInRange(
-  value: unknown,
-  path: string,
-  label: string,
-  minimum: number,
-  maximum: number,
-): ProtocolParseResult<number> {
-  if (typeof value !== "number") {
-    return fail("invalid_type", path, `${label} must be a number`);
-  }
-  if (!Number.isSafeInteger(value)) {
-    return fail("invalid_value", path, `${label} must be a safe integer`);
-  }
-  if (value < minimum || value > maximum) {
-    return fail("invalid_value", path, `${label} must be between ${minimum} and ${maximum}`);
-  }
-  return pass(value);
-}
-
-function parsePositiveSafeInteger(value: unknown, path: string, label: string): ProtocolParseResult<number> {
-  return parseSafeIntegerInRange(value, path, label, 1, MAX_SAFE_INTEGER);
-}
-
-function parseNonNegativeFiniteNumber(
-  value: unknown,
-  path: string,
-  label: string,
-): ProtocolParseResult<number> {
-  if (typeof value !== "number") {
-    return fail("invalid_type", path, `${label} must be a number`);
-  }
-  if (!Number.isFinite(value) || value < 0) {
-    return fail("invalid_value", path, `${label} must be a finite number >= 0`);
-  }
-  return pass(value);
-}
-
-function parseSchema<const T extends string>(
-  value: unknown,
-  exact: T,
-  re: RegExp,
-  path: string,
-  label: string,
-): ProtocolParseResult<T> {
-  if (typeof value !== "string") {
-    return fail("invalid_type", path, `${label} must be a string`);
-  }
-  if (value === exact) {
-    return pass(exact);
-  }
-  const match = re.exec(value);
-  if (match) {
-    return fail("unknown_major", path, `Unsupported ${label} major v${match[1]}`);
-  }
-  return fail("invalid_value", path, `${label} must equal ${exact}`);
-}
-
-function parseUtc(value: unknown, path: string, label: string): ProtocolParseResult<string> {
-  if (typeof value !== "string") {
-    return fail("invalid_type", path, `${label} must be a string`);
-  }
-  if (!isUtcTimestamp(value)) {
-    return fail("invalid_value", path, `${label} must be a UTC RFC 3339 timestamp`);
-  }
-  return pass(value);
-}
-
-function parseOpaqueIdentifier(
-  value: unknown,
-  prefix: string,
-  path: string,
-  label: string,
-): ProtocolParseResult<string> {
-  if (typeof value !== "string") {
-    return fail("invalid_type", path, `${label} must be a string`);
-  }
-  if (!isOpaqueId(value, prefix)) {
-    return fail("invalid_value", path, `${label} must match ${prefix}_...`);
-  }
-  return pass(value);
 }
 
 function parseAcceptedTopic(value: unknown, path: string): ProtocolParseResult<ResearchAcceptedTopicV1> {

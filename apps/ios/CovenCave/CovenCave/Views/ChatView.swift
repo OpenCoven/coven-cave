@@ -38,9 +38,25 @@ struct ChatView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
+    /// The suggestion row a hardware keyboard has highlighted (#5879).
+    @State private var suggestionIndex = 0
+    /// The draft Escape dismissed the suggestion menu for; editing reopens it.
+    @State private var suggestionsDismissedFor: String?
     /// The message being quoted in the next send, if any (swipe-to-reply).
     @State private var replyingTo: DisplayMessage?
     @FocusState private var composerFocused: Bool
+    private struct ScheduledReplyLaunch: Identifiable {
+        let id = UUID()
+        let client: CaveClient
+        let sessionId: String
+        let message: CaveClient.SendBody?
+        let draft: String
+        let imageIds: [UUID]
+        let replyId: String?
+        let lease: AppModel.ConnectionDispatchLease
+    }
+    @State private var scheduledReplyLaunch: ScheduledReplyLaunch?
+
     @State private var showCommands = false
     @State private var showNewChat = false
     @State private var showFamiliarPicker = false
@@ -113,13 +129,39 @@ struct ChatView: View {
 
     /// Per-thread key for the persisted unsent draft.
 
-    // The slash autocomplete is driven purely off the in-progress draft: a
-    // leading "/" on the first word (no whitespace committed yet).
-    private var slashMatches: [SlashCommand] {
-        guard SlashInput.isTypingCommand(draft) else { return [] }
-        return SlashCatalog.matches(draft)
+    // The suggestion menus are driven purely off the in-progress draft — one
+    // surface at a time: command list → argument picker → mention picker
+    // (see `ComposerIntent`).
+    private var composerIntent: ComposerIntent {
+        ComposerIntent.detect(draft, allowsMentions: thread.isGroup)
     }
-    private var showingSlashMenu: Bool { !slashMatches.isEmpty }
+    private var slashMatches: [SlashCommand] {
+        guard case .commands(let prefix) = composerIntent else { return [] }
+        return SlashCatalog.matches(prefix)
+    }
+
+    // Second-level completion for `/model …` and `/familiar …`. Model rows come
+    // from the options `loadSessionModelState` already fetched on open, so no
+    // request fires while typing; familiars are the on-device roster.
+    private var argumentCommand: SlashCommand? {
+        guard case .argument(let command, _) = composerIntent else { return nil }
+        return command
+    }
+    private var argumentRows: [ComposerArgumentRow] {
+        guard case .argument(let command, let partial) = composerIntent else { return [] }
+        return ComposerArgumentRows.rows(
+            for: command, partial: partial,
+            familiars: app.familiars, models: thread.isGroup ? [] : modelPickerOptions,
+            skills: app.composerSuggestions.skills, prompts: app.composerSuggestions.prompts)
+    }
+    /// Which suggestion list the open picker needs from the desktop (#5876).
+    private var suggestionKindToLoad: ComposerSuggestionStore.Kind? {
+        switch argumentCommand?.argCompletion {
+        case .skill: return .skills
+        case .prompt: return .prompts
+        default: return nil
+        }
+    }
 
     // @-mention autocomplete (group chats only): the trailing `@token` matches
     // the group's familiars by name.
@@ -130,7 +172,22 @@ struct ChatView: View {
         let q = partial.lowercased()
         return members.filter { $0.displayName.lowercased().contains(q) || $0.id.lowercased().contains(q) }
     }
-    private var showingMentionMenu: Bool { !mentionMatches.isEmpty }
+    private var showingMentionMenu: Bool { !mentionMatches.isEmpty && argumentCommand == nil }
+
+    /// The one suggestion menu for the draft (#5879): commands, a command's
+    /// argument picker, or mentions, unless Escape dismissed it for this draft.
+    private var suggestionList: ComposerSuggestionList? {
+        guard suggestionsDismissedFor != draft else { return nil }
+        return ComposerSuggestionList.make(
+            intent: composerIntent, commands: slashMatches,
+            argumentRows: argumentRows, mentions: showingMentionMenu ? mentionMatches : [])
+    }
+    private var suggestionIds: [String] { suggestionList?.items.map(\.id) ?? [] }
+
+    /// The composer placeholder says how to reach the menus.
+    private var composerPlaceholder: String {
+        thread.isGroup ? "Write a message… / for commands, @ to mention" : "Write a message… / for commands"
+    }
 
     // A voice call targets a single familiar, so the call button only appears
     // on one-to-one threads whose familiar is known. Group threads have no
@@ -1369,16 +1426,11 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .transition(.scale(scale: 0.94, anchor: .bottomLeading).combined(with: .opacity))
             }
-            if showingSlashMenu {
-                SlashCommandMenu(commands: slashMatches) { command in pickFromMenu(command) }
-                    .padding(.horizontal, 12)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-            if showingMentionMenu {
-                MentionMenu(familiars: mentionMatches,
-                            avatarSource: { app.client?.familiarAvatarSource(for: $0) }) { familiar in
-                    draft = MentionInput.insert(name: familiar.displayName, into: draft)
-                    composerFocused = true
+            if let suggestionList {
+                SuggestionMenu(list: suggestionList,
+                               selection: SuggestionSelection.clamp(suggestionIndex, count: suggestionList.items.count),
+                               avatarSource: { app.client?.familiarAvatarSource(for: $0) }) { item in
+                    pickSuggestion(item)
                 }
                 .padding(.horizontal, 12)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1392,8 +1444,14 @@ struct ChatView: View {
             composerBar
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showActionMenu)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingSlashMenu)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingMentionMenu)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: suggestionList == nil)
+        // A different list starts from its first row.
+        .onChange(of: suggestionIds) { _, _ in suggestionIndex = 0 }
+        // Skill and prompt rows load the first time their picker opens (#5876).
+        .task(id: suggestionKindToLoad) {
+            guard let kind = suggestionKindToLoad else { return }
+            await loadSuggestions(kind)
+        }
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
         .background(chrome.bgBase)
@@ -1409,6 +1467,16 @@ struct ChatView: View {
         }
         // The "+" menu's attach destinations. The pickers hang off the composer
         // (not the menu rows) so the menu can dismiss before they present.
+        .sheet(item: $scheduledReplyLaunch) { launch in
+            ScheduledChatSheet(client: launch.client, sessionId: launch.sessionId, message: launch.message,
+                canSchedule: { requireChatAccess() && app.connectionDispatchLeaseIsCurrent(launch.lease) },
+                onScheduled: {
+                    if draft == launch.draft && pendingImages.map(\.id) == launch.imageIds && replyingTo?.id == launch.replyId {
+                        draft = ""; pendingImages = []; replyingTo = nil
+                    }
+                    app.showToast("Reply scheduled", systemImage: "clock")
+                })
+        }
         .photosPicker(isPresented: $showPhotosPicker,
                       selection: $photoItems,
                       maxSelectionCount: maxAttachments,
@@ -1436,6 +1504,7 @@ struct ChatView: View {
             FloatingAction(id: "files", systemImage: "folder", label: "Files") { showFileImporter = true },
             FloatingAction(id: "dictation", systemImage: "mic.fill", label: "Dictate") { startDictation() },
             FloatingAction(id: "commands", systemImage: "command", label: "Commands") { showCommands = true },
+            FloatingAction(id: "send-later", systemImage: "clock", label: "Send later") { openSendLater() },
         ]
     }
 
@@ -1468,6 +1537,33 @@ struct ChatView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 4)
         }
+    }
+
+    private func openSendLater() {
+        guard !thread.isGroup, !thread.isFlowRun, !isRecoveryOnlyThread,
+              let familiarId = thread.familiarIds.first,
+              let sessionId = thread.sessionIds[familiarId], !sessionId.isEmpty else {
+            app.showToast("Open an existing single-familiar chat to schedule a reply", systemImage: "clock", style: .warning)
+            return
+        }
+        guard let client = app.client, app.connectionState == .connected, requireChatAccess() else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.hasPrefix("/") else {
+            app.showToast("Send commands directly. Only replies can be scheduled.", systemImage: "clock", style: .warning)
+            return
+        }
+        let attachments = pendingImages.map { CaveClient.ChatAttachment(name: $0.name, mimeType: $0.mimeType, dataUrl: $0.dataUrl) }
+        let binding = turnModelBinding
+        var message = thread.makeSendBody(familiarId: familiarId,
+            prompt: replyingTo.map { replyQuote($0) + text } ?? text,
+            attachments: attachments, runId: UUID().uuidString,
+            modelControls: modelControlValues, modelOverride: binding.modelOverride, modelOverrideScope: binding.scope)
+        message?.runId = nil
+        scheduledReplyLaunch = ScheduledReplyLaunch(client: client, sessionId: sessionId,
+            message: text.isEmpty && attachments.isEmpty ? nil : message,
+            draft: draft, imageIds: pendingImages.map(\.id), replyId: replyingTo?.id,
+            lease: app.captureConnectionDispatchLease())
+        composerFocused = false
     }
 
     private func startDictation() {
@@ -1535,7 +1631,7 @@ struct ChatView: View {
             .buttonStyle(.glassPress)
             .accessibilityLabel(showActionMenu ? "Close attach menu" : "Attach or run a tool")
 
-            TextField("Write a message…", text: $draft, axis: .vertical)
+            TextField(composerPlaceholder, text: $draft, axis: .vertical)
                 .accessibilityLabel("Message")
                 .font(isEmptyThread ? .body : .callout)
                 .lineLimit(1...6)
@@ -1546,15 +1642,33 @@ struct ChatView: View {
                 // software keyboard's return still inserts a newline as usual
                 // (a vertical-axis field doesn't fire onSubmit), so multi-line
                 // composing on-device is untouched.
+                // With the suggestion menu open, Return picks the highlighted
+                // row instead of sending (#5879).
                 .onKeyPress(keys: [.return]) { press in
                     guard !press.modifiers.contains(.shift) else { return .ignored }
+                    if pickHighlightedSuggestion() { return .handled }
                     guard canSend else { return .ignored }
                     send()
                     return .handled
                 }
-                // Hardware Escape closes the "+" menu (outside tap and row
-                // selection are the touch paths).
+                // Tab completes the highlighted suggestion; ↑/↓ move it.
+                .onKeyPress(keys: [.tab]) { _ in
+                    pickHighlightedSuggestion() ? .handled : .ignored
+                }
+                .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                    guard let count = suggestionList?.items.count, count > 0 else { return .ignored }
+                    suggestionIndex = SuggestionSelection.move(suggestionIndex, by: press.key == .upArrow ? -1 : 1,
+                                                               count: count)
+                    return .handled
+                }
+                // Hardware Escape closes the suggestion menu for this draft,
+                // then the "+" menu (outside tap and row selection are the
+                // touch paths).
                 .onKeyPress(keys: [.escape]) { _ in
+                    if suggestionList != nil {
+                        suggestionsDismissedFor = draft
+                        return .handled
+                    }
                     guard showActionMenu else { return .ignored }
                     showActionMenu = false
                     return .handled
@@ -1805,6 +1919,27 @@ struct ChatView: View {
 
     /// Tap a row in the inline autocomplete. Commands that take arguments get
     /// prefilled (keyboard stays up); zero-arg commands run immediately.
+    /// Pick any row of the suggestion menu (#5879).
+    private func pickSuggestion(_ item: ComposerSuggestionItem) {
+        suggestionIndex = 0
+        switch item.kind {
+        case .command(let command):
+            pickFromMenu(command)
+        case let .argument(row, command):
+            pickArgument(row, for: command)
+        case .mention(let familiar):
+            draft = MentionInput.insert(name: familiar.displayName, into: draft)
+            composerFocused = true
+        }
+    }
+
+    /// Pick the keyboard-highlighted row. False when no menu is open.
+    private func pickHighlightedSuggestion() -> Bool {
+        guard let items = suggestionList?.items, !items.isEmpty else { return false }
+        pickSuggestion(items[SuggestionSelection.clamp(suggestionIndex, count: items.count)])
+        return true
+    }
+
     private func pickFromMenu(_ command: SlashCommand) {
         if command.argPlaceholder != nil {
             draft = command.name + " "
@@ -1813,6 +1948,77 @@ struct ChatView: View {
             draft = ""
             dispatch(command, args: "")
         }
+    }
+
+    /// Pick from the argument menu: the command runs at once with the row's
+    /// value, the way the desktop picker does — no second tap on send.
+    private func pickArgument(_ row: ComposerArgumentRow, for command: SlashCommand) {
+        Haptics.tap()
+        switch command.argCompletion {
+        case .skill:
+            guard let skill = app.composerSuggestions.skills.first(where: { $0.id == row.value }) else { return }
+            // A skill that declares an argument hint is filled in for editing,
+            // as on the desktop; any other runs at once.
+            if let hint = skill.argumentHint, !hint.trimmingCharacters(in: .whitespaces).isEmpty {
+                draft = "/skill \(skill.id) "
+                return
+            }
+            draft = ""
+            sendPrompt(SkillInvocation.prompt(for: skill), command: command)
+        case .prompt:
+            // A prompt is inserted for editing and never sent.
+            guard let prompt = app.composerSuggestions.prompts.first(where: { $0.id == row.value }) else { return }
+            draft = prompt.body
+        default:
+            draft = ""
+            dispatch(command, args: row.value)
+        }
+    }
+
+    private func loadSuggestions(_ kind: ComposerSuggestionStore.Kind) async {
+        guard let client = app.client else { return }
+        await app.composerSuggestions.ensureLoaded(
+            kind, host: app.connection?.host,
+            skills: { try await client.localSkills() },
+            prompts: { try await client.promptTemplates() })
+    }
+
+    /// `/skill <name> [args]` typed and sent: resolve it the desktop's way.
+    private func invokeSkill(_ args: String, command: SlashCommand) async {
+        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            draft = "/skill "
+            return
+        }
+        await loadSuggestions(.skills)
+        guard let match = SkillInvocation.resolveInvocation(trimmed, in: app.composerSuggestions.skills) else {
+            let failed = app.composerSuggestions.loadState(.skills) == .failed
+            thread.appendSystem(failed
+                ? "Couldn't load skills from the desktop. Is it reachable?"
+                : "No skill matches “\(trimmed)”. Type /skill to pick one.", isError: true)
+            app.touch(thread)
+            return
+        }
+        sendPrompt(SkillInvocation.prompt(for: match.skill, args: match.args), command: command)
+    }
+
+    /// `/prompt <name>` typed and sent: insert the template, never send it.
+    private func insertPrompt(_ args: String) async {
+        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            draft = "/prompt "
+            return
+        }
+        await loadSuggestions(.prompts)
+        guard let prompt = PromptPick.resolve(trimmed, in: app.composerSuggestions.prompts) else {
+            let failed = app.composerSuggestions.loadState(.prompts) == .failed
+            thread.appendSystem(failed
+                ? "Couldn't load prompts from the desktop. Is it reachable?"
+                : "No prompt matches “\(trimmed)”. Type /prompt to pick one.", isError: true)
+            app.touch(thread)
+            return
+        }
+        draft = prompt.body
     }
 
     /// Pick from the full Commands sheet — always prefill so the user sees the
@@ -1857,6 +2063,14 @@ struct ChatView: View {
             Task { await switchModel(args) }
         case .startDiagram:
             startDiagram(args)
+        case .invokeSkill:
+            Task { await invokeSkill(args, command: command) }
+        case .insertPrompt:
+            Task { await insertPrompt(args) }
+        case .browseSkills:
+            draft = args.isEmpty ? "/skills " : "/skills \(args)"
+        case .browsePrompts:
+            draft = args.isEmpty ? "/prompts " : "/prompts \(args)"
         case .desktopOnly(let surface):
             app.showToast("\(surface) lives on your desktop", systemImage: "desktopcomputer",
                           style: .warning)

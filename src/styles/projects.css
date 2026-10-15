@@ -1137,3 +1137,12 @@
     transform: none;
   }
 }
+
+/* Search stays readable and keyboard-visible in narrow panes and on touch. */
+.projects-access-search { min-width:0; max-width:100%; min-height:var(--space-8); border-color:var(--border-strong); }
+.projects-access-search:focus-within { outline:var(--ring-width) solid var(--ring-focus); outline-offset:var(--ring-offset); }
+.projects-access-search input { min-width:0; width:100%; }
+@media (max-width:767px), (pointer:coarse) {
+  .projects-access-search { height:auto; min-height:var(--touch-target); }
+  .projects-access-search input { min-height:var(--touch-target); font-size:var(--text-lg); }
+}

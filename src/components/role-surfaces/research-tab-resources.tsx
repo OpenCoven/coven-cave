@@ -431,7 +431,10 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     }
     closeOverlay();
   }, [closeOverlay, readerExpanded]);
-  useFocusTrap(Boolean(openLink), dialogRef, { onEscape: handleOverlayEscape });
+  useFocusTrap(Boolean(openLink), dialogRef, {
+    onEscape: handleOverlayEscape,
+    containTabFocus: true,
+  });
 
   useEffect(() => {
     if (reading && readerExpanded) readerFocusControlRef.current?.focus();

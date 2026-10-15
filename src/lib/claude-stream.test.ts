@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   hasUnsupportedClaudeToolFrame,
   isClaudeStreamJsonFrame,
+  isSyntheticClaudeEnvelope,
   parseClaudeMessageEnvelope,
   parseClaudeTextOnlyEnvelope,
 } from "./claude-stream.ts";
@@ -286,5 +287,26 @@ for (const profile of CLAUDE_COMPATIBILITY_PROFILES) {
     assert.doesNotMatch(JSON.stringify(events), /UNCLASSIFIED_DISPLAY_TEXT|OPAQUE_STATE/);
     assert.equal(JSON.stringify(envelope), original, "display projection leaves provider continuation bytes unchanged");
   }
+}
+// #5938: Claude Code stamps CLI-authored text (a usage-limit notice) with the
+// `<synthetic>` model marker. The decoder flags that envelope so the route can
+// classify its text; a served model never carries the flag.
+{
+  const notice = {
+    type: "assistant",
+    message: { model: "<synthetic>", content: [{ type: "text", text: "You've reached your Fable limit." }] },
+  };
+  assert.deepEqual(parseClaudeMessageEnvelope(notice, v2), [
+    { kind: "model", model: null, synthetic: true },
+    { kind: "text", text: "You've reached your Fable limit." },
+  ], "a synthetic envelope is flagged and reports no model");
+  assert.equal(isSyntheticClaudeEnvelope(notice), true);
+  assert.equal(isSyntheticClaudeEnvelope({ type: "assistant", message: { model: "claude-opus-5-5", content: [] } }), false);
+  assert.equal(isSyntheticClaudeEnvelope({ type: "user", message: { model: "<synthetic>", content: [] } }), false, "only assistant envelopes carry CLI notices");
+  assert.equal(
+    "synthetic" in parseClaudeMessageEnvelope({ type: "assistant", message: { model: "claude-opus-5-5", content: [] } }, v2)[0],
+    false,
+    "a served model never carries the flag",
+  );
 }
 console.log("claude-stream: ok");

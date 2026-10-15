@@ -11,6 +11,7 @@ import {
   buildInboxGroups,
   groupInboxFeed,
   INBOX_GROUP_BY_OPTIONS,
+  splitFinishedNeeds,
   type InboxGroupBy,
 } from "@/lib/inbox-feed";
 import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
@@ -49,6 +50,7 @@ import {
   RitualAgendaThread,
   RitualItemRow,
   RitualNeedsRow,
+  RitualFinishedGroup,
   ritualWeekLabel,
   type RitualOverviewPane,
   useRitualNow,
@@ -149,7 +151,6 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   }, [setStoredActiveTab]);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [manageMenuOpen, setManageMenuOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(true);
   const [overviewPane, setOverviewPane] = useState<RitualOverviewPane>("log");
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
@@ -705,6 +706,8 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   );
   const ritualAgenda = useMemo(() => ritualAgendaItems(inboxVisible), [inboxVisible]);
   const needsYouIds = useMemo(() => new Set(inboxFeed.needsYou.map((item) => item.id)), [inboxFeed.needsYou]);
+  // Session-finished notifications are gathered into one group (#5873).
+  const needs = useMemo(() => splitFinishedNeeds(inboxFeed.needsYou), [inboxFeed.needsYou]);
   const ritualLog = useMemo(
     () => ritualLogItems(inboxVisible).filter((item) => !needsYouIds.has(item.id)),
     [inboxVisible, needsYouIds],
@@ -750,6 +753,28 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     } finally {
       setInboxBulkBusy(false);
       inboxSelect.exit();
+    }
+  };
+
+  /** Dismiss every finished notification in one bulk request (#5873). */
+  const [finishedBusy, setFinishedBusy] = useState(false);
+  const dismissFinished = async (list: InboxItem[]) => {
+    const ids = list.map((item) => item.id).filter((id) => !id.startsWith("eph:"));
+    if (ids.length === 0) return;
+    setFinishedBusy(true);
+    try {
+      const res = await fetch("/api/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "dismiss", ids }),
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      announce(`Dismissed ${ids.length} finished chat${ids.length === 1 ? "" : "s"}.`);
+      await reloadAfterMutation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "dismiss failed");
+    } finally {
+      setFinishedBusy(false);
     }
   };
 
@@ -822,7 +847,6 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
     setQuery(""); // the filter is scoped to one tab at a time
-    setSearchOpen(false);
     inboxSelect.exit(); // selection is an inbox-tab mode, never carried across
     // Clear any open detail on switch — the new tab may not host that type.
     setSelectedItem(null);
@@ -926,64 +950,26 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
               )}
             </div>
           )}
-          <div className="surface-compact-actions">
-            {activeTab === "overview" && searchOpen && initialLoadDone ? (
-              <div className="surface-compact-search">
-                <SearchInput
-                  value={query}
-                  onValueChange={setQuery}
-                  onClear={() => { setQuery(""); setSearchOpen(false); }}
-                  placeholder="Filter rituals…"
-                  aria-label="Filter rituals"
-                />
-              </div>
-            ) : null}
-            {activeTab === "overview" && !searchOpen ? (
-              <Button
-                aria-label="Search rituals"
-                size="sm"
-                variant="ghost"
-                leadingIcon="ph:magnifying-glass"
-                onClick={() => setSearchOpen(true)}
+          <div className={`surface-compact-actions${activeTab !== "calendar" ? " rituals-search-actions" : ""}`}>
+            {activeTab === "overview" ? (
+              <SearchInput
+                containerClassName="surface-compact-search"
+                value={query}
+                onValueChange={setQuery}
+                onClear={() => setQuery("")}
+                placeholder="Filter rituals…"
+                aria-label="Filter rituals"
               />
             ) : null}
-            {activeTab === "crons" && initialLoadDone && codexAutos.length > 0 ? (
-              /* Below 700px the field collapses to its magnifier, which then
-                 opens it — the CTA beside it must never be the thing that
-                 wraps. */
-              <>
-                {searchOpen ? (
-                  <div className="surface-compact-search">
-                    <SearchInput
-                      value={query}
-                      onValueChange={setQuery}
-                      onClear={() => { setQuery(""); setSearchOpen(false); }}
-                      placeholder="Filter crons…"
-                      aria-label="Filter crons"
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <div className="surface-compact-search rituals-crons-search-field">
-                      <SearchInput
-                        value={query}
-                        onValueChange={setQuery}
-                        onClear={() => setQuery("")}
-                        placeholder="Filter crons…"
-                        aria-label="Filter crons"
-                      />
-                    </div>
-                    <Button
-                      aria-label="Filter crons"
-                      size="sm"
-                      variant="ghost"
-                      className="rituals-crons-search-toggle"
-                      leadingIcon="ph:magnifying-glass"
-                      onClick={() => setSearchOpen(true)}
-                    />
-                  </>
-                )}
-              </>
+            {activeTab === "crons" ? (
+              <SearchInput
+                containerClassName="surface-compact-search"
+                value={query}
+                onValueChange={setQuery}
+                onClear={() => setQuery("")}
+                placeholder="Filter crons…"
+                aria-label="Filter crons"
+              />
             ) : null}
             {activeTab === "overview" ? (
               <>
@@ -1207,9 +1193,9 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
 
                     {inboxFeed.needsYou.length > 0 ? (
                       <section className="rituals-overview__needs" aria-labelledby="rituals-needs-heading">
-                        <h2 id="rituals-needs-heading">Needs you · {inboxFeed.needsYou.length}</h2>
+                        <h2 id="rituals-needs-heading">Needs you · {needs.asks.length}</h2>
                         <ul>
-                          {inboxFeed.needsYou.map((item) => (
+                          {needs.asks.map((item) => (
                             <RitualNeedsRow
                               key={item.id}
                               item={item}
@@ -1221,6 +1207,14 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                               onUnwatch={(next, repo) => void unwatchRepo(next, repo)}
                             />
                           ))}
+                          <RitualFinishedGroup
+                            items={needs.finished}
+                            familiarLabel={familiarLabel}
+                            busy={finishedBusy}
+                            onSelect={openInboxItem}
+                            onDismiss={(next) => void dismissInboxItem(next)}
+                            onDismissAll={(list) => void dismissFinished(list)}
+                          />
                         </ul>
                       </section>
                     ) : null}

@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusIcon } from "@/components/automations/status-icon";
 import { InboxDailyReportRow } from "@/components/automations/inbox-daily-report-row";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { repoFromGithubSubTag } from "@/lib/github-sub-tags";
-import type { IconName } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import { inboxKindLabel } from "@/lib/inbox-feed";
 import { relativeTimeSigned } from "@/lib/relative-time";
 
@@ -125,6 +125,79 @@ export function RitualNeedsRow({ item, familiarLabel, onSelect, onDone, onSnooze
         {onUnwatch && watchedRepo ? <RitualAction icon="ph:bell-slash" label={`Unwatch ${watchedRepo} — stop GitHub notifications from it`} text="Unwatch" onClick={() => onUnwatch(item, watchedRepo)} /> : null}
         <RitualAction icon="ph:x" label={`Dismiss ${item.title}`} text="Dismiss" onClick={() => onDismiss(item)} />
       </RitualActions>
+    </li>
+  );
+}
+
+/** Finished notifications listed per page when the group is open (#5873). */
+export const RITUAL_FINISHED_PAGE = 20;
+
+/**
+ * Every session-finished notification in Needs you, as one row (#5873). The
+ * row names the newest and offers Dismiss all; opening it lists them, newest
+ * first and a page at a time, each with Open and Dismiss. They are news, not
+ * asks, so they never sit between the items that need a response.
+ */
+export function RitualFinishedGroup({ items, familiarLabel, busy = false, onSelect, onDismiss, onDismissAll }: { items: InboxItem[]; familiarLabel: (familiarId?: string | null) => string | null; busy?: boolean; onSelect: (item: InboxItem) => void; onDismiss: (item: InboxItem) => void; onDismissAll: (items: InboxItem[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const [shown, setShown] = useState(RITUAL_FINISHED_PAGE);
+  const listId = useId();
+  const latest = items[0];
+  if (!latest) return null;
+  const count = items.length;
+  const noun = count === 1 ? "chat" : "chats";
+  const remaining = count - shown;
+  return (
+    <li className="rituals-overview__finished">
+      <div className="rituals-overview__need-row">
+        <button
+          type="button"
+          className="rituals-overview__need-main focus-ring-inset"
+          aria-expanded={open}
+          aria-controls={listId}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Icon name={open ? "ph:caret-down" : "ph:caret-right"} width={12} height={12} aria-hidden className="rituals-overview__finished-caret" />
+          <span className="rituals-overview__finished-label">Finished · {count}</span>
+          <span className="rituals-overview__row-title rituals-overview__finished-latest">{latest.title}</span>
+          <span className="rituals-overview__meta">{relativeTime(latest.firedAt ?? latest.updatedAt)}</span>
+        </button>
+        <RitualActions>
+          <RitualAction
+            icon="ph:x"
+            label={busy ? `Dismissing ${count} finished ${noun}` : `Dismiss all ${count} finished ${noun}`}
+            text={busy ? "Dismissing…" : "Dismiss all"}
+            onClick={() => { if (!busy) onDismissAll(items); }}
+          />
+        </RitualActions>
+      </div>
+      {open ? (
+        <ul id={listId} className="rituals-overview__finished-list" aria-label={`Finished ${noun}`}>
+          {items.slice(0, shown).map((item) => {
+            const familiar = familiarLabel(item.familiarId);
+            return (
+              <li key={item.id} className="rituals-overview__need-row">
+                <button type="button" className="rituals-overview__need-main focus-ring-inset" onClick={() => onSelect(item)}>
+                  <span className="rituals-overview__row-title">{item.title}</span>
+                  {familiar ? <span className="rituals-overview__meta">{familiar}</span> : null}
+                  <span className="rituals-overview__spacer" />
+                  <span className="rituals-overview__meta">{relativeTime(item.firedAt ?? item.updatedAt)}</span>
+                </button>
+                <RitualActions>
+                  <RitualAction icon="ph:x" label={`Dismiss ${item.title}`} text="Dismiss" onClick={() => onDismiss(item)} />
+                </RitualActions>
+              </li>
+            );
+          })}
+          {remaining > 0 ? (
+            <li className="rituals-overview__finished-more">
+              <button type="button" className="focus-ring" onClick={() => setShown((value) => value + RITUAL_FINISHED_PAGE)}>
+                Show {Math.min(RITUAL_FINISHED_PAGE, remaining)} more of {remaining}
+              </button>
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
     </li>
   );
 }

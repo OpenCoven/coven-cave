@@ -80,4 +80,8 @@ assert.match(
   "workspace wires onOpenSettings into the one sidebar",
 )
 
+
+// #5888: Dashboard and Canvas no longer share ph:squares-four.
+assert.match(footer, /<Icon name="ph:chart-line-up"[^>]*className="sidebar-foot-icon"/, "Dashboard has its own glyph");
+assert.doesNotMatch(footer, /<Icon name="ph:squares-four"/, "the footer doesn't reuse Canvas's glyph");
 console.log("sidebar-footer.test.ts: ok");

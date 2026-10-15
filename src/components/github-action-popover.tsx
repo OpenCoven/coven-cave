@@ -11,6 +11,7 @@ import {
   itemToContext,
 } from "@/lib/github-tasks";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { SearchInput } from "@/components/ui/search-input";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 
@@ -156,14 +157,13 @@ function BoardMode({
       {/* Search existing */}
       {openCards.length > 0 && (
         <>
-          <input
+          <SearchInput
             ref={inputRef}
-            type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onValueChange={setQuery}
+            onClear={() => setQuery("")}
             placeholder="Search open cards…"
             aria-label="Search open cards"
-            className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
           />
           <ul className="max-h-40 overflow-y-auto space-y-0.5">
             {filtered.slice(0, 12).map((card) => (

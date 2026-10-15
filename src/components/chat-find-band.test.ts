@@ -75,7 +75,7 @@ assert.match(
   /matchCase \|\| wholeWord \?/,
   "it only offers to relax a filter that is actually on",
 );
-assert.match(band, /cave-find-band__kbd">⌘K<\/kbd>/, "and points at all-session search");
+assert.match(band, /cave-find-band__kbd">\{platformizeHint\("⌘K", keys\)\}<\/kbd>/, "and points at all-session search");
 
 // ── chat-view wiring: hits, toggles, re-jump ────────────────────────────────
 assert.match(chatView, /findTranscriptHits\(/, "the view matches occurrences, not just turns");

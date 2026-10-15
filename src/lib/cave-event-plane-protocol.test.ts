@@ -106,3 +106,67 @@ test("the capability is off unless explicitly enabled, and modes fail closed", (
     { ...fixture.capability, rolloutMode: { web: "shadow", ios: "off" } },
   );
 });
+
+// ── Final conformance (#5869) ─────────────────────────────────────────────────
+// Literal pins, so a change to the module and the fixture together still fails
+// here. The Swift twin is CaveEventWireTests' testFinalConformancePins.
+
+test("the wire constants are pinned literally", () => {
+  assert.equal(CAVE_EVENT_PROTOCOL, 1);
+  assert.equal(CAVE_EVENT_PATH, "/api/events-ws");
+  assert.deepEqual([...CAVE_EVENT_TOPICS], ["sessions", "board", "runs", "familiars", "daemon"]);
+  assert.deepEqual({ ...CAVE_EVENT_CLOSE }, { protocol: 4400, invalidFrame: 4402, slowConsumer: 4408 });
+});
+
+test("every malformed fixture is refused", () => {
+  const entries = Object.entries(fixture.malformed as Record<string, unknown>);
+  assert.ok(entries.length >= 2);
+  for (const [name, message] of entries) {
+    assert.throws(
+      () => {
+        try {
+          parseEventServerMessage(raw(message));
+        } catch (serverError) {
+          parseEventClientMessage(raw(message));
+          throw serverError;
+        }
+      },
+      CaveEventProtocolError,
+      `${name} must be refused`,
+    );
+  }
+});
+
+test("web and iOS rollout modes are independent", () => {
+  const modes = ["off", "shadow", "primary"] as const;
+  for (const web of modes) {
+    for (const ios of modes) {
+      const capability = eventPlaneCapabilityFromEnv({
+        COVEN_CAVE_EVENT_PLANE_ENABLED: "1",
+        COVEN_CAVE_EVENT_WEB_MODE: web,
+        COVEN_CAVE_EVENT_IOS_MODE: ios,
+      });
+      assert.deepEqual(capability.rolloutMode, { web, ios });
+    }
+  }
+});
+
+test("ready is valid after hello and after a replacement subscribe", async () => {
+  const { createEventBroker } = await import("./server/cave-event-broker.ts");
+  const broker = createEventBroker({ newEpoch: () => "boot-a", setInterval: () => 0, clearInterval: () => {} });
+  const sent: string[] = [];
+  const handlers = broker.attach({
+    bufferedAmount: 0,
+    send: (data) => sent.push(data),
+    close: () => {},
+    ping: () => {},
+    terminate: () => {},
+  });
+  handlers.message(Buffer.from(raw({ type: "hello", protocol: 1, clientId: "conformance", topics: ["board"] })), false);
+  handlers.message(Buffer.from(raw(fixture.subscribe)), false);
+  const readies = sent.map((frame) => parseEventServerMessage(frame)).filter((message) => message.type === "ready");
+  assert.equal(readies.length, 2);
+  assert.deepEqual(readies[0]!.topics, ["board"]);
+  assert.deepEqual(readies[1]!.topics, fixture.subscribe.topics, "the replacement set, not a union");
+  broker.shutdown();
+});

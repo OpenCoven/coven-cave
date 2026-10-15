@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
-import { fileToAttachment, hasDraggedFiles, type ComposerAttachment } from "@/lib/chat-attachments";
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
+import {
+  fileToAttachment, hasDraggedFiles, MAX_CHAT_ATTACHMENTS, MAX_CHAT_NON_IMAGE_ATTACHMENTS,
+  type ComposerAttachment,
+} from "@/lib/chat-attachments";
 
 /**
  * Staged file attachments for a composer: paperclip picks, drag-and-drop, and
@@ -16,14 +19,13 @@ import { fileToAttachment, hasDraggedFiles, type ComposerAttachment } from "@/li
  * What stays per-composer, by design:
  * - the drop target (home: the composer card; chat: the whole section) — the
  *   handlers are returned as a bundle and attached wherever the surface wants;
- * - cap/added feedback via `onLimit`/`onAdded` (home toasts + announces, chat
- *   is silent);
+ * - optional cap/added callbacks; persistent read/limit feedback is shared;
  * - focus-after-add via `focus` (home defers a tick, chat focuses directly);
  * - the file-input markup (accept list, snapshot-then-clear re-pick fix).
  */
 export function useAttachmentStaging(opts?: {
   maxFiles?: number;
-  /** Called when a pick/drop is entirely swallowed by the cap. */
+  /** Called when the cap prevents some or all selected files from staging. */
   onLimit?: () => void;
   /** Called with the number of files actually staged. */
   onAdded?: (count: number) => void;
@@ -36,6 +38,9 @@ export function useAttachmentStaging(opts?: {
   clearAttachments: () => void;
   handlePaste: (e: ClipboardEvent) => void;
   dropActive: boolean;
+  notice: string | null;
+  dismissNotice: () => void;
+  isReading: boolean;
   dropHandlers: {
     onDragEnter: (e: DragEvent) => void;
     onDragOver: (e: DragEvent) => void;
@@ -43,40 +48,98 @@ export function useAttachmentStaging(opts?: {
     onDrop: (e: DragEvent) => void;
   };
 } {
-  const maxFiles = opts?.maxFiles ?? 10;
+  const maxFiles = opts?.maxFiles ?? MAX_CHAT_ATTACHMENTS;
   const onLimit = opts?.onLimit;
   const onAdded = opts?.onAdded;
   const focus = opts?.focus;
 
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
-  // dragDepthRef counts enter/leave pairs so moving across child elements
-  // never flickers the drop overlay off.
+  const attachmentsRef = useRef<ComposerAttachment[]>([]);
+  const pendingRef = useRef(0);
+  const pendingNonImageRef = useRef(0);
+  const generationRef = useRef(0);
+  const [isReading, setIsReading] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const dismissNotice = useCallback(() => setNotice(null), []);
   const [dropActive, setDropActive] = useState(false);
   const dragDepthRef = useRef(0);
+  useEffect(() => () => { generationRef.current += 1; }, []);
 
   const addFiles = useCallback(
     async (files: FileList | File[] | null) => {
       if (!files?.length) return;
-      const room = Math.max(0, maxFiles - attachments.length);
-      const selected = Array.from(files).slice(0, room);
-      if (selected.length === 0) {
-        onLimit?.();
-        return;
+      if (pendingRef.current === 0) setNotice(null);
+      // Reserve before reading: two drops can arrive before either read settles.
+      const room = Math.max(0, maxFiles - attachmentsRef.current.length - pendingRef.current);
+      let nonImageRoom = Math.max(0, MAX_CHAT_NON_IMAGE_ATTACHMENTS
+        - attachmentsRef.current.filter((attachment) => !(attachment.mimeType ?? attachment.type)?.startsWith("image/")).length
+        - pendingNonImageRef.current);
+      const selected: File[] = [];
+      for (const file of Array.from(files)) {
+        if (selected.length >= room) break;
+        if (!file.type.startsWith("image/")) {
+          if (nonImageRoom === 0) continue;
+          nonImageRoom -= 1;
+        }
+        selected.push(file);
       }
-      const next = await Promise.all(selected.map(fileToAttachment));
-      setAttachments((prev) => [...prev, ...next]);
-      onAdded?.(next.length);
+      if (selected.length < files.length) {
+        setNotice(`You can attach up to ${maxFiles} images or ${MAX_CHAT_NON_IMAGE_ATTACHMENTS} other files, ${maxFiles} total. Remove an attachment before adding another.`);
+        onLimit?.();
+      }
+      if (selected.length === 0) return;
+      const generation = generationRef.current;
+      pendingRef.current += selected.length;
+      const selectedNonImages = selected.filter((file) => !file.type.startsWith("image/")).length;
+      pendingNonImageRef.current += selectedNonImages;
+      setIsReading(true);
+      const results = await Promise.allSettled(selected.map(fileToAttachment));
+      if (generation !== generationRef.current) return;
+      const next: ComposerAttachment[] = [];
+      const problems: string[] = [];
+      results.forEach((result, index) => {
+        const name = selected[index].name;
+        if (result.status === "rejected") {
+          problems.push(`${name} couldn't be read. Choose it again.`);
+          return;
+        }
+        const attachment = result.value;
+        if (!attachment.dataUrl && attachment.text === undefined) {
+          problems.push(attachment.truncated
+            ? `${name} is too large. Choose a smaller file.`
+            : `${name} couldn't be read. Choose it again.`);
+          return;
+        }
+        next.push(attachment);
+        if (attachment.truncated) problems.push(`Text from ${name} was shortened to fit the attachment limit.`);
+      });
+      pendingRef.current -= selected.length;
+      pendingNonImageRef.current -= selectedNonImages;
+      setIsReading(pendingRef.current > 0);
+      if (problems.length) setNotice(previous => [previous, ...problems].filter(Boolean).join(" "));
+      if (next.length) {
+        attachmentsRef.current = [...attachmentsRef.current, ...next];
+        setAttachments(attachmentsRef.current);
+        onAdded?.(next.length);
+      }
       focus?.();
     },
-    [maxFiles, attachments.length, onLimit, onAdded, focus],
+    [maxFiles, onLimit, onAdded, focus],
   );
 
   const removeAttachment = useCallback((id: string) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    attachmentsRef.current = attachmentsRef.current.filter(a => a.id !== id);
+    setAttachments(attachmentsRef.current);
   }, []);
 
   const clearAttachments = useCallback(() => {
+    generationRef.current += 1;
+    pendingRef.current = 0;
+    pendingNonImageRef.current = 0;
+    attachmentsRef.current = [];
     setAttachments([]);
+    setIsReading(false);
+    setNotice(null);
   }, []);
 
   // Paste-to-attach: clipboard files (screenshots, copied files) win over any
@@ -124,5 +187,5 @@ export function useAttachmentStaging(opts?: {
     },
   };
 
-  return { attachments, addFiles, removeAttachment, clearAttachments, handlePaste, dropActive, dropHandlers };
+  return { attachments, addFiles, removeAttachment, clearAttachments, handlePaste, dropActive, dropHandlers, notice, dismissNotice, isReading };
 }

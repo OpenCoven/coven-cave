@@ -91,6 +91,8 @@ export type CaveEventPlaneClientDiagnostics = {
   acknowledgementsSent: number;
   invalidServerMessages: number;
   fallbackActivations: number;
+  /** Fallback poll ticks a covered surface skipped because this topic was ready in primary mode. */
+  pollsAvoided: number;
 };
 
 export type CaveEventPlaneClient = {
@@ -102,6 +104,8 @@ export type CaveEventPlaneClient = {
   /** For useSyncExternalStore: fires whenever state, readiness or mode changes. */
   onChange(listener: () => void): () => void;
   diagnostics(): CaveEventPlaneClientDiagnostics;
+  /** Count one fallback poll tick a covered surface skipped (#5862). */
+  notePollAvoided(): void;
   refreshCapabilities(): Promise<void>;
   dispose(): void;
 };
@@ -159,6 +163,7 @@ export function createCaveEventPlaneClient(deps: CaveEventPlaneDependencies): Ca
     acknowledgementsSent: 0,
     invalidServerMessages: 0,
     fallbackActivations: 0,
+    pollsAvoided: 0,
   };
 
   const mode = (): CaveEventRolloutMode =>
@@ -496,7 +501,11 @@ export function createCaveEventPlaneClient(deps: CaveEventPlaneDependencies): Ca
       acknowledgementsSent: counters.acknowledgementsSent,
       invalidServerMessages: counters.invalidServerMessages,
       fallbackActivations: counters.fallbackActivations,
+      pollsAvoided: counters.pollsAvoided,
     }),
+    notePollAvoided() {
+      counters.pollsAvoided += 1;
+    },
     async refreshCapabilities() {
       capabilityLoaded = false;
       await loadCapability();
@@ -547,6 +556,14 @@ function browserDependencies(): CaveEventPlaneDependencies {
 let singleton: CaveEventPlaneClient | null = null;
 
 /** The webview's one manager. Created on first use, in the browser only. */
+/**
+ * Count one fallback poll tick a covered surface skipped (#5862). A no-op
+ * until the browser client exists, so a server render never creates it.
+ */
+export function noteCaveEventPollAvoided(): void {
+  singleton?.notePollAvoided();
+}
+
 export function getCaveEventPlaneClient(): CaveEventPlaneClient {
   if (typeof window === "undefined") throw new Error("the event plane client runs in the browser only");
   singleton ??= createCaveEventPlaneClient(browserDependencies());

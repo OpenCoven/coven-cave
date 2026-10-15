@@ -1654,7 +1654,7 @@
    the outer threshold here prevents rail reflow from compressing the report. */
 @container document-reader (max-width: 65rem) {
   .research-reader .rr-doc {
-    --research-evidence-edge-reserve: 0;
+    --research-evidence-edge-reserve: 0px;
   }
 
   .research-reader .document-reader--rail .document-reader__layout {
@@ -1871,7 +1871,7 @@
 
   .research-reader .rr-doc,
   .research-reader .rr-doc__column {
-    --research-evidence-edge-reserve: 0;
+    --research-evidence-edge-reserve: 0px;
     padding: 0;
   }
 

@@ -48,6 +48,30 @@ struct CaveConnection: Codable, Equatable {
         return URL(string: "http://\(trimmed):\(CavePorts.production)")
     }
 
+    /// The event-plane socket on the same host (#5864): `wss` for `https`,
+    /// `ws` for `http`, always at the protocol's fixed path.
+    var eventSocketURL: URL? {
+        guard let baseURL,
+              var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        else { return nil }
+        switch components.scheme?.lowercased() {
+        case "https": components.scheme = "wss"
+        case "http": components.scheme = "ws"
+        default: return nil
+        }
+        components.path = CaveEventWire.path
+        components.query = nil
+        components.fragment = nil
+        return components.url
+    }
+
+    /// The event socket only when a credential may travel to it: TLS, or
+    /// plaintext to this device's loopback. A remote plaintext host gets none.
+    var eventSocketURLForCredentialedRequest: URL? {
+        guard let url = eventSocketURL, Self.isCredentialTransportSecure(url) else { return nil }
+        return url
+    }
+
     /// Ordered base URLs to try when the configured one is unreachable — the fix
     /// for a host entered without the proper port. `tailscale serve` usually
     /// terminates TLS on `:8443`, so a `.ts.net` host typed without a port
@@ -260,6 +284,8 @@ struct CaveConnection: Codable, Equatable {
         // Fail closed on an unreadable managed item, not back to a legacy token.
         let managed = try DeviceAccessStore.loadActive()
         guard let token = managed?.credential ?? KeychainStore.string(forKey: tokenKey) else { return nil }
+        // A managed grant is REST-only over TLS: device access keeps WebSocket
+        // scopes, the event socket included, off managed grants (#5864).
         if isManagedDeviceCredential(token), url.scheme?.lowercased() != "https" {
             throw CaveError.insecureCredentialTransport
         }

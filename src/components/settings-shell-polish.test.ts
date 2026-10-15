@@ -25,6 +25,10 @@ const shellResponsiveCss = readFileSync(
 );
 const dashboardCssUrl = new URL("../styles/dashboard.css", import.meta.url);
 const dashboardCss = existsSync(dashboardCssUrl) ? readFileSync(dashboardCssUrl, "utf8") : "";
+const switchCss = readFileSync(new URL("../styles/settings-switch.css", import.meta.url), "utf8");
+const xSectionCss = readFileSync(new URL("../styles/familiar-x-section.css", import.meta.url), "utf8");
+assert.match(dashboardCss, /@import "\.\/settings-switch\.css"/, "Settings loads the shared switch");
+assert.match(xSectionCss, /@import "\.\/settings-switch\.css"/, "X recovery loads the shared switch independently");
 const aboutSource = readFileSync(
   new URL("./settings-about.tsx", import.meta.url),
   "utf8",
@@ -497,17 +501,17 @@ assert.match(
   "Phone disclosures preserve native touch targets on coarse pointers",
 );
 assert.match(
-  dashboardCss,
+  switchCss,
   /\.settings-switch \{[\s\S]{0,400}?border-radius: var\(--radius-pill\)/,
   "the minimal switch track follows the selected pill radius",
 );
 assert.match(
-  dashboardCss,
+  switchCss,
   /\.settings-switch__knob \{[\s\S]{0,220}?border-radius: var\(--radius-pill\)/,
   "the minimal switch knob follows the selected pill radius",
 );
 assert.match(
-  dashboardCss,
+  switchCss,
   /\.settings-switch::after \{[\s\S]{0,120}?inset: -12px/,
   "the small switch keeps a generous hit area",
 );

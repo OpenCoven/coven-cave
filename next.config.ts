@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import bundleAnalyzer from "@next/bundle-analyzer";
+import { MAX_PROXY_BODY_BYTES } from "./src/lib/request-body-limit.ts";
 
 // Opt-in Webpack bundle visualizer retained for `next build --webpack`.
 // Turbopack builds use `pnpm analyze:bundle`, which writes Next's interactive
@@ -111,6 +112,9 @@ const nextConfig: NextConfig = {
   // bundle-budget postbuild gate and the e2e suite guard the output.
   reactCompiler: true,
   experimental: {
+    // Next otherwise silently truncates inline attachment JSON at 10 MiB,
+    // turning valid multi-image sends into an "invalid json body" 400.
+    proxyClientMaxBodySize: MAX_PROXY_BODY_BYTES,
     // Next preloads all 355 route entries as the server starts: ~1.9 s of
     // main-thread work landing exactly on app launch (#5658). server.ts runs
     // the same preload once the launch has settled instead.

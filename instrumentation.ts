@@ -61,8 +61,24 @@ export async function register() {
   }
   const mod = await import("@/lib/inbox-scheduler");
   mod.startScheduler();
+  const scheduledChat = await import("@/lib/server/scheduled-chat-scheduler");
+  scheduledChat.startScheduledChatScheduler();
   const watcher = await import("@/lib/github-watcher");
   watcher.startGithubWatcher();
   const backupSync = await import("@/lib/server/backup-sync");
   backupSync.startBackupSyncScheduler();
+  try {
+    // The event plane's server-side watchers (#5843). They start only when
+    // the plane is switched on with COVEN_CAVE_EVENT_PLANE_ENABLED=1; with it
+    // off there is no daemon poll and no file watch. They publish through the
+    // bridge server.ts installs before Next starts.
+    const { isEventPlaneEnabled } = await import("@/lib/cave-event-plane-protocol");
+    if (isEventPlaneEnabled(process.env)) {
+      (await import("@/lib/server/daemon-event-watcher")).startDaemonEventWatcher();
+      (await import("@/lib/server/familiar-roster-watch")).startFamiliarRosterWatch();
+      (await import("@/lib/server/board-file-watch")).startBoardFileWatch();
+    }
+  } catch (error) {
+    console.warn("[instrumentation] event plane watchers could not start:", error);
+  }
 }

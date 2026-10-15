@@ -1,6 +1,7 @@
 "use client";
 
 import "@/styles/cave-composer.css";
+import { ModelInventoryFeedback } from "@/components/model-inventory-feedback";
 import "@/styles/home-composer.css";
 
 /**
@@ -23,6 +24,7 @@ import {
 import type { SessionRow } from "@/lib/types";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InitialCommandControls } from "@/lib/command-controls";
+import type { ModelControlFamily, ModelControlValues } from "@/lib/model-control-capabilities";
 import { Icon } from "@/lib/icon";
 import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
@@ -46,10 +48,13 @@ import { HOME_DRAFT_KEY, readComposerDraft, useDraftPersistence } from "@/lib/us
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useDictation } from "@/lib/voice/use-dictation";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
+import { ComposerAttachmentFeedback } from "@/components/composer-attachment-feedback";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { canonicalize, inlineSlashCommandPrompt, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerPlusMenu } from "@/components/composer-plus-menu";
+import { Button } from "@/components/ui/button";
+import { requestSummonFamiliar } from "@/lib/summon-events";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
@@ -65,6 +70,8 @@ import { PromptSnippetsModal } from "@/components/prompt-snippets-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
+  MAX_CHAT_ATTACHMENTS,
+  MAX_CHAT_NON_IMAGE_ATTACHMENTS,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
@@ -84,7 +91,13 @@ export type { Destination } from "@/components/home/home-destinations";
 
 type Props = {
   familiars: ResolvedFamiliar[];
+  /** True once the shell's roster fetch has settled successfully, so an
+   *  empty `familiars` means "none exist" rather than "still loading". */
+  rosterReady?: boolean;
   project: CaveProject | null;
+  /** The shell's answer to "Choose a project…" (#5982): opens the project
+   *  picker, or the first-project gate when the familiar has none. */
+  onRequestProject?: () => void;
   taskOrigin?: HomeTaskOrigin | null;
   actingFamiliarId: string | null;
   /** The shell's active familiar — drives the shared selector row's highlight.
@@ -141,7 +154,9 @@ const HOME_COMPOSER_MAX_HEIGHT = 332;
 
 export function HomeComposer({
   familiars,
+  rosterReady = false,
   project,
+  onRequestProject,
   taskOrigin = null,
   actingFamiliarId,
   activeFamiliarId,
@@ -216,9 +231,9 @@ export function HomeComposer({
       textarea.setSelectionRange(nextCaret, nextCaret);
     });
   }, []);
-  // Attachments staged in the composer (cap 10, mirroring the chat composer);
+  // Attachments staged in the composer (50 total, at most 10 non-images);
   // handed to the opened chat on submit. Shared hook — home adds the limit
-  // toast + SR announce and defers refocus a tick (the chat composer is silent).
+  // toast + SR announce and defers refocus a tick.
   const {
     attachments,
     addFiles,
@@ -227,8 +242,11 @@ export function HomeComposer({
     handlePaste,
     dropActive,
     dropHandlers,
+    notice: attachmentNotice,
+    dismissNotice: dismissAttachmentNotice,
+    isReading: attachmentsReading,
   } = useAttachmentStaging({
-    onLimit: () => onToast("Attachment limit reached (10)."),
+    onLimit: () => onToast(`Attachment limit reached (${MAX_CHAT_ATTACHMENTS} total, ${MAX_CHAT_NON_IMAGE_ATTACHMENTS} other files).`),
     onAdded: (count) => announce(`Attached ${count} file${count === 1 ? "" : "s"}`, "polite"),
     focus: () => setTimeout(() => textareaRef.current?.focus(), 0),
   });
@@ -238,6 +256,17 @@ export function HomeComposer({
     [actingFamiliarId, familiars],
   );
   const selectedFamiliarId = selectedFamiliar?.id ?? "";
+  // Zero familiars (#5982): nothing can run a chat, so every launch path asks
+  // for a familiar first — before any project check — and the hero offers the
+  // Summoning Circle. Creation never routes through the onboarding wizard.
+  const noFamiliars = rosterReady && familiars.length === 0;
+  const summonCtaRef = useRef<HTMLButtonElement>(null);
+  const requireFamiliar = useCallback((): boolean => {
+    if (!noFamiliars) return true;
+    onToast("Summon a familiar before starting a chat.");
+    summonCtaRef.current?.focus();
+    return false;
+  }, [noFamiliars, onToast]);
   const actionAuthoritySequenceRef = useRef(0);
   const resolveActionFamiliar = useCallback(async (
     actionLabel: string,
@@ -253,6 +282,7 @@ export function HomeComposer({
   }, [onRequestActingFamiliar]);
   const {
     modelState,
+    modelCapabilities,
     pendingModelOverride,
     waitForRuntimeWrite,
     selectModel: handleSelectModel,
@@ -262,6 +292,32 @@ export function HomeComposer({
   useEffect(() => {
     if (!selectedFamiliar) setOptionsOpen(false);
   }, [selectedFamiliar]);
+  // Thinking · Speed chips (#5902): the same typed selected-model controls the
+  // chat composer edits, picked before the first send. A model or familiar
+  // switch can change the reported families or values; keep only explicit
+  // picks that remain valid (chat-view parity).
+  const [modelControls, setModelControls] = useState<ModelControlValues>({});
+  useEffect(() => {
+    setModelControls((current) => Object.fromEntries(
+      Object.entries(current).filter(([family, value]) =>
+        modelCapabilities.some((capability) =>
+          capability.family === family && capability.values.some((option) => option.value === value),
+        ),
+      ),
+    ) as ModelControlValues);
+  }, [modelCapabilities]);
+  const handleModelControlChange = useCallback(
+    (family: ModelControlFamily, value: string | null) => {
+      setModelControls((current) => {
+        const next = { ...current };
+        if (value) next[family] = value;
+        else delete next[family];
+        return next;
+      });
+    },
+    [],
+  );
+  const hasModelControls = Object.keys(modelControls).length > 0;
   // Host chip: where the opened chat should execute. Per-composer state, not a
   // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
@@ -280,19 +336,22 @@ export function HomeComposer({
           ? modelState.effectiveModel
           : undefined;
   const initialChatControls: InitialCommandControls | undefined =
-    runtimeHost || initialModelOverride !== undefined
+    runtimeHost || initialModelOverride !== undefined || hasModelControls
       ? {
           ...(runtimeHost ? { runtimeHost } : {}),
           ...(initialModelOverride !== undefined
             ? { modelOverride: initialModelOverride, modelOverrideScope: "next-message" as const }
             : {}),
+          // Thinking · Speed picks ride the handoff so the opened chat's first
+          // send and its chips start from the same selection (#5902).
+          ...(hasModelControls ? { modelControls } : {}),
         }
       : undefined;
   const selectedProjectRoot = project?.root ?? "";
   const selectedRuntime = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
   );
-  const runtimeModelInventory = useRuntimeModelInventory(selectedRuntime, selectedFamiliarId);
+  const runtimeModelInventory = useRuntimeModelInventory(selectedRuntime, selectedFamiliarId, modelState?.runtime, runtimeHost);
   const runtimeModelOptions = runtimeModelInventory.models;
   const runtimeOwnsDefault = runtimeModelInventory.defaultOwner === "runtime";
   const effectiveModel =
@@ -387,8 +446,10 @@ export function HomeComposer({
         textareaRef.current?.focus();
         return false;
       }
+      if (!requireFamiliar()) return false;
       if (!project) {
         onToast("Choose a project before running a skill.");
+        onRequestProject?.();
         return false;
       }
       const actionFamiliar = await resolveActionFamiliar("Run skill");
@@ -414,6 +475,8 @@ export function HomeComposer({
       initialChatControls,
       onStartChat,
       onToast,
+      onRequestProject,
+      requireFamiliar,
       text,
     ],
   );
@@ -545,7 +608,7 @@ export function HomeComposer({
     const prompt = (promptOverride ?? text).trim();
     // Allow an attachments-only send (chat can carry files with no text); every
     // other path still needs a prompt and is guarded per-destination below.
-    if ((!prompt && attachments.length === 0) || sending) return;
+    if ((!prompt && attachments.length === 0) || sending || attachmentsReading) return;
 
     // Slash commands bypass the destination model entirely — same contract
     // as the chat composer's slash dispatch.
@@ -621,8 +684,10 @@ export function HomeComposer({
         return;
       }
       if (command === "/new") {
+        if (!requireFamiliar()) return;
         if (!project) {
           onToast("Choose a project before starting a chat.");
+          onRequestProject?.();
           return;
         }
         const actionFamiliar = await resolveActionFamiliar("Start new chat");
@@ -644,8 +709,10 @@ export function HomeComposer({
         setText("");
         return;
       }
+      if (!requireFamiliar()) return;
       if (!project) {
         onToast("Choose a project before running this command.");
+        onRequestProject?.();
         return;
       }
       const actionFamiliar = await resolveActionFamiliar("Run command");
@@ -672,12 +739,14 @@ export function HomeComposer({
     }
     const actionLabel = homeSubmitLabel(destination, runtimeHost, prompt);
     const isOmnigentRun = actionLabel === "Start Omnigent run";
+    if (!requireFamiliar()) return;
     if (!isOmnigentRun && !project) {
       onToast(
         destination === "board"
           ? "Choose a project before creating a task."
           : "Choose a project before starting a chat.",
       );
+      onRequestProject?.();
       return;
     }
     const actionFamiliar = await resolveActionFamiliar(actionLabel, !isOmnigentRun);
@@ -798,6 +867,7 @@ export function HomeComposer({
     waitForRuntimeWrite,
     sending,
     attachments,
+    attachmentsReading,
     clearDraft,
     clearAttachments,
     pushHistory,
@@ -806,6 +876,8 @@ export function HomeComposer({
     onStartChat,
     onNavigateToBoard,
     onToast,
+    onRequestProject,
+    requireFamiliar,
     skills,
     invokeSkill,
     prompts,
@@ -818,7 +890,7 @@ export function HomeComposer({
       // ⌘⇧A opens the attach picker — the "+" menu's Attach-file shortcut.
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
         e.preventDefault();
-        if (!sending && attachments.length < 10) fileInputRef.current?.click();
+        if (!sending && attachments.length < MAX_CHAT_ATTACHMENTS) fileInputRef.current?.click();
         return;
       }
       // The inline menus (Esc-dismiss, ↑↓/Tab/Enter across all four pickers)
@@ -860,10 +932,24 @@ export function HomeComposer({
         <h1 className="home-composer-headline">What are we casting today?</h1>
         {contextLine ? <p className="home-composer-sub">{contextLine}</p> : null}
         <p className="home-composer-guidance" id={guidanceId}>
-          {destination === "board"
-            ? "Describe a task to add to Tasks. Your familiar can pick it up there."
-            : "Choose a familiar and describe what you want to work on."}
+          {noFamiliars
+            ? "No familiars yet. Summon one to start a chat."
+            : destination === "board"
+              ? "Describe a task to add to Tasks. Your familiar can pick it up there."
+              : "Choose a familiar and describe what you want to work on."}
         </p>
+        {noFamiliars ? (
+          <div className="home-composer-summon">
+            <Button
+              ref={summonCtaRef}
+              variant="primary"
+              leadingIcon="ph:magic-wand-fill"
+              onClick={() => requestSummonFamiliar()}
+            >
+              Summon a familiar
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the
@@ -898,7 +984,7 @@ export function HomeComposer({
             ariaLabel="Models"
             items={modelOptions.map((m) => ({ key: m.id, name: m.label, desc: m.id }))}
             activeIndex={slashIdx}
-            footer="↑↓ navigate · Enter switch · Esc cancel"
+            footer={<><ModelInventoryFeedback runtime={modelHarness} modelInventory={runtimeModelInventory} modelCount={runtimeModelOptions.length} /><span>↑↓ navigate · Enter switch · Esc cancel</span></>}
             onHover={setSlashIdx}
             onPick={(i) => {
               const m = modelOptions[i];
@@ -986,14 +1072,23 @@ export function HomeComposer({
 
         {/* Staged attachments — chat-style strip above the textarea, plus a
             count + clear-all header (each chip has its own remove control). */}
+        <ComposerAttachmentFeedback
+          notice={attachmentNotice}
+          reading={attachmentsReading}
+          onDismiss={() => { dismissAttachmentNotice(); textareaRef.current?.focus(); }}
+        />
         {attachments.length > 0 && (
           <div className="hc-attachments-wrap">
             <div className="hc-attachments-head">
-              <span className="hc-attachments-count">{attachments.length}/10 attached</span>
+              <span className="hc-attachments-count">{attachments.length}/{MAX_CHAT_ATTACHMENTS} attached</span>
               <button
                 type="button"
-                className="hc-attachments-clear"
-                onClick={clearAttachments}
+                className="hc-attachments-clear focus-ring"
+                onClick={() => {
+                  clearAttachments();
+                  announce("Attachments cleared.");
+                  textareaRef.current?.focus();
+                }}
                 disabled={sending}
               >
                 Clear all
@@ -1013,8 +1108,12 @@ export function HomeComposer({
                 <span className="hc-attachment-name" title={att.name}>{att.name}</span>
                 <button
                   type="button"
-                  className="hc-attachment-remove"
-                  onClick={() => removeAttachment(att.id)}
+                  className="hc-attachment-remove composer-attachment-remove focus-ring"
+                  onClick={() => {
+                    removeAttachment(att.id);
+                    announce(`Removed ${att.name}.`);
+                    textareaRef.current?.focus();
+                  }}
                   aria-label={`Remove ${att.name}`}
                   title="Remove"
                 >
@@ -1100,7 +1199,7 @@ export function HomeComposer({
                 triggerRef={plusAnchorRef}
                 attach={{
                   onSelect: () => fileInputRef.current?.click(),
-                  disabled: sending || attachments.length >= 10,
+                  disabled: sending || attachments.length >= MAX_CHAT_ATTACHMENTS,
                   hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
                 }}
                 skills={{
@@ -1130,8 +1229,10 @@ export function HomeComposer({
                     ? {
                         onSelect: async () => {
                           if (voiceCallPending) return;
+                          if (!requireFamiliar()) return;
                           if (!project) {
                             onToast("Choose a project before starting a voice call.");
+                            onRequestProject?.();
                             return;
                           }
                           const actionFamiliar = await resolveActionFamiliar("Start voice call");
@@ -1191,7 +1292,7 @@ export function HomeComposer({
                 onClick={() => void handleSubmit()}
                 disabled={
                   (!text.trim() && attachments.length === 0) ||
-                  sending
+                  attachmentsReading || sending
                 }
                 data-typing={text.trim() ? "true" : undefined}
                 className="cave-composer-send focus-ring transition-colors"
@@ -1266,8 +1367,12 @@ export function HomeComposer({
               runtime={selectedRuntime}
               modelValue={selectedModelId}
               modelOptions={runtimeModelOptions}
+              modelInventory={runtimeModelInventory}
               onPickRuntime={handleSelectRuntime}
               onPickModel={handleSelectModel}
+              modelCapabilities={modelCapabilities}
+              modelControls={modelControls}
+              onModelControlChange={handleModelControlChange}
               disabled={sending || !selectedFamiliar}
             />
           </div>

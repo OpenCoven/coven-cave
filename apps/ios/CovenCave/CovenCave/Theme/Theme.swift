@@ -12,6 +12,21 @@ struct ChromePalette: Equatable {
     var bgBase: Color = Color(uiColor: .systemBackground)
     var bgRaised: Color = Color(uiColor: .secondarySystemBackground)
     var bgElevated: Color = Color(uiColor: .tertiarySystemBackground)
+    var bgPanel: Color = Color(uiColor: .secondarySystemBackground)
+    var bgSubtle: Color = Color(uiColor: .tertiarySystemBackground)
+    var bgSunken: Color = Color(uiColor: .systemGroupedBackground)
+    var borderHairline: Color {
+        get { border }
+        set { border = newValue }
+    }
+    var borderStrong: Color = Color(uiColor: .opaqueSeparator)
+    var success: Color = Color(uiColor: .systemGreen)
+    var successSoft: Color = Color(uiColor: .systemGreen).opacity(0.12)
+    var warning: Color = Color(uiColor: .systemOrange)
+    var warningSoft: Color = Color(uiColor: .systemOrange).opacity(0.12)
+    var danger: Color = Color(uiColor: .systemRed)
+    var dangerSoft: Color = Color(uiColor: .systemRed).opacity(0.12)
+    var info: Color = Color(uiColor: .systemBlue)
     var textPrimary: Color = .primary
     var textSecondary: Color = .secondary
     var textMuted: Color = Color(uiColor: .tertiaryLabel)
@@ -46,6 +61,17 @@ extension ChromePalette {
         if let c = Color(hex: t["--text-muted"]) { textMuted = c }
         if let c = Color(hex: t["--border-hairline"]) { border = c }
         if let c = Color(hex: t["--accent-presence"]) { accent = c; accentHex = t["--accent-presence"] }
+        if let c = Color(hex: t["--bg-panel"]) { bgPanel = c }
+        if let c = Color(hex: t["--bg-subtle"]) { bgSubtle = c }
+        if let c = Color(hex: t["--bg-sunken"]) { bgSunken = c }
+        if let c = Color(hex: t["--border-strong"]) { borderStrong = c }
+        if let c = Color(hex: t["--color-success"]) { success = c }
+        if let c = Color(hex: t["--color-success-soft"]) { successSoft = c }
+        if let c = Color(hex: t["--color-warning"]) { warning = c }
+        if let c = Color(hex: t["--color-warning-soft"]) { warningSoft = c }
+        if let c = Color(hex: t["--color-danger"]) { danger = c }
+        if let c = Color(hex: t["--color-danger-soft"]) { dangerSoft = c }
+        if let c = Color(hex: t["--color-info"]) { info = c }
         colorScheme = snapshot.mode.lowercased() == "light" ? .light : .dark
     }
 

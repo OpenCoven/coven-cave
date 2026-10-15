@@ -202,6 +202,34 @@ describe("thread-signal-card module wiring", () => {
     assert.doesNotMatch(wideCard, /max-height:\s*none|overflow:\s*visible/, "wide short panes retain the overlay's bounded scrolling fallback");
   });
 
+  // #5898: a signal-free report used to leave the wide card's right column empty.
+  it("fills the wide card when there are no signals or no rationale", () => {
+    assert.match(
+      source,
+      /className=\{`tsc-card\$\{rows\.length === 0 \? " tsc-card--no-signals" : ""\}\$\{selected \? "" : " tsc-card--no-detail"\}`\}/,
+      "the card names its empty states",
+    );
+    const wide = styles.slice(styles.indexOf("@container thread-signal-overlay (min-width: 48rem)"));
+    assert.match(
+      wide,
+      /\.cave-thread-signal-overlay > \.tsc-card--no-signals \{\s*grid-template-areas:\s*"head head"\s*"tiles why"\s*"foot foot";/,
+      "with no signals the rationale sits beside the tiles",
+    );
+    assert.match(
+      wide,
+      /\.cave-thread-signal-overlay > \.tsc-card--no-signals\.tsc-card--no-detail \{\s*grid-template-areas:\s*"head"\s*"tiles"\s*"foot";\s*grid-template-columns: minmax\(0, 1fr\);/,
+      "with no rationale either, the tiles take the whole width",
+    );
+  });
+
+  it("keeps the new-content pill off an open card", () => {
+    assert.match(
+      styles,
+      /\.cave-chat-overlay-host:has\(> \.cave-thread-signal-overlay\) \.cave-new-response-content \{\s*display: none;\s*\}/,
+      "the transcript pill steps aside while the card covers the bottom edge",
+    );
+  });
+
   it("carries severity on shared tone utilities rather than per-element colors", () => {
     for (const rule of [
       /\.tsc-tone--ok\s*\{\s*color:\s*var\(--color-success\);/,

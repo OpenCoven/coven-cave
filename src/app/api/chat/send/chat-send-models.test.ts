@@ -15,6 +15,34 @@ import {
   turnRetryModel,
 } from "./chat-send-models.ts";
 
+for (const options of [undefined, {}, { origin: null }, { origin: "chat" }]) {
+  const prompt = buildPromptWithResponseControls("hi", {}, options);
+  for (const directive of ["next_paths", "coven_cards", "citations"]) {
+    assert.ok(prompt.includes(`<${directive}>`), `${JSON.stringify(options)} keeps ${directive}`);
+  }
+  assert.ok(prompt.endsWith("\nhi"));
+}
+
+for (const origin of ["canvas", "enhance", "journal"]) {
+  assert.equal(
+    buildPromptWithResponseControls("hi", {}, { origin }),
+    "hi",
+    `${origin} leaves the generation prompt untouched without selected controls`,
+  );
+  assert.equal(
+    buildPromptWithResponseControls("hi", { modelControls: { verbosity: "low" } }, { origin }),
+    [
+      "<response_controls>",
+      "verbosity: low",
+      "These are user-selected prompt guidance, not provider settings. Do not mention them unless asked.",
+      "</response_controls>",
+      "",
+      "hi",
+    ].join("\n"),
+    `${origin} preserves explicitly selected controls without chat directives`,
+  );
+}
+
 for (const scope of [undefined, "next-message", "session", "runtime-default"]) {
   assert.equal(isModelOverrideScope(scope), true, `${String(scope)} is a supported model scope`);
 }

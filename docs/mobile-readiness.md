@@ -125,6 +125,14 @@ remaining physical-device gates are tracked in
   granted, local notifications fire.
 - [ ] Real iPhone: complete the cold-launch, memory-pressure, thermal, energy,
   and Wi-Fi/cellular handoff gates listed in the native performance audit.
+- [ ] Event plane (only with `COVEN_CAVE_EVENT_IOS_MODE` set to `shadow` or
+  `primary`; see [`event-plane-operations.md`](event-plane-operations.md)):
+  the socket opens only while the app is in the foreground, closes when it
+  backgrounds, and resumes from its cursor on return. It uses `wss://` for an
+  HTTPS connection and refuses to send a credential to a remote plaintext host.
+  A phone paired with a managed device grant gets no socket and keeps polling.
+  In `primary`, a board or session change made on the desktop reaches the open
+  list without a pull-to-refresh. Nothing on iOS stops polling.
 
 ## Perf budget (phase 7)
 

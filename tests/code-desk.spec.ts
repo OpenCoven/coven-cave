@@ -3034,7 +3034,11 @@ test.describe("Coding Desk overhaul (#5705)", () => {
     await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: list.sessions } }));
     await openDesk(page);
     list.sessions = [OLDER];
-    await expect(page.locator("[aria-live]").filter({ hasText: /“Wire the flux capacitor” is no longer in the list\. Showing “Fix login retry”\./ })).toHaveCount(1, { timeout: 20_000 });
+    // The announcer clears each message 250 ms later, and the switch waits on
+    // the next sessions poll, so the default once-a-second sampling missed it
+    // (#5859). Read every live region at a 50 ms cadence instead.
+    const liveText = () => page.locator("[aria-live]").allTextContents();
+    await expect.poll(liveText, { timeout: 20_000, intervals: [50] }).toContain("“Wire the flux capacitor” is no longer in the list. Showing “Fix login retry”.");
   });
 
   test("99. after a revert with a refresh already running, focus lands on the row that took its place", async ({ page }) => {

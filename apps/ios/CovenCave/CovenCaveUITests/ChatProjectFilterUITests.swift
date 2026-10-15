@@ -50,6 +50,34 @@ final class ChatProjectFilterUITests: XCTestCase {
     }
 
     @MainActor
+    func testArchivingLastChatRemovesSelectedProjectChip() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-design-closeout", "--ui-preview-chats-home"]
+        app.launch()
+
+        let design = chip(app, "Design Library")
+        XCTAssertTrue(design.waitForExistence(timeout: 10))
+        design.tap()
+        let lyra = row(app, "local:ui-preview-lyra-chat")
+        XCTAssertTrue(lyra.waitForExistence(timeout: 5))
+        lyra.press(forDuration: 1)
+        app.buttons["Archive"].firstMatch.tap()
+        XCTAssertTrue(lyra.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(design.waitForNonExistence(timeout: 5),
+                      "a selected project must not remain a filter choice after its last visible chat is archived")
+
+        let all = chip(app, "All")
+        all.tap()
+        XCTAssertTrue(row(app, "server:ui-preview-server-only").waitForExistence(timeout: 5))
+        XCTAssertFalse(design.exists)
+        app.buttons["Chat list options"].tap()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Show archived")).firstMatch.tap()
+        XCTAssertTrue(design.waitForExistence(timeout: 5))
+        design.tap()
+        XCTAssertTrue(lyra.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testProjectFilterOpensAChatInItsOwnProject() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview-design-closeout", "--ui-preview-chats-home"]
@@ -62,6 +90,41 @@ final class ChatProjectFilterUITests: XCTestCase {
         XCTAssertTrue(lyra.waitForExistence(timeout: 5))
         lyra.tap()
         XCTAssertTrue(app.navigationBars["Lyra design review"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
+    func testAccessibilityTextSizesUseOneProjectMenu() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-preview-design-closeout", "--ui-preview-chats-home",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+        ]
+        app.launch()
+
+        let menu = app.buttons["Project filter menu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        XCTAssertFalse(chip(app, "All").exists, "screen-wide chips give way to one menu")
+        XCTAssertEqual(menu.value as? String, "All projects")
+
+        let lyra = row(app, "local:ui-preview-lyra-chat")
+        let desktop = row(app, "server:ui-preview-server-only")
+        XCTAssertTrue(desktop.waitForExistence(timeout: 5))
+
+        menu.tap()
+        let design = app.buttons["Design Library"].firstMatch
+        XCTAssertTrue(design.waitForExistence(timeout: 5), "the menu lists every project at once")
+        XCTAssertTrue(app.buttons["Unassigned"].firstMatch.exists)
+        design.tap()
+        XCTAssertTrue(lyra.waitForExistence(timeout: 5))
+        XCTAssertTrue(desktop.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(menu.value as? String, "Design Library", "the control names the current choice")
+
+        menu.tap()
+        let all = app.buttons["All projects"].firstMatch
+        XCTAssertTrue(all.waitForExistence(timeout: 5))
+        all.tap()
+        XCTAssertTrue(desktop.waitForExistence(timeout: 5))
+        XCTAssertEqual(menu.value as? String, "All projects")
     }
 
     @MainActor
