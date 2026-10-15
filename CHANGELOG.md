@@ -38,6 +38,11 @@ checksum and updater signature are separate from Windows code signing.
 - **Image generation defaults to GPT Image 2.5** (#6020).
 - **Leaner startup** (#5996). Cave no longer warms every surface or preloads
   every route at launch; surfaces load when used.
+- **Research is an optional package** (#6025). The Research desk, missions,
+  ingestion and media workers now ship as the separately released
+  `@opencoven/research` package, which Cave pins and verifies. Cave also runs
+  with Research absent or disabled, and existing Research data keeps its
+  formats.
 - **Journal reflections** (#5853) run in the morning about yesterday, from
   fixed read-only commands, and the automation card is fixed.
 - **Environment panel** (#5983) opens from the composer's branch chip.
@@ -63,9 +68,12 @@ checksum and updater signature are separate from Windows code signing.
 - **Terminal** (#5975) starts without a separate echo diagnostic gate.
 - **Home send** (#5994) waits for the familiar's project read before asking
   for a project.
+- **Production builds** (#6031) no longer write Turbopack's 1.5 GB build
+  cache, which stalled macOS builds for up to 44 minutes.
 - **Maintenance.** Research host contracts are separated from the mission
-  engine ahead of its extraction (#5998, #6003, #6004, #6006), and the iOS CI
-  job has more headroom (#6002).
+  engine ahead of its extraction (#5998, #6003, #6004, #6006), and the
+  packaged server's file budget is raised for the Research package's chunks
+  (#6023).
 
 ## [0.5.13] - 2026-10-13
 

@@ -316,6 +316,17 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // dependency/native subtrees and first-party runtime-root counts did not
   // change. Restore the established 150-file headroom from the observed
   // Windows maximum without relaxing the expanded-byte ceiling.
+  //
+  // 2026-10-15 (v0.5.14-rc.2, #6023): CI observed 8,734 files on Windows and
+  // 8,730 on Linux; macOS measured 8,726 locally at the same commit. That is
+  // exactly +1,198 over v0.5.13-rc.1 on each. Most of it is #6025: Turbopack
+  // compiles the optional @opencoven/research package into server chunks.
+  // #5996's on-demand imports add more, smaller chunks, and its marketplace
+  // extraction removes 785 plugin files. An inventory diff accounts for all of
+  // it: server chunks +1,694, static chunks +267, server app +20,
+  // instrumentation +1, marketplace plugins -785, payload index +1. Traced
+  // packages and native subtrees are unchanged. Keep the 150-file headroom
+  // over the observed Windows count; the byte ceiling is unchanged.
   fileCount: readSidecarFileCountBudget(),
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
