@@ -443,6 +443,8 @@ assert.ok(runScripts.some((run) => run.includes("pnpm build") && run.includes("i
 // The fixture build may skip Next's own TypeScript pass (the typecheck job
 // covers types), and nothing else may: every other job and step keeps it.
 const fixtureStep = iosSteps.find((step) => step.name === "Prepare the native TCP fixture");
+assert.ok(ciIosJob["timeout-minutes"] >= 75,
+  "the iOS job keeps headroom for the ~50 min fixture build until #6005 is fixed");
 assert.equal(fixtureStep?.env?.COVEN_CAVE_SKIP_BUILD_TYPECHECK, "1",
   "the iOS fixture build skips Next's build-time TypeScript pass (#5991: ~32 min under swap)");
 const skipSites = Object.entries(ci.jobs ?? {}).flatMap(([jobId, job]) => [

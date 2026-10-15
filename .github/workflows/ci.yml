@@ -198,8 +198,11 @@ jobs:
     # Raised from 30 when the suite started actually executing (cave-ac372).
     # A booted simulator plus ~684 unit tests is the added cost; the ceiling is
     # deliberately well above the observed runtime so a slow runner does not
-    # read as a test failure.
-    timeout-minutes: 45
+    # read as a test failure. Raised from 45 to 75 on 2026-10-15: the fixture's
+    # production build now spends ~31 min after Next's route table (#6005), so
+    # even with its TypeScript pass skipped the job runs ~50 min. Lower it again
+    # when #6005 is fixed.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
