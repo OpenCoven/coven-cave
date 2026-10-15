@@ -361,6 +361,7 @@ export const SUITES = {
     "src/lib/truncate-middle.test.ts",
     "src/lib/spec-blocks.test.ts",
     "src/lib/coven-marker-directive.test.ts",
+    "src/lib/connectors.test.ts",
     "src/lib/citations-directive.test.ts",
     "src/lib/github-item-url.test.ts",
     "src/lib/github-sub-tags.test.ts",
@@ -1817,6 +1818,7 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-copilot-jsonl.test.ts",
     "src/app/api/chat/send/harness-routing-opencode.test.ts",
     "src/app/api/chat/send/chat-send-models.test.ts",
+    "src/app/api/chat/send/connectors-wiring.test.ts",
     "src/app/api/chat/send/harness-routing-codex-preflight.test.ts",
     "src/app/api/chat/send/codex-routing.test.ts",
     "src/app/api/chat/send/harness-routing-codex-direct.test.ts",
@@ -2013,6 +2015,7 @@ export const SUITES = {
     "src/lib/github-token.test.ts",
     "src/app/api/github/activity/route.test.ts",
     "src/app/api/github/pat/route.test.ts",
+    "src/app/api/connectors/route.test.ts",
     "src/app/api/github/assigned/route.test.ts",
     "src/app/api/github/assigned/route-cache.test.ts",
     "src/lib/github-assigned-meta.test.ts",
@@ -2260,6 +2263,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/connectors/route.test.ts",
+  "src/lib/connectors.test.ts",
   "src/app/api/chat/scheduled/route.test.ts",
   "src/app/api/chat/send/meta-run-hygiene.test.ts",
   // Daily-note generation imports application aliases and Next route modules.

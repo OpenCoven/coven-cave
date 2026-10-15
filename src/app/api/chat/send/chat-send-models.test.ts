@@ -447,4 +447,19 @@ assert.equal(
     "Pick an Anthropic model for this chat, or move the chat to a runtime that serves OpenAI models.",
 );
 
+{
+  const plain = buildPromptWithResponseControls("hello", {});
+  assert.doesNotMatch(plain, /<connectors>/, "no connectors block unless one is on");
+
+  const withGitHub = buildPromptWithResponseControls("hello", {
+    connectors: [{ id: "github", available: true }],
+  });
+  assert.match(
+    withGitHub,
+    /^<connectors>\n[\s\S]*GitHub — on\.[\s\S]*<\/connectors>\n\n<next_paths>/,
+    "the connectors block leads the per-turn directives",
+  );
+  assert.match(withGitHub, /\nhello$/, "the user prompt still closes the block");
+}
+
 console.log("chat-send-models.test.ts: ok");
