@@ -172,6 +172,21 @@ assert.match(
   "Assistant turn rows render requested, forwarded, and effective model state through shared metadata lines",
 );
 
+// #6011: the status chips are ui-pills (white-space: nowrap, fixed height), so
+// one long reason ran past the reading column on a narrow pane. Both chip rows
+// use a scoped class that lets long text wrap; the shared ui-pill is unchanged.
+assert.equal(
+  chatView.match(/className="ui-pill cave-response-status-chip /g)?.length,
+  2,
+  "the model and control status chips both carry the wrapping chip class",
+);
+const transcriptCss = await readFile(new URL("../styles/cave-chat/transcript.css", import.meta.url), "utf8");
+assert.match(
+  transcriptCss,
+  /\.ui-pill\.cave-response-status-chip \{\s*height: auto;\s*min-height: 26px;\s*max-width: 100%;\s*white-space: normal;\s*overflow-wrap: anywhere;\s*\}/,
+  "a long status chip wraps inside the column while one-line chips keep the pill height",
+);
+
 assert.doesNotMatch(
   chatView,
   /metadata\?\.confirmedModel\?\.trim\(\)/,

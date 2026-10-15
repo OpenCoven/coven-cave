@@ -1547,7 +1547,7 @@ function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) 
   return (
     <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response model. ${lines.join(". ")}`}>
       {lines.map((line) => (
-        <span key={line} className="ui-pill border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
+        <span key={line} className="ui-pill cave-response-status-chip border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
           {line}
         </span>
       ))}
@@ -1587,7 +1587,7 @@ function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }
   return (
     <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response controls. ${lines.join(". ")}`}>
       {lines.map((line) => (
-        <span key={line} className="ui-pill border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
+        <span key={line} className="ui-pill cave-response-status-chip border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
           {line}
         </span>
       ))}
