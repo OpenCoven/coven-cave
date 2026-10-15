@@ -2459,6 +2459,12 @@ export function Workspace() {
   useEffect(() => {
     if (!projectRequestPending) return;
     if (!familiarsLoaded || accessibleGateProjectsLoading) return;
+    // "Not loading" is not "settled": when the roster lands the candidate
+    // flips from none to a familiar, and for one render the scoped read has
+    // neither started nor finished for it. Deciding then sent a first-run send
+    // to the picker instead of the gate (#5890 CI). Wait for this familiar's
+    // read to succeed or fail.
+    if (!accessibleGateProjectsLoadedSuccessfully && !accessibleGateProjectsError) return;
     setProjectRequestPending(false);
     const candidate = preferredFirstProjectGateFamiliarId(activeId, visibleFamiliars);
     const accessKnownEmpty =
