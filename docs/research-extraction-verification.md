@@ -77,8 +77,8 @@ budgets and produces **470,755,538 bytes**, compared with
 **469,669,213 bytes** before the removals. This configuration increases artifact
 size by 1,086,325 bytes; moving source to a package does not remove its runtime
 payload from an installed build. The physically absent build passes typechecking
-and bundle budgets and produces **458,001,608 bytes**, a reduction of
-**11,667,605 bytes** against the baseline. No package-named Research chunks
+and bundle budgets and produces **458,002,287 bytes**, a reduction of
+**11,666,926 bytes** against the baseline. No package-named Research chunks
 were found in that build or its executed-script coverage.
 
 Three samples per installed configuration and two physically absent samples
