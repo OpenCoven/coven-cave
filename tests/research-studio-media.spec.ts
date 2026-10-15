@@ -399,6 +399,12 @@ async function boot(
   await page.route(/\/api\/roles(?:\?|$)/, (route) =>
     route.fulfill({ json: { roles: [] } }),
   );
+  // This fixture's random-port proxy serves media bytes; all Research server
+  // state is mocked. Keep capability discovery on that same fixture boundary
+  // rather than forwarding its foreign-port Referer to the real local API.
+  await page.route("**/api/research/capability", (route) =>
+    route.fulfill({ json: { ok: true, available: true, enabled: true, reason: "available" } }),
+  );
   await page.route(/\/api\/research\/missions\?/, (route) =>
     route.fulfill({ json: { ok: true, missions: [MISSION] } }),
   );

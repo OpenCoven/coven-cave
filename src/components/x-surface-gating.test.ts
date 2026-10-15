@@ -24,10 +24,6 @@ import { test } from "node:test";
 import { readFileSync } from "node:fs";
 
 const studio = readFileSync(new URL("./familiar-studio-brain-tab.tsx", import.meta.url), "utf8");
-const research = readFileSync(
-  new URL("./role-surfaces/research-tab-resources.tsx", import.meta.url),
-  "utf8",
-);
 const types = readFileSync(new URL("../lib/types.ts", import.meta.url), "utf8");
 const familiarsRoute = readFileSync(new URL("../app/api/familiars/route.ts", import.meta.url), "utf8");
 const sourcesRoute = readFileSync(new URL("../app/api/x/sources/route.ts", import.meta.url), "utf8");
@@ -40,14 +36,6 @@ test("the gate reads flags that actually reach the client", () => {
     assert.match(familiarsRoute, new RegExp(`${flag}: configEntry\\.${flag} === true`),
       `/api/familiars emits ${flag}`);
   }
-});
-
-test("the research surface is gated on the research capability", () => {
-  assert.match(
-    research,
-    /\{context\.activeFamiliar\?\.xResearchEnabled \? \(\s*<ResearchXSources/,
-    "ResearchXSources renders only when the familiar has X research enabled",
-  );
 });
 
 test("the studio connection section is gated on EITHER capability", () => {

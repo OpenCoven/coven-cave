@@ -14,7 +14,6 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   PDF_WORKER_PUBLIC_PATH,
-  PDF_WORKER_URL_PATH,
   installedPdfjsVersion,
   resolvePdfWorkerSource,
   stagePdfWorker,
@@ -119,15 +118,4 @@ test("prebuild stages the worker, so a build cannot depend on postinstall alone"
   const scripts = JSON.parse(readFileSync(path.join(REPO_ROOT, "package.json"), "utf8")).scripts;
   assert.match(scripts.prebuild, /copy-pdf-worker\.mjs/);
   assert.match(scripts.postinstall, /copy-pdf-worker\.mjs/);
-});
-
-test("the viewer requests the worker at the path this script stages it to", () => {
-  const viewer = readFileSync(
-    path.join(REPO_ROOT, "src/components/research-paper-viewer.tsx"),
-    "utf8",
-  );
-  assert.ok(
-    viewer.includes(`workerSrc = "${PDF_WORKER_URL_PATH}"`),
-    "workerSrc and the staged public/ path have to stay the same URL",
-  );
 });

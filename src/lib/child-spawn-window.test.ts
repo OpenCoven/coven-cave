@@ -53,10 +53,6 @@ const FORWARDS_CALLER_OPTIONS = new Map([
     "lib/opencoven-tools-resolve.ts:30",
     "default NpmPrefixExecFile impl; the type requires windowsHide: true from callers",
   ],
-  [
-    "lib/server/research-video-renderer.ts:186",
-    "default SpawnProcess impl; the type requires windowsHide: true from callers",
-  ],
 ]);
 
 function sourceFiles(dir: string): string[] {
