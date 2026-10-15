@@ -1182,12 +1182,22 @@
   flex: 0 1 auto;
 }
 
+/* The author line wraps (#6018): in a narrow split pane or the right Chat
+   panel (default 320px) a one-line row ran past the pane and clipped the
+   hover meta and the ⓘ peek. The meta drops to a second line only when the
+   line doesn't fit; wide panes keep one row. */
+.streaming-turn-current__row--author {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+
 .streaming-turn-current__author-meta {
   display: inline-flex;
   min-width: 0;
   flex: 1 1 auto;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: 0 var(--space-2);
 }
 
 .streaming-turn-response[data-copy-reveal="hover"] .streaming-turn-current__copy {
