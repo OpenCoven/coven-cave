@@ -180,10 +180,10 @@ assert.ok(
 );
 const sidecarMeasurement = declaredSidecarBudget.measurement;
 const measuredPlatforms = ["windows", "ubuntu", "macos"];
-assert.equal(sidecarMeasurement.on, "2026-09-22", "the release-candidate budget review date must not drift");
+assert.equal(sidecarMeasurement.on, "2026-10-15", "the release-candidate budget review date must not drift");
 assert.equal(
   sidecarMeasurement.reference,
-  "v0.5.0-rc.2 / GitHub Actions run 35743277066",
+  "v0.5.14-rc.2 / GitHub Actions run 38773009779",
   "the release-candidate budget must retain its governing evidence reference",
 );
 const governingMeasurement = Math.max(
@@ -240,7 +240,7 @@ assert.equal(
 );
 assert.equal(
   sidecarMeasurement.releaseDelta.nextTraceFileCount,
-  7,
+  4,
   "the release delta must retain the measured Next trace growth",
 );
 assert.equal(
@@ -252,22 +252,25 @@ for (const platform of measuredPlatforms) {
   assert.equal(
     sidecarMeasurement[platform] - sidecarMeasurement.releaseDelta.baseline[platform],
     sidecarMeasurement.releaseDelta.fileCount,
-    `${platform} must move by exactly the reviewed v0.5.0 candidate delta`,
+    `${platform} must move by exactly the reviewed v0.5.13 → v0.5.14 candidate delta`,
   );
 }
 assert.deepEqual(
-  sidecarMeasurement.releaseDelta.generatedFileDeltas,
+  sidecarMeasurement.releaseDelta.inventoryDeltas,
   {
-    ".next/server/app": 39,
-    ".next/server/chunks": 89,
-    ".next/static/chunks": 63,
+    ".next/server/chunks": 1694,
+    ".next/static/chunks": 267,
+    ".next/server/app": 20,
+    ".next/server/instrumentation.js": 1,
+    "marketplace/payloads.json": 1,
+    "marketplace/plugins": -785,
   },
   "the release delta must retain the reviewed per-directory inventory counts",
 );
 assert.equal(
-  Object.values(sidecarMeasurement.releaseDelta.generatedFileDeltas).reduce((total, count) => total + count, 0),
+  Object.values(sidecarMeasurement.releaseDelta.inventoryDeltas).reduce((total, count) => total + count, 0),
   sidecarMeasurement.releaseDelta.fileCount,
-  "the same-machine generated-output inventory must account for the complete file-count delta",
+  "the same-machine inventory diff must account for the complete file-count delta",
 );
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 for (const runtimeFile of [

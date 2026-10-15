@@ -1,15 +1,16 @@
 {
   "note": "Single source of truth for the sidecar runtime file-count budget. Edit fileCount HERE and nowhere else: scripts/sidecar-runtime-closure.mjs reads this file, scripts/sidecar-runtime-smoke.mjs derives from that, and src-tauri/build.rs generates the Rust MAX_FILE_COUNT const from it. Before cave-0ia8h the same number was hand-synced across six places and drifted; sidecar-bundle-deps.test.mjs now fails if a literal reappears.",
   "raising": "Raising this is a deliberate, reviewed act, not a reflex when CI goes red. Set it from the GOVERNING platform measurement (Windows runs a few files above Ubuntu; a budget set from an Ubuntu-only figure has reddened windows-latest more than once) and record that measurement below. The reasoning history lives beside SIDECAR_RUNTIME_BUDGETS in scripts/sidecar-runtime-closure.mjs.",
-  "fileCount": 7601,
+  "fileCount": 8884,
   "measurement": {
-    "on": "2026-09-22",
-    "reference": "v0.5.0-rc.2 / GitHub Actions run 35743277066",
+    "on": "2026-10-15",
+    "reference": "v0.5.14-rc.2 / GitHub Actions run 38773009779",
     "governingPlatform": "windows",
-    "windows": 7451,
+    "windows": 8734,
     "windowsObserved": true,
-    "ubuntu": 7447,
-    "macos": 7443,
+    "ubuntu": 8730,
+    "macos": 8726,
+    "macosSource": "Measured locally on macOS arm64 at the same commit (71d779791). The candidate's macOS leg timed out in the Client v1 conformance build (#6005) before assembly.",
     "headroom": 150,
     "featureDelta": {
       "fileCount": 139,
@@ -34,34 +35,35 @@
       }
     },
     "releaseDelta": {
-      "fileCount": 191,
-      "nextTraceFileCount": 7,
-      "changedAppFileCount": 31,
-      "addedRouteCount": 7,
+      "fileCount": 1198,
+      "nextTraceFileCount": 4,
+      "tracedPackageCountChanged": false,
       "runtimeKind": "generated-next-output",
       "nativeOrPlatformSubtree": false,
-      "tracedPackageCountChanged": false,
-      "baselineReference": "v0.5.0-rc.1 / GitHub Actions run 35121097012",
+      "baselineReference": "v0.5.13-rc.1 / GitHub Actions run 38471712437",
       "baseline": {
-        "windows": 7260,
-        "ubuntu": 7256,
-        "macos": 7252
+        "windows": 7536,
+        "ubuntu": 7532,
+        "macos": 7528
       },
-      "generatedFileDeltas": {
-        ".next/server/app": 39,
-        ".next/server/chunks": 89,
-        ".next/static/chunks": 63
+      "inventoryDeltas": {
+        ".next/server/chunks": 1694,
+        ".next/static/chunks": 267,
+        ".next/server/app": 20,
+        ".next/server/instrumentation.js": 1,
+        "marketplace/payloads.json": 1,
+        "marketplace/plugins": -785
       },
-      "localComparison": {
+      "unpackedBytes": {
         "platform": "macos-arm64",
-        "baselineCommit": "c5bd11f7efcc6ecddcbe879b9bd186537b44e7c3",
-        "candidateCommit": "2b1a81c2fc268564273ae06f2e24bf37d788bbbc",
-        "baselineUnpackedBytes": 123297593,
-        "candidateUnpackedBytes": 125383342,
-        "dependencyAndNativeFileCountsChanged": false,
-        "runtimeRootFileCountsChanged": false
-      }
+        "baseline": 125983670,
+        "measured": 145135525
+      },
+      "causes": [
+        "#6025 makes Research the optional @opencoven/research package. Turbopack compiles it into server chunks (+1,124 net); none of the package's own files are copied into the closure.",
+        "#5996 moved startup work behind on-demand imports, which Turbopack emits as more, smaller chunks, and extracted the marketplace plugins (-785)."
+      ]
     },
-    "headroomRationale": "v0.5.0-rc.2 measured 7,443 files on macOS, 7,447 on Linux, and 7,451 on Windows: exactly 191 above rc.1 on each platform. Windows is observed, not projected. A clean same-machine rc.1 reconstruction reproduced 7,252 files; its inventory comparison accounts for the complete net file-count growth in generated .next output: server/app +39, server/chunks +89, static/chunks +63. Seven new route/page traces (352 -> 359) and 31 changed src/app files accompany this growth. Traced package names, dependency/native subtree counts, and first-party runtime-root counts are unchanged; no development-only subtree entered the closure. Local expanded bytes increased by 2,085,749 to 125,383,342. Preserve the established 150-file headroom from the measured Windows maximum, yielding 7,601. The expanded-byte ceiling remains strictly below 200 MiB."
+    "headroomRationale": "v0.5.14-rc.2 observed 8,734 files on Windows and 8,730 on Linux; macOS measured 8,726 locally at the same commit. Each is exactly +1,198 over v0.5.13-rc.1. A same-machine inventory diff of the assembled closure accounts for the whole delta: generated Next output (server chunks +1,694, static chunks +267, server app +20, instrumentation +1) and runtime roots (marketplace plugins -785, payload index +1). Traced package names and dependency or native subtrees are unchanged (27 traced packages on Linux), and Next traces moved 364 -> 368. Expanded bytes stay under the 200 MiB ceiling (145.1 MB on macOS). Keep the established 150-file headroom over the observed Windows count."
   }
 }
