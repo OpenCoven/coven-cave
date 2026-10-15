@@ -14,10 +14,16 @@ import path from "node:path";
 // that names the model the send asked for, no process-failure error for the
 // same run, and no provider text in the error message.
 //
-// CAVEAT: the `<synthetic>` envelope below is reconstructed from memory of
-// the CLI's behaviour, not from a verbatim `coven run claude --stream-json`
-// capture. Confirm the field shape against a real capture before relying on
-// this fixture for anything beyond the classifier contract.
+// Shape checked against Claude Code 2.1.300 (2026-10-15): the CLI builds an
+// API-error reply as an assistant message with `model: "<synthetic>"` (its
+// constant `Pi`), `stop_reason: "stop_sequence"`, `stop_sequence: ""` and the
+// notice as text content, and its stream-json schema adds
+// `is_api_error_message` and `api_error_status` beside `message`, never inside
+// `message.content`. "You've reached your Fable limit" and the
+// `?from=cc_cli_limit_message` settings URL are the CLI's own strings. This is
+// read from the shipped bundle, not a captured over-quota stream, so the frame
+// carries those fields while the route keys only on the synthetic model and
+// the text.
 const home = await mkdtemp(path.join(homedir(), "cave-claude-usage-limit-"));
 const covenBinDir = path.join(home, "coven-bin");
 const claudeBinDir = path.join(home, "claude-bin");
@@ -56,8 +62,11 @@ const FRAMES = [
       role: "assistant",
       content: [{ type: "text", text: LIMIT_TEXT }],
       stop_reason: "stop_sequence",
+      stop_sequence: "",
     },
     parent_tool_use_id: null,
+    is_api_error_message: true,
+    api_error_status: 429,
     session_id: SESSION,
   },
   { type: "result", subtype: "success", duration_ms: 1180, is_error: true, num_turns: 1, result: LIMIT_TEXT, session_id: SESSION },
