@@ -1112,3 +1112,18 @@ assert.match(
 );
 
 // — CHAT-D1-04: @-mention repo files in the composer —
+
+// #6018: a reply's author line (name · status · time, hover meta, badge, ⓘ
+// peek) wraps its meta onto a second line instead of running past a narrow
+// pane — a split pane or the right Chat panel at its default 320px.
+const chatOverlaysCss = readFileSync(new URL("../styles/globals/surface-chat-overlays.css", import.meta.url), "utf8");
+assert.match(
+  chatOverlaysCss,
+  /\.streaming-turn-current__row--author \{\s*flex-wrap: wrap;\s*row-gap: 0;\s*\}/,
+  "the author line wraps instead of overflowing a narrow pane",
+);
+assert.match(
+  chatOverlaysCss,
+  /\.streaming-turn-current__author-meta \{[^}]*flex-wrap: wrap;[^}]*\}/,
+  "the author meta cluster wraps its parts too",
+);
