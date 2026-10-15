@@ -19,13 +19,12 @@ test("a paper pasted twice in different spellings yields one URL", () => {
 
 test("ordinary URLs still come through", () => {
   const urls = collectIngestUrls({ text: "see https://example.com/post" });
-  assert.ok(urls.includes("https://example.com/post"));
+  assert.deepEqual(urls, ["https://example.com/post"]);
 });
 
 test("explicit urls array is honoured alongside text", () => {
   const urls = collectIngestUrls({ urls: ["https://example.com/a"], text: "https://example.com/b" });
-  assert.ok(urls.includes("https://example.com/a"));
-  assert.ok(urls.includes("https://example.com/b"));
+  assert.deepEqual(urls, ["https://example.com/a", "https://example.com/b"]);
 });
 
 test("a raw arXiv URL with no command is rewritten to the canonical HF URL", () => {
