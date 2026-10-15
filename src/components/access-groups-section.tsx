@@ -1,11 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import "@/styles/access-groups.css";
+
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
+import { useOptionalConfirm } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { IconButton } from "@/components/ui/icon-button";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem } from "@/components/ui/popover";
 import { SettingsGroup } from "@/components/ui/settings-group";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   accessLevelMeta,
@@ -41,6 +49,8 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
   const [expanded, setExpanded] = useState<string | null>(null);
   // Group ids with a mutation mid-flight, so rows can't be double-submitted.
   const [busy, setBusy] = useState<Set<string>>(new Set());
+  const confirm = useOptionalConfirm();
+  const newNameId = useId();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -170,6 +180,31 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
     [withBusy],
   );
 
+  // Deleting a group takes its base projects away from every member at once,
+  // so it names the group and that consequence first. Without a provider
+  // (tests, controlled renders) there is nobody to ask, so it runs.
+  const requestDelete = useCallback(
+    async (group: ConsoleAccessGroup) => {
+      if (confirm) {
+        const members = group.memberFamiliarIds.length;
+        const confirmed = await confirm({
+          title: `Delete the ${group.name} group?`,
+          body: (
+            <>
+              {members === 1 ? "Its member loses" : `Its ${members} members lose`} the base
+              projects they inherit from it. Their own grants stay as they are.
+            </>
+          ),
+          confirmLabel: "Delete group",
+          danger: true,
+        });
+        if (!confirmed) return;
+      }
+      deleteGroup(group);
+    },
+    [confirm, deleteGroup],
+  );
+
   // Supreme is all-access already; listing it as a pickable member would only
   // suggest its reach is governed here.
   const memberCandidates = useMemo(
@@ -183,31 +218,38 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
 
   if (loading) {
     return (
-      <div aria-hidden className="animate-pulse space-y-3 px-1 py-2">
-        {[0, 1].map((i) => (
-          <div key={i} className="h-14 rounded-lg bg-[var(--bg-hover)]" />
-        ))}
+      <div className="access-groups__skeleton" role="status" aria-busy="true">
+        <SkeletonRows count={3} />
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="access-groups">
       {error && (
-        <p role="alert" className="px-1 text-[length:var(--text-sm)] text-[var(--color-danger)]">
-          {error}
-        </p>
+        <ErrorState
+          compact
+          headline={error}
+          actions={(
+            <Button size="xs" leadingIcon="ph:arrows-clockwise" onClick={() => { void load(); }}>
+              Retry
+            </Button>
+          )}
+        />
       )}
 
       <SettingsGroup
         label="Access groups"
         description="Give a set of familiars a shared base of projects — each at read or write. A familiar's effective access is the most permissive of its own grants and its groups'."
+        meta={groups.length > 0 ? `${groups.length}` : undefined}
       >
         {groups.length === 0 && (
-          <p className="px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-            No access groups yet. Create one to grant a base set of projects to several familiars at
-            once — e.g. “Researchers” with read access to your docs.
-          </p>
+          <EmptyState
+            compact
+            icon="ph:users-three"
+            headline="No access groups yet."
+            subtitle="Create one to grant a base set of projects to several familiars at once — e.g. “Researchers” with read access to your docs."
+          />
         )}
 
         {groups.map((group) => {
@@ -219,19 +261,24 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
           const grantRollup = rollupAccessLevels(
             group.projectGrants.map((grant) => (grant.access === "read" ? "read" : "write")),
           );
+          const orphanMembers = group.memberFamiliarIds.filter(
+            (id) => !familiars.some((familiar) => familiar.id === id),
+          );
           return (
             <div key={group.id}>
-              <button
-                type="button"
-                aria-expanded={open}
-                onClick={() => setExpanded(open ? null : group.id)}
-                className="focus-ring-inset flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[var(--bg-hover)]"
-              >
-                <span className="flex min-w-0 items-center gap-3">
-                  <Icon name="ph:users-three" width={15} height={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                  <span className="min-w-0">
-                    <span className="block truncate text-[length:var(--text-base)] text-[var(--text-primary)]">{group.name}</span>
-                    <span className="mt-0.5 block truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
+              <div className="access-groups__head">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => setExpanded(open ? null : group.id)}
+                  className="focus-ring-inset access-groups__toggle"
+                >
+                  <span className="access-groups__mark">
+                    <Icon name="ph:users-three" width={14} height={14} aria-hidden />
+                  </span>
+                  <span className="access-groups__text">
+                    <span className="access-groups__name">{group.name}</span>
+                    <span className="access-groups__summary">
                       {group.memberFamiliarIds.length === 1
                         ? "1 member"
                         : `${group.memberFamiliarIds.length} members`}
@@ -244,27 +291,30 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                         : ""}
                     </span>
                   </span>
-                </span>
-                <Icon
-                  name={open ? "ph:caret-up" : "ph:caret-down"}
-                  width={13}
-                  height={13}
-                  className="shrink-0 text-[var(--text-muted)]"
-                  aria-hidden
-                />
-              </button>
+                  <Icon name="ph:caret-down" width={13} height={13} className="access-groups__caret" aria-hidden />
+                </button>
+                <div className="access-groups__menu">
+                  <OverflowMenu
+                    ariaLabel={`Options for the ${group.name} access group`}
+                    size="xs"
+                    disabled={groupBusy}
+                  >
+                    <PopoverItem icon="ph:trash" danger onSelect={() => { void requestDelete(group); }}>
+                      Delete group
+                    </PopoverItem>
+                  </OverflowMenu>
+                </div>
+              </div>
 
               {open && (
-                <div className="space-y-4 border-t border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-3">
+                <div className="access-groups__well">
                   {/* Members */}
                   <div>
-                    <p className="mb-1.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-                      Members
-                    </p>
+                    <p className="access-groups__eyebrow">Members</p>
                     {memberCandidates.length === 0 ? (
-                      <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">No familiars to add.</p>
+                      <p className="access-groups__note">No familiars to add.</p>
                     ) : (
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="access-groups__chips">
                         {memberCandidates.map((familiar) => {
                           const member = group.memberFamiliarIds.includes(familiar.id);
                           return (
@@ -275,11 +325,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                               aria-checked={member}
                               disabled={groupBusy}
                               onClick={() => toggleMember(group, familiar.id)}
-                              className={`focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[length:var(--text-xs)] font-medium transition-colors duration-150 ${
-                                member
-                                  ? "border-transparent bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
-                                  : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-                              } ${groupBusy ? "opacity-60" : ""}`}
+                              className="focus-ring access-groups__chip"
                             >
                               {member && <Icon name="ph:check-bold" width={11} height={11} aria-hidden />}
                               {familiar.display_name}
@@ -288,30 +334,21 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                         })}
                       </div>
                     )}
-                    {group.memberFamiliarIds.some(
-                      (id) => !familiars.some((familiar) => familiar.id === id),
-                    ) && (
-                      <p className="mt-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                    {orphanMembers.length > 0 && (
+                      <p className="access-groups__note access-groups__orphans">
                         Includes familiars no longer in the roster:{" "}
-                        {group.memberFamiliarIds
-                          .filter((id) => !familiars.some((familiar) => familiar.id === id))
-                          .map(familiarName)
-                          .join(", ")}
+                        {orphanMembers.map(familiarName).join(", ")}
                       </p>
                     )}
                   </div>
 
                   {/* Base projects */}
                   <div>
-                    <p className="mb-1.5 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-                      Base projects
-                    </p>
+                    <p className="access-groups__eyebrow">Base projects</p>
                     {projects.length === 0 ? (
-                      <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                        No projects registered yet.
-                      </p>
+                      <p className="access-groups__note">No projects registered yet.</p>
                     ) : (
-                      <div className="space-y-1">
+                      <div className="access-groups__grants">
                         {projects.map((project) => {
                           const grant = group.projectGrants.find(
                             (candidate) => candidate.projectId === project.id,
@@ -323,28 +360,25 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                             : null;
                           const meta = level ? accessLevelMeta(level) : null;
                           return (
-                            <div key={project.id} className="flex items-center justify-between gap-3 py-1">
-                              <span className="flex min-w-0 items-center gap-2">
+                            <div key={project.id} className="access-groups__grant">
+                              <span className="access-groups__project">
                                 <span
                                   aria-hidden
-                                  className="size-2 shrink-0 rounded-full"
+                                  className="access-groups__project-dot"
                                   style={{ background: project.color || "var(--text-muted)" }}
                                 />
-                                <span className="truncate text-[length:var(--text-sm)] text-[var(--text-primary)]" title={project.root}>
+                                <span className="access-groups__project-name" title={project.root}>
                                   {project.name}
                                 </span>
                               </span>
                               <button
                                 type="button"
                                 disabled={groupBusy}
+                                data-level={level ?? "off"}
                                 title={meta ? meta.title : "Not granted — click to grant read access"}
                                 aria-label={`${project.name} access for ${group.name}: ${meta ? meta.label : "off"}. Click to change.`}
                                 onClick={() => cycleProjectGrant(group, project.id)}
-                                className={`focus-ring inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-[length:var(--text-2xs)] font-medium transition-colors duration-150 ${
-                                  level
-                                    ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
-                                    : "border border-[var(--border-hairline)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
-                                } ${groupBusy ? "opacity-60" : ""}`}
+                                className="focus-ring access-groups__level"
                               >
                                 {meta && <Icon name={meta.icon} width={11} height={11} aria-hidden />}
                                 {meta ? meta.label : "Off"}
@@ -355,19 +389,6 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                       </div>
                     )}
                   </div>
-
-                  <div className="flex justify-end">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={groupBusy}
-                      onClick={() => deleteGroup(group)}
-                      leadingIcon="ph:trash"
-                      aria-label={`Delete the ${group.name} access group`}
-                    >
-                      Delete group
-                    </Button>
-                  </div>
                 </div>
               )}
             </div>
@@ -376,19 +397,20 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
 
         {/* Create */}
         <form
-          className="flex items-center gap-2 px-4 py-3"
+          className="access-groups__create"
           onSubmit={(event) => {
             event.preventDefault();
             void createGroup();
           }}
         >
+          <label htmlFor={newNameId} className="access-groups__create-label">New group</label>
           <input
+            id={newNameId}
             type="text"
             value={newName}
             onChange={(event) => setNewName(event.target.value)}
-            placeholder="New group name (e.g. Researchers)…"
-            aria-label="New access group name"
-            className="w-full bg-transparent text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+            placeholder="e.g. Researchers"
+            className="focus-ring access-groups__input"
           />
           <IconButton
             icon="ph:plus-bold"

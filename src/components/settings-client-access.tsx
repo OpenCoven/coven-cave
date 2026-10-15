@@ -3,8 +3,18 @@
 import "@/styles/settings-client-access.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AccessLedger,
+  AccessMeta,
+  AccessRow,
+  AccessStatus,
+  AccessTime,
+  type AccessTone,
+} from "@/components/access-ledger";
 import { SettingsOverview } from "@/components/settings-overview";
 import { Button } from "@/components/ui/button";
+import { useOptionalConfirm } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SettingsGroup } from "@/components/ui/settings-group";
@@ -157,41 +167,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function formatTime(value: number): { dateTime: string; label: string } | null {
-  const date = new Date(value);
-  if (!Number.isFinite(value) || Number.isNaN(date.getTime())) return null;
-  const dateTime = date.toISOString();
-  return {
-    dateTime,
-    label: dateTime.replace("T", " ").replace(".000Z", " UTC"),
-  };
-}
+const REQUEST_STATUS_LABEL: Record<ClientAccessRequestStatus, string> = {
+  pending: "Pending",
+  approved: "Approved",
+  denied: "Denied",
+  expired: "Expired",
+};
 
-function Timestamp({ value, empty = "Never" }: { value: number | null; empty?: string }) {
-  const formatted = value === null ? null : formatTime(value);
-  if (!formatted) return <>{empty}</>;
-  return <time dateTime={formatted.dateTime}>{formatted.label}</time>;
-}
-
-function StatusChip({
-  status,
-}: {
-  status: ClientAccessRequestStatus | "active" | "revoked";
-}) {
-  const labels: Record<typeof status, string> = {
-    pending: "Pending",
-    approved: "Approved",
-    denied: "Denied",
-    expired: "Expired",
-    active: "Active",
-    revoked: "Revoked",
-  };
-  return (
-    <span className={`settings-client-access__status settings-client-access__status--${status}`}>
-      <i aria-hidden="true" />
-      {labels[status]}
-    </span>
-  );
+function requestTone(status: ClientAccessRequestStatus): AccessTone {
+  switch (status) {
+    case "pending":
+      return "pending";
+    case "approved":
+      return "good";
+    case "denied":
+      return "bad";
+    default:
+      return "muted";
+  }
 }
 
 function ScopeList({ scopes, label }: { scopes: string[]; label: string }) {
@@ -476,7 +469,7 @@ function filterSuppressedPendingRequests(
   return requests.filter((request) => !suppressedIds.has(request.id));
 }
 
-function RequestCard({
+function RequestRow({
   request,
   action,
   actionIdentity,
@@ -490,34 +483,35 @@ function RequestCard({
   onDeny: (id: string) => void | Promise<void>;
 }) {
   const busy = action !== null;
+  const pending = request.status === "pending";
+  const tone = requestTone(request.status);
   return (
-    <article className="settings-client-access__card">
-      <header className="settings-client-access__card-header">
-        <div className="settings-client-access__identity">
-          <h3>{request.appName}</h3>
-          <p>{request.installationId}</p>
-        </div>
-        <StatusChip status={request.status} />
-      </header>
-      <ScopeList scopes={request.scopes} label="Requested scopes" />
-      <dl className="settings-client-access__metadata">
-        <div>
-          <dt>Created</dt>
-          <dd><Timestamp value={request.createdAt} empty="Unknown" /></dd>
-        </div>
-        <div>
-          <dt>Expires</dt>
-          <dd><Timestamp value={request.expiresAt} empty="Unknown" /></dd>
-        </div>
-        {request.decidedAt !== null ? (
-          <div>
-            <dt>Decided</dt>
-            <dd><Timestamp value={request.decidedAt} empty="Unknown" /></dd>
-          </div>
-        ) : null}
-      </dl>
-      {request.status === "pending" ? (
-        <div className="settings-client-access__actions">
+    <AccessRow
+      tone={tone}
+      live={pending}
+      settled={!pending}
+      title={request.appName}
+      status={<AccessStatus tone={tone}>{REQUEST_STATUS_LABEL[request.status]}</AccessStatus>}
+      identity={request.installationId}
+      tags={<ScopeList scopes={request.scopes} label="Requested scopes" />}
+      meta={(
+        <AccessMeta
+          items={[
+            <>Requested <AccessTime value={request.createdAt} fallback="at an unknown time" /></>,
+            pending
+              ? <>Expires <AccessTime value={request.expiresAt} fallback="at an unknown time" /></>
+              : null,
+            request.decidedAt !== null
+              ? <>Decided <AccessTime value={request.decidedAt} fallback="at an unknown time" /></>
+              : null,
+            !pending && request.decidedAt === null
+              ? <>Expired <AccessTime value={request.expiresAt} fallback="at an unknown time" /></>
+              : null,
+          ]}
+        />
+      )}
+      actions={pending ? (
+        <>
           <Button
             size="sm"
             variant="primary"
@@ -538,13 +532,13 @@ function RequestCard({
           >
             Deny
           </Button>
-        </div>
-      ) : null}
-    </article>
+        </>
+      ) : undefined}
+    />
   );
 }
 
-function CredentialCard({
+function CredentialRow({
   credential,
   action,
   actionIdentity,
@@ -553,56 +547,46 @@ function CredentialCard({
   credential: ClientAccessCredential;
   action: ClientAccessAction | null;
   actionIdentity: string;
-  onRevoke: (id: string) => void | Promise<void>;
+  onRevoke: (credential: ClientAccessCredential) => void | Promise<void>;
 }) {
   const revoked = credential.revokedAt !== null;
+  const tone: AccessTone = revoked ? "bad" : "good";
   return (
-    <article className="settings-client-access__card">
-      <header className="settings-client-access__card-header">
-        <div className="settings-client-access__identity">
-          <h3>{credential.appName}</h3>
-          <p>{credential.installationId}</p>
-        </div>
-        <StatusChip status={revoked ? "revoked" : "active"} />
-      </header>
-      <ScopeList scopes={credential.scopes} label="Granted scopes" />
-      <dl className="settings-client-access__metadata">
-        <div>
-          <dt>Created</dt>
-          <dd><Timestamp value={credential.createdAt} empty="Unknown" /></dd>
-        </div>
-        <div>
-          <dt>Last used</dt>
-          <dd><Timestamp value={credential.lastUsedAt} /></dd>
-        </div>
-        {credential.revokedAt !== null ? (
-          <div>
-            <dt>Revoked</dt>
-            <dd><Timestamp value={credential.revokedAt} empty="Unknown" /></dd>
-          </div>
-        ) : null}
-        {credential.revocationReason ? (
-          <div className="settings-client-access__reason">
-            <dt>Reason</dt>
-            <dd>{credential.revocationReason}</dd>
-          </div>
-        ) : null}
-      </dl>
-      {!revoked ? (
-        <div className="settings-client-access__actions">
-          <Button
-            size="sm"
-            variant="danger-ghost"
-            disabled={action !== null}
-            loading={action?.kind === "revoke" && action.id === credential.id}
-            aria-label={`Revoke access for ${actionIdentity}`}
-            onClick={() => onRevoke(credential.id)}
-          >
-            Revoke
-          </Button>
-        </div>
-      ) : null}
-    </article>
+    <AccessRow
+      tone={tone}
+      settled={revoked}
+      title={credential.appName}
+      status={<AccessStatus tone={tone}>{revoked ? "Revoked" : "Active"}</AccessStatus>}
+      identity={credential.installationId}
+      tags={<ScopeList scopes={credential.scopes} label="Granted scopes" />}
+      meta={(
+        <AccessMeta
+          items={[
+            <>Issued <AccessTime value={credential.createdAt} fallback="at an unknown time" /></>,
+            <>Last used <AccessTime value={credential.lastUsedAt} fallback="never" /></>,
+            revoked
+              ? <>Revoked <AccessTime value={credential.revokedAt} fallback="at an unknown time" /></>
+              : null,
+            credential.revocationReason
+              ? <span className="access-ledger__reason">{credential.revocationReason}</span>
+              : null,
+          ]}
+        />
+      )}
+      revealActions
+      actions={!revoked ? (
+        <Button
+          size="sm"
+          variant="danger-ghost"
+          disabled={action !== null}
+          loading={action?.kind === "revoke" && action.id === credential.id}
+          aria-label={`Revoke access for ${actionIdentity}`}
+          onClick={() => onRevoke(credential)}
+        >
+          Revoke
+        </Button>
+      ) : undefined}
+    />
   );
 }
 
@@ -690,6 +674,33 @@ function SettingsClientAccessContent({
     () => createActionIdentityResolver(credentials, "credential"),
     [credentials],
   );
+  // Open requests lead the ledger; decided ones follow as receipts.
+  const { orderedRequests, openCount } = useMemo(() => {
+    const open = pendingRequests.filter((request) => request.status === "pending");
+    const decided = pendingRequests.filter((request) => request.status !== "pending");
+    return { orderedRequests: [...open, ...decided], openCount: open.length };
+  }, [pendingRequests]);
+  const activeCount = credentials.filter((credential) => credential.revokedAt === null).length;
+  // Revoking names the app and its consequence before it happens. Without a
+  // provider (controlled renders, tests) there is nobody to ask, so it runs.
+  const confirm = useOptionalConfirm();
+  const revoke = useCallback(async (credential: ClientAccessCredential) => {
+    if (confirm) {
+      const confirmed = await confirm({
+        title: `Revoke access for ${credential.appName}?`,
+        body: (
+          <>
+            Installation <code>{credential.installationId}</code> loses access at once and
+            has to pair again to get it back.
+          </>
+        ),
+        confirmLabel: "Revoke access",
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+    return onRevoke(credential.id);
+  }, [confirm, onRevoke]);
   return (
     <div className="settings-client-access">
       <SettingsOverview section="client-access" />
@@ -716,14 +727,14 @@ function SettingsClientAccessContent({
           <SettingsGroup
             label="Pending requests"
             description="Review apps asking Cave for scoped client access."
-            meta={`${pendingRequests.length}`}
+            meta={`${openCount}`}
             variant="ruled"
-            panel={false}
+            panel
           >
-            {pendingRequests.length > 0 ? (
-              <div className="settings-client-access__list">
-                {pendingRequests.map((request) => (
-                  <RequestCard
+            {orderedRequests.length > 0 ? (
+              <AccessLedger>
+                {orderedRequests.map((request) => (
+                  <RequestRow
                     key={request.id}
                     request={request}
                     action={action}
@@ -732,32 +743,42 @@ function SettingsClientAccessContent({
                     onDeny={onDeny}
                   />
                 ))}
-              </div>
+              </AccessLedger>
             ) : (
-              <p className="settings-client-access__empty">No pending requests.</p>
+              <EmptyState
+                compact
+                icon="ph:key"
+                headline="No pending requests."
+                subtitle="When an app asks to pair with Cave, it appears here for your approval."
+              />
             )}
           </SettingsGroup>
           <SettingsGroup
             label="Issued credentials"
             description="Active and revoked client credentials. Secret values are never shown."
-            meta={`${credentials.length}`}
+            meta={`${activeCount} active`}
             variant="ruled"
-            panel={false}
+            panel
           >
             {credentials.length > 0 ? (
-              <div className="settings-client-access__list">
+              <AccessLedger>
                 {credentials.map((credential) => (
-                  <CredentialCard
+                  <CredentialRow
                     key={credential.id}
                     credential={credential}
                     action={action}
                     actionIdentity={describeCredentialActionIdentity(credential)}
-                    onRevoke={onRevoke}
+                    onRevoke={revoke}
                   />
                 ))}
-              </div>
+              </AccessLedger>
             ) : (
-              <p className="settings-client-access__empty">No client credentials issued.</p>
+              <EmptyState
+                compact
+                icon="ph:seal-check"
+                headline="No client credentials issued."
+                subtitle="Approve a request and its credential is listed here. Secret values are never shown."
+              />
             )}
           </SettingsGroup>
         </>
