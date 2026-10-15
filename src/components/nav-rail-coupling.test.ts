@@ -77,4 +77,50 @@ assert.match(
   "shell sets userOverrodeNavRef when the user re-opens the nav while rail-collapsed",
 );
 
+// Chat-list fit (#5956, G2): the open nav yields to Chat's thread list only
+// where the two squeeze the reading column. The policy is pure and unit-tested
+// in src/lib/shell-chat-rail-nav.test.ts; these pins keep the shell wiring.
+const chatRailToggle = await readFile(new URL("../lib/chat-rail-toggle.ts", import.meta.url), "utf8");
+const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+assert.match(
+  chatSurface,
+  /useEffect\(\(\) => \(\) => emitChatRailVisibility\(\{ available: false, open: false \}\), \[\]\);/,
+  "leaving Chat retracts the list as { available: false, open: false }, which is what gives the nav back",
+);
+assert.match(
+  chatRailToggle,
+  /let lastVisibility: ChatRailVisibility/,
+  "the list's visibility is latched for a listener that registers after ChatSurface announced it",
+);
+assert.match(
+  shell,
+  /setChatRail\(readChatRailVisibility\(\)\);[\s\S]{0,320}?window\.addEventListener\(CHAT_RAIL_VISIBILITY_EVENT, onChatRailVisibility\);/,
+  "the shell reads the latched list visibility, then follows the event",
+);
+assert.match(
+  shell,
+  /const step = resolveChatRailNavYield\(\{\s*rail: chatRail,\s*isMobile,\s*navOpen: navIsOpen,\s*yieldNeeded: shouldNavYieldToChatRail\(\{\s*viewportWidth: window\.innerWidth,\s*navWidth: preferredNavWidth,\s*railWidth,\s*\}\),\s*state: chatRailNavRef\.current,\s*\}\);/,
+  "the shell asks the pure policy, measuring the window, the nav's open width and the rendered list",
+);
+assert.match(
+  shell,
+  /const focusInNav = navAsideRef\.current\?\.contains\(document\.activeElement\) \?\? false;\s*panel\.collapse\(\);\s*if \(focusInNav\) detailElRef\.current\?\.focus\(\{ preventScroll: true \}\);/,
+  "a yield that closes the nav under the focus lands it on the main content",
+);
+assert.match(
+  shell,
+  /<aside\s+ref=\{navAsideRef\}\s+className="shell-nav"/,
+  "the focus check reads the nav's own landmark",
+);
+assert.match(
+  shell,
+  /if \(navOpen && navRef\.current && !navRef\.current\.isCollapsed\(\)\) \{\s*chatRailNavRef\.current = noteChatRailNavOpened\(chatRailNavRef\.current\);/,
+  "only a nav that is really open again counts as the user taking it back",
+);
+assert.match(
+  shell,
+  /if \(panel && !railAutoCollapsedNavRef\.current && !chatRailNavRef\.current\.autoCollapsed\) \{/,
+  "the remembered preference does not reopen a nav that is yielding",
+);
+
 console.log("nav-rail-coupling.test.ts ok");

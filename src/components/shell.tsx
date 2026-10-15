@@ -53,6 +53,19 @@ import {
   SHELL_DETAIL_MIN_PX,
   shouldAutoCollapseNavForRightChat,
 } from "@/lib/shell-right-chat";
+import {
+  CHAT_RAIL_VISIBILITY_EVENT,
+  parseChatRailVisibility,
+  readChatRailVisibility,
+  type ChatRailVisibility,
+} from "@/lib/chat-rail-toggle";
+import {
+  CHAT_RAIL_NAV_IDLE,
+  noteChatRailNavOpened,
+  resolveChatRailNavYield,
+  shouldNavYieldToChatRail,
+  type ChatRailNavState,
+} from "@/lib/shell-chat-rail-nav";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 // Shell — multi-pane app chrome. Horizontal Group of nav/list/detail,
@@ -364,6 +377,11 @@ function ShellInner({
   const [preferredRightChatWidth, setPreferredRightChatWidth] = useState(RIGHT_CHAT_DEFAULT_PX);
   const rightChatAutoCollapsedNavRef = useRef(false);
   const rightChatNavOverrideRef = useRef(false);
+  // Chat-list ↔ nav fit (#5956): on a window too narrow for both, the open nav
+  // yields to Chat's thread list for the visit (shell-chat-rail-nav.ts).
+  const chatRailNavRef = useRef<ChatRailNavState>(CHAT_RAIL_NAV_IDLE);
+  const [chatRail, setChatRail] = useState<ChatRailVisibility>(() => readChatRailVisibility());
+  const navAsideRef = useRef<HTMLElement | null>(null);
   const [preferredNavWidth, setPreferredNavWidth] = useState(() =>
     resolveShellNavWidth(readNavWidthPref()),
   );
@@ -834,7 +852,12 @@ function ShellInner({
       if (rememberedNavOpen !== null) {
         railAutoCollapsedNavRef.current = false;
         userOverrodeNavRef.current = false;
-        applyPanelOpenState(navRef.current, rememberedNavOpen);
+        // A group swap mid-visit (the right Chat panel adds a panel) must not
+        // reopen a nav that is yielding to the chat list.
+        applyPanelOpenState(
+          navRef.current,
+          rememberedNavOpen && !chatRailNavRef.current.autoCollapsed,
+        );
         minimizedGroupsRef.current.add(groupId);
         markShellMinimizeApplied(groupId);
       }
@@ -928,7 +951,7 @@ function ShellInner({
     if (!settled || isMobile) return;
     const pref = seedNavOpenPref(false);
     const panel = navRef.current;
-    if (panel && !railAutoCollapsedNavRef.current) {
+    if (panel && !railAutoCollapsedNavRef.current && !chatRailNavRef.current.autoCollapsed) {
       if (pref && panel.isCollapsed()) {
         panel.expand();
       } else if (!pref && !panel.isCollapsed()) {
@@ -1094,7 +1117,59 @@ function ShellInner({
     if (navOpen && rightChatAutoCollapsedNavRef.current) {
       rightChatNavOverrideRef.current = true;
     }
+    // navOpen follows a ResizeObserver, so a width measured just before the
+    // chat-list yield closed the nav can still arrive as "open". Only a panel
+    // that is really open now counts as the user taking the nav back.
+    if (navOpen && navRef.current && !navRef.current.isCollapsed()) {
+      chatRailNavRef.current = noteChatRailNavOpened(chatRailNavRef.current);
+    }
   }, [navOpen]);
+
+  // Chat's thread list announces itself over a window event (chat-rail-toggle);
+  // the value is latched module-side because ChatSurface's mount effect runs
+  // before this listener registers.
+  useEffect(() => {
+    setChatRail(readChatRailVisibility());
+    const onChatRailVisibility = (event: Event) => {
+      const next = parseChatRailVisibility((event as CustomEvent<unknown>).detail);
+      if (next) setChatRail(next);
+    };
+    window.addEventListener(CHAT_RAIL_VISIBILITY_EVENT, onChatRailVisibility);
+    return () => window.removeEventListener(CHAT_RAIL_VISIBILITY_EVENT, onChatRailVisibility);
+  }, []);
+
+  // The open nav yields to the chat list only where the two squeeze the
+  // reading column; leaving Chat or collapsing the list gives it back. Never
+  // persisted: the onResize writer skips while the yield holds the nav.
+  useEffect(() => {
+    if (!mounted) return;
+    const panel = navRef.current;
+    if (!panel) return;
+    const navIsOpen = !panel.isCollapsed();
+    const railWidth =
+      detailElRef.current?.querySelector<HTMLElement>(".chat-inner-rail")?.offsetWidth ?? 0;
+    const step = resolveChatRailNavYield({
+      rail: chatRail,
+      isMobile,
+      navOpen: navIsOpen,
+      yieldNeeded: shouldNavYieldToChatRail({
+        viewportWidth: window.innerWidth,
+        navWidth: preferredNavWidth,
+        railWidth,
+      }),
+      state: chatRailNavRef.current,
+    });
+    chatRailNavRef.current = step.state;
+    if (step.action === "collapse") {
+      // Entering Chat from a sidebar row leaves focus in the nav, which is
+      // about to go inert; land it on the main content like the skip link.
+      const focusInNav = navAsideRef.current?.contains(document.activeElement) ?? false;
+      panel.collapse();
+      if (focusInNav) detailElRef.current?.focus({ preventScroll: true });
+    } else if (step.action === "restore") {
+      panel.expand();
+    }
+  }, [mounted, chatRail, isMobile, preferredNavWidth]);
 
   // Clear coupling bookkeeping when the viewport crosses into mobile: the nav
   // becomes a drawer and the rail-close handler early-returns on mobile, so a
@@ -1276,7 +1351,8 @@ function ShellInner({
             !isMobile &&
             navPolicy === "remembered" &&
             navPrefArmedGroupRef.current === groupId &&
-            !railAutoCollapsedNavRef.current
+            !railAutoCollapsedNavRef.current &&
+            !chatRailNavRef.current.autoCollapsed
           ) {
             // The ONE user-authored write — everything else that touches this
             // key is seeding, and the policy handoff must be able to tell them
@@ -1288,6 +1364,7 @@ function ShellInner({
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
+          ref={navAsideRef}
           className="shell-nav"
           aria-label="Sidebar"
           aria-hidden={isMobile ? mobileDrawer !== "nav" : !navOpen}
