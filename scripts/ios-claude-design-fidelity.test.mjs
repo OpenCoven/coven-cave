@@ -604,15 +604,22 @@ assert.ok(
 assert.match(models, /requestedModel: String\?/, "iOS decodes requested model intent metadata");
 assert.match(models, /confirmedModel: String\?/, "iOS decodes confirmed model metadata");
 assert.match(models, /modelApplicationState: String\?/, "iOS decodes model application state metadata");
+// #6042: the rows come from ChatRunDetails.lines, which mirrors the web's
+// src/lib/chat-run-details.ts: one Model row, the others only when they differ.
 assert.match(
-  messageBubble,
-  /private var responseModelStatus:[\s\S]*?Requested model:[\s\S]*?Recorded model:/,
-  "iOS renders requested and applied model status separately",
+  models,
+  /enum ChatRunDetails[\s\S]*?reported by the runtime[\s\S]*?Recorded model:[\s\S]*?Requested model:[\s\S]*?Forwarded model:/,
+  "iOS builds the Run details rows from one shared helper with the web's row rules",
+);
+assert.match(
+  models,
+  /sourcePhrases\[\$0\][\s\S]*?if let reason, confirmed == nil, reasonAdds \{ lines\.append\(reason\) \}/,
+  "iOS renders the safe model source in plain words and keeps the reason only where it adds something",
 );
 assert.match(
   messageBubble,
-  /let reason = message\.modelApplicationReason[\s\S]*?Model source:/,
-  "iOS renders safe model source and degraded reason metadata",
+  /private var responseModelStatus:[\s\S]*?ChatRunDetails\.lines\([\s\S]*?reason: message\.modelApplicationReason/,
+  "the bubble renders the shared helper's rows",
 );
 assert.match(
   chat,

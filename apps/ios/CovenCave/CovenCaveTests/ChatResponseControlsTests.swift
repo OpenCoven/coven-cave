@@ -50,6 +50,8 @@ final class ChatResponseControlsTests: XCTestCase {
             XCTAssertEqual(restored.runtimeIdentity?.activity, activity)
             XCTAssertEqual(activity.statusLines.count, 3)
             XCTAssertEqual(activity.statusLines[0], "Runtime path: SSH relay")
+            if state == "supported" { XCTAssertEqual(activity.statusLines[1], "Tool details: available") }
+            if state == "unknown" { XCTAssertEqual(activity.statusLines[2], "Reasoning summaries: not verified on this path") }
             let wire = try JSONSerialization.jsonObject(with: JSONEncoder().encode(identity))
             let frame = try JSONSerialization.data(withJSONObject: ["kind": "response_metadata", "responseMetadata": ["harness": "claude", "runtimeIdentity": wire]])
             guard case .runtimeIdentity(let live)? = StreamEvent.decode(String(decoding: frame, as: UTF8.self)) else {
@@ -62,6 +64,62 @@ final class ChatResponseControlsTests: XCTestCase {
             XCTAssertNotNil(identity, "An optional capability report cannot hide runtime identity")
             XCTAssertNil(identity?.activity)
         }
+    }
+
+    func testRunDetailsLinesMirrorTheWebBuilder() {
+        // The case that opened #6026 on the web: saved but unconfirmed, on the
+        // Coven relay with reasoning support unverified. One Model row, no
+        // reason sentence restating the pending state.
+        let pending = ChatRuntimeIdentity(
+            schemaVersion: 1, harness: "claude", version: "2.1.289", model: nil,
+            activity: ChatRuntimeActivity(schemaVersion: 1, path: "coven", tools: "supported", reasoning: "unknown"))
+        XCTAssertEqual(ChatRunDetails.lines(
+            identity: pending, requested: nil, desired: "anthropic/claude-fable-5-1", forwarded: nil, confirmed: nil,
+            state: "pending", source: "familiar-default", reason: "Cave saved the model intent and is waiting for runtime confirmation."), [
+            "Runtime: claude 2.1.289",
+            "Model: anthropic/claude-fable-5-1 · pending confirmation · familiar default",
+            "Runtime path: Coven relay",
+            "Tool details: available",
+            "Reasoning summaries: not verified on this path",
+        ])
+        // A reported model: no state or source noise; the request shows only
+        // because it differs from the selection.
+        let reported = ChatRuntimeIdentity(
+            schemaVersion: 1, harness: "claude", version: "2.1.288", model: "claude-opus-5-5",
+            activity: ChatRuntimeActivity(schemaVersion: 1, path: "direct", tools: "supported", reasoning: "supported"))
+        XCTAssertEqual(ChatRunDetails.lines(
+            identity: reported, requested: "claude-sonnet-5", desired: nil, forwarded: nil, confirmed: nil,
+            state: "applied", source: "session", reason: nil), [
+            "Runtime: claude 2.1.288",
+            "Model: claude-opus-5-5 · reported by the runtime",
+            "Requested model: claude-sonnet-5",
+            "Runtime path: Direct runtime",
+            "Tool details: available",
+            "Reasoning summaries: available",
+        ])
+        // A legacy transcript keeps its recorded model without promoting it,
+        // and an unsupported model keeps its reason.
+        XCTAssertEqual(ChatRunDetails.lines(
+            identity: nil, requested: "", desired: "openai/gpt-6-astra", forwarded: "gpt-6-astra", confirmed: nil,
+            state: "unsupported", source: nil, reason: "Runtime rejected the selected model."), [
+            "Runtime: Identity not recorded in this response",
+            "Model: openai/gpt-6-astra · not supported by the runtime",
+            "Requested model: Runtime default",
+            "Forwarded model: gpt-6-astra",
+            "Runtime rejected the selected model.",
+            "Activity: not recorded for this turn",
+        ])
+        XCTAssertEqual(ChatRunDetails.lines(
+            identity: nil, requested: nil, desired: "anthropic/claude-fable-5-1", forwarded: nil, confirmed: "legacy-inferred-model",
+            state: "applied", source: nil, reason: nil), [
+            "Runtime: Identity not recorded in this response",
+            "Recorded model: legacy-inferred-model",
+            "Selected model: anthropic/claude-fable-5-1",
+            "Activity: not recorded for this turn",
+        ])
+        XCTAssertEqual(ChatRunDetails.lines(identity: nil, requested: nil, desired: nil, forwarded: nil, confirmed: nil,
+                                            state: nil, source: nil, reason: nil),
+                       ["Runtime: Identity not recorded in this response", "Model: not reported", "Activity: not recorded for this turn"])
     }
 
     func testRuntimeIdentitySeparatesReportsFromSelectedModelsAndSurvivesHistory() throws {

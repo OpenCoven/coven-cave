@@ -421,72 +421,24 @@ struct MessageBubble: View {
         }
     }
 
+    /// The Run details rows, from the same builder rules as the web (#6042).
+    /// One combined accessibility element, as before, so a screen reader
+    /// hears the whole trail as one status.
     @ViewBuilder private var responseModelStatus: some View {
-        let identity = message.runtimeIdentity?.validated()
-        let requested = message.requestedModel
-        let desired = message.desiredModel
-        let forwarded = message.forwardedModel
-        let confirmed = message.confirmedModel
-        let state = message.modelApplicationState
-        let source = message.modelSource
-        let reason = message.modelApplicationReason
         if !isUser {
+            let lines = ChatRunDetails.lines(
+                identity: message.runtimeIdentity?.validated(),
+                requested: message.requestedModel,
+                desired: message.desiredModel,
+                forwarded: message.forwardedModel,
+                confirmed: message.confirmedModel,
+                state: message.modelApplicationState,
+                source: message.modelSource,
+                reason: message.modelApplicationReason
+            )
             VStack(alignment: .leading, spacing: 3) {
-                if let identity {
-                    Text("Runtime: \(identity.harness) \(identity.version ?? "version not reported")")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("Runtime-reported model: \(identity.model ?? "unavailable")")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    ForEach(identity.activity?.statusLines ?? ["Activity support: not recorded"], id: \.self) { line in
-                        Text(line)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("Runtime: not recorded")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("Runtime-reported model: unavailable")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("Activity support: not recorded")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let requested {
-                    let requestedLabel = requested.isEmpty ? "Runtime default" : requested
-                    Text("Requested model: \(requestedLabel)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let desired, !desired.isEmpty, desired != confirmed {
-                    Text("Selected model: \(desired)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let forwarded, !forwarded.isEmpty, forwarded != desired, forwarded != confirmed {
-                    Text("Forwarded model: \(forwarded)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let confirmed, !confirmed.isEmpty, identity == nil {
-                    Text("Recorded model: \(confirmed)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else if let state, !state.isEmpty {
-                    Text("Model: \(state.capitalized)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let source, !source.isEmpty {
-                    Text("Model source: \(source)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if let reason, !reason.isEmpty, confirmed == nil {
-                    Text(reason)
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
