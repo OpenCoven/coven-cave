@@ -50,7 +50,7 @@ assert.match(
 assert.match(
   shell,
   /const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;/,
-  "the shared first-paint expanded width is the 240px shell-nav default",
+  "the shared first-paint expanded width is the 188px shell-nav default",
 );
 
 assert.match(

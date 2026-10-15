@@ -3,8 +3,9 @@
  *
  * Chat sets prose in a capped reading column (72ch, 752px). On a wide window
  * the nav and the chat list cost that column nothing; closing the nav only
- * widens the wallpaper margin. On a narrow desktop window the same 240px nav
- * squeezes it, measured with the list open:
+ * widens the wallpaper margin. On a narrow desktop window the open nav
+ * squeezes it, measured with the list open and the nav at its former 240px
+ * default (188px since 2026-10-15, which only gives the column more room):
  *
  *   window   nav open   nav closed
  *   1024px   328px      540px
@@ -29,7 +30,7 @@ import type { ChatRailVisibility } from "./chat-rail-toggle.ts";
 /** Narrowest window-minus-nav-minus-list width that still sets prose at 45
  *  characters a line (about 470px of the 752px column, after the pane's own
  *  chrome and padding). Below it the open nav yields to the chat list. With the
- *  default 240px nav and 280px list that is a window under 1200px. */
+ *  default 188px nav and 280px list that is a window under about 1148px. */
 export const CHAT_CONVERSATION_MIN_PX = 680;
 
 export interface ChatRailNavFitInput {

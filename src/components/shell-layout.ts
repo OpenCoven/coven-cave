@@ -1,8 +1,15 @@
 export type ShellPanelLayout = Record<string, number>;
 
-export const SHELL_NAV_MIN_PX = 220;
-export const SHELL_NAV_MAX_PX = 420;
-export const SHELL_NAV_DEFAULT_PX = 240;
+// Fitted to the sidebar's content (2026-10-15). The rail card needs 145–171px
+// at max-content, plus its 8px margin on each side: 175px of panel on macOS
+// with the default font, 187px at the widest (Windows "Ctrl+N", Work Sans, the
+// longest Room title "Research Desk"). Screen scale does not move it; the
+// rail's text is set in px. The default is the narrowest width that clips
+// nothing in that worst case, so it is also the minimum. Every label is a
+// fixed registry title, so the maximum only leaves a little drag room.
+export const SHELL_NAV_MIN_PX = 188;
+export const SHELL_NAV_MAX_PX = 220;
+export const SHELL_NAV_DEFAULT_PX = 188;
 
 type ResolveShellDestinationLayoutOptions = {
   panelIds: string[];
