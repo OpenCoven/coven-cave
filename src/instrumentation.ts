@@ -52,7 +52,7 @@ export async function register() {
     // another live process is never robbed (cave-v3ajh). Detached and
     // best-effort: the next launch purges before it hydrates, so a failure here
     // is retried rather than fatal to shell delivery.
-    const xRuntime = await import("@/lib/server/research-mission-x-runtime");
+    const xRuntime = await import("@/lib/server/research-runtime-privacy");
     void xRuntime.sweepResearchMissionXRuntime().catch((error) => {
       console.warn("[instrumentation] X mission runtime sweep failed:", error);
     });

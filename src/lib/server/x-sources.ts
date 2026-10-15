@@ -20,7 +20,7 @@ import { writeJsonAtomic } from "./atomic-write.ts";
 import { corruptAsidePath } from "./corrupt-aside.ts";
 import { isValidFamiliarId } from "./familiar-id.ts";
 import { acquireProcessIntentLock } from "./process-intent-lock.ts";
-import { isValidResearchMissionId } from "./research-mission-store.ts";
+import { isValidResearchMissionId } from "./research-runtime-contract.ts";
 
 export type XSourceAvailability = "available" | "unavailable" | "deleted";
 
