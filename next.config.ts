@@ -45,7 +45,9 @@ const nextConfig: NextConfig = {
   // target trees) into the standalone bundle. These roots are never runtime
   // inputs; packaged assets are copied explicitly by sidecar-bundle.sh.
   outputFileTracingExcludes: {
-    "/*": [
+    // Instrumentation is a non-route entry (no leading slash). Apply the same
+    // runtime-input exclusions to it as to page and API entries.
+    "*": [
       "./.agents/**/*",
       "./.beads/**/*",
       "./.claude/**/*",
@@ -115,9 +117,7 @@ const nextConfig: NextConfig = {
     // Next otherwise silently truncates inline attachment JSON at 10 MiB,
     // turning valid multi-image sends into an "invalid json body" 400.
     proxyClientMaxBodySize: MAX_PROXY_BODY_BYTES,
-    // Next preloads all 355 route entries as the server starts: ~1.9 s of
-    // main-thread work landing exactly on app launch (#5658). server.ts runs
-    // the same preload once the launch has settled instead.
+    // Routes load on demand; src/instrumentation.ts starts background services.
     preloadEntriesOnStart: false,
     // Next 16.2 enables Turbopack's persistent dev cache by default. In a
     // long-lived desktop session the cache reaches multiple gigabytes, then

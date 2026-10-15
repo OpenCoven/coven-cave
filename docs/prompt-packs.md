@@ -1,5 +1,10 @@
 # Prompt packs & templates
 
+Package authoring paths and sync commands in this guide belong to the
+[OpenCoven/marketplace](https://github.com/OpenCoven/marketplace) repository.
+Cave keeps catalog metadata and verified release pins; it downloads payloads
+on demand and reuses the local cache offline.
+
 Prompt **templates** are reusable starter prompts you drop into a composer and
 edit before sending. They come from three places, merged by id (later wins):
 

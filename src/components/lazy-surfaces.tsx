@@ -58,10 +58,7 @@ function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
 // Flow experience lives on feature/automations-flow (its /api/flows engine +
 // webhooks remain live under src/lib/flow + src/lib/server).
 
-// Keep the raw imports separate from the `next/dynamic` wrappers. The current
-// App Router implementation of `next/dynamic` does not expose `.preload()`, so
-// warm-up must call the loaders directly to fetch a sidebar's chunks without
-// mounting the surface (and therefore without running any of its effects).
+// Load surfaces only when their dynamic wrappers render.
 const loadCalendarView = () => import("@/components/calendar-view").then((m) => m.CalendarView);
 const loadChatSurface = () => import("@/components/chat-surface").then((m) => m.ChatSurface);
 const loadBoardView = () => import("@/components/board-view").then((m) => m.BoardView);
@@ -82,15 +79,6 @@ const loadSettingsShell = () =>
   import("@/components/settings-shell").then((m) => m.SettingsShell);
 const loadRailTerminalPanel = () =>
   import("@/components/rail-terminal-panel").then((m) => m.RailTerminalPanel);
-
-/** Canonical workspace surfaces whose chunks can be warmed before navigation. */
-export type WarmableSidebarSurface =
-  | "chat"
-  | "marketplace"
-  | "board"
-  | "schedules"
-  | "grimoire"
-  | "agents";
 
 // The Code workbench chunk (CodeMirror et al.) now rides the Code room's
 // dynamic import (role-surfaces/register.tsx → code-room.tsx), keeping it out
@@ -175,30 +163,6 @@ export const RailTerminalPanel = dynamic(
   timed("terminal", loadRailTerminalPanel),
   { ssr: false, loading: SurfaceFallback },
 );
-
-/**
- * Fetch a canonical sidebar surface's chunks without mounting it. These use
- * the same import specifiers as their `next/dynamic` wrappers, so the module
- * cache is shared with the eventual render.
- */
-export function preloadSidebarSurface(surface: WarmableSidebarSurface): Promise<void> {
-  switch (surface) {
-    case "chat":
-      return loadChatSurface().then(() => undefined);
-    case "marketplace":
-      return loadMarketplaceView().then(() => undefined);
-    case "board":
-      return Promise.all([loadBoardView(), loadFamiliarWorkQueueView()]).then(() => undefined);
-    case "schedules":
-      return Promise.all([loadInboxEscalationsView(), loadCalendarView(), loadAutomationsView()]).then(
-        () => undefined,
-      );
-    case "grimoire":
-      return loadGrimoireView().then(() => undefined);
-    case "agents":
-      return loadFamiliarsView().then(() => undefined);
-  }
-}
 
 export const OpenCovenSubmissionPage = dynamic(
   timed("submissions", () =>

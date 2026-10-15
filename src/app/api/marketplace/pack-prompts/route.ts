@@ -13,7 +13,8 @@
 
 import { NextResponse } from "next/server";
 import path from "node:path";
-import { pluginDir, resolveCatalogName } from "@/lib/server/marketplace-catalog-resolve";
+import { resolveCatalogName } from "@/lib/server/marketplace-catalog-resolve";
+import { ensureMarketplacePlugin } from "@/lib/server/marketplace-payload";
 import { scanPromptsDir } from "@/lib/server/prompt-scan";
 import type { PromptOption } from "@/lib/slash-prompt";
 
@@ -27,6 +28,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: `unknown plugin "${id}"` }, { status: 400 });
   }
   const prompts: PromptOption[] = [];
-  await scanPromptsDir(path.join(pluginDir(name), "prompts"), `pack:${name}`, prompts);
+  try {
+    await scanPromptsDir(path.join(await ensureMarketplacePlugin(name), "prompts"), `pack:${name}`, prompts);
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Could not load plugin payload" }, { status: 503 });
+  }
   return NextResponse.json({ ok: true, prompts });
 }

@@ -38,9 +38,10 @@ const schemaFiles = new Map([
 ]);
 
 const outputDirectory = new URL(
-  "../marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/schemas/",
+  "../artifacts/marketplace/tweet-thread-lab/skills/tweet-thread-lab/references/schemas/",
   import.meta.url,
 );
+writeProtocolSchemas(outputDirectory);
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const gitAttributes = readFileSync(new URL("../.gitattributes", import.meta.url), "utf8");
 const validationCoreSource = readFileSync(

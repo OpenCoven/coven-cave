@@ -131,6 +131,7 @@ assert.match(closureSource, /\.nft\.json/, "runtime closure must consume Next fi
 for (const runtimeRoot of [
   ".agents/skills",
   "marketplace/catalog.json",
+  "marketplace/payloads.json",
   "marketplace/exports",
   "marketplace/marketplace.json",
   "marketplace/plugins",

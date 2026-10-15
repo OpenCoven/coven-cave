@@ -1,5 +1,6 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import { ensureMarketplacePlugin } from "./marketplace-payload.ts";
 import { marketplacePluginsRoot } from "./knowledge-packs.ts";
 
 const SAFE_PLUGIN_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/i;
@@ -81,7 +82,17 @@ export async function resolveBundledCopilotPluginDirs(
   const cacheKey = `${requestedRoot}\u0000${pluginIds.join("\u0000")}`;
   const cached = resolvedCache.get(cacheKey);
   if (cached) return [...cached];
-  const resolved = await resolveUncached(pluginIds, requestedRoot);
+  const resolved = options.pluginsRoot || process.env.COVEN_MARKETPLACE_PLUGINS_DIR
+    ? await resolveUncached(pluginIds, requestedRoot)
+    : (await Promise.all(pluginIds.map(async id => {
+      if (!SAFE_PLUGIN_ID.test(id)) return [];
+      try {
+        const directory = await ensureMarketplacePlugin(id);
+        return resolveUncached([id], path.dirname(directory));
+      } catch {
+        return [];
+      }
+    }))).flat();
   resolvedCache.set(cacheKey, resolved);
   return [...resolved];
 }

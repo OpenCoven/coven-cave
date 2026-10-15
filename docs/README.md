@@ -118,6 +118,8 @@ transport reuses the existing authenticated cache and revision/write guards.
 
 ## Program
 
+- [`research-core-boundary.md`](research-core-boundary.md) — proposed optional Research boundary, shared contracts to retain, and extraction acceptance criteria
+
 Active initiatives. Parts have shipped; parts have not. Each states which.
 
 - [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the reliability program (`cave-58eoq`); Windows supervision and authenticated native readiness have shipped

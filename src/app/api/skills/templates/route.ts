@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 import path from "node:path";
 import { covenHome } from "@/lib/coven-paths";
 import { loadConfig } from "@/lib/cave-config";
+import { ensureMarketplacePlugin, marketplacePluginHasDirectory } from "@/lib/server/marketplace-payload";
 import { scanPromptsDir } from "@/lib/server/prompt-scan";
 import { SKILL_TEMPLATES, mergeSkillTemplates, type SkillTemplate } from "@/lib/skill-templates";
 import type { PromptOption } from "@/lib/slash-prompt";
@@ -24,7 +25,6 @@ import type { PromptOption } from "@/lib/slash-prompt";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const MARKETPLACE_PLUGINS_DIR = path.join(process.cwd(), "marketplace", "plugins");
 
 function toSkillTemplate(option: PromptOption, source: SkillTemplate["source"]): SkillTemplate {
   return {
@@ -48,8 +48,9 @@ export async function GET() {
     // the shape guard keeps a hand-edited config from escaping the plugins dir.
     const installed = Object.keys(cfg.marketplace.installed).filter((id) => /^[\w.-]+$/.test(id));
     for (const id of installed) {
+      if (!await marketplacePluginHasDirectory(id, "skill-templates")) continue;
       const scanned: PromptOption[] = [];
-      await scanPromptsDir(path.join(MARKETPLACE_PLUGINS_DIR, id, "skill-templates"), `pack:${id}`, scanned);
+      await scanPromptsDir(path.join(await ensureMarketplacePlugin(id), "skill-templates"), `pack:${id}`, scanned);
       for (const option of scanned) packs.push(toSkillTemplate(option, `pack:${id}`));
     }
   } catch {
