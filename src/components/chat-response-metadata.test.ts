@@ -156,10 +156,11 @@ assert.doesNotMatch(
   "The misleading 'model:'/'runtime:' label helpers should be gone — openclaw-local is not a model and the runtime is a cwd",
 );
 
+const runDetails = await readFile(new URL("../lib/chat-run-details.ts", import.meta.url), "utf8");
 assert.match(
-  chatView,
-  /<ResponseControlStatus metadata=\{turn\.responseMetadata\} \/>/,
-  "Assistant turn rows render labeled requested/applied/rejected control state",
+  runDetails,
+  /function controlLines\([\s\S]*?"Rejected"[\s\S]*?"Prompt guidance"[\s\S]*?"Applied"[\s\S]*?"Forwarded — not confirmed"[\s\S]*?"Requested — not confirmed"/,
+  "Run details carry labeled requested/applied/rejected control state",
 );
 assert.doesNotMatch(
   chatView,
@@ -167,24 +168,32 @@ assert.doesNotMatch(
   "Routine model/control provenance metadata must not suppress empty-response treatment",
 );
 assert.match(
+  runDetails,
+  /function runtimeAndModelGroups\([\s\S]*?"Requested model"[\s\S]*?"Selected model"[\s\S]*?"Forwarded model"[\s\S]*?"Recorded model"/,
+  "Run details carry requested, forwarded, and effective model state through the shared builder",
+);
+assert.match(
   chatView,
-  /function responseModelStatusLines\([\s\S]*?Requested model:[\s\S]*?Recorded model:[\s\S]*?function ResponseModelStatus\([\s\S]*?const lines = responseModelStatusLines\(metadata\);[\s\S]*?<ResponseModelStatus metadata=\{turn\.responseMetadata\} \/>/,
-  "Assistant turn rows render requested, forwarded, and effective model state through shared metadata lines",
+  /function ResponseRunDetails\([\s\S]*?const details = responseRunDetails\(metadata\);[\s\S]*?<details\s+className="cave-run-details"[\s\S]*?<ResponseRunDetails metadata=\{turn\.responseMetadata\} \/>/,
+  "Assistant turn rows render the model, control and activity trail as one Run details disclosure (#6026)",
 );
+assert.doesNotMatch(chatView, /ResponseModelStatus|ResponseControlStatus/, "the two chip rows are gone");
 
-// #6011: the status chips are ui-pills (white-space: nowrap, fixed height), so
-// one long reason ran past the reading column on a narrow pane. Both chip rows
-// use a scoped class that lets long text wrap; the shared ui-pill is unchanged.
-assert.equal(
-  chatView.match(/className="ui-pill cave-response-status-chip /g)?.length,
-  2,
-  "the model and control status chips both carry the wrapping chip class",
-);
+// #6026: the trail is a muted disclosure, not pills. Closed, it is one line
+// that fits the reading column; open, long values wrap inside the column, so
+// the #6011 wrapping chip class has no caller.
+assert.doesNotMatch(chatView, /cave-response-status-chip/, "no status chip class remains in the chat view");
 const transcriptCss = await readFile(new URL("../styles/cave-chat/transcript.css", import.meta.url), "utf8");
+assert.doesNotMatch(transcriptCss, /cave-response-status-chip/, "the wrapping chip rule left with the chips");
 assert.match(
   transcriptCss,
-  /\.ui-pill\.cave-response-status-chip \{\s*height: auto;\s*min-height: 26px;\s*max-width: 100%;\s*white-space: normal;\s*overflow-wrap: anywhere;\s*\}/,
-  "a long status chip wraps inside the column while one-line chips keep the pill height",
+  /\.cave-run-details > summary \{[^}]*max-width: 100%;[^}]*list-style: none;/,
+  "the closed Run details line stays inside the reading column with no native marker",
+);
+assert.match(
+  transcriptCss,
+  /\.cave-run-details dd \{[^}]*min-width: 0;[^}]*overflow-wrap: anywhere;/,
+  "an open Run details value wraps inside the column",
 );
 
 assert.doesNotMatch(

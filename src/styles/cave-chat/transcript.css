@@ -29,17 +29,86 @@
   contain-intrinsic-size: auto 160px;
 }
 
-/* Runtime and control status chips under a reply (#6011). They borrow the
-   ui-pill look, but a pill is white-space: nowrap at a fixed height, so one
-   long reason ("Coven forwarded the selected model; downstream acceptance was
-   not confirmed.") ran past the reading column on a narrow pane. Long text
-   wraps inside the column; one-line chips keep the pill's height. */
-.ui-pill.cave-response-status-chip {
-  height: auto;
-  min-height: 26px;
+/* #6026: the per-turn runtime, model and control trail is one muted
+   disclosure, not a row of pills (static provenance reads as text, design
+   language §8). Closed, it is a single line that fits the reading column;
+   open, a label/value list whose long values wrap inside the column. */
+.cave-run-details {
+  margin-top: var(--space-2);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.cave-run-details > summary {
+  display: inline-block;
   max-width: 100%;
-  white-space: normal;
+  padding-block: var(--space-1);
+  line-height: 1.5;
+  cursor: pointer;
+  list-style: none;
+  border-radius: var(--radius-control);
+}
+
+.cave-run-details__caret {
+  display: inline-block;
+  vertical-align: -0.1em;
+  margin-inline-end: var(--space-1);
+}
+
+.cave-run-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cave-run-details[open] > summary > .cave-run-details__caret {
+  transform: rotate(90deg);
+}
+
+.cave-run-details__list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-1) 0 var(--space-2);
+  padding-inline-start: calc(var(--icon-xs) + var(--space-1));
+  color: var(--text-secondary);
+}
+
+.cave-run-details__group,
+.cave-run-details__row {
+  display: contents;
+}
+
+/* Groups (runtime, model, controls, activity) read as a gap in the list, not
+   a heading that would repeat the first row's label. */
+.cave-run-details__group + .cave-run-details__group > .cave-run-details__row:first-child > * {
+  margin-top: var(--space-2);
+}
+
+.cave-run-details dt {
+  color: var(--text-muted);
+}
+
+.cave-run-details dd {
+  min-width: 0;
+  margin: 0;
   overflow-wrap: anywhere;
+}
+
+.cave-run-details__row[data-gap] > dd {
+  color: var(--text-muted);
+}
+
+.cave-run-details__note {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 40rem) {
+  .cave-run-details__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cave-run-details dt {
+    margin-top: var(--space-1);
+  }
 }
 
 /* No hover tint on chat turns — hovering a message must not shift its
