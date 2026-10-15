@@ -2,7 +2,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  chatListStaleNotice,
   mergeDegradedSessionList,
   resolveChatDeepLink,
   sessionsPollIntervalMs,
@@ -77,17 +76,4 @@ test("a conversation without a readable familiar still opens", async () => {
     await resolveChatDeepLink("s6", [], async () => ({ ok: true, conversation: { familiarId: 7 } })),
     { kind: "open", familiarId: null },
   );
-});
-
-test("the stale notice shows only above existing rows", () => {
-  assert.equal(chatListStaleNotice({ sessionsError: true, sessionsDegraded: false, hasRows: false }), null);
-  assert.equal(
-    chatListStaleNotice({ sessionsError: true, sessionsDegraded: true, hasRows: true }),
-    "Couldn't refresh chats. Showing the last list.",
-  );
-  assert.equal(
-    chatListStaleNotice({ sessionsError: false, sessionsDegraded: true, hasRows: true }),
-    "Coven isn't reachable. Showing chats saved on this device.",
-  );
-  assert.equal(chatListStaleNotice({ sessionsError: false, sessionsDegraded: false, hasRows: true }), null);
 });

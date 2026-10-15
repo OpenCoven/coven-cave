@@ -70,19 +70,3 @@ export async function resolveChatDeepLink(
     return { kind: "open", familiarId: null };
   }
 }
-
-/**
- * Copy for a list that has rows but is not current. The empty-list failure has
- * its own full state; this is the non-blocking line above existing rows, which
- * previously gave no sign the list had stopped refreshing.
- */
-export function chatListStaleNotice(input: {
-  sessionsError: boolean;
-  sessionsDegraded: boolean;
-  hasRows: boolean;
-}): string | null {
-  if (!input.hasRows) return null;
-  if (input.sessionsError) return "Couldn't refresh chats. Showing the last list.";
-  if (input.sessionsDegraded) return "Coven isn't reachable. Showing chats saved on this device.";
-  return null;
-}

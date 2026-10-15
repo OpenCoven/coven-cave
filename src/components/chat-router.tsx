@@ -83,8 +83,6 @@ type Props = {
   sessionsLoaded?: boolean;
   /** Last session-list load failed — forwarded to ChatList (cave-x6k5). */
   sessionsError?: boolean;
-  /** Last load succeeded with local rows only — forwarded to ChatList (#5563). */
-  sessionsDegraded?: boolean;
   /** The list is complete for its scope. Omitted = treat a settled list as
    *  complete (callers that don't track authority keep the old behavior). */
   sessionsAuthoritative?: boolean;
@@ -187,7 +185,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onSessionRemoved,
     sessionsLoaded,
     sessionsError,
-    sessionsDegraded,
     sessionsAuthoritative,
     familiarsLoaded,
     familiarsError,
@@ -835,7 +832,6 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         daemonRunning={daemonRunning}
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
-        sessionsDegraded={sessionsDegraded}
         compact={compact}
         onSessionsChanged={onSessionsChanged}
         onSessionsDeleted={onSessionsDeleted}

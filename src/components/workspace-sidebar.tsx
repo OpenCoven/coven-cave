@@ -44,7 +44,6 @@ import {
   emitChatSessionDragStart,
 } from "@/lib/chat-split";
 import { requestChatRailToggle } from "@/lib/chat-rail-toggle";
-import { chatListStaleNotice } from "@/lib/chat-list-authority";
 import { ChatRowTitle } from "@/components/chat-row-title";
 import { RuntimeLogo, runtimeDisplayName } from "@/components/runtime-logo";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
@@ -59,8 +58,6 @@ type Props = {
   /** The sessions list request failed. With no rows to show, say so rather
    *  than presenting the failure as an empty history (#5527). */
   sessionsError?: boolean;
-  /** Last load had local rows only; the daemon was unreachable (#5563). */
-  sessionsDegraded?: boolean;
   browseScope?: ChatBrowseScope;
   /** The open chat when the project filter hides it (#5585): kept reachable at
    *  the top of the rail instead of silently leaving it. */
@@ -603,7 +600,6 @@ export function SidebarChatsSection({
   sessions,
   reflectionSourceSessions,
   sessionsError = false,
-  sessionsDegraded = false,
   browseScope,
   outOfScopeActiveSession = null,
   activeFamiliarId = null,
@@ -742,14 +738,6 @@ export function SidebarChatsSection({
     () => deriveChatRecencyBuckets(recentSessions, now),
     [recentSessions, now],
   );
-  // Mirrors the empty-list failure state below: when that full state shows,
-  // the non-blocking stale line doesn't (#5563).
-  const staleNotice = chatListStaleNotice({
-    sessionsError,
-    sessionsDegraded,
-    hasRows: recentBuckets.length > 0 || attentionSessions.length > 0,
-  });
-
   // ── Broadcast select mode (cave-g7yg6) ──────────────────────────────────
   //
   // `visibleThreads` is what select-all acts on and what the hook keys its
@@ -910,17 +898,6 @@ export function SidebarChatsSection({
             <button type="button" onClick={() => setDeleteError(null)} aria-label="Dismiss" className="shrink-0">
               <Icon name="ph:x-bold" width={9} aria-hidden />
             </button>
-          </div>
-        ) : null}
-        {staleNotice ? (
-          <div role="status" className="cnav__error">
-            <Icon name="ph:plugs" width={13} className="shrink-0" aria-hidden />
-            <span className="cnav__error-text">{staleNotice}</span>
-            {onSessionsChanged ? (
-              <button type="button" onClick={() => onSessionsChanged()} aria-label="Retry loading chats" className="shrink-0">
-                Retry
-              </button>
-            ) : null}
           </div>
         ) : null}
         {archiveError ? (

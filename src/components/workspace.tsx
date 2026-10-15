@@ -769,9 +769,6 @@ export function Workspace() {
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   // The last session-list load failed (cave-x6k5) — see loadSessions.
   const [sessionsError, setSessionsError] = useState(false);
-  // The last load succeeded but the daemon was unreachable, so the server sent
-  // only the rows it could read locally (#5563). Rows it omitted are retained.
-  const [sessionsDegraded, setSessionsDegraded] = useState(false);
   // The list is the complete set for its scope: the last load succeeded and was
   // not degraded. `sessionsLoaded` alone also turns true after a failure, so
   // anything that deletes state for rows missing from the list gates on this.
@@ -2022,7 +2019,6 @@ export function Workspace() {
 
         const degraded = json.degraded === true;
         setSessionsError(false);
-        setSessionsDegraded(degraded);
         setSessionsAuthoritative(!degraded);
         setSessionsFailureStreak(0);
         const projectedSessions = applyChatAttentionProjections(
@@ -4588,7 +4584,6 @@ export function Workspace() {
         // (cave-fh9so).
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
-        sessionsDegraded={sessionsDegraded}
         sessionsAuthoritative={sessionsAuthoritative}
         familiarsLoaded={familiarsLoaded}
         familiarsError={familiarsError}

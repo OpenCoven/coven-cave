@@ -91,8 +91,6 @@ type Props = {
   sessionsLoaded?: boolean;
   /** Last session-list load failed — chat list shows a can't-load state (cave-x6k5). */
   sessionsError?: boolean;
-  /** Last load succeeded with local rows only; the daemon was unreachable (#5563). */
-  sessionsDegraded?: boolean;
   /** The list is complete for its scope; gates anything that prunes by it (#5563). */
   sessionsAuthoritative?: boolean;
   familiarsLoaded?: boolean;
@@ -148,7 +146,6 @@ export function ChatSurface({
   routerRef,
   sessionsLoaded,
   sessionsError,
-  sessionsDegraded,
   sessionsAuthoritative,
   familiarsLoaded,
   familiarsError,
@@ -589,7 +586,6 @@ export function ChatSurface({
             sessions={browseSessions}
             reflectionSourceSessions={sessions}
             sessionsError={sessionsError}
-            sessionsDegraded={sessionsDegraded}
             browseScope={effectiveBrowseScope}
             outOfScopeActiveSession={outOfScopeActiveSession}
             activeFamiliarId={activeFamiliarId}
@@ -735,7 +731,6 @@ export function ChatSurface({
                   activeFamiliarId={activeFamiliarId}
                   sessionsLoaded={sessionsLoaded}
                   sessionsError={sessionsError}
-                  sessionsDegraded={sessionsDegraded}
                   sessionsAuthoritative={sessionsAuthoritative}
                   familiarsLoaded={familiarsLoaded}
                   familiarsError={familiarsError}
@@ -815,7 +810,6 @@ export function ChatSurface({
         sessions={browseSessions}
         reflectionSourceSessions={sessions}
         sessionsError={sessionsError}
-        sessionsDegraded={sessionsDegraded}
         browseScope={effectiveBrowseScope}
         outOfScopeActiveSession={outOfScopeActiveSession}
         activeFamiliarId={activeFamiliarId}
