@@ -2096,6 +2096,7 @@ export const SUITES = {
     "src/lib/server/familiar-contract-files.test.ts",
     "src/lib/server/canonical-path.test.ts",
     "src/lib/server/project-paths.test.ts",
+    "src/lib/server/research-core-boundary.test.ts",
     "src/lib/server/home-browse.test.ts",
     "src/lib/server/workspace-root-store.test.ts",
     "src/lib/server/session-project-roots.test.ts",

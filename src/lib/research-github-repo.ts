@@ -11,7 +11,10 @@
  * Canvas GitHub importer and the Cave project linker already enforce.
  */
 
+import { sanitizeGithubObjectSha } from "./github-object-sha.ts";
 import { gitHubRepoSlug, normalizeGitHubRepoUrl } from "./github-repo-link.ts";
+
+export { GITHUB_OBJECT_SHA_PATTERN, sanitizeGithubObjectSha } from "./github-object-sha.ts";
 
 /** A single entry in a repository's recursive git tree. */
 export type GithubRepoTreeEntry = {
@@ -79,7 +82,6 @@ export const GITHUB_REPO_SNAPSHOT_BYTE_CAP = 512 * 1024;
 export const MAX_GITHUB_REPOSITORIES_PER_INGEST = 5;
 /** Upper bound on an accepted branch/ref string. */
 export const GITHUB_REPO_REF_MAX_LENGTH = 256;
-export const GITHUB_OBJECT_SHA_PATTERN = /^[a-f0-9]{40}$/;
 const GITHUB_REPO_IDENTITY_MAX_LENGTH = 100;
 const GITHUB_REPO_DESCRIPTION_MAX_LENGTH = 1_000;
 const GITHUB_REPO_METADATA_MAX_LENGTH = 100;
@@ -124,12 +126,6 @@ export function sanitizeGithubRef(value: string | null | undefined): string | nu
   if (/[\u0000-\u001f\u007f\s?#]/.test(trimmed)) return null;
   if (trimmed === "." || trimmed === ".." || trimmed.includes("..")) return null;
   return trimmed;
-}
-
-export function sanitizeGithubObjectSha(value: string | null | undefined): string | null {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim().toLowerCase();
-  return GITHUB_OBJECT_SHA_PATTERN.test(normalized) ? normalized : null;
 }
 
 /** Distinct repository identities represented by a submitted URL batch. */
