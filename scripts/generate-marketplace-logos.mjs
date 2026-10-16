@@ -95,6 +95,21 @@ async function build() {
       ? plugin.displayName.trim()
       : plugin.name;
     const fallback = monogram(title);
+    // Coven-owned listings share the canonical mark across web and iOS.
+    if (/^(?:open)?coven-/.test(plugin.name)) {
+      entries[plugin.name] = {
+        kind: "brand",
+        title: "OpenCoven",
+        monogram: fallback,
+        slug: "opencoven",
+        assetPath: "/marketplace-logos/opencoven.png",
+        source: "assets/brand/coven-logo.png",
+      };
+      if (!brandAssets.has("opencoven.png")) {
+        brandAssets.set("opencoven.png", await readFile(path.join(ROOT, "assets/brand/coven-logo.png")));
+      }
+      continue;
+    }
     const brand = resolveBrand(plugin);
     if (brand) {
       const assetPath = `/marketplace-logos/${plugin.name}.png`;
@@ -117,6 +132,7 @@ async function build() {
     }
   }
 
+  const brandCount = Object.values(entries).filter((entry) => entry.kind === "brand").length;
   const registry = {
     schemaVersion: 1,
     generator: "scripts/generate-marketplace-logos.mjs",
@@ -126,8 +142,8 @@ async function build() {
       package: "simple-icons",
     },
     catalogCount: catalog.plugins.length,
-    brandCount: brandAssets.size,
-    monogramCount: catalog.plugins.length - brandAssets.size,
+    brandCount,
+    monogramCount: catalog.plugins.length - brandCount,
     entries,
   };
   const expectedRegistry = `${JSON.stringify(registry, null, 2)}\n`;

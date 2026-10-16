@@ -7,8 +7,8 @@
     "package": "simple-icons"
   },
   "catalogCount": 130,
-  "brandCount": 35,
-  "monogramCount": 95,
+  "brandCount": 44,
+  "monogramCount": 86,
   "entries": {
     "github": {
       "kind": "brand",
@@ -320,9 +320,12 @@
       "source": "https://vercel.com/design/brands#next-js"
     },
     "coven-familiars": {
-      "kind": "monogram",
-      "title": "Coven Familiars",
-      "monogram": "CF"
+      "kind": "brand",
+      "title": "OpenCoven",
+      "monogram": "CF",
+      "slug": "opencoven",
+      "assetPath": "/marketplace-logos/opencoven.png",
+      "source": "assets/brand/coven-logo.png"
     },
     "1password": {
       "kind": "brand",
@@ -339,9 +342,12 @@
       "monogram": "CS"
     },
     "coven-parallel-work": {
-      "kind": "monogram",
-      "title": "Coven Parallel Work Protocol",
-      "monogram": "CP"
+      "kind": "brand",
+      "title": "OpenCoven",
+      "monogram": "CP",
+      "slug": "opencoven",
+      "assetPath": "/marketplace-logos/opencoven.png",
+      "source": "assets/brand/coven-logo.png"
     },
     "disk-space-optimizer": {
       "kind": "monogram",
@@ -506,9 +512,12 @@
       "monogram": "NO"
     },
     "opencoven-design": {
-      "kind": "monogram",
-      "title": "OpenCoven Design Skill",
-      "monogram": "OS"
+      "kind": "brand",
+      "title": "OpenCoven",
+      "monogram": "OS",
+      "slug": "opencoven",
+      "assetPath": "/marketplace-logos/opencoven.png",
+      "source": "assets/brand/coven-logo.png"
     },
     "prompt-engineer": {
       "kind": "monogram",
@@ -555,9 +564,12 @@
       "monogram": "OC"
     },
     "opencoven-role-creation-process": {
-      "kind": "monogram",
-      "title": "OpenCoven Role Creation Process",
-      "monogram": "OP"
+      "kind": "brand",
+      "title": "OpenCoven",
+      "monogram": "OP",
+      "slug": "opencoven",
+      "assetPath": "/marketplace-logos/opencoven.png",
+      "source": "assets/brand/coven-logo.png"
     },
     "prompt-vault": {
       "kind": "monogram",
@@ -580,29 +592,44 @@
       "monogram": "TA"
     },
     "coven-flows": {
-      "kind": "monogram",
-      "title": "Coven Flows",
-      "monogram": "CF"
+      "kind": "brand",
+      "title": "OpenCoven",
+      "monogram": "CF",
+      "slug": "opencoven",
+      "assetPath": "/marketplace-logos/opencoven.png",
+      "source": "assets/brand/coven-logo.png"
     },
     "coven-memory": {
-      "kind": "monogram",
-      "title": "Coven Memory & Knowledge",
-      "monogram": "CK"
+      "kind": "brand",
+      "title": "OpenCoven",
+      "monogram": "CK",
+      "slug": "opencoven",
+      "assetPath": "/marketplace-logos/opencoven.png",
+      "source": "assets/brand/coven-logo.png"
     },
     "coven-evals": {
-      "kind": "monogram",
-      "title": "Coven Evals",
-      "monogram": "CE"
+      "kind": "brand",
+      "title": "OpenCoven",
+      "monogram": "CE",
+      "slug": "opencoven",
+      "assetPath": "/marketplace-logos/opencoven.png",
+      "source": "assets/brand/coven-logo.png"
     },
     "coven-canvas": {
-      "kind": "monogram",
-      "title": "Coven Canvas",
-      "monogram": "CC"
+      "kind": "brand",
+      "title": "OpenCoven",
+      "monogram": "CC",
+      "slug": "opencoven",
+      "assetPath": "/marketplace-logos/opencoven.png",
+      "source": "assets/brand/coven-logo.png"
     },
     "coven-automations": {
-      "kind": "monogram",
-      "title": "Coven Automations",
-      "monogram": "CA"
+      "kind": "brand",
+      "title": "OpenCoven",
+      "monogram": "CA",
+      "slug": "opencoven",
+      "assetPath": "/marketplace-logos/opencoven.png",
+      "source": "assets/brand/coven-logo.png"
     },
     "slack": {
       "kind": "monogram",
