@@ -268,12 +268,23 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertTrue(chip.label.contains("1 failed"), "chip reports the failure: \(chip.label)")
 
         // The enclosing message supplies its identifier to child elements.
+        // The trail is folded into a Run details disclosure (#6045): the
+        // closed summary counts the gaps, and opening it shows the rows.
+        let runDetails = app.buttons.matching(NSPredicate(
+            format: "identifier == %@ AND label BEGINSWITH %@", chip.identifier, "Run details"
+        )).firstMatch
+        XCTAssertTrue(runDetails.waitForExistence(timeout: 5), "the response folds its trail into Run details")
+        XCTAssertEqual(runDetails.label, "Run details · runtime not recorded · 3 unverified",
+                       "the closed summary names the missing runtime and counts the gaps")
+        XCTAssertEqual(runDetails.value as? String, "Collapsed")
+        runDetails.tap()
         // Select the combined status for this message, not an individual line.
         let identity = app.staticTexts.matching(NSPredicate(
             format: "identifier == %@ AND (label == %@ OR label BEGINSWITH %@)",
             chip.identifier, "Model application status", "Runtime:"
         )).firstMatch
         XCTAssertTrue(identity.waitForExistence(timeout: 5), "the response exposes its identity status")
+        XCTAssertEqual(runDetails.value as? String, "Expanded")
         XCTAssertTrue(identity.label.contains("Runtime: Identity not recorded in this response"),
                       "legacy history does not invent a runtime: \(identity.label)")
         XCTAssertTrue(identity.label.contains("Model: not reported"),
@@ -344,13 +355,16 @@ final class AgentActivityUITests: XCTestCase {
         }
         // Position the start high enough to capture both the runtime and the
         // wrapped full model ID, not merely the first line at the bottom edge.
+        // A slow drag held at its end, so the scroll stops where the finger
+        // did: a released flick carries momentum past the start of the rows
+        // now that the wrapped Run details summary sits above them (#6045).
         let upperThird = visibleTop + (transcript.frame.maxY - visibleTop) / 3
         for _ in 0..<5 {
             if identity.frame.minY <= upperThird { break }
             transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
                 .press(forDuration: 0.05, thenDragTo: transcript.coordinate(
                     withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)
-                ))
+                ), withVelocity: .slow, thenHoldForDuration: 0.2)
         }
         XCTAssertGreaterThanOrEqual(identity.frame.minY, visibleTop,
                                     "scrolling exposes the start of the identity report")
@@ -373,8 +387,16 @@ final class AgentActivityUITests: XCTestCase {
         return app
     }
 
+    /// Opens the Run details disclosure (#6045) and returns its combined rows.
     @MainActor
     private func reportedIdentity(in app: XCUIApplication) -> XCUIElement {
+        let runDetails = app.buttons.matching(NSPredicate(
+            format: "label BEGINSWITH %@", "Run details · claude 2.1.288"
+        )).firstMatch
+        XCTAssertTrue(runDetails.waitForExistence(timeout: 5), "the response folds its report into Run details")
+        XCTAssertEqual(runDetails.label, "Run details · claude 2.1.288 · 1 unverified",
+                       "the closed summary carries the runtime and the one unverified fact")
+        if runDetails.value as? String != "Expanded" { runDetails.tap() }
         let identity = app.staticTexts.matching(NSPredicate(
             format: "label BEGINSWITH %@", "Runtime: claude 2.1.288"
         )).firstMatch

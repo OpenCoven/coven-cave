@@ -307,14 +307,66 @@ struct ChatRuntimeActivity: Codable, Hashable {
                       "disabled": "off for this turn"]
         return ["Runtime path: \(paths[path]!)", "Tool details: \(states[tools]!)", "Reasoning summaries: \(states[reasoning]!)"]
     }
+
+    /// The same rows as `statusLines` with the web's gap rule: only an
+    /// `unknown` state is unverified; unsupported, partial and disabled are
+    /// facts the runtime reported (#6026).
+    var statusDetailLines: [ChatRunDetailLine] {
+        guard validated != nil else { return [ChatRunDetailLine(text: "Activity: not recorded for this turn", gap: true)] }
+        let gaps = [path == "unknown", tools == "unknown", reasoning == "unknown"]
+        return zip(statusLines, gaps).map { ChatRunDetailLine(text: $0, gap: $1) }
+    }
 }
 
-/// The Run details rows under a reply, mirroring src/lib/chat-run-details.ts
-/// (#6039, #6042). One Model row carries the model fact: the model the runtime
-/// reported when it did, otherwise the selection with its state and source in
-/// plain words. The other rows appear only when they differ from it, and the
-/// reason only where it adds something the state phrase does not.
-enum ChatRunDetails {
+/// One row of the Run details disclosure, as on the web. A row without a
+/// label is a note (the model application reason). `gap` marks a fact the
+/// runtime did not report or confirm; the collapsed summary counts those so
+/// the gaps stay visible while the rows are hidden (#6026, #6045).
+struct ChatRunDetailLine: Equatable {
+    var label: String?
+    var value: String
+    var gap = false
+
+    init(label: String?, value: String, gap: Bool = false) {
+        self.label = label
+        self.value = value
+        self.gap = gap
+    }
+
+    /// Splits a "Label: value" status line at its first ": ".
+    init(text: String, gap: Bool = false) {
+        if let separator = text.range(of: ": ") {
+            label = String(text[..<separator.lowerBound])
+            value = String(text[separator.upperBound...])
+        } else {
+            label = nil
+            value = text
+        }
+        self.gap = gap
+    }
+
+    var text: String { label.map { "\($0): \(value)" } ?? value }
+}
+
+/// The Run details under a reply, mirroring src/lib/chat-run-details.ts
+/// (#6039, #6042, #6045). One Model row carries the model fact: the model the
+/// runtime reported when it did, otherwise the selection with its state and
+/// source in plain words. The other rows appear only when they differ from it,
+/// and the reason only where it adds something the state phrase does not.
+/// The collapsed summary carries the runtime, the model state when it is not
+/// applied, then the unverified and rejected counts, as `runDetailsSummaryText`
+/// does on the web.
+struct ChatRunDetails: Equatable {
+    var lines: [ChatRunDetailLine]
+    var facts: [String]
+    var unverified: Int
+    var rejected: Int
+
+    /// The closed disclosure's whole text, as a screen reader hears it.
+    var summary: String { (["Run details"] + facts).joined(separator: " · ") }
+    /// Every row as "Label: value" text.
+    var lineTexts: [String] { lines.map(\.text) }
+
     static let statePhrases: [String: String] = [
         "unknown": "not confirmed", "saved": "saved, waiting for the runtime", "pending": "pending confirmation",
         "applied": "applied, not reported back", "unsupported": "not supported by the runtime", "failed": "failed to apply",
@@ -324,41 +376,94 @@ enum ChatRunDetails {
         "session": "this session", "next-message": "this message only",
     ]
 
+    /// The flat row texts without control rows, for callers that want only
+    /// the runtime, model and activity trail.
     static func lines(identity: ChatRuntimeIdentity?, requested: String?, desired: String?, forwarded: String?,
                       confirmed: String?, state: String?, source: String?, reason: String?) -> [String] {
+        build(identity: identity, requested: requested, desired: desired, forwarded: forwarded, confirmed: confirmed,
+              state: state, source: source, reason: reason).lineTexts
+    }
+
+    static func build(identity: ChatRuntimeIdentity?, requested: String?, desired: String?, forwarded: String?,
+                      confirmed: String?, state: String?, source: String?, reason: String?,
+                      requestedControls: [String: String]? = nil, rejectedControlFamilies: [String]? = nil,
+                      promptGuidanceControls: [String: String]? = nil, forwardedControls: [String: String]? = nil,
+                      appliedControls: [String: String]? = nil) -> ChatRunDetails {
         func present(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
         let desired = present(desired), forwarded = present(forwarded), confirmed = present(confirmed)
         let state = present(state), source = present(source), reason = present(reason)
         let reported = present(identity?.model)
-        var lines: [String] = []
+        let legacy = identity == nil && confirmed != nil
+        var lines: [ChatRunDetailLine] = []
         if let identity {
-            lines.append("Runtime: " + (present(identity.version).map { "\(identity.harness) \($0)" } ?? "\(identity.harness) · Version not reported"))
+            let version = present(identity.version)
+            lines.append(ChatRunDetailLine(text: "Runtime: " + (version.map { "\(identity.harness) \($0)" } ?? "\(identity.harness) · Version not reported"),
+                                           gap: version == nil))
         } else {
-            lines.append("Runtime: Identity not recorded in this response")
+            lines.append(ChatRunDetailLine(text: "Runtime: Identity not recorded in this response", gap: true))
         }
         if let reported {
-            lines.append("Model: \(reported) · reported by the runtime")
-            if let desired, desired != reported { lines.append("Selected model: \(desired)") }
-        } else if identity == nil, let confirmed {
+            lines.append(ChatRunDetailLine(text: "Model: \(reported) · reported by the runtime"))
+            if let desired, desired != reported { lines.append(ChatRunDetailLine(text: "Selected model: \(desired)")) }
+        } else if legacy, let confirmed {
             // A transcript from before runtime reports: the recorded model is
             // labeled as such and never promoted to a reported model.
-            lines.append("Recorded model: \(confirmed)")
-            if let desired, desired != confirmed { lines.append("Selected model: \(desired)") }
+            lines.append(ChatRunDetailLine(text: "Recorded model: \(confirmed)"))
+            if let desired, desired != confirmed { lines.append(ChatRunDetailLine(text: "Selected model: \(desired)")) }
         } else if desired == nil, state == nil {
-            lines.append("Model: not reported")
+            lines.append(ChatRunDetailLine(text: "Model: not reported", gap: true))
         } else {
             let phrase = state.map { statePhrases[$0] ?? $0 } ?? "not confirmed by the runtime"
             let parts = [desired ?? "Runtime default", phrase, source.map { sourcePhrases[$0] ?? $0 }].compactMap { $0 }
-            lines.append("Model: " + parts.joined(separator: " · "))
+            lines.append(ChatRunDetailLine(text: "Model: " + parts.joined(separator: " · "), gap: true))
         }
         if let requested, requested != (desired ?? "") {
-            lines.append("Requested model: \(requested.isEmpty ? "Runtime default" : requested)")
+            lines.append(ChatRunDetailLine(text: "Requested model: \(requested.isEmpty ? "Runtime default" : requested)"))
         }
-        if let forwarded, forwarded != desired { lines.append("Forwarded model: \(forwarded)") }
+        if let forwarded, forwarded != desired { lines.append(ChatRunDetailLine(text: "Forwarded model: \(forwarded)")) }
         let reasonAdds = !["pending", "saved", "applied"].contains(state ?? "")
-        if let reason, confirmed == nil, reasonAdds { lines.append(reason) }
-        lines += identity?.activity?.statusLines ?? ["Activity: not recorded for this turn"]
-        return lines
+        if let reason, confirmed == nil, reasonAdds { lines.append(ChatRunDetailLine(label: nil, value: reason)) }
+
+        // Per-turn control outcome: requested, prompt guidance, applied, or
+        // rejected. A forwarded or merely requested control is unconfirmed.
+        let requestedControls = requestedControls ?? [:]
+        let rejected = Set(rejectedControlFamilies ?? [])
+        let promptGuidance = Set((promptGuidanceControls ?? [:]).keys)
+        let forwardedFamilies = Set((forwardedControls ?? [:]).keys)
+        let applied = Set((appliedControls ?? [:]).keys)
+        for family in requestedControls.keys.sorted() {
+            let value = requestedControls[family] ?? ""
+            if rejected.contains(family) {
+                lines.append(ChatRunDetailLine(text: "Rejected: \(family) \(value)"))
+            } else if promptGuidance.contains(family) {
+                lines.append(ChatRunDetailLine(text: "Prompt guidance: \(family) \(value)"))
+            } else if applied.contains(family) {
+                lines.append(ChatRunDetailLine(text: "Applied: \(family) \(value)"))
+            } else if forwardedFamilies.contains(family) {
+                lines.append(ChatRunDetailLine(text: "Forwarded — not confirmed: \(family) \(value)", gap: true))
+            } else {
+                lines.append(ChatRunDetailLine(text: "Requested — not confirmed: \(family) \(value)", gap: true))
+            }
+        }
+        for family in rejected.subtracting(requestedControls.keys).sorted() {
+            lines.append(ChatRunDetailLine(text: "Rejected: \(family)"))
+        }
+
+        lines += identity?.activity?.statusDetailLines ?? [ChatRunDetailLine(text: "Activity: not recorded for this turn", gap: true)]
+
+        let unverified = lines.filter(\.gap).count
+        var facts: [String] = []
+        if let identity {
+            facts.append(present(identity.version).map { "\(identity.harness) \($0)" } ?? identity.harness)
+        } else {
+            facts.append("runtime not recorded")
+        }
+        // The state is its own summary fact ("model pending"); the unconfirmed
+        // Model row is the one gap it leaves in the list.
+        if let state, state != "applied", !legacy { facts.append("model \(state)") }
+        if unverified > 0 { facts.append("\(unverified) unverified") }
+        if !rejected.isEmpty { facts.append("\(rejected.count) rejected") }
+        return ChatRunDetails(lines: lines, facts: facts, unverified: unverified, rejected: rejected.count)
     }
 }
 

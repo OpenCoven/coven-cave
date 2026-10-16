@@ -39,13 +39,19 @@ final class ActivityProviderUITests: XCTestCase {
         if notificationPrompt.waitForExistence(timeout: 3) {
             notificationPrompt.buttons.matching(NSPredicate(format: "label IN %@", ["Don’t Allow", "Don't Allow"])).firstMatch.tap()
         }
+        // The report is folded into a Run details disclosure (#6045); the
+        // closed summary names the runtime, and opening it shows the rows.
+        let runDetails = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@",
+            "Run details · \(harness) \(version)")).firstMatch
         let identity = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@",
             "Runtime: \(harness) \(version)", "Model: \(model) · reported by the runtime")).firstMatch
         let tool = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", "Tool activity:", "Succeeded")).firstMatch
-        guard identity.waitForExistence(timeout: 120), tool.waitForExistence(timeout: 20) else {
+        guard runDetails.waitForExistence(timeout: 120), tool.waitForExistence(timeout: 20) else {
             XCTFail("The actual provider did not report the expected identity and a successful tool")
             return
         }
+        runDetails.tap()
+        XCTAssertTrue(identity.waitForExistence(timeout: 5))
         XCTAssertTrue(identity.label.contains("Tool details: available"))
         XCTAssertFalse(system.alerts.firstMatch.exists)
         attachScreenshot("native-provider-live")
@@ -56,7 +62,10 @@ final class ActivityProviderUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["--ui-native-activity-recovery"]
         app.launch()
-        XCTAssertTrue(identity.waitForExistence(timeout: 20))
+        // Expansion is a reading position, not persisted: open it again.
+        XCTAssertTrue(runDetails.waitForExistence(timeout: 20))
+        runDetails.tap()
+        XCTAssertTrue(identity.waitForExistence(timeout: 5))
         XCTAssertTrue(tool.waitForExistence(timeout: 20))
         attachScreenshot("native-provider-hydrated")
         try await checkOutput(app, tool: tool, marker: marker)

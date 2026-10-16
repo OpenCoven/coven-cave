@@ -86,8 +86,11 @@ final class ActivityRecoveryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["The marker was read."].exists)
         XCTAssertTrue(app.staticTexts["Inspecting 🧙 café."].exists)
         XCTAssertTrue(app.staticTexts["Done: \(marker)"].exists)
+        let runDetails = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Run details · hermes")).firstMatch
+        XCTAssertTrue(runDetails.exists, "the recovered reply folds its report into Run details (#6045)")
+        runDetails.tap()
         let identity = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Runtime: hermes")).firstMatch
-        XCTAssertTrue(identity.exists)
+        XCTAssertTrue(identity.waitForExistence(timeout: 5))
         XCTAssertTrue(identity.label.contains("Model: served-fixture-v3 · reported by the runtime"))
         XCTAssertTrue(identity.label.contains("Tool details: available"))
         attachScreenshot("native-recovered-activity")

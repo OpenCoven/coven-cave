@@ -604,23 +604,53 @@ assert.ok(
 assert.match(models, /requestedModel: String\?/, "iOS decodes requested model intent metadata");
 assert.match(models, /confirmedModel: String\?/, "iOS decodes confirmed model metadata");
 assert.match(models, /modelApplicationState: String\?/, "iOS decodes model application state metadata");
-// #6042: the rows come from ChatRunDetails.lines, which mirrors the web's
+// #6042: the rows come from ChatRunDetails.build, which mirrors the web's
 // src/lib/chat-run-details.ts: one Model row, the others only when they differ.
 assert.match(
   models,
-  /enum ChatRunDetails[\s\S]*?reported by the runtime[\s\S]*?Recorded model:[\s\S]*?Requested model:[\s\S]*?Forwarded model:/,
+  /struct ChatRunDetails[\s\S]*?reported by the runtime[\s\S]*?Recorded model:[\s\S]*?Requested model:[\s\S]*?Forwarded model:/,
   "iOS builds the Run details rows from one shared helper with the web's row rules",
 );
 assert.match(
   models,
-  /sourcePhrases\[\$0\][\s\S]*?if let reason, confirmed == nil, reasonAdds \{ lines\.append\(reason\) \}/,
+  /sourcePhrases\[\$0\][\s\S]*?if let reason, confirmed == nil, reasonAdds \{ lines\.append\(ChatRunDetailLine\(label: nil, value: reason\)\) \}/,
   "iOS renders the safe model source in plain words and keeps the reason only where it adds something",
+);
+// #6045: the rows fold into the web's collapsed disclosure. The closed summary
+// is the web's runDetailsSummaryText, and the gaps are counted the same way.
+assert.match(
+  models,
+  /var summary: String \{ \(\["Run details"\] \+ facts\)\.joined\(separator: " · "\) \}/,
+  "the closed summary reads like the web's: Run details, then the facts",
+);
+assert.match(
+  models,
+  /facts\.append\("model \\\(state\)"\)[\s\S]*?facts\.append\("\\\(unverified\) unverified"\)[\s\S]*?facts\.append\("\\\(rejected\.count\) rejected"\)/,
+  "the summary facts carry the model state and the unverified and rejected counts in the web's order",
+);
+const responseRunDetails = await read("apps/ios/CovenCave/CovenCave/Views/ResponseRunDetailsView.swift");
+assert.match(
+  responseRunDetails,
+  /ChatRunDetails\.build\([\s\S]*?reason: message\.modelApplicationReason,[\s\S]*?appliedControls: message\.appliedControls/,
+  "the disclosure renders the shared helper's rows, controls included",
+);
+assert.match(
+  responseRunDetails,
+  /app\.expandedActivityMessages\.contains\(expansionKey\)/,
+  "the disclosure keeps its open state in AppModel so a transcript rebuild does not close it",
+);
+assert.match(
+  responseRunDetails,
+  /\.accessibilityLabel\(details\.summary\)[\s\S]*?\.accessibilityValue\(expanded \? "Expanded" : "Collapsed"\)[\s\S]*?\.accessibilityHint\(expanded \? "Hides the run details\." : "Shows the run details\."\)/,
+  "the summary is a button that announces its state and what tapping does",
 );
 assert.match(
   messageBubble,
-  /private var responseModelStatus:[\s\S]*?ChatRunDetails\.lines\([\s\S]*?reason: message\.modelApplicationReason/,
-  "the bubble renders the shared helper's rows",
+  /if !isUser \{\s*ResponseRunDetailsView\(message: message\)/,
+  "the bubble renders the shared disclosure under assistant replies",
 );
+assert.doesNotMatch(messageBubble, /responseModelStatus|responseControlStatus/, "the stacked rows and the separate controls block are gone");
+assert.doesNotMatch(messageBubble, /summaryTitle: "Run details"/, "the tools chip no longer shares the Run details name");
 assert.match(
   chat,
   /private var turnModelBinding: ChatModelTurnBinding/,

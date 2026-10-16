@@ -532,7 +532,9 @@ final class AppModel {
     @ObservationIgnored private var projectNavigationSessionsHydration = ProjectNavigationHydrationState()
     @ObservationIgnored private var projectNavigationTasksHydration = ProjectNavigationHydrationState()
 
-    /// Messages whose agent-activity trail the reader has opened.
+    /// Messages whose agent-activity trail the reader has opened, and the
+    /// `<id>:run-metadata` keys of the Run details disclosures they opened
+    /// (#6045).
     ///
     /// Deliberately not view-local `@State`: a transcript rebuild re-creates
     /// the row, and state that lives on the row goes with it — silently
