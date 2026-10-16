@@ -293,13 +293,14 @@ struct MessageBubble: View {
                 // What the familiar is doing (tool calls / progress) — live
                 // while streaming, a collapsed summary once finished.
                 // A settled timeline reply shows its tools inline, one by one.
-                // "Run details" sums the whole run up in one place (#5881).
+                // "Tools this run" sums the whole run up in one place (#5881;
+                // "Run details" is the runtime and model disclosure, #6045).
                 let timelineTools = timeline == nil ? [] : message.activitySteps.filter { $0.kind == .tool }
                 if !isUser, !message.streaming, timelineTools.count >= 2 {
                     AgentActivityView(steps: timelineTools, streaming: false,
                                       messageId: "\(message.id):run-details",
                                       onShowToolOutput: onShowToolOutput,
-                                      summaryTitle: "Run details")
+                                      summaryTitle: "Tools this run")
                         .padding(.leading, 2)
                 }
                 let remainingActivity = timeline == nil ? message.activitySteps : message.activitySteps.filter { $0.kind == .progress }
@@ -316,9 +317,11 @@ struct MessageBubble: View {
                     bubble(projection)
                         .contextMenu { messageActions }
                 }
+                // The runtime, model, control and activity trail, folded into
+                // one Run details disclosure like the web (#6045).
                 if !isUser {
-                    responseModelStatus
-                    responseControlStatus
+                    ResponseRunDetailsView(message: message)
+                        .padding(.leading, 2)
                 }
 
                 // Protocol cards and explicit bare-line links can unfurl. Inline
@@ -393,58 +396,6 @@ struct MessageBubble: View {
             if !isUser { Spacer(minLength: 48) }
         }
         .accessibilityIdentifier("Message bubble \(message.id)")
-    }
-
-    @ViewBuilder private var responseControlStatus: some View {
-        let requested = message.requestedControls ?? [:]
-        let rejected = Set(message.rejectedControlFamilies ?? [])
-        let promptGuidance = Set((message.promptGuidanceControls ?? [:]).keys)
-        let forwarded = Set((message.forwardedControls ?? [:]).keys)
-        let applied = Set((message.appliedControls ?? [:]).keys)
-        if !requested.isEmpty || !rejected.isEmpty {
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(requested.keys).sorted(), id: \.self) { family in
-                    let value = requested[family] ?? ""
-                    let status = rejected.contains(family) ? "Rejected" : promptGuidance.contains(family) ? "Prompt guidance" : applied.contains(family) ? "Applied" : forwarded.contains(family) ? "Forwarded — not confirmed" : "Requested — not confirmed"
-                    Text("\(status): \(family) \(value)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(Array(rejected.subtracting(requested.keys)).sorted(), id: \.self) { family in
-                    Text("Rejected: \(family)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Response controls")
-        }
-    }
-
-    /// The Run details rows, from the same builder rules as the web (#6042).
-    /// One combined accessibility element, as before, so a screen reader
-    /// hears the whole trail as one status.
-    @ViewBuilder private var responseModelStatus: some View {
-        if !isUser {
-            let lines = ChatRunDetails.lines(
-                identity: message.runtimeIdentity?.validated(),
-                requested: message.requestedModel,
-                desired: message.desiredModel,
-                forwarded: message.forwardedModel,
-                confirmed: message.confirmedModel,
-                state: message.modelApplicationState,
-                source: message.modelSource,
-                reason: message.modelApplicationReason
-            )
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                    Text(line)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .accessibilityElement(children: .combine)
-        }
     }
 
     /// Quiet icon row under the last settled assistant reply.
