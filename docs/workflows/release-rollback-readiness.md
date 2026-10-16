@@ -84,16 +84,14 @@ links with `gh api repos/OpenCoven/coven-cave/releases/tags/<tag> --jq
 '.assets[].name'`. An asset listed in prose but absent from the API is a
 release-page defect, even if the build job was green.
 
-For [#5851](https://github.com/OpenCoven/coven-cave/issues/5851), follow the
-[release and candidate sequence](branching.md#release-and-testflight) for a new
-version from clean `main`. The Windows MSI path uses the v0.5.7 build, budget,
-upload, updater signature, and attestation sequence. This MSI is **not
-Authenticode-signed**; do not describe it as code-signed. Check the new MSI's
-checksum entry, `latest.json`, updater signature, and public release page
-before directing downloads to it. The rollback gate selects v0.5.7, the
-newest older release with the required assets, and verifies its manifest.
-The incomplete v0.5.8 through v0.5.12 tags do not need to be replayed. The
-current `latest` alias intentionally points to v0.5.8 meanwhile.
+The [v0.5.13 release](https://github.com/OpenCoven/coven-cave/releases/tag/v0.5.13)
+published a Windows MSI through the build, budget, upload, updater signature,
+and attestation path. That MSI is **not Authenticode-signed**. For a future
+release, complete the [Windows signing setup](windows-msi-signing.md) and land
+the signing gate before following the
+[release and candidate sequence](branching.md#release-and-testflight) from
+clean `main`. Check the new signed MSI, checksum entry, `latest.json`, updater
+signatures, and public release page before directing downloads to it.
 
 ## What it checks
 
