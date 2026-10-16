@@ -724,15 +724,9 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
 
   const title =
     eligibleSessions.find((session) => session.id === selectedSessionId)?.title ?? "New chat";
-  // Surfaced *alongside* the mounted router below rather than replacing it —
-  // familiarsError/sessionsError already passed the blocking branches above
-  // (hasResolvedRouter is true), so this is a transient refresh failure, not
-  // a first-load failure, and must not disturb the live chat.
-  const transientErrorHeadline = familiarsError
-    ? "Couldn't refresh familiars"
-    : sessionsError
-      ? "Couldn't refresh chats"
-      : null;
+  // A background session refresh must not interrupt an already mounted chat.
+  // First-load failures retain the recovery state above.
+  const transientErrorHeadline = familiarsError ? "Couldn't refresh familiars" : null;
 
   return (
     <aside

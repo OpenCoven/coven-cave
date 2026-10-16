@@ -192,34 +192,43 @@ test.describe("chat threads rail", () => {
     await expect(rail.getByText("No conversations yet.")).toHaveCount(0);
   });
 
-  test("a degraded refresh keeps daemon chats and says the list is local (#5563)", async ({ page }) => {
+  test("a degraded refresh updates local rows and quietly retains daemon chats (#6027)", async ({ page }) => {
     await gotoChat(page);
     const rail = page.locator(RAIL);
     await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
     // Daemon unreachable: the server answers ok with only the local rows.
     await page.route("**/api/sessions/list**", (route) =>
-      route.fulfill({ json: { ok: true, degraded: true, error: "daemon http 503", sessions: [SESSIONS[0]] } }),
+      route.fulfill({ json: { ok: true, degraded: true, error: "daemon http 503", sessions: [{ ...SESSIONS[0], title: "Updated local chat" }] } }),
     );
-    await expect(rail.getByRole("status")).toContainText("Coven isn't reachable", { timeout: 20_000 });
+    await expect(rail.getByText("Updated local chat")).toBeVisible({ timeout: 20_000 });
+    await expect(rail.getByText("Coven isn't reachable", { exact: false })).toHaveCount(0);
     await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
-    await expect(rail.getByText("Refactor auth flow")).toBeVisible();
   });
 
-  test("a failed refresh keeps the rows and offers Retry (#5563)", async ({ page }) => {
+  test("failed refreshes keep chats quiet and recover automatically (#6027)", async ({ page }) => {
     await gotoChat(page);
     const rail = page.locator(RAIL);
     await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
+    let failures = 0;
     let failing = true;
-    await page.route("**/api/sessions/list**", (route) =>
-      failing
-        ? route.fulfill({ status: 503, json: { ok: false, error: "daemon unavailable" } })
-        : route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
-    );
-    await expect(rail.getByRole("status")).toContainText("Couldn't refresh chats", { timeout: 20_000 });
+    await page.route("**/api/sessions/list**", (route) => {
+      if (failing) {
+        failures += 1;
+        return route.fulfill({ status: 503, json: { ok: false, error: "daemon unavailable" } });
+      }
+      return route.fulfill({ json: { ok: true, sessions: SESSIONS.map((row, index) =>
+        index === 0 ? { ...row, title: "Recovered chat title" } : row,
+      ) } });
+    });
+    // Two failed polls prove that retries keep running while cached chats stay
+    // usable, without relying on the removed banner as a synchronization hook.
+    await expect.poll(() => failures, { timeout: 25_000 }).toBeGreaterThanOrEqual(2);
     await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
+    await expect(rail.getByText("Couldn't refresh chats", { exact: false })).toHaveCount(0);
+    await expect(rail.getByRole("button", { name: "Retry loading chats" })).toHaveCount(0);
     failing = false;
-    await rail.getByRole("button", { name: "Retry loading chats" }).click();
-    await expect(rail.getByRole("status").filter({ hasText: "Couldn't refresh chats" })).toHaveCount(0, { timeout: 15_000 });
+    await expect(rail.getByText("Recovered chat title")).toBeVisible({ timeout: 25_000 });
+    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
   });
 
   test("a #chat deep link survives a failed first list load (#5563)", async ({ page }) => {
