@@ -264,6 +264,19 @@ export function QuickChatThread({
     schedulePin();
   }, [messages.length, latestAssistantSource, schedulePin]);
 
+  // Buffered prose and async Markdown can grow after the source-driven pin.
+  // Observe the turns themselves: the capped scroller need not change size.
+  // schedulePin respects released user intent, so late layout never resumes
+  // following while someone is reading older output.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(schedulePin);
+    observer.observe(scroller);
+    for (const turn of scroller.children) observer.observe(turn);
+    return () => observer.disconnect();
+  }, [messages.length, schedulePin]);
+
   useEffect(() => {
     const userMessageChanged = observedUserMessageIdRef.current !== lastUserMessageId;
     const turnChanged = observedAssistantTurnIdRef.current !== latestAssistantId;
