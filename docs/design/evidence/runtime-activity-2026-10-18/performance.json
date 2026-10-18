@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "browser": "155.0.8059.80",
+  "url": "http://127.0.0.1:60727/#chat-native-http-response",
+  "method": "Alternating warmed history reloads, same production fixture and same frozen main application bytes; candidate changes harness/docs only. No app performance improvement claimed.",
+  "rows": [
+    {
+      "cohort": "warmup",
+      "readyMs": 656,
+      "taskDurationMs": 397.446,
+      "scriptDurationMs": 144.817,
+      "layoutDurationMs": 27.92,
+      "recalcStyleDurationMs": 44.476,
+      "heapBytes": 27264016,
+      "domNodes": 795,
+      "toolCards": 1,
+      "reasoningBlocks": 2,
+      "navigationDurationMs": 223.59999990463257
+    },
+    {
+      "cohort": "warmup",
+      "readyMs": 504,
+      "taskDurationMs": 276.625,
+      "scriptDurationMs": 108.73299999999999,
+      "layoutDurationMs": 24.177,
+      "recalcStyleDurationMs": 35.226,
+      "heapBytes": 36573252,
+      "domNodes": 805,
+      "toolCards": 1,
+      "reasoningBlocks": 2,
+      "navigationDurationMs": 138.70000004768372
+    },
+    {
+      "cohort": "baseline",
+      "readyMs": 319,
+      "taskDurationMs": 243.77599999999998,
+      "scriptDurationMs": 94.811,
+      "layoutDurationMs": 21.195,
+      "recalcStyleDurationMs": 27.682,
+      "heapBytes": 36989652,
+      "domNodes": 805,
+      "toolCards": 1,
+      "reasoningBlocks": 2,
+      "navigationDurationMs": 70.5
+    },
+    {
+      "cohort": "candidate",
+      "readyMs": 332,
+      "taskDurationMs": 228.697,
+      "scriptDurationMs": 91.92999999999999,
+      "layoutDurationMs": 22.022,
+      "recalcStyleDurationMs": 28.663999999999998,
+      "heapBytes": 52889480,
+      "domNodes": 805,
+      "toolCards": 1,
+      "reasoningBlocks": 2,
+      "navigationDurationMs": 66
+    },
+    {
+      "cohort": "baseline",
+      "readyMs": 445,
+      "taskDurationMs": 249.209,
+      "scriptDurationMs": 95.52,
+      "layoutDurationMs": 21.267,
+      "recalcStyleDurationMs": 32.9,
+      "heapBytes": 59119360,
+      "domNodes": 805,
+      "toolCards": 1,
+      "reasoningBlocks": 2,
+      "navigationDurationMs": 72.20000004768372
+    },
+    {
+      "cohort": "candidate",
+      "readyMs": 334,
+      "taskDurationMs": 272.18399999999997,
+      "scriptDurationMs": 112.32499999999999,
+      "layoutDurationMs": 23.122,
+      "recalcStyleDurationMs": 30.477,
+      "heapBytes": 63871036,
+      "domNodes": 805,
+      "toolCards": 1,
+      "reasoningBlocks": 2,
+      "navigationDurationMs": 70.10000014305115
+    },
+    {
+      "cohort": "baseline",
+      "readyMs": 320,
+      "taskDurationMs": 226.34699999999998,
+      "scriptDurationMs": 90.193,
+      "layoutDurationMs": 22.102,
+      "recalcStyleDurationMs": 29.103,
+      "heapBytes": 71036000,
+      "domNodes": 794,
+      "toolCards": 1,
+      "reasoningBlocks": 2,
+      "navigationDurationMs": 65.70000004768372
+    },
+    {
+      "cohort": "candidate",
+      "readyMs": 315,
+      "taskDurationMs": 222.56400000000002,
+      "scriptDurationMs": 93.898,
+      "layoutDurationMs": 22.265,
+      "recalcStyleDurationMs": 28.563000000000002,
+      "heapBytes": 72517168,
+      "domNodes": 805,
+      "toolCards": 1,
+      "reasoningBlocks": 2,
+      "navigationDurationMs": 48.89999985694885
+    },
+    {
+      "cohort": "baseline",
+      "readyMs": 330,
+      "taskDurationMs": 239.454,
+      "scriptDurationMs": 89.97,
+      "layoutDurationMs": 23.711,
+      "recalcStyleDurationMs": 37.150000000000006,
+      "heapBytes": 92718688,
+      "domNodes": 805,
+      "toolCards": 1,
+      "reasoningBlocks": 2,
+      "navigationDurationMs": 51.39999985694885
+    },
+    {
+      "cohort": "candidate",
+      "readyMs": 374,
+      "taskDurationMs": 253.01000000000002,
+      "scriptDurationMs": 99.538,
+      "layoutDurationMs": 21.744,
+      "recalcStyleDurationMs": 29.496000000000002,
+      "heapBytes": 92462468,
+      "domNodes": 805,
+      "toolCards": 1,
+      "reasoningBlocks": 2,
+      "navigationDurationMs": 75.29999995231628
+    }
+  ],
+  "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+  "baselineSourceOid": "64c5658ebf4fcb381fc7270fc15fae379a1fec76",
+  "candidateProductSourceOid": "64c5658ebf4fcb381fc7270fc15fae379a1fec76",
+  "limitations": [
+    "Harness/docs-only change: both cohorts use identical application bytes, not a feature-on/off comparison.",
+    "Four measured samples per cohort, two discarded warmups; host also ran verification jobs.",
+    "One-tool/two-summary fixture; not a long-trace, mobile-device or memory-leak benchmark.",
+    "CDP task/script/layout/style durations reset per navigation; values are per-document, not differences between documents."
+  ],
+  "summary": {
+    "baseline": {
+      "readyMs": 325.0,
+      "taskDurationMs": 241.615,
+      "scriptDurationMs": 92.50200000000001,
+      "layoutDurationMs": 21.6845,
+      "recalcStyleDurationMs": 31.0015,
+      "heapBytes": 65077680.0
+    },
+    "candidate": {
+      "readyMs": 333.0,
+      "taskDurationMs": 240.8535,
+      "scriptDurationMs": 96.71799999999999,
+      "layoutDurationMs": 22.1435,
+      "recalcStyleDurationMs": 29.08,
+      "heapBytes": 68194102.0
+    }
+  }
+}

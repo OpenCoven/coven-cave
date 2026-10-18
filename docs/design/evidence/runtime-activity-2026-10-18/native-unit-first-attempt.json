@@ -1,0 +1,52 @@
+{
+  "devicesAndConfigurations": [
+    {
+      "device": {
+        "architecture": "arm64",
+        "deviceId": "84FABA82-4947-46A7-92A2-AC97511E6CEA",
+        "deviceName": "Cave Activity 5767 Exact",
+        "modelName": "iPhone 16 Pro",
+        "osBuildNumber": "23F77",
+        "osVersion": "26.5",
+        "platform": "iOS Simulator"
+      },
+      "expectedFailures": 0,
+      "failedTests": 1,
+      "passedTests": 1131,
+      "skippedTests": 0,
+      "testPlanConfiguration": {
+        "configurationId": "1",
+        "configurationName": "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.1",
+  "expectedFailures": 0,
+  "failedTests": 1,
+  "finishTime": 1792311798.072,
+  "passedTests": 1131,
+  "result": "Failed",
+  "skippedTests": 0,
+  "startTime": 1792311595.686,
+  "statistics": [],
+  "testFailures": [
+    {
+      "failureText": "Test exceeded execution time allowance of 1 minute",
+      "targetName": "CovenCaveTests",
+      "testIdentifier": 77,
+      "testIdentifierString": "AppLockTests/testBusyApprovedActionDoesNotBypassBusyGuardWhenApprovalsAreDisabled()",
+      "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveTests/AppLockTests/testBusyApprovedActionDoesNotBypassBusyGuardWhenApprovalsAreDisabled",
+      "testName": "testBusyApprovedActionDoesNotBypassBusyGuardWhenApprovalsAreDisabled()"
+    }
+  ],
+  "title": "Test - CovenCave",
+  "topInsights": [
+    {
+      "category": "Longest Test Runs",
+      "impact": "66% of duration",
+      "text": "3 longest test runs with outlier durations exceeding 5.61s (three standard deviations)"
+    }
+  ],
+  "totalTestCount": 1132,
+  "rawReportSha256": "ed8c0f48ab77f1c64039672616ef5a743f344b221822ccb6b1fc19c11cdbec6f"
+}

@@ -1,0 +1,437 @@
+{
+  "schemaVersion": 1,
+  "mode": "reconnect",
+  "startedAt": "2026-10-18T08:15:03.557Z",
+  "candidate": {
+    "head": "64c5658ebf4fcb381fc7270fc15fae379a1fec76",
+    "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+    "serverSha256": "625582608ba181610f9564eb7b9696b28139171802c62a7f05ef5569e6ca60eb",
+    "runnerSha256": "13ebb53609361aeceed32774d721abc85f23aa8105d78242a84a69b07ad02aea"
+  },
+  "classification": "Production client/send/replay/history; real scratch daemon; controlled Hermes provider and fsynced child-process counter.",
+  "providerRequests": 1,
+  "hostileCallbacks": 0,
+  "checkpoints": [
+    {
+      "label": "client SSE transport interrupted",
+      "counter": 0,
+      "dropped": 1
+    },
+    {
+      "label": "client SSE transport interrupted",
+      "counter": 1,
+      "dropped": 1
+    },
+    {
+      "label": "actual client completed",
+      "counter": 1,
+      "providerRequests": 1,
+      "sessionId": "native-http-response"
+    },
+    {
+      "label": "actual client reopened history",
+      "counter": 1,
+      "providerRequests": 1,
+      "sessionId": "native-http-response"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 72142.303125
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 144022.296416
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 228606.389583
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 228606.716833
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 228704.590416
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/send",
+      "atMs": 228723.853041
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 228911.98375
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 228912.209666
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 229202.370375
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/stream",
+      "atMs": 272556.62125
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 343393.254291
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 343398.623166
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 398737.276125
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 398752.159375
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 398752.9535
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 418111.429625
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 418116.387416
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 418121.501625
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 418547.521541
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 418548.301708
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 418583.944958
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 418908.996375
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 418931.65825
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 418932.055666
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 419212.968541
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 419252.411208
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 419257.997416
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 419277.616416
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 419589.709
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 419661.2085
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 419678.624625
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 419686.847458
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 420009.091666
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 420045.580666
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 420046.046458
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 420067.558583
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 420325.859875
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 420377.60575
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 420377.723541
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 420395.696583
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 420598.631
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 420613.350791
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 420613.455208
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 420946.750541
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 420970.255541
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 420978.093083
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 421282.491333
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 421317.757291
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 421318.088916
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 421379.546333
+    }
+  ],
+  "timingsMs": {
+    "providerFirstActivity": 0.4685419999877922,
+    "controlledTool": 72.93766600004165,
+    "providerTerminal": 140907.13804199998
+  },
+  "passed": true,
+  "uiRenderingVerified": false,
+  "omissions": [
+    "UI observations require a separate receipt.",
+    "No real provider, protected authority, human accessibility or physical-device claim."
+  ],
+  "covenVersion": "coven v0.4.9 (engine coven-code 0.8.0, pinned 0.8.0)",
+  "saved": {
+    "id": "dff60dc1-abbe-4c74-81c6-baa26313fcc9",
+    "role": "assistant",
+    "text": "Inspecting 🧙 café.\nDone: 1",
+    "createdAt": "2026-10-18T08:21:13.304Z",
+    "durationMs": 140923,
+    "isError": false,
+    "tools": [
+      {
+        "id": "effect-once-1",
+        "name": "increment_counter",
+        "status": "ok",
+        "input": "{\n  \"path\": \"effect-invocations.jsonl\"\n}",
+        "output": "1",
+        "durationMs": 64794,
+        "textOffset": 20,
+        "activity": {
+          "schemaVersion": 1,
+          "runId": "6c172abc-20d8-4af4-9408-b8b5fea2ba89",
+          "attemptId": "d680529f-2a85-4f1e-9c19-454d6af1a865",
+          "callId": "effect-once-1",
+          "phase": "ok",
+          "source": "runtime-report",
+          "producer": {
+            "harness": "hermes",
+            "version": null,
+            "protocol": "hermes-responses-v1"
+          },
+          "firstObservedAt": 1792311532394,
+          "updatedAt": 1792311597188,
+          "sequence": 1,
+          "executionObservedAt": 1792311532394,
+          "terminalObservedAt": 1792311597188,
+          "authority": {
+            "binding": "unavailable",
+            "approval": "unavailable",
+            "effect": "unavailable"
+          }
+        }
+      }
+    ],
+    "reasoningBlocks": [
+      {
+        "schemaVersion": 1,
+        "id": "d680529f-2a85-4f1e-9c19-454d6af1a865:summary-before",
+        "representation": "provider-summary",
+        "textOffset": 0,
+        "phase": "complete",
+        "disclosure": "display-safe",
+        "observation": {
+          "runId": "6c172abc-20d8-4af4-9408-b8b5fea2ba89",
+          "attemptId": "d680529f-2a85-4f1e-9c19-454d6af1a865",
+          "source": "runtime-report",
+          "producer": {
+            "harness": "hermes",
+            "version": null,
+            "protocol": "hermes-responses-v1"
+          },
+          "firstObservedAt": 1792311532392,
+          "updatedAt": 1792311532393,
+          "completedAt": 1792311532393,
+          "sequence": 0,
+          "binding": "unavailable"
+        },
+        "text": "Increment the isolated counter once."
+      },
+      {
+        "schemaVersion": 1,
+        "id": "d680529f-2a85-4f1e-9c19-454d6af1a865:summary-after",
+        "representation": "provider-summary",
+        "textOffset": 20,
+        "phase": "complete",
+        "disclosure": "display-safe",
+        "observation": {
+          "runId": "6c172abc-20d8-4af4-9408-b8b5fea2ba89",
+          "attemptId": "d680529f-2a85-4f1e-9c19-454d6af1a865",
+          "source": "runtime-report",
+          "producer": {
+            "harness": "hermes",
+            "version": null,
+            "protocol": "hermes-responses-v1"
+          },
+          "firstObservedAt": 1792311673295,
+          "updatedAt": 1792311673295,
+          "completedAt": 1792311673295,
+          "sequence": 2,
+          "binding": "unavailable"
+        },
+        "text": "The isolated counter was incremented."
+      }
+    ],
+    "progress": [
+      {
+        "id": "familiar-contract",
+        "label": "No familiar identity files found",
+        "status": "notice",
+        "createdAt": "2026-10-18T08:18:52.374Z"
+      }
+    ],
+    "parentId": "6ad22e3f-ce7e-4dc1-8e03-c3e02bed1053",
+    "responseMetadata": {
+      "familiarId": "effectfixture",
+      "harness": "hermes",
+      "model": "",
+      "runtime": "local:<scratch>/project",
+      "runtimeIdentity": {
+        "schemaVersion": 1,
+        "harness": "hermes",
+        "version": null,
+        "model": "served-fixture-v3",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "api",
+          "tools": "supported",
+          "reasoning": "supported"
+        }
+      },
+      "requestedModel": "",
+      "desiredModel": "",
+      "confirmedModel": "served-fixture-v3",
+      "retryModel": "served-fixture-v3",
+      "modelSource": "runtime-default",
+      "modelApplicationState": "applied",
+      "modelApplicationReason": "Runtime confirmed the selected model."
+    }
+  },
+  "negativeControl": {
+    "counter": 2,
+    "repeatedInvocationDetected": true
+  },
+  "serverStopped": true,
+  "daemonStopped": true,
+  "fixtureRootRemoved": true,
+  "finishedAt": "2026-10-18T08:23:38.263Z",
+  "rawReportSha256": "43d2ffb6ad01644b5d6c16916bfd0761afde6685dbf486b8da65dc332ec27432"
+}

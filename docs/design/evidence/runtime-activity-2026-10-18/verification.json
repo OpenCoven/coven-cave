@@ -1,0 +1,257 @@
+{
+  "schemaVersion": 1,
+  "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+  "environment": {
+    "os": "macOS 26.7.1 (25G241)",
+    "architecture": "arm64",
+    "node": "v24.18.1",
+    "next": "16.3.8",
+    "coven": "0.4.9 (engine coven-code 0.8.0)",
+    "xcode": "26.6 (17F113)",
+    "simulator": "iPhone 16 Pro / iOS 26.5 (23F77)",
+    "browser": "Chromium 155.0.8059.80 for real-client receipts; Playwright Chromium 151.0.7922.34 for existing E2E fixtures"
+  },
+  "checks": [
+    {
+      "name": "build",
+      "command": "pnpm build; pnpm exec tauri build --ci --no-sign --bundles app --config <alternate-ID config>",
+      "status": "passed",
+      "note": "Production build and packaged Release build passed existing bundle/standalone budgets. Qualification uses only packaged build ZhCtRUET5IWsZpj-I_ycz.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-build-1.log",
+          "sha256": "f66b4b331c723c951539e88aba57026ff2d9247da0a447895747c790b1a69c6d"
+        },
+        {
+          "name": "cave-5767-package-build-1.log",
+          "sha256": "12df15d10209b2dea4479537113f159b3c4ed532fef686c4ab5c5029b133ca59"
+        }
+      ]
+    },
+    {
+      "name": "targeted",
+      "command": "node scripts/runtime-activity-effect-counter.test.mjs; node --experimental-strip-types --import ./scripts/test-alias-register.mjs src/lib/chat-activity-corpus.test.ts",
+      "status": "passed",
+      "note": "Independent durable-counter negative control and shared versioned corpus passed.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-corpus.log",
+          "sha256": "5cf9acf2e78de3b93cb9504cdef7883d166b8fec0ebb7c9af9d7529860828c3f"
+        }
+      ]
+    },
+    {
+      "name": "wiring",
+      "command": "pnpm check:tests-wired",
+      "status": "passed",
+      "note": "2085 tests wired; new opt-in harnesses are explicit release-gate commands, not ordinary unit tests.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-wiring.log",
+          "sha256": "a48330b9fe58f122e00258437fde740bb96c66cd5a0d5bc2c1397baadc08ff9f"
+        }
+      ]
+    },
+    {
+      "name": "typecheck",
+      "command": "pnpm typecheck",
+      "status": "passed",
+      "note": "Final product source unchanged.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-typecheck.log",
+          "sha256": "9c3592fda20724ebf5b1e13abf87d99ef506832d8b44c55b18bc5239c0bbd063"
+        }
+      ]
+    },
+    {
+      "name": "lint",
+      "command": "pnpm lint; pnpm exec eslint scripts/runtime-activity-{effect-recovery,access-probes,client-fixture,runtime-matrix,native-transport}.mjs",
+      "status": "passed",
+      "note": "Full source lint and separate changed-harness lint passed.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-lint.log",
+          "sha256": "ecbbae0e9f8cb78238c13188ffc650932682fdec4a22afa26efb2865d3b13ca7"
+        },
+        {
+          "name": "cave-5767-harness-lint-final.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "name": "app",
+      "command": "pnpm test:app; existing nodeArgsFor/Vitest selectors for remainder and targeted retries",
+      "status": "passed-across-attempts",
+      "note": "All 1448 files passed across the original suite, targeted corrections to scratch invocation, and resumed remaining selectors; not one uninterrupted green command. Tests that establish their own temporary HOME were run without conflicting outer COVEN_HOME. Never used installed Coven state.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-app-tests-4.log",
+          "sha256": "a4419baede7ee9fae048422943bbddf178fec110c1395a9d182a586993ce5468"
+        },
+        {
+          "name": "cave-5767-app-resume.log",
+          "sha256": "b55c06cc2315421206d6ff32e2f9f5064e5f3f485ed80617358a6ad102ee14ad"
+        },
+        {
+          "name": "cave-5767-app-resume-3.log",
+          "sha256": "5ec3b9039aae6d78f46e922258d714f3819d8aeb43855bcd3eaaadcf198f75e8"
+        },
+        {
+          "name": "cave-5767-travel-retry.log",
+          "sha256": "dad98e112fa9099f8712366eaa729a0290f32a86bdc091deb36ba9d646505140"
+        },
+        {
+          "name": "cave-5767-config-retry.log",
+          "sha256": "0e5d0e2933e53fc0732dd5c3908fe2c34b80552f4c7d7149f835c3f6fac5f578"
+        },
+        {
+          "name": "cave-5767-config-compat-retry.log",
+          "sha256": "44daf6f65a05db22b8c6b83142dcbd317416e114d6da59436b4c9b3b7182871e"
+        }
+      ]
+    },
+    {
+      "name": "api",
+      "command": "pnpm test:api; existing nodeArgsFor/Vitest selectors for remainder and targeted retries",
+      "status": "passed-across-attempts",
+      "note": "All 522 files passed across attempts. Scratch path named .coven preserves the daemon path assertion. HOME-owning contract/voice tests require no outer COVEN_HOME override.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-api-tests-2.log",
+          "sha256": "524022524149a99c191689cc5007a4a42786a0befe142515ea4fba13c89b19c4"
+        },
+        {
+          "name": "cave-5767-api-resume.log",
+          "sha256": "b8ca19c31238f3f06c00ade94ecd87ed0c68e22f430ee66a5eac217752d2d29c"
+        },
+        {
+          "name": "cave-5767-api-resume-3.log",
+          "sha256": "f0ad1eaa36c54d6dc00728f273293b0475cda491cb1f6124ac7d0581ef2f0e2a"
+        },
+        {
+          "name": "cave-5767-api-resume-4.log",
+          "sha256": "e29992111805c847f53e75b0a9443fde28fdc2b1eb6e93ba2224776383ef36f8"
+        },
+        {
+          "name": "cave-5767-contract-retry.log",
+          "sha256": "e2071f34a9f9c342211a8bc4a7f3ce8b321dbdceedead6e3685f1ee724604ec3"
+        },
+        {
+          "name": "cave-5767-hydrate-retry.log",
+          "sha256": "028c622b2d6676b7c055352d9e3ac55ab262f57f484032a8d0813b0a2598db3d"
+        },
+        {
+          "name": "cave-5767-voice-append-retry.log",
+          "sha256": "8e7f27676d7044b577bf36c2899a40162f0732b64679fb6afee50f16d76a8852"
+        },
+        {
+          "name": "cave-5767-voice-session-retry.log",
+          "sha256": "cef79d60eec6ece05715bdcb72d7dcfc6f52c3e89f795c91078177e53adbfdcc"
+        }
+      ]
+    },
+    {
+      "name": "mobile",
+      "command": "pnpm test:mobile",
+      "status": "passed",
+      "note": "106 files. Source/contract coverage, not human/native UI acceptance.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-mobile-tests.log",
+          "sha256": "968e37468642180c2a4e3c0fbe73f2e816cc1ff04028fc9b949b663107ca762c"
+        }
+      ]
+    },
+    {
+      "name": "conformance",
+      "command": "pnpm test:conformance",
+      "status": "passed",
+      "note": "9 files; Windows-only cases explicitly skipped on macOS. Compatibility-control integration builds and removes .next. Its output is NOT the release candidate. Exact preserved packaged artifact restored byte-for-byte before final browser/native qualification.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-conformance.log",
+          "sha256": "536e35409756e2ea0718ae1d2f2126cd06e11a955adc25beaf27199d4caed363"
+        }
+      ]
+    },
+    {
+      "name": "e2e",
+      "command": "pnpm exec playwright test --config <production-server config> tests/chat-{activity-updates,tool-cards,run-details,response-output,proposal-review-card}.spec.ts --project desktop",
+      "status": "passed",
+      "note": "19 tests against the frozen production build; existing API-mocked component/browser fixtures are supporting evidence only. Real send/replay/history qualification is separate in browser-reconnect.json.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-e2e-2.log",
+          "sha256": "29d2a6535ced0b9d006e41120ccdef7e082748626646ad609375f866ded650e0"
+        },
+        {
+          "name": "cave-5767-e2e-activity-extended.log",
+          "sha256": "8b6836aa49a4619ce1f87c451ef6842cc1d824850e372d389dcb5df93181b549"
+        }
+      ]
+    },
+    {
+      "name": "native-recovery",
+      "command": "node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-native-transport.mjs --execute --destination <owned-simulator> --derived-data <owned-derived> --evidence <new-dir>",
+      "status": "passed",
+      "note": "2 native transport tests plus rendered recovery UI; actual daemon, server restart, lazy output and scene-supervisor recovery.",
+      "retainedLocalLogs": [
+        {
+          "name": "native-transport.log",
+          "sha256": "e7e96de7ce7a491cdf3fa446b29d7aca5ea521c2871d3a29d94d02950f616fd0"
+        },
+        {
+          "name": "native-recovery-ui.log",
+          "sha256": "ecc42da69c96f023f560eaee016f51f6cc87b2bb8701f9c50a090b6e3096d4f2"
+        }
+      ]
+    },
+    {
+      "name": "native-unit",
+      "command": "same native harness with --unit-suite; xcodebuild test-without-building -only-testing:CovenCaveTests/AppLockTests/testBusyApprovedActionDoesNotBypassBusyGuardWhenApprovalsAreDisabled",
+      "status": "passed-across-attempts",
+      "note": "Full run: 1131 passed, one AppLock test exceeded 60 seconds. Exact targeted test then passed without source changes. The original full-suite result remains Failed.",
+      "retainedLocalLogs": [
+        {
+          "name": "native-transport.log",
+          "sha256": "927490f7b7929256c063164e8fd92a9156a6fbf4cde87d92e24b96bf4c29f533"
+        },
+        {
+          "name": "cave-5767-app-lock-retry.log",
+          "sha256": "1673adfa87831fb0d3fe0733be8be5693564af68ff7b94d2d3e276c0ef8466be"
+        }
+      ]
+    },
+    {
+      "name": "native-live",
+      "command": "same native harness with --live-ui-send",
+      "status": "failed-explicitly-deferred",
+      "note": "Real composer/send/termination/restart/hydration preserved one dispatch/effect and stable IDs, but ActivityRecoveryUITests.swift:114 tool.isHittable failed after output-sheet dismissal. Completion callback is not test success. #5766 must resolve before claiming native-complete.",
+      "retainedLocalLogs": [
+        {
+          "name": "native-recovery-ui.log",
+          "sha256": "53438c6ff7fb89a8b739b8968587570d639d6cf572b77784f052c70d25dd54f8"
+        }
+      ]
+    },
+    {
+      "name": "chromium-supporting-tests",
+      "command": "Existing nodeArgsFor selectors: canvas-inspector-chromium, canvas-preview-csp-chromium, arcade/glitter-crypt-chromium",
+      "status": "passed-across-attempts",
+      "note": "Installed Chromium after initial unavailable-browser skips. Inspector and CSP passed; corrected canonical arcade path passed separately. Wrong-path command errors executed no test.",
+      "retainedLocalLogs": [
+        {
+          "name": "cave-5767-chromium-skips-final.log",
+          "sha256": "9d2a0587b73d7db9f1ae14b67006e736124f02a58b1734a6ae608132fa24ebec"
+        },
+        {
+          "name": "cave-5767-glitter-final.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ],
+  "privacy": "All daemon runs used dedicated scratch COVEN_HOME/COVEN_SOCKET/COVEN_CAVE_HOME. No real-provider turns authorized or run. No installed ~/.coven mutations."
+}
