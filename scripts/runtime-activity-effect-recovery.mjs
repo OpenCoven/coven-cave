@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { prepareActivityAccessProbe, probeActivityRevocation } from "./runtime-activity-access-probes.mjs";
 const args = process.argv.slice(2);
 const flags = args.slice(3);
 const includeExpiry = flags.includes("--include-expiry");
@@ -19,8 +20,9 @@ const ringEviction = flags.includes("--ring-eviction");
 const persistenceFailure = flags.includes("--persistence-failure");
 const splitSecrets = flags.includes("--split-secrets");
 const parallelCalls = flags.includes("--parallel-calls");
+const cancelAfterEffect = flags.includes("--cancel-after-effect");
 const invokeChild = promisify(execFile);
-assert.ok(args[0] === "--execute" && args[1] === "--evidence" && path.isAbsolute(args[2] ?? "") && new Set(flags).size === flags.length && flags.every(flag => ["--include-expiry", "--ring-eviction", "--persistence-failure", "--split-secrets", "--parallel-calls"].includes(flag)) && !(persistenceFailure && (ringEviction || includeExpiry || splitSecrets || parallelCalls)) && !(parallelCalls && (ringEviction || splitSecrets)), "Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-effect-recovery.mjs --execute --evidence <new absolute directory> [--include-expiry] [--ring-eviction] [--split-secrets] OR [--include-expiry] --parallel-calls OR --persistence-failure");
+assert.ok(args[0] === "--execute" && args[1] === "--evidence" && path.isAbsolute(args[2] ?? "") && new Set(flags).size === flags.length && flags.every(flag => ["--include-expiry", "--ring-eviction", "--persistence-failure", "--split-secrets", "--parallel-calls", "--cancel-after-effect"].includes(flag)) && !(persistenceFailure && (ringEviction || includeExpiry || splitSecrets || parallelCalls || cancelAfterEffect)) && !(parallelCalls && (ringEviction || splitSecrets || cancelAfterEffect)) && !(cancelAfterEffect && (ringEviction || splitSecrets)), "Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-effect-recovery.mjs --execute --evidence <new absolute directory> [--include-expiry] [--ring-eviction] [--split-secrets] OR [--include-expiry] --parallel-calls OR --persistence-failure OR [--include-expiry] --cancel-after-effect");
 assert.ok(["darwin", "linux"].includes(process.platform), "POSIX counter fixture only; other platforms remain unverified.");
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."), evidence = args[2];
 await mkdir(evidence, { recursive: false, mode: 0o700 });
@@ -30,7 +32,7 @@ const imp = (f) => import(pathToFileURL(path.join(repo, f)).href);
 const { startCave, stopCave, freePort } = await imp("scripts/client-v1-conformance.mjs");
 const binary = execFileSync("which", ["coven"], { encoding: "utf8" }).trim();
 const adminToken = randomUUID(), providerToken = randomUUID(), mobileToken = randomUUID();
-const sourceFiles = ["scripts/runtime-activity-effect-recovery.mjs", "scripts/runtime-activity-effect-counter.mjs", "scripts/runtime-activity-effect-counter.test.mjs", "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json", "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json", "src/app/api/chat/send/route.ts", "src/lib/chat-tool-events.ts", "src/lib/hermes-responses-stream.ts"];
+const sourceFiles = ["scripts/runtime-activity-effect-recovery.mjs", "scripts/runtime-activity-access-probes.mjs", "scripts/runtime-activity-effect-counter.mjs", "scripts/runtime-activity-effect-counter.test.mjs", "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json", "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json", "src/app/api/chat/send/route.ts", "src/lib/chat-tool-events.ts", "src/lib/hermes-responses-stream.ts"];
 const sourceHashes = async () => Object.fromEntries(await Promise.all(sourceFiles.map(async file => [file, createHash("sha256").update(await readFile(path.join(repo, file))).digest("hex")])));
 const deadline = new AbortController();
 const deadlineTimer = setTimeout(() => deadline.abort(new Error("qualification deadline exceeded")), includeExpiry ? 480_000 : 240_000);
@@ -39,10 +41,12 @@ process.on("SIGINT", onInterrupt);
 process.on("SIGTERM", onInterrupt);
 const report = { schemaVersion: 1, scenario: "hermes-durable-effect-recovery", startedAt: (new Date()).toISOString(), omissions: ["HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.", "Coven-specific state is isolated; HOME is unchanged.", "Ring eviction, access revocation and persistence-failure injection remain unverified."], head: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", cwd: repo }).trim(), buildId: (await readFile(path.join(repo, ".next/BUILD_ID"), "utf8")).trim(), classification: "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.", passed: false, checkpoints: [], providerRequests: 0, host: { node: process.version, platform: process.platform, architecture: process.arch } };
 report.sourceHashes = await sourceHashes();
-report.options = { includeExpiry, ringEviction, persistenceFailure, splitSecrets, parallelCalls };
+report.options = { includeExpiry, ringEviction, persistenceFailure, splitSecrets, parallelCalls, cancelAfterEffect };
+const timings = { started: performance.now() };
+report.timingsMs = {};
 report.productSourceUncommitted = Boolean(execFileSync("git", ["status", "--porcelain", "--", "src/app/api/chat/send/route.ts", "src/lib/chat-tool-events.ts", "src/lib/hermes-responses-stream.ts"], { encoding: "utf8", cwd: repo }).trim());
 report.scenario = parallelCalls ? "hermes-durable-effect-parallel-reordered-results" : persistenceFailure ? "hermes-durable-effect-persistence-failure" : ringEviction ? "hermes-durable-effect-ring-eviction" : splitSecrets ? "hermes-durable-effect-split-secrets" : report.scenario;
-report.omissions[2] = "Access revocation and process-crash durability remain unverified.";
+report.omissions[2] = "Physical remote ingress, per-project delegated authority and process-crash durability remain unverified; managed device revocation uses a controlled external peer inventory.";
 if (!ringEviction) report.omissions.push("Ring eviction not run; use --ring-eviction.");
 if (!persistenceFailure) report.omissions.push("Persistence failure not injected; use --persistence-failure separately.");
 let serverLogs = "";
@@ -186,6 +190,7 @@ try {
   const project = await createProject({ name: "Controlled durable effect fixture", root: projectRoot });
   await grantProjectToFamiliar({ familiarId: "effectfixture", projectId: project.id, source: "human", access: "write" });
   await selectQueueProject(project.id);
+  process.env.TAILSCALE_BIN = await prepareActivityAccessProbe(root);
   report.covenVersion = native(["--version"]).trim();
   daemon = true;
   native(["daemon", "start"]);
@@ -213,11 +218,13 @@ try {
     }
   };
   report.stage = "initial-send";
+  timings.send = performance.now();
   const sent = new AbortController();
   const response = await request("/api/chat/send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ familiarId: "effectfixture", sessionId: randomUUID(), runId, startNewConversation: true, projectRoot, permissionMode: "write", prompt: "Run the controlled isolated counter tool once." }), signal: sent.signal });
   assert.equal(response.status, 200);
   const initialWire = await until(response.body.getReader(), (e) => parallelCalls ? reordered.expected.tools.slice(0, 2).every(tool => e.some(x => x.kind === "tool_use" && x.id === tool.id && x.status === "running")) : e.some(x => x.kind === "tool_use" && x.status === "running"));
   assertPublic(initialWire);
+  report.timingsMs.firstActivity = performance.now() - timings.send;
   assert.equal(await count(), 0);
   sent.abort();
   report.checkpoints.push({ label: "transport drop before effect", counter: 0 });
@@ -225,8 +232,11 @@ try {
   const tail = await request("/api/chat/stream?runId=" + runId + "&cursor=0", { signal: tailController.signal });
   assert.equal(tail.status, 200);
   releaseTool();
+  timings.tool = performance.now();
   await until(tail.body.getReader(), (e) => parallelCalls ? reordered.expected.tools.slice(0, 2).every(tool => e.some(x => x.kind === "tool_use" && x.id === tool.id && x.status === "ok")) : e.some(x => x.kind === "tool_use" && x.status === "ok"));
   await expectedCount("effect after initial transport drop");
+  report.timingsMs.toolResult = performance.now() - timings.tool;
+  report.managedAccess = await probeActivityRevocation({ origin: cave.origin, adminToken, runId, sessionId: parse(initialWire).find(event => event.kind === 'session')?.sessionId });
   tailController.abort();
   const final = await request("/api/chat/stream?runId=" + runId + "&cursor=0");
   assert.equal(final.status, 200);
@@ -235,9 +245,17 @@ try {
     await chmod(blockedDirectory, 0o500);
     report.injectedFault = "Own fixture conversation directory denies writes after the real effect.";
   }
-  releaseFinal();
+  if (cancelAfterEffect) {
+    const stop = await request("/api/chat/stop", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ runId }) });
+    assert.equal(stop.status, 200);
+    assert.equal((await stop.json()).stopped, true, "server must acknowledge the explicit stop");
+    report.stopAcknowledgedAfterEffect = true;
+  } else releaseFinal();
   const wire = await final.text();
   const events = parse(wire), done = events.findLast((e) => e.kind === "done");
+  report.diagnostics = events.filter(event => event.kind === 'progress' && ['harness-start', 'resume-gap', 'save-transcript'].includes(event.id)).map(event => ({ id: event.id, status: event.status, ...(Number.isFinite(event.durationMs) ? { durationMs: event.durationMs } : {}) }));
+  if (cancelAfterEffect) report.cancellationObservation = { terminal: Boolean(done), persisted: Boolean(done?.persistedTurnId), cancelled: done?.cancelled === true, isError: done?.isError === true, progress: events.filter(event => event.kind === "progress").map(event => ({ id: event.id, status: event.status })) };
+  report.timingsMs.terminal = performance.now() - timings.send;
   assertPublic(wire);
   report.stage = "terminal-persistence-state";
   if (persistenceFailure) {
@@ -250,7 +268,11 @@ try {
     blockedDirectory = undefined;
     report.visiblePersistenceFailureVerified = true;
   } else {
-    assert.ok(done?.persistedTurnId && !done.isError);
+    assert.ok(done?.persistedTurnId);
+    if (!cancelAfterEffect) assert.equal(done.isError, false);
+    else {
+      assert.ok(!events.some(event => event.kind === "tool_use" && event.activity?.authority?.effect === "verified"), "stop is not effect rollback authority");
+    }
   }
   if (ringEviction) {
     assert.ok(events.some(event => event.kind === "progress" && event.id === "resume-gap"), "real production ring must report the evicted cursor gap");
@@ -318,23 +340,24 @@ try {
       return;
     }
     const assistant = value.conversation.turns.find(turn => turn.id === done.persistedTurnId);
+    if (cancelAfterEffect) assert.equal(assistant?.cancelled, true, "saved cancellation must remain explicit");
     report.stage = 'history: assert.ok(assistant';
     assert.ok(assistant, "the exact persisted assistant turn must survive recovery");
     report.stage = 'history: assert.equal(assistant.role';
     assert.equal(assistant.role, "assistant");
     report.stage = 'history: assert.equal(assistant.text';
-    assert.equal(assistant.text, scenario.expected.answer.replaceAll("{{COUNTER}}", String(scenario.expected.counter)));
+    assert.equal(assistant.text, cancelAfterEffect ? "Inspecting 🧙 café." : scenario.expected.answer.replaceAll("{{COUNTER}}", String(scenario.expected.counter)));
     report.stage = 'history: assert.equal(assistant.isError';
-    assert.equal(assistant.isError, false);
+    if (!cancelAfterEffect) assert.equal(assistant.isError, false);
     const identity = assistant.responseMetadata?.runtimeIdentity;
     report.stage = 'history: assert.equal(identity?.harness';
     assert.equal(identity?.harness, scenario.expected.harness);
     report.stage = 'history: assert.equal(identity?.model';
-    assert.equal(identity?.model, scenario.expected.model);
+    if (!cancelAfterEffect) assert.equal(identity?.model, scenario.expected.model);
     report.stage = 'history: assert.equal(identity?.activity?.path';
     assert.equal(identity?.activity?.path, "api");
     report.stage = 'history: assert.deepEqual(assistant.reasoningBlocks?.map(block => block.text)';
-    assert.deepEqual(assistant.reasoningBlocks?.map(block => block.text), scenario.expected.summaries);
+    assert.deepEqual(assistant.reasoningBlocks?.map(block => block.text), cancelAfterEffect ? scenario.expected.summaries.slice(0, 1) : scenario.expected.summaries);
     const tool = assistant.tools?.find(tool => tool.id === scenario.expected.toolId);
     report.stage = 'history: assert.ok(tool);';
     assert.ok(tool);

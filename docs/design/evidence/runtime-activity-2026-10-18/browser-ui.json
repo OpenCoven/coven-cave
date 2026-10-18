@@ -1,0 +1,31 @@
+{
+  "method": "Authorized isolated Chromium browser, real production send/replay/history via transparent downstream-only transport interruption. No API route mocks.",
+  "browserVersion": "155.0.8059.80",
+  "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+  "beforeEffectReplay": {
+    "replay": true,
+    "status": 200
+  },
+  "delayedOldSession": {
+    "url": "http://127.0.0.1:60727/",
+    "oldAnswerCount": 0,
+    "oldToolCount": 0,
+    "newSession": 1
+  },
+  "reopenedHistory": {
+    "url": "http://127.0.0.1:60727/#chat-native-http-response",
+    "answerCount": 1,
+    "toolCards": 1
+  },
+  "performanceReloads": 10,
+  "negativeControls": [
+    "Actual provider counts one request; durable tool ledger remains one after all reads.",
+    "Separate child process invoked twice makes independent control count two."
+  ],
+  "limitations": [
+    "One local owner/familiar; no multi-principal per-project delegated-access claim.",
+    "Unrelated shell endpoints returned 403/400 under the scratch proxy; chat send/replay/history succeeded.",
+    "This is automated browser coverage, not human accessibility acceptance."
+  ],
+  "screenshotSha256": "fbb741653438b2c883029969c80447861aa7a969d0e1d7e664b961b16217ee9d"
+}

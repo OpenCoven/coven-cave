@@ -447,6 +447,8 @@ try {
   } else {
     runReport.fullUnitSuiteExecuted = true;
   }
+  assert.equal((await readFile(path.join(repo, '.next/BUILD_ID'), 'utf8')).trim(), runReport.candidate.buildId,
+    'candidate build changed during qualification; serialize build-mutating suites');
   runReport.passed = true;
 } catch (error) {
   runReport.failure = error instanceof Error ? error.message : 'native transport failed';

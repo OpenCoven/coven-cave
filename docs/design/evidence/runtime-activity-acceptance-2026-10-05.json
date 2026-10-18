@@ -112,127 +112,232 @@
           "id": "5761-boundary-01",
           "section": "Ownership and hard boundaries",
           "requirement": "Render only provider-designated user-visible reasoning/summary content. Never request, reconstruct, or fabricate hidden chain-of-thought. Keep provider summaries, model narration, and application progress distinguishable.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5761-boundary-02",
           "section": "Ownership and hard boundaries",
           "requirement": "Model text, tags, tool output, and local hook output cannot manufacture verified execution, approval, or commit receipts.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5761-boundary-03",
           "section": "Ownership and hard boundaries",
           "requirement": "A requested tool is not an executed tool; an approval request is not permission; a successful process result is not proof of a protected commit.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5761-boundary-04",
           "section": "Ownership and hard boundaries",
           "requirement": "Bind activity to the actual conversation/run/turn and authorized familiar revision from the authoritative session. Missing historical binding/provenance is explicit, never inferred from a display name, and cannot qualify protected execution.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#delegated-access"
+          }
         },
         {
           "id": "5761-boundary-05",
           "section": "Ownership and hard boundaries",
           "requirement": "Redact and bound display projections before SSE, replay retention, transcript storage, logs, and exports. Never expose opaque reasoning/signature payloads or credentials as thinking text. Preserve required provider continuation state separately and unchanged.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#privacy-export"
+          }
         },
         {
           "id": "5761-boundary-06",
           "section": "Ownership and hard boundaries",
           "requirement": "Reconnect is read/replay, never permission to rerun a tool. Missing events, expired buffers, cancellation, rejected actions, persistence failure, and unavailable receipts remain honest states.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5761-boundary-07",
           "section": "Ownership and hard boundaries",
           "requirement": "Use current authenticated access checks for detail/receipt/export reads. Developer/moderator presentation modes do not grant additional access by themselves.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#delegated-access"
+          }
         },
         {
           "id": "5761-acceptance-01",
           "section": "Implementation issues",
           "requirement": "#5762 — Typed reasoning/tool projection and server disclosure boundary.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5761-acceptance-02",
           "section": "Implementation issues",
           "requirement": "#5763 — Runtime adapter propagation and tested capability matrix.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5761-acceptance-03",
           "section": "Implementation issues",
           "requirement": "#5764 — Persistence, replay, reconnect, and history consistency.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5761-acceptance-04",
           "section": "Implementation issues",
           "requirement": "#5765 — Accessible web/desktop Activity, reasoning, tools, and detail inspection.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5761-acceptance-05",
           "section": "Implementation issues",
           "requirement": "#5766 — Native iOS parity, recovery, and VoiceOver evidence.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5761-acceptance-06",
           "section": "Implementation issues",
           "requirement": "#5767 — Real-daemon, packaged-client, security, and native E2E qualification.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5761-acceptance-07",
           "section": "Epic acceptance",
           "requirement": "Every claimed supported runtime/launch path has a documented, tested exposure capability, including explicit unsupported/unverified states.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5761-acceptance-08",
           "section": "Epic acceptance",
           "requirement": "Thinking and tools preserve identity, order, correlation, and terminal state from runtime output through live UI, replay, and history.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5761-acceptance-09",
           "section": "Epic acceptance",
           "requirement": "Parallel same-name calls, retries, approval states, errors, cancellation, reconnect gaps, persistence failures, and session/familiar switching pass the shared scenario corpus.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5761-acceptance-10",
           "section": "Epic acceptance",
           "requirement": "Default visibility, disclosure controls, keyboard/VoiceOver behavior, reduced motion, and mobile layout are verified without hiding failures or pending approvals.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#human-accessibility"
+          }
         },
         {
           "id": "5761-acceptance-11",
           "section": "Epic acceptance",
           "requirement": "Secret/PII sentinels, malicious markers/tool output, and cross-session requests cannot leak data or acquire authority.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#privacy-export"
+          }
         },
         {
           "id": "5761-acceptance-12",
           "section": "Epic acceptance",
           "requirement": "Real-daemon and packaged/native evidence accompanies deterministic fixtures; unavailable providers/devices remain unverified, not passed.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5761-acceptance-13",
           "section": "Epic acceptance",
           "requirement": "Required checks pass on exact PR heads; retain commands, first-attempt results, retries, runtime/schema versions, sanitized artifacts, and remaining gaps before closeout.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5761-acceptance-14",
           "section": "Epic acceptance",
           "requirement": "Supported-path documentation, retention/disclosure behavior, content-minimized diagnostics, and safe rollback are recorded. Remaining native/security/producer gaps cannot be hidden by a blanket completed label.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#rollout-docs"
+          }
         }
       ],
       "primaryBlocker": "All child acceptance criteria remain required; no aggregate completion claim.",
@@ -254,73 +359,133 @@
           "id": "5762-scope-01",
           "section": "Implementation scope",
           "requirement": "Add a versioned, backward-compatible typed reasoning-block representation to the existing union and transcript model. Carry stable block identity, run/turn association, start/update/end semantics, and explicit representation: provider summary, provider progress, application activity description, or unverified legacy content. Keep an old-transcript decoder; do not pretend a legacy string has verified provenance.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5762-scope-02",
           "section": "Implementation scope",
           "requirement": "Extend tool projection metadata with logical call identity, attempt identity, source, available timestamps, and separate requested/executing/terminal/effect-confirmation states. Approval, policy rejection, cancellation request, confirmed cancellation, and unknown outcome must not collapse into `ok` or `error`. Adopt existing canonical names where available rather than creating competing lifecycle semantics.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5762-scope-03",
           "section": "Implementation scope",
           "requirement": "Attach identity/revision and receipt references only from authenticated authoritative session/producer objects. Explicitly represent unavailable binding/evidence; never infer it from a familiar display name, assistant text, hook payload, or client-provided `actor`, `audience`, `approved`, or `verified` field.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5762-scope-04",
           "section": "Implementation scope",
           "requirement": "Implement a single server disclosure/projection boundary for this event family. Schema-aware safe-field selection precedes SSE, replay-buffer retention, persisted presentation payloads, and telemetry. Apply secret redaction to summaries, titles, arguments, outputs, URLs, and diagnostics; unclassified payloads default to metadata-only. Never rely on browser masking or truncation as redaction.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#server-disclosure"
+          }
         },
         {
           "id": "5762-scope-05",
           "section": "Implementation scope",
           "requirement": "Treat streamed preview fragments as a leakage boundary: buffer/classify complete safe units or use a tested stateful redactor so secrets split across chunks never reach the client. Keep opaque provider reasoning/signatures outside the display union and preserve required provider continuation state unchanged in its existing execution boundary.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#server-disclosure"
+          }
         },
         {
           "id": "5762-scope-06",
           "section": "Implementation scope",
           "requirement": "Document the producer-to-Cave mapping and trust level for every exposed state. Coven/Threads remain authoritative for execution and protected changes; Psyche owns orchestration; Runtimes owns capability descriptors; SDK mirrors accepted public contracts. Any producer gap is an explicit upstream dependency, not a new Cave ledger or browser-controlled approval system.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5762-acceptance-01",
           "section": "Acceptance and red-to-green evidence",
           "requirement": "Runtime validators reject malformed or contradictory new events before projection; unknown optional event versions leave plain chat usable and show a safe unavailable-detail state.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5762-acceptance-02",
           "section": "Acceptance and red-to-green evidence",
           "requirement": "Golden serialization/decoding fixtures pin new/legacy behavior, multiple reasoning blocks, missing provenance, and all tool lifecycle distinctions.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5762-acceptance-03",
           "section": "Acceptance and red-to-green evidence",
           "requirement": "Adversarial fixtures using forged receipts, `<thinking>`/`<coven:...>` text, malicious tool output, and caller-supplied disclosure fields cannot generate trusted UI authority.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5762-acceptance-04",
           "section": "Acceptance and red-to-green evidence",
           "requirement": "Secret/PII sentinels, including split UTF-8 chunks and signed URLs, are absent from display-event bytes, buffer contents, persisted projections, and ordinary logs. Unknown disclosure policy withholds content rather than failing open.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#server-disclosure"
+          }
         },
         {
           "id": "5762-acceptance-05",
           "section": "Acceptance and red-to-green evidence",
           "requirement": "Existing tool payload byte limits, parallel-call identity, deduplication, and historical rendering remain covered; migration does not discard old answers or synthesize execution evidence.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         },
         {
           "id": "5762-acceptance-06",
           "section": "Acceptance and red-to-green evidence",
           "requirement": "Add the contract/disclosure fixtures to the existing test registry and document exact producer schema versions and ownership decisions in a scoped design document.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          }
         }
       ],
       "primaryBlocker": "Producer-aligned typed disclosure, provenance and full adversarial retention evidence are not fully qualified.",
@@ -342,79 +507,144 @@
           "id": "5763-scope-01",
           "section": "Implementation",
           "requirement": "Inventory supported launch paths at the current main revision: direct local, Coven-backed, SSH, and configured API/bridge paths. Record runtime version, selected model where known, adapter/schema revision, reasoning representation, tool-event coverage, approval interception, and provenance level. Provider API documentation alone does not establish that its CLI exposes the same events.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5763-scope-02",
           "section": "Implementation",
           "requirement": "Route provider-designated displayable summaries and progress through the new typed event seam, preserving block IDs and native delta-versus-snapshot semantics. Support multiple reasoning blocks interleaved with prose/tools. Keep commentary, reasoning summary, and final answer distinct. Never request hidden chain-of-thought or treat encrypted/signature fields as text.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5763-scope-03",
           "section": "Implementation",
           "requirement": "Map tool argument construction, complete request, execution start, result, error, retry, and cancellation only to states supported by actual runtime evidence. Streaming arguments are not execution. Preserve native call IDs within the correct run; correlate attempts separately. Keep hook/envelope deduplication and parallel same-name calls intact; ambiguous correlation remains visibly uncertain rather than merging unrelated calls.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5763-scope-04",
           "section": "Implementation",
           "requirement": "Pass every projection through #5762 before retaining/emitting it. Do not create a raw payload diagnostic fallback. Preserve required opaque provider continuation state unchanged within existing execution storage; sanitized presentation objects must not replace provider replay objects.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#server-disclosure"
+          }
         },
         {
           "id": "5763-scope-05",
           "section": "Implementation",
           "requirement": "Use accepted Runtimes descriptors and negotiated capabilities, not model-name heuristics. Unsupported, unknown, disabled, and provider-withheld reasoning are distinguishable. An unsupported detail path preserves plain chat with a safe diagnostic; a missing protected authorization capability must not silently enable an unsafe write.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5763-scope-06",
           "section": "Implementation",
           "requirement": "Map authoritative decision/receipt references only where the producer provides them. Any protected-action producer gap must be tracked with Coven/Threads/SDK ownership before enabling corresponding controls. A hook, assistant statement, or CLI exit code cannot be promoted into an authorization or commit receipt.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5763-acceptance-01",
           "section": "Acceptance fixtures",
           "requirement": "At least one supported runtime yields summary → tool request/start → result → second summary → final answer through the real route using deterministic synthetic upstream traffic.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5763-acceptance-02",
           "section": "Acceptance fixtures",
           "requirement": "Every claimed supported runtime/path has fixture-backed coverage; unavailable installed runtimes or credentials remain explicitly unverified in the matrix.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5763-acceptance-03",
           "section": "Acceptance fixtures",
           "requirement": "Parallel same-name calls with different arguments, duplicate hook/envelope reports, result-before-start, late results, and retries retain correct IDs and terminal states.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5763-acceptance-04",
           "section": "Acceptance fixtures",
           "requirement": "Chunk boundaries through UTF-8, malformed/truncated JSON, complete snapshots after deltas, and unknown event variants neither duplicate prose nor leak protocol data into answers.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5763-acceptance-05",
           "section": "Acceptance fixtures",
           "requirement": "Reasoning unavailable/withheld/disabled produces an honest state, not an endless spinner or manufactured explanation.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5763-acceptance-06",
           "section": "Acceptance fixtures",
           "requirement": "Opaque reasoning/signature fixtures survive a simulated provider continuation unchanged while their bytes remain absent from SSE, transcript previews, and ordinary logs.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#server-disclosure"
+          }
         },
         {
           "id": "5763-acceptance-07",
           "section": "Acceptance fixtures",
           "requirement": "Direct, Coven-backed, and SSH paths preserve their current authorization and environment boundaries; no provider path bypass is added to achieve UI parity.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         }
       ],
       "primaryBlocker": "Canonical Codex/Grok admission, real Hermes provider, OpenCode permission and remote-path evidence remain unverified.",
@@ -436,79 +666,144 @@
           "id": "5764-scope-01",
           "section": "Scope",
           "requirement": "Carry #5762's safe block/call/attempt IDs, source and disclosure metadata, terminal state, and ordering through the existing transcript store and read projections. Update cloning, history decoding, reload, and live-to-persisted reconciliation together. Legacy `reasoning`/tool records must remain readable with explicitly unknown provenance; never backfill invented IDs as provider evidence.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5764-scope-02",
           "section": "Scope",
           "requirement": "Make per-run sequence/cursor handling idempotent for duplicate chunks, duplicate terminal frames, and overlap between replay and live tail. Define ordering in one authoritative scope, not by client wall-clock timestamps. Preserve interleaving under `assistant_replace`, tool offset correction, Unicode text, and multiple reasoning blocks.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5764-scope-03",
           "section": "Scope",
           "requirement": "On an evicted cursor, expired buffer, server restart, or missing run, expose the existing gap/reconciling state and recover from an authorized canonical transcript/snapshot where available. An incomplete snapshot remains incomplete. Do not claim durable event replay from the process-local ring or silently present missing history as a complete trace.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5764-scope-04",
           "section": "Scope",
           "requirement": "Distinguish transport completion, generation completion, persisted projection success, and external-effect confirmation. A persistence failure must be visible. A disconnected client does not establish tool failure, and a process exit does not settle every open tool as successful. Unknown external outcomes require reconciliation before any retry capable of another side effect.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5764-scope-05",
           "section": "Scope",
           "requirement": "Partition live/history/output caches and subscriptions by authenticated access scope and exact run/conversation/authorized familiar binding. Session aliases and follow-up runs cannot adopt another run's events. Recheck authorization for history, reconnect, lazy detail and export; invalidate/restrict cached content after access revocation or policy changes.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#delegated-access"
+          }
         },
         {
           "id": "5764-scope-06",
           "section": "Scope",
           "requirement": "Apply #5762 before buffering and storage. Preserve finite retention and existing caps; represent truncation/eviction/withholding explicitly. Operational metrics contain IDs/status/timing, not duplicated text. Keep provider-opaque continuation state separate. Do not add another database or audit authority.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#server-disclosure"
+          }
         },
         {
           "id": "5764-acceptance-01",
           "section": "Acceptance",
           "requirement": "The same synthetic run produces equivalent ordered safe blocks/tool outcomes live, after replay, and after reopening history, with no duplicated tool cards or reasoning text.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5764-acceptance-02",
           "section": "Acceptance",
           "requirement": "Duplicate and out-of-order frames, result-before-start, retries, cancellation, lost final frame, and concurrent same-name calls preserve call/attempt identity and honest state.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5764-acceptance-03",
           "section": "Acceptance",
           "requirement": "Reconnect and history reads invoke no tool dispatch. A side-effect counter stays unchanged across repeated reconnects, expired-cursor recovery, and reloads.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5764-acceptance-04",
           "section": "Acceptance",
           "requirement": "Buffer eviction and server restart visibly report gaps until verified recovery; no unsupported promise of exactly-once execution or complete historical trace.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5764-acceptance-05",
           "section": "Acceptance",
           "requirement": "A final answer followed by persistence failure remains distinguishable from a durably saved turn. Recovered terminal state does not regress to running on late duplicates.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5764-acceptance-06",
           "section": "Acceptance",
           "requirement": "Session/familiar switching, concurrent runs, revoked access, guessed IDs, stale caches, and delayed old responses cannot disclose or merge another scope's activity.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#delegated-access"
+          }
         },
         {
           "id": "5764-acceptance-07",
           "section": "Acceptance",
           "requirement": "Old transcripts retain their content and visibility preferences; large outputs remain lazy-loaded with request-time authorization. Deleted/expired payloads cannot be resurrected by stale cache or exports.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#privacy-export"
+          }
         }
       ],
       "primaryBlocker": "Durable no-repeat-side-effect counter, restart/eviction/revocation and full persistence-failure recovery evidence remain unverified.",
@@ -530,85 +825,155 @@
           "id": "5765-scope-01",
           "section": "Product decisions and scope",
           "requirement": "Add a compact Activity summary and chronological disclosure over #5762 events. Render provider reasoning summaries/progress separately from observed tool calls/results and separately from Cave-generated activity descriptions. Missing/withheld reasoning is explicit when relevant, not an empty block or perpetual Thinking indicator. A summary is not a faithful private thought transcript.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#rendered"
+          }
         },
         {
           "id": "5765-scope-02",
           "section": "Product decisions and scope",
           "requirement": "**Preserve #5454:** reasoning is on when the saved preference is absent, off for the explicit opt-out, and on for the explicit opt-in. Do not silently adopt the research report's collapsed-reasoning default. The compact Activity container and safe tool-output disclosure can be collapsed without overriding this existing reasoning preference. Any default change needs a separate owner-approved decision.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#preference-hydration"
+          }
         },
         {
           "id": "5765-scope-03",
           "section": "Product decisions and scope",
           "requirement": "Show multiple reasoning blocks interleaved with prose and tools, not a single detached field. Keep stable block/call/attempt identity through live updates, snapshots, replay, and history. Distinguish parallel same-name tools and preserve retry history rather than overwriting earlier failures.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5765-scope-04",
           "section": "Product decisions and scope",
           "requirement": "Tool cards show action/target, requested versus executing state, safe argument/result previews, duration when measured, and error/cancellation/unknown outcome. Withheld, truncated, expired, unsupported, and inaccessible are distinct from empty. Never infer read/write semantics solely from a tool's display name; consume validated metadata.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#rendered"
+          }
         },
         {
           "id": "5765-scope-05",
           "section": "Product decisions and scope",
           "requirement": "Pending approval and consequential actions stay discoverable even when reasoning/details are hidden. Show exact action, target, scope, and relevant safe preview; resolve decisions only through the existing authenticated authority endpoint. A click remains pending until server confirmation. Stale/revoked/double-submitted approval and changed action payload must be rejected or re-proposed by the authority. No new browser-owned authorization or optimistic committed state.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#approval-producer"
+          }
         },
         {
           "id": "5765-scope-06",
           "section": "Product decisions and scope",
           "requirement": "Preserve #5520's model-marker proposal-review cards as evidence-only; do not add approve/deny authority to that marker path. Model prose/HTML/tool output cannot impersonate trusted receipt/status chrome. Expose authoritative receipt links only when verified through the existing backend; explain unavailable evidence.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#rendered"
+          }
         },
         {
           "id": "5765-scope-07",
           "section": "Product decisions and scope",
           "requirement": "Reuse existing inspection surfaces before adding a new panel. Provide a lazily loaded detailed view with safe inputs/results, source/receipt references, call/attempt IDs, timings, and filtering. Desktop side panel and narrow-screen sheet must render the same authorized projection. Copy/export must recheck current disclosure policy server-side; a developer-mode toggle is not authorization. Never add a raw-thinking/raw-payload bypass.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#privacy-export"
+          }
         },
         {
           "id": "5765-scope-08",
           "section": "Product decisions and scope",
           "requirement": "Preserve focus, scroll anchoring, and user-expanded state. Do not auto-collapse an actively read block on completion. Announce semantic milestones using `useAnnouncer()`; no per-token live-region chatter. Use native disclosure buttons/accessible names, focus return, semantic status text, reduced motion, localized full messages, and direction-safe layout.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#human-accessibility"
+          }
         },
         {
           "id": "5765-acceptance-01",
           "section": "Acceptance",
           "requirement": "Fixture-backed browser tests prove reasoning → parallel tools → retry/error → final answer live and after history reload, including explicit no-summary capability.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#composite"
+          }
         },
         {
           "id": "5765-acceptance-02",
           "section": "Acceptance",
           "requirement": "Fresh/default/opt-out preferences and hydration do not flash or silently invert. Hidden reasoning never hides an approval or failed consequential action.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#preference-hydration"
+          }
         },
         {
           "id": "5765-acceptance-03",
           "section": "Acceptance",
           "requirement": "Forged model markers, script/HTML payloads, hostile links, guessed receipt IDs, and client-set privileges cannot create trusted events, unsafe rendering, or unauthorized detail access.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#delegated-access"
+          }
         },
         {
           "id": "5765-acceptance-04",
           "section": "Acceptance",
           "requirement": "Denied, stale, expired, revoked, and already-resolved approvals remain distinct from successful execution; no action is shown committed without the required evidence.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#approval-producer"
+          }
         },
         {
           "id": "5765-acceptance-05",
           "section": "Acceptance",
           "requirement": "Keyboard, focus return, screen-reader status milestones, reduced motion, phone layout, long URLs/JSON, large traces, and expand/collapse scroll behavior are exercised. Use current design tokens and the section 9 shipping checklist.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#human-accessibility"
+          }
         },
         {
           "id": "5765-acceptance-06",
           "section": "Acceptance",
           "requirement": "Large results remain lazy and bounded; trace updates do not remount the full transcript. Measure baseline versus candidate on the same production fixture and prevent regressions to existing performance gates.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#large-trace"
+          }
         }
       ],
       "primaryBlocker": "Packaged desktop, performance comparison and human keyboard/screen-reader acceptance remain unverified.",
@@ -630,85 +995,155 @@
           "id": "5766-scope-01",
           "section": "Implementation",
           "requirement": "Trace the existing native network decoder → chat model/reducer → transcript/disclosure → persisted history path. Record exact touched Swift files before implementation. Decode #5762's additive event fields and backward-compatible legacy forms; consume the same golden corpus as TypeScript rather than maintaining an independent vocabulary.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#native-contract"
+          }
         },
         {
           "id": "5766-scope-02",
           "section": "Implementation",
           "requirement": "Keep stable run/turn/reasoning-block/tool-call/attempt identity and ordering. Account explicitly for Swift string indexing versus JavaScript UTF-16 offsets so emoji, combining characters, and non-Latin text cannot move tool cards into the wrong prose segment. If wire order supersedes offsets, implement the same mapping on both clients.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#native-contract"
+          }
         },
         {
           "id": "5766-scope-03",
           "section": "Implementation",
           "requirement": "Render separate provider-summary/progress and observed tool cards. Show safe input/result previews, retries, errors, cancellation requested versus confirmed, source/receipt provenance, truncation, and unsupported/withheld detail. Offer a native full-height detail sheet with lazy authorized loading, predictable dismissal/focus return, and no raw payload bypass.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#native-live-layout"
+          }
         },
         {
           "id": "5766-scope-04",
           "section": "Implementation",
           "requirement": "Follow the visibility semantics preserved by #5454 and #5765: do not silently disable reasoning on new installs or overwrite an explicit existing preference. Document any native preference migration separately from the web storage key. Pending approvals and consequential failures remain visible even when reasoning/details are hidden.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#preference-hydration"
+          }
         },
         {
           "id": "5766-scope-05",
           "section": "Implementation",
           "requirement": "Bind approval actions only to existing authenticated server decision endpoints and exact displayed action/revision. Denied, stale, revoked, expired, or already-resolved decisions cannot look executed. Keep marker-based proposal reviews evidence-only. Unsupported authority paths remain unavailable rather than being implemented locally in Swift.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#approval-producer"
+          }
         },
         {
           "id": "5766-scope-06",
           "section": "Implementation",
           "requirement": "Exercise app backgrounding, network switch, reconnect gap, server restart, opening another conversation/familiar, and navigation away during streaming. Reconcile with #5764 without replaying tools or adopting stale cross-scope responses. Show disconnected/reconciling/unknown states and keep current authorization checks on detail reads.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#native-live-layout"
+          }
         },
         {
           "id": "5766-scope-07",
           "section": "Implementation",
           "requirement": "Announce meaningful state transitions with VoiceOver, not every streamed token. Support Dynamic Type, reduced motion, non-color status labels, comfortable touch targets, localized messages, and bidirectional text. Preserve user scroll position on expand/collapse and sharply shrinking content; no blank transcript or lost focus.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#human-accessibility"
+          }
         },
         {
           "id": "5766-scope-08",
           "section": "Implementation",
           "requirement": "Keep safe trace contents out of lock-screen notifications, Live Activities, diagnostic logs, and analytics unless independently authorized by the existing privacy policy. Activity details do not gain disclosure rights merely by entering a native shared container.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#privacy-export"
+          }
         },
         {
           "id": "5766-acceptance-01",
           "section": "Acceptance",
           "requirement": "Shared corpus yields semantically equivalent native/web block order, statuses, provenance, and redaction, including legacy transcripts and unsupported-summary runtimes.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#native-contract"
+          }
         },
         {
           "id": "5766-acceptance-02",
           "section": "Acceptance",
           "requirement": "Native unit/UI tests cover live → background → reconnect → completion → history reload, repeated reconnect without repeat side effects, and session/familiar changes with delayed old events.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#native-live-layout"
+          }
         },
         {
           "id": "5766-acceptance-03",
           "section": "Acceptance",
           "requirement": "Unicode interleaving, large outputs, long-running parallel calls, retry, and collapse/height-shrink cases preserve readable layout and stable scroll/focus.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#native-live-layout"
+          }
         },
         {
           "id": "5766-acceptance-04",
           "section": "Acceptance",
           "requirement": "Secret and opaque provider-state sentinels are absent from native payload projections, previews, logs, notifications, and unauthorized caches.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#privacy-export"
+          }
         },
         {
           "id": "5766-acceptance-05",
           "section": "Acceptance",
           "requirement": "Human VoiceOver pass records observations for reasoning disclosure, tool details, approval/rejection, error/retry, reconnect, and history. Simulator accessibility-tree checks do not replace this evidence.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#human-accessibility"
+          }
         },
         {
           "id": "5766-acceptance-06",
           "section": "Acceptance",
           "requirement": "Build-generated markdown assets are present in the tested app. Native Release smoke/performance evidence is retained; unavailable physical-device/VoiceOver checks remain explicit blockers for a native-complete claim.",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#native-live-layout"
+          }
         }
       ],
       "primaryBlocker": "Full native matrix remains unverified; physical-device performance and human VoiceOver are explicitly pending at Val's request.",
@@ -730,163 +1165,298 @@
           "id": "5767-harness-01",
           "section": "Harness and scope",
           "requirement": "Extend the existing test runner, Playwright configuration, real-daemon harnesses, and native `CovenCaveTests`/`CovenCaveUITests`. Use isolated temporary HOME/project/state and controlled non-production tools with a durable invocation counter.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#harness"
+          }
         },
         {
           "id": "5767-harness-02",
           "section": "Harness and scope",
           "requirement": "Create one shared versioned scenario corpus for producer normalization, TypeScript reducers, native decoders, and end-to-end assertions. Reuse relevant existing compatibility cases instead of copying provider parsers into test mocks.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#harness"
+          }
         },
         {
           "id": "5767-harness-03",
           "section": "Harness and scope",
           "requirement": "Intercept only the external provider/tool boundary for deterministic tests; do not mock away server authorization, persistence, replay, or the browser's actual send/history paths in the production-path gate.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#harness"
+          }
         },
         {
           "id": "5767-harness-04",
           "section": "Harness and scope",
           "requirement": "Record a capability matrix by runtime, version, model where known, schema revision, launch path, and client. Distinguish fixture-conformant, real-daemon-verified, real-provider-verified, unsupported, and unverified. An API vendor name is not evidence that every CLI/path works.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#runtime-matrix"
+          }
         },
         {
           "id": "5767-golden-01",
           "section": "Required golden scenarios",
           "requirement": "Summary → tool → second summary → final answer → Ordered blocks and correct states live and after reopening history",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#rendered"
+          }
         },
         {
           "id": "5767-golden-02",
           "section": "Required golden scenarios",
           "requirement": "No/disabled/withheld reasoning; opaque continuation state → Honest capability state; no invented thinking or opaque bytes in any display/log/export",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#privacy-export"
+          }
         },
         {
           "id": "5767-golden-03",
           "section": "Required golden scenarios",
           "requirement": "Parallel same-name calls; result before start; duplicate hooks/envelopes → Separate call/attempt identity, one correlated card, no result loss or false success",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5767-golden-04",
           "section": "Required golden scenarios",
           "requirement": "Delta/snapshot replacement and Unicode chunk boundaries → No duplicated text or misplaced tool/summary blocks, including Swift/JS indexing differences",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5767-golden-05",
           "section": "Required golden scenarios",
           "requirement": "Tool error, retry, cancellation request/acknowledgment → Earlier failures retained; requested cancellation never presented as confirmed effect rollback",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#golden-05"
+          }
         },
         {
           "id": "5767-golden-06",
           "section": "Required golden scenarios",
           "requirement": "Transport drop before/after tool completion and lost final frame → Replay/history recovery with unchanged side-effect counter",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#golden-06"
+          }
         },
         {
           "id": "5767-golden-07",
           "section": "Required golden scenarios",
           "requirement": "Ring eviction, expired cursor, server restart, incomplete snapshot → Explicit gap/reconciling/unavailable state until evidence supports completeness",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5767-golden-08",
           "section": "Required golden scenarios",
           "requirement": "Final answer followed by persistence failure → Visible unsaved/recovery condition, not a durable-success claim",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#recovery"
+          }
         },
         {
           "id": "5767-golden-09",
           "section": "Required golden scenarios",
           "requirement": "Permit / Degrade to Proposal / Reject → UI reflects authoritative decision; proposed or rejected work never appears committed",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#approval-producer"
+          }
         },
         {
           "id": "5767-golden-10",
           "section": "Required golden scenarios",
           "requirement": "Approval denied/expired/revoked; action/revision changes; double submission → Authoritative gate rejects stale/replayed authorization; at most one admitted controlled action",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#approval-producer"
+          }
         },
         {
           "id": "5767-golden-11",
           "section": "Required golden scenarios",
           "requirement": "Guessed run/detail IDs; access revocation; delayed previous-session frames → No cross-principal/project/session/familiar data leakage or cache adoption",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#golden-11"
+          }
         },
         {
           "id": "5767-golden-12",
           "section": "Required golden scenarios",
           "requirement": "Hostile tool output, fake receipt/approval markers, unsafe HTML/URLs → Text stays untrusted; no script execution, authority spoofing, or automatic follow-on action",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#golden-12"
+          }
         },
         {
           "id": "5767-golden-13",
           "section": "Required golden scenarios",
           "requirement": "Secrets split across chunks; private tool results; opaque signatures → Sentinel absence from network display payloads, retained projections, ordinary logs, caches, copy/export, and native notifications",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#privacy-export"
+          }
         },
         {
           "id": "5767-golden-14",
           "section": "Required golden scenarios",
           "requirement": "Oversized/deep payloads, long traces, lazy-output access denial → Existing bounds hold; truncation/withholding explicit; UI remains responsive",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#large-trace"
+          }
         },
         {
           "id": "5767-golden-15",
           "section": "Required golden scenarios",
           "requirement": "Legacy transcript, default-on/explicit-off preference, hydration → Existing content and #5454 behavior preserved without a flash or implicit policy change",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#preference-hydration"
+          }
         },
         {
           "id": "5767-golden-16",
           "section": "Required golden scenarios",
           "requirement": "Desktop/native navigation, iOS background/foreground and shrinking content → No blank transcript, stuck generation, repeat tool dispatch, or lost reading position",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#native-live-layout"
+          }
         },
         {
           "id": "5767-golden-17",
           "section": "Required golden scenarios",
           "requirement": "Keyboard, VoiceOver, reduced motion, large text, narrow/RTL layout → Usable disclosure and approval, stable focus, milestone-only announcements",
-          "status": "not-fully-qualified"
+          "status": "deferred",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#human-accessibility"
+          }
         },
         {
           "id": "5767-scope-01",
           "section": "Evidence, observability, and rollout",
           "requirement": "Keep a sanitized E2E evidence packet per exact candidate: commit/build IDs, daemon/runtime/adapter versions, OS/device/browser, exact commands, scenario results, first-attempt failures and retry counts, screenshots/video, event/receipt references, and explicit omissions. Do not include credentials or private conversations.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#packet"
+          }
         },
         {
           "id": "5767-scope-02",
           "section": "Evidence, observability, and rollout",
           "requirement": "Run at least one real-daemon supported-runtime vertical slice and packaged desktop smoke in addition to deterministic fixtures. Native claims require actual native tests and the human VoiceOver observations from #5766. Missing providers/devices/credentials are unverified, never silent passes.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#harness"
+          }
         },
         {
           "id": "5767-scope-03",
           "section": "Evidence, observability, and rollout",
           "requirement": "Record content-minimized timing/correlation diagnostics for first activity, tool latency, replay gaps, projection failures, and rendering cost. Use existing observability/OTel facilities where present; no new telemetry service or full-payload export by default. Displayed source references or model-input inclusion do not prove that a tool causally influenced an answer; do not assert such influence without evidence.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#diagnostics"
+          }
         },
         {
           "id": "5767-scope-04",
           "section": "Evidence, observability, and rollout",
           "requirement": "Measure baseline/candidate performance on identical production fixtures, preserve existing performance/bundle gates, and document optional batching/virtualization changes. Approvals and critical failures cannot be hidden behind non-critical batching.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#performance"
+          }
         },
         {
           "id": "5767-scope-05",
           "section": "Evidence, observability, and rollout",
           "requirement": "Roll out with the repository's existing capability/feature-gating mechanism. Rollback can disable the new presentation/unsupported capability, never bypass disclosure or protected authorization. Do not add legacy OpenClaw support as a prerequisite for proving unrelated supported paths; preserve its separate #4892 release gate.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#rollout-docs"
+          }
         },
         {
           "id": "5767-scope-06",
           "section": "Evidence, observability, and rollout",
           "requirement": "Publish supported-path documentation and known limitations with the feature. Close the epic only when its supported scope is explicitly satisfied; unresolved native/security/producer gaps must be resolved or the corresponding support claim must remain disabled and explicitly deferred.",
-          "status": "not-fully-qualified"
+          "status": "qualified",
+          "historicalStatus": "not-fully-qualified",
+          "qualification": {
+            "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
+            "decision": "runtime-activity-2026-10-18/decisions.json#rollout-docs"
+          }
         }
       ],
       "primaryBlocker": "Full exact-candidate golden corpus, durable controlled action and packaged/native evidence remain unverified.",
@@ -916,5 +1486,17 @@
     "disclosureAndDesktopPartial": "docs/design/evidence/runtime-activity-disclosure-desktop-2026-10-05.json",
     "hermesReorderedResults": "docs/design/evidence/runtime-activity-hermes-reordered-2026-10-05.json",
     "desktopLiveParallel": "docs/design/evidence/runtime-activity-desktop-parallel-2026-10-05.json"
+  },
+  "currentQualification": {
+    "recordedAt": "2026-10-18",
+    "packet": "runtime-activity-2026-10-18/packet.json",
+    "decisions": "runtime-activity-2026-10-18/decisions.json",
+    "sourceOid": "64c5658ebf4fcb381fc7270fc15fae379a1fec76",
+    "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+    "policy": "Qualified means the decision entry’s explicit controlled scope. Deferred entries retain missing evidence, owner and imperative next step; this does not close any issue or qualify other paths.",
+    "counts": {
+      "qualified": 66,
+      "deferred": 48
+    }
   }
 }

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-10-18T08:15:04.608Z",
+  "destination": "84FABA82-4947-46A7-92A2-AC97511E6CEA",
+  "fixtureId": "f365e600-96fa-4208-9960-4ed97e603ae5",
+  "candidate": {
+    "head": "64c5658ebf4fcb381fc7270fc15fae379a1fec76",
+    "sourceBefore": "4be7d9aad0388c8ca57db8cd7a39ce029fdf1992f3d3df15cdae4969220d336e",
+    "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+    "sourceAfter": "4be7d9aad0388c8ca57db8cd7a39ce029fdf1992f3d3df15cdae4969220d336e"
+  },
+  "host": {
+    "node": "v24.18.1",
+    "xcode": "Xcode 26.6\nBuild version 17F113"
+  },
+  "scenario": "hermes-summary-tool-reconnect-restart-native-supervisor-history",
+  "classification": "real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider",
+  "passed": true,
+  "providerRequests": 1,
+  "toolInvocations": 1,
+  "limitations": [
+    "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+    "UI starts from an accepted-delivery fixture and uses real recovery/history/output; not managed pairing, human VoiceOver, physical-device performance or a real provider.",
+    "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+  ],
+  "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+  "daemon": {
+    "pid": 56753,
+    "version": "coven v0.4.9 (engine coven-code 0.8.0, pinned 0.8.0)"
+  },
+  "ingressRefusalsVerified": true,
+  "realDaemonRosterVerified": true,
+  "restart": {
+    "previousPid": 57485,
+    "newPid": 24093,
+    "previousStopped": true,
+    "sameOrigin": true,
+    "ingressRefusalsVerified": true
+  },
+  "savedConversations": 1,
+  "uiOutage": {
+    "previousPid": 24093,
+    "previousStopped": true
+  },
+  "uiRestart": {
+    "previousPid": 24093,
+    "newPid": 38410,
+    "previousStopped": true,
+    "sameOrigin": true
+  },
+  "uiCompletionReceived": true,
+  "renderedRecoveryVerified": true,
+  "sceneSupervisorRecoveryVerified": true,
+  "liveUISendTerminationHydrationVerified": false,
+  "serverStopped": true,
+  "providerStopped": true,
+  "daemonStopped": true,
+  "noDaemonState": true,
+  "fixtureRootRemoved": true,
+  "sourceUnchanged": true,
+  "finishedAt": "2026-10-18T08:18:40.092Z",
+  "rawReportSha256": "85b34203136057655321af140c171d8c2694a2fdefa8e6c0885a6d15e3155d1a"
+}
