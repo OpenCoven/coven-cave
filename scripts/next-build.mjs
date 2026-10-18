@@ -7,6 +7,7 @@
 // 'useContext')" while CI, with NODE_ENV unset, stayed green. A build is a
 // production build, so this pins NODE_ENV and says so when it overrides one.
 
+import { BUILD_GATE_EXIT_CODE } from "./build-gate-exit.mjs";
 import { applyInstrumentationTraceExclusions, instrumentationTraceLeaks } from "./instrumentation-trace.mjs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -38,13 +39,16 @@ export function instrumentationLeakReport(leaks, shown = 20) {
   return lines.join("\n");
 }
 
-/** Post-build pass: read the raw trace's leaks, then apply the exclusions. Returns the exit status. */
+/**
+ * Post-build pass: read the raw trace's leaks, then apply the exclusions. Returns the exit
+ * status: a leak is a deterministic build-gate failure, so CI's build retry stops on it (#6087).
+ */
 export async function finishBuild(root, { error = console.error } = {}) {
   const leaks = await instrumentationTraceLeaks(root);
   await applyInstrumentationTraceExclusions(root);
   if (leaks.length === 0) return 0;
   error(instrumentationLeakReport(leaks));
-  return 1;
+  return BUILD_GATE_EXIT_CODE;
 }
 
 async function main() {

@@ -50,7 +50,7 @@ test("PR checks is an always-reporting merge-ref Linux gate during migration", a
   ]);
   assert.doesNotMatch(
     job.steps.map((step) => step.run ?? "").join("\n"),
-    /\bpnpm build\b|\bcargo\b|\bplaywright\b|conformance|sidecar|xcodebuild/i,
+    /\bpnpm build\b|build-with-retry|\bcargo\b|\bplaywright\b|conformance|sidecar|xcodebuild/i,
     "deferred validation must not consume routine PR capacity",
   );
 });
@@ -106,10 +106,9 @@ test("candidate validation requires signed tag provenance and calls every deferr
   assert.deepEqual(full.jobs.frontend.env, {
     NEXT_PUBLIC_CAVE_CRAFTS: "1",
   });
-  assert.match(
-    full.jobs.frontend.steps.find((step) => /\bpnpm build\b/.test(step.run ?? ""))?.run ?? "",
-    /for attempt in 1 2 3; do[\s\S]*pnpm build[\s\S]*rm -rf \.next/,
-    "candidate frontend validation retains the Turbopack retry",
+  assert.ok(
+    full.jobs.frontend.steps.some((step) => step.run === "node scripts/build-with-retry.mjs"),
+    "candidate frontend validation retains the Turbopack retry (scripts/build-with-retry.mjs, #6087)",
   );
   assert.match(
     full.jobs.rust.steps.map((step) => step.run ?? "").join("\n"),
@@ -284,7 +283,8 @@ test("release and candidate validation run the Client v1 gates after the web bui
   ];
   for (const [label, job] of jobs) {
     const runs = job.steps.map((step) => step.run ?? "");
-    const build = runs.findIndex((run) => /\bpnpm build\b/.test(run));
+    // The web build runs through the shared flake retry (#6087).
+    const build = runs.findIndex((run) => /\bpnpm build\b/.test(run) || run === "node scripts/build-with-retry.mjs");
     const fixture = runs.findIndex((run) =>
       run.includes("node scripts/export-client-v1-contract.mjs --check"),
     );

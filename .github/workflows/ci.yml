@@ -534,20 +534,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build with Turbopack flake retry
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            if pnpm build; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "::warning::pnpm build attempt $attempt failed; retrying with clean .next"
-              rm -rf .next
-            fi
-          done
-          echo "::error::pnpm build failed after 3 attempts"
-          exit 1
+        # Retries Turbopack flakes; a build-gate failure (exit 78) is not retried (#6087).
+        run: node scripts/build-with-retry.mjs
 
   frontend-e2e:
     name: Frontend E2E (${{ matrix.shard }}/8)

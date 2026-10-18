@@ -218,7 +218,7 @@ After Phase 3 merges:
 | pnpm store | `actions/setup-node` with `cache: pnpm` (keyed by `pnpm-lock.yaml`) | shared across `PR checks` and every `full-validation` leg |
 | Rust target | `Swatinem/rust-cache` with `workspaces: src-tauri -> target` | `rust` leg, `runtime` legs, `windows-native` leg |
 | Playwright browsers | installed per job with `--with-deps chromium webkit` (version pinned by lockfile; not cached) | `e2e`, `e2e-agentic` |
-| `.next` build | not cached; Turbopack flake retry (3 attempts, clean `.next` between) | frontend leg only |
+| `.next` build | not cached; Turbopack flake retry (`scripts/build-with-retry.mjs`: 3 attempts, clean `.next` between; a build-gate failure, exit 78, is not retried) | frontend leg only |
 
 Caching exists to cut wall-clock, never to relax correctness: every leg runs
 `pnpm install --frozen-lockfile` against the exact lockfile and `--locked`
