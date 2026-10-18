@@ -164,6 +164,7 @@ import { runtimeDisplayName } from "@/components/runtime-logo";
 import { Popover, PopoverBody } from "@/components/ui/popover";
 import { ChatSendLater } from "@/components/chat-send-later";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { useToolMilestones } from "@/lib/use-tool-milestones";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
@@ -2399,6 +2400,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
   const { announce } = useAnnouncer();
+  useToolMilestones(turns.findLast((turn) => turn.role === "assistant"));
   // "Start a task" (card-follows-chat): the starting page arms this, and the
   // stream's "session" event — where the session id is born — creates the
   // linked board card from the first prompt. State renders the armed chip; the

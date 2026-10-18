@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/chat-tool-milestones.test.ts",
     "src/app/api/chat/scheduled/route.test.ts",
     "src/components/chat-send-later.test.ts",
     "src/lib/server/scheduled-chat-store.test.ts",
