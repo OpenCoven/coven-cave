@@ -1499,6 +1499,7 @@ export const SUITES = {
     "scripts/dependency-policy.test.mjs",
     "scripts/build-sandbox-runtime.test.mjs",
     "scripts/next-build.test.mjs",
+    "scripts/build-with-retry.test.mjs",
     "scripts/instrumentation-trace.test.mjs",
     "scripts/dev-app.test.mjs",
     "scripts/dev-app-origin-health.test.mjs",

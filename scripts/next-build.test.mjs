@@ -4,6 +4,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { BUILD_GATE_EXIT_CODE } from "./build-gate-exit.mjs";
 import { finishBuild, instrumentationLeakReport, nodeEnvOverrideNotice, productionBuildEnv } from "./next-build.mjs";
 
 test("the build always runs with NODE_ENV=production (#5701)", () => {
@@ -48,7 +49,8 @@ test("a clean instrumentation trace finishes the build (#6082)", async t => {
 test("excluded checkout files in the raw trace fail the build after the exclusion pass (#6082)", async t => {
   const root = await buildFixture(t, ["../../.git/objects/pack/pack-1.idx", "../../src/app/api/config/route.ts", "../../marketplace/payloads.json"]);
   const errors = [];
-  assert.equal(await finishBuild(root, { error: message => errors.push(message) }), 1);
+  // The build-gate status, so CI's flake retry stops instead of rebuilding (#6087).
+  assert.equal(await finishBuild(root, { error: message => errors.push(message) }), BUILD_GATE_EXIT_CODE);
   assert.equal(errors.length, 1);
   assert.match(errors[0], /lists 2 checkout file\(s\) that outputFileTracingExcludes covers \(#6082\)/);
   assert.match(errors[0], /^  \.git\/objects\/pack\/pack-1\.idx$/m);

@@ -399,17 +399,8 @@ jobs:
       - run: pnpm test:api
       - run: pnpm test:mobile
       - name: Build release web bundle
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            if pnpm build; then
-              exit 0
-            fi
-            echo "::warning::pnpm build attempt $attempt failed; retrying with clean .next"
-            rm -rf .next
-          done
-          exit 1
+        # Retries Turbopack flakes; a build-gate failure (exit 78) is not retried (#6087).
+        run: node scripts/build-with-retry.mjs
 
       # Client v1 compatibility gates (Chat v1 Phase 7, Task 2). External
       # clients read /api/client/v1/health before they pair; a release whose
