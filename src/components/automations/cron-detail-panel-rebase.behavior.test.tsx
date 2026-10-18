@@ -28,7 +28,7 @@ afterEach(async () => {
   await act(async () => renderer?.unmount());
   renderer = undefined;
   // A duplicate key or an update outside act() is a rendering bug, not noise.
-  const reactWarnings = consoleError.mock.calls.filter(([message]) => typeof message === "string" && /same key|not wrapped in act/.test(message));
+  const reactWarnings = consoleError.mock.calls.filter(([message]: unknown[]) => typeof message === "string" && /same key|not wrapped in act/.test(message));
   consoleError.mockRestore();
   vi.unstubAllGlobals();
   expect(reactWarnings).toEqual([]);
