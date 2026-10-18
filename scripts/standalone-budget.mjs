@@ -56,15 +56,25 @@ export const STANDALONE_FORBIDDEN_ROOTS = Object.freeze([
   ".next/dev",
   ".tmp",
   ".worktrees",
+  // Checkout content no runtime path reads (#6086). next.config.ts excludes
+  // each of these from tracing; seeing one here means a new glob bypassed it.
+  "apps",
   "artifacts",
+  "assets",
+  "config",
+  "docs",
+  "fixtures",
+  "output",
   "release",
+  "screenshots",
+  "skills-lock.json",
   "src-tauri",
   "target",
   "target-windows",
   "test-results",
 ]);
 
-const STANDALONE_FORBIDDEN_ROOT_PREFIXES = Object.freeze([".worktree-lifecycle-fixture-"]);
+export const STANDALONE_FORBIDDEN_ROOT_PREFIXES = Object.freeze([".worktree-lifecycle-fixture-", "playwright."]);
 const IOS_BUILD_ROOT_PATTERN = /^(apps\/ios\/(?:[^/]+\/)*build(?:-[^/]+)?)(?:\/|$)/;
 
 function portable(relativePath) {
