@@ -84,6 +84,7 @@ export function CodexDetailPanel({
   onConflictSaveMine,
   onConflictUseTheirs,
   onConflictKeepEditing,
+  inFlightKey = "",
 }: {
   auto: CodexAutomation;
   /** Coven's canonical lifecycle; the panel's state, badge and controls read only this. */
@@ -108,6 +109,8 @@ export function CodexDetailPanel({
   onConflictSaveMine?: (patch: CodexAutomationPatch, revision: number) => void;
   onConflictUseTheirs?: () => void;
   onConflictKeepEditing?: () => void;
+  /** Changes when Coven's scheduler reports this automation in a different state. New occurrences appear on no stream the panel follows. */
+  inFlightKey?: string;
 }) {
   const isActive = lifecycle.state === "active";
   const control = lifecycleControl(lifecycle);
@@ -133,6 +136,14 @@ export function CodexDetailPanel({
       setOccurrenceNonce((value) => value + 1);
     }
   }, []);
+  // The overview's scheduler read notices new occurrences; re-read the ones shown here.
+  const seenInFlightKey = useRef(inFlightKey);
+  useEffect(() => {
+    if (seenInFlightKey.current === inFlightKey) return;
+    seenInFlightKey.current = inFlightKey;
+    setHealthNonce((value) => value + 1);
+    setOccurrenceNonce((value) => value + 1);
+  }, [inFlightKey]);
   const feed = useAutomationFeed(auto.id, watched.automationId === auto.id ? watched.streams : NO_STREAMS, onFeedChange);
   useEffect(() => {
     if (lifecycle.revision === null) return;

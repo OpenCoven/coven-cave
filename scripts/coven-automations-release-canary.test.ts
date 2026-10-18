@@ -53,6 +53,9 @@ interface Flaws {
   definitionRevisionStale?: boolean;
   rebaseDropsOtherChange?: boolean;
   offlineDefinitionLooksAvailable?: boolean;
+  inFlightMisses?: boolean;
+  inFlightCollapses?: boolean;
+  offlineInFlightLooksAvailable?: boolean;
 }
 
 const labels: Record<string, string> = {
@@ -239,6 +242,14 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
         automation: { id: "cave-release-canary-run", name: runDefinition.name, prompt: runDefinition.prompt },
       } });
     },
+    inFlight: (): Promise<CanaryResponse> => {
+      if (offline && flaws.offlineInFlightLooksAvailable !== true) return Promise.resolve({ status: 503, body: { kind: "unavailable" } });
+      const entry = { state: flaws.inFlightCollapses === true ? "running" : "claimed", count: 1, since: "2026-10-18T08:31:46.886Z", manual: true };
+      return Promise.resolve({ status: 200, body: {
+        kind: "available", readAt: "2026-10-18T08:32:00.000Z", truncated: [],
+        byAutomation: ran && flaws.inFlightMisses !== true ? { "cave-release-canary-run": entry } : {},
+      } });
+    },
     restartDaemon: () => {
       if (flaws.forgetsUpdateOnRestart === true) routine = previous;
       return Promise.resolve();
@@ -321,6 +332,9 @@ for (const [label, flaws, message] of [
   ["a definition read without its current revision", { definitionRevisionStale: true }, /definition after the change: expected revision 2/u],
   ["a rebased save that undoes the other change", { rebaseDropsOtherChange: true }, /rebased save: expected the new name with the other change kept/u],
   ["a definition that looks available when the daemon is gone", { offlineDefinitionLooksAvailable: true }, /definition with the daemon stopped: expected 503 degraded/u],
+  ["an overview that misses the claimed occurrence", { inFlightMisses: true }, /in-flight overview: expected 200/u],
+  ["a claimed occurrence reported as running", { inFlightCollapses: true }, /in-flight overview: expected 200/u],
+  ["an overview that looks available when the daemon is gone", { offlineInFlightLooksAvailable: true }, /the in-flight overview with the daemon stopped: expected 503/u],
 ] as const) {
   test(`fails closed on ${label}`, async () => {
     await assert.rejects(runCaveAutomationsScenario(fakeCave(flaws), options), message);

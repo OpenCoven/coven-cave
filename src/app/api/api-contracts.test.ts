@@ -157,6 +157,7 @@ const contracts: RouteContract[] = [
   { route: "/coven-automations/[id]/feed", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]/definition", methods: ["GET"], kind: "json" },
   { route: "/coven-automation-lifecycle", methods: ["GET"], kind: "json" },
+  { route: "/coven-automation-occurrences", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/import", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },

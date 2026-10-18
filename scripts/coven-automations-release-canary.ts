@@ -22,7 +22,9 @@
 // revision Coven no longer holds must be refused through Cave's edit route,
 // reviewed against the definition and revision Coven reports
 // (`GET /api/codex-automations/[id]/definition`), and re-applied at that
-// revision without undoing the other change. Finally it stops
+// revision without undoing the other change. The overview's scheduler read
+// (`GET /api/coven-automation-occurrences`) must report that routine's claimed
+// Run now occurrence and nothing else in flight. Finally it stops
 // the daemon and requires Cave to report it unavailable rather than fall back.
 //
 //   pnpm canary:automations-release            # install the pinned release
@@ -125,6 +127,8 @@ export interface CanaryDependencies {
   saveViaRoute(id: string, body: Record<string, unknown>): Promise<CanaryResponse>;
   /** `GET /api/codex-automations/[id]/definition` */
   definition(id: string): Promise<CanaryResponse>;
+  /** `GET /api/coven-automation-occurrences` */
+  inFlight(): Promise<CanaryResponse>;
   restartDaemon(): Promise<void>;
   stopDaemon(): Promise<void>;
 }
@@ -363,6 +367,14 @@ export async function runCaveAutomationsScenario(
   if (/spawn|No such file/u.test(JSON.stringify(listed.body) + JSON.stringify(inspected.body))) {
     fail("occurrences: the daemon's free-text reason reached Cave's answer.");
   }
+  // The overview rows: Coven's scheduler views name the one claimed occurrence, for the one routine that has it.
+  const overview = await cave.inFlight();
+  expectAnswer("in-flight overview", { status: overview.status, body: { kind: overview.body.kind, byAutomation: overview.body.byAutomation, truncated: overview.body.truncated } }, 200, {
+    kind: "available",
+    byAutomation: { [RUN_ROUTINE_ID]: { state: "claimed", count: 1, since: occurrence.scheduledFor, manual: true } },
+    truncated: [],
+  });
+
   // The changefeed: each stream from the beginning, then from its checkpoint.
   const runStream = { stream: "run", streamId: String(run.id) };
   const runCheckpoint = expectFeed("run stream", await cave.feed(RUN_ROUTINE_ID, runStream), [
@@ -445,6 +457,7 @@ export async function runCaveAutomationsScenario(
     { command: "activate", expectedRevision: 1, adoptionKey: `cave-${randomUUID()}` }), 503, { kind: "unavailable" });
   expectAnswer("occurrences with the daemon stopped", await cave.occurrences(RUN_ROUTINE_ID), 503, { kind: "unavailable" });
   expectAnswer("the changefeed with the daemon stopped", await cave.feed(RUN_ROUTINE_ID, { checkpoint: definitionCheckpoint }), 503, { kind: "unavailable" });
+  expectAnswer("the in-flight overview with the daemon stopped", await cave.inFlight(), 503, { kind: "unavailable" });
   const offlineDefinition = await cave.definition(RUN_ROUTINE_ID);
   if (offlineDefinition.status !== 503 || offlineDefinition.body.degraded !== true) {
     fail(`definition with the daemon stopped: expected 503 degraded, received ${offlineDefinition.status} ${describe(offlineDefinition.body)}.`);
@@ -612,6 +625,7 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
     const feedRoute = await import("../src/app/api/coven-automations/[id]/feed/route.ts");
     const editRoute = await import("../src/app/api/codex-automations/[id]/route.ts");
     const definitionRoute = await import("../src/app/api/codex-automations/[id]/definition/route.ts");
+    const inFlightRoute = await import("../src/app/api/coven-automation-occurrences/route.ts");
     const { TOKEN_HEADER } = await import("../src/proxy-helpers.ts");
     // Mutating routes accept only a local origin, as the desktop app sends them.
     const token = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
@@ -661,6 +675,7 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
         { params: Promise.resolve({ id }) })),
       saveViaRoute: async (id, body) => answer(await editRoute.PATCH(
         local(`http://127.0.0.1:3000/api/codex-automations/${encodeURIComponent(id)}`, body, "PATCH"), { params: Promise.resolve({ id }) })),
+      inFlight: async () => answer(await inFlightRoute.GET(new Request("http://127.0.0.1:3000/api/coven-automation-occurrences"))),
       definition: async (id) => answer(await definitionRoute.GET(
         new Request(`http://127.0.0.1:3000/api/codex-automations/${encodeURIComponent(id)}/definition`), { params: Promise.resolve({ id }) })),
       restartDaemon: async () => {
@@ -725,6 +740,7 @@ async function main(signal: AbortSignal): Promise<void> {
     "feedLostPosition=expired",
     "staleSave=refused",
     "conflictRebase=kept-both",
+    "inFlight=claimed",
     "offline=reported-unavailable",
   ].join(" ") + "\n");
 }
