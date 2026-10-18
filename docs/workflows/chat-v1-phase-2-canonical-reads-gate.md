@@ -78,7 +78,9 @@ Current standalone Chat installation, signing and native acceptance remain under
 release gate [#4781](https://github.com/OpenCoven/coven-cave/issues/4781).
 SDK publication remains under [SDK #41](https://github.com/OpenCoven/sdk/issues/41).
 The security release hold [#5339](https://github.com/OpenCoven/coven-cave/issues/5339)
-remains independently binding. Physical-device checks, release qualification,
+closed on 2026-10-18 ([closeout](https://github.com/OpenCoven/coven-cave/issues/5339#issuecomment-6249041955)). A candidate or rollback
+target must still bundle Next 16.3.3 or later, which means Cave v0.4.2 or
+later. Physical-device checks, release qualification,
 rollout observation and any other gate's explicit criteria still require their own
 candidate-bound evidence and disposition.
 
