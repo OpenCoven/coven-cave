@@ -31,9 +31,19 @@
 // latest.json covers some but not all of EXPECTED_ROLLBACK_PLATFORMS. Partial
 // manifests are a sanctioned outcome upstream, so the gate names the platforms
 // with no rollback path instead of blocking the release over them.
+//
+// A second is recorded rather than refused, for the same deadlock reason: a
+// baseline whose package.json pins a floored dependency below
+// BUNDLED_DEPENDENCY_FLOORS (#5339). Rolling back to it would reinstall a
+// dependency the incident replaced, so the verdict's `baselineFloor` says it is
+// not a rollback target and `release-rollout.mjs` refuses to restore it. Failing
+// this job instead would withhold latest.json, and after any floor raise the
+// first release at the new floor has only an unpatched baseline: refusing there
+// would block the very release that ships the fix.
 import { appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { collectPinnedFloorProblems, describeBundledVersions } from "./bundled-dependency-floor.mjs";
 import { parseFinalTag } from "./release-promotion.mjs";
 
 const MAX_API_PAGES = 20;
@@ -266,9 +276,9 @@ function isTransportStatus(status) {
 const RETRY_ADVICE =
   "GitHub could not answer, which is not evidence the rollback target is broken — retry before treating the release as unshippable";
 
-async function requestJson(context, url, description) {
+async function requestJson(context, url, description, { accept = "application/vnd.github+json" } = {}) {
   const headers = {
-    accept: "application/vnd.github+json",
+    accept,
     "user-agent": "release-rollback-readiness",
   };
   if (context.token && isApiRequest(context, url)) {
@@ -285,10 +295,12 @@ async function requestJson(context, url, description) {
   }
   if (!response?.ok) {
     const status = typeof response?.status === "number" ? response.status : 0;
-    throw new RollbackReadinessError(
+    const error = new RollbackReadinessError(
       `${description} request failed with HTTP ${response?.status ?? "unknown"}` +
         (isTransportStatus(status) ? `; ${RETRY_ADVICE}` : ""),
     );
+    error.status = status;
+    throw error;
   }
   // A 2xx whose body is not JSON is an intermediary answering, not GitHub — an
   // edge error page, a truncated CDN response, a captive proxy. Left unwrapped
@@ -334,6 +346,28 @@ async function listReleases(context) {
   );
 }
 
+/**
+ * Whether the baseline's pinned dependencies clear the #5339 floor, read from
+ * its tag's package.json. A tag with no package.json is recorded as not clear
+ * rather than refused: it is not a release this gate can vouch for, and the
+ * answer that keeps an operator off it is the safe one. A GitHub that cannot
+ * answer still throws with the retry advice, like every other read here.
+ */
+async function readBaselineFloor(context, baseline) {
+  const url = `${context.apiUrl}${context.repositoryPath}/contents/package.json?ref=${encodeURIComponent(baseline.tag)}`;
+  let manifest;
+  try {
+    manifest = await requestJson(context, url, `${baseline.tag} package.json`, {
+      accept: "application/vnd.github.raw+json",
+    });
+  } catch (error) {
+    if (error?.status !== 404) throw error;
+    return { clear: false, versions: {}, problems: [`${baseline.tag} has no package.json to read its pins from`] };
+  }
+  const { versions, problems } = collectPinnedFloorProblems(manifest);
+  return { clear: problems.length === 0, versions, problems };
+}
+
 export async function verifyRollbackReadiness(options = {}) {
   // Checked after resolution, not before: the earlier form asked whether
   // `options.fetchImpl` OR `globalThis.fetch` was callable, which on every Node
@@ -376,6 +410,8 @@ export async function verifyRollbackReadiness(options = {}) {
       // release that does not exist. `baselineWaived` is what says so, and the
       // summary prints the waiver instead of a coverage line.
       missingPlatforms: [],
+      // Null for the same reason: there is no baseline whose pins to read.
+      baselineFloor: null,
       ready: true,
     };
   }
@@ -413,6 +449,7 @@ export async function verifyRollbackReadiness(options = {}) {
       `${baseline.tag} rollback metadata is incomplete: ${manifestProblems.join("; ")}`,
     );
   }
+  const baselineFloor = await readBaselineFloor(context, baseline);
 
   return {
     tag: target.tag,
@@ -432,6 +469,10 @@ export async function verifyRollbackReadiness(options = {}) {
     missingPlatforms: EXPECTED_ROLLBACK_PLATFORMS.filter(
       (platform) => !Object.hasOwn(manifest.platforms, platform),
     ),
+    // Recorded, never fatal — see the floor note at the top of this file.
+    // `clear: false` means the baseline must not be restored, and
+    // release-rollout.mjs refuses to plan or rehearse it.
+    baselineFloor,
     ready: true,
   };
 }
@@ -478,6 +519,10 @@ function writeCliResult(result, env) {
       // learns the answer, and "" reads as full coverage only when
       // `baseline-waived` is false — which is exactly what it means.
       "rollback-platforms-missing": result.missingPlatforms.join(","),
+      // "" when the baseline is waived, so a reader cannot mistake "no
+      // baseline" for "a baseline that clears the floor".
+      "baseline-floor-clear": result.baselineFloor ? result.baselineFloor.clear : "",
+      "baseline-floor-problems": floorProblemsLine(result),
     })
       .map(([key, value]) => `${key}=${String(value)}`)
       .join("\n") + "\n",
@@ -486,8 +531,13 @@ function writeCliResult(result, env) {
     result.missingPlatforms.length > 0
       ? `- ⚠️ **No rollback path for ${result.missingPlatforms.join(", ")}** — those installs cannot be auto-rolled-back to \`${result.baseline.tag}\` and would need a manual reinstall. The baseline shipped a partial \`latest.json\`, which is allowed (see docs/workflows/release-rollback-readiness.md); this is a coverage note, not a failure.\n`
       : "";
+  const floor = !result.baselineFloor
+    ? ""
+    : result.baselineFloor.clear
+      ? `- Pinned dependencies clear the bundled-dependency floor: ${describeBundledVersions(result.baselineFloor.versions)}\n`
+      : `- ⛔ **Do not roll back to \`${result.baseline.tag}\`.** Its pins are below the bundled-dependency floor (#5339): ${floorProblemsLine(result)}. A rollback would reinstall them, so this release's only remedy is a patch forward, and \`release-rollout.mjs restore-plan\` refuses this baseline. This is recorded rather than refused: failing the job would withhold latest.json from the release that carries the fix.\n`;
   const detail = result.baseline
-    ? `- Rollback target: \`${result.baseline.tag}\` (published ${result.baseline.publishedAt})\n- Platforms the updater can roll back: ${result.platforms.join(", ")}\n${shortfall}`
+    ? `- Rollback target: \`${result.baseline.tag}\` (published ${result.baseline.publishedAt})\n- Platforms the updater can roll back: ${result.platforms.join(", ")}\n${shortfall}${floor}`
     : "- Rollback target: none — waived as a first release\n";
   appendFileSync(
     requiredEnv(env, "GITHUB_STEP_SUMMARY"),
@@ -501,6 +551,21 @@ function writeCliResult(result, env) {
       `::warning::Rollback baseline ${result.baseline.tag} covers ${result.platforms.length}/${EXPECTED_ROLLBACK_PLATFORMS.length} updater platforms; no auto-rollback for ${result.missingPlatforms.join(", ")}.`,
     );
   }
+  if (result.baselineFloor && !result.baselineFloor.clear) {
+    console.warn(
+      `::warning::Rollback baseline ${result.baseline.tag} is below the bundled-dependency floor (${floorProblemsLine(result)}); do not roll back to it — patch forward instead.`,
+    );
+  }
+}
+
+/**
+ * The floor problems on one line, for GITHUB_OUTPUT and the workflow command,
+ * where a newline would end the value and start another. No problem can carry
+ * one: a pin is printed only once validated as a final version, or through
+ * JSON.stringify, and the rest is fixed text. The forged-pin test holds that.
+ */
+function floorProblemsLine(result) {
+  return (result.baselineFloor?.problems ?? []).join("; ");
 }
 
 function requiredEnv(env, name) {
