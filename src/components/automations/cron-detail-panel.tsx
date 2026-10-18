@@ -19,6 +19,16 @@ import { relativeTimeSigned } from "@/lib/relative-time";
 import { runStatusColor, runStatusIcon } from "@/lib/automations/run-status";
 import { CronDetailSection, CronSummaryTile, FieldLabel } from "@/components/automations/cron-detail-primitives";
 import { CanonicalAutomationHistory } from "@/components/automations/canonical-history";
+import { AutomationSchedulePreview } from "@/components/automations/automation-schedule-preview";
+import { sameRoutineRrule } from "@/lib/automations/routine-rrule";
+import {
+  lifecycleControl,
+  lifecycleFreshnessNote,
+  lifecycleStateLabel,
+  parseLifecycleDetail,
+  type AutomationHealthView,
+  type AutomationLifecycleView,
+} from "@/lib/automations/lifecycle";
 
 const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
   weekly: "Weekly",
@@ -51,6 +61,7 @@ function formatDurationMs(ms: number): string {
 
 export function CodexDetailPanel({
   auto,
+  lifecycle,
   busy,
   expanded,
   onToggleExpanded,
@@ -62,6 +73,8 @@ export function CodexDetailPanel({
   runs,
 }: {
   auto: CodexAutomation;
+  /** Coven's canonical lifecycle; the panel's state, badge and controls read only this. */
+  lifecycle: AutomationLifecycleView;
   busy: boolean;
   /** Full-page-width mode: the rail grows to fill the surface and the form
    *  reflows into a two-column canvas (list hidden until collapsed). */
@@ -74,7 +87,28 @@ export function CodexDetailPanel({
   onRun: (auto: CodexAutomation) => void;
   runs: AutomationRunRecord[];
 }) {
-  const isActive = auto.status === "ACTIVE";
+  const isActive = lifecycle.state === "active";
+  const control = lifecycleControl(lifecycle);
+  const formatTime = (iso: string) => formatTimestamp(iso, readDateTimePrefs());
+  const freshnessNote = lifecycleFreshnessNote(lifecycle, formatTime);
+  const stateLabel = lifecycleStateLabel(lifecycle);
+  // Health is read on demand for the open automation only, and again whenever
+  // Coven reports a new revision. `undefined` while reading, `null` if it can't be.
+  const [health, setHealth] = useState<AutomationHealthView | null | undefined>(undefined);
+  useEffect(() => {
+    if (lifecycle.revision === null) return;
+    const controller = new AbortController();
+    setHealth(undefined);
+    fetch(`/api/coven-automations/${encodeURIComponent(auto.id)}/lifecycle`, { cache: "no-store", signal: controller.signal })
+      .then((res) => res.json())
+      .then((json) => {
+        if (controller.signal.aborted) return;
+        const detail = parseLifecycleDetail(json);
+        setHealth(detail.kind === "available" ? detail.health : null);
+      })
+      .catch(() => { if (!controller.signal.aborted) setHealth(null); });
+    return () => controller.abort();
+  }, [auto.id, lifecycle.revision]);
   // Dialog semantics for the cron detail panel — trap focus, Escape closes, focus
   // returns to the opening row. aria-modal omitted (see DetailPanel's note).
   const panelRef = useRef<HTMLDivElement>(null);
@@ -162,7 +196,7 @@ export function CodexDetailPanel({
     tagsText !== commaInput(auto.tags) ||
     cwdsText !== listInput(auto.cwds) ||
     skillPath.trim() !== (auto.skillPath ?? "") ||
-    nextRrule !== (auto.rrule ?? "");
+    !sameRoutineRrule(nextRrule, auto.rrule ?? "");
   const canSave = !busy && dirty && name.trim().length > 0 && !invalidSchedule;
 
   // When Save is disabled because the form is invalid (not merely unchanged),
@@ -202,8 +236,12 @@ export function CodexDetailPanel({
   // sentence explaining where it stands. Shares recurrenceFromRrule with the
   // create dialog's preview and the calendar's projection, so all three
   // answer "when does this run" the same way.
-  const upcoming = cronNextRuns(auto, Date.now(), 3);
-  const insight = cronInsight(auto, latestRun, upcoming[0] ?? null);
+  // Whether the saved rule can be read at all; the preview below does the zone-aware reading.
+  const readableRule = cronNextRuns({ rrule: auto.rrule, status: "ACTIVE" }, Date.now(), 1)[0] ?? null;
+  const insight = lifecycle.state === "unknown"
+    ? freshnessNote ?? "Checking the current state with Coven."
+    : cronInsight({ status: isActive ? "ACTIVE" : "PAUSED", scheduleHuman: auto.scheduleHuman }, latestRun, readableRule);
+  const nextDue = isActive ? health?.nextDueAt ?? null : null;
   const runStats = recordedRunStats(runs);
   const latestRunLabel = latestRun
     ? `${latestRun.status} ${relTime(latestRun.startedAt)}`
@@ -481,7 +519,8 @@ export function CodexDetailPanel({
               }}
             >
               <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: isActive ? "var(--color-success)" : "var(--text-muted)" }} />
-              {isActive ? "Active" : "Paused"}
+              {stateLabel}
+              {lifecycle.revision !== null ? <span className="[color:var(--text-muted)]!">· rev {lifecycle.revision}</span> : null}
             </span>
             <Button
               variant="ghost"
@@ -511,7 +550,7 @@ export function CodexDetailPanel({
         <div className={`space-y-5${expanded ? " mx-auto w-full max-w-6xl" : ""}`}>
         <div className={`cron-detail-summary-grid grid grid-cols-2 gap-2${expanded ? " @min-[900px]:grid-cols-4" : ""}`}>
           <CronSummaryTile label="Schedule" value={auto.scheduleHuman || nextRrule || "Not scheduled"} tone={invalidSchedule ? "danger" : "default"} />
-          <CronSummaryTile label="Status" value={isActive ? "Active" : "Paused"} tone={isActive ? "active" : "paused"} />
+          <CronSummaryTile label="Status" value={lifecycle.freshness === "stale" ? `${stateLabel} (stale)` : stateLabel} tone={isActive ? "active" : "paused"} />
           <CronSummaryTile label="Model" value={model.trim() || "Default"} />
           <CronSummaryTile label="Last run" value={latestRunLabel} tone={latestRun?.status === "failed" ? "danger" : "default"} />
           {/* The tile the pane was missing. A surface that can describe a cron
@@ -521,23 +560,24 @@ export function CodexDetailPanel({
               the insight line above says which. */}
           <CronSummaryTile
             label="Next run"
-            value={upcoming[0] ? formatTimestamp(upcoming[0], readDateTimePrefs()) : "—"}
+            value={nextDue ? formatTimestamp(nextDue, readDateTimePrefs()) : "—"}
           />
         </div>
 
         {/* One sentence for the state, above the fields that configure it. */}
         <p className="cron-detail-insight" role="status">{insight}</p>
 
-        {upcoming.length > 1 ? (
-          <p className="cron-detail-upcoming">
-            <span className="cron-detail-upcoming__label">then</span>
-            {upcoming.slice(1).map((iso) => (
-              <span key={iso} className="cron-detail-upcoming__at">
-                {formatTimestamp(iso, readDateTimePrefs())}
-              </span>
-            ))}
-          </p>
+        {freshnessNote && lifecycle.state !== "unknown" ? (
+          <p className="text-[length:var(--text-xs)] [color:var(--color-warning)]!" role="status">{freshnessNote}</p>
         ) : null}
+
+        <AutomationSchedulePreview
+          rrule={nextRrule}
+          savedRrule={auto.rrule ?? ""}
+          lifecycle={lifecycle}
+          health={lifecycle.revision === null ? null : health}
+          nowMs={Date.now()}
+        />
 
         {expanded ? (
           <div className="grid items-start gap-5 lg:grid-cols-2">
@@ -594,14 +634,21 @@ export function CodexDetailPanel({
           </Button>
           <Button
             variant={isActive ? "danger" : "secondary"}
-            disabled={busy}
+            disabled={busy || control.disabledReason !== null}
             onClick={() => onToggle(auto)}
             className="justify-center rounded-[var(--radius-control)] text-[length:var(--text-sm)] font-medium"
             leadingIcon={isActive ? "ph:pause" : "ph:play"}
           >
-            {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
+            {busy ? (isActive ? "Pausing…" : "Resuming…") : control.label}
           </Button>
         </div>
+        {control.disabledReason ? (
+          <p className="text-[length:var(--text-xs)] [color:var(--text-muted)]!" role="note">{control.disabledReason}</p>
+        ) : control.expectedRevision !== null ? (
+          <p className="text-[length:var(--text-2xs)] [color:var(--text-muted)]!">
+            {control.label} applies only if Coven still holds revision {control.expectedRevision}.
+          </p>
+        ) : null}
         <div className="border-t pt-3 [border-color:var(--border-hairline)]!">
           <Button
             variant="danger-ghost"

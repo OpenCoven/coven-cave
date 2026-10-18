@@ -14,6 +14,12 @@ import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { relativeTimeSigned } from "@/lib/relative-time";
 import { runStatusColor } from "@/lib/automations/run-status";
 import { cronHealth, cronHealthLabel, cronRunVerb, type CronHealth } from "@/lib/automations/cron-health";
+import {
+  lifecycleControl,
+  lifecycleFreshnessNote,
+  lifecycleStateLabel,
+  type AutomationLifecycleView,
+} from "@/lib/automations/lifecycle";
 
 function relTime(iso: string | undefined | null): string {
   return iso ? relativeTimeSigned(iso) : "—";
@@ -22,6 +28,9 @@ function relTime(iso: string | undefined | null): string {
 export type ScheduleActions = {
   runAutomation: (auto: CodexAutomation) => void;
   togglePauseAutomation: (auto: CodexAutomation) => void;
+  /** Coven's canonical lifecycle for one automation. Rows read their state
+   *  from this, never from the legacy routine mirror's `status`. */
+  lifecycleOf: (id: string) => AutomationLifecycleView;
   /** The automation with a mutation in flight, if any. Rows disable their own
    *  actions against it so a double-click cannot submit the same run twice —
    *  the second POST comes back 409. The detail panel already did this; the
@@ -68,8 +77,7 @@ export function RowActionButton({ icon, label, text, onClick, disabled }: { icon
  * shape, never the thing that distinguishes it — `prefers-reduced-motion`
  * removes the pulse and the states must still be told apart.
  */
-function CronStatusGlyph({ health }: { health: CronHealth }) {
-  const label = cronHealthLabel(health);
+function CronStatusGlyph({ health, label = cronHealthLabel(health) }: { health: CronHealth; label?: string }) {
   return (
     <span role="img" aria-label={label} title={label} className="rituals-cron-row__status">
       <span aria-hidden className={`rituals-cron-row__glyph--${health}`} />
@@ -90,10 +98,19 @@ function AutomationScheduleRow({
   lastRun?: AutomationRunRecord;
   onSelect: (auto: CodexAutomation) => void;
 }) {
-  const isActive = auto.status === "ACTIVE";
-  const health = cronHealth(auto, lastRun);
   const actions = useContext(ScheduleActionsContext);
+  const lifecycle = actions?.lifecycleOf(auto.id) ?? null;
+  const isActive = lifecycle?.state === "active";
+  const known = lifecycle !== null && lifecycle.state !== "unknown";
+  // An unverified row draws the "off" glyph but names its real state, so the
+  // shape never claims a pause Coven did not report.
+  const health = cronHealth({ status: isActive ? "ACTIVE" : "PAUSED" }, lastRun);
+  const glyphLabel = known ? undefined : lifecycle ? lifecycleStateLabel(lifecycle) : "Not verified";
+  const freshnessNote = lifecycle ? lifecycleFreshnessNote(lifecycle, (iso) => formatTimestamp(iso, readDateTimePrefs())) : null;
+  const control = lifecycle ? lifecycleControl(lifecycle) : null;
   const busy = actions?.busyId === auto.id;
+  const toggleDisabled = busy || !control || control.disabledReason !== null;
+  const toggleLabel = `${isActive ? "Pause" : "Resume"} ${auto.name}${control?.disabledReason ? `: ${control.disabledReason}` : ""}`;
   const tag = auto.tags[0];
   return (
     <li
@@ -101,7 +118,7 @@ function AutomationScheduleRow({
       aria-current={selected ? "true" : undefined}
       onClick={() => onSelect(auto)}
     >
-      <CronStatusGlyph health={health} />
+      <CronStatusGlyph health={health} label={glyphLabel} />
 
       <span className="rituals-cron-row__name">
         <button
@@ -113,6 +130,11 @@ function AutomationScheduleRow({
           {auto.name}
         </button>
         {tag ? <span className="rituals-cron-row__tag">{tag}</span> : null}
+        {lifecycle && freshnessNote ? (
+          <span className="rituals-cron-row__tag" title={freshnessNote}>
+            {lifecycle.freshness === "stale" ? `${lifecycleStateLabel(lifecycle)} · stale` : lifecycleStateLabel(lifecycle)}
+          </span>
+        ) : null}
       </span>
 
       <span className="rituals-cron-row__avatars">
@@ -151,9 +173,9 @@ function AutomationScheduleRow({
             ) : null}
             <RowActionButton
               icon={isActive ? "ph:pause" : "ph:play"}
-              label={`${isActive ? "Pause" : "Resume"} ${auto.name}`}
+              label={toggleLabel}
               text={isActive ? "Pause" : "Resume"}
-              disabled={busy}
+              disabled={toggleDisabled}
               onClick={() => actions.togglePauseAutomation(auto)}
             />
             <RowActionButton
@@ -178,7 +200,7 @@ function AutomationScheduleRow({
               <PopoverSeparator />
               <PopoverItem
                 icon={isActive ? "ph:pause" : "ph:play"}
-                disabled={busy}
+                disabled={toggleDisabled}
                 onSelect={() => actions.togglePauseAutomation(auto)}
               >
                 {isActive ? "Pause" : "Resume"}
@@ -241,6 +263,7 @@ function AutomationScheduleSection({
 export function AutomationsPanel({
   active,
   paused,
+  unverified,
   failingCount,
   selectedId,
   familiarsById,
@@ -249,6 +272,8 @@ export function AutomationsPanel({
 }: {
   active: CodexAutomation[];
   paused: CodexAutomation[];
+  /** Automations whose lifecycle Coven has not confirmed: still checking, unreachable, or unreadable. */
+  unverified: CodexAutomation[];
   failingCount: number;
   selectedId: string | null;
   familiarsById: Map<string, ResolvedFamiliar>;
@@ -264,6 +289,11 @@ export function AutomationsPanel({
         lastRunById={lastRunById}
         onSelect={onSelect} />
       <AutomationScheduleSection title="Paused" items={paused}
+        selectedId={selectedId}
+        familiarsById={familiarsById}
+        lastRunById={lastRunById}
+        onSelect={onSelect} />
+      <AutomationScheduleSection title="Not verified" items={unverified}
         selectedId={selectedId}
         familiarsById={familiarsById}
         lastRunById={lastRunById}
