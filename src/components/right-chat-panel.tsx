@@ -22,6 +22,8 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { AgentsNewChatRequest } from "@/lib/agents-new-chat";
+// The panel-only header rules (#6052): one row, title and overflow menu.
+import "@/styles/right-chat-header.css";
 
 const ChatRouter = dynamic(
   () => import("@/components/chat-router").then((module) => module.ChatRouter),
