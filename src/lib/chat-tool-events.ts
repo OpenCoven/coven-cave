@@ -754,7 +754,7 @@ export class ToolCallTracker {
     const call = this.byEnvelopeId.get(id);
     if (!call) return announced;
     const previous = this.recorded.get(call.id);
-    if (previous?.status !== "requested") return announced;
+    if (previous?.status !== "requested" && previous?.status !== "approval-requested") return announced;
     const event: ToolStreamEvent = {
       id: call.id,
       name: call.name,
@@ -762,6 +762,22 @@ export class ToolCallTracker {
       status: "running",
     };
     this.record(event, textOffset);
+    return event;
+  }
+
+  /** A supported adapter may report a pending approval/cancellation for an
+   * existing call. This records a request, never authorization or completion.
+   * Unknown IDs cannot create calls or acquire execution evidence. */
+  envelopeToolRequestState(toolUseId: string, status: "approval-requested" | "cancel-requested"): ToolStreamEvent | null {
+    const call = this.byEnvelopeId.get(toolUseId);
+    if (!call) return null;
+    const previous = this.recorded.get(call.id);
+    if (!previous || isKnownToolOutcome(previous.status)) return null;
+    // Approval precedes execution; a late request must not erase a start.
+    if (status === "approval-requested" && previous.activity?.executionObservedAt != null) return null;
+    if (status === "approval-requested" && previous.status === "running") return null;
+    const event: ToolStreamEvent = { id: call.id, name: call.name, status };
+    this.record(event);
     return event;
   }
 

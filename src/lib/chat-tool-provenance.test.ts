@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { ToolCallTracker, toPersistedTools } from "./chat-tool-events.ts";
 import { normalizeToolActivity } from "./chat-activity.ts";
-import { mergeToolObservation, settleToolObservations } from "./chat-tool-state.ts";
+import { mergeToolObservation, settleToolObservations, normalizeToolStatus, isKnownToolOutcome, isToolActive, retainToolStatus, toolStatusLabel } from "./chat-tool-state.ts";
 
 const runId = "22222222-3333-4444-8555-666666666666";
 let now = 100;
@@ -74,4 +74,62 @@ assert.deepEqual(normalizeToolActivity(declined.activity, declined.id, "rejected
 assert.deepEqual(mergeToolObservation(declined, { ...declined, status: "ok" }).activity, declined.activity);
 assert.deepEqual(settleToolObservations([declined]), [declined]);
 assert.deepEqual(toPersistedTools(rejected.snapshot(), 0)?.[0]?.activity, declined.activity);
+
+// Requests and producer-confirmed outcomes must survive serialization without
+// inventing permission, execution, or protected-effect evidence.
+const lifecycle = [
+  ["approval-requested", "Approval requested", false],
+  ["cancel-requested", "Cancellation requested", false],
+  ["cancelled", "Cancelled", true],
+  ["policy-rejected", "Rejected by policy", true],
+  ["user-rejected", "Rejected by user", true],
+] as const;
+for (const [status, label, terminal] of lifecycle) {
+  assert.equal(normalizeToolStatus(status), status);
+  assert.equal(toolStatusLabel(status), label);
+  assert.equal(isKnownToolOutcome(status), terminal);
+  assert.equal(isToolActive(status), !terminal);
+  const observation = {
+    ...activity, phase: status, executionObservedAt: null,
+    terminalObservedAt: terminal ? activity.updatedAt : null,
+  };
+  assert.deepEqual(normalizeToolActivity(JSON.parse(JSON.stringify(observation)), result.id, status), observation);
+  assert.equal(normalizeToolActivity({ ...observation, terminalObservedAt: terminal ? null : activity.updatedAt }, result.id, status), undefined);
+  assert.deepEqual(observation.authority, { binding: "unavailable", approval: "unavailable", effect: "unavailable" });
+  if (terminal) {
+    assert.equal(retainToolStatus(status, "running"), status);
+    assert.equal(retainToolStatus(status, "ok"), status);
+    assert.equal(settleToolObservations([{ status }])![0].status, status);
+  } else {
+    assert.equal(settleToolObservations([{ status }])![0].status, "unknown");
+  }
+}
+assert.equal(retainToolStatus("approval-requested", "requested"), "approval-requested");
+assert.equal(retainToolStatus("running", "approval-requested"), "running");
+assert.equal(retainToolStatus("cancel-requested", "running"), "cancel-requested");
+assert.equal(retainToolStatus("cancel-requested", "approval-requested"), "cancel-requested");
+assert.equal(retainToolStatus("cancel-requested", "ok"), "ok", "cancellation request can lose a race to completion");
+assert.equal(retainToolStatus("cancel-requested", "cancelled"), "cancelled");
+assert.equal(normalizeToolActivity({ ...activity, phase: "approval-requested", terminalObservedAt: null }, result.id, "approval-requested"), undefined, "approval request does not report execution");
+
+for (const outcome of ["policy-rejected", "user-rejected", "cancelled"] as const) {
+  const pending = new ToolCallTracker(() => now, "", { runId, harness: "fixture", version: null, protocol: null });
+  assert.equal(pending.envelopeToolRequestState("missing", "cancel-requested"), null);
+  pending.envelopeToolUse("pending", "read");
+  const approval = pending.envelopeToolRequestState("pending", "approval-requested")!;
+  assert.equal(approval.status, "approval-requested");
+  assert.equal(approval.activity?.executionObservedAt, null);
+  if (outcome === "cancelled") {
+    assert.equal(pending.envelopeToolStart("pending", "read")?.status, "running");
+    assert.equal(pending.envelopeToolRequestState("pending", "approval-requested"), null);
+    const cancellation = pending.envelopeToolRequestState("pending", "cancel-requested")!;
+    assert.equal(cancellation.status, "cancel-requested");
+    assert.equal(cancellation.activity?.terminalObservedAt, null);
+    assert.equal(pending.envelopeToolProgress("pending", undefined)?.status, "cancel-requested");
+  }
+  const terminal = pending.envelopeToolResult("pending", "safe result", false, outcome)!;
+  assert.equal(terminal.status, outcome);
+  assert.deepEqual(toPersistedTools(pending.snapshot(), 0)?.[0]?.activity, terminal.activity);
+  assert.equal(pending.envelopeToolRequestState("pending", "cancel-requested"), null);
+}
 console.log("tool provenance: passed");

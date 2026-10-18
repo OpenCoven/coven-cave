@@ -543,7 +543,18 @@ The encrypted backup path remains a separate local restore artifact.
 
 ## Tool outcomes
 
-The shared display status is now `requested | running | ok | error | rejected | unknown`.
+The shared display status is `requested | approval-requested | running |
+cancel-requested | ok | error | rejected | policy-rejected | user-rejected |
+cancelled | unknown`. These are presentation observations, not new producer
+contracts. Legacy `rejected` retains its unspecified cause. `approval-requested`
+does not imply permission; `cancel-requested` is nonterminal and a racing result
+can still succeed. Only a supported producer confirmation may establish
+`cancelled`, `policy-rejected`, or `user-rejected`. The tracker accepts explicit
+request observations only for an existing call. Replayed starts cannot erase a
+cancellation request, and first-terminal-wins applies to every known outcome.
+Local turn stop/disconnect still settles unfinished observations to `unknown`.
+No existing adapter is upgraded to claim these producer capabilities by this
+additive display contract.
 Assistant function-call declarations and pre-tool hooks report requests. They
 do not prove authorization or execution. Recognized execution-start/progress
 frames can advance the same stable call ID to running; native results establish
@@ -1264,3 +1275,44 @@ An unsigned descriptor is mirrored in Runtimes with an offline test of its
 existing signer against Cave's verifier/cache/decoder. This does not publish a
 bundle or install trust keys. Canonical signed admission and stock-trust live
 Cave/Grok acceptance remain pending; source/binary reproducibility is unproven.
+
+
+## #5762 qualification map (2026-10-18)
+
+The following maps all twelve original requirements without replacing them.
+Tests exercise production projection functions and, where named, real route
+handlers against an isolated synthetic provider. They do not qualify every
+runtime adapter, native UI, or authenticated producer receipt. The existing
+acceptance packet remains not-fully-qualified until the producer decision and
+subsequent consumer qualification are recorded.
+
+| Original criterion | Executable evidence |
+| --- | --- |
+| scope-01: typed reasoning and legacy decoding | `src/lib/chat-reasoning-blocks.test.ts`, `src/lib/server/legacy-reasoning-projection.test.ts`, `src/lib/chat-activity-corpus.test.ts` |
+| scope-02: call/attempt/source/time and lifecycle distinctions | `src/lib/chat-tool-provenance.test.ts`, `src/lib/chat-tool-outcomes.test.ts` |
+| scope-03: authoritative binding and receipts | `src/lib/chat-tool-provenance.test.ts` rejects forged authority and preserves unavailable fields; producer decision remains outstanding |
+| scope-04: disclosure before live/retained presentation | `src/lib/chat-display-disclosure.test.ts`, `src/app/api/chat/send/route-hermes-disclosure.integration.test.ts` |
+| scope-05: split units and opaque continuation isolation | Hermes route fixture uses seven-byte UTF-8 chunks, split credentials, opaque signatures and conflicting summaries; `src/lib/chat-activity-corpus.test.ts` pins fragmented decoding |
+| scope-06: producer mappings and ownership | This document's producer matrix and Tool outcomes sections; producer decision remains outstanding |
+| acceptance-01: validators and unknown versions | `src/lib/chat-tool-provenance.test.ts`, `src/lib/chat-reasoning-blocks.test.ts` |
+| acceptance-02: golden new/legacy, multiple blocks and every lifecycle distinction | `src/lib/chat-activity-corpus.test.ts`, `src/lib/chat-tool-provenance.test.ts` JSON round trips and explicit expected lifecycle labels/timestamps |
+| acceptance-03: forged receipts, tags and caller disclosure | `src/lib/chat-display-disclosure.test.ts`, `src/lib/chat-tool-provenance.test.ts`, Hermes route fixture's forged `<coven:receipt>` output and hidden `<thinking>` markers |
+| acceptance-04: secret/PII sentinels across boundaries | Hermes route fixture checks live SSE, replay contents, raw persisted transcript bytes and loaded conversation, captured ordinary console logs, authenticated Client v1 messages response, and HFR JSONL export |
+| acceptance-05: byte limits, identity, deduplication and migration | `src/lib/chat-tool-events.test.ts`, `src/lib/chat-tool-outcomes.test.ts`, `src/lib/server/legacy-reasoning-projection.test.ts`, shared activity corpus |
+| acceptance-06: registry and design | All named tests are existing entries in `scripts/run-tests.mjs`; `pnpm check:tests-wired` verifies registry coverage |
+
+The Client v1 messages contract returns tool counts and ordinary answer text;
+it intentionally does not expose tool bodies or reasoning blocks. Its sentinel
+check exercises the actual authenticated route over the saved fixture. HFR
+export uses `conversationToHfrJsonl` over the same transcript. A quoted receipt
+marker in tool output remains inert text; it cannot populate authority fields.
+An HFR post-tool observation is not a protected-effect receipt.
+
+Coven/Threads own authenticated session/familiar revision, approval and effect
+receipts; Psyche owns orchestration; Runtimes owns capability descriptors; SDK
+mirrors accepted contracts. Cave retains `binding`, `approval`, and `effect` as
+`unavailable`. Val must decide whether to accept that limitation or commission
+the producer contract specifying authenticated references and read access.
+No inferred display name, hook payload, marker, or client field fills this gap.
+
+The existing cross-repository dependency is [Coven #1137](https://github.com/OpenCoven/coven/issues/1137): trusted familiar identity, authorized sources, a production chat consumer, and receipt reconciliation. Its 2026-10-17 reconciliation records the daemon ledger (#1209) and verified issuer (#1210) as delivered; chat-specific authorized-source resolution, native isolation, and receipt/dispatch consumption remain missing. Its automation counterpart #857 is explicitly not a substitute for chat authority. Val’s decision must reconcile this display contract with that issue; this work does not approve or implement a verifier.
