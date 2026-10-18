@@ -1973,6 +1973,7 @@ export const SUITES = {
     "scripts/sidecar-lock.test.mjs",
     "scripts/sidecar-bundle.test.mjs",
     "scripts/sidecar-bundle-deps.test.mjs",
+    "scripts/bundled-dependency-floor.test.mjs",
     "scripts/sidecar-runtime-closure.test.mjs",
     "scripts/standalone-budget.test.mjs",
     "scripts/tray-icon.test.mjs",

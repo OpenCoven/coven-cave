@@ -18,6 +18,11 @@ import {
   verifySidecarRuntime,
 } from "./sidecar-runtime-closure.mjs";
 import { publishSidecarArchive, writeSidecarArchiveManifest } from "./sidecar-archive-manifest.mjs";
+import { BUNDLED_DEPENDENCY_FLOORS } from "./bundled-dependency-floor.mjs";
+
+// verifySidecarRuntime enforces the #5339 floor, so floored fixture packages
+// sit exactly at their patched minimum and everything else stays at 1.0.0.
+const FIXTURE_VERSIONS = new Map(BUNDLED_DEPENDENCY_FLOORS.map((floor) => [floor.name, floor.minimum]));
 
 async function write(root, relativePath, contents = "fixture\n") {
   const output = path.join(root, relativePath);
@@ -27,7 +32,8 @@ async function write(root, relativePath, contents = "fixture\n") {
 
 async function packageFixture(root, packageName, extra = {}) {
   const packageRoot = path.join(root, "node_modules", ...packageName.split("/"));
-  await write(packageRoot, "package.json", `${JSON.stringify({ name: packageName, version: "1.0.0" })}\n`);
+  const version = FIXTURE_VERSIONS.get(packageName) ?? "1.0.0";
+  await write(packageRoot, "package.json", `${JSON.stringify({ name: packageName, version })}\n`);
   await write(packageRoot, "index.js", `module.exports = ${JSON.stringify(packageName)};\n`);
   for (const [relativePath, contents] of Object.entries(extra)) await write(packageRoot, relativePath, contents);
 }
@@ -314,6 +320,24 @@ try {
     "a bundle without the pdf.js worker must not verify",
   );
   await write(destination, "public/pdf.worker.min.mjs", "pdf worker\n");
+
+  // #5339: a bundle carrying the pre-patch Next 16.3.1 must not verify. This
+  // is the same call sidecar-bundle.sh makes before Tauri packages a release.
+  assert.deepEqual(
+    (await verifySidecarRuntime(destination)).bundledVersions,
+    Object.fromEntries(FIXTURE_VERSIONS),
+    "the verifier must report the bundled versions it checked against the floor",
+  );
+  const bundledNextManifest = path.join(destination, "node_modules", "next", "package.json");
+  const patchedNextManifest = await readFile(bundledNextManifest, "utf8");
+  await writeFile(bundledNextManifest, `${JSON.stringify({ name: "next", version: "16.3.1" })}\n`, "utf8");
+  await assert.rejects(
+    verifySidecarRuntime(destination),
+    /bundled next 16\.3\.1 is below the patched minimum 16\.3\.3/,
+    "a release bundle with pre-patch Next must fail verification",
+  );
+  await writeFile(bundledNextManifest, patchedNextManifest, "utf8");
+  await verifySidecarRuntime(destination);
 
   const optionalPackage = "@next/swc-linux-x64-gnu";
   await packageFixture(projectRoot, optionalPackage);
