@@ -16,6 +16,23 @@ private func reminder(link: Reminder.Link? = nil) -> Reminder {
 /// UNUserNotificationCenter plumbing is intentionally not under test.
 final class ChatNotificationsTests: XCTestCase {
 
+    func testLiveActivityStateWithholdsTraceTitlesBeforeEncoding() throws {
+        for title in ["PRIVATE_TOOL_ARGUMENT", "PRIVATE_REASONING_SUMMARY", "PRIVATE_OPAQUE_SIGNATURE"] {
+            let state = ChatActivityAttributes.ContentState(statusLabel: title)
+            let encoded = try JSONEncoder().encode(state)
+            XCTAssertEqual(state.statusLabel, "Working…")
+            XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains(title))
+        }
+    }
+
+    func testRestoredLiveActivityStateDoesNotRediscloseAnOldTraceTitle() throws {
+        let sentinel = "PRIVATE_RESTORED_TOOL_TITLE"
+        let saved = try JSONSerialization.data(withJSONObject: ["statusLabel": sentinel])
+        let state = try JSONDecoder().decode(ChatActivityAttributes.ContentState.self, from: saved)
+        XCTAssertEqual(state.statusLabel, "Working…")
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(state), as: UTF8.self).contains(sentinel))
+    }
+
     // MARK: - Notify/suppress decision
 
     func testNotifiesWhenBackgroundedUnmutedAndEnabled() {
