@@ -13,8 +13,13 @@
 // canonical lifecycle through the pinned SDK (`GET /api/coven-automation-lifecycle`
 // and `GET /api/coven-automations/[id]/lifecycle`), and resumes and pauses it at
 // an expected revision (`POST /api/coven-automations/[id]/lifecycle`), including
-// a same-key resend and a stale-revision conflict. Finally it stops the daemon
-// and requires Cave to report it unavailable rather than fall back.
+// a same-key resend and a stale-revision conflict. It presses Run now through
+// Cave's own route on a third routine whose runtime is not installed, then
+// reads the occurrence, run and failed attempt Coven recorded
+// (`GET /api/coven-automations/[id]/occurrences[/occurrenceId]`) and follows
+// the automation, occurrence and run streams of the changefeed
+// (`GET /api/coven-automations/[id]/feed`) from a checkpoint. Finally it stops
+// the daemon and requires Cave to report it unavailable rather than fall back.
 //
 //   pnpm canary:automations-release            # install the pinned release
 //   pnpm canary:automations-release -- --coven <path to coven or bin/coven.js>
@@ -33,6 +38,7 @@ export const RELEASE_FIXTURE = path.join(repositoryRoot, "fixtures", "coven-auto
 const USAGE = "usage: coven-automations-release-canary.ts [--coven <path to coven or @opencoven/cli bin/coven.js>]";
 const ROUTINE_ID = "cave-release-canary";
 const FORM_ROUTINE_ID = "cave-release-canary-form";
+const RUN_ROUTINE_ID = "cave-release-canary-run";
 const READINESS_TIMEOUT_MS = 30_000;
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 // sockaddr_un.sun_path is 104 bytes on macOS and 108 on Linux, including NUL.
@@ -52,6 +58,9 @@ export const REQUIRED_ACTIONS = [
   "coven.automations.command.v1",
   "coven.automations.definition.activate.v1",
   "coven.automations.definition.pause.v1",
+  "coven.automations.run",
+  "coven.automations.occurrence.history.v1",
+  "coven.automations.occurrence.get.v1",
 ] as const;
 
 export interface CanaryArguments {
@@ -100,6 +109,14 @@ export interface CanaryDependencies {
   lifecycleDetail(id: string): Promise<CanaryResponse>;
   /** `POST /api/coven-automations/[id]/lifecycle` */
   lifecycleCommand(id: string, body: Record<string, unknown>): Promise<CanaryResponse>;
+  /** `POST /api/codex-automations/[id]/run`, as Run now sends it. */
+  runNow(id: string): Promise<CanaryResponse>;
+  /** `GET /api/coven-automations/[id]/occurrences` */
+  occurrences(id: string): Promise<CanaryResponse>;
+  /** `GET /api/coven-automations/[id]/occurrences/[occurrenceId]` */
+  occurrence(id: string, occurrenceId: string): Promise<CanaryResponse>;
+  /** `GET /api/coven-automations/[id]/feed?…` */
+  feed(id: string, query: Record<string, string>): Promise<CanaryResponse>;
   restartDaemon(): Promise<void>;
   stopDaemon(): Promise<void>;
 }
@@ -109,6 +126,9 @@ export interface CanarySummary {
   historyEntries: number;
   historyPages: number;
   lifecycleCommands: number;
+  occurrences: number;
+  attempts: number;
+  feedEvents: number;
 }
 
 function fail(message: string): never {
@@ -191,6 +211,18 @@ function expectLifecycle(
   return { timezone: record.timezone as string };
 }
 
+/** A caught-up feed read whose events are exactly `label:detail` in order; returns its checkpoint. */
+function expectFeed(label: string, response: CanaryResponse, expected: readonly string[]): string {
+  const events = Array.isArray(response.body.events) ? response.body.events as { label?: unknown; detail?: unknown }[] : [];
+  const actual = events.map((event) => `${String(event.label)}:${String(event.detail)}`);
+  const checkpoint = response.body.checkpoint;
+  if (response.status !== 200 || response.body.kind !== "available" || response.body.caughtUp !== true || response.body.omitted !== 0 ||
+    actual.join("|") !== expected.join("|") || typeof checkpoint !== "string" || checkpoint.length === 0) {
+    fail(`${label}: expected the caught-up feed [${expected.join(", ")}], received ${response.status} ${describe(response.body)}.`);
+  }
+  return checkpoint;
+}
+
 function expectAnswer(label: string, response: CanaryResponse, status: number, body: Record<string, unknown>): void {
   if (response.status !== status || describe(response.body) !== describe(body)) {
     fail(`${label}: expected ${status} ${describe(body)}, received ${response.status} ${describe(response.body)}.`);
@@ -219,9 +251,13 @@ async function expectUnavailable(label: string, attempt: () => Promise<unknown>,
  */
 export async function runCaveAutomationsScenario(
   cave: CanaryDependencies,
-  // Twelve hours from now on this machine's clock, where the daemon resolves
-  // `local`: the form routine cannot fire in the seconds it is active.
-  { formHour = (new Date().getHours() + 12) % 24 }: { formHour?: number } = {},
+  {
+    // Twelve hours from now on this machine's clock, where the daemon resolves
+    // `local`: the form routine cannot fire in the seconds it is active.
+    formHour = (new Date().getHours() + 12) % 24,
+    // An existing directory the daemon may run in; nothing is ever written there.
+    runCwd,
+  }: { formHour?: number; runCwd: string },
 ): Promise<CanarySummary> {
   const capabilities = await cave.capabilities();
   const missing = REQUIRED_ACTIONS.filter((action) => !capabilities.actions?.includes(action));
@@ -287,6 +323,54 @@ export async function runCaveAutomationsScenario(
   if (removed.status !== 200 || removedRecord?.kind !== "absent") {
     fail(`lifecycle after delete: expected the form routine absent, received ${removed.status} ${describe(removed.body)}.`);
   }
+
+  // Run now through Cave's own route, on a routine whose runtime is not on the
+  // daemon's PATH: Coven records a manual occurrence, a run and its failed
+  // attempt. Cave must report the failure, never a started run, and then show
+  // each fact as Coven recorded it, without the daemon's free text.
+  const runRoutine = await cave.createRoutine({ ...draft, id: RUN_ROUTINE_ID, name: "Cave release canary (run now)", cwd: runCwd });
+  if (runRoutine.id !== RUN_ROUTINE_ID || runRoutine.status !== "PAUSED") {
+    fail(`createRoutine (run now): expected the paused routine back, received ${describe(runRoutine)}.`);
+  }
+  const ran = await cave.runNow(RUN_ROUTINE_ID);
+  if (ran.status === 200 || ran.body.ok !== false) {
+    fail(`run now without a runtime: expected Cave to report the failed run, received ${ran.status} ${describe(ran.body)}.`);
+  }
+  const listed = await cave.occurrences(RUN_ROUTINE_ID);
+  const occurrences = Array.isArray(listed.body.occurrences) ? listed.body.occurrences as Record<string, unknown>[] : [];
+  const occurrence = occurrences[0];
+  if (listed.status !== 200 || listed.body.kind !== "available" || occurrences.length !== 1 || listed.body.nextCursor !== null ||
+    occurrence.kind !== "manual" || occurrence.state !== "claimed" || occurrence.automationRevision !== 1 || occurrence.reasonRecorded !== true) {
+    fail(`occurrences: expected one claimed manual occurrence at revision 1 with its reason withheld, received ${listed.status} ${describe(listed.body)}.`);
+  }
+  const inspected = await cave.occurrence(RUN_ROUTINE_ID, String(occurrence.id));
+  const inspectedOccurrence = inspected.body.occurrence as { runs?: Record<string, unknown>[] } | null | undefined;
+  const run = inspectedOccurrence?.runs?.length === 1 ? inspectedOccurrence.runs[0] : undefined;
+  const attempts = Array.isArray(run?.attempts) ? run.attempts as Record<string, unknown>[] : [];
+  if (inspected.status !== 200 || inspected.body.kind !== "available" || run?.status !== "running" || run.runtime !== "coven-code" ||
+    run.finishedAt !== null || attempts.length !== 1 || attempts[0].state !== "failed" || attempts[0].failureClass !== "runtime_unavailable" ||
+    attempts[0].retryClassification !== "initial" || attempts[0].reasonRecorded !== true || typeof attempts[0].settledAt !== "string") {
+    fail(`occurrence: expected one open run whose only attempt failed with runtime_unavailable, received ${inspected.status} ${describe(inspected.body)}.`);
+  }
+  if (/spawn|No such file/u.test(JSON.stringify(listed.body) + JSON.stringify(inspected.body))) {
+    fail("occurrences: the daemon's free-text reason reached Cave's answer.");
+  }
+  // The changefeed: each stream from the beginning, then from its checkpoint.
+  const runStream = { stream: "run", streamId: String(run.id) };
+  const runCheckpoint = expectFeed("run stream", await cave.feed(RUN_ROUTINE_ID, runStream), [
+    "Run changed:none → running",
+    "Attempt changed:none → adopted",
+    "Attempt changed:adopted → dispatching",
+    "Attempt changed:dispatching → failed",
+  ]);
+  expectFeed("run stream from its checkpoint", await cave.feed(RUN_ROUTINE_ID, { ...runStream, checkpoint: runCheckpoint }), []);
+  expectFeed("occurrence stream", await cave.feed(RUN_ROUTINE_ID, { stream: "occurrence", streamId: String(occurrence.id) }), [
+    "Occurrence changed:none → claimed",
+  ]);
+  const definitionCheckpoint = expectFeed("automation stream", await cave.feed(RUN_ROUTINE_ID, {}), ["Definition created:Revision 1"]);
+  // A position Coven does not hold is a reset for the caller, not an outage.
+  expectAnswer("a checkpoint Coven never issued", await cave.feed(RUN_ROUTINE_ID, { checkpoint: "cave-canary-unknown-checkpoint" }), 410, { kind: "expired" });
+
   const updated = await cave.updateRoutine({ ...created, prompt: "Report that the Cave canary was revised." });
   if (updated.id !== ROUTINE_ID || updated.prompt !== "Report that the Cave canary was revised.") {
     fail(`updateRoutine: expected the revised prompt, received ${describe(updated)}.`);
@@ -325,8 +409,10 @@ export async function runCaveAutomationsScenario(
   expectAnswer("lifecycle with the daemon stopped", await cave.lifecycle([ROUTINE_ID]), 503, { kind: "unavailable" });
   expectAnswer("a command with the daemon stopped", await cave.lifecycleCommand(ROUTINE_ID,
     { command: "activate", expectedRevision: 1, adoptionKey: `cave-${randomUUID()}` }), 503, { kind: "unavailable" });
+  expectAnswer("occurrences with the daemon stopped", await cave.occurrences(RUN_ROUTINE_ID), 503, { kind: "unavailable" });
+  expectAnswer("the changefeed with the daemon stopped", await cave.feed(RUN_ROUTINE_ID, { checkpoint: definitionCheckpoint }), 503, { kind: "unavailable" });
 
-  return { mutations: 6, historyEntries: 3, historyPages: 3, lifecycleCommands: 4 };
+  return { mutations: 8, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 };
 }
 
 function covenCommand(coven: string): [string, string[]] {
@@ -467,6 +553,8 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
     // The canary creates the home, private to this user, before Cave or the
     // daemon reads it.
     mkdirSync(home, { mode: 0o700 });
+    const work = path.join(root, "work");
+    mkdirSync(work, { mode: 0o700 });
     verifyCovenVersion(coven, version, home);
 
     // Cave resolves the daemon from COVEN_HOME on every request; the socket
@@ -480,6 +568,10 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
     const createRoute = await import("../src/app/api/codex-automations/route.ts");
     const overviewRoute = await import("../src/app/api/coven-automation-lifecycle/route.ts");
     const lifecycleRoute = await import("../src/app/api/coven-automations/[id]/lifecycle/route.ts");
+    const runRoute = await import("../src/app/api/codex-automations/[id]/run/route.ts");
+    const occurrencesRoute = await import("../src/app/api/coven-automations/[id]/occurrences/route.ts");
+    const occurrenceRoute = await import("../src/app/api/coven-automations/[id]/occurrences/[occurrenceId]/route.ts");
+    const feedRoute = await import("../src/app/api/coven-automations/[id]/feed/route.ts");
     const { TOKEN_HEADER } = await import("../src/proxy-helpers.ts");
     // Mutating routes accept only a local origin, as the desktop app sends them.
     const token = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
@@ -517,12 +609,22 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
         new Request(`http://127.0.0.1:3000/api/coven-automations/${encodeURIComponent(id)}/lifecycle`), { params: Promise.resolve({ id }) })),
       lifecycleCommand: async (id, body) => answer(await lifecycleRoute.POST(
         local(`http://127.0.0.1:3000/api/coven-automations/${encodeURIComponent(id)}/lifecycle`, body), { params: Promise.resolve({ id }) })),
+      runNow: async (id) => answer(await runRoute.POST(
+        local(`http://127.0.0.1:3000/api/codex-automations/${encodeURIComponent(id)}/run`, {}), { params: Promise.resolve({ id }) })),
+      occurrences: async (id) => answer(await occurrencesRoute.GET(
+        new Request(`http://127.0.0.1:3000/api/coven-automations/${encodeURIComponent(id)}/occurrences`), { params: Promise.resolve({ id }) })),
+      occurrence: async (id, occurrenceId) => answer(await occurrenceRoute.GET(
+        new Request(`http://127.0.0.1:3000/api/coven-automations/${encodeURIComponent(id)}/occurrences/${encodeURIComponent(occurrenceId)}`),
+        { params: Promise.resolve({ id, occurrenceId }) })),
+      feed: async (id, query) => answer(await feedRoute.GET(
+        new Request(`http://127.0.0.1:3000/api/coven-automations/${encodeURIComponent(id)}/feed?${new URLSearchParams(query)}`),
+        { params: Promise.resolve({ id }) })),
       restartDaemon: async () => {
         await stop();
         await start();
       },
       stopDaemon: stop,
-    }));
+    }, { runCwd: work }));
     return { ...summary, covenVersion: version, daemonStarts: starts };
   } catch (error) {
     const output = Buffer.concat(log).toString("utf8").trim();
@@ -571,6 +673,12 @@ async function main(signal: AbortSignal): Promise<void> {
     `lifecycleCommands=${result.lifecycleCommands}`,
     "createPaused=passed",
     "revisionConflict=typed",
+    "runNowFailure=reported",
+    `occurrences=${result.occurrences}`,
+    `attempts=${result.attempts}`,
+    `feedEvents=${result.feedEvents}`,
+    "feedResume=passed",
+    "feedLostPosition=expired",
     "offline=reported-unavailable",
   ].join(" ") + "\n");
 }

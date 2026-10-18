@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CwdPickerField } from "@/components/cwd-picker-field";
 import { SkillSelect } from "@/components/automation-skill-select";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,9 @@ import { runStatusColor, runStatusIcon } from "@/lib/automations/run-status";
 import { CronDetailSection, CronSummaryTile, FieldLabel } from "@/components/automations/cron-detail-primitives";
 import { CanonicalAutomationHistory } from "@/components/automations/canonical-history";
 import { AutomationSchedulePreview } from "@/components/automations/automation-schedule-preview";
+import { AutomationOccurrences } from "@/components/automations/automation-occurrences";
+import { useAutomationFeed, type AutomationFeedChange } from "@/lib/automations/use-automation-feed";
+import { feedStatusText, type AutomationFeedStream } from "@/lib/automations/feed";
 import { sameRoutineRrule } from "@/lib/automations/routine-rrule";
 import {
   lifecycleControl,
@@ -29,6 +32,8 @@ import {
   type AutomationHealthView,
   type AutomationLifecycleView,
 } from "@/lib/automations/lifecycle";
+
+const NO_STREAMS: AutomationFeedStream[] = [];
 
 const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
   weekly: "Weekly",
@@ -71,6 +76,7 @@ export function CodexDetailPanel({
   onDelete,
   onRun,
   runs,
+  onCanonicalChange,
 }: {
   auto: CodexAutomation;
   /** Coven's canonical lifecycle; the panel's state, badge and controls read only this. */
@@ -86,6 +92,8 @@ export function CodexDetailPanel({
   onDelete: (auto: CodexAutomation) => void;
   onRun: (auto: CodexAutomation) => void;
   runs: AutomationRunRecord[];
+  /** Coven's changefeed reported a definition change, or lost its position: re-read the lifecycle. */
+  onCanonicalChange?: () => void;
 }) {
   const isActive = lifecycle.state === "active";
   const control = lifecycleControl(lifecycle);
@@ -95,6 +103,23 @@ export function CodexDetailPanel({
   // Health is read on demand for the open automation only, and again whenever
   // Coven reports a new revision. `undefined` while reading, `null` if it can't be.
   const [health, setHealth] = useState<AutomationHealthView | null | undefined>(undefined);
+  // The changefeed is the signal to re-read; it never stands in for the reads themselves.
+  const [healthNonce, setHealthNonce] = useState(0);
+  const [occurrenceNonce, setOccurrenceNonce] = useState(0);
+  // Streams are tagged with the automation they were read for, so a selection
+  // change never follows the previous automation's runs under the new id.
+  const [watched, setWatched] = useState<{ automationId: string; streams: AutomationFeedStream[] }>({ automationId: auto.id, streams: [] });
+  const onWatchStreams = useCallback((streams: AutomationFeedStream[]) => setWatched({ automationId: auto.id, streams }), [auto.id]);
+  const onCanonicalChangeRef = useRef(onCanonicalChange);
+  onCanonicalChangeRef.current = onCanonicalChange;
+  const onFeedChange = useCallback((change: AutomationFeedChange) => {
+    if (change.reset || change.topics.includes("definition")) onCanonicalChangeRef.current?.();
+    if (change.reset || change.topics.some((topic) => topic !== "definition")) {
+      setHealthNonce((value) => value + 1);
+      setOccurrenceNonce((value) => value + 1);
+    }
+  }, []);
+  const feed = useAutomationFeed(auto.id, watched.automationId === auto.id ? watched.streams : NO_STREAMS, onFeedChange);
   useEffect(() => {
     if (lifecycle.revision === null) return;
     const controller = new AbortController();
@@ -108,7 +133,7 @@ export function CodexDetailPanel({
       })
       .catch(() => { if (!controller.signal.aborted) setHealth(null); });
     return () => controller.abort();
-  }, [auto.id, lifecycle.revision]);
+  }, [auto.id, lifecycle.revision, healthNonce]);
   // Dialog semantics for the cron detail panel — trap focus, Escape closes, focus
   // returns to the opening row. aria-modal omitted (see DetailPanel's note).
   const panelRef = useRef<HTMLDivElement>(null);
@@ -444,6 +469,9 @@ export function CodexDetailPanel({
       </div>
     </CronDetailSection>
   );
+  const occurrencesSection = (
+    <AutomationOccurrences key={auto.id} automationId={auto.id} refreshNonce={occurrenceNonce} onWatchStreams={onWatchStreams} />
+  );
   const runsSection = runs.length > 0 ? (
     <CronDetailSection
       title="Recent runs"
@@ -571,6 +599,19 @@ export function CodexDetailPanel({
           <p className="text-[length:var(--text-xs)] [color:var(--color-warning)]!" role="status">{freshnessNote}</p>
         ) : null}
 
+        {/* Not a live region: the check time changes every few seconds. Outages and resets read as text here. */}
+        <div className="space-y-0.5 text-[length:var(--text-2xs)] [color:var(--text-muted)]!">
+          <p>{feedStatusText(feed.state, feed.now, (ms) => formatTimestamp(new Date(ms).toISOString(), readDateTimePrefs()))}</p>
+          {feed.state.lastEvent ? (
+            <p>
+              Last event: {feed.state.lastEvent.label}, {feed.state.lastEvent.detail}{" "}
+              <time dateTime={feed.state.lastEvent.recordedAt} title={feed.state.lastEvent.recordedAt}>
+                ({formatTimestamp(feed.state.lastEvent.recordedAt, readDateTimePrefs())})
+              </time>
+            </p>
+          ) : null}
+        </div>
+
         <AutomationSchedulePreview
           rrule={nextRrule}
           savedRrule={auto.rrule ?? ""}
@@ -589,6 +630,7 @@ export function CodexDetailPanel({
               {instructionsSection}
               {runtimeSection}
             </div>
+            <div className="min-w-0 lg:col-span-2">{occurrencesSection}</div>
             {runsSection && <div className="min-w-0 lg:col-span-2">{runsSection}</div>}
             <div className="min-w-0 lg:col-span-2"><CanonicalAutomationHistory key={auto.id} automationId={auto.id} /></div>
           </div>
@@ -598,6 +640,7 @@ export function CodexDetailPanel({
             {instructionsSection}
             {scheduleSection}
             {runtimeSection}
+            {occurrencesSection}
             {runsSection}
             <CanonicalAutomationHistory key={auto.id} automationId={auto.id} />
           </div>
