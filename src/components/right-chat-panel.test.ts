@@ -664,4 +664,49 @@ assert.doesNotMatch(
   "list must not adopt Escape ownership through the trap — Escape stays the legacy listener's job",
 );
 
+// #6052: the chat header inside the narrow panel is one row — title and
+// overflow menu — with the rest revealed on hover/focus or left to the wide
+// surface. The rules live in a component-imported sheet (CLAUDE.md, "New
+// surface CSS"), never in globals.
+const headerCss = await readFile(new URL("../styles/right-chat-header.css", import.meta.url), "utf8");
+assert.match(source, /import "@\/styles\/right-chat-header\.css";/, "the panel imports its own header sheet");
+assert.doesNotMatch(shellCss, /cave-chat-header-status|cave-chat-header-avatar/, "panel header rules stay out of the global sheet");
+for (const selector of [
+  ".right-chat .cave-chat-header-row .cave-chat-header-avatar",
+  '.right-chat .cave-chat-header-row .ui-session-pill[data-state="completed"]',
+  ".right-chat .cave-chat-meta-line--complete .cave-chat-meta-line__meta",
+  ".right-chat .cave-chat-header-status",
+]) {
+  assert.match(
+    headerCss,
+    new RegExp(`${selector.replace(/[.[\]"]/g, (c) => `\\${c}`)} \\{\\s*display: none;`),
+    `${selector} is hidden in the panel`,
+  );
+}
+assert.doesNotMatch(
+  headerCss,
+  /cave-chat-session-actions[^{]*\{[^}]*display: none/,
+  "actions are never display:none — they stay in the accessibility tree and tab order",
+);
+assert.match(
+  headerCss,
+  /\.right-chat \.cave-chat-session-actions > \.focus-ring:not\(:last-child\) \{[^}]*width: 0;[^}]*opacity: 0;/,
+  "non-overflow actions rest collapsed (width and opacity) so the title gets the room",
+);
+assert.match(
+  headerCss,
+  /\.right-chat \.cave-chat-linear-header:focus-within \.cave-chat-session-actions > \.focus-ring \{[^}]*opacity: 1;/,
+  "keyboard focus inside the header reveals the whole action cluster",
+);
+assert.match(
+  headerCss,
+  /@media \(hover: none\) and \(pointer: coarse\) \{[\s\S]*\.right-chat \.cave-chat-session-actions > \.focus-ring[\s\S]*opacity: 1;/,
+  "touch devices cannot hover: actions stay visible there",
+);
+assert.doesNotMatch(
+  headerCss,
+  /\.ui-session-pill\[data-state="(running|queued|failed|paused)"\]/,
+  "live session states keep their pill; only the settled state hides",
+);
+
 console.log("right-chat-panel.test.ts OK");

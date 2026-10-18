@@ -1,0 +1,107 @@
+/* right-chat-header.css — the chat header inside the narrow Chat panel
+ * (sidechat, `right-chat-panel.tsx`), issue #6052.
+ *
+ * The panel mounts the same ChatView as the main Chat surface, whose header
+ * is built for a wide column: avatar · title · status pill · identity line,
+ * then the action icons, then the steps/active stats and the Last run strip.
+ * At the panel's ~276px that stacked four bands 144px tall and left the title
+ * four characters of room ("Ame…").
+ *
+ * In the panel the header is one row: the title and the overflow menu. The
+ * rail beside the panel already shows the familiar, so the avatar goes; the
+ * identity line, stats and Last run strip belong to the wide surface. The
+ * status pill stays only while there is something to report (a settled run
+ * shows nothing, the same rule a brand-new chat follows). Rename, voice,
+ * archive and find return on hover or keyboard focus of the header; they
+ * give up width as well as opacity so the title gets the room, but they are
+ * never `display: none` — they stay in the accessibility tree and tab order,
+ * and `:focus-within` reveals the whole cluster when you tab into it, the
+ * same contract as `.reveal-scope` / `.reveal-on-hover` in foundations.css.
+ *
+ * Imported by the component, not globals.css: only a route that opens the
+ * panel pays for it (CLAUDE.md, "New surface CSS").
+ */
+
+.right-chat .cave-chat-header-row {
+  flex-wrap: nowrap;
+  align-items: center;
+  column-gap: var(--space-2);
+}
+
+/* The wide header's identity grid (avatar / title / pill / meta) collapses to
+   a flex line, and the 40rem container rule that gave it the whole first line
+   no longer applies: title and actions share one row. */
+.right-chat .cave-chat-header-row > .cave-chat-meta-line {
+  display: flex;
+  flex: 1 1 0;
+  flex-basis: auto;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.right-chat .cave-chat-header-row .cave-chat-header-avatar {
+  display: none;
+}
+
+/* The one badge that owns the session state keeps its live states; a settled
+   run has nothing to report in a column this narrow. */
+.right-chat .cave-chat-header-row .ui-session-pill[data-state="completed"] {
+  display: none;
+}
+
+/* Settled identity and provenance ("Nova · claude 2.1.289 · model · dir ·
+   2m 18s") stay on the wide surface. Streaming, failed and offline states keep
+   their live meta (elapsed, "esc to cancel", Start daemon). */
+.right-chat .cave-chat-meta-line--complete .cave-chat-meta-line__meta {
+  display: none;
+}
+
+/* Steps/active stats and the Last run strip. */
+.right-chat .cave-chat-header-status {
+  display: none;
+}
+
+/* Rename follows the spark's hover rule (session-chrome.css) instead of
+   resting at 60% opacity. */
+.right-chat .cave-chat-title > button[aria-label="Rename chat"] {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.right-chat .cave-chat-title:hover > button[aria-label="Rename chat"],
+.right-chat .cave-chat-title:focus-within > button[aria-label="Rename chat"] {
+  opacity: 1;
+}
+
+/* Everything but the overflow menu (always last) rests collapsed. */
+.right-chat .cave-chat-session-actions > .focus-ring:not(:last-child) {
+  width: 0;
+  min-width: 0;
+  margin-inline: calc(var(--space-1) * -0.75);
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    width var(--duration-fast) var(--ease-standard),
+    margin var(--duration-fast) var(--ease-standard);
+}
+
+.right-chat .cave-chat-linear-header:hover .cave-chat-session-actions > .focus-ring,
+.right-chat .cave-chat-linear-header:focus-within .cave-chat-session-actions > .focus-ring {
+  width: 24px;
+  min-width: 24px;
+  margin-inline: 0;
+  opacity: 1;
+}
+
+/* Touch cannot hover: the cluster is always visible there. */
+@media (hover: none) and (pointer: coarse) {
+  .right-chat .cave-chat-session-actions > .focus-ring,
+  .right-chat .cave-chat-title > button[aria-label="Rename chat"] {
+    width: 24px;
+    min-width: 24px;
+    margin-inline: 0;
+    opacity: 1;
+  }
+}
