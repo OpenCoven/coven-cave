@@ -1062,6 +1062,10 @@ export const SUITES = {
     "src/lib/automations/feed.test.ts",
     "src/lib/automations/use-automation-feed.test.ts",
     "src/components/automations/automation-occurrences.test.ts",
+    // #5217: revision-conflict review and rebase
+    "src/lib/automations/revision-rebase.test.ts",
+    "src/components/automations/revision-conflict-review.test.ts",
+    "src/components/automations/cron-detail-panel-rebase.behavior.test.tsx",
     "src/lib/inbox-feed.test.ts",
     "src/lib/inbox-title.test.ts",
     "src/lib/toast-groups.test.ts",
@@ -2585,6 +2589,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/automations/cron-detail-panel-rebase.behavior.test.tsx",
   "src/components/familiar-note-generation-controls.test.tsx",
   "src/lib/use-attachment-staging-behavior.test.tsx",
   "src/components/composer-enhance-behavior.test.tsx",

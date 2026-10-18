@@ -4,6 +4,7 @@ import test from "node:test";
 import type { DaemonResponse } from "@/lib/coven-daemon";
 import { CovenAutomationsUnavailableError } from "@/lib/coven-automations-types";
 import {
+  readRoutineDefinition,
   CovenAutomationRevisionConflictError,
   createRoutine,
   deleteRoutine,
@@ -291,3 +292,15 @@ test("codexRruleText does not double the RRULE prefix", () => {
 });
 
 console.log("coven automations client: ok");
+
+test("readRoutineDefinition returns the body and revision from one definition.get.v1 snapshot", async () => {
+  const { calls, transport } = versionedDaemon({ revision: 7, routine: { ...ROUTINE, tags: undefined } });
+  const definition = await readRoutineDefinition("daily-notes", transport);
+  assert.equal(calls.length, 1);
+  assert.equal((calls[0]?.body as Record<string, unknown>).action, "coven.automations.definition.get.v1");
+  assert.equal(definition?.revision, 7);
+  assert.equal(definition?.routine.prompt, ROUTINE.prompt);
+  assert.deepEqual(definition?.routine.tags, [], "the versioned read omits empty tags");
+  assert.equal(await readRoutineDefinition("gone", versionedDaemon({ routine: null }).transport), null);
+  await assert.rejects(readRoutineDefinition("daily-notes", versionedDaemon({ revision: 0 }).transport), /no revision/);
+});

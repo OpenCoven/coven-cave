@@ -174,7 +174,19 @@ export async function readRoutineRevision(
   id: string,
   transport: AutomationTransport = callDaemon,
 ): Promise<number | null> {
-  const payload = await invokeAction<{ routine?: unknown; revision?: number; tombstonedAt?: string | null; error?: string }>(
+  return (await readRoutineDefinition(id, transport))?.revision ?? null;
+}
+
+/**
+ * The routine body and the revision Coven holds for it, read from one
+ * `definition.get.v1` snapshot so the two always belong together. Null when
+ * Coven holds no live definition with this id.
+ */
+export async function readRoutineDefinition(
+  id: string,
+  transport: AutomationTransport = callDaemon,
+): Promise<{ routine: CovenantAutomation; revision: number } | null> {
+  const payload = await invokeAction<{ routine?: CovenantAutomation | null; revision?: number; tombstonedAt?: string | null; error?: string }>(
     "coven.automations.definition.get.v1",
     { id },
     transport,
@@ -184,7 +196,8 @@ export async function readRoutineRevision(
   if (typeof payload.revision !== "number" || !Number.isSafeInteger(payload.revision) || payload.revision < 1) {
     throw new CovenAutomationsUnavailableError("Coven reported no revision for this definition", false);
   }
-  return payload.revision;
+  // The versioned read omits empty optional fields that the legacy read always sends.
+  return { routine: { ...payload.routine, tags: payload.routine.tags ?? [] }, revision: payload.revision };
 }
 
 /**
