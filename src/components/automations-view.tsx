@@ -16,7 +16,6 @@ import {
 } from "@/lib/inbox-feed";
 import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import type {
-  AutomationStatus,
   CodexAutomation,
   CodexAutomationPatch,
 } from "@/lib/codex-automations-types";
@@ -38,6 +37,8 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } from "@/lib/rituals-overview";
 import { failingCronIds } from "@/lib/automations/cron-health";
+import { lifecycleCommandMessage, lifecycleControl, parseLifecycleDetail } from "@/lib/automations/lifecycle";
+import { useAutomationLifecycle } from "@/lib/automations/use-automation-lifecycle";
 import { liveRunView, newestRunFor } from "@/lib/automations/live-run";
 import { LiveRunCard } from "@/components/automations/live-run-card";
 import { FamiliarCarousel } from "@/components/automations/familiar-carousel";
@@ -539,32 +540,41 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   }, [announce]);
 
   // ── Codex toggle ──────────────────────────────────────────────────────────
+  // Pause/resume reads Coven's canonical lifecycle and sends the command at the
+  // revision on screen. Coven refuses a moved definition (REVISION_CONFLICT)
+  // instead of Cave overwriting it, and an unverifiable state sends nothing.
+  const lifecycleIds = useMemo(() => codexAutos.map((a) => a.id), [codexAutos]);
+  const lifecycle = useAutomationLifecycle(lifecycleIds);
+  const { view: lifecycleOf, send: sendLifecycle } = lifecycle;
   const toggleCodex = useCallback(async (auto: CodexAutomation) => {
+    const control = lifecycleControl(lifecycleOf(auto.id));
+    if (control.disabledReason !== null || !control.command) {
+      setError(control.disabledReason ?? "The current state can't be verified.");
+      return;
+    }
     setBusyId(auto.id);
     try {
-      const newStatus: AutomationStatus = auto.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
-      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      if (!res.ok) throw new Error(`http ${res.status}`);
-      announce(`${newStatus === "PAUSED" ? "Paused" : "Resumed"} '${auto.name}'.`);
+      const result = await sendLifecycle(auto.id, control.command, control.expectedRevision);
+      const outcome = lifecycleCommandMessage(result, control.command, auto.name);
+      if (outcome.ok) announce(outcome.message);
+      else setError(outcome.message);
       await reloadAfterMutation();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "codex patch failed");
+      setError(err instanceof Error ? err.message : "lifecycle command failed");
     } finally {
       setBusyId(null);
     }
-  }, [reloadAfterMutation]);
+  }, [lifecycleOf, sendLifecycle, reloadAfterMutation]);
 
   const saveCodex = useCallback(async (auto: CodexAutomation, patch: CodexAutomationPatch) => {
     setBusyId(auto.id);
+    // Saved at the revision on screen: Coven refuses it if the definition moved.
+    const expectedRevision = lifecycleOf(auto.id).revision;
     try {
       const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(patch),
+        body: JSON.stringify(expectedRevision === null ? patch : { ...patch, expectedRevision }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
@@ -576,22 +586,25 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     } finally {
       setBusyId(null);
     }
-  }, [reloadAfterMutation]);
+  }, [lifecycleOf, reloadAfterMutation]);
 
   const deleteCodex = useCallback((auto: CodexAutomation) => {
     setSelectedCodex(null);
     focusHeaderAction(); // panel held focus
+    // The revision the person chose to delete; a change since then is a conflict.
+    const expectedRevision = lifecycleOf(auto.id).revision;
     scheduleDelete([auto.id], `automation “${auto.name}”`, async () => {
       setCodexAutos((prev) => prev.filter((a) => a.id !== auto.id));
       try {
-        const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, { method: "DELETE" });
+        const query = expectedRevision === null ? "" : `?expectedRevision=${expectedRevision}`;
+        const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}${query}`, { method: "DELETE" });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "codex delete failed");
       } finally { await reloadAfterMutation(); }
     });
-  }, [scheduleDelete, reloadAfterMutation, focusHeaderAction]);
+  }, [scheduleDelete, reloadAfterMutation, focusHeaderAction, lifecycleOf]);
 
   const runCodexNow = useCallback(async (auto: CodexAutomation) => {
     if (!(await confirm({ title: `Run “${auto.name}” now?`, body: "This executes the agent immediately.", confirmLabel: "Run now" }))) return;
@@ -612,20 +625,36 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   }, [refreshRuns, refreshLastRuns]);
 
   const createCodex = useCallback(async (input: AutomationCreateInput) => {
+    const { start, ...body } = input;
     try {
+      // Every new routine is created paused; activation is a separate,
+      // revision-checked command against the definition Coven just stored.
       const res = await fetch("/api/codex-automations", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       setCreateOpen(false);
-      announce(`Created cron '${input.name}'.`);
+      const createdId: string | undefined = json.automation?.id;
+      if (start === "active" && createdId) {
+        const detail = parseLifecycleDetail(await fetch(`/api/coven-automations/${encodeURIComponent(createdId)}/lifecycle`, { cache: "no-store" })
+          .then((r) => r.json()).catch(() => null));
+        if (detail.kind === "available" && detail.record.kind === "present" && detail.record.state === "paused") {
+          const outcome = lifecycleCommandMessage(await sendLifecycle(createdId, "activate", detail.record.revision), "activate", input.name);
+          if (outcome.ok) announce(`Created cron '${input.name}' and resumed it.`);
+          else setError(`Created '${input.name}' paused. ${outcome.message}`);
+        } else {
+          setError(`Created '${input.name}' paused. Coven's revision couldn't be read, so it wasn't resumed.`);
+        }
+      } else {
+        announce(`Created cron '${input.name}', paused.`);
+      }
       await reloadAfterMutation();
       if (json.automation) { setSelectedCodex(json.automation); setSelectedItem(null); }
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex create failed");
     }
-  }, [reloadAfterMutation]);
+  }, [reloadAfterMutation, sendLifecycle]);
 
   // Ids whose delete is pending in the undo window — hidden everywhere until the
   // window lapses (committing the delete) or Undo restores them.
@@ -669,18 +698,27 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   const codexActive = useMemo(
     () =>
       codexAutos.filter(
-        (a) => a.status === "ACTIVE" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!failingOnly || failingIds.has(a.id)) && (!q || a.name.toLowerCase().includes(q)),
+        (a) => lifecycleOf(a.id).state === "active" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!failingOnly || failingIds.has(a.id)) && (!q || a.name.toLowerCase().includes(q)),
       ),
-    [codexAutos, familiarFilter, failingIds, failingOnly, hiddenIds, q],
+    [codexAutos, familiarFilter, failingIds, failingOnly, hiddenIds, lifecycleOf, q],
   );
   const codexPaused = useMemo(
     // A paused cron is off, not failing, so the failing filter hides the whole
     // Paused group rather than pretending none of them match.
     () =>
       failingOnly ? [] : codexAutos.filter(
-        (a) => a.status === "PAUSED" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
+        (a) => (lifecycleOf(a.id).state === "paused" || lifecycleOf(a.id).state === "disabled") && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
       ),
-    [codexAutos, familiarFilter, failingOnly, hiddenIds, q],
+    [codexAutos, familiarFilter, failingOnly, hiddenIds, lifecycleOf, q],
+  );
+  // Rows Coven has not confirmed a state for. They are listed apart rather
+  // than filed under Active or Paused on the strength of the legacy mirror.
+  const codexUnverified = useMemo(
+    () =>
+      failingOnly ? [] : codexAutos.filter(
+        (a) => lifecycleOf(a.id).state === "unknown" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
+      ),
+    [codexAutos, familiarFilter, failingOnly, hiddenIds, lifecycleOf, q],
   );
   // Cron counts per familiar for the carousel cards — unfiltered, so the strip
   // keeps reporting the whole picture while a scope is active.
@@ -816,12 +854,12 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   // would be reporting the filter back at you instead of the crons.
   const summary = useMemo(() => {
     return {
-      active: liveAutos.filter((a) => a.status === "ACTIVE").length,
-      paused: liveAutos.filter((a) => a.status === "PAUSED").length,
+      active: liveAutos.filter((a) => lifecycleOf(a.id).state === "active").length,
+      paused: liveAutos.filter((a) => lifecycleOf(a.id).state === "paused" || lifecycleOf(a.id).state === "disabled").length,
       failing: failingIds.size,
       soonest: undefined as string | undefined,
     };
-  }, [liveAutos, failingIds.size]);
+  }, [liveAutos, failingIds.size, lifecycleOf]);
 
   // The card's view of the followed run, recomputed each render so the elapsed
   // readout stays honest without this component owning a timer of its own.
@@ -888,6 +926,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     <ScheduleActionsContext.Provider
       value={{
         runAutomation: runCodexNow,
+        lifecycleOf,
         togglePauseAutomation: toggleCodex,
         busyId,
       }}
@@ -1262,7 +1301,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                 )}
               </>
             )
-          ) : q && codexActive.length + codexPaused.length === 0 ? (
+          ) : q && codexActive.length + codexPaused.length + codexUnverified.length === 0 ? (
             <EmptyState
               className="mt-12"
               icon="ph:magnifying-glass"
@@ -1291,6 +1330,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
               <AutomationsPanel
                 active={codexActive}
                 paused={codexPaused}
+                unverified={codexUnverified}
                 // Scoped to the rows actually rendered, unlike the header chip:
                 // "Active · 1  3 failing" would be counting failures that a
                 // familiar scope has already hidden. Suppressed entirely while
@@ -1302,7 +1342,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                 lastRunById={lastRunById}
                 onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
               />
-              {codexActive.length === 0 && codexPaused.length === 0 && (
+              {codexActive.length === 0 && codexPaused.length === 0 && codexUnverified.length === 0 && (
                 <p className="mt-2 text-[length:var(--text-sm)] [color:var(--text-muted)]!">
                   {failingOnly
                     ? "No failing crons — clear the failing filter to see the rest."
@@ -1346,6 +1386,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
           {selectedCodex && (
             <CodexDetailPanel
               auto={selectedCodex}
+              lifecycle={lifecycleOf(selectedCodex.id)}
               busy={busyId === selectedCodex.id}
               expanded={cronDetailExpanded}
               onToggleExpanded={() => setDetailExpanded((v) => !v)}

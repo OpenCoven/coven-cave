@@ -33,6 +33,9 @@ export type AutomationCreateInput = {
   reasoning_effort: string;
   execution_environment: string;
   skill_path: string | null;
+  /** New routines are always created paused. `active` resumes the new
+   *  definition afterwards, at the revision Coven reports for it. */
+  start: "paused" | "active";
 };
 
 type Props = {
@@ -66,6 +69,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
   const [tagsText, setTagsText] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [skillPath, setSkillPath] = useState<string | null>(null);
+  const [start, setStart] = useState<AutomationCreateInput["start"]>("paused");
 
   const toggleDay = (day: string) => {
     setDays((prev) =>
@@ -129,6 +133,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
       reasoning_effort: reasoningEffort,
       execution_environment: executionEnvironment,
       skill_path: skillPath,
+      start,
     });
   };
 
@@ -250,6 +255,20 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
                       its being the ONLY readout as a P1 — "raw RRULE exposed
                       with no plain-English translation". */}
                   <SchedulePlanPreview plan={plan} ariaLabel="Cron schedule plan" />
+
+                  {/* Safe by default: a new routine runs nothing until it is
+                      resumed, and resuming is its own revision-checked step. */}
+                  <fieldset className="workflow-field automation-create-dialog__field">
+                    <legend>After creating</legend>
+                    <label className="flex items-start gap-2 text-[length:var(--text-sm)]">
+                      <input type="radio" name="automation-start" value="paused" checked={start === "paused"} onChange={() => setStart("paused")} />
+                      <span>Keep it paused. Nothing runs until you resume it.</span>
+                    </label>
+                    <label className="flex items-start gap-2 text-[length:var(--text-sm)]">
+                      <input type="radio" name="automation-start" value="active" checked={start === "active"} onChange={() => setStart("active")} />
+                      <span>Resume it now, so it runs from its next scheduled slot.</span>
+                    </label>
+                  </fieldset>
 
                   <p
                     className="automation-create-dialog__rrule"

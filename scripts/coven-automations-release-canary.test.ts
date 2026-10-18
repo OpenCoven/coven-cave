@@ -12,6 +12,7 @@ import {
   runCaveAutomationsScenario,
   type CanaryDependencies,
   type CanaryHistory,
+  type CanaryResponse,
   type CanaryRoutine,
 } from "./coven-automations-release-canary.ts";
 
@@ -35,6 +36,12 @@ interface Flaws {
   checkpointRewinds?: boolean;
   fallsBackWhenStopped?: boolean;
   offlineHistoryLooksAvailable?: boolean;
+  formCreatedActive?: boolean;
+  formRuleRefused?: boolean;
+  localZoneUnresolved?: boolean;
+  replayReapplies?: boolean;
+  staleRevisionOverwrites?: boolean;
+  offlineLifecycleLooksAvailable?: boolean;
 }
 
 const labels: Record<string, string> = {
@@ -52,6 +59,12 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
     revision += 1;
     events.push({ sequence: events.length, label: labels[kind] ?? kind, detail: `Revision ${revision}` });
   };
+  // The second routine, created through Cave's create route and driven by the lifecycle routes.
+  let form: { state: "paused" | "active"; revision: number } | null = null;
+  const adopted = new Map<string, number>();
+  const formRecord = (id: string) => form === null
+    ? { id, kind: "absent" }
+    : { id, kind: "present", state: form.state, revision: form.revision, timezone: flaws.localZoneUnresolved === true ? "local" : "Etc/UTC" };
   const online = () => {
     if (offline && flaws.fallsBackWhenStopped !== true) {
       throw new CovenAutomationsUnavailableError("daemon request failed: connect ENOENT", true);
@@ -83,7 +96,12 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
       return Promise.resolve({ ...routine });
     },
     listRoutineRuns: () => Promise.resolve([]),
-    deleteRoutine: () => {
+    deleteRoutine: (id) => {
+      if (id === "cave-release-canary-form") {
+        const existed = form !== null;
+        form = null;
+        return Promise.resolve(existed);
+      }
       const existed = routine !== null;
       if (existed) record("removed");
       routine = null;
@@ -100,6 +118,38 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
         status: 200,
         body: { kind: "available", entries, hasEntries: entries.length > 0, checkpoint: `cp:${last}` },
       });
+    },
+    createRoutineViaRoute: (body): Promise<CanaryResponse> => {
+      if (flaws.formRuleRefused === true && /BYMINUTE/u.test(String(body.rrule))) {
+        return Promise.resolve({ status: 500, body: { ok: false, error: "rrule key `BYMINUTE` is not supported" } });
+      }
+      form = { state: flaws.formCreatedActive === true ? "active" : "paused", revision: 1 };
+      return Promise.resolve({ status: 200, body: { ok: true, automation: { id: body.id, status: form.state === "active" ? "ACTIVE" : "PAUSED" } } });
+    },
+    lifecycle: (ids): Promise<CanaryResponse> => {
+      if (offline && flaws.offlineLifecycleLooksAvailable !== true) return Promise.resolve({ status: 503, body: { kind: "unavailable" } });
+      return Promise.resolve({ status: 200, body: { kind: "available", readAt: "2026-10-18T00:00:00.000Z", records: ids.map((id) =>
+        id === "cave-release-canary"
+          ? routine === null ? { id, kind: "absent" } : { id, kind: "present", state: routine.status === "ACTIVE" ? "active" : "paused", revision, timezone: routine.timezone }
+          : formRecord(id)) } });
+    },
+    lifecycleDetail: (id): Promise<CanaryResponse> => Promise.resolve({ status: 200, body: {
+      kind: "available", readAt: "2026-10-18T00:00:00.000Z", record: formRecord(id),
+      health: { nextDueAt: "2026-10-18T15:00:00.000Z", lastPlannedAt: null, lastStartedAt: null, lastSuccessAt: null, consecutiveFailures: 0, quarantined: false },
+    } }),
+    lifecycleCommand: (_id, body): Promise<CanaryResponse> => {
+      if (offline) return Promise.resolve({ status: 503, body: { kind: "unavailable" } });
+      const key = String(body.adoptionKey);
+      if (adopted.has(key) && flaws.replayReapplies !== true) {
+        return Promise.resolve({ status: 200, body: { kind: "committed", revision: adopted.get(key), replayed: true } });
+      }
+      if (form === null) return Promise.resolve({ status: 422, body: { kind: "rejected", code: "NOT_FOUND" } });
+      if (body.expectedRevision !== form.revision && flaws.staleRevisionOverwrites !== true) {
+        return Promise.resolve({ status: 409, body: { kind: "conflict", currentRevision: form.revision } });
+      }
+      form = { state: body.command === "activate" ? "active" : "paused", revision: form.revision + 1 };
+      adopted.set(key, form.revision);
+      return Promise.resolve({ status: 200, body: { kind: "committed", revision: form.revision, replayed: false } });
     },
     restartDaemon: () => {
       if (flaws.forgetsUpdateOnRestart === true) routine = previous;
@@ -150,7 +200,8 @@ test("pins one exact CLI release, at registry integrity, and CI runs the canary"
 });
 
 test("passes against a daemon Cave reports faithfully", async () => {
-  assert.deepEqual(await runCaveAutomationsScenario(fakeCave()), { mutations: 4, historyEntries: 3, historyPages: 3 });
+  assert.deepEqual(await runCaveAutomationsScenario(fakeCave(), { formHour: 15 }),
+    { mutations: 6, historyEntries: 3, historyPages: 3, lifecycleCommands: 4 });
 });
 
 for (const [label, flaws, message] of [
@@ -162,8 +213,14 @@ for (const [label, flaws, message] of [
   ["a checkpoint that rewinds to the start", { checkpointRewinds: true }, /history from the pre-restart checkpoint: expected available history \[2:Definition removed:Revision 3\]/u],
   ["a read that falls back when the daemon is gone", { fallsBackWhenStopped: true }, /getRoutine with the daemon stopped: expected CovenAutomationsUnavailableError with degraded=true, but the call succeeded/u],
   ["history that looks available when the daemon is gone", { offlineHistoryLooksAvailable: true }, /history with the daemon stopped: expected 503 unavailable/u],
+  ["a create from the form that does not stay paused", { formCreatedActive: true }, /create route: expected the form routine created paused/u],
+  ["a create route that passes BYMINUTE to Coven", { formRuleRefused: true }, /create route: expected the form routine created paused, received 500/u],
+  ["a zone left as local", { localZoneUnresolved: true }, /lifecycle: expected the explicit utc zone and a resolved zone for local/u],
+  ["a resend that applies the command again", { replayReapplies: true }, /resume resent under its adoption key: expected 200/u],
+  ["a stale revision that overwrites", { staleRevisionOverwrites: true }, /pause at a stale revision: expected 409/u],
+  ["a lifecycle that looks available when the daemon is gone", { offlineLifecycleLooksAvailable: true }, /lifecycle with the daemon stopped: expected 503/u],
 ] as const) {
   test(`fails closed on ${label}`, async () => {
-    await assert.rejects(runCaveAutomationsScenario(fakeCave(flaws)), message);
+    await assert.rejects(runCaveAutomationsScenario(fakeCave(flaws), { formHour: 15 }), message);
   });
 }

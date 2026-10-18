@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { toCodexAutomationPayload } from "@/lib/coven-automations-facade";
+import { covenRoutineRrule, toCodexAutomationPayload } from "@/lib/coven-automations-facade";
 import { createRoutine, listRoutines } from "@/lib/server/coven-automations-client";
 import { CovenAutomationsUnavailableError } from "@/lib/coven-automations-types";
 import { isLocalOrigin } from "@/lib/server/local-origin";
@@ -32,6 +32,8 @@ export async function POST(req: Request) {
   if (!rrule.startsWith("RRULE:")) {
     return NextResponse.json({ ok: false, error: "rrule must start with RRULE:" }, { status: 422 });
   }
+  const schedule = covenRoutineRrule(rrule);
+  if (!schedule.ok) return NextResponse.json({ ok: false, error: schedule.error }, { status: 422 });
   const asArray = (v: unknown): string[] =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !x.includes("\n")) : [];
   const asStr = (v: unknown): string => (typeof v === "string" && !v.includes("\n") ? v : "");
@@ -43,7 +45,7 @@ export async function POST(req: Request) {
           : `cron-${Date.now().toString(36)}`,
       name,
       status: "PAUSED",
-      rrule: rrule.slice("RRULE:".length),
+      rrule: schedule.rrule,
       prompt,
       runtime: "coven-code",
       timeoutMinutes: 60,

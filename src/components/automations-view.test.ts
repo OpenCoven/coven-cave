@@ -287,9 +287,13 @@ assert.equal(
 
 // ── 2026-07-03 a11y batch ─────────────────────────────────────────────────────
 assert.match(source, /const \{ announce \} = useAnnouncer\(\)/, "AutomationsView consumes the shared announcer");
-assert.match(source, /announce\(`\$\{newStatus === "PAUSED" \? "Paused" : "Resumed"\} '\$\{auto\.name\}'\.`\)/, "cron pause/resume announces");
+// Pause/resume go through Coven's canonical lifecycle at the revision on screen
+// (#5217); the outcome Coven reports is what gets announced or shown.
+assert.match(source, /const outcome = lifecycleCommandMessage\(result, control\.command, auto\.name\);\s*if \(outcome\.ok\) announce\(outcome\.message\);\s*else setError\(outcome\.message\);/, "cron pause/resume announces Coven's outcome");
+assert.match(source, /await sendLifecycle\(auto\.id, control\.command, control\.expectedRevision\)/, "pause/resume sends the expected revision");
+assert.doesNotMatch(source, /body: JSON\.stringify\(\{ status: newStatus \}\)/, "pause/resume no longer PATCHes the legacy status");
 assert.match(source, /announce\(`Run started for '\$\{auto\.name\}'\.`\)/, "run-now announces");
-assert.match(source, /announce\(`Created cron '\$\{input\.name\}'\.`\)/, "create announces");
+assert.match(source, /announce\(`Created cron '\$\{input\.name\}', paused\.`\)/, "create announces, and says the new cron is paused");
 assert.match(source, /role="img" aria-label="Paused"/, "status dots carry accessible names");
 assert.match(source, /<section aria-labelledby=\{headingId\}/, "list sections are labelled landmarks with real headings");
 assert.match(source, /<div[\s\S]{0,120}role="tabpanel"[\s\S]{0,120}id=\{`automations-panel-\$\{activeTab\}`\}[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}[\s\S]{0,180}aria-label=\{activeTab === "overview" \? "Rituals overview" : activeTab === "calendar" \? "Rituals calendar" : "Rituals crons"\}/, "the active Rituals panel is a tabpanel with the destination-specific label");

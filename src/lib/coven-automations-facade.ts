@@ -14,6 +14,8 @@ export function codexRruleText(rrule: string): string {
   return rrule.startsWith("RRULE:") ? rrule : `RRULE:${rrule}`;
 }
 
+export { covenRoutineRrule } from "@/lib/automations/routine-rrule";
+
 export function toCodexAutomationPayload(auto: CovenantAutomation): CodexAutomation {
   const rrule = codexRruleText(auto.rrule);
   return {

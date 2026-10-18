@@ -8,8 +8,13 @@
 // own code through Cave's real daemon transport: the routine client
 // (`coven-automations-client`) for mutations and reads, and the history route
 // (`GET /api/coven-automations/[id]/events`) for canonical event history,
-// resumed from a checkpoint taken before a daemon restart. Finally it stops the
-// daemon and requires Cave to report it unavailable rather than fall back.
+// resumed from a checkpoint taken before a daemon restart. It creates a second
+// routine through Cave's create route with the rule the form builds, reads its
+// canonical lifecycle through the pinned SDK (`GET /api/coven-automation-lifecycle`
+// and `GET /api/coven-automations/[id]/lifecycle`), and resumes and pauses it at
+// an expected revision (`POST /api/coven-automations/[id]/lifecycle`), including
+// a same-key resend and a stale-revision conflict. Finally it stops the daemon
+// and requires Cave to report it unavailable rather than fall back.
 //
 //   pnpm canary:automations-release            # install the pinned release
 //   pnpm canary:automations-release -- --coven <path to coven or bin/coven.js>
@@ -17,6 +22,7 @@
 // Unix only: Cave reaches the daemon over its Unix socket here.
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -26,6 +32,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 export const RELEASE_FIXTURE = path.join(repositoryRoot, "fixtures", "coven-automations-release");
 const USAGE = "usage: coven-automations-release-canary.ts [--coven <path to coven or @opencoven/cli bin/coven.js>]";
 const ROUTINE_ID = "cave-release-canary";
+const FORM_ROUTINE_ID = "cave-release-canary-form";
 const READINESS_TIMEOUT_MS = 30_000;
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 // sockaddr_un.sun_path is 104 bytes on macOS and 108 on Linux, including NUL.
@@ -33,12 +40,18 @@ const MAX_SOCKET_PATH_BYTES = 103;
 const EXIT_SIGNALS = { SIGINT: 2, SIGTERM: 15 } as const;
 export const REQUIRED_ACTIONS = [
   "coven.automations.create",
-  "coven.automations.update",
-  "coven.automations.delete",
+  "coven.automations.definition.revise.v1",
+  "coven.automations.definition.tombstone.v1",
   "coven.automations.get",
   "coven.automations.list",
   "coven.automations.runs",
   "coven.automations.events.subscribe.v1",
+  "coven.automations.definition.list.v1",
+  "coven.automations.definition.get.v1",
+  "coven.automations.health",
+  "coven.automations.command.v1",
+  "coven.automations.definition.activate.v1",
+  "coven.automations.definition.pause.v1",
 ] as const;
 
 export interface CanaryArguments {
@@ -63,6 +76,12 @@ export interface CanaryHistory {
   };
 }
 
+/** One Cave route's answer: its HTTP status and JSON body. */
+export interface CanaryResponse {
+  status: number;
+  body: Record<string, unknown>;
+}
+
 /** The Cave surfaces the scenario drives, injected so tests can supply a fake. */
 export interface CanaryDependencies {
   capabilities(): Promise<{ status: string; actions?: readonly string[] }>;
@@ -73,6 +92,14 @@ export interface CanaryDependencies {
   listRoutineRuns(id: string): Promise<unknown[]>;
   deleteRoutine(id: string): Promise<boolean>;
   history(id: string, checkpoint?: string): Promise<CanaryHistory>;
+  /** `POST /api/codex-automations`, as the create dialog sends it. */
+  createRoutineViaRoute(body: Record<string, unknown>): Promise<CanaryResponse>;
+  /** `GET /api/coven-automation-lifecycle?id=…` */
+  lifecycle(ids: readonly string[]): Promise<CanaryResponse>;
+  /** `GET /api/coven-automations/[id]/lifecycle` */
+  lifecycleDetail(id: string): Promise<CanaryResponse>;
+  /** `POST /api/coven-automations/[id]/lifecycle` */
+  lifecycleCommand(id: string, body: Record<string, unknown>): Promise<CanaryResponse>;
   restartDaemon(): Promise<void>;
   stopDaemon(): Promise<void>;
 }
@@ -81,6 +108,7 @@ export interface CanarySummary {
   mutations: number;
   historyEntries: number;
   historyPages: number;
+  lifecycleCommands: number;
 }
 
 function fail(message: string): never {
@@ -148,6 +176,27 @@ function expectHistory(label: string, history: CanaryHistory, expected: readonly
   return history;
 }
 
+function expectLifecycle(
+  label: string,
+  response: CanaryResponse,
+  id: string,
+  expected: { state: string; revision: number },
+): { timezone: string } {
+  const records = Array.isArray(response.body.records) ? response.body.records as Record<string, unknown>[] : [];
+  const record = records.find((entry) => entry?.id === id);
+  if (response.status !== 200 || response.body.kind !== "available" || record?.kind !== "present" ||
+    record.state !== expected.state || record.revision !== expected.revision || typeof record.timezone !== "string") {
+    fail(`${label}: expected ${id} ${expected.state} at revision ${expected.revision}, received ${response.status} ${describe(response.body)}.`);
+  }
+  return { timezone: record.timezone as string };
+}
+
+function expectAnswer(label: string, response: CanaryResponse, status: number, body: Record<string, unknown>): void {
+  if (response.status !== status || describe(response.body) !== describe(body)) {
+    fail(`${label}: expected ${status} ${describe(body)}, received ${response.status} ${describe(response.body)}.`);
+  }
+}
+
 async function expectUnavailable(label: string, attempt: () => Promise<unknown>, degraded: boolean): Promise<void> {
   try {
     await attempt();
@@ -168,7 +217,12 @@ async function expectUnavailable(label: string, attempt: () => Promise<unknown>,
  * fact; the scenario only checks that Cave's client and history route report
  * them faithfully, across a restart and after the daemon is gone.
  */
-export async function runCaveAutomationsScenario(cave: CanaryDependencies): Promise<CanarySummary> {
+export async function runCaveAutomationsScenario(
+  cave: CanaryDependencies,
+  // Twelve hours from now on this machine's clock, where the daemon resolves
+  // `local`: the form routine cannot fire in the seconds it is active.
+  { formHour = (new Date().getHours() + 12) % 24 }: { formHour?: number } = {},
+): Promise<CanarySummary> {
   const capabilities = await cave.capabilities();
   const missing = REQUIRED_ACTIONS.filter((action) => !capabilities.actions?.includes(action));
   if (capabilities.status !== "available" || missing.length > 0) {
@@ -189,6 +243,50 @@ export async function runCaveAutomationsScenario(cave: CanaryDependencies): Prom
   }
   const runs = await cave.listRoutineRuns(ROUTINE_ID);
   if (runs.length !== 0) fail(`listRoutineRuns: a paused routine reported runs ${describe(runs)}.`);
+
+  // Create-paused through Cave's own create route, with the rule the form
+  // builds: it always writes BYMINUTE, which Coven refuses unless Cave drops it.
+  const formCreated = await cave.createRoutineViaRoute({
+    id: FORM_ROUTINE_ID, name: "Cave release canary (form)", rrule: `RRULE:FREQ=DAILY;BYHOUR=${formHour};BYMINUTE=0`,
+    prompt: "Report that the Cave form canary ran.", tags: [], cwds: [], familiars: [],
+  });
+  const formAutomation = formCreated.body.automation as { id?: string; status?: string } | undefined;
+  if (formCreated.status !== 200 || formCreated.body.ok !== true || formAutomation?.id !== FORM_ROUTINE_ID || formAutomation.status !== "PAUSED") {
+    fail(`create route: expected the form routine created paused, received ${formCreated.status} ${describe(formCreated.body)}.`);
+  }
+
+  // The canonical lifecycle through the pinned SDK: state, revision and the
+  // zone Coven actually runs each routine in.
+  const both = await cave.lifecycle([ROUTINE_ID, FORM_ROUTINE_ID]);
+  const { timezone: canaryZone } = expectLifecycle("lifecycle", both, ROUTINE_ID, { state: "paused", revision: 1 });
+  const { timezone: formZone } = expectLifecycle("lifecycle", both, FORM_ROUTINE_ID, { state: "paused", revision: 1 });
+  if (canaryZone !== "utc" || formZone === "local") {
+    fail(`lifecycle: expected the explicit utc zone and a resolved zone for local, received ${canaryZone} and ${formZone}.`);
+  }
+  const detail = await cave.lifecycleDetail(FORM_ROUTINE_ID);
+  const health = detail.body.health as { nextDueAt?: unknown } | null | undefined;
+  if (detail.status !== 200 || detail.body.kind !== "available" || typeof health?.nextDueAt !== "string") {
+    fail(`lifecycle detail: expected Coven's next due slot, received ${detail.status} ${describe(detail.body)}.`);
+  }
+
+  // Resume at the revision just read, as "Resume it now" in the create dialog
+  // does, then resend under the same key: Coven reconciles, it does not reapply.
+  const resume = { command: "activate", expectedRevision: 1, adoptionKey: `cave-${randomUUID()}` };
+  expectAnswer("resume at revision 1", await cave.lifecycleCommand(FORM_ROUTINE_ID, resume), 200, { kind: "committed", revision: 2, replayed: false });
+  expectAnswer("resume resent under its adoption key", await cave.lifecycleCommand(FORM_ROUTINE_ID, resume), 200, { kind: "committed", revision: 2, replayed: true });
+  // A control still showing revision 1 must not overwrite revision 2.
+  expectAnswer("pause at a stale revision", await cave.lifecycleCommand(FORM_ROUTINE_ID,
+    { command: "pause", expectedRevision: 1, adoptionKey: `cave-${randomUUID()}` }), 409, { kind: "conflict", currentRevision: 2 });
+  expectLifecycle("lifecycle after resume", await cave.lifecycle([FORM_ROUTINE_ID]), FORM_ROUTINE_ID, { state: "active", revision: 2 });
+  expectAnswer("pause at revision 2", await cave.lifecycleCommand(FORM_ROUTINE_ID,
+    { command: "pause", expectedRevision: 2, adoptionKey: `cave-${randomUUID()}` }), 200, { kind: "committed", revision: 3, replayed: false });
+  expectLifecycle("lifecycle after pause", await cave.lifecycle([FORM_ROUTINE_ID]), FORM_ROUTINE_ID, { state: "paused", revision: 3 });
+  if ((await cave.deleteRoutine(FORM_ROUTINE_ID)) !== true) fail("deleteRoutine: expected the form routine to be deleted.");
+  const removed = await cave.lifecycle([FORM_ROUTINE_ID]);
+  const removedRecord = (removed.body.records as Record<string, unknown>[] | undefined)?.[0];
+  if (removed.status !== 200 || removedRecord?.kind !== "absent") {
+    fail(`lifecycle after delete: expected the form routine absent, received ${removed.status} ${describe(removed.body)}.`);
+  }
   const updated = await cave.updateRoutine({ ...created, prompt: "Report that the Cave canary was revised." });
   if (updated.id !== ROUTINE_ID || updated.prompt !== "Report that the Cave canary was revised.") {
     fail(`updateRoutine: expected the revised prompt, received ${describe(updated)}.`);
@@ -224,8 +322,11 @@ export async function runCaveAutomationsScenario(cave: CanaryDependencies): Prom
   if (offline.status !== 503 || offline.body.kind !== "unavailable") {
     fail(`history with the daemon stopped: expected 503 unavailable, received ${offline.status} ${describe(offline.body)}.`);
   }
+  expectAnswer("lifecycle with the daemon stopped", await cave.lifecycle([ROUTINE_ID]), 503, { kind: "unavailable" });
+  expectAnswer("a command with the daemon stopped", await cave.lifecycleCommand(ROUTINE_ID,
+    { command: "activate", expectedRevision: 1, adoptionKey: `cave-${randomUUID()}` }), 503, { kind: "unavailable" });
 
-  return { mutations: 4, historyEntries: 3, historyPages: 3 };
+  return { mutations: 6, historyEntries: 3, historyPages: 3, lifecycleCommands: 4 };
 }
 
 function covenCommand(coven: string): [string, string[]] {
@@ -376,6 +477,19 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
     const client = await import("../src/lib/server/coven-automations-client.ts");
     const { createAutomationReadClient } = await import("../src/lib/server/coven-automations-sdk.ts");
     const { GET } = await import("../src/app/api/coven-automations/[id]/events/route.ts");
+    const createRoute = await import("../src/app/api/codex-automations/route.ts");
+    const overviewRoute = await import("../src/app/api/coven-automation-lifecycle/route.ts");
+    const lifecycleRoute = await import("../src/app/api/coven-automations/[id]/lifecycle/route.ts");
+    const { TOKEN_HEADER } = await import("../src/proxy-helpers.ts");
+    // Mutating routes accept only a local origin, as the desktop app sends them.
+    const token = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
+    const local = (url: string, body: unknown) => new Request(url, {
+      method: "POST",
+      headers: { host: "127.0.0.1:3000", "content-type": "application/json", ...(token ? { [TOKEN_HEADER]: token } : {}) },
+      body: JSON.stringify(body),
+    });
+    const answer = async (response: Response): Promise<CanaryResponse> =>
+      ({ status: response.status, body: await response.json() as Record<string, unknown> });
     const reader = createAutomationReadClient();
     const summary = await guarded(runCaveAutomationsScenario({
       capabilities: async () => {
@@ -396,6 +510,13 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
           { params: Promise.resolve({ id }) });
         return { status: response.status, body: await response.json() as CanaryHistory["body"] };
       },
+      createRoutineViaRoute: async (body) => answer(await createRoute.POST(local("http://127.0.0.1:3000/api/codex-automations", body))),
+      lifecycle: async (ids) => answer(await overviewRoute.GET(new Request(
+        `http://127.0.0.1:3000/api/coven-automation-lifecycle?${new URLSearchParams(ids.map((id) => ["id", id]))}`))),
+      lifecycleDetail: async (id) => answer(await lifecycleRoute.GET(
+        new Request(`http://127.0.0.1:3000/api/coven-automations/${encodeURIComponent(id)}/lifecycle`), { params: Promise.resolve({ id }) })),
+      lifecycleCommand: async (id, body) => answer(await lifecycleRoute.POST(
+        local(`http://127.0.0.1:3000/api/coven-automations/${encodeURIComponent(id)}/lifecycle`, body), { params: Promise.resolve({ id }) })),
       restartDaemon: async () => {
         await stop();
         await start();
@@ -447,6 +568,9 @@ async function main(signal: AbortSignal): Promise<void> {
     `historyPages=${result.historyPages}`,
     "refusal=typed",
     "historyResumeAcrossRestart=passed",
+    `lifecycleCommands=${result.lifecycleCommands}`,
+    "createPaused=passed",
+    "revisionConflict=typed",
     "offline=reported-unavailable",
   ].join(" ") + "\n");
 }
