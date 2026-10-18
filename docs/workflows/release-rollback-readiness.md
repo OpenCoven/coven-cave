@@ -114,8 +114,9 @@ release's manifest; malformed or unavailable metadata remains fatal:
 
 The job publishes the resulting record as step outputs (`ready`,
 `baseline-tag`, `baseline-version`, `baseline-url`, `baseline-waived`,
-`rollback-platforms`, `rollback-platforms-missing`) and as a run summary, so
-the rollout decision has an artifact rather than an assumption.
+`rollback-platforms`, `rollback-platforms-missing`, `baseline-floor-clear`,
+`baseline-floor-problems`) and as a run summary, so the rollout decision has an
+artifact rather than an assumption.
 
 ### Partial platform coverage is reported, not refused
 
@@ -162,6 +163,42 @@ Keys outside that set are recorded but never counted as a shortfall: a new
 target ships before this list learns its name, and reporting it as unexpected
 would be noise on every run until someone edited a constant.
 
+### A baseline below the bundled-dependency floor is recorded, not refused
+
+The gate also reads the baseline tag's `package.json` and checks three pins
+against `BUNDLED_DEPENDENCY_FLOORS` in `scripts/bundled-dependency-floor.mjs`:
+`dependencies.next`, `dependencies.sharp` and `pnpm.overrides.sharp`. Those are
+the patched minimums recorded on
+[#5339](https://github.com/OpenCoven/coven-cave/issues/5339), currently Next
+16.3.3 and sharp 0.35.4. Patched releases pin all three exactly, and every
+published tag's pins match its lockfile, so the pin names what the release
+bundles. A range, a prerelease or a missing pin is not clear, and neither is a
+tag with no `package.json`.
+
+A baseline that is not clear is **not a rollback target**. Restoring it would
+reinstall a dependency the incident replaced. It still doesn't fail the job,
+for the deadlock reason above. After any floor raise, the first release at the
+new floor has only an unpatched baseline, and failing this job would withhold
+`latest.json` from the release that carries the fix. So the gate records the
+problem in four places:
+
+- the `baseline-floor-clear=false` and `baseline-floor-problems` outputs
+- a ⛔ "Do not roll back" line in the summary
+- an annotation:
+
+  ```text
+  ::warning::Rollback baseline v0.4.1 is below the bundled-dependency floor (dependencies.next 16.3.1 is below the patched minimum 16.3.3 (GHSA-p293-qw3h-jr36 and GHSA-2xp9-vwfh-vxw4, #5339); dependencies.sharp 0.35.3 is below the patched minimum 0.35.4 (libheif 1.23.2 for GHSA-g89c-p67h-r497 via sharp-libvips 1.3.3, #5339); pnpm.overrides.sharp 0.35.3 is below the patched minimum 0.35.4 (libheif 1.23.2 for GHSA-g89c-p67h-r497 via sharp-libvips 1.3.3, #5339)); do not roll back to it — patch forward instead.
+  ```
+
+- the verdict's `baselineFloor`, which `scripts/release-rollout.mjs` reads.
+  Its `gate` reports `rollback target: none — … patch forward`, and
+  `restore-plan` refuses to rehearse the restore. A verdict written before
+  this check existed has no `baselineFloor`: `gate` holds and `restore-plan`
+  refuses until the readiness gate is re-run.
+
+Read a not-clear baseline as: the only remedy for this release is a
+patch-forward version. Don't run [Rolling back](#rolling-back) against it.
+
 ## Reading a failure
 
 Each refusal names the shortfall and the release it found:
@@ -188,9 +225,10 @@ answer, which is not evidence the rollback target is broken — retry before tre
 release as unshippable
 ```
 
-Only the API listing is authenticated. The baseline's `latest.json` is fetched
-from its public download url with no `Authorization` header, because that url
-redirects to a third-party object host.
+Only API requests are authenticated: the release listing and the baseline
+tag's `package.json`. The baseline's `latest.json` is fetched from its public
+download url with no `Authorization` header, because that url redirects to a
+third-party object host.
 
 ## The first release
 
@@ -211,6 +249,10 @@ prior release exists — never that the prior release's artifacts are missing.
 
 The baseline this gate verifies is what a rollback consumes — one half per
 population, in this order.
+
+First check that the run recorded `baseline-floor-clear=true`. If it says
+`false`, stop here: the baseline bundles a dependency below the #5339 floor,
+so neither step below is a remedy. Ship a patch-forward version instead.
 
 1. **Stop the rollout.** Make the baseline the latest release again, so the
    updater alias resolves to the baseline's manifest instead of the bad
