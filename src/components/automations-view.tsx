@@ -22,7 +22,7 @@ import type {
 import type { AutomationRunRecord } from "@/lib/automation-runs";
 import { Icon } from "@/lib/icon";
 import { useDaemonShellBannerVisible } from "@/lib/shell-banners";
-import { useDateTimePrefs } from "@/lib/datetime-format";
+import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -39,6 +39,8 @@ import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } fr
 import { failingCronIds } from "@/lib/automations/cron-health";
 import { lifecycleCommandMessage, lifecycleControl, parseLifecycleDetail } from "@/lib/automations/lifecycle";
 import { useAutomationLifecycle } from "@/lib/automations/use-automation-lifecycle";
+import { useAutomationInFlight } from "@/lib/automations/use-automation-in-flight";
+import { inFlightNote } from "@/lib/automations/in-flight";
 import { saveWithRevisionCheck, type RevisionRebase } from "@/lib/automations/revision-rebase";
 import { liveRunView, newestRunFor } from "@/lib/automations/live-run";
 import { LiveRunCard } from "@/components/automations/live-run-card";
@@ -547,6 +549,8 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   const lifecycleIds = useMemo(() => codexAutos.map((a) => a.id), [codexAutos]);
   const lifecycle = useAutomationLifecycle(lifecycleIds);
   const { view: lifecycleOf, send: sendLifecycle } = lifecycle;
+  // Read only while there are crons to show; four reads cover every row.
+  const inFlight = useAutomationInFlight(lifecycleIds.length > 0);
   const toggleCodex = useCallback(async (auto: CodexAutomation) => {
     const control = lifecycleControl(lifecycleOf(auto.id));
     if (control.disabledReason !== null || !control.command) {
@@ -958,6 +962,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
       value={{
         runAutomation: runCodexNow,
         lifecycleOf,
+        inFlightOf: inFlight.view,
         togglePauseAutomation: toggleCodex,
         busyId,
       }}
@@ -1362,6 +1367,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                 active={codexActive}
                 paused={codexPaused}
                 unverified={codexUnverified}
+                inFlightNote={inFlightNote(inFlight.cache, inFlight.now, (iso) => formatTimestamp(iso, readDateTimePrefs()))}
                 // Scoped to the rows actually rendered, unlike the header chip:
                 // "Active · 1  3 failing" would be counting failures that a
                 // familiar scope has already hidden. Suppressed entirely while
@@ -1428,6 +1434,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
               onRun={runCodexNow}
               runs={automationRuns}
               formResetKey={formResetKey}
+              inFlightKey={JSON.stringify(inFlight.view(selectedCodex.id).entry)}
               conflict={conflict?.id === selectedCodex.id ? conflict.rebase : null}
               onConflictSaveMine={conflictSaveMine}
               onConflictUseTheirs={conflictUseTheirs}
