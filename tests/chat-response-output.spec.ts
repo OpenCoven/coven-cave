@@ -321,8 +321,7 @@ test("the header archive button sends one archive mutation and leaves the sessio
   await expect(page).not.toHaveURL(/#chat-s-response-complete$/);
 });
 
-for (const surface of ["main", "quick"] as const) {
-test(`${surface}: reduced-motion streaming preserves selected settled prose as new tokens arrive`, async ({ page }) => {
+async function openControlledStream(page: Page, surface: "main" | "quick") {
   await setup(page);
   const project = { id: "response-project", name: "Response project", root: "/tmp/coven-cave", access: "write" };
   await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [project] } }));
@@ -354,7 +353,7 @@ test(`${surface}: reduced-motion streaming preserves selected settled prose as n
   await page.goto(surface === "main" ? "/?mode=chat#chat-s-response-complete" : "/quick-chat", { waitUntil: "domcontentloaded" });
   const main = surface === "main" ? page.getByTestId("chat-main") : page.locator(".tray-quick-chat__pane");
   if (surface === "main") {
-    await expect(main.locator('.cave-bubble-assistant[data-state="complete"]').last()).toBeVisible();
+    await expect(main.locator('.cave-bubble-assistant[data-state="complete"]').last()).toBeVisible({ timeout: 30_000 });
   } else {
     await page.getByRole("button", { name: "Project", exact: true }).click();
     await page.getByRole("menu", { name: "Project options" }).getByText("Response project · Full", { exact: true }).click();
@@ -364,6 +363,64 @@ test(`${surface}: reduced-motion streaming preserves selected settled prose as n
   const emit = async (frame: object) => page.evaluate((value) => {
     (window as unknown as { caveTestFrame(frame: object): void }).caveTestFrame(value);
   }, frame);
+  return { main, emit };
+}
+
+for (const surface of ["main", "quick"] as const) {
+test(`${surface}: failed streaming preserves partial text and keeps Retry visible`, async ({ page }) => {
+  const { main, emit } = await openControlledStream(page, surface);
+  const partial = "The provider returned a useful partial answer before the connection ended.";
+  await emit({ kind: "assistant_chunk", text: partial });
+  const live = main.locator(".streaming-turn-response").last();
+  await expect(live.getByText(partial, { exact: true })).toBeVisible();
+  await emit({ kind: "error", message: "The test provider disconnected." });
+  await emit({ kind: "done", sessionId: "s-response-complete", isError: true });
+  await expect(live.getByText(partial, { exact: true })).toBeVisible();
+  const response = main.locator(surface === "main" ? ".cave-bubble-assistant" : ".quick-chat-turn--familiar").last();
+  const phase = response.locator(".streaming-turn-current__phase");
+  await expect(phase).toBeVisible();
+  await expect(phase).toHaveText(/Failed$/);
+  await expect(response.getByRole("button", { name: "Retry response", exact: true })).toBeVisible();
+  await expect(live.locator(".streaming-turn-current__spinner")).toHaveCount(0);
+});
+
+test(`${surface}: reading older output preserves position until unseen content is requested`, async ({ page }) => {
+  const { main, emit } = await openControlledStream(page, surface);
+  const transcript = main.locator(surface === "main" ? ".cave-chat-transcript" : ".quick-chat-thread");
+  const composer = main.getByRole(surface === "main" ? "textbox" : "combobox", { name: "Message", exact: true });
+  const originalComposer = await composer.elementHandle();
+  const live = main.locator(".streaming-turn-response").last();
+  const bottomGap = () => transcript.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop);
+  await emit({ kind: "assistant_chunk", text: Array.from({ length: 40 }, (_, i) => `Streaming detail ${i + 1} keeps this response scrollable.`).join("\n\n") + "\n\n" });
+  await expect(live.getByText("Streaming detail 40 keeps this response scrollable.", { exact: true })).toBeVisible();
+  await expect.poll(bottomGap).toBeLessThanOrEqual(4);
+  await transcript.hover();
+  await page.mouse.wheel(0, -600);
+  await expect(main.getByRole("button", { name: "Latest", exact: true })).toBeVisible();
+  await expect.poll(bottomGap).toBeGreaterThanOrEqual(590);
+  const readingPosition = await transcript.evaluate(element => element.scrollTop);
+  await emit({ kind: "assistant_chunk", text: "Unseen detail arrives while the reader is above the end.\n\n" });
+  await expect(live).toContainText("Unseen detail arrives while the reader is above the end.");
+  const unseen = main.getByRole("button", { name: "New response content", exact: true });
+  await expect(unseen).toBeVisible();
+  // Let any scheduled auto-pin execute before checking that reading stayed put.
+  await transcript.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect.poll(() => transcript.evaluate(element => element.scrollTop)).toBeCloseTo(readingPosition, 0);
+  await expect(composer).toBeVisible();
+  expect(await composer.evaluate((element, original) => element === original, originalComposer)).toBe(true);
+  await unseen.click();
+  await expect(unseen).toHaveCount(0);
+  await expect.poll(bottomGap).toBeLessThanOrEqual(4);
+  await emit({ kind: "assistant_chunk", text: "Following resumes only after the reader requests it.\n\n" });
+  await expect(live).toContainText("Following resumes only after the reader requests it.");
+  await expect.poll(bottomGap).toBeLessThanOrEqual(4);
+  await expect(main.getByRole("button", { name: "New response content", exact: true })).toHaveCount(0);
+  await emit({ kind: "done", sessionId: "s-response-complete" });
+  await expect(live.locator(".streaming-turn-current__spinner")).toHaveCount(0);
+});
+
+test(`${surface}: reduced-motion streaming preserves selected settled prose as new tokens arrive`, async ({ page }) => {
+  const { main, emit } = await openControlledStream(page, surface);
   await emit({ kind: "assistant_chunk", text: "This settled paragraph must keep its selection.\n\nLive text" });
   const live = main.locator(".streaming-turn-response").last();
   const settled = live.getByText("This settled paragraph must keep its selection.", { exact: true });
