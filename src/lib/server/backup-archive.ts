@@ -241,7 +241,7 @@ async function makeResearchLexicalUnavailable(
   researchRoot: string,
   observer?: ResearchRestoreDurabilityObserver,
 ): Promise<string> {
-  const indexDirectory = path.join(researchRoot, "index");
+  const indexDirectory = path.join(/* turbopackIgnore: true */ researchRoot, "index");
   const createdIndex = await mkdir(indexDirectory, { recursive: true, mode: 0o700 });
   if (createdIndex) await fsyncResearchRestoreDirectory(path.dirname(indexDirectory), observer);
   const info = await lstat(indexDirectory);
@@ -283,7 +283,7 @@ async function makeResearchLexicalUnavailable(
       || entry.name.startsWith(".restore-recovery-")
     ) {
       if (!entry.isFile()) throw new Error("Research lexical restore entry is unsafe");
-      await removeLexicalFile(path.join(indexDirectory, entry.name));
+      await removeLexicalFile(path.join(/* turbopackIgnore: true */ indexDirectory, entry.name));
     }
   }
   await fsyncResearchRestoreDirectory(indexDirectory, observer);

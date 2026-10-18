@@ -293,7 +293,7 @@ function semanticDeletionLayout(
   rootInput?: string,
 ): { root: StableDirectoryIdentity; index: StableDirectoryIdentity } | null {
   const indexPath = path.dirname(file);
-  const rootPath = rootInput === undefined ? indexPath : path.resolve(rootInput);
+  const rootPath = rootInput === undefined ? indexPath : path.resolve(/* turbopackIgnore: true */ rootInput);
   const relativeIndex = path.relative(rootPath, indexPath);
   if (relativeIndex === ".." || relativeIndex.startsWith(`..${path.sep}`) || path.isAbsolute(relativeIndex)) {
     throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic index escapes the Resource root");
@@ -304,7 +304,7 @@ function semanticDeletionLayout(
     ? root
     : inspectPrivateDirectory(indexPath, "semantic index directory");
   if (!index) return null;
-  const expectedIndexRealPath = path.resolve(root.realPath, relativeIndex);
+  const expectedIndexRealPath = path.resolve(/* turbopackIgnore: true */ root.realPath, relativeIndex);
   if (index.realPath !== expectedIndexRealPath) {
     throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic index directory escapes the Resource root");
   }
@@ -319,7 +319,7 @@ function assertStableDeletionLayout(
     assertStableDirectoryIdentity(layout.index, "semantic index directory");
   }
   const relativeIndex = path.relative(layout.root.path, layout.index.path);
-  if (realpathSync(layout.index.path) !== path.resolve(layout.root.realPath, relativeIndex)) {
+  if (realpathSync(layout.index.path) !== path.resolve(/* turbopackIgnore: true */ layout.root.realPath, relativeIndex)) {
     throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic index directory escapes the Resource root");
   }
 }
@@ -945,7 +945,7 @@ export async function removeResearchResourceSemanticPublication(input: {
   ) => void;
 }): Promise<void> {
   assertId(input.resourceId, "resource id");
-  const file = path.resolve(input.file ?? researchResourceSemanticIndexPath(input.root));
+  const file = path.resolve(/* turbopackIgnore: true */ input.file ?? researchResourceSemanticIndexPath(input.root));
   const deletionLayout = semanticDeletionLayout(file, input.root);
   if (!deletionLayout) return;
   assertStableDeletionLayout(deletionLayout);

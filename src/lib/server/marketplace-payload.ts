@@ -96,7 +96,7 @@ export function createMarketplacePayloadStore(options: {
       async function verify(directory: string, prefix = ""): Promise<void> {
         for (const entry of await readdir(directory, { withFileTypes: true })) {
           const relative = prefix + entry.name;
-          const target = path.join(directory, entry.name);
+          const target = path.join(/* turbopackIgnore: true */ directory, entry.name);
           if (entry.isDirectory()) await verify(target, relative + "/");
           else {
             const file = expected.get(relative);
@@ -109,14 +109,14 @@ export function createMarketplacePayloadStore(options: {
       if (expected.size) throw new Error("Marketplace payload cache is incomplete: " + id);
       return destination;
     }
-    const temporary = await mkdtemp(path.join(root, ".install-"));
+    const temporary = await mkdtemp(path.join(/* turbopackIgnore: true */ root, ".install-"));
     try {
       for (const file of files) {
-        const target = path.join(temporary, file.path);
+        const target = path.join(/* turbopackIgnore: true */ temporary, file.path);
         await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
         await writeFile(target, Buffer.from(file.content, "base64"), { mode: file.executable ? 0o700 : 0o600, flag: "wx" });
       }
-      const archiveTemporary = path.join(root, path.basename(temporary) + ".json");
+      const archiveTemporary = path.join(/* turbopackIgnore: true */ root, path.basename(temporary) + ".json");
       try { await writeFile(archiveTemporary, bytes, { flag: "wx", mode: 0o600 }); await rename(archiveTemporary, archive); }
       finally { await rm(archiveTemporary, { force: true }); }
       try { await rename(temporary, destination); }

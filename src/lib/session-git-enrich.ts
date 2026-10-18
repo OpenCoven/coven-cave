@@ -241,12 +241,12 @@ function statToken(file: string): string {
 
 /** Stat identities of the files a branch switch, commit or fetch rewrites. */
 export function gitRootFingerprint(root: string, gitDir: string | null, commonDir: string | null): string {
-  if (!gitDir || !commonDir) return `nogit:${statToken(path.join(root, ".git"))}`;
+  if (!gitDir || !commonDir) return `nogit:${statToken(path.join(/* turbopackIgnore: true */ root, ".git"))}`;
   return [
-    statToken(path.join(gitDir, "HEAD")),
-    statToken(path.join(gitDir, "logs", "HEAD")),
-    statToken(path.join(commonDir, "FETCH_HEAD")),
-    statToken(path.join(commonDir, "packed-refs")),
+    statToken(path.join(/* turbopackIgnore: true */ gitDir, "HEAD")),
+    statToken(path.join(/* turbopackIgnore: true */ gitDir, "logs", "HEAD")),
+    statToken(path.join(/* turbopackIgnore: true */ commonDir, "FETCH_HEAD")),
+    statToken(path.join(/* turbopackIgnore: true */ commonDir, "packed-refs")),
   ].join("|");
 }
 

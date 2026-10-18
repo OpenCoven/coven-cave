@@ -116,11 +116,11 @@ function legacyPath(options: ResearchLinksCompatibilityOptions): string | undefi
 }
 
 function migrationPaths(root: string) {
-  const directory = path.join(root, MIGRATION_DIRECTORY);
+  const directory = path.join(/* turbopackIgnore: true */ root, MIGRATION_DIRECTORY);
   return {
     directory,
-    projection: path.join(directory, PROJECTION_FILE),
-    journal: path.join(directory, JOURNAL_FILE),
+    projection: path.join(/* turbopackIgnore: true */ directory, PROJECTION_FILE),
+    journal: path.join(/* turbopackIgnore: true */ directory, JOURNAL_FILE),
   };
 }
 

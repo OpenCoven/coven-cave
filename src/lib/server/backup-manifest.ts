@@ -145,7 +145,7 @@ export const BACKUP_KNOWN_GAPS = [
 ];
 
 export function backupRoots(): Record<BackupRoot, string> {
-  return { coven: path.resolve(covenHome()), cave: path.resolve(caveHome()) };
+  return { coven: path.resolve(/* turbopackIgnore: true */ covenHome()), cave: path.resolve(/* turbopackIgnore: true */ caveHome()) };
 }
 
 export function normalizeBackupPath(rel: string): string {
@@ -164,7 +164,7 @@ function rootPath(root: BackupRoot, roots = backupRoots()): string {
 
 export function resolveBackupEntryPath(root: BackupRoot, rel: string, roots = backupRoots()): string {
   const base = rootPath(root, roots);
-  const resolved = path.resolve(base, normalizeBackupPath(rel));
+  const resolved = path.resolve(/* turbopackIgnore: true */ base, normalizeBackupPath(rel));
   if (!(resolved === base || resolved.startsWith(base + path.sep))) {
     throw new Error("backup path not allowed");
   }

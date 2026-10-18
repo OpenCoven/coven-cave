@@ -29,7 +29,7 @@ import {
   type ChatAttentionRequest,
 } from "./chat-attention.ts";
 
-const CONV_DIR = path.join(caveHome(), "conversations");
+const CONV_DIR = path.join(/* turbopackIgnore: true */ caveHome(), "conversations");
 const conversationLockTails = new Map<string, Promise<void>>();
 const VALID_ATTENTION_REASON_SET = new Set<string>(CHAT_ATTENTION_REASONS);
 
@@ -385,7 +385,7 @@ function hydrateSummaryIndex(): Promise<void> {
         || typeof raw.summary.sessionId !== "string"
         || typeof raw.summary.updatedAt !== "string"
       ) continue;
-      const file = path.join(CONV_DIR, name);
+      const file = path.join(/* turbopackIgnore: true */ CONV_DIR, name);
       if (conversationSummaryCache.has(file)) continue;
       const summary = raw.summary as unknown as ConversationSummary;
       conversationSummaryCache.set(file, {
@@ -720,8 +720,8 @@ function pathFor(sessionId: string): string {
   if (!isSafeConversationSessionId(sessionId)) {
     throw new Error("invalid session id");
   }
-  const root = path.resolve(CONV_DIR);
-  const resolved = path.resolve(root, `${sessionId}.json`);
+  const root = path.resolve(/* turbopackIgnore: true */ CONV_DIR);
+  const resolved = path.resolve(/* turbopackIgnore: true */ root, `${sessionId}.json`);
   if (!resolved.startsWith(root + path.sep)) {
     throw new Error("invalid session id");
   }
@@ -1331,7 +1331,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
 
   await hydrateSummaryIndex();
   const names = entries.filter((name) => name.endsWith(".json"));
-  const files = names.map((name) => path.join(CONV_DIR, name));
+  const files = names.map((name) => path.join(/* turbopackIgnore: true */ CONV_DIR, name));
   const liveFiles = new Set(files);
   let pruned = 0;
   for (const file of conversationSummaryCache.keys()) {
@@ -1489,7 +1489,7 @@ export async function searchConversations(
   // Drop cache entries for conversations that have since been deleted.
   if (searchCache.size > 0) {
     const live = new Set(
-      entries.filter((n) => n.endsWith(".json")).map((n) => path.join(CONV_DIR, n)),
+      entries.filter((n) => n.endsWith(".json")).map((n) => path.join(/* turbopackIgnore: true */ CONV_DIR, n)),
     );
     for (const key of searchCache.keys()) if (!live.has(key)) searchCache.delete(key);
   }
@@ -1498,7 +1498,7 @@ export async function searchConversations(
   for (const name of entries) {
     if (!name.endsWith(".json")) continue;
     try {
-      const file = path.join(CONV_DIR, name);
+      const file = path.join(/* turbopackIgnore: true */ CONV_DIR, name);
       const info = await stat(file);
       if (info.size > maxFileBytes) {
         searchCache.delete(file); // too big now — don't keep a stale entry

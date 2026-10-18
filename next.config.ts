@@ -60,8 +60,12 @@ const nextConfig: NextConfig = {
   // target trees) into the standalone bundle. These roots are never runtime
   // inputs; packaged assets are copied explicitly by sidecar-bundle.sh.
   outputFileTracingExcludes: {
-    // Instrumentation is a non-route entry (no leading slash). Apply the same
-    // runtime-input exclusions to it as to page and API entries.
+    // Turbopack 16.3 applies these to page and API entries only. Its
+    // instrumentation trace ignores them (no key reaches it), and Next copies
+    // that trace into .next/standalone before scripts/instrumentation-trace.mjs
+    // can drop excluded files. scripts/next-build.mjs therefore fails a build
+    // whose raw instrumentation trace lists any file matched here (#6082): mark
+    // the runtime path that globbed it with /* turbopackIgnore: true */.
     "*": [
       "./.agents/**/*",
       "./.beads/**/*",

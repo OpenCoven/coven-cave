@@ -66,7 +66,7 @@ export async function resolveRuntimeSkillRoots(
 ): Promise<string[]> {
   const home = options.homeDir ?? homedir();
   const candidates = [
-    options.covenSkillsRoot ?? path.join(caveHome(), "skills"),
+    options.covenSkillsRoot ?? path.join(/* turbopackIgnore: true */ caveHome(), "skills"),
     path.join(home, ".codex", "skills"),
     path.join(home, ".codex", "plugins", "cache"),
     path.join(home, ".claude", "skills"),
@@ -77,7 +77,7 @@ export async function resolveRuntimeSkillRoots(
       try {
         return await realpath(root);
       } catch {
-        return path.resolve(root);
+        return path.resolve(/* turbopackIgnore: true */ root);
       }
     }),
   );
@@ -112,7 +112,7 @@ export async function resolveRuntimeResourceRoots(
       try {
         return await realpath(root);
       } catch {
-        return path.resolve(root);
+        return path.resolve(/* turbopackIgnore: true */ root);
       }
     }),
   );
@@ -186,7 +186,7 @@ export async function scanSkillsDir(dir: string, familiar: LocalSkillScope, out:
   } catch { return; }
 
   for (const skillName of entries) {
-    const skillMdPath = path.join(dir, skillName, "SKILL.md");
+    const skillMdPath = path.join(/* turbopackIgnore: true */ dir, skillName, "SKILL.md");
   try {
       await stat(skillMdPath);
       const text = await readFile(skillMdPath, "utf8");

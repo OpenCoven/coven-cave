@@ -25,7 +25,7 @@ function readText(file: string): string | null {
 /** `branch --show-current`: the branch HEAD names, `null` when detached. */
 export function readHeadBranch(gitDir: string | null): string | null | undefined {
   if (!gitDir) return undefined;
-  const head = readText(path.join(gitDir, "HEAD"))?.trim();
+  const head = readText(path.join(/* turbopackIgnore: true */ gitDir, "HEAD"))?.trim();
   if (!head) return undefined;
   const symbolic = /^ref:\s*refs\/heads\/(.+)$/.exec(head);
   if (symbolic) return symbolic[1];
@@ -54,8 +54,8 @@ function unquoteConfigValue(raw: string): string | undefined {
 export function readOriginUrl(gitDir: string | null, commonDir: string | null): string | null | undefined {
   if (!commonDir) return undefined;
   // Per-worktree config can override the shared file.
-  if (gitDir && fs.existsSync(path.join(gitDir, "config.worktree"))) return undefined;
-  const config = readText(path.join(commonDir, "config"));
+  if (gitDir && fs.existsSync(path.join(/* turbopackIgnore: true */ gitDir, "config.worktree"))) return undefined;
+  const config = readText(path.join(/* turbopackIgnore: true */ commonDir, "config"));
   if (config == null) return undefined;
   let inOrigin = false;
   // Absence here cannot exclude an origin inherited from global/system config.
@@ -83,7 +83,7 @@ export function readOriginUrl(gitDir: string | null, commonDir: string | null): 
 }
 
 function refExists(commonDir: string, fullRef: string, packedRefs: string | null): boolean {
-  if (fs.existsSync(path.join(commonDir, fullRef))) return true;
+  if (fs.existsSync(path.join(/* turbopackIgnore: true */ commonDir, fullRef))) return true;
   if (!packedRefs) return false;
   return packedRefs.split(/\r?\n/).some((line) => !line.startsWith("#") && !line.startsWith("^") && line.endsWith(` ${fullRef}`));
 }
@@ -94,14 +94,14 @@ function refExists(commonDir: string, fullRef: string, packedRefs: string | null
  */
 export function readDefaultBaseRef(commonDir: string | null): string | null | undefined {
   if (!commonDir) return undefined;
-  if (fs.existsSync(path.join(commonDir, "reftable"))) return undefined;
-  if (!fs.existsSync(path.join(commonDir, "refs"))) return undefined;
-  const originHead = readText(path.join(commonDir, "refs", "remotes", "origin", "HEAD"))?.trim();
+  if (fs.existsSync(path.join(/* turbopackIgnore: true */ commonDir, "reftable"))) return undefined;
+  if (!fs.existsSync(path.join(/* turbopackIgnore: true */ commonDir, "refs"))) return undefined;
+  const originHead = readText(path.join(/* turbopackIgnore: true */ commonDir, "refs", "remotes", "origin", "HEAD"))?.trim();
   if (originHead) {
     const target = /^ref:\s*refs\/remotes\/(.+)$/.exec(originHead);
     return target ? target[1] : undefined;
   }
-  const packedRefs = readText(path.join(commonDir, "packed-refs"));
+  const packedRefs = readText(path.join(/* turbopackIgnore: true */ commonDir, "packed-refs"));
   for (const [ref, fullRef] of [
     ["origin/main", "refs/remotes/origin/main"],
     ["origin/master", "refs/remotes/origin/master"],

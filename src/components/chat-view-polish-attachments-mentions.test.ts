@@ -294,7 +294,7 @@ assert.match(
 );
 assert.match(
   chatRuntimeSource,
-  /async function resolveFamiliarWorkspace\([\s\S]*?readFamiliarWorkspaces\(\)[\s\S]*?path\.resolve\(familiarsRoot, familiarId\)[\s\S]*?path\.relative\(familiarsRoot, candidate\)[\s\S]*?relative\.startsWith\("\.\."\)/,
+  /async function resolveFamiliarWorkspace\([\s\S]*?readFamiliarWorkspaces\(\)[\s\S]*?path\.resolve\((?:\/\* turbopackIgnore: true \*\/ )?familiarsRoot, familiarId\)[\s\S]*?path\.relative\(familiarsRoot, candidate\)[\s\S]*?relative\.startsWith\("\.\."\)/,
   "/chat/send must validate default familiar workspace paths under the familiar root while preserving configured workspaces",
 );
 assert.match(
