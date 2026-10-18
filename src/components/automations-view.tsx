@@ -1396,6 +1396,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
               onDelete={deleteCodex}
               onRun={runCodexNow}
               runs={automationRuns}
+              onCanonicalChange={() => void lifecycle.refresh()}
             />
           )}
         </div>

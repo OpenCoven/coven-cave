@@ -42,6 +42,13 @@ interface Flaws {
   replayReapplies?: boolean;
   staleRevisionOverwrites?: boolean;
   offlineLifecycleLooksAvailable?: boolean;
+  runNowLooksStarted?: boolean;
+  occurrenceReasonLeaks?: boolean;
+  attemptLooksRunning?: boolean;
+  feedReplaysFromStart?: boolean;
+  lostPositionLooksOffline?: boolean;
+  offlineOccurrencesLookAvailable?: boolean;
+  offlineFeedLooksAvailable?: boolean;
 }
 
 const labels: Record<string, string> = {
@@ -65,6 +72,16 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
   const formRecord = (id: string) => form === null
     ? { id, kind: "absent" }
     : { id, kind: "present", state: form.state, revision: form.revision, timezone: flaws.localZoneUnresolved === true ? "local" : "Etc/UTC" };
+  // The third routine: Run now with no runtime installed leaves one manual
+  // occurrence, one open run and its failed attempt, as Coven 0.4.10 records them.
+  let ran = false;
+  const occurrenceId = "occ-3ef12c9439ef478aacc4e863682088a7";
+  const runId = "run-0ce1422cb4c24b87b33dfd1834a3edf7";
+  const feeds: Record<string, string[]> = {
+    [`run:${runId}`]: ["Run changed:none → running", "Attempt changed:none → adopted", "Attempt changed:adopted → dispatching", "Attempt changed:dispatching → failed"],
+    [`occurrence:${occurrenceId}`]: ["Occurrence changed:none → claimed"],
+    "automation:cave-release-canary-run": ["Definition created:Revision 1"],
+  };
   const online = () => {
     if (offline && flaws.fallsBackWhenStopped !== true) {
       throw new CovenAutomationsUnavailableError("daemon request failed: connect ENOENT", true);
@@ -80,6 +97,7 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
       if (!/^[A-Za-z0-9_.-]+$/u.test(String(draft.id))) {
         return Promise.reject(new CovenAutomationsUnavailableError("id may contain only ASCII letters", flaws.refusalLooksOffline === true));
       }
+      if (draft.id === "cave-release-canary-run") return Promise.resolve({ id: "cave-release-canary-run", status: "PAUSED" });
       routine = { ...(draft as unknown as CanaryRoutine), ...(flaws.createsActive === true ? { status: "ACTIVE" } : {}) };
       record("created");
       return Promise.resolve({ ...routine });
@@ -151,6 +169,48 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
       adopted.set(key, form.revision);
       return Promise.resolve({ status: 200, body: { kind: "committed", revision: form.revision, replayed: false } });
     },
+    runNow: (): Promise<CanaryResponse> => {
+      ran = true;
+      return Promise.resolve(flaws.runNowLooksStarted === true
+        ? { status: 200, body: { ok: true, run: { id: runId, status: "running" } } }
+        : { status: 500, body: { ok: false, error: "failed to spawn harness" } });
+    },
+    occurrences: (): Promise<CanaryResponse> => {
+      if (offline && flaws.offlineOccurrencesLookAvailable !== true) return Promise.resolve({ status: 503, body: { kind: "unavailable" } });
+      return Promise.resolve({ status: 200, body: {
+        kind: "available", readAt: "2026-10-18T08:32:00.000Z", nextCursor: null,
+        occurrences: ran ? [{
+          id: occurrenceId, automationRevision: 1, scheduledFor: "2026-10-18T08:31:46.886Z", kind: "manual", state: "claimed",
+          fenceGeneration: 1, leaseExpiresAt: null, reasonRecorded: true, createdAt: "2026-10-18T08:31:46.886Z", updatedAt: "2026-10-18T08:31:47.199Z",
+          ...(flaws.occurrenceReasonLeaks === true ? { failureReason: "failed to spawn harness `coven-code`" } : {}),
+        }] : [],
+      } });
+    },
+    occurrence: (_id, id): Promise<CanaryResponse> => Promise.resolve({ status: 200, body: {
+      kind: "available", readAt: "2026-10-18T08:32:01.000Z",
+      occurrence: {
+        id, kind: "manual", state: "claimed", runsTruncated: false,
+        runs: [{
+          id: runId, status: "running", runtime: "coven-code", finishedAt: null,
+          attempts: [{ attemptNumber: 1, state: flaws.attemptLooksRunning === true ? "running" : "failed", failureClass: "runtime_unavailable",
+            retryClassification: "initial", reasonRecorded: true, settledAt: "2026-10-18T08:31:47.199Z" }],
+        }],
+      },
+    } }),
+    feed: (id, query): Promise<CanaryResponse> => {
+      if (offline && flaws.offlineFeedLooksAvailable !== true) return Promise.resolve({ status: 503, body: { kind: "unavailable" } });
+      if (query.checkpoint === "cave-canary-unknown-checkpoint") {
+        return Promise.resolve(flaws.lostPositionLooksOffline === true ? { status: 503, body: { kind: "unavailable" } } : { status: 410, body: { kind: "expired" } });
+      }
+      const key = `${query.stream ?? "automation"}:${query.streamId ?? id}`;
+      const all = feeds[key] ?? [];
+      const events = query.checkpoint && flaws.feedReplaysFromStart !== true ? [] : all;
+      return Promise.resolve({ status: 200, body: {
+        kind: "available", readAt: "2026-10-18T08:32:02.000Z", checkpoint: `cp-${key}`, caughtUp: true, omitted: 0,
+        throughSequence: events.length ? events.length - 1 : null,
+        events: events.map((entry, sequence) => ({ id: `evt${String(sequence).padStart(32, "0")}`, sequence, label: entry.split(":")[0], detail: entry.slice(entry.indexOf(":") + 1) })),
+      } });
+    },
     restartDaemon: () => {
       if (flaws.forgetsUpdateOnRestart === true) routine = previous;
       return Promise.resolve();
@@ -199,9 +259,11 @@ test("pins one exact CLI release, at registry integrity, and CI runs the canary"
     "node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/coven-automations-release-canary.ts");
 });
 
+const options = { formHour: 15, runCwd: "/tmp/cave-canary-work" };
+
 test("passes against a daemon Cave reports faithfully", async () => {
-  assert.deepEqual(await runCaveAutomationsScenario(fakeCave(), { formHour: 15 }),
-    { mutations: 6, historyEntries: 3, historyPages: 3, lifecycleCommands: 4 });
+  assert.deepEqual(await runCaveAutomationsScenario(fakeCave(), options),
+    { mutations: 8, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 });
 });
 
 for (const [label, flaws, message] of [
@@ -219,8 +281,16 @@ for (const [label, flaws, message] of [
   ["a resend that applies the command again", { replayReapplies: true }, /resume resent under its adoption key: expected 200/u],
   ["a stale revision that overwrites", { staleRevisionOverwrites: true }, /pause at a stale revision: expected 409/u],
   ["a lifecycle that looks available when the daemon is gone", { offlineLifecycleLooksAvailable: true }, /lifecycle with the daemon stopped: expected 503/u],
+  ["a missing occurrence read", { missingAction: "coven.automations.occurrence.history.v1" }, /capabilities: expected coven\.automations available with coven\.automations\.occurrence\.history\.v1/u],
+  ["a failed Run now reported as started", { runNowLooksStarted: true }, /run now without a runtime: expected Cave to report the failed run/u],
+  ["a daemon reason that reaches Cave's answer", { occurrenceReasonLeaks: true }, /occurrences: the daemon's free-text reason reached Cave's answer/u],
+  ["a failed attempt shown as running", { attemptLooksRunning: true }, /occurrence: expected one open run whose only attempt failed with runtime_unavailable/u],
+  ["a feed checkpoint that replays from the start", { feedReplaysFromStart: true }, /run stream from its checkpoint: expected the caught-up feed \[\]/u],
+  ["a lost feed position reported as an outage", { lostPositionLooksOffline: true }, /a checkpoint Coven never issued: expected 410/u],
+  ["occurrences that look available when the daemon is gone", { offlineOccurrencesLookAvailable: true }, /occurrences with the daemon stopped: expected 503/u],
+  ["a changefeed that looks available when the daemon is gone", { offlineFeedLooksAvailable: true }, /the changefeed with the daemon stopped: expected 503/u],
 ] as const) {
   test(`fails closed on ${label}`, async () => {
-    await assert.rejects(runCaveAutomationsScenario(fakeCave(flaws), { formHour: 15 }), message);
+    await assert.rejects(runCaveAutomationsScenario(fakeCave(flaws), options), message);
   });
 }

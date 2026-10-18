@@ -116,8 +116,8 @@ assert.match(
 );
 assert.match(
   codexDetailPanel,
-  /<div className="space-y-5">\s*\{identitySection\}\s*\{instructionsSection\}\s*\{scheduleSection\}\s*\{runtimeSection\}\s*\{runsSection\}/,
-  "the side rail keeps the priority stack: identity, instructions, schedule, runtime, runs",
+  /<div className="space-y-5">\s*\{identitySection\}\s*\{instructionsSection\}\s*\{scheduleSection\}\s*\{runtimeSection\}\s*\{occurrencesSection\}\s*\{runsSection\}/,
+  "the side rail keeps the priority stack: identity, instructions, schedule, runtime, then Coven's occurrences before runs started from Cave",
 );
 assert.match(
   source,
