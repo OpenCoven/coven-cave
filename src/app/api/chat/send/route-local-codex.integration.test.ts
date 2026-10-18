@@ -15,7 +15,7 @@ const log = path.join(home, "coven-calls.jsonl");
 await mkdir(bin, { recursive: true });
 await mkdir(familiarWorkspace, { recursive: true });
 
-const saved = Object.fromEntries(["COVEN_HOME", "COVEN_CAVE_HOME", "COVEN_BIN", "COVEN_TEST_LOG", "CODEX_BIN", "CAVE_OLLAMA_URL"].map((key) => [key, process.env[key]]));
+const saved = Object.fromEntries(["COVEN_HOME", "COVEN_CAVE_HOME", "COVEN_BIN", "COVEN_TEST_LOG", "CODEX_BIN", "CAVE_OLLAMA_URL", "CODEX_OSS_BASE_URL", "CODEX_OSS_PORT"].map((key) => [key, process.env[key]]));
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.COVEN_TEST_LOG = log;
@@ -39,6 +39,7 @@ const shim = [
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === 'codex-ollama') {",
+  "  appendFileSync(process.env.COVEN_TEST_LOG + '.env', `${JSON.stringify({ base: process.env.CODEX_OSS_BASE_URL ?? null, port: process.env.CODEX_OSS_PORT ?? null })}\\n`);",
   "  const session = 'local-session';",
   "  const events = [",
   "    { type: 'system', subtype: 'init', model: 'ollama/qwen3:8b', session_id: session },",
@@ -63,12 +64,12 @@ if (process.platform === "win32") {
   process.env.COVEN_BIN = shimExecutable;
 }
 
-// A fake Ollama on the default endpoint. `server` switches what it answers.
+// A fake Ollama on the default endpoint and on 11500. `server` switches what it answers.
 let server = "down";
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = String(input);
-  if (!url.startsWith("http://127.0.0.1:11434/")) return realFetch(input, init);
+  if (!url.startsWith("http://127.0.0.1:11434/") && !url.startsWith("http://127.0.0.1:11500/")) return realFetch(input, init);
   if (server === "down") throw new TypeError("fetch failed");
   const json = (value) => ({ ok: true, status: 200, json: async () => value });
   if (url.endsWith("/api/version")) return json({ version: "0.21.0" });
@@ -126,7 +127,10 @@ try {
   assert.deepEqual(await runCalls(), [], "no refusal ever starts a model process");
 
   // Ready: the turn runs the local adapter through Coven, with the manifest Cave scaffolded.
+  // An address inherited from Cave's own environment must not redirect it.
   server = "ready";
+  process.env.CODEX_OSS_BASE_URL = "http://elsewhere.example:9/v1";
+  process.env.CODEX_OSS_PORT = "9";
   clearLocalCodexProbeCache();
   response = await send({ modelOverride: "ollama/qwen3:8b", modelOverrideScope: "next-message" });
   assert.equal(response.status, 200, await response.clone().text());
@@ -140,6 +144,18 @@ try {
   assert.deepEqual(manifest.adapters[0].non_interactive_prompt_prefix_args, [
     "exec", "--skip-git-repo-check", "--color", "never", "--config", 'web_search="disabled"', "--config", 'model_provider="ollama"',
   ]);
+  const spawnEnvs = async () => (await readFile(`${log}.env`, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(await spawnEnvs(), [{ base: null, port: null }], "a default-endpoint turn clears an inherited server address");
+
+  // A custom address saved in Settings reaches Codex through `coven run`.
+  const { writeLocalModelSettings } = await import("@/lib/server/local-models-settings");
+  await writeLocalModelSettings({ endpoints: { ollama: "http://127.0.0.1:11500" }, allowRemote: false });
+  clearLocalCodexProbeCache();
+  response = await send({ modelOverride: "ollama/qwen3:8b", modelOverrideScope: "next-message" });
+  assert.equal(response.status, 200, await response.clone().text());
+  await response.text();
+  assert.equal((await runCalls()).at(-1)[1], "codex-ollama");
+  assert.deepEqual((await spawnEnvs()).at(-1), { base: "http://127.0.0.1:11500/v1", port: null });
 } finally {
   globalThis.fetch = realFetch;
   for (const [key, value] of Object.entries(saved)) {

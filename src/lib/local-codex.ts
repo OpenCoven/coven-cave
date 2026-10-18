@@ -146,3 +146,45 @@ export function localCodexAdapterManifest(info: LocalCodexBackendInfo): { adapte
     }],
   };
 }
+
+/** Where an endpoint or the remote-server permission came from. */
+export type LocalSettingSource = "default" | "settings" | "environment";
+
+/** One model as Settings → Local models shows it. */
+export type LocalModelSummary = { name: string; tools: boolean; contextLength: number | null };
+
+/** What Settings → Local models shows for one backend (GET /api/local-models). */
+export type LocalModelsBackendStatus = {
+  backend: LocalCodexBackend;
+  harness: LocalCodexHarnessId;
+  product: string;
+  label: string;
+  defaultEndpoint: string;
+  endpointEnv: string;
+  startHint: string;
+  addModelHint: string;
+  /** The address chats use now, or null when the configured one is unusable. */
+  endpoint: string | null;
+  source: LocalSettingSource;
+  /** The address saved in Settings, even when the environment overrides it. */
+  savedEndpoint: string | null;
+  server:
+    | { state: "running"; version: string | null; models: LocalModelSummary[] }
+    | { state: "stopped" }
+    | { state: "unexpected" }
+    | { state: "invalid-address"; reason: string };
+};
+
+export type LocalModelsStatus = {
+  ok: true;
+  /** Only a request from this computer can change where inference happens. */
+  editable: boolean;
+  allowRemote: { value: boolean; source: LocalSettingSource };
+  backends: LocalModelsBackendStatus[];
+};
+
+/** Body for PUT /api/local-models. A null or empty endpoint restores the default. */
+export type LocalModelsSettingsPatch = {
+  endpoints?: Partial<Record<LocalCodexBackend, string | null>>;
+  allowRemote?: boolean;
+};

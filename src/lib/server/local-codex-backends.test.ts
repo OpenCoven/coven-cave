@@ -1,12 +1,31 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test, { after } from "node:test";
 import { LOCAL_CODEX_BACKENDS } from "../local-codex.ts";
 import {
+  applyLocalCodexSpawnEnv,
+  applyLocalModelsSettingsPatch,
   clearLocalCodexProbeCache,
+  localModelsAllowRemote,
   preflightLocalCodex,
   probeLocalCodexBackend,
+  readLocalModelsStatus,
   resolveLocalCodexEndpoint,
 } from "./local-codex-backends.ts";
+import { EMPTY_LOCAL_MODEL_SETTINGS, type LocalModelSettings } from "./local-models-settings.ts";
+
+// Probes read saved Settings when none are passed; keep that read off the
+// real Cave home.
+const scratchHome = mkdtempSync(path.join(tmpdir(), "cave-local-models-"));
+const savedCaveHome = process.env.COVEN_CAVE_HOME;
+process.env.COVEN_CAVE_HOME = scratchHome;
+after(() => {
+  if (savedCaveHome === undefined) delete process.env.COVEN_CAVE_HOME;
+  else process.env.COVEN_CAVE_HOME = savedCaveHome;
+  rmSync(scratchHome, { recursive: true, force: true });
+});
 
 const ollama = LOCAL_CODEX_BACKENDS["codex-ollama"];
 const lmstudio = LOCAL_CODEX_BACKENDS["codex-lmstudio"];
@@ -102,13 +121,13 @@ test("a success is reused for 15 s, so a menu and a turn share one read", async 
 });
 
 test("endpoints stay on this machine unless a remote server is explicitly allowed", () => {
-  assert.deepEqual(resolveLocalCodexEndpoint(ollama, {}), { ok: true, endpoint: "http://127.0.0.1:11434", isDefault: true });
-  assert.deepEqual(resolveLocalCodexEndpoint(ollama, { CAVE_OLLAMA_URL: "http://localhost:11500/" }), { ok: true, endpoint: "http://localhost:11500", isDefault: false });
+  assert.deepEqual(resolveLocalCodexEndpoint(ollama, {}), { ok: true, endpoint: "http://127.0.0.1:11434", isDefault: true, source: "default" });
+  assert.deepEqual(resolveLocalCodexEndpoint(ollama, { CAVE_OLLAMA_URL: "http://localhost:11500/" }), { ok: true, endpoint: "http://localhost:11500", isDefault: false, source: "environment" });
   const remote = resolveLocalCodexEndpoint(ollama, { CAVE_OLLAMA_URL: "http://gpu-box.lan:11434" });
   assert.equal(remote.ok, false);
-  assert.match(remote.ok ? "" : remote.reason, /not this machine\. Set CAVE_LOCAL_MODELS_ALLOW_REMOTE=1/);
+  assert.match(remote.ok ? "" : remote.reason, /^CAVE_OLLAMA_URL points at gpu-box\.lan:11434, which isn't this computer\. .*Settings → Local models, or set CAVE_LOCAL_MODELS_ALLOW_REMOTE=1\.$/);
   assert.deepEqual(resolveLocalCodexEndpoint(ollama, { CAVE_OLLAMA_URL: "http://gpu-box.lan:11434", CAVE_LOCAL_MODELS_ALLOW_REMOTE: "1" }),
-    { ok: true, endpoint: "http://gpu-box.lan:11434", isDefault: false });
+    { ok: true, endpoint: "http://gpu-box.lan:11434", isDefault: false, source: "environment" });
   for (const bad of ["not a url", "ftp://127.0.0.1", "http://user:pw@127.0.0.1:11434", "http://127.0.0.1:11434/v1", "http://127.0.0.1:11434/?x=1"]) {
     assert.equal(resolveLocalCodexEndpoint(ollama, { CAVE_OLLAMA_URL: bad }).ok, false, bad);
   }
@@ -161,4 +180,99 @@ test("a ready preflight gives the native model and the Codex overrides for this 
     "-c", 'model_providers.cave_local.wire_api="responses"',
     "-c", 'model_provider="cave_local"',
   ]);
+});
+
+const saved = (settings: Partial<LocalModelSettings>): LocalModelSettings => ({ ...EMPTY_LOCAL_MODEL_SETTINGS, ...settings });
+
+test("an address comes from the environment, then Settings, then the default", () => {
+  const settings = saved({ endpoints: { ollama: "http://127.0.0.1:11500", lmstudio: "http://gpu-box.lan:1234" } });
+  assert.deepEqual(resolveLocalCodexEndpoint(ollama, {}, settings), { ok: true, endpoint: "http://127.0.0.1:11500", isDefault: false, source: "settings" });
+  assert.deepEqual(resolveLocalCodexEndpoint(ollama, { CAVE_OLLAMA_URL: "http://127.0.0.1:11600" }, settings),
+    { ok: true, endpoint: "http://127.0.0.1:11600", isDefault: false, source: "environment" }, "the environment overrides a saved address");
+  const remote = resolveLocalCodexEndpoint(lmstudio, {}, settings);
+  assert.equal(remote.ok, false, "a saved address on another computer still needs the permission");
+  assert.match(remote.ok ? "" : remote.reason, /^The saved LM Studio address points at gpu-box\.lan:1234/);
+  assert.equal(remote.source, "settings");
+  assert.deepEqual(resolveLocalCodexEndpoint(lmstudio, {}, { ...settings, allowRemote: true }),
+    { ok: true, endpoint: "http://gpu-box.lan:1234", isDefault: false, source: "settings" });
+  assert.deepEqual(localModelsAllowRemote({}, settings), { value: false, source: "default" });
+  assert.deepEqual(localModelsAllowRemote({}, { ...settings, allowRemote: true }), { value: true, source: "settings" });
+  assert.deepEqual(localModelsAllowRemote({ CAVE_LOCAL_MODELS_ALLOW_REMOTE: "1" }, settings), { value: true, source: "environment" });
+});
+
+test("a Settings change is validated against the permission that holds afterwards", () => {
+  const empty = EMPTY_LOCAL_MODEL_SETTINGS;
+  assert.deepEqual(applyLocalModelsSettingsPatch(empty, { endpoints: { ollama: " http://localhost:11500/ " } }, {}),
+    { ok: true, settings: { endpoints: { ollama: "http://localhost:11500" }, allowRemote: false } }, "an address is saved as its origin");
+  assert.deepEqual(applyLocalModelsSettingsPatch(saved({ endpoints: { ollama: "http://localhost:11500" } }), { endpoints: { ollama: "" } }, {}),
+    { ok: true, settings: { endpoints: {}, allowRemote: false } }, "an empty address restores the default");
+  assert.deepEqual(applyLocalModelsSettingsPatch(empty, { endpoints: { lmstudio: "http://127.0.0.1:1234" } }, {}),
+    { ok: true, settings: { endpoints: {}, allowRemote: false } }, "saving the default address is the same as the default");
+  const remote = applyLocalModelsSettingsPatch(empty, { endpoints: { lmstudio: "http://gpu-box.lan:1234" } }, {});
+  assert.equal(remote.ok, false);
+  assert.equal(!remote.ok && remote.field, "lmstudio");
+  assert.match(!remote.ok ? remote.error : "", /^The LM Studio address points at gpu-box\.lan:1234, which isn't this computer/);
+  assert.deepEqual(applyLocalModelsSettingsPatch(empty, { allowRemote: true, endpoints: { lmstudio: "http://gpu-box.lan:1234" } }, {}),
+    { ok: true, settings: { endpoints: { lmstudio: "http://gpu-box.lan:1234" }, allowRemote: true } }, "one change can allow a remote server and point at it");
+  const offWhileRemote = applyLocalModelsSettingsPatch(saved({ allowRemote: true, endpoints: { lmstudio: "http://gpu-box.lan:1234" } }), { allowRemote: false }, {});
+  assert.equal(offWhileRemote.ok, false, "turning the permission off cannot strand a remote address");
+  assert.equal(!offWhileRemote.ok && offWhileRemote.field, "lmstudio");
+  for (const bad of [null, [], "x", { other: 1 }, { allowRemote: "yes" }, { endpoints: [] }, { endpoints: { vllm: "http://127.0.0.1:8000" } }, { endpoints: { ollama: 5 } }, { endpoints: { ollama: "ftp://127.0.0.1" } }]) {
+    assert.equal(applyLocalModelsSettingsPatch(empty, bad, {}).ok, false, JSON.stringify(bad));
+  }
+});
+
+test("the spawned Codex reaches only this session's server", () => {
+  const inherited = () => ({ PATH: "/bin", CODEX_OSS_BASE_URL: "http://elsewhere:9/v1", CODEX_OSS_PORT: "9" });
+  const direct = inherited();
+  applyLocalCodexSpawnEnv(direct, { endpoint: "http://127.0.0.1:11500", isDefault: false }, "direct");
+  assert.deepEqual(direct, { PATH: "/bin" }, "the direct transport names a custom server with -c, so nothing inherited survives");
+  const covenDefault = inherited();
+  applyLocalCodexSpawnEnv(covenDefault, { endpoint: "http://127.0.0.1:11434", isDefault: true }, "coven");
+  assert.deepEqual(covenDefault, { PATH: "/bin" }, "an inherited address cannot redirect a default-endpoint session");
+  const covenCustom = inherited();
+  applyLocalCodexSpawnEnv(covenCustom, { endpoint: "http://127.0.0.1:11500", isDefault: false }, "coven");
+  assert.deepEqual(covenCustom, { PATH: "/bin", CODEX_OSS_BASE_URL: "http://127.0.0.1:11500/v1" });
+});
+
+test("Settings status reports both servers, where each address came from, and what each can run", async () => {
+  clearLocalCodexProbeCache();
+  const { fetchImpl } = server(ollamaRoutes());
+  const status = await readLocalModelsStatus({ editable: false, env: {}, settings: EMPTY_LOCAL_MODEL_SETTINGS, fetchImpl });
+  assert.equal(status.editable, false);
+  assert.deepEqual(status.allowRemote, { value: false, source: "default" });
+  const [first, second] = status.backends;
+  assert.equal(first.backend, "ollama");
+  assert.equal(first.source, "default");
+  assert.equal(first.endpoint, "http://127.0.0.1:11434");
+  assert.deepEqual(first.server, {
+    state: "running", version: "0.21.0",
+    models: [{ name: "llama2:7b", tools: false, contextLength: 4096 }, { name: "qwen3:8b", tools: true, contextLength: 40960 }],
+  });
+  assert.equal(second.backend, "lmstudio");
+  assert.deepEqual(second.server, { state: "stopped" });
+
+  clearLocalCodexProbeCache();
+  const moved = await readLocalModelsStatus({
+    editable: true, env: {}, fetchImpl,
+    settings: saved({ endpoints: { ollama: "http://gpu-box.lan:11434" } }),
+  });
+  assert.equal(moved.backends[0].source, "settings");
+  assert.equal(moved.backends[0].endpoint, null);
+  assert.equal(moved.backends[0].savedEndpoint, "http://gpu-box.lan:11434");
+  assert.equal(moved.backends[0].server.state, "invalid-address");
+});
+
+test("a saved custom address reaches the preflight and its Codex overrides", async () => {
+  clearLocalCodexProbeCache();
+  const custom = server(Object.fromEntries(Object.entries(ollamaRoutes()).map(([url, route]) => [url.replace("127.0.0.1:11434", "127.0.0.1:11500"), route])));
+  const ready = await preflightLocalCodex("codex-ollama", "ollama/qwen3:8b", {
+    env: {}, fetchImpl: custom.fetchImpl, settings: saved({ endpoints: { ollama: "http://127.0.0.1:11500" } }),
+  });
+  assert.equal(ready?.ok, true);
+  if (!ready?.ok) return;
+  assert.equal(ready.endpoint, "http://127.0.0.1:11500");
+  assert.equal(ready.isDefault, false);
+  assert.equal(ready.source, "settings");
+  assert.ok(ready.configArgs.includes('model_providers.cave_local.base_url="http://127.0.0.1:11500/v1"'));
 });
