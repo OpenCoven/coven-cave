@@ -470,7 +470,8 @@ export function CodexDetailPanel({
     </CronDetailSection>
   );
   const occurrencesSection = (
-    <AutomationOccurrences key={auto.id} automationId={auto.id} refreshNonce={occurrenceNonce} onWatchStreams={onWatchStreams} />
+    // Its own key namespace: it sits beside CanonicalAutomationHistory, which is keyed by the bare id.
+    <AutomationOccurrences key={`occurrences:${auto.id}`} automationId={auto.id} refreshNonce={occurrenceNonce} onWatchStreams={onWatchStreams} />
   );
   const runsSection = runs.length > 0 ? (
     <CronDetailSection
