@@ -109,6 +109,8 @@ import {
 } from "@/lib/codex-compatibility";
 import { codexLaunchCommand } from "@/lib/codex-bin";
 import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
+import { isCodexFamilyHarness, isLocalCodexHarness, localCodexBackendInfo } from "@/lib/local-codex";
+import { preflightLocalCodex } from "@/lib/server/local-codex-backends";
 import { codexReasoningForwardable } from "@/lib/server/direct-transport-reasoning-gates";
 import {
   covenRelayedRunError,
@@ -2339,7 +2341,7 @@ async function postAdmittedChat(
   // resume-incapable combination retains the existing filtered
   // `coven run codex` transport unchanged.
   const codexResumeTarget =
-    binding.harness === "codex" &&
+    isCodexFamilyHarness(binding.harness) &&
     body.sessionId &&
     !flowDiscussionStartsFresh &&
     // A handoff never resumes the previous runtime's native session. Without
@@ -2351,7 +2353,7 @@ async function postAdmittedChat(
       ? existingConversation?.harnessSessionId ?? body.sessionId
       : null;
   const codexSpawnEnv =
-    !sshRuntime && binding.harness === "codex" ? harnessSpawnEnv(body.familiarId) : null;
+    !sshRuntime && isCodexFamilyHarness(binding.harness) ? harnessSpawnEnv(body.familiarId) : null;
   const codexDirectLaunch = codexSpawnEnv
     ? (() => {
         try {
@@ -2927,8 +2929,10 @@ async function postAdmittedChat(
   // so it is forwardable exactly when that transport was selected above with
   // the flag in its probed contract (#5905). The model-state route asks the
   // same routing helpers, so the chips it offers match what lands here.
+  // Reasoning effort is a cloud Codex control; a local model never receives it.
   const codexReasoningForwardingEnabled =
-    codexDirect && codexReasoningForwardable(codexDirectCapabilities, Boolean(codexResumeTarget));
+    codexDirect && !isLocalCodexHarness(binding.harness) &&
+    codexReasoningForwardable(codexDirectCapabilities, Boolean(codexResumeTarget));
   const copilotReasoningForwardingEnabled =
     Boolean(copilotStream) && copilotSupportsReasoningEffort(copilotCapability?.version ?? null);
   const forwardableControlParameters = new Set<string>([
@@ -2981,6 +2985,45 @@ async function postAdmittedChat(
       modelApplicationState: "rejected",
       modelApplicationReason: "The saved model id failed launch-boundary validation.",
     }, { status: 400 });
+  }
+  // Codex local mode (#6049): the server, the model and its tool support are
+  // checked before anything spawns. A session that cannot run locally stops
+  // here with what to do; it never falls back to cloud Codex. Both transports
+  // pin the local provider: `-c` overrides on the direct one, Cave's
+  // scaffolded adapter manifest on `coven run`.
+  let localCodexConfigArgs: string[] | undefined;
+  if (isLocalCodexHarness(binding.harness)) {
+    const info = localCodexBackendInfo(binding.harness)!;
+    if (sshRuntime) {
+      return NextResponse.json({
+        ok: false,
+        code: "local_codex_remote_host",
+        error: `${info.label} runs on this computer with its own ${info.product} server. Switch the host to this computer to use it.`,
+      }, { status: 409 });
+    }
+    const preflight = await preflightLocalCodex(binding.harness, cleanModelId(desiredModel));
+    if (preflight && !preflight.ok) {
+      return NextResponse.json({
+        ok: false,
+        code: preflight.code,
+        error: preflight.message,
+        desiredModel,
+        modelApplicationState: "rejected",
+        modelApplicationReason: preflight.message,
+      }, { status: 409 });
+    }
+    // Off the direct transport the turn runs `coven run <harness>` with
+    // Cave's scaffolded manifest, which can only target the default
+    // endpoint. Continuity there is by replay: Coven cannot capture an
+    // external Codex adapter's thread id for a native resume.
+    if (!codexDirect && preflight?.ok && preflight.endpoint !== info.defaultEndpoint) {
+      return NextResponse.json({
+        ok: false,
+        code: "local_codex_custom_endpoint",
+        error: `A custom ${info.product} endpoint (${info.endpointEnv}) needs Cave's direct Codex transport, which isn't available for this Codex version. Unset ${info.endpointEnv} to use ${info.defaultEndpoint}.`,
+      }, { status: 409 });
+    }
+    localCodexConfigArgs = preflight?.ok ? preflight.configArgs : undefined;
   }
   if (savedModelRejection === "provider-mismatch") {
     // Refused before any process starts: forwarding this id would launch the
@@ -3571,6 +3614,8 @@ async function postAdmittedChat(
         // Thinking pick (#5905): `-c model_reasoning_effort=…`, gated on the
         // probed `--config` capability for this launch shape.
         reasoningEffort: forwardReasoning,
+        // Codex local mode: keep this turn on its server, fresh or resumed.
+        localConfigArgs: localCodexConfigArgs,
       });
     }
     const a = ["run", binding.harness, "--stream-json"];
@@ -3910,7 +3955,7 @@ async function postAdmittedChat(
       // but produced no output") and the banner heuristic ate bare-number
       // answers — so their text passes through verbatim.
       const rawStdoutHarness =
-        binding.harness !== "codex" && binding.harness !== "claude";
+        !isCodexFamilyHarness(binding.harness) && binding.harness !== "claude";
       let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
@@ -3950,7 +3995,7 @@ async function postAdmittedChat(
       // through to the generic empty-output/authentication diagnostic.
       let codexAdapterFailure: ReturnType<typeof codexAdapterFailureAvailability> = null;
       const captureCodexAdapterFailure = (text: string) => {
-        if (binding.harness !== "codex" || codexAdapterFailure) return;
+        if (!isCodexFamilyHarness(binding.harness) || codexAdapterFailure) return;
         codexAdapterFailure = codexAdapterFailureAvailability(text);
       };
       // Tracks open tool calls from both hook lines and stream-json

@@ -82,7 +82,8 @@ assert.equal(
   "A longer flag like --add-dir-recursive must not be mistaken for --add-dir",
 );
 
-const curatedIds = ["codex", "claude", "copilot", "hermes", "grok", "openclaw"];
+// Codex local mode (#6049) sits beside Codex: same CLI, local inference.
+const curatedIds = ["codex", "codex-ollama", "codex-lmstudio", "claude", "copilot", "hermes", "grok", "openclaw"];
 {
   const ids = COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id);
   assert.deepEqual(ids.slice(0, curatedIds.length), curatedIds, "curated adapters keep their seed order first");

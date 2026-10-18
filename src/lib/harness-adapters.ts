@@ -1,4 +1,5 @@
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+import { localCodexAdapterManifest, localCodexBackendInfo } from "./local-codex.ts";
 import type { RuntimeAvailabilitySummary } from "./runtime-availability.ts";
 
 export type CompatibilityAdapter = {
@@ -98,6 +99,27 @@ const CURATED_ADAPTERS: CompatibilityAdapter[] = [
     chatSupported: true,
     installHint:
       "Install Codex with `npm install -g @openai/codex`, then run `codex login`.",
+    source: "bundled",
+  },
+  // Codex local mode (#6049): the same Codex harness, with inference on a
+  // local server. No `codex login` is needed; the server and a tool-capable
+  // model are. See src/lib/local-codex.ts.
+  {
+    id: "codex-ollama",
+    label: "Codex · Ollama",
+    binary: "codex",
+    chatSupported: true,
+    installHint:
+      "Install Codex with `npm install -g @openai/codex` and Ollama from ollama.com, start Ollama, then pull a model with tool support (for example `ollama pull qwen3:8b`).",
+    source: "bundled",
+  },
+  {
+    id: "codex-lmstudio",
+    label: "Codex · LM Studio",
+    binary: "codex",
+    chatSupported: true,
+    installHint:
+      "Install Codex with `npm install -g @openai/codex` and LM Studio from lmstudio.ai, download a model with tool support, then start LM Studio's server.",
     source: "bundled",
   },
   {
@@ -434,6 +456,14 @@ export function adapterManifestScaffoldForHarness(
   harnessId: string,
   _platform = process.platform,
 ): AdapterManifestScaffold | null {
+  // Codex local mode is Cave's own adapter, not a registry runtime (#6049).
+  const local = localCodexBackendInfo(canonicalHarnessId(harnessId));
+  if (local) {
+    return {
+      filename: `${local.harness}.json`,
+      contents: `${JSON.stringify(localCodexAdapterManifest(local), null, 2)}\n`,
+    };
+  }
   const registry = REGISTRY_RUNTIMES.find(
     (runtime) => runtime.id === canonicalHarnessId(harnessId),
   );

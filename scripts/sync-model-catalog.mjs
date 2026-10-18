@@ -34,6 +34,9 @@ const SUPPORTED_PROVIDERS = new Set([
   "github",
   "nous",
   "xai",
+  // Local inference servers for Codex local mode (#6049).
+  "ollama",
+  "lmstudio",
 ]);
 
 function rejectUnknownKeys(value, allowed, description) {
@@ -270,6 +273,8 @@ export type GeneratedRuntimeProvider =
   | "github"
   | "nous"
   | "xai"
+  | "ollama"
+  | "lmstudio"
   | null;
 
 export type GeneratedRuntimeModelCatalog = {

@@ -2,6 +2,7 @@
 
 import type { RuntimeModelInventoryResult } from "@/lib/use-runtime-model-options";
 import { runtimeDisplayName } from "@/components/runtime-logo";
+import { localCodexBackendInfo } from "@/lib/local-codex";
 import { Button } from "@/components/ui/button";
 import { PopoverItem } from "@/components/ui/popover";
 import "@/styles/composer-runtime-chip.css";
@@ -20,7 +21,12 @@ export function ModelInventoryFeedback({ runtime, modelInventory, modelCount, me
   const canRefresh = Boolean(modelInventory) && !managed &&
     issue !== "remote-runtime" && issue !== "local-only" && issue !== "profile-managed";
   const name = runtimeDisplayName(runtime);
+  // Local servers have no runtime default to fall back on, so their copy says what to do instead.
+  const local = localCodexBackendInfo(runtime);
   const status = loading ? `Loading ${name} models…`
+    : local && issue === "local-server-unavailable" ? `${local.product} isn’t answering. ${local.startHint} Then retry model discovery.`
+    : local && issue === "local-endpoint-invalid" ? `${local.endpointEnv} isn’t a usable endpoint for ${local.product}. Fix or unset it, then retry.`
+    : local && issue === "local-no-tool-models" ? `${local.product} has no model with tool support, which Codex needs. ${local.addModelHint}`
     : issue === "remote-runtime" ? "Models are managed on the remote machine. Use runtime default or set a model with /model."
     : issue === "local-only" ? "Open Cave on this computer to discover models. You can still use runtime default or /model."
     : issue === "profile-managed" ? "This profile manages its own models. Use runtime default or set a model with /model."

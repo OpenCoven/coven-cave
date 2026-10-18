@@ -10,7 +10,7 @@
 // `allowCustom` separately governs explicit custom IDs; runtime-managed adapters
 // have no fabricated local inventory.
 
-export type RuntimeProvider = "openai" | "anthropic" | "github" | "nous" | "xai" | null;
+export type RuntimeProvider = "openai" | "anthropic" | "github" | "nous" | "xai" | "ollama" | "lmstudio" | null;
 
 import {
   CLAUDE_OPUS_5_CAVE_ID,
@@ -60,7 +60,13 @@ export type RuntimeModelDiscoveryIssue =
   | "runtime-managed"
   | "remote-runtime"
   | "local-only"
-  | "profile-managed";
+  | "profile-managed"
+  /** Codex local mode (#6049): the inference server did not answer. */
+  | "local-server-unavailable"
+  /** Codex local mode: the configured endpoint is malformed or remote without opt-in. */
+  | "local-endpoint-invalid"
+  /** Codex local mode: the server answered, with no chat model that supports tools. */
+  | "local-no-tool-models";
 
 export type RuntimeModelInventory = {
   runtime: string;
@@ -144,6 +150,8 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> =
 
 const DYNAMIC_INVENTORY_RUNTIMES = new Set([
   "codex",
+  "codex-ollama",
+  "codex-lmstudio",
   "claude",
   "copilot",
   "grok",
