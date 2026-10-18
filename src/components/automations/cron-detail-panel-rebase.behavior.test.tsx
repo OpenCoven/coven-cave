@@ -17,15 +17,21 @@ const base: CodexAutomation = {
 const lifecycle: AutomationLifecycleView = { state: "active", revision: 4, timezone: "UTC", freshness: "live", readAt: new Date().toISOString() };
 
 let renderer: ReactTestRenderer | undefined;
+let consoleError: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  consoleError = vi.spyOn(console, "error");
   // Every background read (health, occurrences, feed, skills) answers unavailable.
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503, json: async () => ({ kind: "unavailable", ok: false }) })));
 });
 afterEach(async () => {
   await act(async () => renderer?.unmount());
   renderer = undefined;
+  // A duplicate key or an update outside act() is a rendering bug, not noise.
+  const reactWarnings = consoleError.mock.calls.filter(([message]) => typeof message === "string" && /same key|not wrapped in act/.test(message));
+  consoleError.mockRestore();
   vi.unstubAllGlobals();
+  expect(reactWarnings).toEqual([]);
 });
 
 type Props = Parameters<typeof CodexDetailPanel>[0];
