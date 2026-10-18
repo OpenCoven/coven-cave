@@ -50,7 +50,7 @@ export function normalizeToolActivity(value: unknown, callId: string, status: To
     if (time !== null && (!timestamp(time) || time < data.firstObservedAt || time > data.updatedAt)) return undefined;
   }
   if (isKnownToolOutcome(status) !== (data.terminalObservedAt !== null) ||
-    (status === "requested" && data.executionObservedAt !== null) ||
+    ((status === "requested" || status === "approval-requested") && data.executionObservedAt !== null) ||
     (status === "running" && data.executionObservedAt === null)) return undefined;
   if (typeof data.executionObservedAt === "number" && typeof data.terminalObservedAt === "number" &&
     data.executionObservedAt > data.terminalObservedAt) return undefined;
