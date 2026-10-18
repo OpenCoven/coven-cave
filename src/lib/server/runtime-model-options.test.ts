@@ -276,3 +276,52 @@ for (const [runtime, id] of [
   assert.deepEqual((await listRuntimeModelInventory(runtime, "sage", { ...dependencies, inventoryRestriction: "remote-runtime" })).models, []);
   assert.equal(probes, 1, `${runtime} must not probe local credentials for an SSH binding`);
 }
+
+// Codex local mode (#6049): the inference server is the inventory.
+{
+  const { LOCAL_CODEX_BACKENDS } = await import("../local-codex.ts");
+  const probes: string[] = [];
+  const probe = (answer: Awaited<ReturnType<NonNullable<Parameters<typeof listRuntimeModelInventory>[2]>["probeLocalBackend"] & {}>>) =>
+    async (info: { backend: string }) => { probes.push(info.backend); return answer; };
+  const ready = await listRuntimeModelInventory("codex-lmstudio", "sage", {
+    probeLocalBackend: probe({
+      kind: "available", endpoint: "http://127.0.0.1:1234", version: null,
+      models: [
+        { name: "hermes-3-llama-3.1-8b", tools: true, contextLength: 8192 },
+        { name: "hermes-4-llama-3.1-8b", tools: true, contextLength: 8192 },
+        { name: "plain-llm", tools: false, contextLength: 8192 },
+        { name: "qwen/qwen3.8-27b", tools: true, contextLength: 262144 },
+      ],
+    }),
+  });
+  assert.deepEqual(probes, ["lmstudio"]);
+  assert.deepEqual(ready.models, [
+    { id: "lmstudio/hermes-3-llama-3.1-8b", label: "hermes-3-llama-3.1-8b" },
+    { id: "lmstudio/hermes-4-llama-3.1-8b", label: "hermes-4-llama-3.1-8b" },
+    { id: "lmstudio/qwen/qwen3.8-27b", label: "qwen/qwen3.8-27b" },
+  ], "every installed tool-capable model is a choice; an older release on a local server is not collapsed away");
+  assert.equal(ready.provenance, "live");
+  assert.equal(ready.discoveryIssue, undefined);
+
+  const issue = async (runtime: string, answer: Parameters<typeof probe>[0]) =>
+    (await listRuntimeModelInventory(runtime, "sage", { probeLocalBackend: probe(answer) })).discoveryIssue;
+  assert.equal(await issue("codex-ollama", { kind: "unreachable", endpoint: "http://127.0.0.1:11434" }), "local-server-unavailable");
+  assert.equal(await issue("codex-ollama", { kind: "invalid-response", endpoint: "http://127.0.0.1:11434" }), "local-server-unavailable");
+  assert.equal(await issue("codex-ollama", { kind: "invalid-endpoint", reason: "not this machine" }), "local-endpoint-invalid");
+  assert.equal(await issue("codex-ollama", {
+    kind: "available", endpoint: "http://127.0.0.1:11434", version: "0.21.0",
+    models: [{ name: "llama2:7b", tools: false, contextLength: 4096 }],
+  }), "local-no-tool-models", "a server with only tool-less models says so instead of offering models Codex cannot drive");
+
+  probes.length = 0;
+  const remote = await listRuntimeModelInventory("codex-ollama", "sage", {
+    allowCliInventory: false,
+    probeLocalBackend: probe({ kind: "unreachable", endpoint: "http://127.0.0.1:11434" }),
+  });
+  assert.equal(remote.discoveryIssue, "remote-runtime");
+  assert.deepEqual(probes, [], "an SSH-bound familiar never probes this machine's server");
+  assert.equal((await listRuntimeModelInventory("codex-ollama", "sage", {
+    probeLocalBackend: async () => { throw new Error("boom"); },
+  })).discoveryIssue, "local-server-unavailable");
+  assert.ok(LOCAL_CODEX_BACKENDS["codex-ollama"]);
+}

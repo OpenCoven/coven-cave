@@ -201,8 +201,8 @@ assert.match(
 // route asks the same routing helpers through direct-transport-reasoning-gates.
 assert.match(
   chatRoute,
-  /const codexReasoningForwardingEnabled =\s*\n\s*codexDirect && codexReasoningForwardable\(codexDirectCapabilities, Boolean\(codexResumeTarget\)\);/,
-  "Codex Thinking forwarding follows the direct routing decision and the launch shape's --config capability",
+  /const codexReasoningForwardingEnabled =\s*\n\s*codexDirect && !isLocalCodexHarness\(binding\.harness\) &&\s*\n\s*codexReasoningForwardable\(codexDirectCapabilities, Boolean\(codexResumeTarget\)\);/,
+  "Codex Thinking forwarding follows the direct routing decision and the launch shape's --config capability, and never reaches a local model (#6049)",
 );
 assert.match(
   chatRoute,
