@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile, chmod } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkBundledDependencyFloor, describeBundledVersions } from "./bundled-dependency-floor.mjs";
 
 /** The one place the file-count budget is written down. */
 export const SIDECAR_RUNTIME_BUDGET_FILE = fileURLToPath(
@@ -834,13 +835,18 @@ export async function verifySidecarRuntime(root) {
     }
   }
 
+  // #5339: the bundled Next and sharp must be at or above their patched
+  // minimums. This is the release build's last stop before Tauri packages the
+  // sidecar, so an unpatched copy fails here instead of shipping.
+  const bundledVersions = await checkBundledDependencyFloor(root);
+
   const metrics = await sidecarRuntimeMetrics(root);
   for (const [metric, budget] of Object.entries(SIDECAR_RUNTIME_BUDGETS)) {
     if (metrics[metric] > budget) {
       throw new Error(`sidecar runtime ${metric} ${metrics[metric]} exceeds target ${budget}`);
     }
   }
-  return metrics;
+  return { ...metrics, bundledVersions };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -851,6 +857,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(
       `==> sidecar runtime closure: ${metrics.fileCount} files, ${metrics.directoryCount} directories, ${metrics.unpackedBytes} bytes`,
     );
+    console.log(`==> bundled dependency floor: ${describeBundledVersions(metrics.bundledVersions)}`);
   } else {
     const [projectRoot, standaloneRoot, dependencyRoot, destination] = process.argv.slice(2);
     if (!projectRoot || !standaloneRoot || !dependencyRoot || !destination) {

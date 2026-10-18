@@ -30,6 +30,10 @@ that diverge. It pairs with the conformance suite that enforces them.
 - **The sidecar runtime smoke** — [`scripts/sidecar-runtime-smoke.mjs`](../scripts/sidecar-runtime-smoke.mjs).
   Run it after `bash scripts/sidecar-bundle.sh` with
   `pnpm test:sidecar-runtime`.
+- **The bundled dependency floor** — [`scripts/bundled-dependency-floor.mjs`](../scripts/bundled-dependency-floor.mjs).
+  The sidecar verifier fails every release build whose bundled `next` or
+  `sharp` is below the patched minimum recorded on #5339. To check a shipped
+  package, extract it and run the script on its `resources/server` directory.
 - **Tailscale/MagicDNS discovery** — the conformance suite checks live
   `tailscale status --self --json` when a runner has a connected Tailscale
   daemon, then proves the MagicDNS host and derived Serve URL through the same
