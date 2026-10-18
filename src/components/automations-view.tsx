@@ -39,6 +39,7 @@ import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } fr
 import { failingCronIds } from "@/lib/automations/cron-health";
 import { lifecycleCommandMessage, lifecycleControl, parseLifecycleDetail } from "@/lib/automations/lifecycle";
 import { useAutomationLifecycle } from "@/lib/automations/use-automation-lifecycle";
+import { saveWithRevisionCheck, type RevisionRebase } from "@/lib/automations/revision-rebase";
 import { liveRunView, newestRunFor } from "@/lib/automations/live-run";
 import { LiveRunCard } from "@/components/automations/live-run-card";
 import { FamiliarCarousel } from "@/components/automations/familiar-carousel";
@@ -566,27 +567,52 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     }
   }, [lifecycleOf, sendLifecycle, reloadAfterMutation]);
 
-  const saveCodex = useCallback(async (auto: CodexAutomation, patch: CodexAutomationPatch) => {
-    setBusyId(auto.id);
-    // Saved at the revision on screen: Coven refuses it if the definition moved.
-    const expectedRevision = lifecycleOf(auto.id).revision;
+  // A save Coven refused, or would have refused, because the definition moved.
+  const [conflict, setConflict] = useState<{ id: string; rebase: RevisionRebase } | null>(null);
+  // Bumped to load the selected definition into the panel's form over unsaved edits.
+  const [formResetKey, setFormResetKey] = useState(0);
+  useEffect(() => {
+    if (conflict && conflict.id !== selectedCodex?.id) setConflict(null);
+  }, [conflict, selectedCodex?.id]);
+
+  /** Save an edit of `base` only at a revision whose fields the person has seen; otherwise review. */
+  const saveCodex = useCallback(async (base: CodexAutomation, patch: CodexAutomationPatch) => {
+    setBusyId(base.id);
+    setConflict(null);
     try {
-      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(expectedRevision === null ? patch : { ...patch, expectedRevision }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
-      if (json.automation) setSelectedCodex(json.automation);
-      announce(`Saved '${patch.name ?? auto.name}'.`);
+      const result = await saveWithRevisionCheck(base, patch);
+      if (result.kind === "review") {
+        setConflict({ id: base.id, rebase: result.rebase });
+        announce(`Not saved: Coven has a newer revision of '${base.name}'. Review what changed.`);
+        return;
+      }
+      if (result.kind === "failed") {
+        setError(result.message);
+        return;
+      }
+      if (result.automation) setSelectedCodex(result.automation);
+      setFormResetKey((key) => key + 1);
+      announce(`Saved '${patch.name ?? base.name}'.`);
       await reloadAfterMutation();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "codex save failed");
     } finally {
       setBusyId(null);
     }
-  }, [lifecycleOf, reloadAfterMutation]);
+  }, [reloadAfterMutation]);
+
+  const conflictSaveMine = useCallback((patch: CodexAutomationPatch) => {
+    if (!conflict) return;
+    // The rebased edit starts from Coven's newer definition; the save re-checks it.
+    void saveCodex(conflict.rebase.theirs, patch);
+  }, [conflict, saveCodex]);
+  const conflictUseTheirs = useCallback(() => {
+    if (!conflict) return;
+    setSelectedCodex(conflict.rebase.theirs);
+    setFormResetKey((key) => key + 1);
+    setConflict(null);
+    announce(`Showing Coven's revision ${conflict.rebase.revision} of '${conflict.rebase.theirs.name}'. Your edit was not saved.`);
+    void reloadAfterMutation();
+    void lifecycle.refresh();
+  }, [conflict, reloadAfterMutation, lifecycle]);
 
   const deleteCodex = useCallback((auto: CodexAutomation) => {
     setSelectedCodex(null);
@@ -599,6 +625,11 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
         const query = expectedRevision === null ? "" : `?expectedRevision=${expectedRevision}`;
         const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}${query}`, { method: "DELETE" });
         const json = await res.json().catch(() => null);
+        if (res.status === 409 && json?.conflict) {
+          // Deleting is never retried at a revision the person did not choose.
+          const holds = Number.isSafeInteger(json.currentRevision) ? `revision ${json.currentRevision}` : "a newer revision";
+          throw new Error(`Not deleted: Coven holds ${holds} of “${auto.name}”, which changed after you chose to delete it. Open it to see the change, then delete again if you still want to.`);
+        }
         if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "codex delete failed");
@@ -1396,6 +1427,11 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
               onDelete={deleteCodex}
               onRun={runCodexNow}
               runs={automationRuns}
+              formResetKey={formResetKey}
+              conflict={conflict?.id === selectedCodex.id ? conflict.rebase : null}
+              onConflictSaveMine={conflictSaveMine}
+              onConflictUseTheirs={conflictUseTheirs}
+              onConflictKeepEditing={() => setConflict(null)}
               onCanonicalChange={() => void lifecycle.refresh()}
             />
           )}

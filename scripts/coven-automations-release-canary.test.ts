@@ -49,6 +49,10 @@ interface Flaws {
   lostPositionLooksOffline?: boolean;
   offlineOccurrencesLookAvailable?: boolean;
   offlineFeedLooksAvailable?: boolean;
+  staleSaveOverwrites?: boolean;
+  definitionRevisionStale?: boolean;
+  rebaseDropsOtherChange?: boolean;
+  offlineDefinitionLooksAvailable?: boolean;
 }
 
 const labels: Record<string, string> = {
@@ -75,6 +79,8 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
   // The third routine: Run now with no runtime installed leaves one manual
   // occurrence, one open run and its failed attempt, as Coven 0.4.10 records them.
   let ran = false;
+  // The run routine's definition, as Cave's edit and definition routes report it.
+  let runDefinition = { name: "Cave release canary (run now)", prompt: "Report that the Cave canary ran.", revision: 1 };
   const occurrenceId = "occ-3ef12c9439ef478aacc4e863682088a7";
   const runId = "run-0ce1422cb4c24b87b33dfd1834a3edf7";
   const feeds: Record<string, string[]> = {
@@ -108,6 +114,10 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
     },
     listRoutines: () => Promise.resolve(routine === null ? [] : [{ ...routine }]),
     updateRoutine: (definition) => {
+      if (definition.id === "cave-release-canary-run") {
+        runDefinition = { name: String(definition.name), prompt: String(definition.prompt), revision: runDefinition.revision + 1 };
+        return Promise.resolve({ id: definition.id, status: "PAUSED", prompt: runDefinition.prompt });
+      }
       previous = routine;
       routine = { ...(definition as CanaryRoutine) };
       record("revised");
@@ -211,6 +221,24 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
         events: events.map((entry, sequence) => ({ id: `evt${String(sequence).padStart(32, "0")}`, sequence, label: entry.split(":")[0], detail: entry.slice(entry.indexOf(":") + 1) })),
       } });
     },
+    saveViaRoute: (_id, body): Promise<CanaryResponse> => {
+      if (body.expectedRevision !== runDefinition.revision && flaws.staleSaveOverwrites !== true) {
+        return Promise.resolve({ status: 409, body: { ok: false, conflict: true, currentRevision: runDefinition.revision } });
+      }
+      runDefinition = {
+        name: String(body.name ?? runDefinition.name),
+        prompt: flaws.rebaseDropsOtherChange === true ? "Report that the Cave canary ran." : runDefinition.prompt,
+        revision: runDefinition.revision + 1,
+      };
+      return Promise.resolve({ status: 200, body: { ok: true, automation: { id: "cave-release-canary-run", name: runDefinition.name, prompt: runDefinition.prompt } } });
+    },
+    definition: (): Promise<CanaryResponse> => {
+      if (offline && flaws.offlineDefinitionLooksAvailable !== true) return Promise.resolve({ status: 503, body: { ok: false, degraded: true } });
+      return Promise.resolve({ status: 200, body: {
+        ok: true, revision: flaws.definitionRevisionStale === true ? 1 : runDefinition.revision,
+        automation: { id: "cave-release-canary-run", name: runDefinition.name, prompt: runDefinition.prompt },
+      } });
+    },
     restartDaemon: () => {
       if (flaws.forgetsUpdateOnRestart === true) routine = previous;
       return Promise.resolve();
@@ -263,7 +291,7 @@ const options = { formHour: 15, runCwd: "/tmp/cave-canary-work" };
 
 test("passes against a daemon Cave reports faithfully", async () => {
   assert.deepEqual(await runCaveAutomationsScenario(fakeCave(), options),
-    { mutations: 8, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 });
+    { mutations: 10, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 });
 });
 
 for (const [label, flaws, message] of [
@@ -289,6 +317,10 @@ for (const [label, flaws, message] of [
   ["a lost feed position reported as an outage", { lostPositionLooksOffline: true }, /a checkpoint Coven never issued: expected 410/u],
   ["occurrences that look available when the daemon is gone", { offlineOccurrencesLookAvailable: true }, /occurrences with the daemon stopped: expected 503/u],
   ["a changefeed that looks available when the daemon is gone", { offlineFeedLooksAvailable: true }, /the changefeed with the daemon stopped: expected 503/u],
+  ["a save at a stale revision that overwrites", { staleSaveOverwrites: true }, /save at a stale revision: expected 409 with currentRevision 2/u],
+  ["a definition read without its current revision", { definitionRevisionStale: true }, /definition after the change: expected revision 2/u],
+  ["a rebased save that undoes the other change", { rebaseDropsOtherChange: true }, /rebased save: expected the new name with the other change kept/u],
+  ["a definition that looks available when the daemon is gone", { offlineDefinitionLooksAvailable: true }, /definition with the daemon stopped: expected 503 degraded/u],
 ] as const) {
   test(`fails closed on ${label}`, async () => {
     await assert.rejects(runCaveAutomationsScenario(fakeCave(flaws), options), message);
