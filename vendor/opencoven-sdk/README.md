@@ -1,7 +1,7 @@
 # Pinned SDK consumer artifacts
 
 These unmodified packages were built from OpenCoven/sdk commit
-`d4cf105df882271497ab9eeacf075af87e8d6330` for Cave issue #5217. The selected
+`d19fdbe3912c012b3730932d5a03eff10ba3d32d` for Cave issue #5217. The selected
 source is OpenCoven/sdk; its experimental packages are not published to npm.
 Keeping the tarballs in Git makes clean builds independent of a local SDK
 checkout, temporary directory, mutable branch or install-time build script.
