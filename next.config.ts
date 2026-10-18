@@ -102,17 +102,26 @@ const nextConfig: NextConfig = {
       // runtime inputs. Guard against a dynamic child-process dependency
       // causing NFT to copy the entire checkout into the desktop sidecar.
       "./src/**/*",
-      "./apps/**/*.test.*",
-      // Xcode build output. The glob is `build*` rather than `build` because
-      // Xcode writes a per-configuration directory whenever one is passed a
-      // custom name or derived-data path — a real checkout carries
-      // `apps/ios/CovenCave/build` (806 MB) alongside
-      // `apps/ios/CovenCave/build-cody-cma81` (180 MB), and only the first was
-      // matched. NFT swept 85.6 MB of the second into the standalone, which is
-      // what pushed unpackedBytes to 524,402,366 against the 480 MiB cap and
-      // failed the build. That is exactly the "local build state" this block
-      // exists to keep out, so the fix is the pattern, not a bigger cap.
-      "./apps/ios/**/build*/**/*",
+      // Checkout content the server never reads at runtime (#6086). Runtime
+      // path globs in route graphs matched it anyway: every PNG under these
+      // roots via the familiar avatar route, `docs/` specs via the journal and
+      // chat routes, `canvas.json` and `package.json` fixtures by name. The
+      // sidecar closure already forbids or omits all of it, and
+      // scripts/standalone-budget.mjs forbids each root, so a new glob fails
+      // the build instead of shipping. `apps/` also covers Xcode's `build*`
+      // output: `apps/ios/CovenCave/build-cody-cma81` once put 85.6 MB in the
+      // standalone and pushed unpackedBytes past the 480 MiB cap (#4708).
+      "./apps/**/*",
+      "./assets/**/*",
+      "./config/**/*",
+      "./docs/**/*",
+      "./fixtures/**/*",
+      "./output/**/*",
+      "./screenshots/**/*",
+      "./playwright*.config.ts",
+      "./skills-lock.json",
+      // `tsconfig.json` stays: Turbopack traces the project tsconfig into every
+      // entry itself, instrumentation included, so no call site can drop it.
     ],
   },
   // Next's tracer misses runtime-required packages that go through its

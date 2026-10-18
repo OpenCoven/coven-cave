@@ -42,7 +42,9 @@ type PackageManifest = {
 function readPackageManifest(root: string): PackageManifest | null {
   try {
     const parsed = JSON.parse(readFileSync(
-      /* turbopackIgnore: true */ path.join(root, "package.json"),
+      // The mark must sit inside path.join: Turbopack builds its reference from
+      // the join itself, and `<dynamic>/package.json` matched fixtures (#6086).
+      path.join(/* turbopackIgnore: true */ root, "package.json"),
       "utf8",
     )) as unknown;
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
