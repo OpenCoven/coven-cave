@@ -672,24 +672,24 @@ async function acquireCacheLock(file: string): Promise<CacheLock | null> {
   while (Date.now() < deadline) {
     try {
       await fs.mkdir(path.dirname(file), { recursive: true });
-      const handle = await fs.open(lock, "wx", 0o600);
+      const handle = await fs.open(/* turbopackIgnore: true */ lock, "wx", 0o600);
       const token = `${process.pid}:${randomBytes(8).toString("hex")}`;
       await handle.writeFile(token);
       await handle.close();
       const owns = async () => {
-        try { return await fs.readFile(lock, "utf8") === token; } catch { return false; }
+        try { return await fs.readFile(/* turbopackIgnore: true */ lock, "utf8") === token; } catch { return false; }
       };
       return {
         owns,
         // A stale-lock taker may install its own lock before this writer
         // resumes. Never let the former owner remove that newer lock.
-        release: async () => { if (await owns()) await fs.rm(lock, { force: true }); },
+        release: async () => { if (await owns()) await fs.rm(/* turbopackIgnore: true */ lock, { force: true }); },
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
       try {
-        const stat = await fs.stat(lock);
-        if (Date.now() - stat.mtimeMs > CACHE_LOCK_STALE_MS) await fs.rm(lock, { force: true });
+        const stat = await fs.stat(/* turbopackIgnore: true */ lock);
+        if (Date.now() - stat.mtimeMs > CACHE_LOCK_STALE_MS) await fs.rm(/* turbopackIgnore: true */ lock, { force: true });
       } catch { /* another writer released or replaced the lock */ }
       await new Promise((resolve) => setTimeout(resolve, CACHE_LOCK_POLL_MS));
     }

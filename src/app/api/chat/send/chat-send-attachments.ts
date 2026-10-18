@@ -219,7 +219,7 @@ export async function resolveMentionedFiles(
   if (typeof root !== "string" || !path.isAbsolute(root)) return [];
   let realRoot: string;
   try {
-    realRoot = await realpath(path.resolve(root));
+    realRoot = await realpath(path.resolve(/* turbopackIgnore: true */ root));
     if (!(await stat(realRoot)).isDirectory()) return [];
   } catch {
     return [];
@@ -228,7 +228,7 @@ export async function resolveMentionedFiles(
   for (const rel of relPaths.slice(0, MAX_MENTIONED_FILES)) {
     if (typeof rel !== "string" || !rel || rel.includes("\0") || path.isAbsolute(rel)) continue;
     if (rel.split(/[\\/]+/).includes("..")) continue;
-    const candidate = path.resolve(realRoot, rel);
+    const candidate = path.resolve(/* turbopackIgnore: true */ realRoot, rel);
     if (candidate === realRoot || !candidate.startsWith(realRoot + path.sep)) continue;
     try {
       const real = await realpath(candidate);

@@ -1195,19 +1195,19 @@ async function acquireOpenClawCacheLock(file: string): Promise<OpenClawCacheLock
   await registryFs.mkdir(path.dirname(file), { recursive: true });
   while (Date.now() <= deadline) {
     try {
-      const handle = await registryFs.open(lock, "wx", 0o600);
+      const handle = await registryFs.open(/* turbopackIgnore: true */ lock, "wx", 0o600);
       const ownerToken = `${process.pid}:${randomBytes(16).toString("hex")}`;
       try {
         await handle.writeFile(ownerToken);
       } catch (error) {
         await handle.close().catch(() => undefined);
-        await registryFs.rm(lock, { force: true }).catch(() => undefined);
+        await registryFs.rm(/* turbopackIgnore: true */ lock, { force: true }).catch(() => undefined);
         throw error;
       }
       await handle.close();
       const owns = async () => {
         try {
-          return await registryFs.readFile(lock, "utf8") === ownerToken;
+          return await registryFs.readFile(/* turbopackIgnore: true */ lock, "utf8") === ownerToken;
         } catch {
           return false;
         }
@@ -1215,17 +1215,17 @@ async function acquireOpenClawCacheLock(file: string): Promise<OpenClawCacheLock
       return {
         owns,
         release: async () => {
-          if (await owns()) await registryFs.rm(lock, { force: true });
+          if (await owns()) await registryFs.rm(/* turbopackIgnore: true */ lock, { force: true });
         },
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
       try {
-        const stat = await registryFs.stat(lock);
+        const stat = await registryFs.stat(/* turbopackIgnore: true */ lock);
         if (Date.now() - stat.mtimeMs >= CACHE_LOCK_STALE_MS) {
           const stale = `${lock}.${process.pid}.${randomBytes(6).toString("hex")}.stale`;
           try {
-            await registryFs.rename(lock, stale);
+            await registryFs.rename(/* turbopackIgnore: true */ lock, stale);
             await registryFs.rm(stale, { force: true });
             continue;
           } catch {
@@ -1333,7 +1333,7 @@ async function waitForOpenClawCacheWriter(
       ?? await readRecoverableCache(file, publicKeys, checkpoint, now, anchor);
     let lockExists = true;
     try {
-      await registryFs.stat(lock);
+      await registryFs.stat(/* turbopackIgnore: true */ lock);
     } catch {
       lockExists = false;
     }

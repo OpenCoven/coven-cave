@@ -33,7 +33,7 @@ export type ResearchResourceMaintenanceOptions = {
 export function createResearchResourceMaintenance(options: ResearchResourceMaintenanceOptions = {}) {
   const store = options.store ?? createResearchResourceStore({ root: options.root });
   const indexFile = options.root
-    ? path.join(options.root, "index", "research-resources.sqlite")
+    ? path.join(/* turbopackIgnore: true */ options.root, "index", "research-resources.sqlite")
     : undefined;
   let lexicalPromise: Promise<ResearchResourceLexicalIndex> | null = options.index
     ? Promise.resolve(options.index)

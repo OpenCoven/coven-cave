@@ -112,13 +112,13 @@ function canonicalPathFor(entry: CaveHomeReconciliationEntry): string {
 }
 
 function samePath(left: string, right: string): boolean {
-  return path.relative(path.resolve(left), path.resolve(right)) === "";
+  return path.relative(path.resolve(/* turbopackIgnore: true */ left), path.resolve(/* turbopackIgnore: true */ right)) === "";
 }
 
 async function isCanonicalCompatibilityLink(legacyPath: string, canonicalPath: string): Promise<boolean> {
   try {
     const target = await readlink(legacyPath);
-    return samePath(path.resolve(path.dirname(legacyPath), target), canonicalPath);
+    return samePath(path.resolve(/* turbopackIgnore: true */ path.dirname(legacyPath), target), canonicalPath);
   } catch {
     return false;
   }
@@ -848,8 +848,8 @@ async function createRecoveryBundle(
     entry: { legacy: entry.legacy, next: entry.next, strategy: entry.strategy },
     files,
   };
-  await writeJsonAtomic(path.join(directory, "manifest.json"), manifest);
-  const verified = JSON.parse(await readFile(path.join(directory, "manifest.json"), "utf8")) as typeof manifest;
+  await writeJsonAtomic(path.join(/* turbopackIgnore: true */ directory, "manifest.json"), manifest);
+  const verified = JSON.parse(await readFile(path.join(/* turbopackIgnore: true */ directory, "manifest.json"), "utf8")) as typeof manifest;
   if (JSON.stringify(verified) !== JSON.stringify(manifest)) throw new Error("backup manifest verification failed");
   fault(options, "after-backup-manifest");
   return { id, directory };
@@ -859,13 +859,13 @@ async function verifiedBundleRole(
   directory: string,
   role: "legacy" | "canonical",
 ): Promise<{ source: string; hash: string; info: PathInfo }> {
-  const manifest = JSON.parse(await readFile(path.join(directory, "manifest.json"), "utf8")) as {
+  const manifest = JSON.parse(await readFile(path.join(/* turbopackIgnore: true */ directory, "manifest.json"), "utf8")) as {
     files?: Array<{ role?: string; storedPath?: string; hash?: string }>;
   };
   const file = manifest.files?.find((candidate) => candidate.role === role);
   if (!file?.storedPath || !file.hash) throw new Error(`verified ${role} backup is unavailable`);
-  const source = path.resolve(directory, file.storedPath);
-  if (path.dirname(source) !== path.resolve(directory)) throw new Error(`${role} backup path is invalid`);
+  const source = path.resolve(/* turbopackIgnore: true */ directory, file.storedPath);
+  if (path.dirname(source) !== path.resolve(/* turbopackIgnore: true */ directory)) throw new Error(`${role} backup path is invalid`);
   const sourceInfo = await pathInfo(source);
   if (sourceInfo.hash !== file.hash) throw new Error(`${role} backup hash changed before recovery`);
   return { source, hash: file.hash, info: sourceInfo };

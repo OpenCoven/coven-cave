@@ -166,8 +166,8 @@ export async function rollbackCommitStart(repoRoot: string, start: CommitStart, 
  */
 export async function createPrivateIndex(repoRoot: string): Promise<{ env: Record<string, string>; dispose: () => void }> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "coven-cave-commit-"));
-  const index = path.join(dir, "index");
-  const realIndex = path.resolve(repoRoot, (await git(repoRoot, ["rev-parse", "--git-path", "index"])).stdout.trim());
+  const index = path.join(/* turbopackIgnore: true */ dir, "index");
+  const realIndex = path.resolve(/* turbopackIgnore: true */ repoRoot, (await git(repoRoot, ["rev-parse", "--git-path", "index"])).stdout.trim());
   if (fs.existsSync(/* turbopackIgnore: true */ realIndex)) {
     const { atime, mtimeMs } = fs.statSync(/* turbopackIgnore: true */ realIndex);
     fs.copyFileSync(/* turbopackIgnore: true */ realIndex, index);

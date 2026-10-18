@@ -354,11 +354,11 @@ async function openLayout(rootInput: string): Promise<StoreLayout> {
 }
 
 function manifestPath(layout: StoreLayout, packId: string): string {
-  return path.join(layout.manifestsDir, `${packId}.json`);
+  return path.join(/* turbopackIgnore: true */ layout.manifestsDir, `${packId}.json`);
 }
 
 function receiptPath(layout: StoreLayout, packId: string): string {
-  return path.join(layout.receiptsDir, `${packId}.json`);
+  return path.join(/* turbopackIgnore: true */ layout.receiptsDir, `${packId}.json`);
 }
 
 function blobPath(layout: StoreLayout, digest: string): string {
@@ -429,7 +429,7 @@ async function verifyRedactionMap(
   const expected = pack.transforms.redactionMapDigest;
   if (!expected) return undefined;
   const { bytes } = await readSafeFileWithIdentity(
-    path.join(layout.redactionsDir, `${expected}.json`),
+    path.join(/* turbopackIgnore: true */ layout.redactionsDir, `${expected}.json`),
     `redaction map ${expected}`,
     REDACTION_MAP_BYTES,
   );
@@ -501,7 +501,7 @@ export function createContextPackStore(options: { root?: string } = {}): Context
         }
         if (hasRedactionMap && input.redactionMap) {
           const digest = parsedPack.transforms.redactionMapDigest;
-          await publishNoReplace(path.join(layout.redactionsDir, `${digest}.json`), input.redactionMap);
+          await publishNoReplace(path.join(/* turbopackIgnore: true */ layout.redactionsDir, `${digest}.json`), input.redactionMap);
         }
         await publishNoReplace(receiptPath(layout, parsedPack.id), new TextEncoder().encode(`${JSON.stringify(input.receipt)}\n`));
 
@@ -571,7 +571,7 @@ export function createContextPackStore(options: { root?: string } = {}): Context
         await syncDirectory(layout.manifestsDir);
         await unlink(receiptPath(layout, id)).catch(() => {});
         if (pack.transforms.redactionMapDigest) {
-          await unlink(path.join(layout.redactionsDir, `${pack.transforms.redactionMapDigest}.json`)).catch(() => {});
+          await unlink(path.join(/* turbopackIgnore: true */ layout.redactionsDir, `${pack.transforms.redactionMapDigest}.json`)).catch(() => {});
         }
         await syncDirectory(layout.manifestsDir);
 
