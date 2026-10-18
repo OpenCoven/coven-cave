@@ -4,7 +4,7 @@ import { useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
-import { Shell, type ShellHandle } from "@/components/shell";
+import { Shell, type ShellHandle, type ShellNavPolicy } from "@/components/shell";
 import { SidebarFooter, type SidebarFooterDestination } from "@/components/sidebar-footer";
 import { SidebarSection } from "@/components/sidebar-section";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
@@ -17,6 +17,17 @@ function activeFooterDestination(pathname: string): SidebarFooterDestination {
   if (pathname.startsWith("/dashboard")) return "dashboard";
   if (pathname.startsWith("/settings")) return "settings";
   return null;
+}
+
+/**
+ * Settings opens with the left rail collapsed (#6083): it is a full-width
+ * form, not a place people navigate from. `visit-collapsed` collapses the rail
+ * on arrival without reading or writing the remembered rail preference, so
+ * opening the rail inside Settings is a one-off, and every other destination
+ * keeps the state the person left it in.
+ */
+function destinationNavPolicy(pathname: string): ShellNavPolicy {
+  return pathname.startsWith("/settings") ? "visit-collapsed" : "remembered";
 }
 
 function destinationTitle(pathname: string): string {
@@ -143,7 +154,7 @@ export function AnalyticsPageShell({ children }: { children: ReactNode }) {
       ref={shellRef}
       nav={<DestinationSidebar pathname={pathname} />}
       detail={children}
-      navPolicy="remembered"
+      navPolicy={destinationNavPolicy(pathname)}
       mobileTabs={
         <MobileBottomTabs
           mode=""
