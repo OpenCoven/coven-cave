@@ -29,6 +29,7 @@ function okPayload(payload) {
 /** A tiny in-memory automations daemon. */
 function fakeDaemon({ routines = [], runs = {}, offline = false, reject = null, runOutcome = null } = {}) {
   const store = new Map(routines.map((r) => [r.id, r]));
+  const revisions = new Map(routines.map((r) => [r.id, 1]));
   const calls = [];
   const transport = async (request) => {
     calls.push(request.body);
@@ -40,11 +41,26 @@ function fakeDaemon({ routines = [], runs = {}, offline = false, reject = null, 
     switch (action) {
       case "coven.automations.list":
         return okPayload({ routines: [...store.values()] });
-      case "coven.automations.create":
-      case "coven.automations.update": {
+      case "coven.automations.create": {
         const routine = { ...params.definition };
         store.set(routine.id, routine);
+        revisions.set(routine.id, 1);
         return okPayload({ routine });
+      }
+      // Edits go through Coven's versioned revise at the revision just read.
+      case "coven.automations.definition.get.v1":
+        return okPayload(store.has(params.id)
+          ? { routine: store.get(params.id), revision: revisions.get(params.id), tombstonedAt: null }
+          : { routine: null });
+      case "coven.automations.definition.revise.v1": {
+        const routine = { ...params.definition };
+        if (params.expectedRevision !== revisions.get(routine.id)) {
+          return { ok: false, status: 409, data: { ok: false, accepted: false, action, status: "rejected", reason: "conflict",
+            error: { code: "REVISION_CONFLICT", currentRevision: revisions.get(routine.id) } } };
+        }
+        store.set(routine.id, routine);
+        revisions.set(routine.id, params.expectedRevision + 1);
+        return okPayload({ outcome: "committed", revision: params.expectedRevision + 1, result: { routine, revision: params.expectedRevision + 1 } });
       }
       case "coven.automations.runs":
         return okPayload({ runs: runs[params.id] ?? [] });
@@ -150,7 +166,7 @@ test("PUT disable pauses an existing routine and keeps its model + tags", async 
     { transport: daemon.transport },
   );
   assert.equal(result.status, 200);
-  const updated = daemon.calls.find((c) => c.action === "coven.automations.update").definition;
+  const updated = daemon.calls.find((c) => c.action === "coven.automations.definition.revise.v1").definition;
   assert.equal(updated.status, "PAUSED");
   assert.equal(updated.rrule, "FREQ=DAILY;BYHOUR=7", "the time changes with the same save");
   assert.equal(updated.model, "m-1");
