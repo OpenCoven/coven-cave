@@ -43,6 +43,12 @@ unchanged. #6069, #5766 and #5767 remain open for their complete criteria.
 
 Next: nominate the exact next candidate commit/build, rerun the complete packet
 before rollout, and obtain Val's explicit acceptance. Keep human/device and
-provider gates separate. The original evidence checkout remains preserved; all
-daemon state used scratch roots. The owned simulator was shut down. The issue
-comment records local worktree ownership and delivery status separately.
+provider gates separate. All daemon state used scratch roots, and the owned simulator was shut down.
+The original exact-candidate checkout was later found absent and unregistered;
+its branch still retains `7dec8b30288bd67acf42a4dffe6c681fdf63f94e` and the
+original packet remains in merge `36679dba6918618385b1ec1782b374e70af365bf`.
+[The issue correction](https://github.com/OpenCoven/coven-cave/issues/5767#issuecomment-6250185014)
+records the unknown removal disposition. A surviving git ref does not prove
+preservation of ignored raw files. This session did not remove that checkout.
+The separate native recovery checkout and local receipts remain retained;
+issue comments record their ownership and delivery status.
