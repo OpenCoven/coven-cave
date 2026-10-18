@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-10-18T12:21:07.905Z",
+  "destination": "3A31EAE7-E679-4B64-BF28-838C1BCC7D68",
+  "fixtureId": "b34e9ded-a6fc-4a10-9c8e-82522a47409a",
+  "candidate": {
+    "head": "2d623fcf3744ef0ca960cc7ffd22256e2860e9a8",
+    "sourceBefore": "b3d39f56a3202bb21e2dca2e4187b0dc65c79c05f41d7222b74ea573c7c4f140",
+    "buildId": "RmbJx8XNjDdNt1HhIXIqA",
+    "sourceAfter": "b3d39f56a3202bb21e2dca2e4187b0dc65c79c05f41d7222b74ea573c7c4f140"
+  },
+  "host": {
+    "node": "v24.18.1",
+    "xcode": "Xcode 26.6\nBuild version 17F113"
+  },
+  "scenario": "hermes-live-native-send-termination-restart-hydration",
+  "classification": "real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider",
+  "passed": false,
+  "providerRequests": 0,
+  "toolInvocations": 0,
+  "limitations": [
+    "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+    "UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.",
+    "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+  ],
+  "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+  "daemon": {
+    "pid": 45813,
+    "version": "coven v0.4.9 (engine coven-code 0.8.0, pinned 0.8.0)"
+  },
+  "serverPid": 46344,
+  "ingressRefusalsVerified": true,
+  "realDaemonRosterVerified": true,
+  "failure": "install-ui-app failed; see its retained log\n\n149 !== 0\n",
+  "serverStopped": true,
+  "providerStopped": true,
+  "daemonStopped": true,
+  "noDaemonState": true,
+  "fixtureRootRemoved": true,
+  "sourceUnchanged": true,
+  "finishedAt": "2026-10-18T12:21:51.897Z"
+}

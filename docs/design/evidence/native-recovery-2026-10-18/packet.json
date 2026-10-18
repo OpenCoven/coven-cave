@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "issues": [
+    6069,
+    5766,
+    5767
+  ],
+  "sourceOid": "2d623fcf3744ef0ca960cc7ffd22256e2860e9a8",
+  "nextBuildId": "RmbJx8XNjDdNt1HhIXIqA",
+  "scope": "Development-build native rerun only; final release packet remains unaccepted",
+  "artifacts": [
+    {
+      "path": "README.md",
+      "sha256": "d6950ac278a3da2e8a860cf34b2ac13eaf8c7a07b766fc26a596d149c297b10d",
+      "bytes": 3023
+    },
+    {
+      "path": "attempts.json",
+      "sha256": "b5cf09b8ff12b1cbc7464f14d507a2cfbe501c2ade6de845b8da0df8d38d49a9",
+      "bytes": 4136
+    },
+    {
+      "path": "background-xctest-summary.json",
+      "sha256": "59bfc2fc42307d287bccb56329964418bbf8c6eb551fb63380e49c7aaeba2fca",
+      "bytes": 945
+    },
+    {
+      "path": "commands.txt",
+      "sha256": "569ec1d64c4cb19aa3eecb30b7feeb6e37b1b3b1c3c228bd54b01a8491770e09",
+      "bytes": 4463
+    },
+    {
+      "path": "identity.json",
+      "sha256": "9296a9a4a6890729418b68a30797bf6e514cab5813fc942eacb526f46b3c5823",
+      "bytes": 1642
+    },
+    {
+      "path": "live-recovery.json",
+      "sha256": "ed405604a9852f3a48febdd83d8c71fc7ee20539e7ed71b231a33db7c4dd781f",
+      "bytes": 2715
+    },
+    {
+      "path": "live-running.png",
+      "sha256": "54da7408192c0e47eafc87141c1ba10382c5813fdacb3533ab4f35a51a11542c",
+      "bytes": 342679
+    },
+    {
+      "path": "live-setup-failure.json",
+      "sha256": "ffed6a79ca4084d6fc4ea37c3b7d8a534401b2786387d068cb7721caefa7bfa8",
+      "bytes": 1794
+    },
+    {
+      "path": "live-xctest-summary.json",
+      "sha256": "6fe88205d625d7f3cd7fe1aeea447852d8ae07a44430a02f55a79587b5de5ba6",
+      "bytes": 945
+    },
+    {
+      "path": "navigation-xctest-summary.json",
+      "sha256": "a0c5f4f4893b497db3a51f5d3083e78c03d71a7e69aadf8f9c5ef9582931e49f",
+      "bytes": 945
+    },
+    {
+      "path": "recovered-after-background.png",
+      "sha256": "eaf9f6d632b2b52793f7263321195e5323df94ae4071129abf1821dd078323ff",
+      "bytes": 420691
+    },
+    {
+      "path": "verification.json",
+      "sha256": "62263afdbad01a83134f566347d105d4e7f03c68058f0e930111a0fb43d40672",
+      "bytes": 2323
+    }
+  ]
+}
