@@ -7,16 +7,30 @@
 // anything; it reads, with short timeouts and a short cache, so a stopped
 // server cannot stall a chat turn.
 //
-// Endpoints default to this machine. A remote endpoint is refused unless
-// CAVE_LOCAL_MODELS_ALLOW_REMOTE=1 says otherwise: "local" must not quietly
-// send prompts across the network.
+// Endpoints default to this machine. An address comes from the backend's
+// environment variable, then from Settings → Local models, then from the
+// backend default. A server on another computer is refused unless Settings or
+// CAVE_LOCAL_MODELS_ALLOW_REMOTE=1 allows it: "local" must not quietly send
+// prompts across the network.
 
 import {
+  LOCAL_CODEX_BACKENDS,
   localCodexBackendInfo,
   localCodexConfigArgs,
   localCodexNativeModel,
+  type LocalCodexBackend,
   type LocalCodexBackendInfo,
+  type LocalModelsBackendStatus,
+  type LocalModelsStatus,
+  type LocalSettingSource,
 } from "../local-codex.ts";
+import {
+  EMPTY_LOCAL_MODEL_SETTINGS,
+  readLocalModelSettings,
+  type LocalModelSettings,
+} from "./local-models-settings.ts";
+
+export type { LocalSettingSource };
 
 export const LOCAL_MODELS_ALLOW_REMOTE_ENV = "CAVE_LOCAL_MODELS_ALLOW_REMOTE";
 
@@ -28,38 +42,69 @@ const CACHE_TTL_MS = 15_000;
 const FAILURE_TTL_MS = 3_000;
 
 export type LocalEndpointResolution =
-  | { ok: true; endpoint: string; isDefault: boolean }
-  | { ok: false; reason: string };
+  | { ok: true; endpoint: string; isDefault: boolean; source: LocalSettingSource }
+  | { ok: false; reason: string; source: LocalSettingSource };
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 
-/** The server's base URL from its environment override, or the backend default. */
-export function resolveLocalCodexEndpoint(
-  info: LocalCodexBackendInfo,
+/** Whether a server on another computer is allowed, and who allowed it. */
+export function localModelsAllowRemote(
   env: Env = process.env,
-): LocalEndpointResolution {
-  const raw = env[info.endpointEnv]?.trim();
-  if (!raw) return { ok: true, endpoint: info.defaultEndpoint, isDefault: true };
+  settings: LocalModelSettings = EMPTY_LOCAL_MODEL_SETTINGS,
+): { value: boolean; source: LocalSettingSource } {
+  if (env[LOCAL_MODELS_ALLOW_REMOTE_ENV] === "1") return { value: true, source: "environment" };
+  if (settings.allowRemote) return { value: true, source: "settings" };
+  return { value: false, source: "default" };
+}
+
+/**
+ * Validate one base URL for a backend. `subject` names the value in the
+ * message: the environment variable, the saved address, or the field being
+ * saved.
+ */
+export function parseLocalEndpoint(
+  info: LocalCodexBackendInfo,
+  raw: string,
+  options: { allowRemote: boolean; subject: string },
+): { ok: true; endpoint: string; isDefault: boolean } | { ok: false; reason: string } {
   let url: URL;
   try {
-    url = new URL(raw);
+    url = new URL(raw.trim());
   } catch {
-    return { ok: false, reason: `${info.endpointEnv} is not a URL. Use a base URL such as ${info.defaultEndpoint}.` };
+    return { ok: false, reason: `${options.subject} isn't a URL. Use a base URL such as ${info.defaultEndpoint}.` };
   }
   if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password ||
     (url.pathname !== "/" && url.pathname !== "") || url.search || url.hash) {
-    return { ok: false, reason: `${info.endpointEnv} must be a plain http(s) base URL with no path, credentials or query, such as ${info.defaultEndpoint}.` };
+    return { ok: false, reason: `${options.subject} must be a plain http(s) base URL with no path, credentials or query, such as ${info.defaultEndpoint}.` };
   }
   // `origin` is the normalized scheme, host and port: no quotes or spaces,
   // so it is safe inside Codex's `key="value"` overrides.
   const endpoint = url.origin;
-  if (!LOOPBACK_HOSTS.has(url.hostname) && env[LOCAL_MODELS_ALLOW_REMOTE_ENV] !== "1") {
+  if (!LOOPBACK_HOSTS.has(url.hostname) && !options.allowRemote) {
     return {
       ok: false,
-      reason: `${info.endpointEnv} points at ${url.host}, which is not this machine. Set ${LOCAL_MODELS_ALLOW_REMOTE_ENV}=1 to send prompts to a remote ${info.product} server.`,
+      reason: `${options.subject} points at ${url.host}, which isn't this computer. To send prompts to a ${info.product} server there, turn on “Allow servers on other computers” in Settings → Local models, or set ${LOCAL_MODELS_ALLOW_REMOTE_ENV}=1.`,
     };
   }
   return { ok: true, endpoint, isDefault: endpoint === info.defaultEndpoint };
+}
+
+/** The server's base URL: its environment override, then the saved Settings address, then the backend default. */
+export function resolveLocalCodexEndpoint(
+  info: LocalCodexBackendInfo,
+  env: Env = process.env,
+  settings: LocalModelSettings = EMPTY_LOCAL_MODEL_SETTINGS,
+): LocalEndpointResolution {
+  const allowRemote = localModelsAllowRemote(env, settings).value;
+  const fromEnvironment = env[info.endpointEnv]?.trim();
+  if (fromEnvironment) {
+    return { ...parseLocalEndpoint(info, fromEnvironment, { allowRemote, subject: info.endpointEnv }), source: "environment" };
+  }
+  const saved = settings.endpoints[info.backend];
+  if (saved) {
+    return { ...parseLocalEndpoint(info, saved, { allowRemote, subject: `The saved ${info.product} address` }), source: "settings" };
+  }
+  return { ok: true, endpoint: info.defaultEndpoint, isDefault: true, source: "default" };
 }
 
 export type LocalModel = {
@@ -179,9 +224,10 @@ export function clearLocalCodexProbeCache(): void {
 /** Probe one backend, cached briefly per endpoint so a chat turn and a model menu share one read. */
 export async function probeLocalCodexBackend(
   info: LocalCodexBackendInfo,
-  options: { env?: Env; fetchImpl?: FetchLike; now?: () => number; fresh?: boolean } = {},
+  options: { env?: Env; settings?: LocalModelSettings; fetchImpl?: FetchLike; now?: () => number; fresh?: boolean } = {},
 ): Promise<LocalBackendProbe> {
-  const resolution = resolveLocalCodexEndpoint(info, options.env);
+  const settings = options.settings ?? await readLocalModelSettings();
+  const resolution = resolveLocalCodexEndpoint(info, options.env, settings);
   if (!resolution.ok) return { kind: "invalid-endpoint", reason: resolution.reason };
   const now = options.now ?? Date.now;
   const key = `${info.backend}\0${resolution.endpoint}`;
@@ -207,6 +253,9 @@ export type LocalCodexPreflight =
     ok: true;
     info: LocalCodexBackendInfo;
     endpoint: string;
+    /** The backend's default endpoint, which Codex's built-in provider already targets. */
+    isDefault: boolean;
+    source: LocalSettingSource;
     version: string | null;
     /** The model name Codex receives. */
     nativeModel: string;
@@ -231,7 +280,7 @@ export type LocalCodexFailureCode =
 export async function preflightLocalCodex(
   harness: string,
   modelId: string | null | undefined,
-  options: { env?: Env; fetchImpl?: FetchLike; now?: () => number } = {},
+  options: { env?: Env; settings?: LocalModelSettings; fetchImpl?: FetchLike; now?: () => number } = {},
 ): Promise<LocalCodexPreflight | null> {
   const info = localCodexBackendInfo(harness);
   if (!info) return null;
@@ -243,13 +292,14 @@ export async function preflightLocalCodex(
       message: `Choose a model for ${info.label}. Local sessions run only the model you pick; Cave never substitutes a cloud model.`,
     };
   }
-  const probe = await probeLocalCodexBackend(info, options);
+  const settings = options.settings ?? await readLocalModelSettings();
+  const probe = await probeLocalCodexBackend(info, { ...options, settings });
   if (probe.kind === "invalid-endpoint") return { ok: false, code: "local_endpoint_invalid", message: probe.reason };
   if (probe.kind === "unreachable") {
     return { ok: false, code: "local_server_unreachable", message: `${info.product} isn't reachable at ${probe.endpoint}. ${info.startHint} Then send again.` };
   }
   if (probe.kind === "invalid-response") {
-    return { ok: false, code: "local_server_invalid", message: `The server at ${probe.endpoint} didn't answer like ${info.product}. Check ${info.endpointEnv}, or unset it to use ${info.defaultEndpoint}.` };
+    return { ok: false, code: "local_server_invalid", message: `The server at ${probe.endpoint} didn't answer like ${info.product}. Check the address in Settings → Local models.` };
   }
   const model = probe.models.find((entry) => entry.name === nativeModel);
   if (!model) {
@@ -258,14 +308,116 @@ export async function preflightLocalCodex(
   if (!model.tools) {
     return { ok: false, code: "local_model_no_tools", message: `${nativeModel} doesn't support tool calling, which Codex needs to work. Choose a model ${info.product} marks as tool-capable.` };
   }
-  const resolution = resolveLocalCodexEndpoint(info, options.env);
+  const resolution = resolveLocalCodexEndpoint(info, options.env, settings);
   const endpoint = resolution.ok ? resolution.endpoint : probe.endpoint;
+  const isDefault = resolution.ok && resolution.isDefault;
   return {
     ok: true,
     info,
     endpoint,
+    isDefault,
+    source: resolution.source,
     version: probe.version,
     nativeModel,
-    configArgs: localCodexConfigArgs(info, resolution.ok && resolution.isDefault ? null : endpoint),
+    configArgs: localCodexConfigArgs(info, isDefault ? null : endpoint),
   };
+}
+
+/**
+ * Point the spawned Codex at this session's server. Codex's built-in Ollama
+ * and LM Studio providers read CODEX_OSS_BASE_URL, so a value inherited from
+ * Cave's own environment would redirect even a default-endpoint session; it
+ * is always cleared first. The direct transport names a custom endpoint with
+ * `-c` overrides. Cave's adapter manifest for `coven run` is fixed, so that
+ * transport takes a custom endpoint from the environment instead (Coven
+ * passes it through to Codex; verified with Codex 0.163.0).
+ */
+export function applyLocalCodexSpawnEnv(
+  env: Record<string, string | undefined>,
+  target: { endpoint: string; isDefault: boolean },
+  transport: "direct" | "coven",
+): void {
+  delete env.CODEX_OSS_BASE_URL;
+  delete env.CODEX_OSS_PORT;
+  if (transport === "coven" && !target.isDefault) env.CODEX_OSS_BASE_URL = `${target.endpoint}/v1`;
+}
+
+/** Everything Settings → Local models shows, read from both servers in parallel. */
+export async function readLocalModelsStatus(options: {
+  editable: boolean;
+  env?: Env;
+  settings?: LocalModelSettings;
+  fetchImpl?: FetchLike;
+  fresh?: boolean;
+}): Promise<LocalModelsStatus> {
+  const env = options.env ?? process.env;
+  const settings = options.settings ?? await readLocalModelSettings();
+  const backends = await Promise.all(Object.values(LOCAL_CODEX_BACKENDS).map(async (info): Promise<LocalModelsBackendStatus> => {
+    const resolution = resolveLocalCodexEndpoint(info, env, settings);
+    const probe = await probeLocalCodexBackend(info, { env, settings, fetchImpl: options.fetchImpl, fresh: options.fresh });
+    return {
+      backend: info.backend,
+      harness: info.harness,
+      product: info.product,
+      label: info.label,
+      defaultEndpoint: info.defaultEndpoint,
+      endpointEnv: info.endpointEnv,
+      startHint: info.startHint,
+      addModelHint: info.addModelHint,
+      endpoint: resolution.ok ? resolution.endpoint : null,
+      source: resolution.source,
+      savedEndpoint: settings.endpoints[info.backend] ?? null,
+      server: probe.kind === "available"
+        ? { state: "running", version: probe.version, models: probe.models.map(({ name, tools, contextLength }) => ({ name, tools, contextLength })) }
+        : probe.kind === "unreachable" ? { state: "stopped" }
+        : probe.kind === "invalid-response" ? { state: "unexpected" }
+        : { state: "invalid-address", reason: probe.reason },
+    };
+  }));
+  return { ok: true, editable: options.editable, allowRemote: localModelsAllowRemote(env, settings), backends };
+}
+
+/**
+ * Apply a Settings change, validating every address against the permission
+ * that will hold afterwards: turning remote servers off while an address
+ * points at another computer is refused rather than leaving a broken saved
+ * address behind.
+ */
+export function applyLocalModelsSettingsPatch(
+  current: LocalModelSettings,
+  patch: unknown,
+  env: Env = process.env,
+): { ok: true; settings: LocalModelSettings } | { ok: false; error: string; field?: string } {
+  if (typeof patch !== "object" || patch === null || Array.isArray(patch)) return { ok: false, error: "Send an object with endpoints or allowRemote." };
+  const record = patch as Record<string, unknown>;
+  const unknownKey = Object.keys(record).find((key) => key !== "endpoints" && key !== "allowRemote");
+  if (unknownKey) return { ok: false, error: `Unknown setting: ${unknownKey}.` };
+  if (record.allowRemote !== undefined && typeof record.allowRemote !== "boolean") return { ok: false, error: "allowRemote must be true or false.", field: "allowRemote" };
+  const allowRemote = typeof record.allowRemote === "boolean" ? record.allowRemote : current.allowRemote;
+  const endpoints: Partial<Record<LocalCodexBackend, string>> = { ...current.endpoints };
+  if (record.endpoints !== undefined) {
+    if (typeof record.endpoints !== "object" || record.endpoints === null || Array.isArray(record.endpoints)) {
+      return { ok: false, error: "endpoints must be an object.", field: "endpoints" };
+    }
+    for (const [backend, value] of Object.entries(record.endpoints as Record<string, unknown>)) {
+      if (backend !== "ollama" && backend !== "lmstudio") return { ok: false, error: `Unknown backend: ${backend}.` };
+      if (value === null || value === "") {
+        delete endpoints[backend];
+        continue;
+      }
+      if (typeof value !== "string" || value.length > 2_048) return { ok: false, error: "An address must be a URL.", field: backend };
+      endpoints[backend] = value.trim();
+    }
+  }
+  const remoteAllowed = env[LOCAL_MODELS_ALLOW_REMOTE_ENV] === "1" || allowRemote;
+  for (const info of Object.values(LOCAL_CODEX_BACKENDS)) {
+    const value = endpoints[info.backend];
+    if (!value) continue;
+    const parsed = parseLocalEndpoint(info, value, { allowRemote: remoteAllowed, subject: `The ${info.product} address` });
+    if (!parsed.ok) return { ok: false, error: parsed.reason, field: info.backend };
+    // Saving the default address is the same as using the default.
+    if (parsed.isDefault) delete endpoints[info.backend];
+    else endpoints[info.backend] = parsed.endpoint;
+  }
+  return { ok: true, settings: { endpoints, allowRemote } };
 }

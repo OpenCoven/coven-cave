@@ -258,6 +258,8 @@ const contracts: RouteContract[] = [
   { route: "/knowledge/packs/seed", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/launch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  // Reads are open to signed-in clients; PUT is guarded inside the handler (#6049).
+  { route: "/local-models", methods: ["GET", "PUT"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/mobile-handoff", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/mobile-token/refresh", methods: ["POST"], kind: "json" },
   { route: "/mcp", methods: ["GET"], kind: "json" },

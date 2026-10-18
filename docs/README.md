@@ -76,6 +76,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 
 
 - [`familiar-identity-context.md`](familiar-identity-context.md) — how a familiar's declared identity reaches the model, and what the injection may not do
+- [`local-models.md`](local-models.md) — Codex local mode on Ollama and LM Studio: setup, addresses, what stays on this computer, limitations and troubleshooting
 - [`auto-mission-mode.md`](auto-mission-mode.md) — `/auto`, its status blocks, and the closing questionnaire
 - [`orchestration-ready-tasks.md`](orchestration-ready-tasks.md) — the shared task contract every familiar and orchestrator reads and writes
 - [`role-surfaces.md`](role-surfaces.md) — role-aware rooms, and why the Cave is not role-hardcoded

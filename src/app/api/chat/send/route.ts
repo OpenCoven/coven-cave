@@ -110,7 +110,7 @@ import {
 import { codexLaunchCommand } from "@/lib/codex-bin";
 import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
 import { isCodexFamilyHarness, isLocalCodexHarness, localCodexBackendInfo } from "@/lib/local-codex";
-import { preflightLocalCodex } from "@/lib/server/local-codex-backends";
+import { applyLocalCodexSpawnEnv, preflightLocalCodex } from "@/lib/server/local-codex-backends";
 import { codexReasoningForwardable } from "@/lib/server/direct-transport-reasoning-gates";
 import {
   covenRelayedRunError,
@@ -3013,17 +3013,13 @@ async function postAdmittedChat(
       }, { status: 409 });
     }
     // Off the direct transport the turn runs `coven run <harness>` with
-    // Cave's scaffolded manifest, which can only target the default
-    // endpoint. Continuity there is by replay: Coven cannot capture an
-    // external Codex adapter's thread id for a native resume.
-    if (!codexDirect && preflight?.ok && preflight.endpoint !== info.defaultEndpoint) {
-      return NextResponse.json({
-        ok: false,
-        code: "local_codex_custom_endpoint",
-        error: `A custom ${info.product} endpoint (${info.endpointEnv}) needs Cave's direct Codex transport, which isn't available for this Codex version. Unset ${info.endpointEnv} to use ${info.defaultEndpoint}.`,
-      }, { status: 409 });
+    // Cave's scaffolded manifest; a custom endpoint reaches Codex through
+    // the spawn environment. Continuity there is by replay: Coven cannot
+    // capture an external Codex adapter's thread id for a native resume.
+    if (preflight?.ok) {
+      localCodexConfigArgs = preflight.configArgs;
+      if (localRuntimePlan) applyLocalCodexSpawnEnv(localRuntimePlan.env, preflight, codexDirect ? "direct" : "coven");
     }
-    localCodexConfigArgs = preflight?.ok ? preflight.configArgs : undefined;
   }
   if (savedModelRejection === "provider-mismatch") {
     // Refused before any process starts: forwarding this id would launch the
