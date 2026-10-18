@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "issue": 5765,
+  "recordedAt": "2026-10-18",
+  "baseCommit": "36679dba6918618385b1ec1782b374e70af365bf",
+  "candidateDescription": "Verified source snapshot committed as candidateCommit; the fixture ran before commit and records baseCommit as its then-HEAD. Source hashes bind that run to the delivered patch.",
+  "sourceSha256": {
+    "src/components/chat-view.tsx": "63bc3ff61075003e9bb39dadd3ea018824f46dd196244b2544c8ffc033793453",
+    "src/lib/chat-tool-milestones.ts": "60ee98cd94e84df7d7a62b42fee5a66919cfa859d720e5f50901e594281206a6",
+    "src/lib/use-tool-milestones.ts": "217478588d7d6e8676265c9ba86316531d6ec19dfab692e2a923a962dc1fd8c8",
+    "src/lib/chat-tool-milestones.test.ts": "b57c9a1088e63ad730bcca313f0928bd8c739b19221ab7157ab0c671f3090fa7",
+    "tests/chat-activity-acceptance.spec.ts": "87645211a025defc6521866b192684d33e0780b3ec16529105a1faaebe7f3ae9",
+    "scripts/run-tests.mjs": "cc62ac0836d1f0cfd7347e6969cb5fdedd54274be73445e4f9af19289faafcd0",
+    "scripts/runtime-activity-browser-fixture.mjs": "00ff9cfc749510eed90781d709020f7b7561ccae0063ba124da93063ca76e355"
+  },
+  "verification": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "testWiring": "passed; 2086 files wired",
+    "productionBuild": "passed, including bundle and standalone budgets",
+    "standaloneBytes": 473047647,
+    "appSuite": "passed: all 1449 test files; unchanged runner with per-file temporary-home isolation documented below",
+    "chromium": {
+      "startTime": "2026-10-18T09:41:53.167Z",
+      "duration": 50026.908,
+      "expected": 13,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "webkit": {
+      "startTime": "2026-10-18T09:46:46.673Z",
+      "duration": 38811.189999999995,
+      "expected": 7,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "testIsolationSource": "// Local verification harness only: preserve test-owned HOME fixtures, and give\n// every other test file its own temporary Coven home instead of sharing state.\nimport childProcess from 'node:child_process';\nimport { syncBuiltinESMExports } from 'node:module';\nimport { mkdtempSync, readFileSync, rmSync } from 'node:fs';\nimport { tmpdir } from 'node:os';\nimport path from 'node:path';\nif (process.argv[1]?.endsWith('/scripts/run-tests.mjs')) {\n  const original = childProcess.spawnSync;\n  childProcess.spawnSync = function(command, args, options) {\n    const file = args?.find((value) => /\\.test\\.(?:ts|tsx|mjs)$/.test(value));\n    if (!file) return original(command, args, options);\n    const root = mkdtempSync(path.join(tmpdir(), 'cave-5765-suite-file-'));\n    const env = { ...options.env };\n    delete env.COVEN_CAVE_HOME;\n    delete env.COVEN_SOCKET;\n    const source = readFileSync(path.resolve(options.cwd, file), 'utf8');\n    if (/process\\.env\\.HOME\\s*=/.test(source)) delete env.COVEN_HOME;\n    else env.COVEN_HOME = path.join(root, 'coven');\n    try { return original(command, args, { ...options, env }); }\n    finally { rmSync(root, { recursive: true, force: true }); }\n  };\n  syncBuiltinESMExports();\n}\n"
+  },
+  "browserSpecs": [
+    "tests/chat-activity-acceptance.spec.ts",
+    "tests/chat-activity-updates.spec.ts",
+    "tests/chat-tool-cards.spec.ts"
+  ],
+  "performance": {
+    "fixture": "500 ordered same-name calls with lazily mounted result bodies, five history reload/disclosure samples per build",
+    "baseline": {
+      "calls": 500,
+      "samples": [
+        {
+          "reloadMs": 865.1010000000024,
+          "openMs": 171.83645800000158,
+          "nodes": 6348
+        },
+        {
+          "reloadMs": 1060.2779999999984,
+          "openMs": 137.02395800000158,
+          "nodes": 6348
+        },
+        {
+          "reloadMs": 1691.7043339999982,
+          "openMs": 249.33095799999865,
+          "nodes": 6348
+        },
+        {
+          "reloadMs": 1198.984457999999,
+          "openMs": 157.26329100000294,
+          "nodes": 6348
+        },
+        {
+          "reloadMs": 1137.4707500000004,
+          "openMs": 200.40891700000066,
+          "nodes": 6348
+        }
+      ]
+    },
+    "candidate": {
+      "calls": 500,
+      "samples": [
+        {
+          "reloadMs": 978.2762079999993,
+          "openMs": 133.0432499999988,
+          "nodes": 6348
+        },
+        {
+          "reloadMs": 950.231917000001,
+          "openMs": 105.66870899999776,
+          "nodes": 6348
+        },
+        {
+          "reloadMs": 1018.9535419999993,
+          "openMs": 103.70633400000224,
+          "nodes": 6348
+        },
+        {
+          "reloadMs": 693.0399169999982,
+          "openMs": 129.13145799999984,
+          "nodes": 6348
+        },
+        {
+          "reloadMs": 1065.2876660000002,
+          "openMs": 95.57070899999962,
+          "nodes": 6348
+        }
+      ]
+    },
+    "medians": {
+      "reloadMs": {
+        "baseline": 1137.4707500000004,
+        "candidate": 978.2762079999993,
+        "changePercent": -13.995484455314655
+      },
+      "openMs": {
+        "baseline": 171.83645800000158,
+        "candidate": 105.66870899999776,
+        "changePercent": -38.50623422417332
+      }
+    },
+    "interpretation": "No observed regression; 6348 chat DOM nodes in every sample and no payload bodies before disclosure. Separate local runs on the same machine with concurrent work, not a statistically controlled speedup claim.",
+    "baselineBuildLimit": "The baseline compiled and typechecked, but standalone copying exhausted disk. Baseline browser measurements used its compiled production next start server. This is not a passing full baseline build receipt."
+  },
+  "realDaemon": {
+    "schemaVersion": 1,
+    "startedAt": "2026-10-18T09:43:56.602Z",
+    "root": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-browser-activity-8ZvZaf",
+    "candidate": {
+      "head": "36679dba6918618385b1ec1782b374e70af365bf",
+      "buildId": "7f-h1tbSRXio3jAJ4QWAp"
+    },
+    "classification": "built Cave, real Coven daemon, synthetic external Hermes provider; browser assertions recorded separately",
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "modelInventoryRequests": 0,
+    "fixturePassed": true,
+    "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+    "covenVersion": "coven v0.4.9 (engine coven-code 0.8.0, pinned 0.8.0)",
+    "daemon": {
+      "pid": 83744,
+      "startedAt": "2026-10-18T09:43:58.562843000Z",
+      "socket": "/private/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-browser-activity-8ZvZaf/coven/coven.sock"
+    },
+    "serverPid": 84473,
+    "serverStopped": true,
+    "daemonStopped": true,
+    "fixtureRootRemoved": true,
+    "finishedAt": "2026-10-18T09:44:31.416Z"
+  },
+  "realBrowser": {
+    "startedAt": "2026-10-18T09:43:56.494Z",
+    "passed": true,
+    "browser": "headed Dia, isolated temporary profile",
+    "routeMocks": false,
+    "assertions": [
+      "default-on provider summary and tool are visible before completion",
+      "completion preserves tool node, expansion, focus and chronological identities",
+      "private provider sentinels absent",
+      "tool milestone live region updated",
+      "history reload preserves summaries, tool result and identical timeline keys"
+    ],
+    "announcements": [
+      "Tool 1: running.",
+      "Tool 1: succeeded."
+    ],
+    "finishedAt": "2026-10-18T09:44:31.533Z"
+  },
+  "screenshots": [
+    "runtime-activity-acceptance-live-2026-10-18.png",
+    "runtime-activity-acceptance-reloaded-2026-10-18.png"
+  ],
+  "retainedFailures": [
+    "Initial baseline standalone copying failed with ENOSPC; only this worktree generated dev and incomplete standalone outputs were removed.",
+    "An extra OS sandbox denied process-identity subprocess spawning in the first app-suite attempt; a second attempt exposed a fixture-incompatible forced COVEN_CAVE_HOME. The suite was restarted with a temporary COVEN_HOME and without overriding its derived Cave home.",
+    "The first real-browser attempt incorrectly expected literal underscores in Markdown-rendered answer text. Its provider/tool counts were 1/1 and owned cleanup passed; the corrected rerun passed.",
+    "A shared temporary COVEN_HOME overrode older travel tests that isolate HOME, contaminating their queue. The failing test passes without the inherited override; full-suite rerun gives each file an isolated home while respecting tests that already assign HOME.",
+    "Initial WebKit launch failed because its binary was missing. Installed the pinned Playwright WebKit revision and all seven acceptance cases passed."
+  ],
+  "remaining": [
+    "Val acceptance or rejection of deferring approval states until a real producer exists",
+    "Val decision on inline disclosures and the run rail versus a filterable panel and narrow-screen sheet",
+    "Human keyboard-only and screen-reader acceptance; DOM/live-region recordings are not human assistive-technology evidence",
+    "PR delivery and exact-head guarded merge"
+  ],
+  "scopeLimits": [
+    "Only the external Hermes provider is synthetic in the real-daemon run. No claim about a live external provider service.",
+    "No approval or committed-effect authority is inferred from tool observations or model markers.",
+    "WebKit rendering is not an actual native Tauri shell run. Historical packaged desktop evidence remains separately scoped; no new native-only surface or permission code changed."
+  ],
+  "approvalDeferralProposal": {
+    "state": "Awaiting explicit Val acceptance, not approved",
+    "currentPresentation": "Approval and change confirmation unavailable.",
+    "reason": "The tool observation projection has no authenticated approval/effect producer; model proposal-review markers remain evidence-only.",
+    "proposal": "Retain the explicit unavailable state until a real authority producer can supply pending, stale, expired, revoked and resolved approval states. Do not infer permission or committed effects from tool completion."
+  },
+  "candidateCommit": "d13582ac7f21d6cb54af9a51cb9527dbb5ddc5df"
+}
