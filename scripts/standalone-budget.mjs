@@ -72,6 +72,7 @@ export const STANDALONE_FORBIDDEN_ROOTS = Object.freeze([
   "target",
   "target-windows",
   "test-results",
+  "tsconfig.json",
 ]);
 
 export const STANDALONE_FORBIDDEN_ROOT_PREFIXES = Object.freeze([".worktree-lifecycle-fixture-", "playwright."]);

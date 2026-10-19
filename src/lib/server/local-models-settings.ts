@@ -29,7 +29,7 @@ const BACKENDS: readonly LocalCodexBackend[] = ["ollama", "lmstudio"];
 const MAX_ENDPOINT_LENGTH = 2_048;
 
 export function localModelSettingsPath(): string {
-  return path.join(caveHome(), "local-models.json");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "local-models.json");
 }
 
 /** Keep only the fields this version understands. Values are validated again

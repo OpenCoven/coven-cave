@@ -23,7 +23,7 @@ type ProjectsFile = {
 export function projectsFilePath(): string {
   return (
     process.env.CAVE_PROJECTS_PATH_OVERRIDE ??
-    path.join(caveHome(), "projects.json")
+    path.join(/* turbopackIgnore: true */ caveHome(), "projects.json")
   );
 }
 
@@ -48,7 +48,7 @@ function normalizeRootExpandingHome(root: string): string {
   // stayed empty and the project looked dead (cave-psp8).
   if (trimmed === "~") trimmed = homedir();
   else if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
-    trimmed = path.join(homedir(), trimmed.slice(2));
+    trimmed = path.join(/* turbopackIgnore: true */ homedir(), trimmed.slice(2));
   }
   const normalized = trimmed.replace(/\\/g, "/");
   let endIndex = normalized.length;

@@ -120,19 +120,19 @@ const nextConfig: NextConfig = {
       "./screenshots/**/*",
       "./playwright*.config.ts",
       "./skills-lock.json",
-      // `tsconfig.json` stays: Turbopack traces the project tsconfig into every
-      // entry itself, instrumentation included, so no call site can drop it.
+      // Route graphs reached it by name through runtime joins such as
+      // `path.join(caveHome(), "config.json")`; the instrumentation graph no
+      // longer does, so the #6082 leak guard holds (#6093).
+      "./tsconfig.json",
     ],
   },
-  // Next's tracer misses runtime-required packages that go through its
-  // own require-hook (e.g. @swc/helpers/_/_interop_require_default).
-  // Force-include the offenders so server.js can boot.
-  outputFileTracingIncludes: {
-    "/*": [
-      "./node_modules/@swc/helpers/**/*",
-      "./node_modules/node-pty/**/*",
-    ],
-  },
+  // No `outputFileTracingIncludes` (#6093). Turbopack 16.3 resolves an include
+  // by reading every directory under its first segment: `./node_modules/...`
+  // walked all of node_modules for each matching route, even for a literal
+  // file path, and one interrupted readdir under load panicked the build.
+  // The sidecar copies @swc/helpers and node-pty from the locked install
+  // (SIDECAR_DYNAMIC_PACKAGES in scripts/sidecar-runtime-closure.mjs), and
+  // Next now traces @swc/helpers itself.
   // React Compiler (cave-n9a8): automatic memoization across the component
   // tree. This codebase concentrates UI in a few very large stateful
   // components (chat-view ~7k lines / ~69 useState; workspace ~47) where

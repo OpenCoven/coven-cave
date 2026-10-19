@@ -306,7 +306,7 @@ export function clearConversationListMetadataCache(): void {
 // its own key. The source check lives in the unit test instead, which pins
 // summaryDerivationSourceDigest() and fails until the version is bumped.
 
-const SUMMARY_INDEX_PATH = path.join(caveHome(), "conversation-summary-index.json");
+const SUMMARY_INDEX_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "conversation-summary-index.json");
 export const SUMMARY_INDEX_VERSION = 2;
 const SUMMARY_INDEX_WRITE_DELAY_MS = 2_000;
 

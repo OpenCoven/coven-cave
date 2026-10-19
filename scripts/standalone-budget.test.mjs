@@ -11,6 +11,7 @@ import {
   STANDALONE_FORBIDDEN_ROOTS,
   verifyStandaloneArtifact,
 } from "./standalone-budget.mjs";
+import { SIDECAR_DYNAMIC_PACKAGES } from "./sidecar-runtime-closure.mjs";
 
 assert.equal(STANDALONE_BUDGETS.fileCount, 12_000, "standalone output allows at most 12,000 files");
 
@@ -68,7 +69,7 @@ try {
   assert.equal(forbiddenStandaloneRoot("apps/ios/CovenCave/building-notes/file.txt"), "apps");
   assert.equal(forbiddenStandaloneRoot("playwright.threads-live.config.ts"), "playwright.threads-live.config.ts");
   assert.equal(forbiddenStandaloneRoot("marketplace/plugins/x/plugin.json"), undefined);
-  assert.equal(forbiddenStandaloneRoot("tsconfig.json"), undefined, "Turbopack traces the tsconfig into every entry itself");
+  assert.equal(forbiddenStandaloneRoot("tsconfig.json"), "tsconfig.json", "a runtime join that matches the tsconfig by name fails the artifact check (#6093)");
   assert.equal(forbiddenStandaloneRoot("node_modules/target/index.js"), undefined);
 
   const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
@@ -87,6 +88,16 @@ try {
     /"\.\/apps\/\*\*\/\*"/,
     "Next tracing excludes the native app trees, suffixed iOS build roots included",
   );
+  // Turbopack resolves an include by reading every directory under its first
+  // segment, for each matching route; one interrupted readdir panicked a local
+  // build (#6093). The sidecar copies the packages the include used to force.
+  assert.doesNotMatch(nextConfig, /^\s*outputFileTracingIncludes\s*:/m, "next.config.ts declares no tracing includes");
+  for (const packageName of ["@swc/helpers", "node-pty"]) {
+    assert.ok(
+      SIDECAR_DYNAMIC_PACKAGES.includes(packageName),
+      `the sidecar copies ${packageName} from the locked install`,
+    );
+  }
   // Every root the artifact guard forbids is also excluded from tracing, so a
   // forbidden root in the output means a new glob, not a missing exclude (#6086).
   const excludes = new Set([...nextConfig.matchAll(/"(\.\/[^"]+)"/g)].map((match) => match[1]));

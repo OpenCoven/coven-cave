@@ -103,11 +103,11 @@ function canonicalTimestamp(value: string): boolean {
 }
 
 function resourceRoot(options: ResearchLinksCompatibilityOptions): string {
-  if (options.resourceRoot) return path.resolve(options.resourceRoot);
+  if (options.resourceRoot) return path.resolve(/* turbopackIgnore: true */ options.resourceRoot);
   const override = process.env.CAVE_RESEARCH_RESOURCES_PATH_OVERRIDE?.trim();
-  if (override) return path.resolve(override);
+  if (override) return path.resolve(/* turbopackIgnore: true */ override);
   const legacyOverride = options.legacyPath ?? process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE?.trim();
-  if (legacyOverride) return path.join(path.dirname(path.resolve(legacyOverride)), "research-resources");
+  if (legacyOverride) return path.join(/* turbopackIgnore: true */ path.dirname(path.resolve(/* turbopackIgnore: true */ legacyOverride)), "research-resources");
   return path.join(/* turbopackIgnore: true */ caveHome(), "research-resources");
 }
 
@@ -205,7 +205,7 @@ async function writePrivateJson(target: string, value: unknown): Promise<void> {
       ? 0
       : constants.O_NOFOLLOW;
     handle = await open(
-      temporary,
+      /* turbopackIgnore: true */ temporary,
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow,
       PRIVATE_FILE_MODE,
     );
@@ -213,11 +213,11 @@ async function writePrivateJson(target: string, value: unknown): Promise<void> {
     await handle.sync();
     await handle.close();
     handle = null;
-    await rename(temporary, target);
+    await rename(/* turbopackIgnore: true */ temporary, target);
     await syncDirectory(path.dirname(target));
   } catch (error) {
     await handle?.close().catch(() => {});
-    await rm(temporary, { force: true }).catch(() => {});
+    await rm(/* turbopackIgnore: true */ temporary, { force: true }).catch(() => {});
     throw error;
   }
   const info = await lstat(target);

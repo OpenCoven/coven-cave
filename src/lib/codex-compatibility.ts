@@ -435,7 +435,7 @@ async function reclaimAbandonedCacheLock(lockPath: string): Promise<boolean> {
   const guardPath = `${lockPath}.takeover`;
   let guard: Awaited<ReturnType<typeof open>> | null = null;
   try {
-    guard = await open(guardPath, "wx", 0o600);
+    guard = await open(/* turbopackIgnore: true */ guardPath, "wx", 0o600);
   } catch {
     return false;
   }
@@ -452,13 +452,13 @@ async function reclaimAbandonedCacheLock(lockPath: string): Promise<boolean> {
     }
     const tombstone = `${lockPath}.abandoned.${observed?.token ?? crypto.randomUUID()}`;
     await rename(/* turbopackIgnore: true */ lockPath, tombstone);
-    try { await unlink(tombstone); } catch { /* best effort */ }
+    try { await unlink(/* turbopackIgnore: true */ tombstone); } catch { /* best effort */ }
     return true;
   } catch {
     return false;
   } finally {
     try { await guard.close(); } catch { /* best effort */ }
-    try { await unlink(guardPath); } catch { /* best effort */ }
+    try { await unlink(/* turbopackIgnore: true */ guardPath); } catch { /* best effort */ }
   }
 }
 
@@ -566,7 +566,7 @@ async function readCodexSchemaWatermark(
 async function syncCacheFile(filePath: string): Promise<void> {
   // Windows only permits fsync on a writable handle, even though the file is
   // already closed and no longer needs modification.
-  const handle = await open(filePath, "r+");
+  const handle = await open(/* turbopackIgnore: true */ filePath, "r+");
   try {
     await handle.sync();
   } finally {
@@ -592,13 +592,13 @@ async function writeDurableSchemaDocument(filePath: string, serialized: string):
   const temp = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {
     await mkdir(dir, { recursive: true });
-    await writeFile(temp, serialized, { encoding: "utf8", mode: 0o600 });
+    await writeFile(/* turbopackIgnore: true */ temp, serialized, { encoding: "utf8", mode: 0o600 });
     await syncCacheFile(temp);
-    await rename(temp, filePath);
+    await rename(/* turbopackIgnore: true */ temp, filePath);
     await syncCacheDirectory(dir);
     return true;
   } catch {
-    try { await unlink(temp); } catch { /* best effort */ }
+    try { await unlink(/* turbopackIgnore: true */ temp); } catch { /* best effort */ }
     return false;
   }
 }
@@ -736,7 +736,7 @@ export const CODEX_SCHEMA_TRUSTED_KEYS: Readonly<Record<string, string>> = {
 };
 
 export function codexSchemaCachePath(home = os.homedir()): string {
-  return path.join(home, ".coven", "cache", "codex-schemas.json");
+  return path.join(/* turbopackIgnore: true */ home, ".coven", "cache", "codex-schemas.json");
 }
 
 /**

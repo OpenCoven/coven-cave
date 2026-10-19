@@ -6,7 +6,7 @@ import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 
-const INBOX_PATH = path.join(caveHome(), "inbox.json");
+const INBOX_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "inbox.json");
 
 export type ItemKind = "reminder" | "agent" | "response-needed" | "daily-summary" | "milestone";
 export type ItemStatus = "pending" | "fired" | "snoozed" | "dismissed" | "done";

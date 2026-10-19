@@ -78,7 +78,7 @@ export {
 } from "@/lib/cave-board-types";
 export { OrchestrationValidationError } from "@/lib/task-orchestration";
 
-const BOARD_PATH = path.join(caveHome(), "board.json");
+const BOARD_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "board.json");
 export const MAX_BOARD_AGENTIC_PROPOSALS = 16;
 export const MAX_BOARD_AGENTIC_AUDIT_ENTRIES = 64;
 

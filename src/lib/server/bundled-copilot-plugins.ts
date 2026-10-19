@@ -55,9 +55,9 @@ async function resolveUncached(
   for (const id of pluginIds) {
     if (!SAFE_PLUGIN_ID.test(id)) continue;
     try {
-      const pluginDir = await realpath(path.join(root, id));
+      const pluginDir = await realpath(path.join(/* turbopackIgnore: true */ root, id));
       if (!isInside(pluginDir, root) || !(await stat(pluginDir)).isDirectory()) continue;
-      const manifest = JSON.parse(await readFile(path.join(pluginDir, "plugin.json"), "utf8"));
+      const manifest = JSON.parse(await readFile(path.join(/* turbopackIgnore: true */ pluginDir, "plugin.json"), "utf8"));
       if (!isSkillOnlyManifest(manifest, id)) continue;
       resolved.push(pluginDir);
     } catch {
