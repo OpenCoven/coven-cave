@@ -32,20 +32,44 @@ export function traceWalkProbeEnabled(env, platform = process.platform) {
   return env.CI === "true" && platform !== "win32";
 }
 
-/** Creates the probe folder (mode 000); returns a function that removes it. */
-export function armTraceWalkProbe(root) {
+/**
+ * Removes a probe folder an interrupted build left behind, and says whether there was one. A
+ * leftover would make every later build or dev server panic on any walk. It is made readable
+ * first, so even a folder someone put files in (rmdir then fails and stops the build) no
+ * longer breaks tracing.
+ */
+export function clearStaleTraceWalkProbe(root) {
   const probe = path.join(root, TRACE_WALK_PROBE);
-  if (existsSync(probe)) {
-    chmodSync(probe, 0o755);
-    rmdirSync(probe); // fails, and so stops the build, if anything was put inside it
-  }
+  if (!existsSync(probe)) return false;
+  chmodSync(probe, 0o755);
+  rmdirSync(probe);
+  return true;
+}
+
+/**
+ * Creates the probe folder (mode 000) and returns a function that removes it. The folder is
+ * also removed when the process exits for any reason, uncaught exceptions included (a write to
+ * a full disk once crashed the wrapper mid-build), and on SIGINT or SIGTERM.
+ */
+export function armTraceWalkProbe(root, proc = process) {
+  const probe = path.join(root, TRACE_WALK_PROBE);
+  clearStaleTraceWalkProbe(root);
   mkdirSync(probe);
   chmodSync(probe, 0o000);
-  return () => {
-    if (!existsSync(probe)) return;
-    chmodSync(probe, 0o755);
-    rmdirSync(probe);
+  const onSignal = (signal) => {
+    disarm();
+    proc.kill(proc.pid, signal);
   };
+  function disarm() {
+    proc.off("exit", disarm);
+    proc.off("SIGINT", onSignal);
+    proc.off("SIGTERM", onSignal);
+    clearStaleTraceWalkProbe(root);
+  }
+  proc.on("exit", disarm);
+  proc.once("SIGINT", onSignal);
+  proc.once("SIGTERM", onSignal);
+  return disarm;
 }
 
 /**
@@ -137,12 +161,16 @@ async function main() {
   const root = process.cwd();
   const env = productionBuildEnv(process.env);
   if (!traceWalkProbeEnabled(process.env)) {
+    if (clearStaleTraceWalkProbe(root)) {
+      console.warn(`next-build: removed a ${TRACE_WALK_PROBE}/ left by an interrupted probed build (#6101).`);
+    }
     const result = spawnSync(process.execPath, [nextBin, "build", ...process.argv.slice(2)], { stdio: "inherit", env });
     if (result.error) throw result.error;
     if (result.status !== 0) process.exit(result.status ?? 1);
     process.exit(await finishBuild(root));
   }
   const disarm = armTraceWalkProbe(root);
+  console.log(`next-build: trace-walk probe armed at ${TRACE_WALK_PROBE}/ (#6101)`);
   let result;
   try {
     result = await runNextBuild(nextBin, process.argv.slice(2), env);
