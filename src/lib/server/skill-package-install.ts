@@ -26,9 +26,9 @@ function assertSkillPackageId(value: string, label: string): void {
 async function sourceSkillDir(packId: string, skillId: string): Promise<string> {
   assertSkillPackageId(packId, "pack");
   assertSkillPackageId(skillId, "skill");
-  const packDir = path.resolve(await ensureMarketplacePlugin(packId));
-  const skillsRoot = path.resolve(packDir, "skills");
-  const source = path.resolve(skillsRoot, skillId);
+  const packDir = path.resolve(/* turbopackIgnore: true */ await ensureMarketplacePlugin(packId));
+  const skillsRoot = path.resolve(/* turbopackIgnore: true */ packDir, "skills");
+  const source = path.resolve(/* turbopackIgnore: true */ skillsRoot, skillId);
   if (!source.startsWith(skillsRoot + path.sep)) {
     throw new Error("invalid skill source");
   }
@@ -37,7 +37,7 @@ async function sourceSkillDir(packId: string, skillId: string): Promise<string> 
 
 async function requireSkillMd(dir: string): Promise<void> {
   try {
-    const st = await stat(path.join(dir, "SKILL.md"));
+    const st = await stat(path.join(/* turbopackIgnore: true */ dir, "SKILL.md"));
     if (!st.isFile()) throw new Error("missing SKILL.md");
   } catch {
     throw new Error("missing SKILL.md");
@@ -64,8 +64,8 @@ function normalizeTargets(targets: unknown): SkillPackageInstallTarget[] {
 }
 
 function targetDir(target: SkillPackageInstallTarget, skillId: string): string {
-  if (target === "coven") return path.join(covenHome(), "skills", skillId);
-  return path.join(homedir(), ".agents", "skills", skillId);
+  if (target === "coven") return path.join(/* turbopackIgnore: true */ covenHome(), "skills", skillId);
+  return path.join(/* turbopackIgnore: true */ homedir(), ".agents", "skills", skillId);
 }
 
 export async function installSkillPackage(request: SkillPackageInstallRequest): Promise<SkillPackageInstallResult> {

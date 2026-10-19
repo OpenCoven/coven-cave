@@ -9,7 +9,7 @@ function expandHomeShortcut(value: string): string {
   const trimmed = value.trim();
   if (trimmed === "~") return homedir();
   if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
-    return path.join(homedir(), trimmed.slice(2));
+    return path.join(/* turbopackIgnore: true */ homedir(), trimmed.slice(2));
   }
   return value;
 }

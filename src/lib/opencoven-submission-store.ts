@@ -15,7 +15,7 @@ type StoreFile = {
 };
 
 function storePath(): string {
-  return path.join(covenHome(), "opencoven-submissions.json");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "opencoven-submissions.json");
 }
 
 export async function loadOpenCovenSubmissions(): Promise<OpenCovenSubmissionManifest[]> {
