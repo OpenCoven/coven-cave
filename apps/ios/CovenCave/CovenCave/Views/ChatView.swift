@@ -126,7 +126,7 @@ struct ChatView: View {
     // surface at a time: command list → argument picker → mention picker
     // (see `ComposerIntent`).
     private var composerIntent: ComposerIntent {
-        ComposerIntent.detect(draft, allowsMentions: thread.isGroup)
+        ComposerIntent.detect(draft, allowsMentions: thread.isGroup || fileMentionRoot != nil)
     }
     private var slashMatches: [SlashCommand] {
         guard case .commands(let prefix) = composerIntent else { return [] }
@@ -167,19 +167,45 @@ struct ChatView: View {
     }
     private var showingMentionMenu: Bool { !mentionMatches.isEmpty && argumentCommand == nil }
 
+    // @-file mentions (one-to-one chats with a project, #6104): the trailing
+    // `@token` filters the project's files the way the desktop picker does.
+    /// The root a one-to-one chat's `@` lists files from, or nil in a group
+    /// chat (whose `@` names familiars) or a chat without a project.
+    private var fileMentionRoot: String? {
+        guard !thread.isGroup, !thread.isFlowRun,
+              let root = thread.projectRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !root.isEmpty else { return nil }
+        return root
+    }
+    /// The root whose file index the open `@` picker needs, so it loads the
+    /// first time the picker opens rather than with the chat.
+    private var fileIndexToLoad: String? {
+        guard case .mention = composerIntent else { return nil }
+        return fileMentionRoot
+    }
+    private var fileMentionMatches: [String] {
+        guard let root = fileMentionRoot, case .mention(let partial) = composerIntent else { return [] }
+        return FileMention.filter(app.composerSuggestions.files(for: root), query: partial)
+    }
+
     /// The one suggestion menu for the draft (#5879): commands, a command's
     /// argument picker, or mentions, unless Escape dismissed it for this draft.
     private var suggestionList: ComposerSuggestionList? {
         guard suggestionsDismissedFor != draft else { return nil }
         return ComposerSuggestionList.make(
             intent: composerIntent, commands: slashMatches,
-            argumentRows: argumentRows, mentions: showingMentionMenu ? mentionMatches : [])
+            argumentRows: argumentRows, mentions: showingMentionMenu ? mentionMatches : [],
+            files: fileMentionMatches)
     }
     private var suggestionIds: [String] { suggestionList?.items.map(\.id) ?? [] }
 
-    /// The composer placeholder says how to reach the menus.
+    /// The composer placeholder says how to reach the menus, and mentions
+    /// `@` only where it opens one.
     private var composerPlaceholder: String {
-        thread.isGroup ? "Write a message… / for commands, @ to mention" : "Write a message… / for commands"
+        if thread.isGroup { return "Write a message… / for commands, @ to mention" }
+        return fileMentionRoot == nil
+            ? "Write a message… / for commands"
+            : "Write a message… / for commands, @ for files"
     }
 
     // A voice call targets a single familiar, so the call button only appears
@@ -1474,6 +1500,11 @@ struct ChatView: View {
             guard let kind = suggestionKindToLoad else { return }
             await loadSuggestions(kind)
         }
+        // The project's files load when `@` first opens their picker (#6104).
+        .task(id: fileIndexToLoad) {
+            guard let root = fileIndexToLoad else { return }
+            await loadProjectFiles(root: root)
+        }
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
         .background(chrome.bgBase)
@@ -1952,6 +1983,9 @@ struct ChatView: View {
         case .mention(let familiar):
             draft = MentionInput.insert(name: familiar.displayName, into: draft)
             composerFocused = true
+        case .file(let path):
+            draft = MentionInput.insert(name: path, into: draft)
+            composerFocused = true
         }
     }
 
@@ -1995,6 +2029,13 @@ struct ChatView: View {
             draft = ""
             dispatch(command, args: row.value)
         }
+    }
+
+    private func loadProjectFiles(root: String) async {
+        guard let client = app.client, let familiarId = thread.familiarIds.first else { return }
+        await app.composerSuggestions.ensureProjectFiles(
+            root: root, host: app.connection?.host,
+            load: { root in try await client.projectFiles(root: root, familiarId: familiarId) })
     }
 
     private func loadSuggestions(_ kind: ComposerSuggestionStore.Kind) async {
