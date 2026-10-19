@@ -112,7 +112,7 @@ export function composeOmnigentPrompt(prompt: string, identityPrefix: string): s
 async function readUserMd(familiarId: string): Promise<string | null> {
   try {
     const workspace = await familiarWorkspace(familiarId);
-    return await readFile(path.join(workspace, "USER.md"), "utf8");
+    return await readFile(path.join(/* turbopackIgnore: true */ workspace, "USER.md"), "utf8");
   } catch {
     return null;
   }

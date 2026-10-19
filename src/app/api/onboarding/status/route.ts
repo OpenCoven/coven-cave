@@ -301,7 +301,7 @@ async function loadCovenAdapterSummaries(
 }
 
 async function checkCovenHome(): Promise<Step> {
-  const p = path.join(homedir(), ".coven");
+  const p = path.join(/* turbopackIgnore: true */ homedir(), ".coven");
   try {
     const s = await stat(p);
     if (s.isDirectory()) return { ok: true, detail: p };
@@ -321,7 +321,7 @@ async function checkCovenHome(): Promise<Step> {
 async function checkConfigEvidence(): Promise<"ready" | "unavailable"> {
   try {
     const parsed = JSON.parse(
-      await readFile(path.join(caveHome(), "config.json"), "utf8"),
+      await readFile(path.join(/* turbopackIgnore: true */ caveHome(), "config.json"), "utf8"),
     );
     return parsed && typeof parsed === "object" ? "ready" : "unavailable";
   } catch (error) {

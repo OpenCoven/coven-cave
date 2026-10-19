@@ -26,13 +26,13 @@ function reportDate(report: ThreadSelfReport): string {
 
 async function reportsDir(familiarId: string): Promise<string> {
   assertFamiliarId(familiarId);
-  return path.join(await familiarWorkspace(familiarId), "self-reports");
+  return path.join(/* turbopackIgnore: true */ await familiarWorkspace(familiarId), "self-reports");
 }
 
 /** Compact per-thread metric snapshots (signal trends) — kept in a
  *  subdirectory so the report reader's *.jsonl glob never sees them. */
 async function metricSnapshotsDir(familiarId: string): Promise<string> {
-  return path.join(await reportsDir(familiarId), "metric-snapshots");
+  return path.join(/* turbopackIgnore: true */ await reportsDir(familiarId), "metric-snapshots");
 }
 
 function sortNewestFirst(a: ThreadSelfReport, b: ThreadSelfReport): number {
@@ -43,7 +43,7 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
   const dir = await reportsDir(familiarId);
   let files: string[];
   try {
-    files = await readdir(dir);
+    files = await readdir(/* turbopackIgnore: true */ dir);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
@@ -51,7 +51,7 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
 
   const reports: ThreadSelfReport[] = [];
   for (const file of files.filter((name) => name.endsWith(".jsonl")).sort()) {
-    const fullPath = path.join(dir, file);
+    const fullPath = path.join(/* turbopackIgnore: true */ dir, file);
     let raw = "";
     try {
       raw = await readFile(fullPath, "utf8");
@@ -108,7 +108,7 @@ export async function appendSelfReport(familiarId: string, report: ThreadSelfRep
   const dir = await reportsDir(familiarId);
   await mkdir(dir, { recursive: true });
   const redacted = redactSelfReport(report);
-  await appendFile(path.join(dir, `${reportDate(redacted)}.jsonl`), `${JSON.stringify(redacted)}\n`, "utf8");
+  await appendFile(path.join(/* turbopackIgnore: true */ dir, `${reportDate(redacted)}.jsonl`), `${JSON.stringify(redacted)}\n`, "utf8");
   // Also persist the compact metric snapshot (signal trends). Additive:
   // readers backfill from full reports, so a failure here only costs a cache.
   try {
@@ -116,7 +116,7 @@ export async function appendSelfReport(familiarId: string, report: ThreadSelfRep
     await mkdir(snapshotDir, { recursive: true });
     const snapshot = snapshotFromReport(redacted);
     await appendFile(
-      path.join(snapshotDir, `${reportDate(redacted)}.jsonl`),
+      path.join(/* turbopackIgnore: true */ snapshotDir, `${reportDate(redacted)}.jsonl`),
       `${JSON.stringify(snapshot)}\n`,
       "utf8",
     );
@@ -129,7 +129,7 @@ async function readPersistedMetricSnapshots(familiarId: string): Promise<ThreadM
   const dir = await metricSnapshotsDir(familiarId);
   let files: string[];
   try {
-    files = await readdir(dir);
+    files = await readdir(/* turbopackIgnore: true */ dir);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
@@ -139,7 +139,7 @@ async function readPersistedMetricSnapshots(familiarId: string): Promise<ThreadM
   for (const file of files.filter((name) => name.endsWith(".jsonl")).sort()) {
     let raw = "";
     try {
-      raw = await readFile(path.join(dir, file), "utf8");
+      raw = await readFile(path.join(/* turbopackIgnore: true */ dir, file), "utf8");
     } catch {
       continue;
     }

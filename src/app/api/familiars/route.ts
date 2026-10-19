@@ -208,7 +208,7 @@ export async function POST(req: Request) {
   }
 
   const covenDir = covenHome();
-  const familiarsToml = path.join(covenDir, "familiars.toml");
+  const familiarsToml = path.join(/* turbopackIgnore: true */ covenDir, "familiars.toml");
 
   await mkdir(covenDir, { recursive: true });
 

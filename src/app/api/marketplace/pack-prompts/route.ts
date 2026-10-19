@@ -29,7 +29,7 @@ export async function GET(req: Request) {
   }
   const prompts: PromptOption[] = [];
   try {
-    await scanPromptsDir(path.join(await ensureMarketplacePlugin(name), "prompts"), `pack:${name}`, prompts);
+    await scanPromptsDir(path.join(/* turbopackIgnore: true */ await ensureMarketplacePlugin(name), "prompts"), `pack:${name}`, prompts);
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Could not load plugin payload" }, { status: 503 });
   }

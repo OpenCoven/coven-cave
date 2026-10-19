@@ -73,7 +73,7 @@ type LoadedFamiliarConfig = {
 };
 
 async function loadFamiliarConfig(familiarId: string): Promise<LoadedFamiliarConfig> {
-  const configPath = path.join(caveHome(), "config.json");
+  const configPath = path.join(/* turbopackIgnore: true */ caveHome(), "config.json");
   try {
     const raw = await readFile(configPath, "utf8");
     const parsed = JSON.parse(raw) as {

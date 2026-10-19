@@ -92,12 +92,12 @@ assert.match(projectPaths, /covenWorkspaceRoot/);
 // invariant ("no openclaw paths") was relaxed for this single case.
 
 const localSkills = await readFile("src/app/api/skills/local/route.ts", "utf8");
-assert.ok(localSkills.includes('path.join(covenHome(), "skills")'));
+assert.match(localSkills, /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?covenHome\(\), "skills"\)/);
 assert.doesNotMatch(localSkills, /familiarWorkspace|familiarIds/);
 assert.doesNotMatch(localSkills, /\.openclaw/);
 
 const directorySkills = await readFile("src/lib/server/skills-directory.ts", "utf8");
-assert.ok(directorySkills.includes('path.join(covenHome(), "skills")'));
+assert.match(directorySkills, /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?covenHome\(\), "skills"\)/);
 assert.doesNotMatch(directorySkills, /path\.join\(process\.cwd\(\), "\.coven"\)/);
 
 const roles = await readFile("src/app/api/roles/route.ts", "utf8");
@@ -105,7 +105,7 @@ assert.doesNotMatch(roles, /\.openclaw/);
 
 const roleSource = await readFile("src/lib/role-source.ts", "utf8");
 assert.match(roleSource, /familiarWorkspace/);
-assert.ok(roleSource.includes('path.join(covenHome(), "roles")'));
+assert.match(roleSource, /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?covenHome\(\), "roles"\)/);
 assert.doesNotMatch(roleSource, /\.openclaw/);
 
 const chatSend = await readFile("src/app/api/chat/send/route.ts", "utf8");

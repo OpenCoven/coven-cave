@@ -22,11 +22,11 @@ function covenHome(opts: CraftDraftStoreOptions = {}): string {
 }
 
 function draftDir(opts: CraftDraftStoreOptions = {}): string {
-  return path.join(covenHome(opts), DRAFTS_DIR);
+  return path.join(/* turbopackIgnore: true */ covenHome(opts), DRAFTS_DIR);
 }
 
 function draftPath(id: string, opts: CraftDraftStoreOptions = {}): string {
-  return path.join(draftDir(opts), `${id}.json`);
+  return path.join(/* turbopackIgnore: true */ draftDir(opts), `${id}.json`);
 }
 
 function isCraftDraft(value: unknown): value is CraftDraft {
@@ -67,7 +67,7 @@ function isCraftDraft(value: unknown): value is CraftDraft {
 export async function readCraftDrafts(opts: CraftDraftStoreOptions = {}): Promise<CraftDraft[]> {
   let names: string[];
   try {
-    names = await readdir(draftDir(opts));
+    names = await readdir(/* turbopackIgnore: true */ draftDir(opts));
   } catch {
     return [];
   }
@@ -76,7 +76,7 @@ export async function readCraftDrafts(opts: CraftDraftStoreOptions = {}): Promis
       .filter((name) => /^[a-z0-9][a-z0-9.-]*\.json$/.test(name))
       .map(async (name) => {
         try {
-          const parsed = JSON.parse(await readFile(path.join(draftDir(opts), name), "utf8")) as unknown;
+          const parsed = JSON.parse(await readFile(path.join(/* turbopackIgnore: true */ draftDir(opts), name), "utf8")) as unknown;
           return isCraftDraft(parsed) ? parsed : null;
         } catch {
           return null;
@@ -103,8 +103,8 @@ export async function saveCraftDraft(
 export async function deleteCraftDraft(id: string, opts: CraftDraftStoreOptions = {}): Promise<boolean> {
   if (!isValidCraftDraftId(id)) return false;
   const target = draftPath(id, opts);
-  const dir = path.resolve(draftDir(opts));
-  const resolved = path.resolve(target);
+  const dir = path.resolve(/* turbopackIgnore: true */ draftDir(opts));
+  const resolved = path.resolve(/* turbopackIgnore: true */ target);
   if (!resolved.startsWith(dir + path.sep) || path.dirname(resolved) !== dir) return false;
   try {
     await rm(resolved);
