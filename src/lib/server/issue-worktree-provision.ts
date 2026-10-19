@@ -87,7 +87,7 @@ function resolveWorktreePath(repoRoot: string, relDir: string): string | null {
   if (!relDir || relDir.includes("\0") || path.isAbsolute(relDir)) return null;
   if (relDir.split(/[\\/]+/).includes("..")) return null;
   const resolved = path.resolve(repoRoot, relDir);
-  const worktreesRoot = path.join(repoRoot, ".worktrees");
+  const worktreesRoot = path.join(/* turbopackIgnore: true */ repoRoot, ".worktrees");
   if (resolved !== worktreesRoot && !resolved.startsWith(worktreesRoot + path.sep)) return null;
   return resolved;
 }
