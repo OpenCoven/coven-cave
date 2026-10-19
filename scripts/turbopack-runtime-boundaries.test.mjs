@@ -16,6 +16,10 @@ const expectedBoundaries = new Map([
   ["../src/lib/server/backup-archive.ts", [
     ["path.join(/* turbopackIgnore: true */ researchRoot, relativeDirectory)", 1],
   ]],
+  // Unmarked, the `.worktrees` join made the build scan 56,826 files (#6099).
+  ["../src/lib/server/issue-worktree-provision.ts", [
+    ['path.join(/* turbopackIgnore: true */ repoRoot, ".worktrees")', 1],
+  ]],
   ["../src/lib/server/research-context-pack-store.ts", [
     ["readdir(/* turbopackIgnore: true */ layout.manifestsDir)", 2],
   ]],
