@@ -16,7 +16,7 @@ import {
  * re-read familiars.toml.
  */
 function storePath(): string {
-  return path.join(caveHome(), "removed-familiars.json");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "removed-familiars.json");
 }
 
 export async function readTombstones(now = Date.now()): Promise<RemovedFamiliarTombstone[]> {

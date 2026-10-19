@@ -3,6 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expectedBoundaries = new Map([
+  // A `caveHome()` join matches by partial name: `"state.json"` traced Xcode's
+  // `workspace-state.json` and failed the #6082 leak guard; `"config.json"`
+  // traced `tsconfig.json` into every entry (#6093).
+  ["../src/lib/cave-config.ts", [
+    ['path.join(/* turbopackIgnore: true */ caveHome(), "config.json")', 1],
+    ['path.join(/* turbopackIgnore: true */ caveHome(), "state.json")', 1],
+  ]],
   ["../src/lib/mobile-handoff.ts", [
     ["spawn(/* turbopackIgnore: true */ bin, args", 1],
   ]],
@@ -20,7 +27,7 @@ const expectedBoundaries = new Map([
   ]],
   ["../src/lib/server/research-resource-semantic-index.ts", [
     ["existsSync(/* turbopackIgnore: true */ candidate)", 2],
-    ["readdirSync(/* turbopackIgnore: true */ directory)", 1],
+    ["readdirSync(/* turbopackIgnore: true */ directory)", 2],
     ["path.resolve(/* turbopackIgnore: true */ options.file ?? semanticIndexPath())", 2],
     ["existsSync(/* turbopackIgnore: true */ candidate.file)", 1],
     ["existsSync(/* turbopackIgnore: true */ file)", 5],

@@ -95,7 +95,7 @@ export async function loadConversationFromJsonl(
   }
 
   const jsonlPath = path.join(
-    process.env.OPENCLAW_HOME ?? path.join(homedir(), ".openclaw"),
+    /* turbopackIgnore: true */ process.env.OPENCLAW_HOME ?? path.join(/* turbopackIgnore: true */ homedir(), ".openclaw"),
     "agents",
     familiarId,
     "sessions",

@@ -96,9 +96,9 @@ function activeStoreQueues(): Map<string, Promise<void>> {
     new Map<string, Promise<void>>();
 }
 
-export const migrationJournalPath = () => path.join(caveHome(), "migration-state.json");
-export const migrationBackupRoot = () => path.join(caveHome(), "migration-backups");
-const migrationLockPath = () => path.join(caveHome(), ".migration.lock");
+export const migrationJournalPath = () => path.join(/* turbopackIgnore: true */ caveHome(), "migration-state.json");
+export const migrationBackupRoot = () => path.join(/* turbopackIgnore: true */ caveHome(), "migration-backups");
+const migrationLockPath = () => path.join(/* turbopackIgnore: true */ caveHome(), ".migration.lock");
 
 function canonicalPathFor(entry: CaveHomeReconciliationEntry): string {
   const override = entry.next === "preferences.json"
@@ -108,7 +108,7 @@ function canonicalPathFor(entry: CaveHomeReconciliationEntry): string {
       : entry.next === "backdrop.jpg"
         ? process.env.COVEN_BACKDROP_PATH?.trim()
         : undefined;
-  return override || path.join(caveHome(), entry.next);
+  return override || path.join(/* turbopackIgnore: true */ caveHome(), entry.next);
 }
 
 function samePath(left: string, right: string): boolean {
@@ -141,7 +141,7 @@ async function digestDir(target: string): Promise<{ hash: string; bytes: number 
   let bytes = 0;
   for (const name of (await readdir(target)).sort()) {
     if (name === ".DS_Store") continue;
-    const child = path.join(target, name);
+    const child = path.join(/* turbopackIgnore: true */ target, name);
     const info = await lstat(child);
     hash.update(name);
     if (info.isSymbolicLink()) hash.update(`l:${await readlink(child)}`);
@@ -238,7 +238,7 @@ type LockOwner = {
 };
 
 async function readLockOwner(lock: string): Promise<LockOwner> {
-  const owner = await readFile(path.join(lock, "owner.json"), "utf8")
+  const owner = await readFile(path.join(/* turbopackIgnore: true */ lock, "owner.json"), "utf8")
     .then((value) => JSON.parse(value) as {
       pid?: unknown;
       token?: unknown;
@@ -323,8 +323,8 @@ async function publishTakeoverClaim(
   ownerToken: string | null,
   takeoverToken: string,
 ): Promise<boolean> {
-  const candidate = path.join(lock, `.takeover-candidate-${takeoverToken}`);
-  const claimPath = path.join(lock, ".takeover");
+  const candidate = path.join(/* turbopackIgnore: true */ lock, `.takeover-candidate-${takeoverToken}`);
+  const claimPath = path.join(/* turbopackIgnore: true */ lock, ".takeover");
   await writeFile(candidate, JSON.stringify({
     pid: process.pid,
     takeoverToken,
@@ -494,7 +494,7 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
         if (options.lockCandidateOwnerWrite) {
           await options.lockCandidateOwnerWrite(candidate, owner);
         } else {
-          await writeJsonAtomic(path.join(candidate, "owner.json"), owner);
+          await writeJsonAtomic(path.join(/* turbopackIgnore: true */ candidate, "owner.json"), owner);
         }
         candidatePrepared = true;
       }
@@ -525,7 +525,7 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
           try {
             const currentOwner = await readLockOwner(lock);
             if (currentOwner.token === token) {
-              await writeJsonAtomic(path.join(lock, "owner.json"), {
+              await writeJsonAtomic(path.join(/* turbopackIgnore: true */ lock, "owner.json"), {
                 pid: process.pid,
                 token,
                 startedAt: currentOwner.startedAt ?? owner.startedAt ?? nowIso(),
@@ -578,7 +578,7 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
           (owner.pid ? !alive : now() - info.mtimeMs > LOCK_STALE_MS);
         if (reclaimable) {
           await options.lockProbe?.("stale-observed");
-          const takeover = path.join(lock, ".takeover");
+          const takeover = path.join(/* turbopackIgnore: true */ lock, ".takeover");
           const takeoverToken = randomBytes(16).toString("hex");
           // Register before writeFile can publish the claim. Another
           // same-process contender must never mistake this token for an
@@ -723,7 +723,7 @@ async function pruneBackups(journal: MigrationJournal): Promise<void> {
   );
   const directories: Array<{ name: string; mtimeMs: number }> = [];
   for (const name of await readdir(migrationBackupRoot())) {
-    const target = path.join(migrationBackupRoot(), name);
+    const target = path.join(/* turbopackIgnore: true */ migrationBackupRoot(), name);
     const info = await lstat(target).catch(() => null);
     if (info?.isDirectory()) directories.push({ name, mtimeMs: info.mtimeMs });
   }
@@ -733,7 +733,7 @@ async function pruneBackups(journal: MigrationJournal): Promise<void> {
   const removable = directories.filter((candidate) => !protectedIds.has(candidate.name));
   const removeCount = Math.max(0, directories.length - (BACKUP_RETENTION - 1));
   for (const stale of removeCount > 0 ? removable.slice(-removeCount) : []) {
-    await rm(path.join(migrationBackupRoot(), stale.name), { recursive: true, force: true });
+    await rm(path.join(/* turbopackIgnore: true */ migrationBackupRoot(), stale.name), { recursive: true, force: true });
   }
 }
 
@@ -749,7 +749,7 @@ async function copyPathAtomically(
   expectedHash?: string,
 ): Promise<void> {
   const temporary = path.join(
-    path.dirname(destination),
+    /* turbopackIgnore: true */ path.dirname(destination),
     `.${path.basename(destination)}.migration-${process.pid}-${randomBytes(6).toString("hex")}`,
   );
   try {
@@ -779,7 +779,7 @@ async function retireExpectedPath(
   }
   await probe?.();
   const retired = path.join(
-    path.dirname(target),
+    /* turbopackIgnore: true */ path.dirname(target),
     `.${path.basename(target)}.migration-retired-${process.pid}-${randomBytes(6).toString("hex")}`,
   );
   await rename(target, retired);
@@ -810,7 +810,7 @@ async function restoreInterruptedRetirement(target: string): Promise<void> {
   if (retired.length > 1) {
     throw new Error(`multiple interrupted replacements require review for ${target}`);
   }
-  await rename(path.join(parent, retired[0]), target);
+  await rename(path.join(/* turbopackIgnore: true */ parent, retired[0]), target);
 }
 
 async function createRecoveryBundle(
@@ -824,7 +824,7 @@ async function createRecoveryBundle(
 ): Promise<{ id: string; directory: string }> {
   await pruneBackups(journal);
   const id = `${nowIso().replace(/[:.]/g, "-")}-${randomBytes(4).toString("hex")}`;
-  const directory = path.join(migrationBackupRoot(), id);
+  const directory = path.join(/* turbopackIgnore: true */ migrationBackupRoot(), id);
   await mkdir(directory, { recursive: true });
   fault(options, "after-backup-directory");
 
@@ -835,7 +835,7 @@ async function createRecoveryBundle(
   ] as const) {
     if (info.kind === "missing" || info.kind === "symlink") continue;
     const storedName = `${role}-${path.basename(source)}`;
-    const storedPath = path.join(directory, storedName);
+    const storedPath = path.join(/* turbopackIgnore: true */ directory, storedName);
     await copyPath(source, storedPath, info.kind);
     const storedInfo = await pathInfo(storedPath);
     if (!info.hash || storedInfo.hash !== info.hash) throw new Error(`backup verification failed for ${role}`);
@@ -1482,7 +1482,7 @@ async function syncManagedMirror(
   if (legacyInfo.hash !== canonicalInfo.hash) {
     await options.managedMirrorProbe?.(canonicalPath);
     const staged = path.join(
-      path.dirname(legacyPath),
+      /* turbopackIgnore: true */ path.dirname(legacyPath),
       `.${path.basename(legacyPath)}.migration-refresh-${process.pid}-${randomBytes(6).toString("hex")}`,
     );
     await copyPathAtomically(canonicalPath, staged, canonicalInfo.kind, canonicalInfo.hash);
@@ -1528,8 +1528,8 @@ async function reconcileDirectory(
   let collisions = 0;
   for (const name of await readdir(legacyPath)) {
     if (name === ".DS_Store") continue;
-    const legacyChild = path.join(legacyPath, name);
-    const canonicalChild = path.join(canonicalPath, name);
+    const legacyChild = path.join(/* turbopackIgnore: true */ legacyPath, name);
+    const canonicalChild = path.join(/* turbopackIgnore: true */ canonicalPath, name);
     const left = await pathInfo(legacyChild);
     const right = await pathInfo(canonicalChild);
     if (left.kind === "symlink") {
@@ -1601,7 +1601,7 @@ async function reconcileEntry(
   options: ReconciliationOptions,
 ): Promise<void> {
   if (options.legacy && options.legacy !== entry.legacy) return;
-  const legacyPath = path.join(covenHome(), entry.legacy);
+  const legacyPath = path.join(/* turbopackIgnore: true */ covenHome(), entry.legacy);
   const canonicalPath = canonicalPathFor(entry);
   await mkdir(path.dirname(canonicalPath), { recursive: true });
   // A hard process termination can bypass finally blocks after the atomic
@@ -1832,7 +1832,7 @@ async function reconcileEntry(
   if (merged.ok && (options.action === "merge" || !options.action)) {
     if (entry.strategy !== "directory") {
       const staged = path.join(
-        path.dirname(canonicalPath),
+        /* turbopackIgnore: true */ path.dirname(canonicalPath),
         `.${path.basename(canonicalPath)}.migration-merge-${process.pid}-${randomBytes(6).toString("hex")}`,
       );
       try {
@@ -1907,7 +1907,7 @@ export async function caveHomeReconciliationStatus(
   const conflicts: string[] = [];
   const details: CaveHomeConflictDetail[] = [];
   for (const entry of entries) {
-    const legacyPath = path.join(covenHome(), entry.legacy);
+    const legacyPath = path.join(/* turbopackIgnore: true */ covenHome(), entry.legacy);
     const canonicalPath = canonicalPathFor(entry);
     // Stat-only classification first: steady-state entries (legacy absent,
     // verified bridge, per-store override, unchanged managed mirror) must not
@@ -1931,7 +1931,7 @@ export async function caveHomeReconciliationStatus(
     canonicalInfo = await pathInfo(canonicalPath);
     const isPending = canonicalInfo.kind === "missing" && legacyInfo.kind !== "symlink";
     (isPending ? pending : conflicts).push(entry.legacy);
-    const backupPath = prior?.backupId ? path.join(migrationBackupRoot(), prior.backupId) : undefined;
+    const backupPath = prior?.backupId ? path.join(/* turbopackIgnore: true */ migrationBackupRoot(), prior.backupId) : undefined;
     details.push({
       legacy: entry.legacy,
       next: entry.next,

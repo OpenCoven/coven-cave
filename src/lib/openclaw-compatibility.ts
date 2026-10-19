@@ -758,11 +758,11 @@ function meetsOpenClawCheckpoint(
 
 function defaultOpenClawCacheDir(): string {
   const covenRoot = covenHomePath();
-  return process.env.COVEN_CAVE_HOME || path.join(covenRoot, "cave");
+  return process.env.COVEN_CAVE_HOME || path.join(/* turbopackIgnore: true */ covenRoot, "cave");
 }
 
 function openClawCacheFile(cacheDir?: string): string {
-  return path.join(cacheDir || defaultOpenClawCacheDir(), CACHE_FILE);
+  return path.join(/* turbopackIgnore: true */ cacheDir || defaultOpenClawCacheDir(), CACHE_FILE);
 }
 
 function trustAnchorFile(file: string): string {
@@ -775,7 +775,7 @@ function trustAnchorJournalDir(file: string): string {
 
 function trustAnchorJournalEntry(file: string, anchor: OpenClawTrustAnchor): string {
   return path.join(
-    trustAnchorJournalDir(file),
+    /* turbopackIgnore: true */ trustAnchorJournalDir(file),
     `${anchor.sequence}-${anchor.payloadHash}.json`,
   );
 }
@@ -789,7 +789,7 @@ function acceptedCacheJournalEntry(
   bundle: OpenClawSchemaBundle,
 ): string {
   return path.join(
-    acceptedCacheJournalDir(file),
+    /* turbopackIgnore: true */ acceptedCacheJournalDir(file),
     `${bundle.sequence}-${openClawSchemaBundlePayloadHash(bundle)}.json`,
   );
 }
@@ -853,7 +853,7 @@ async function readJournalTrustAnchors(file: string): Promise<OpenClawTrustAncho
       if (!entry.isFile() || !match) {
         throw new OpenClawCacheTrustConflictError("Invalid OpenClaw trust journal entry");
       }
-      const raw = await readBoundedFile(path.join(trustAnchorJournalDir(file), entry.name), 1024);
+      const raw = await readBoundedFile(path.join(/* turbopackIgnore: true */ trustAnchorJournalDir(file), entry.name), 1024);
       const parsed = raw === null ? null : JSON.parse(raw) as unknown;
       const anchor = parsed && validTrustAnchor(parsed) ? parsed : null;
       if (
@@ -1080,7 +1080,7 @@ async function readAcceptedCacheJournal(
       const match = /^(\d{1,16})-([a-f0-9]{64})\.json$/.exec(entry.name);
       if (!entry.isFile() || !match) return null;
       const raw = await readBoundedFile(
-        path.join(acceptedCacheJournalDir(file), entry.name),
+        path.join(/* turbopackIgnore: true */ acceptedCacheJournalDir(file), entry.name),
         MAX_CACHE_BYTES,
       );
       const cached = raw === null
@@ -1143,7 +1143,7 @@ async function writeAcceptedCacheJournal(
   await Promise.all(records
     .filter((record) => !retained.has(record.name))
     .map((record) => registryFs.rm(
-      path.join(acceptedCacheJournalDir(file), record.name),
+      path.join(/* turbopackIgnore: true */ acceptedCacheJournalDir(file), record.name),
       { force: true },
     ).catch(() => undefined)));
   return true;

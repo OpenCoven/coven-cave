@@ -61,7 +61,7 @@ async function sweepStaleStagedFiles(stagingDir: string, now = Date.now()): Prom
       // `<uuid>.<ext>` shape from the write path keeps the sweep to its own
       // litter.
       if (!STAGED_FILE_NAME.test(entry.name)) continue;
-      const target = path.join(stagingDir, entry.name);
+      const target = path.join(/* turbopackIgnore: true */ stagingDir, entry.name);
       try {
         const meta = await lstat(target);
         // A symlink planted here is not ours; removing what it points at would
@@ -105,7 +105,7 @@ export async function writeAttachmentsToRuntime(
   } catch {
     return filePaths;
   }
-  const stagingDir = path.join(realStagingRoot, ATTACHMENT_STAGING_DIR);
+  const stagingDir = path.join(/* turbopackIgnore: true */ realStagingRoot, ATTACHMENT_STAGING_DIR);
   await sweepStaleStagedFiles(stagingDir);
   for (const [index, attachment] of attachments.entries()) {
     const payload = cleanImageDataUrl(attachment.dataUrl) ??
@@ -133,7 +133,7 @@ export async function writeAttachmentsToRuntime(
     try {
       await mkdir(stagingDir, { recursive: true, mode: 0o700 });
       const filePath = path.join(
-        stagingDir,
+        /* turbopackIgnore: true */ stagingDir,
         `${crypto.randomUUID()}.${attachmentExtension({ ...attachment, mimeType })}`,
       );
       await writeFile(filePath, bytes, { mode: 0o600 });

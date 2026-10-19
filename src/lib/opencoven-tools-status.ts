@@ -196,7 +196,7 @@ async function resolvedExecutablePath(binaryPath: string): Promise<string | null
 function samePath(left: string, right: string): boolean {
   const normalize = (value: string) =>
     process.platform === "win32" ? value.toLowerCase() : value;
-  return normalize(resolve(left)) === normalize(resolve(right));
+  return normalize(resolve(/* turbopackIgnore: true */ left)) === normalize(resolve(/* turbopackIgnore: true */ right));
 }
 
 type PackageIdentity = {
@@ -212,7 +212,7 @@ async function packageIdentityForExecutable(
   let directory = dirname(executablePath);
   for (let depth = 0; depth < 16; depth += 1) {
     try {
-      const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as {
+      const manifest = JSON.parse(await readFile(join(/* turbopackIgnore: true */ directory, "package.json"), "utf8")) as {
         name?: unknown;
         bin?: unknown;
       };
@@ -228,7 +228,7 @@ async function packageIdentityForExecutable(
               : null;
         let binaryVerified = false;
         if (binPath) {
-          const expectedPath = resolve(directory, binPath);
+          const expectedPath = resolve(/* turbopackIgnore: true */ directory, binPath);
           try {
             binaryVerified = samePath(await realpath(expectedPath), executablePath);
           } catch {
