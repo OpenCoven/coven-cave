@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import {
+  assertIsolatedStreamBuild,
+  buildStreamInvocation,
+  parseStreamArguments,
+} from "./run-stream-performance.mjs";
 import {
   createStreamWorkload,
   evaluateStreamPerformance,
@@ -125,4 +133,56 @@ test("invalid observer entries and time windows fail instead of disappearing", (
   for (const [start, end] of [[NaN, 400], [100, Infinity], [400, 100], [-1, 400]]) {
     assert.throws(() => overlappingLongTasks([], start, end));
   }
+});
+
+test("the launcher refuses workload overrides and only accepts the explicit failing control", () => {
+  assert.deepEqual(parseStreamArguments([]), { control: false });
+  assert.deepEqual(parseStreamArguments(["--control"]), { control: true });
+  for (const args of [["--trials=1"], ["--retries=1"], ["--control", "--control"], ["--unknown"]]) {
+    assert.throws(() => parseStreamArguments(args));
+  }
+});
+
+test("the real CLI invocation strips credentials and injection while fixing the tested workload", () => {
+  const invocation = buildStreamInvocation({
+    stateRoot: "/synthetic/state", artifactRoot: "/synthetic/artifacts", control: false,
+    sourceEnv: {
+      PATH: "/bin", HOME: "/browser-cache-home", CI: "1", COVEN_CAVE_PORT: "3199",
+      GITHUB_TOKEN: "private", GITHUB_PAT: "private", OPENAI_API_KEY: "private",
+      ANTHROPIC_API_KEY: "private", NODE_OPTIONS: "--require=untrusted.cjs",
+      COVEN_HOME: "/real/coven", COVEN_CAVE_ENV_FILE: "/real/.env",
+      CAVE_STREAM_CONTROL: "1", CAVE_STREAM_PERFORMANCE: "0",
+    },
+  });
+  assert.equal(invocation.env.HOME, "/browser-cache-home");
+  assert.equal(invocation.env.COVEN_CAVE_PORT, "3199");
+  assert.equal(invocation.env.CAVE_STREAM_PERFORMANCE, "1");
+  assert.equal(invocation.env.CAVE_STREAM_CONTROL, "0");
+  assert.equal(invocation.env.CAVE_STREAM_STATE_ROOT, "/synthetic/state");
+  for (const key of ["GITHUB_TOKEN", "GITHUB_PAT", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+    "NODE_OPTIONS", "COVEN_HOME", "COVEN_CAVE_ENV_FILE"]) {
+    assert.equal(invocation.env[key], undefined, key);
+  }
+  assert.ok(invocation.args.includes("tests/chat-stream-performance.spec.ts"));
+  assert.ok(invocation.args.includes("--retries=0"));
+  assert.ok(invocation.args.includes("--workers=1"));
+  assert.ok(invocation.args.includes("--no-deps"));
+  assert.equal(invocation.args.some(arg => arg.includes("repeat-each")), false);
+  assert.equal(buildStreamInvocation({
+    stateRoot: "/synthetic/state", artifactRoot: "/synthetic/artifacts",
+    sourceEnv: {}, control: true,
+  }).env.CAVE_STREAM_CONTROL, "1");
+});
+
+test("a build with local dotenv files is refused without reading or modifying them", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "stream-env-test-"));
+  try {
+    assert.doesNotThrow(() => assertIsolatedStreamBuild(directory));
+    for (const name of [".env", ".env.local", ".env.production", ".env.production.local"]) {
+      const file = path.join(directory, name);
+      writeFileSync(file, "DO_NOT_READ=synthetic\n");
+      assert.throws(() => assertIsolatedStreamBuild(directory), /dotenv/);
+      rmSync(file);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });

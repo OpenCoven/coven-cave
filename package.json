@@ -55,6 +55,7 @@
     "bench:daemon-reliability": "node --experimental-strip-types scripts/daemon-reliability-benchmark.mjs",
     "bench:daemon-lifecycle": "node --experimental-strip-types scripts/daemon-lifecycle-probe.mjs",
     "performance:report": "node --experimental-strip-types scripts/cave-performance-report.mjs",
+    "performance:stream": "node scripts/run-stream-performance.mjs",
     "ios:performance:capture": "node scripts/ios-performance-capture.mjs",
     "test:performance-report": "node --test scripts/cave-performance-report.test.mjs",
     "analyze:bundle": "next experimental-analyze --output",

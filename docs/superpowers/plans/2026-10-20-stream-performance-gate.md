@@ -50,7 +50,7 @@
 
 ### Task 2: Production browser gate and automation
 
-**Files:** Create `tests/chat-context-fixture.ts`, `tests/chat-stream-performance.spec.ts`, and `scripts/run-stream-performance.mjs`; modify `tests/chat-context-performance.spec.ts`, `playwright.config.ts`, `package.json`, `.github/workflows/cave-performance.yml`, `src/lib/performance-budgets.ts`, its test, and `docs/performance-budgets.md`.
+**Files:** Create `tests/chat-context-fixture.ts`, `tests/chat-stream-performance.spec.ts`, and `scripts/run-stream-performance.mjs`; modify `tests/chat-context-performance.spec.ts`, `playwright.config.ts`, `package.json`, `.github/workflows/cave-performance.yml`, `src/lib/performance-budgets.ts`, its test, `scripts/cave-performance-report.mjs`, its test, and `docs/performance-budgets.md`.
 
 **Interfaces:**
 
