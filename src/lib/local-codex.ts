@@ -147,6 +147,27 @@ export function localCodexAdapterManifest(info: LocalCodexBackendInfo): { adapte
   };
 }
 
+/**
+ * Every way /api/chat/send refuses a local session before anything runs
+ * (#6095). Each message is Cave's own copy plus the server address or the
+ * model name, so the chat error banner already shows the whole reason.
+ */
+export const LOCAL_CODEX_REFUSAL_CODES = [
+  "local_codex_remote_host",
+  "local_endpoint_invalid",
+  "local_server_unreachable",
+  "local_server_invalid",
+  "local_model_unselected",
+  "local_model_missing",
+  "local_model_no_tools",
+  "local_model_other_computer",
+] as const;
+export type LocalCodexRefusalCode = typeof LOCAL_CODEX_REFUSAL_CODES[number];
+
+export function isLocalCodexRefusalCode(code: unknown): code is LocalCodexRefusalCode {
+  return typeof code === "string" && (LOCAL_CODEX_REFUSAL_CODES as readonly string[]).includes(code);
+}
+
 /** Where an endpoint or the remote-server permission came from. */
 export type LocalSettingSource = "default" | "settings" | "environment";
 

@@ -145,6 +145,7 @@ import {
 } from "@/lib/initial-prompt-handoff";
 import { useCopy } from "@/lib/use-copy";
 import { authRecoveryHarness, parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
+import { isLocalCodexRefusalCode, type LocalCodexRefusalCode } from "@/lib/local-codex";
 import { ComposerModelPopover, runtimeModelLabel } from "@/components/composer-runtime-chip";
 import type { ComposerModelInventory } from "@/components/model-inventory-feedback";
 import type { RuntimeModelOption } from "@/lib/runtime-models";
@@ -870,6 +871,7 @@ function ChatErrorStrip({
   modelInventory,
   onRetryWithModel,
   onManageUsage,
+  localRefusal,
 }: {
   message: string;
   code?: string;
@@ -917,11 +919,17 @@ function ChatErrorStrip({
   onRetryWithModel?: (modelId: string) => void;
   /** Opens the runtime vendor's usage page through the host's URL path. */
   onManageUsage?: () => void;
+  /** The send was refused for a local session before anything ran (#6095). */
+  localRefusal?: LocalCodexRefusalCode;
 }) {
   const { copied, copy } = useCopy();
   const usageLimit = code === "harness_usage_limit";
   const erroredTools = (failingTurn?.tools ?? []).filter((t) => t.status === "error");
   const erroredSteps = (failingTurn?.progress ?? []).filter((p) => p.status === "error");
+  // The refused `connect` step only repeats the message above, so it says
+  // that instead of claiming detail is withheld. It applies only while the
+  // message still names the refusal; every other step keeps the fallback.
+  const refusalShown = Boolean(localRefusal && message.includes(localRefusal));
   const hasDetail = Boolean(code) || erroredTools.length > 0 || erroredSteps.length > 0;
   const [open, setOpen] = useState(true);
   // Re-expand whenever a *new* error fires so the latest detail is front-and-centre.
@@ -1163,7 +1171,12 @@ function ChatErrorStrip({
                 <pre className={pre}>A tool failed. Its input and output are withheld to protect project data.</pre>
               </div>
             ))}
-            {erroredSteps.map((p) => (
+            {erroredSteps.map((p) => refusalShown && p.id === "connect" ? (
+              <div key={p.id}>
+                <div className={kicker}>request refused</div>
+                <pre className={pre}>Nothing ran. The reason is shown above.</pre>
+              </div>
+            ) : (
               <div key={p.id}>
                 <div className={kicker}>step failure</div>
                 <pre className={pre}>{safeRuntimeProcessDetail(p) ?? "A runtime step failed. Its detail is withheld to protect project data."}</pre>
@@ -2544,9 +2557,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Debug context for the inline error strip below the chat: which turn failed
   // and an optional machine code. `seq` increments per occurrence so the strip
   // re-expands its detail every time a *new* error fires (not just the first).
-  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string; harness?: string; model?: string | null } | null>(null);
+  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string; harness?: string; model?: string | null; localRefusal?: LocalCodexRefusalCode } | null>(null);
   const debugErrorSeqRef = useRef(0);
-  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string; harness?: string; model?: string | null }) => {
+  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string; harness?: string; model?: string | null; localRefusal?: LocalCodexRefusalCode }) => {
     debugErrorSeqRef.current += 1;
     const seq = debugErrorSeqRef.current;
     setDebugError((previous) => ({
@@ -5705,7 +5718,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       });
       if (!res.ok) {
         const refusal = res.status === 409
-          ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown } | null
+          ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown; code?: unknown } | null
           : null;
         const message = await chatBridgeFailureMessage(res);
         let surfacedMessage = message;
@@ -5769,7 +5782,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           liveGeneration.sessionId,
           liveStreamMetadata(liveGeneration),
         );
-        raiseDebugError({ turnId: assistantId, code: `HTTP ${res.status}` });
+        // A local session refused before anything ran (#6095): the message
+        // above is Cave's own copy and the whole reason.
+        raiseDebugError({
+          turnId: assistantId,
+          code: `HTTP ${res.status}`,
+          ...(isLocalCodexRefusalCode(refusal?.code) ? { localRefusal: refusal.code } : {}),
+        });
         publishStreamHealth({
           type: "degrade",
           at: new Date().toISOString(),
@@ -8763,6 +8782,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         <ChatErrorStrip
           message={error}
           code={debugError?.code}
+          localRefusal={debugError?.localRefusal}
           errorSeq={debugError?.seq ?? 0}
           failingTurn={
             debugError?.turnId ? turns.find((t) => t.id === debugError.turnId) ?? null : null
