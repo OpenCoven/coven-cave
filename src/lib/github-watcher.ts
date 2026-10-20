@@ -1,6 +1,7 @@
 import { createItem, loadInbox } from "@/lib/cave-inbox";
 import { broadcastCreated } from "@/lib/inbox-scheduler";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { withinDeadline } from "./async-deadline.ts";
 import {
   diffCompletedRuns,
   diffOpenedPrs,
@@ -24,6 +25,7 @@ import {
  */
 
 const TICK_MS = 60_000;
+const READ_TIMEOUT_MS = 8_000;
 const GH = "https://api.github.com";
 // Per repo per tick — a storm (e.g. cursor loss) can't flood the inbox.
 const MAX_NOTIFICATIONS_PER_REPO = 10;
@@ -36,16 +38,25 @@ declare global {
 }
 
 async function ghFetch(path: string, token: string): Promise<unknown> {
-  const res = await fetch(`${GH}${path}`, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      Authorization: `Bearer ${token}`,
-    },
-    cache: "no-store",
-  });
-  if (!res.ok) return null;
-  return res.json().catch(() => null);
+  // Include body consumption: a partial response must not hold the shared
+  // tick forever. Only the winning read reaches notification/cursor effects.
+  const result = await withinDeadline(async (signal) => {
+    const res = await fetch(`${GH}${path}`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+      signal,
+    });
+    if (signal.aborted || !res.ok) {
+      void res.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    return res.json();
+  }, Date.now() + READ_TIMEOUT_MS);
+  return result.state === "ready" ? result.value : null;
 }
 
 async function notify(input: {
