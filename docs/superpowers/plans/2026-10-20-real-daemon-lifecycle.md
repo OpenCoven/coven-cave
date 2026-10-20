@@ -1,6 +1,7 @@
 # Real daemon lifecycle implementation plan
 
 > **For agentic workers:** Use superpowers:executing-plans for this scoped delivery.
+> Checkbox state is not evidence of completion; code, merged PRs, and issue #6120 are authoritative.
 
 **Goal:** Produce actual isolated CLI lifecycle evidence for #6120, under #6119.
 
