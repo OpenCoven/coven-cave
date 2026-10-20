@@ -272,7 +272,9 @@ export async function PATCH(req: Request) {
   if (sessionId && !isSafeConversationSessionId(sessionId)) {
     return jsonError("invalid session id", 400);
   }
-  if (!clearModel && !model) return jsonError("invalid model", 400);
+  // Runtime selection carries no model: the handoff below deliberately resets
+  // the previous runtime's intent to the target runtime's default.
+  if (scope !== "runtime-handoff" && !clearModel && !model) return jsonError("invalid model", 400);
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
   if (scope === "next-message") {
@@ -285,8 +287,10 @@ export async function PATCH(req: Request) {
   const sessionConversation = (scope === "session" || scope === "runtime-handoff") && sessionId
     ? await loadConversation(sessionId)
     : null;
-  if ((scope === "session" || scope === "runtime-handoff") && sessionId &&
-      (!sessionConversation || sessionConversation.familiarId !== familiarId)) {
+  if (sessionId && (
+    (scope === "session" && !sessionConversation) ||
+    (sessionConversation && sessionConversation.familiarId !== familiarId)
+  )) {
     return jsonError("not found", 404);
   }
   const modelValidationHarness = scope === "session"
@@ -296,7 +300,7 @@ export async function PATCH(req: Request) {
         binding.harness,
     )
     : canonicalHarnessId(binding.harness);
-  if (model && !isModelAllowedByRuntime(modelValidationHarness, model)) {
+  if (scope !== "runtime-handoff" && model && !isModelAllowedByRuntime(modelValidationHarness, model)) {
     return jsonError("model is not allowed by this runtime", 400);
   }
 

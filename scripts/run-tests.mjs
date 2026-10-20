@@ -665,6 +665,7 @@ export const SUITES = {
     "src/components/composer-linked-work-actions.test.ts",
     "src/components/composer-options-menu.test.ts",
     "src/components/composer-runtime-chip.test.ts",
+    "src/components/composer-account-switch.behavior.test.tsx",
     "src/components/model-inventory-feedback.test.tsx",
     "src/components/settings-local-models.test.tsx",
     "src/components/composer-git-chip.test.ts",
@@ -1664,6 +1665,7 @@ export const SUITES = {
     "src/app/api/projects/icon/route.test.ts",
     "src/app/api/images/generate/route.test.ts",
     "src/app/api/chat/model-state/route.test.ts",
+    "src/app/api/chat/model-state/route-handoff.integration.test.ts",
     "src/app/api/runtime-models/[runtime]/route.test.ts",
     "src/app/api/runtime-models/[runtime]/route-behavior.test.ts",
     "src/app/api/runtime-models/opencode/route.test.ts",
@@ -2181,6 +2183,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/chat/model-state/route-handoff.integration.test.ts",
   "src/lib/server/saved-links-route.test.ts",
   "src/lib/collect-saved-link-urls.test.ts",
   "src/app/api/connectors/route.test.ts",
@@ -2612,6 +2615,7 @@ const VITEST_TESTS = new Set([
   "src/components/familiar-note-generation-controls.test.tsx",
   "src/lib/use-attachment-staging-behavior.test.tsx",
   "src/components/composer-enhance-behavior.test.tsx",
+  "src/components/composer-account-switch.behavior.test.tsx",
   "src/components/chat-thread-rail.test.tsx",
   "src/components/composer-model-inventory.test.tsx",
   "src/lib/use-runtime-model-options-behavior.test.tsx",

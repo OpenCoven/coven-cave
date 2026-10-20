@@ -7553,7 +7553,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       popoverPlacement={composerPopoverPlacement}
       ariaLabel={inlineComposer ? "New chat context" : "Session context"}
-      executionRuntime={session?.runtime ?? null}
+      executionRuntime={runtimeHost && runtimeHost !== LOCAL_HOST_ID
+        ? `ssh:${runtimeHost}`
+        : modelState?.runtime ?? session?.runtime ?? (modelState ? "local" : null)}
     />
   );
   // One Tools menu, placed by width (#5954): desktop puts it in the action
