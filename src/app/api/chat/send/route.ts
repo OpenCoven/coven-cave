@@ -3257,7 +3257,8 @@ async function postAdmittedChat(
   const mentionedFiles = imagesSupported
     ? await resolveMentionedFiles(
         body.mentionedFiles,
-        resolvedFamiliarWorkspace,
+        cwd,
+        body.mentionedFilesRoot,
       )
     : [];
   const dailyMemoryContext = metaRun
