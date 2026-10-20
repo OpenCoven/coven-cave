@@ -61,6 +61,64 @@ test("cleanup inspects surviving groups, even after their leaders have exited", 
   assert.deepEqual(signals, [[456, "SIGTERM"], [456, "SIGKILL"]]);
 });
 
+test("transient permission uncertainty needs definitive absence and never authorizes a signal", async () => {
+  const groups = new Set([123]);
+  const signals = [];
+  let observations = 0;
+  const result = await cleanupOwnedGroups(groups, {
+    alive: () => {
+      if (++observations <= 2) throw Object.assign(new Error("unknown group"), { code: "EPERM" });
+      return false;
+    },
+    signal: (...args) => signals.push(args),
+  });
+  assert.equal(result, true);
+  assert.ok(observations >= 3, "the permission error is not proof of absence");
+  assert.deepEqual(signals, []);
+  assert.equal(groups.size, 0);
+});
+
+test("confirmed-absent group IDs are retired before later cleanup observations", async () => {
+  const groups = new Set([123, 456]);
+  const signals = [];
+  let absentObservations = 0;
+  await cleanupOwnedGroups(groups, {
+    alive: pid => {
+      if (pid === 123) {
+        assert.equal(++absentObservations, 1, "an absent ID must never be observed again");
+        return false;
+      }
+      return true;
+    },
+    signal: (...args) => signals.push(args),
+    timeoutMs: 0,
+  });
+  assert.deepEqual([...groups], [456]);
+  assert.deepEqual(signals, [[456, "SIGTERM"], [456, "SIGKILL"]]);
+});
+
+test("persistent uncertainty fails without signaling that group or hiding a live group", async () => {
+  const groups = new Set([123, 456]);
+  const signals = [];
+  await assert.rejects(cleanupOwnedGroups(groups, {
+    alive: pid => {
+      if (pid === 123) throw Object.assign(new Error("unknown group"), { code: "EPERM" });
+      return true;
+    },
+    signal: (...args) => signals.push(args),
+    timeoutMs: 0,
+  }), { code: "EPERM" });
+  assert.ok(groups.has(123) && groups.has(456));
+  assert.ok(signals.every(([pid]) => pid === 456));
+});
+
+test("a completed command retires its definitively absent process group", { skip: process.platform === "win32" }, async () => {
+  const groups = new Set();
+  const result = await runOwnedCommand(process.execPath, ["-e", ""], { cwd: os.tmpdir(), env: {}, groups });
+  assert.equal(result.code, 0);
+  assert.equal(groups.size, 0);
+});
+
 test("child environment uses only private fixture paths and an explicit allowlist", () => {
   const env = isolatedEnvironment("/tmp/private-probe");
   assert.equal(env.COVEN_HOME, path.join("/tmp/private-probe", "coven"));

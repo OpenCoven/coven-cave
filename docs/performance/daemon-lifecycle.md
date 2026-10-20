@@ -53,6 +53,15 @@ exported. If version-command cleanup cannot be inspected, the probe returns a
 failed JSON report before starting samples. No inspection error counts as
 proof that a process exited.
 
+Shutdown and cleanup observation allow up to the existing two-second wait for
+a transient permission error to clear. Darwin can return `EPERM` while an exited
+process remains unreaped. The probe never signals a group on an uncertain
+observation and requires a later definitive absence before recording cleanup.
+Persistent uncertainty still fails. Confirmed-absent group IDs are retired
+immediately, including after command completion, while surviving descendants
+remain tracked. Numeric POSIX process groups do not provide an atomic ownership
+guarantee; this probe does not prove containment of escaped descendants.
+
 The report retains every failed sample, attempted-operation duration and cleanup
 result. A failed operation ends that sample's journey, so later operations are
 unmeasured for that sample. Cancellation stops further samples and retains the

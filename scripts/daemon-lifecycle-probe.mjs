@@ -34,13 +34,49 @@ function signalGroup(pid, signal) {
   catch (error) { if (error.code !== "ESRCH") throw error; }
 }
 
+function permissionUncertain(error) {
+  return ["EPERM", "EACCES"].includes(error.code);
+}
+
+async function waitForGroupsToExit(groups, { alive, timeoutMs }) {
+  const deadline = performance.now() + timeoutMs;
+  for (;;) {
+    let uncertain;
+    for (const pid of groups) {
+      try {
+        if (!alive(pid)) groups.delete(pid);
+      } catch (error) {
+        if (!permissionUncertain(error)) throw error;
+        uncertain ??= error;
+      }
+    }
+    if (groups.size === 0) return true;
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) {
+      if (uncertain) throw uncertain;
+      return false;
+    }
+    // Darwin may return EPERM for an exited, unreaped group. Only a later
+    // definitive absence clears it; permission uncertainty is not success.
+    await delay(Math.min(25, remaining));
+  }
+}
+
 export async function cleanupOwnedGroups(groups, { alive = groupAlive, signal = signalGroup, timeoutMs = 2000 } = {}) {
   // A launcher exit does not prove that its descendants have exited.
   for (const termination of ["SIGTERM", "SIGKILL"]) {
-    for (const pid of groups) if (alive(pid)) signal(pid, termination);
-    const deadline = performance.now() + timeoutMs;
-    while ([...groups].some(alive) && performance.now() < deadline) await delay(25);
-    if (![...groups].some(alive)) return true;
+    let uncertain;
+    for (const pid of groups) {
+      try {
+        if (alive(pid)) signal(pid, termination);
+        else groups.delete(pid);
+      } catch (error) {
+        if (!permissionUncertain(error)) throw error;
+        uncertain ??= error;
+      }
+    }
+    if (await waitForGroupsToExit(groups, { alive, timeoutMs })) return true;
+    if (uncertain) throw uncertain;
   }
   return false;
 }
@@ -58,6 +94,10 @@ export function runOwnedCommand(binary, args, { cwd, env, groups, signal, timeou
       settled = true;
       clearTimeout(timer); clearTimeout(killTimer); clearTimeout(settlementTimer);
       signal?.removeEventListener("abort", abort);
+      if (child.pid) {
+        try { if (!groupAlive(child.pid)) groups.delete(child.pid); }
+        catch { /* Keep uncertain groups for bounded cleanup; never infer absence. */ }
+      }
       resolve({ code, signal: terminationSignal, stdout, stderr, timedOut, spawnFailed, outputExceeded, cancelled, durationMs: performance.now() - started });
     };
     const terminate = () => {
@@ -221,9 +261,7 @@ async function runSample(binary, index, signal) {
       assert.equal((await status()).status, "stopped");
       // Verify endpoint disappearance separately from status rendering.
       await assert.rejects(readHealth(env.COVEN_SOCKET));
-      const deadline = performance.now() + 2000;
-      while ([...groups].some(groupAlive) && performance.now() < deadline) await delay(25);
-      assert.equal([...groups].some(groupAlive), false);
+      assert.equal(await waitForGroupsToExit(groups, { alive: groupAlive, timeoutMs: 2000 }), true);
     });
     sample.pass = true;
   } catch { /* Failed operation is retained; subsequent operations were not exercised. */ }
