@@ -101,7 +101,7 @@ export function parseLmsLinkStatus(stdout: string): { thisDevice: string | null;
 function lmsCommand(): string {
   const executable = process.platform === "win32" ? "lms.exe" : "lms";
   // LM Studio installs its CLI here; a GUI-launched Cave may not have it on PATH.
-  const installed = path.join(homedir(), ".lmstudio", "bin", executable);
+  const installed = path.join(/* turbopackIgnore: true */ homedir(), ".lmstudio", "bin", executable);
   return existsSync(installed) ? installed : executable;
 }
 
