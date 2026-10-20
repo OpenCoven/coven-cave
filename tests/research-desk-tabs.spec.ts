@@ -854,6 +854,70 @@ test.describe("research desk tabs", () => {
   // slow-compile as failure; triple it (same pattern as other cold-boot specs).
   test.describe.configure({ timeout: 180_000 });
 
+  test("Research styles load only after enabled room activation", async ({ page }, testInfo) => {
+    await mockResearchApis(page);
+    let available = true;
+    let enabled = false;
+    await page.route("**/api/research/capability", route => route.fulfill({
+      json: { ok: true, available, enabled, reason: enabled ? "available" : available ? "disabled" : "not-installed" },
+    }));
+    const researchRules = () => page.evaluate(() => {
+      const collect = (rules: CSSRuleList): string[] => Array.from(rules).flatMap(rule => {
+        const own = "selectorText" in rule && String(rule.selectorText).includes(".research-desk") ? [rule.cssText] : [];
+        return "cssRules" in rule ? [...own, ...collect((rule as CSSGroupingRule).cssRules)] : own;
+      });
+      return Array.from(document.styleSheets).flatMap(sheet => collect(sheet.cssRules));
+    });
+
+    // Each navigation starts a fresh document. Styles cached after a prior
+    // activation are deliberately outside this first-use boundary.
+    for (available of [true, false]) {
+      await page.goto("/");
+      await page.locator("#shell-main-content").waitFor();
+      expect.soft(await researchRules(), "Home loads no Research desk styles").toEqual([]);
+      await expect(async () => {
+        await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", {
+          detail: { mode: "surface:researcher-desk" },
+        })));
+        await expect(page.getByText(available ? "Research is disabled" : "Research is not installed", { exact: true })).toBeVisible({ timeout: 3_000 });
+      }).toPass({ timeout: 30_000 });
+      expect.soft(await researchRules(), "Unavailable Research loads no desk styles").toEqual([]);
+    }
+
+    available = enabled = true;
+    await page.goto("/");
+    await enterResearchDesk(page);
+    await expect(page.locator(".research-desk")).toHaveCSS("display", "flex");
+    await expect.poll(async () => (await researchRules()).length).toBeGreaterThan(0);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const appearances = [];
+    for (const appearance of [
+      { theme: "coven", mode: "dark", width: 1280, height: 900 },
+      { theme: "coven", mode: "light", width: 390, height: 844 },
+      { theme: "tide", mode: "dark", width: 768, height: 1024 },
+    ]) {
+      await page.setViewportSize(appearance);
+      await page.evaluate(({ theme, mode }) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.mode = mode;
+      }, appearance);
+      const styles = await page.locator(".research-desk, .research-mission-detail__body, #research-mission-title").evaluateAll(nodes => nodes.map(node => {
+        const css = getComputedStyle(node);
+        return {
+          element: node.id || node.className,
+          display: css.display, direction: css.flexDirection, columns: css.gridTemplateColumns,
+          color: css.color, background: css.backgroundColor, fontSize: css.fontSize,
+          padding: css.padding, gap: css.gap, width: css.width, height: css.height,
+          containerName: css.containerName, containerType: css.containerType,
+        };
+      }));
+      appearances.push({ ...appearance, styles });
+    }
+    await testInfo.attach("research-computed-styles.json", {
+      body: JSON.stringify(appearances, null, 2), contentType: "application/json",
+    });
+  });
+
   test("Desk preserves readable title width with stored rail sizes", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.addInitScript(() => {

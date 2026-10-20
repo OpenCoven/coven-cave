@@ -37,6 +37,9 @@
       ],
       "@opencoven/research-client": [
         "./src/components/role-surfaces/research-package-absent.tsx"
+      ],
+      "@opencoven/research-room": [
+        "./src/components/role-surfaces/research-package-absent.tsx"
       ]
     }
   },
