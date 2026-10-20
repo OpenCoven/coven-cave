@@ -430,11 +430,15 @@ test("a remote-host handoff carries follow-up text through its owned session pro
 for (const departure of ["project", "new-chat"] as const) {
   test(`a delayed runtime save cannot send or move a draft after ${departure} departure`, async ({ page }) => {
     await setup(page);
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: { familiarId: "cody" } })));
     await switchProject(page, "alpha");
-    // switchProject returns as soon as the row is clicked. Typing before the
-    // composer binds to Alpha writes the draft under the previous key, and the
-    // key change then shows Alpha's empty draft — the "Received: ''" flake.
+    const priorComposer = await page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true }).elementHandle();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", {
+      detail: { familiarId: "cody", projectRoot: "/context/alpha" },
+    })));
+    // New Chat awaits project/familiar admission before replacing its composer.
+    // The old composer can already show Alpha, so the chip alone cannot prove
+    // the request finished. Begin the runtime-save scenario in the new instance.
+    await expect.poll(() => priorComposer!.evaluate((element) => element.isConnected)).toBe(false);
     await expect(page.getByTestId("chat-main").getByRole("button", { name: /^Project: Context alpha/ })).toBeVisible();
     let releaseSave!: () => void;
     const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
