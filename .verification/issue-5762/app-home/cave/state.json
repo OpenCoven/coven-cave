@@ -1,0 +1,50 @@
+{
+  "sessionFamiliar": {},
+  "sessionTitles": {},
+  "sessionTitleAuto": {},
+  "sessionTitleManual": {},
+  "sessionTitleRevision": {},
+  "sessionArchived": {},
+  "sessionSacrificed": {},
+  "sessionKeep": {},
+  "sessionPinned": {},
+  "sessionArchiveExtendedUntil": {},
+  "sessionOwned": {},
+  "sessionFlow": {},
+  "sessionFlowCompleted": {},
+  "sessionFlowAmbiguous": {},
+  "mergedPrAutoArchived": {},
+  "travel": {
+    "manualOffline": false,
+    "hubUnreachableSince": "2026-06-30T12:01:00.000Z",
+    "lastHubReachableAt": "2026-06-30T12:00:00.000Z",
+    "staleCache": true,
+    "localSubdaemonWakeRequestedAt": null,
+    "localBindHost": "127.0.0.1",
+    "offlineQueue": [
+      {
+        "id": "travel-20260630100100000-719exg",
+        "kind": "chat",
+        "summary": "Message to Sage",
+        "createdAt": "2026-06-30T10:01:00.000Z",
+        "status": "synced",
+        "payload": {
+          "familiarId": "sage",
+          "prompt": "queued while traveling"
+        }
+      },
+      {
+        "id": "travel-20260630120112000-2mmp9z",
+        "kind": "chat",
+        "summary": "Offline Sage message",
+        "createdAt": "2026-06-30T12:01:12.000Z",
+        "status": "pending",
+        "payload": {
+          "familiarId": "sage",
+          "prompt": "queued during private network drop",
+          "projectRoot": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification"
+        }
+      }
+    ]
+  }
+}

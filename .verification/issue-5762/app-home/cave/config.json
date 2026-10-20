@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "defaults": {
+    "harness": "codex",
+    "model": "openai/gpt-5.5"
+  },
+  "familiars": {
+    "sage": {
+      "harness": "codex"
+    }
+  },
+  "roles": [],
+  "addons": {
+    "github": false,
+    "code": false,
+    "browser": false,
+    "flow": false,
+    "journal": false,
+    "docs": false
+  },
+  "marketplace": {
+    "installed": {},
+    "knowledgePacks": []
+  },
+  "multiHost": {
+    "mode": "hub",
+    "hubUrl": "http://127.0.0.1:56582",
+    "executorUrls": []
+  },
+  "omnigent": {
+    "enabled": false,
+    "baseUrl": "",
+    "defaultAgentId": "",
+    "defaultHostId": "",
+    "defaultWorkspace": "",
+    "hostMap": {},
+    "hostWorkspaceMap": {},
+    "exposeHostsInComposer": true
+  },
+  "inferenceRoutes": {},
+  "remoteHosts": []
+}

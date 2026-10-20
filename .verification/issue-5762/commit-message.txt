@@ -1,0 +1,10 @@
+fix(chat): preserve lifecycle distinctions and qualify disclosure
+
+Distinguish approval and cancellation requests from confirmed outcomes, keep
+policy and user rejection separate, and preserve conservative replay folding.
+Extend the route fixture through raw storage, Client v1 and HFR exports; map
+all twelve criteria while retaining the explicit producer-authority gap.
+
+Refs #5762.
+
+Coven-Harness: codex / gpt-6

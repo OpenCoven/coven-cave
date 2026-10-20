@@ -1,0 +1,34 @@
+{
+  "sessionFamiliar": {},
+  "sessionTitles": {
+    "sparkle-title-cas": "Ordinary manual rename"
+  },
+  "sessionTitleAuto": {},
+  "sessionTitleManual": {
+    "sparkle-title-cas": true
+  },
+  "sessionTitleRevision": {
+    "sparkle-title-cas": 4
+  },
+  "sessionArchived": {},
+  "sessionSacrificed": {},
+  "sessionKeep": {},
+  "sessionPinned": {},
+  "sessionArchiveExtendedUntil": {
+    "sparkle-title-cas": "2026-10-25T06:19:42.760Z"
+  },
+  "sessionOwned": {},
+  "sessionFlow": {},
+  "sessionFlowCompleted": {},
+  "sessionFlowAmbiguous": {},
+  "mergedPrAutoArchived": {},
+  "travel": {
+    "manualOffline": false,
+    "hubUnreachableSince": null,
+    "lastHubReachableAt": null,
+    "staleCache": false,
+    "localSubdaemonWakeRequestedAt": null,
+    "localBindHost": "127.0.0.1",
+    "offlineQueue": []
+  }
+}

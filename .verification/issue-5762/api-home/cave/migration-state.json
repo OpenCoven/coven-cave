@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "migrationVersion": 2,
+  "updatedAt": "2026-10-18T06:19:42.515Z",
+  "entries": {
+    "cave-config.json": {
+      "legacy": "cave-config.json",
+      "next": "config.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-config.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/config.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.493Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-state.json": {
+      "legacy": "cave-state.json",
+      "next": "state.json",
+      "strategy": "state",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-state.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/state.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.495Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-board.json": {
+      "legacy": "cave-board.json",
+      "next": "board.json",
+      "strategy": "board",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-board.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/board.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.496Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-canvas.json": {
+      "legacy": "cave-canvas.json",
+      "next": "canvas.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-canvas.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/canvas.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.497Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-inbox.json": {
+      "legacy": "cave-inbox.json",
+      "next": "inbox.json",
+      "strategy": "inbox",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-inbox.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/inbox.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.498Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-inbox-prefs.json": {
+      "legacy": "cave-inbox-prefs.json",
+      "next": "inbox-prefs.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-inbox-prefs.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/inbox-prefs.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.499Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-projects.json": {
+      "legacy": "cave-projects.json",
+      "next": "projects.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-projects.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/projects.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.501Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-project-permissions.json": {
+      "legacy": "cave-project-permissions.json",
+      "next": "project-permissions.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-project-permissions.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/project-permissions.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.502Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-permission-config.json": {
+      "legacy": "cave-permission-config.json",
+      "next": "permission-config.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-permission-config.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/permission-config.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.502Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-automation-runs.json": {
+      "legacy": "cave-automation-runs.json",
+      "next": "automation-runs.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-automation-runs.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/automation-runs.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.503Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-removed-familiars.json": {
+      "legacy": "cave-removed-familiars.json",
+      "next": "removed-familiars.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-removed-familiars.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/removed-familiars.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.505Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-preferences.json": {
+      "legacy": "cave-preferences.json",
+      "next": "preferences.json",
+      "strategy": "preferences",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-preferences.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/preferences.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.508Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-preferences.json.locks": {
+      "legacy": "cave-preferences.json.locks",
+      "next": "preferences.json.locks",
+      "strategy": "directory",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-preferences.json.locks",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/preferences.json.locks",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.509Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-theme.json": {
+      "legacy": "cave-theme.json",
+      "next": "theme.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-theme.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/theme.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.512Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-message-feedback.json": {
+      "legacy": "cave-message-feedback.json",
+      "next": "message-feedback.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-message-feedback.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/message-feedback.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.513Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-mobile-paired.json": {
+      "legacy": "cave-mobile-paired.json",
+      "next": "mobile-paired.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-mobile-paired.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/mobile-paired.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.514Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-salem-pathfinder.json": {
+      "legacy": "cave-salem-pathfinder.json",
+      "next": "salem-pathfinder.json",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-salem-pathfinder.json",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/salem-pathfinder.json",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.514Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-backdrop.jpg": {
+      "legacy": "cave-backdrop.jpg",
+      "next": "backdrop.jpg",
+      "strategy": "manual",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-backdrop.jpg",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/backdrop.jpg",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.515Z",
+      "summary": "No legacy data remains."
+    },
+    "cave-conversations": {
+      "legacy": "cave-conversations",
+      "next": "conversations",
+      "strategy": "directory",
+      "legacyPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave-conversations",
+      "canonicalPath": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-5762-disclosure-qualification/.verification/issue-5762/api-home/cave/conversations",
+      "decision": "absent",
+      "decidedAt": "2026-10-18T06:19:42.515Z",
+      "summary": "No legacy data remains."
+    }
+  }
+}

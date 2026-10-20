@@ -1,0 +1,33 @@
+{
+  "sessionFamiliar": {},
+  "sessionTitles": {},
+  "sessionTitleAuto": {},
+  "sessionTitleManual": {},
+  "sessionTitleRevision": {},
+  "sessionArchived": {},
+  "sessionSacrificed": {},
+  "sessionKeep": {},
+  "sessionPinned": {},
+  "sessionArchiveExtendedUntil": {},
+  "sessionOwned": {},
+  "sessionFlow": {
+    "execution-one": {
+      "flowId": "flow-one",
+      "runId": "fb99a54b-f04e-4211-95e7-63e4d07fa541"
+    }
+  },
+  "sessionFlowCompleted": {
+    "execution-one": false
+  },
+  "sessionFlowAmbiguous": {},
+  "mergedPrAutoArchived": {},
+  "travel": {
+    "manualOffline": false,
+    "hubUnreachableSince": null,
+    "lastHubReachableAt": null,
+    "staleCache": false,
+    "localSubdaemonWakeRequestedAt": null,
+    "localBindHost": "127.0.0.1",
+    "offlineQueue": []
+  }
+}

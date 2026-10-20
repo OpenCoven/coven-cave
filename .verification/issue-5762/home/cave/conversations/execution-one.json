@@ -1,0 +1,14 @@
+{
+  "sessionId": "execution-one",
+  "familiarId": "cody",
+  "harness": "copilot",
+  "updatedAt": "2026-10-18T06:15:49.564Z",
+  "turns": [
+    {
+      "id": "answer",
+      "role": "assistant",
+      "text": "Retained result.",
+      "createdAt": "2020-01-01T00:00:00.000Z"
+    }
+  ]
+}
