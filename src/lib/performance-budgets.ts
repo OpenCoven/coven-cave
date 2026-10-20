@@ -42,6 +42,8 @@ export type PerformanceBudgetSurface = typeof PERFORMANCE_BUDGET_SURFACES[number
  * - `postbuild` — already enforced by a build-time gate; recorded here so the
  *   catalogue is complete, and deliberately NOT re-evaluated, because two gates
  *   over one number drift apart.
+ * - `browser-performance` — enforced by the production browser fixture; the
+ *   file/list report delegates without pretending it measured that workload.
  * - `pending` — the value is approved and recorded, but no fixture produces the
  *   measurement yet. Reported on every run so the gap stays visible instead of
  *   reading as a pass.
@@ -49,6 +51,7 @@ export type PerformanceBudgetSurface = typeof PERFORMANCE_BUDGET_SURFACES[number
 export const PERFORMANCE_BUDGET_GATES = [
   "performance-report",
   "postbuild",
+  "browser-performance",
   "pending",
 ] as const;
 export type PerformanceBudgetGate = typeof PERFORMANCE_BUDGET_GATES[number];
@@ -477,8 +480,8 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     unit: "ms",
     direction: "lower-is-better",
     limit: 200,
-    gate: "pending",
-    source: "cave-o8gc4: 10k-event stream fixture is not built yet",
+    gate: "browser-performance",
+    source: "tests/chat-stream-performance.spec.ts",
   },
   {
     id: "cli.doctor.p95-ms",
@@ -608,8 +611,9 @@ function headroomOf(budget: PerformanceBudget, value: number, limit: number): {
  * crashed emits no metric, and treating "no measurement" as "no breach" would
  * turn every such outage into a green run. That is the same asymmetry the
  * maintenance gate takes when a plane's entry is missing rather than false.
- * `pending` and `postbuild` entries never fail this evaluation — the first has
- * nothing to measure, and the second is enforced by the gate it names.
+ * `pending` entries have nothing to measure here. `postbuild` and
+ * `browser-performance` are enforced by the gates they name and never receive
+ * a fabricated verdict from this file/list evaluation.
  *
  * A measurement taken at the wrong fixture scale is treated as no measurement,
  * for the same reason. Every enforced limit here is a number about a specific
@@ -644,7 +648,7 @@ export function evaluatePerformanceBudgets(
         note: null,
       };
     }
-    if (budget.gate === "postbuild") {
+    if (budget.gate === "postbuild" || budget.gate === "browser-performance") {
       return {
         budget,
         value: null,

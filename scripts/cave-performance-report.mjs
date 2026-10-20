@@ -364,7 +364,7 @@ function budgetRow(result) {
     ? "—"
     : formatMetricValue(result.value, result.budget.unit);
   const headroom = result.headroomPct === null
-    ? result.budget.gate === "postbuild"
+    ? result.verdict === "delegated"
       ? `enforced by \`${result.budget.source}\``
       : result.note ?? result.budget.source
     : `${result.headroomPct.toFixed(1)}%` +
@@ -431,7 +431,7 @@ ${rows.join("\n")}
 
 - Budget verdict: **${report.summary.budgetPass ? "PASS" : "FAIL"}**
 - Enforced here: ${report.budgets.enforcedCount} · breached: ${report.budgets.breachCount} · unmeasured: ${report.budgets.unmeasuredCount}
-- Enforced by a build gate: ${report.budgets.delegatedCount} · awaiting a fixture: ${report.budgets.pendingCount}
+- Enforced by separate gates: ${report.budgets.delegatedCount} · awaiting a fixture: ${report.budgets.pendingCount}
 - Fixture profile: \`${report.controls.conversationFixture?.profile ?? "unknown"}\` (${report.controls.conversationFixture?.fileCount ?? "?"} conversations)
 
 An enforced budget with no measurement counts as a failure, not a pass: a

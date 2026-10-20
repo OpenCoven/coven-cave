@@ -1,8 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { resolvePort } from "./scripts/ports.mjs";
 
 // Playwright config — three viewport projects so the same specs in
@@ -24,15 +24,21 @@ import { resolvePort } from "./scripts/ports.mjs";
 // need a daemon should mock /api/*).
 
 const PORT = resolvePort("e2e", process.env);
-const productionE2E = !!process.env.CI;
+const streamPerformance = process.env.CAVE_STREAM_PERFORMANCE === "1";
+const streamStateRoot = process.env.CAVE_STREAM_STATE_ROOT;
+if (streamPerformance && (!streamStateRoot || !isAbsolute(streamStateRoot) || !existsSync(streamStateRoot))) {
+  throw new Error("Run the stream benchmark with pnpm performance:stream for isolated state");
+}
+const fixtureTmpRoot = streamPerformance ? streamStateRoot! : tmpdir();
+const productionE2E = !!process.env.CI || streamPerformance;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_RUN_ID = randomUUID();
-const E2E_PROJECTS_PATH = join(tmpdir(), `cave-e2e-projects-${E2E_RUN_ID}.json`);
-const E2E_QUEUE_PROJECT_PATH = join(tmpdir(), `cave-e2e-queue-project-${E2E_RUN_ID}.json`);
-const E2E_PROJECT_PERMISSIONS_PATH = join(tmpdir(), `cave-e2e-project-permissions-${E2E_RUN_ID}.json`);
-const E2E_COVEN_HOME = join(tmpdir(), `cave-e2e-coven-${E2E_RUN_ID}`);
-const E2E_CAVE_HOME = join(tmpdir(), `cave-e2e-cave-${E2E_RUN_ID}`);
-const E2E_COVEN_SOCKET = join(tmpdir(), `cave-e2e-socket-${E2E_RUN_ID}.sock`);
+const E2E_PROJECTS_PATH = join(fixtureTmpRoot, `cave-e2e-projects-${E2E_RUN_ID}.json`);
+const E2E_QUEUE_PROJECT_PATH = join(fixtureTmpRoot, `cave-e2e-queue-project-${E2E_RUN_ID}.json`);
+const E2E_PROJECT_PERMISSIONS_PATH = join(fixtureTmpRoot, `cave-e2e-project-permissions-${E2E_RUN_ID}.json`);
+const E2E_COVEN_HOME = join(fixtureTmpRoot, `cave-e2e-coven-${E2E_RUN_ID}`);
+const E2E_CAVE_HOME = join(fixtureTmpRoot, `cave-e2e-cave-${E2E_RUN_ID}`);
+const E2E_COVEN_SOCKET = join(fixtureTmpRoot, `cave-e2e-socket-${E2E_RUN_ID}.sock`);
 const E2E_LOCAL_PEER_FIXTURE = "cave-e2e-local-peer-fixture";
 const E2E_MOBILE_ACCESS_FIXTURE = "test-fixture";
 const E2E_AGENTIC_RECOMMENDATIONS =
@@ -95,6 +101,7 @@ writeFileSync(E2E_QUEUE_PROJECT_PATH, JSON.stringify({ version: 1, projectId: "e
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
+  globalTimeout: streamPerformance ? 20 * 60_000 : undefined,
   forbidOnly: !!process.env.CI,
   // Retry once everywhere: the dev server compiles routes on first hit, so under
   // parallel load a cold route can exceed a test's timeout on the first try and
@@ -248,6 +255,17 @@ export default defineConfig({
     // to an arbitrary server that may be using the developer's real ~/.coven.
     reuseExistingServer: false,
     env: {
+      ...(streamPerformance ? {
+        HOME: join(fixtureTmpRoot, "home"),
+        USERPROFILE: join(fixtureTmpRoot, "home"),
+        XDG_CONFIG_HOME: join(fixtureTmpRoot, "config"),
+        XDG_CACHE_HOME: join(fixtureTmpRoot, "cache"),
+        XDG_DATA_HOME: join(fixtureTmpRoot, "data"),
+        COVEN_CAVE_ENV_FILE: join(fixtureTmpRoot, "cave.env"),
+        COVEN_VAULT_FILE: join(fixtureTmpRoot, "vault.yaml"),
+        COVEN_GITHUB_SUBSCRIPTIONS_PATH: join(fixtureTmpRoot, "subscriptions.json"),
+        COVEN_RESEARCH_ENABLED: "0",
+      } : {}),
       COVEN_CAVE_E2E: "1",
       // The existing suite covers every registered room, as next dev did.
       // Keep that explicit in fixture builds; released apps keep their allowlist.
@@ -273,7 +291,7 @@ export default defineConfig({
       // real ~/.coven directory. A per-config UUID prevents concurrent runs or
       // later PID reuse from sharing stale state while remaining stable for
       // every request in this run.
-      COVEN_PREFERENCES_PATH: join(tmpdir(), `cave-e2e-preferences-${E2E_RUN_ID}.json`),
+      COVEN_PREFERENCES_PATH: join(fixtureTmpRoot, `cave-e2e-preferences-${E2E_RUN_ID}.json`),
       // Route every remaining server-side home/socket lookup into this run's
       // synthetic state. Targeted browser routes mock memory payloads, but
       // project dependencies and shell boot probes must also never inspect a
@@ -286,8 +304,8 @@ export default defineConfig({
       CAVE_PROJECTS_PATH_OVERRIDE: E2E_PROJECTS_PATH,
       CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: E2E_PROJECT_PERMISSIONS_PATH,
       CAVE_QUEUE_PROJECT_PATH_OVERRIDE: E2E_QUEUE_PROJECT_PATH,
-      COVEN_BACKDROP_PATH: join(tmpdir(), `cave-e2e-backdrop-${E2E_RUN_ID}.jpg`),
-      COVEN_THEME_PATH: join(tmpdir(), `cave-e2e-theme-${E2E_RUN_ID}.json`),
+      COVEN_BACKDROP_PATH: join(fixtureTmpRoot, `cave-e2e-backdrop-${E2E_RUN_ID}.jpg`),
+      COVEN_THEME_PATH: join(fixtureTmpRoot, `cave-e2e-theme-${E2E_RUN_ID}.json`),
     },
   },
 });
