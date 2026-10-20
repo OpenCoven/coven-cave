@@ -252,6 +252,7 @@ async function writePermissions() {
 }
 
 const realNow = Date.now;
+let flushSummaryIndex = async () => {};
 try {
   process.env.COVEN_HOME = covenHome;
   delete process.env.COVEN_SOCKET;
@@ -259,12 +260,14 @@ try {
   process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = permissionsPath;
 
   const { computeSessionsList } = await import("./sessions-list.ts");
-  const { saveConversation, clearConversationListMetadataCache } = await import(
+  const { saveConversation, clearConversationListMetadataCache, flushConversationSummaryIndex } = await import(
     "../cave-conversations.ts"
   );
+  flushSummaryIndex = flushConversationSummaryIndex;
   const { clearCaveStoreReadCache } = await import("./store-read-cache.ts");
 
   async function reset() {
+    await flushSummaryIndex();
     await rm(scratchRoot, { recursive: true, force: true });
     await mkdir(covenHome, { recursive: true });
     await mkdir(projectRoot, { recursive: true });
@@ -785,6 +788,8 @@ workspace = "${relocatedProjectRoot}
 } finally {
   Date.now = realNow;
   await stopDaemon();
+  // A scheduled or in-flight summary write must settle before its directory is removed.
+  await flushSummaryIndex();
   for (const [key, value] of Object.entries(previousEnv)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;

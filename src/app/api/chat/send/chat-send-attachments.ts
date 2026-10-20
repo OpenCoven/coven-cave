@@ -210,10 +210,13 @@ export function cleanupStagedAttachmentFiles(filePaths: ReadonlyMap<number, stri
 /**
  * Resolve at most ten repository-relative files without allowing absolute,
  * traversal, or symlink-escape paths into a harness prompt.
+ * `root` is the server-authorized runtime cwd. The optional picker root is
+ * only a consistency check, never authority to select a different directory.
  */
 export async function resolveMentionedFiles(
   relPaths: unknown,
   root: unknown,
+  mentionedFilesRoot?: unknown,
 ): Promise<string[]> {
   if (!Array.isArray(relPaths) || relPaths.length === 0) return [];
   if (typeof root !== "string" || !path.isAbsolute(root)) return [];
@@ -221,6 +224,10 @@ export async function resolveMentionedFiles(
   try {
     realRoot = await realpath(path.resolve(/* turbopackIgnore: true */ root));
     if (!(await stat(realRoot)).isDirectory()) return [];
+    if (mentionedFilesRoot !== undefined) {
+      if (typeof mentionedFilesRoot !== "string" || !path.isAbsolute(mentionedFilesRoot)) return [];
+      if (await realpath(mentionedFilesRoot) !== realRoot) return [];
+    }
   } catch {
     return [];
   }
