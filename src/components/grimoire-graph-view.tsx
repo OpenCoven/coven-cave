@@ -228,6 +228,13 @@ function GraphColorDot({ color }: { color: string }) {
   return <span aria-hidden className="grimoire-graph-dot" style={{ background: color }} />;
 }
 
+export type GraphNavigation = {
+  selectedId: string | null;
+  trail: string[];
+  query: string;
+  explorerOpen: boolean;
+};
+
 export function GrimoireGraphView({
   graph,
   meta,
@@ -240,6 +247,8 @@ export function GrimoireGraphView({
   familiars = [],
   onRetry,
   onOpen,
+  initialNavigation,
+  onNavigationChange,
 }: {
   /** The graph to render — full-corpus scan when available, else the
    *  client-built knowledge graph (so something always paints instantly). */
@@ -260,6 +269,8 @@ export function GrimoireGraphView({
   familiars?: readonly { id: string; color?: string | null; display_name?: string }[];
   onRetry?: () => void;
   onOpen: (ref: WikiDocRef) => void;
+  initialNavigation?: GraphNavigation;
+  onNavigationChange?: (navigation: GraphNavigation) => void;
 }) {
   const settingsId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -268,8 +279,8 @@ export function GrimoireGraphView({
   const reducedMotion = usePrefersReducedMotion();
 
   const [prefs, setPrefs] = useState<GraphPrefs>(readPrefs);
-  const [query, setQuery] = useState("");
-  const [explorerOpen, setExplorerOpen] = useState(false);
+  const [query, setQuery] = useState(initialNavigation?.query ?? "");
+  const [explorerOpen, setExplorerOpen] = useState(initialNavigation?.explorerOpen ?? false);
   const [gestureMode, setGestureMode] = useState<"orbit" | "pan">("orbit");
   const gestureModeRef = useRef(gestureMode);
   gestureModeRef.current = gestureMode;
@@ -279,9 +290,13 @@ export function GrimoireGraphView({
   const filtersTriggerRef = useRef<HTMLButtonElement>(null);
   // The selected node: spotlighted, centred, and described by the focus panel.
   // Hover lives in a ref — it changes every mousemove and must not re-render.
-  const [stickyId, setStickyId] = useState<string | null>(null);
+  const [stickyId, setStickyId] = useState<string | null>(initialNavigation?.selectedId ?? null);
   // The traversal path, oldest first, for Back.
-  const [trail, setTrail] = useState<string[]>([]);
+  const [trail, setTrail] = useState<string[]>(initialNavigation?.trail ?? []);
+
+  useEffect(() => {
+    onNavigationChange?.({ selectedId: stickyId, trail, query, explorerOpen });
+  }, [explorerOpen, onNavigationChange, query, stickyId, trail]);
 
   useEffect(() => {
     try {
@@ -430,6 +445,8 @@ export function GrimoireGraphView({
   const needsFitRef = useRef(prefs.dims === 3 ? savedCamera === null : savedView === null);
   const dragRef = useRef<{
     pointerId: number;
+    button: number;
+    openOnClick: boolean;
     mode: "node" | "pan" | "orbit";
     nodeIndex: number;
     startX: number;
@@ -881,11 +898,14 @@ export function GrimoireGraphView({
     (node: DocGraphNode | undefined) => {
       if (!node) return;
       if (node.ref) {
+        // Publish synchronously: opening the reader unmounts this canvas before
+        // a selection effect could save the new node and its traversal trail.
+        onNavigationChange?.({ selectedId: node.id, trail: [...trail.filter((id) => id !== node.id), node.id].slice(-TRAIL_LIMIT), query, explorerOpen: true });
         announcer.announce(`Opening ${node.title}`, "polite");
         onOpen(node.ref);
       }
     },
-    [announcer, onOpen],
+    [announcer, onNavigationChange, onOpen, query, trail],
   );
 
   const goBack = useCallback(() => {
@@ -1138,10 +1158,13 @@ export function GrimoireGraphView({
       }
       multiTouchRef.current = false;
       const nodeIndex = hitTest(e.clientX, e.clientY);
-      const panGesture = dimsRef.current === 2 || gestureModeRef.current === "pan" || e.shiftKey || e.button === 2 || e.button === 1;
+      const modifier = e.metaKey || e.ctrlKey;
+      const panGesture = dimsRef.current === 2 || gestureModeRef.current === "pan" || modifier || e.shiftKey || e.button === 2 || e.button === 1;
       dragRef.current = {
         pointerId: e.pointerId,
-        mode: nodeIndex >= 0 && !e.shiftKey && e.button === 0 && gestureModeRef.current !== "pan" ? "node" : panGesture ? "pan" : "orbit",
+        button: e.button,
+        openOnClick: e.button === 0 && modifier && !e.shiftKey && !e.altKey,
+        mode: nodeIndex >= 0 && !modifier && !e.shiftKey && e.button === 0 && gestureModeRef.current !== "pan" ? "node" : panGesture ? "pan" : "orbit",
         nodeIndex,
         startX: e.clientX,
         startY: e.clientY,
@@ -1257,6 +1280,7 @@ export function GrimoireGraphView({
         scheduleFrame();
         return; // orbit / pan
       }
+      if (drag.button !== 0) return;
       // Click: select a node (fly to it + focus panel), or clear on background.
       const idx = hitTest(e.clientX, e.clientY);
       if (idx < 0) {
@@ -1266,10 +1290,14 @@ export function GrimoireGraphView({
       }
       const node = nodeById.get(sim.ids[idx]);
       if (!node) return;
+      if (drag.openOnClick && idx === drag.nodeIndex && node.ref) {
+        openNode(node);
+        return;
+      }
       setStickyId((prev) => (prev === node.id ? null : node.id));
       if (stickyRef.current !== node.id) selectNode(node.id);
     },
-    [hitTest, nodeById, scheduleFrame, selectNode],
+    [hitTest, nodeById, openNode, scheduleFrame, selectNode],
   );
 
   // Wheel must be non-passive to preventDefault (page scroll).
@@ -1444,7 +1472,10 @@ export function GrimoireGraphView({
     <button
       key={`${node.id}${extra ?? ""}`}
       type="button"
-      onClick={onClick}
+      onClick={(event) => {
+        if ((event?.metaKey || event?.ctrlKey) && node.ref) openNode(node);
+        else onClick();
+      }}
       onMouseEnter={() => {
         hoverRef.current = node.id;
         scheduleFrame();
@@ -1673,7 +1704,7 @@ export function GrimoireGraphView({
       <canvas
         ref={canvasRef}
         role="img"
-        aria-label={`Document graph: ${summary}. Tab and Shift+Tab step through the most-connected documents, Enter opens the focused one; ${three ? "arrow keys orbit" : "arrow keys pan"}, plus and minus zoom, 0 fits the view; with a document selected, ] and [ step through its relations and Backspace goes back. Escape clears the selection; the next Tab leaves the canvas.`}
+        aria-label={`Document graph: ${summary}. Command or Control-drag pans; Command or Control-click opens a document. Tab and Shift+Tab step through the most-connected documents, Enter opens the focused one; ${three ? "arrow keys orbit" : "arrow keys pan"}, plus and minus zoom, 0 fits the view; with a document selected, ] and [ step through its relations and Backspace goes back. Escape clears the selection; the next Tab leaves the canvas.`}
         tabIndex={0}
         className="focus-ring absolute inset-0 h-full w-full cursor-grab touch-none"
         onPointerDown={onPointerDown}
@@ -1835,7 +1866,8 @@ export function GrimoireGraphView({
         {summary}
         {scanning ? " · scanning…" : ""}
         {memoryTruncated && meta ? ` · ${meta.memory.scanned} of ${meta.memory.total} memory files scanned${meta.memory.scoped ? " in this familiar selection" : ""}` : ""}
-        {three && gestureMode === "orbit" ? " · Drag to orbit · Shift-drag to pan · Pinch to zoom" : " · Drag to pan · Pinch to zoom"}
+        {three && gestureMode === "orbit" ? " · Drag to orbit · Shift or ⌘/Ctrl-drag to pan · Pinch to zoom" : " · Drag to pan · Pinch to zoom"}
+        {" · ⌘/Ctrl-click to open"}
       </div>
     </div>
   );
