@@ -48,6 +48,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`windows-runtime-cache.md`](windows-runtime-cache.md) — the content-addressed archive layer and its two digests
 - [`windows-update-preparation.md`](windows-update-preparation.md) — download, verify, and install as three distinct phases
 - [`windows-upgrade-benchmark.md`](windows-upgrade-benchmark.md) — what `scripts/windows-upgrade-diagnostics.ps1` captures
+- [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the daemon connectivity launch flow, readiness checks, fault coverage, and measurement contract; the `cave-58eoq` program's tracked work all merged (#4485–#4528), and its residual risks have no issue yet
 
 ### Mobile and handoff
 
@@ -84,6 +85,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 - [`chat-image-carousel.md`](chat-image-carousel.md) — image carousel markers, reusing the protocol above
 - [`chat-proposal-review-card.md`](chat-proposal-review-card.md) — proposal-review receipt marker and evidence-only card (#5520)
 - [`research-host-contract.md`](research-host-contract.md) — explicit core adapters and shared saved links for the optional Research package
+- [`research-core-boundary.md`](research-core-boundary.md) — the optional Research boundary and the shared contracts core keeps; shipped in #6025 and enforced by `research-core-boundary.test.ts` and `research-maintenance-boundary.test.ts`
 - [`research-run-surface.md`](research-run-surface.md) — durable ResearchMission projections across Chat, Quick Chat, and Research Desk
 - [`execution-analytics.md`](execution-analytics.md) — model- and harness-level analytics: the three model identities, why harness version is never recorded, coverage as the honesty layer, and what the aggregate discards
 
@@ -120,16 +122,12 @@ transport reuses the existing authenticated cache and revision/write guards.
 
 ## Program
 
-- [`research-core-boundary.md`](research-core-boundary.md) — proposed optional Research boundary, shared contracts to retain, and extraction acceptance criteria
-- [`research-extraction-verification.md`](research-extraction-verification.md) — candidate compatibility evidence, size and timing measurements, and remaining extraction acceptance
-
 Active initiatives. Parts have shipped; parts have not. Each states which.
 
-- [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the reliability program (`cave-58eoq`); Windows supervision and authenticated native readiness have shipped
-- [`golden-paths.md`](golden-paths.md) — the eight journeys the Cave must make effortless, with per-item shipped/broken status
-- [`craft-ux.md`](craft-ux.md) — a friction inventory of the craft authoring flow with a reuse-first enablement plan
 - [`desktop-onboarding.md`](desktop-onboarding.md) — the evidence baseline and product contract for download → first successful familiar response, separating confirmed behavior from proposals still needing usability and packaged-app testing
-- [`ci-implementation-plan.md`](ci-implementation-plan.md) — the release-candidate CI rollout (`cave-7kix8.8`): signed promotion, full validation, and the parallel `PR checks` context have shipped; retiring routine PR fanout and the protection switch remain
+- [`ci-implementation-plan.md`](ci-implementation-plan.md) — the release-candidate CI rollout: signed promotion, full validation, the parallel `PR checks` context, and promotion at real release cuts have shipped; the protection switch, retiring routine PR fanout, and verifying the lean gate remain, with no tracking issue yet (#6111)
+- [`roadmaps/coven-automations-v1.md`](roadmaps/coven-automations-v1.md) — the cross-repository Coven Automations v1 program (`OpenCoven/coven#854`) and its [machine-readable mapping](roadmaps/coven-automations-v1.mapping.json): foundation, protocol, scheduler reliability, embodiment, and authority have closed; dispatch-time trust (`coven#857`), certification (`coven#858`), the SDK, Cave oversight (#5217), Psyche, Docs, and organization canaries remain, and the 2026-10-18 release checkpoint is no-go
+- [`performance/ios-performance-audit.md`](performance/ios-performance-audit.md) — the native iOS performance record (opened 2026-08-10, updated through 2026-10-03): instrumentation, the Release capture driver, and the budgets ratified on 2026-10-02 (#5292), none CI-enforced; the main-thread hitch budget (#5748), inline-zoom device evidence (#5314), and the physical-device gates remain
 
 ---
 
@@ -148,6 +146,12 @@ Point-in-time records. Read for intent, not for current behavior.
 - [`mobile-readiness.md`](mobile-readiness.md) — manual dogfood checklist for the `feat/mobile-readiness` rollout
 - [`windows-sidecar-compression.md`](windows-sidecar-compression.md) — a zstd-level benchmark against a fixed production payload
 - [`salem-chat-api-model.md`](salem-chat-api-model.md) — an outbound brief for the `opencoven-chat-api` repo, not a Cave contract
+- [`golden-paths.md`](golden-paths.md) — the eight journeys mapped on 2026-07-09; every path's enablement plan has shipped (#2767–#5132), and several surfaces it describes have since moved
+- [`craft-ux.md`](craft-ux.md) — the craft authoring audit and redesign; all six checkpoints shipped on 2026-07-15 (#3188–#3208), and `marketplace.md` (Living, above) describes the flow now
+- [`research-extraction-verification.md`](research-extraction-verification.md) — candidate compatibility evidence and size and timing measurements for the Research extraction, which merged as #6025 (#5997 closed)
+- [`plans/2026-07-26-dynamic-claude-opus-5.md`](plans/2026-07-26-dynamic-claude-opus-5.md) — capability-gated Claude Opus 5 across Claude Code, Copilot CLI, and OpenCode; shipped in #3954, and #5541 later limited the `opus` alias to Claude Code below 2.1.280
+- [`plans/2026-07-29-ios-new-chat-project-contract.md`](plans/2026-07-29-ios-new-chat-project-contract.md) — binding native iOS first turns to a familiar-authorized project; shipped in #4067 and reworked by the chat-only shell (#5379); the current contract is [`specs/ios-new-chat-project-contract.md`](specs/ios-new-chat-project-contract.md)
+- [`contracts/mobile-recovery-contract.md`](contracts/mobile-recovery-contract.md) — the transport-recovery contract proposed after the 2026-08-26 Serve-drift incident (#5051); #5056 and #5270 implemented its core rules differently, and `mobile-tailscale.md` (Living, above) describes current behavior
 - [`coven-autoloop-cli-wrapper-spec.md`](coven-autoloop-cli-wrapper-spec.md) — scoping handoff for the unbuilt `bin/coven-autoloop` write path; the read path in `src/lib/research-autoloop.ts` already ships and is not what this describes
 - [`2026-08-28 Coven Grimoire frame conformance`](audits/2026-08-28-coven-grimoire-frame-conformance.md) (`cave-wc0j7`) — frame-vs-surface conformance audit for `Coven Grimoire.dc.html`: the frame is a familiar-authored *publication* (issue contents, bylines, Share) while the repo's grimoire is the *memory* knowledge store; the collision is documented and the frame stays unbuilt pending a product decision
 
@@ -162,9 +166,12 @@ Point-in-time records. Read for intent, not for current behavior.
 ## Other trees under `docs/`
 
 - [`api/`](api) — reference documentation for versioned public HTTP surfaces, listed individually under **Living** above
-- [`superpowers/`](superpowers) — the approved spec and plan store that issues and PRs cite (142 files)
-- [`specs/`](specs) — **frozen** (55 files). The earlier flat convention, which overlapped `superpowers/` from 2026-06-30 to 2026-08-06. Closed to new files, and deliberately not migrated: issues, PRs, and older plans cite these by path. See [`specs/README.md`](specs/README.md) for the reasoning and for the three undated standing contracts it holds
-- [`plans/`](plans), [`audits/`](audits) — small point-in-time sets predating the `superpowers/` store
+- [`superpowers/`](superpowers) — the approved spec and plan store that issues and PRs cite
+- [`specs/`](specs) — **frozen** (55 files at the freeze, plus three added after it; `docs-index.test.mjs` pins the count). The earlier flat convention, which overlapped `superpowers/` from 2026-06-30 to 2026-08-06. Closed to new files, and deliberately not migrated: issues, PRs, and older plans cite these by path. See [`specs/README.md`](specs/README.md) for the reasoning and for the three undated standing contracts it holds
+- [`plans/`](plans), [`audits/`](audits), [`contracts/`](contracts) — small point-in-time sets predating the `superpowers/` store; their documents are listed under **Historical** above
+- [`roadmaps/`](roadmaps), [`performance/`](performance) — program records kept current; listed under **Program** above
+- [`design/`](design) — runtime-activity design notes and their [`evidence/`](design/evidence) for the chat-observability work (#5761, #5767)
+- [`client-v1-conformance-results/`](client-v1-conformance-results), [`release-acceptance-results/`](release-acceptance-results) — machine-written run records; see [client-v1 conformance](workflows/client-v1-conformance.md) and [release acceptance](workflows/release-acceptance.md)
 - [`design-handoff/`](design-handoff), [`diagrams/`](diagrams), [`screenshots/`](screenshots), [`familiar-chatout-codex/`](familiar-chatout-codex) — supporting material
 
 ## Keeping this honest
