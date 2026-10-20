@@ -55,6 +55,25 @@ A server on another computer is refused until you turn on **Allow servers on
 other computers** in Settings, or set `CAVE_LOCAL_MODELS_ALLOW_REMOTE=1`.
 That computer then receives your prompts and anything you share in chat.
 
+### LM Studio's LM Link
+
+LM Link lets LM Studio serve a model loaded on another of your computers
+through the local server, so `http://127.0.0.1:1234` can answer with
+inference that happens elsewhere. LM Studio's REST API doesn't say which
+computer a model is on, so Cave asks LM Studio's `lms` command (`lms ls` and
+`lms link status`) after the server answers.
+
+- Settings → Local models marks those models **LM Link** with the
+  computer's name.
+- Chats don't offer them, and a turn that names one is refused, unless
+  **Allow servers on other computers** is on. The same permission covers a
+  server address on another computer.
+- A model that exists on this computer and on a linked one counts as linked,
+  because LM Studio sends it to whichever device is preferred.
+- If `lms` isn't installed or doesn't answer, Settings says Cave couldn't
+  check. Nothing is blocked then, so with LM Link on, a model may run on
+  another computer.
+
 ## What stays on this computer
 
 - There is no cloud fallback. Every launch pins Codex's local provider. A
@@ -111,7 +130,8 @@ inherited from its own environment, so only the configured server is used.
 | … doesn't support tool calling | Choose a model marked **Tool support** in Settings. |
 | The server at … didn't answer like Ollama | The address points at something else, often the other server's port. Check it in Settings. |
 | … isn't this computer | The address is on another computer. Allow remote servers in Settings, or use a local address. |
-| The model menu is empty | Settings → Local models says why: server stopped, address invalid, or no tool-capable model. |
+| … runs on *computer* through LM Link | LM Studio serves that model from another computer. Load a model on this computer, or allow servers on other computers in Settings. |
+| The model menu is empty | Settings → Local models says why: server stopped, address invalid, no tool-capable model, or only LM Link models while servers on other computers are off. |
 
 Codex sends long instructions with every turn. If replies seem to ignore the
 conversation, the server may be truncating the prompt. Raise the model's

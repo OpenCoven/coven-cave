@@ -37,6 +37,12 @@ describe("ModelInventoryFeedback for local servers", () => {
     );
   });
 
+  it("says when every tool-capable model runs on another computer through LM Link", () => {
+    expect(status("codex-lmstudio", "local-models-on-other-computers")).toBe(
+      "LM Studio’s tool-capable models run on another computer through LM Link. Load one on this computer, or allow servers on other computers in Settings → Local models.",
+    );
+  });
+
   it("offers a retry, and leaves other runtimes' copy unchanged", () => {
     const markup = renderToStaticMarkup(
       <ModelInventoryFeedback runtime="codex-ollama" modelInventory={inventory("local-server-unavailable")} modelCount={0} />,
