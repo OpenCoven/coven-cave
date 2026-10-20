@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/github-watcher.behavior.test.ts",
     "src/lib/chat-tool-milestones.test.ts",
     "src/app/api/chat/scheduled/route.test.ts",
     "src/components/chat-send-later.test.ts",
@@ -2609,6 +2610,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/lib/github-watcher.behavior.test.ts",
   "src/components/automations/cron-detail-panel-rebase.behavior.test.tsx",
   "src/components/model-inventory-feedback.test.tsx",
   "src/components/settings-local-models.test.tsx",
