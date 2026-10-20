@@ -64,8 +64,8 @@ All compatibility aliases remain accounted for:
 | `flow` | `inbox`; the retired standalone Flow view does not imply the Flow engine is removed |
 | `calendar` | `inbox`, Calendar tab |
 | `familiar-work-queue` | `board`, Queue tab |
-| `roles` | `marketplace`, Roles section |
-| `capabilities` | `marketplace`, Capabilities section |
+| `roles` | `marketplace`, Browse; the former Roles section was removed, while role APIs remain live |
+| `capabilities` | `marketplace`, Browse; the former Capabilities section was removed, while capability APIs remain live |
 | `code`, `github` | `surface:code`; GitHub also requests Activity |
 
 Persisted mode strings and deep links need an explicit unavailable destination
@@ -133,7 +133,7 @@ capability, not approval of its current startup cost.
 | Scheduled chat | 15-second unreferenced interval; global timer; production-build guard | Preserves scheduled send admission. Define shutdown/drain and disabled-feature behavior; unref alone is not cancellation. |
 | GitHub watcher | Immediate tick and 60-second interval; enabled subscriptions/token checked inside tick; single-flight flag | Visibility does not disable its timer. Fetch deadlines and stopping owned work require verification; catching a rejection does not bound a never-settling request. |
 | Backup sync | Startup tick, interval and quit hook; configuration gates actual sync | Core recovery is separate from optional remote sync. Verify disabled idle cost, bounded sync and quit behavior. |
-| Event-plane daemon/roster/Board watchers | Started only with `COVEN_CAVE_EVENT_PLANE_ENABLED=1` | Existing feature gate. Measure and verify watcher disposal and fallback polling for each client/platform. |
+| Event-plane daemon/roster/Board watchers | Started when `COVEN_CAVE_EVENT_PLANE_ENABLED` is `1` or `true` (trimmed and case-insensitive) | Existing feature gate. Measure and verify watcher disposal and fallback polling for each client/platform. |
 
 Do not stop an execution or required privacy task just because its room closes.
 UI subscriptions belong to UI lifetime. Durable jobs belong to their explicit
