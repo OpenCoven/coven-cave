@@ -92,21 +92,25 @@ useful evidence; reactivating the monolith is not the proposed architecture.
 
 ## Platform comparison
 
-Release v0.2.5 publishes the following user installers:
+Release v0.5.14 publishes the following user installers (file names follow the same pattern each release; checked 2026-10-20, #6111):
 
 | Platform | Published installer | Current trust state | Main risks |
 | --- | --- | --- | --- |
-| macOS Apple Silicon | `CovenCave-v0.2.5-aarch64.dmg` | Signed and notarized | Wrong Intel asset, packaged WKWebView behavior, folder picker, inherited runtime PATH. |
-| macOS Intel | `CovenCave-v0.2.5-x86_64.dmg` | Signed and notarized | Wrong Apple Silicon asset, packaged WKWebView behavior, folder picker, inherited runtime PATH. |
-| Windows x64 | `CovenCave_0.2.5_x64_en-US.msi` | Authenticode-signed MSI (#5758); inner executables unsigned | SmartScreen publisher reputation, slow MSI upgrades, app-data permissions, npm `.cmd` launchers, PTY behavior. |
-| Linux x64 | `CovenCave_0.2.5_amd64.AppImage` | Detached signature published | Executable bit, FUSE availability, desktop integration, picker/PTY differences. |
+| macOS Apple Silicon | `CovenCave-v0.5.14-aarch64.dmg` | Signed and notarized | Wrong Intel asset, packaged WKWebView behavior, folder picker, inherited runtime PATH. |
+| macOS Intel | `CovenCave-v0.5.14-x86_64.dmg` | Signed and notarized | Wrong Apple Silicon asset, packaged WKWebView behavior, folder picker, inherited runtime PATH. |
+| Windows x64 | `CovenCave_0.5.14_x64_en-US.msi` | Not Authenticode-signed: #5971 deferred the signing #5758 added, and #5739 tracks restoring it; updater signature and attestation published | SmartScreen publisher reputation, slow MSI upgrades, app-data permissions, npm `.cmd` launchers, PTY behavior. |
+| Linux x64 | `CovenCave_0.5.14_amd64.AppImage` | Detached signature published | Executable bit, FUSE availability, desktop integration, picker/PTY differences. |
 | Windows ARM64 | Not published | Unsupported | Architecture must be identified before download. |
 | Linux ARM64 | Not published | Unsupported | Architecture must be identified before download. |
 
 The `.app.tar.gz` files in a release are updater payloads, not the primary
 macOS installer.
 
-## Confirmed blockers and evidence
+## Evidence baseline
+
+Every linked issue below was closed as completed by 2026-08-08. The rows record
+failure classes the target journey must keep covering, not open blockers;
+reopen or file a new issue when one recurs.
 
 | Evidence | Stage | Classification | Impact |
 | --- | --- | --- | --- |
@@ -119,7 +123,7 @@ macOS installer.
 | [#3258](https://github.com/OpenCoven/coven-cave/issues/3258): an unusable NVM Node selection hid the actionable installer trace. | System check | Missing feedback | P1: remediation requires support. |
 | [#3856](https://github.com/OpenCoven/coven-cave/issues/3856): runtime launchability and authentication errors diverged. | Runtime | Terminology and integration | P0: "installed" was mistaken for "ready". |
 | [#4318](https://github.com/OpenCoven/coven-cave/issues/4318): daemon supervision/readiness improved, while packaged fault evidence remained incomplete. | Local service | Reliability | P0 until packaged recovery is demonstrated. |
-| Bead `cave-d8i6p` records legacy onboarding readiness work. | First run | Product debt | Reuse focused contracts; do not restore the old wizard wholesale. |
+| The retired Bead `cave-d8i6p` recorded legacy onboarding readiness work; it has no GitHub issue. | First run | Product debt | Reuse focused contracts; do not restore the old wizard wholesale. |
 
 ### Evidence action matrix
 

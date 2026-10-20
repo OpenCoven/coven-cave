@@ -163,6 +163,7 @@ import { ArchiveChatButton, ChatTitleEditable, SessionOverflowMenu, VoiceCallBut
 import { runtimeDisplayName } from "@/components/runtime-logo";
 import { Popover, PopoverBody } from "@/components/ui/popover";
 import { ChatSendLater } from "@/components/chat-send-later";
+import { useSetupOpener } from "@/components/onboarding-local-setup-host";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useToolMilestones } from "@/lib/use-tool-milestones";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
@@ -1606,32 +1607,21 @@ function turnMetaPeekTitle(turn: Turn): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
-/** Inline remedy for the offline meta line: the old copy said "start it from
- *  the banner above", but the banner can be dismissed or off-screen — a broken
- *  reference. The action lives in the notice itself, self-contained like the
- *  settings/onboarding start buttons; the workspace's 5s status poll picks up
- *  the flip and clears the offline state (cave-5qmm). */
+/** Keep offline recovery in reach even when the shell banner was dismissed.
+ * Setup checks prerequisites and reports start failures with recovery guidance. */
 function MetaLineStartDaemon() {
-  const [starting, setStarting] = useState(false);
+  const { openSetup, setupHost } = useSetupOpener("banner");
   return (
-    <button
-      type="button"
-      className="cave-chat-meta-line__action focus-ring"
-      disabled={starting}
-      onClick={async () => {
-        setStarting(true);
-        try {
-          await fetch("/api/daemon/start", { method: "POST" });
-        } catch {
-          // The meta line keeps reading "daemon offline" and the button
-          // re-arms — the workspace banner surfaces start errors in detail.
-        } finally {
-          setStarting(false);
-        }
-      }}
-    >
-      {starting ? "starting…" : "Start daemon"}
-    </button>
+    <>
+      <button
+        type="button"
+        className="cave-chat-meta-line__action focus-ring"
+        onClick={openSetup}
+      >
+        Open setup
+      </button>
+      {setupHost}
+    </>
   );
 }
 

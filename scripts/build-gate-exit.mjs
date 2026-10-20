@@ -4,7 +4,8 @@
 // flakes (scripts/build-with-retry.mjs). A gate that measures the build output
 // fails the same way on every attempt, so it exits with this status instead of
 // 1 and the retry stops at once. The gates are the instrumentation-trace leak
-// guard (scripts/next-build.mjs), bundle-budget and standalone-budget. A gate
+// guard and the trace-walk probe (scripts/next-build.mjs), bundle-budget and
+// standalone-budget. A gate
 // that could not read or measure the output still exits 1: that can be a flaky
 // build, and a retry may succeed.
 //

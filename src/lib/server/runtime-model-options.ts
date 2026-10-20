@@ -21,7 +21,8 @@ import {
 } from "./hermes-models.ts";
 import { listOpenCodeModels } from "./opencode-models.ts";
 import { localCodexBackendInfo, localCodexModelId } from "../local-codex.ts";
-import { probeLocalCodexBackend } from "./local-codex-backends.ts";
+import { localModelRunsHere, localModelsAllowRemote, probeLocalCodexBackend } from "./local-codex-backends.ts";
+import { readLocalModelSettings } from "./local-models-settings.ts";
 
 export type RuntimeModelOptionsDependencies = {
   allowOpenCodeInventory?: boolean;
@@ -42,7 +43,13 @@ export type RuntimeModelOptionsDependencies = {
   listOpenCode?: typeof listOpenCodeModels;
   /** Codex local mode: ask the inference server what it can run. */
   probeLocalBackend?: typeof probeLocalCodexBackend;
+  /** Codex local mode: whether prompts may go to another computer (Settings or environment). */
+  localAllowRemote?: () => Promise<boolean>;
 };
+
+async function readLocalAllowRemote(): Promise<boolean> {
+  return localModelsAllowRemote(process.env, await readLocalModelSettings()).value;
+}
 
 function sanitizeModels(
   runtime: string,
@@ -163,8 +170,15 @@ export async function listRuntimeModelInventory(
       if (probe.kind !== "available") return { ...degraded, discoveryIssue: "local-server-unavailable" };
       const usable = probe.models.filter((model) => model.tools);
       if (usable.length === 0) return { ...degraded, discoveryIssue: "local-no-tool-models" };
+      // A model LM Link serves from another computer is offered only with
+      // the permission that a server on another computer needs.
+      const allowRemote = usable.some((model) => model.lmLink)
+        ? await (dependencies.localAllowRemote ?? readLocalAllowRemote)()
+        : false;
+      const offered = usable.filter((model) => localModelRunsHere(model, allowRemote));
+      if (offered.length === 0) return { ...degraded, discoveryIssue: "local-models-on-other-computers" };
       result = {
-        models: usable.map((model) => ({ id: localCodexModelId(info, model.name), label: model.name })),
+        models: offered.map((model) => ({ id: localCodexModelId(info, model.name), label: model.name })),
         provenance: "live",
       };
     } else if (

@@ -5,7 +5,9 @@
 // the address chats use, and the models it reports, with the ones Codex can
 // drive (tool support) marked. Saving an address re-reads that server and
 // tells open model menus to refresh, so no menu keeps the previous server's
-// models.
+// models. Models that LM Studio's LM Link serves from another computer are
+// marked too (#6094): chats offer them only when servers on other computers
+// are allowed.
 
 import "@/styles/settings-local-models.css";
 
@@ -60,6 +62,7 @@ function contextLabel(tokens: number | null): string | null {
 function BackendCard({
   backend,
   editable,
+  allowRemote,
   draft,
   error,
   saving,
@@ -70,6 +73,7 @@ function BackendCard({
 }: {
   backend: LocalModelsBackendStatus;
   editable: boolean;
+  allowRemote: boolean;
   draft: string;
   error: string | null;
   saving: boolean;
@@ -87,6 +91,8 @@ function BackendCard({
       ? "Change this on the computer running Cave."
       : `Leave empty to use ${backend.defaultEndpoint}.`;
   const models = backend.server.state === "running" ? backend.server.models : null;
+  const deviceCheck = backend.server.state === "running" ? backend.server.deviceCheck : "not-needed";
+  const linked = models?.some((model) => model.lmLink) ?? false;
   return (
     <div className="settings-local-models__card">
       <div className="settings-local-models__status-row">
@@ -133,6 +139,11 @@ function BackendCard({
                   <span className="settings-local-models__model-name">{model.name}</span>
                   <span className="settings-local-models__model-meta">
                     {context ? <span>{context}</span> : null}
+                    {model.lmLink ? (
+                      <span className="settings-local-models__badge" data-link>
+                        LM Link · {model.lmLink.deviceName ?? "another computer"}
+                      </span>
+                    ) : null}
                     <span className="settings-local-models__badge" data-tools={model.tools || undefined}>
                       {model.tools ? "Tool support" : "No tool support · Codex can't use it"}
                     </span>
@@ -144,6 +155,19 @@ function BackendCard({
         ) : (
           <p className="settings-local-models__empty">No models yet. {backend.addModelHint}</p>
         )
+      ) : null}
+      {linked ? (
+        <p className="settings-local-models__help">
+          {allowRemote
+            ? "Models marked LM Link run on another computer, which receives your prompts. Chats offer them because servers on other computers are allowed."
+            : "Models marked LM Link run on another computer. Chats don't offer them while servers on other computers are off."}
+        </p>
+      ) : null}
+      {deviceCheck === "unavailable" ? (
+        <p className="settings-local-models__status settings-local-models__check" data-tone="warning">
+          <span className="settings-local-models__dot" aria-hidden="true" />
+          <span>Cave couldn't check which computer each model runs on, because LM Studio's lms command didn't answer. If LM Link is on, a model listed here may run on another computer.</span>
+        </p>
       ) : null}
     </div>
   );
@@ -253,6 +277,7 @@ export function LocalModelsSection() {
               <BackendCard
                 backend={backend}
                 editable={status.editable}
+                allowRemote={allowRemote?.value === true}
                 draft={drafts[backend.backend] ?? ""}
                 error={errors[backend.backend] ?? null}
                 saving={saving === backend.backend}
@@ -282,7 +307,7 @@ export function LocalModelsSection() {
                   <p id="settings-local-models-remote-help" className="settings-local-models__help">
                     {allowRemote?.source === "environment"
                       ? "Turned on by CAVE_LOCAL_MODELS_ALLOW_REMOTE in Cave's environment."
-                      : "Off keeps every prompt on this computer. On lets an address above point at another computer, which then receives your prompts and anything you share in chat."}
+                      : "Off keeps every prompt on this computer. On lets an address above, or an LM Studio model shared through LM Link, use another computer, which then receives your prompts and anything you share in chat."}
                   </p>
                 </div>
                 <button

@@ -9,6 +9,7 @@ import {
   ONBOARDING_BOOTSTRAP_STAGES,
   createOnboardingBootstrapState,
   normalizeResumableBootstrapState,
+  prepareOnboardingBootstrapRun,
   runOnboardingBootstrapStages,
   startSerializedOnboardingBootstrapRun,
   type OnboardingBootstrapRunners,
@@ -392,12 +393,12 @@ export async function startOrResumeOnboardingBootstrap(
   confirm: boolean,
 ): Promise<OnboardingBootstrapState> {
   let state = await currentState();
-  if (!state.confirmed && !confirm) return state;
-  if (state.complete) return state;
   if (bootstrapRuntime.run) return state;
+  const prepared = prepareOnboardingBootstrapRun(state, confirm);
+  if (!prepared) return state;
 
   state = {
-    ...normalizeResumableBootstrapState(state),
+    ...prepared,
     confirmed: true,
     status: "running",
     failure: null,

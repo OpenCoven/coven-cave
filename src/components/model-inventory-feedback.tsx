@@ -27,6 +27,7 @@ export function ModelInventoryFeedback({ runtime, modelInventory, modelCount, me
     : local && issue === "local-server-unavailable" ? `${local.product} isn’t answering. ${local.startHint} Then retry model discovery.`
     : local && issue === "local-endpoint-invalid" ? `${local.endpointEnv} isn’t a usable endpoint for ${local.product}. Fix or unset it, then retry.`
     : local && issue === "local-no-tool-models" ? `${local.product} has no model with tool support, which Codex needs. ${local.addModelHint}`
+    : local && issue === "local-models-on-other-computers" ? `${local.product}’s tool-capable models run on another computer through LM Link. Load one on this computer, or allow servers on other computers in Settings → Local models.`
     : issue === "remote-runtime" ? "Models are managed on the remote machine. Use runtime default or set a model with /model."
     : issue === "local-only" ? "Open Cave on this computer to discover models. You can still use runtime default or /model."
     : issue === "profile-managed" ? "This profile manages its own models. Use runtime default or set a model with /model."

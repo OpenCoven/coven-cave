@@ -1,11 +1,23 @@
 import assert from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { BUILD_GATE_EXIT_CODE } from "./build-gate-exit.mjs";
-import { finishBuild, instrumentationLeakReport, nodeEnvOverrideNotice, productionBuildEnv } from "./next-build.mjs";
+import {
+  armTraceWalkProbe,
+  clearStaleTraceWalkProbe,
+  finishBuild,
+  instrumentationLeakReport,
+  nodeEnvOverrideNotice,
+  productionBuildEnv,
+  TRACE_WALK_PROBE,
+  traceWalkFailure,
+  traceWalkProbeEnabled,
+  traceWalkReport,
+} from "./next-build.mjs";
 
 test("the build always runs with NODE_ENV=production (#5701)", () => {
   assert.equal(productionBuildEnv({ NODE_ENV: "development", PATH: "/bin" }).NODE_ENV, "production");
@@ -69,4 +81,92 @@ test("the leak report caps the listing", () => {
   assert.match(report, /^  src\/f19\.ts$/m);
   assert.doesNotMatch(report, /^  src\/f20\.ts$/m);
   assert.match(report, /…and 3 more$/);
+});
+
+test("the trace-walk probe runs under POSIX CI or on request, never on Windows (#6101)", () => {
+  assert.equal(traceWalkProbeEnabled({ CI: "true" }, "linux"), true);
+  assert.equal(traceWalkProbeEnabled({ CI: "true" }, "darwin"), true);
+  assert.equal(traceWalkProbeEnabled({ CI: "true" }, "win32"), false, "chmod 000 does not stop reads on Windows");
+  assert.equal(traceWalkProbeEnabled({}, "darwin"), false, "a local build is unchanged by default");
+  assert.equal(traceWalkProbeEnabled({ COVEN_TRACE_WALK_PROBE: "1" }, "darwin"), true);
+  assert.equal(traceWalkProbeEnabled({ CI: "true", COVEN_TRACE_WALK_PROBE: "0" }, "linux"), false);
+});
+
+test("the probe is an empty, unreadable root folder that is removed afterwards", { skip: process.platform === "win32" }, async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "cave-trace-probe-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const probe = path.join(root, TRACE_WALK_PROBE);
+  const disarm = armTraceWalkProbe(root);
+  await assert.rejects(readdir(probe), { code: "EACCES" });
+  disarm();
+  await assert.rejects(access(probe), { code: "ENOENT" });
+
+  // A leftover from a killed build is replaced; one with contents stops the build.
+  await mkdir(probe);
+  armTraceWalkProbe(root)();
+  await mkdir(probe);
+  await writeFile(path.join(probe, "kept"), "x");
+  assert.throws(() => armTraceWalkProbe(root), { code: "ENOTEMPTY" });
+});
+
+test("a probed build failure names the walking module or endpoint", () => {
+  const root = "/repo";
+  const moduleWalk = [
+    "Error [TurbopackInternalError]: [project]/src/lib/server/journal-store.ts [app-route] (ecmascript)",
+    "Caused by:",
+    `- reading dir "/repo/${TRACE_WALK_PROBE}"`,
+    "- Permission denied (os error 13)",
+  ].join("\n");
+  assert.deepEqual(traceWalkFailure(moduleWalk, root), { module: "src/lib/server/journal-store.ts [app-route]", endpoint: null });
+  assert.match(traceWalkReport(traceWalkFailure(moduleWalk, root)), /in src\/lib\/server\/journal-store\.ts \[app-route\] \(#6101\)/);
+
+  const endpointWalk = `Failed to write app endpoint /page\n- reading dir "/repo/${TRACE_WALK_PROBE}"`;
+  assert.deepEqual(traceWalkFailure(endpointWalk, root), { module: null, endpoint: "/page" });
+  assert.match(traceWalkReport(traceWalkFailure(endpointWalk, root)), /tracing the \/page endpoint/);
+
+  assert.equal(traceWalkFailure("Error: Turbopack build failed with 1 error", root), null, "other failures pass through");
+  assert.equal(traceWalkFailure('- reading dir "/elsewhere/trace-walk-probe"', root), null);
+});
+
+test("a probe folder left by an interrupted build is cleared before the next one", { skip: process.platform === "win32" }, async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "cave-trace-stale-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const probe = path.join(root, TRACE_WALK_PROBE);
+  assert.equal(clearStaleTraceWalkProbe(root), false, "nothing to clear");
+  await mkdir(probe, { mode: 0o000 });
+  assert.equal(clearStaleTraceWalkProbe(root), true);
+  await assert.rejects(access(probe), { code: "ENOENT" });
+
+  await mkdir(probe);
+  await writeFile(path.join(probe, "kept"), "x");
+  await import("node:fs/promises").then(({ chmod }) => chmod(probe, 0o000));
+  assert.throws(() => clearStaleTraceWalkProbe(root), { code: "ENOTEMPTY" });
+  assert.deepEqual(await readdir(probe), ["kept"], "a folder with contents is made readable, never emptied");
+});
+
+const ARM_IN_CHILD = (root, then) => `
+  const { armTraceWalkProbe } = await import(${JSON.stringify(new URL("./next-build.mjs", import.meta.url).href)});
+  armTraceWalkProbe(${JSON.stringify(root)});
+  ${then}
+`;
+
+test("the probe is removed when the wrapper crashes", { skip: process.platform === "win32" }, async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "cave-trace-crash-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", ARM_IN_CHILD(root, 'throw new Error("ENOSPC writing stdout");')], { encoding: "utf8" });
+  assert.equal(child.status, 1);
+  assert.match(child.stderr, /ENOSPC writing stdout/);
+  await assert.rejects(access(path.join(root, TRACE_WALK_PROBE)), { code: "ENOENT" });
+});
+
+test("the probe is removed when the wrapper is terminated", { skip: process.platform === "win32" }, async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "cave-trace-term-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const child = spawn(process.execPath, ["--input-type=module", "-e", ARM_IN_CHILD(root, 'console.log("armed"); setInterval(() => {}, 1000);')]);
+  await new Promise((resolve) => child.stdout.once("data", resolve));
+  await assert.rejects(readdir(path.join(root, TRACE_WALK_PROBE)), { code: "EACCES" });
+  const exited = new Promise((resolve) => child.once("exit", (code, signal) => resolve(signal)));
+  child.kill("SIGTERM");
+  assert.equal(await exited, "SIGTERM", "the signal still ends the process");
+  await assert.rejects(access(path.join(root, TRACE_WALK_PROBE)), { code: "ENOENT" });
 });

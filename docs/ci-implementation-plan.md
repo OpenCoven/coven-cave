@@ -1,9 +1,9 @@
 # CI Implementation Plan — fastest Coven Cave CI workflow
 
-**Bead:** `cave-7kix8.8` (Plan CI implementation, checklist child of `cave-7kix8`)
+**Tracker:** none. The retired Bead `cave-7kix8.8` (checklist child of `cave-7kix8`) has no GitHub issue; open one in Cave Project 9 before resuming Phase 2.
 **Parent design:** [`docs/superpowers/specs/2026-08-05-release-candidate-ci-design.md`](superpowers/specs/2026-08-05-release-candidate-ci-design.md) (approved; spec commit `11ee417d9`)
 **Task-level breakdown:** [`docs/superpowers/plans/2026-08-17-release-candidate-ci.md`](superpowers/plans/2026-08-17-release-candidate-ci.md)
-**Status:** Program — Phase 1 (signed promotion, full validation, parallel `PR checks` context) is shipped on `main`; Phase 2 (retire routine fanout) plus the branch-protection switch remain.
+**Status:** Program — Phase 1 (signed promotion, full validation, parallel `PR checks` context) is shipped on `main`, and Phase 5 promotion has run on real cuts (v0.5.13-rc.1 → v0.5.13, v0.5.14-rc.4 → v0.5.14 at `cd4965abc`). Phase 2 (the branch-protection switch), Phase 3 (retire routine fanout) and Phase 4 (verify the lean gate) remain. Last checked against `main` on 2026-10-20 (#6111).
 
 This is the rollout plan for the approved Option C model: one non-skippable
 Linux `PR checks` gate on pull requests, no automatic `main` CI, and the full
@@ -26,9 +26,9 @@ The repository has moved past the written spec. What is already true on
 | `.github/workflows/release-candidate.yml` | **Shipped** — signed RC-tag trigger + provenance gate calling `full-validation` |
 | `.github/workflows/release.yml` authorization | **Shipped** — `Authorize release promotion` job gates all publishing paths |
 | `scripts/release-promotion.mjs` + tests | **Shipped and wired** — tag parsing, tag verification, main ancestry, RC-run discovery, legacy recovery boundary |
-| `scripts/ci-recovery.mjs` + tests | **Shipped and wired** — exact-head dispatch, PR-number concurrency, non-cancelling recovery |
+| `scripts/ci-recovery.mjs` + tests | **Shipped and wired** — since #5936, requests a full rerun of the latest cancelled first-attempt `pull_request` run after a one-hour cooldown, rechecking exact head, live base, merge parents and workflow guards; it never dispatches, because `workflow_dispatch` checks cannot satisfy branch protection (#5922) |
 | `ci.yml` `push: branches: [main]` trigger | **Still present** — post-merge full reruns still happen |
-| `ci.yml` legacy path-aware fanout | **Still present** — `paths`, `ios`, `frontend-validation`, `frontend-bundle`, `frontend-e2e`, `frontend-e2e-agentic`, `build` |
+| `ci.yml` legacy path-aware fanout | **Still present** — `paths`, `ios`, `frontend-validation`, `windows-conformance` (added 2026-09-14), `frontend-bundle`, `frontend-e2e`, `frontend-e2e-agentic`, `build` |
 | Required-check documentation | **Still names `Frontend build`** — `CLAUDE.md`, `.agents/skills/branch-to-merge/SKILL.md`, `docs/cross-environment.md` |
 
 So the remaining work is: switch branch protection to `PR checks`, then remove
@@ -146,9 +146,11 @@ new single required context.
 **Workflow change** (`.github/workflows/ci.yml`):
 
 1. Delete `push: branches: [main]`.
-2. Delete the `paths`, `ios`, `frontend-validation`,
+2. Delete the `paths`, `frontend-validation`, `windows-conformance`,
    `frontend-bundle`, `frontend-e2e`, `frontend-e2e-agentic`, and
-   `build` jobs.
+   `build` jobs. Keep `ios` until candidate validation runs the iOS
+   XCTest suite: `full-validation.yml` has no iOS leg, and native iOS
+   coverage must be preserved when duplicate lanes retire.
 3. Retain `pr-checks` unchanged.
 4. Retain `workflow_dispatch` with the exact-SHA guard, PR-number
    concurrency, and read-only permissions.
@@ -160,9 +162,12 @@ Resulting job map must be exactly one job: `pr-checks` named `PR checks`.
 **Recovery contract** (`scripts/ci-recovery.mjs`,
 `scripts/ci-recovery.test.mjs`, `scripts/ci-recovery-workflow.test.mjs`):
 
-- Narrow the guarded-job contract to `pr-checks` only.
-- Keep `expected_sha`, `expected_pr_number`, run-name stamping,
-  branch-head revalidation, cooldown, and non-cancelling dispatch behavior.
+- Narrow the workflow-guard contract (today `paths`, `build`, and its
+  carried-forward-evidence step) to `pr-checks` only.
+- Keep the #5936 recovery shape: a full rerun of an eligible cancelled
+  `pull_request` run, exact head, live base, merge parents, attempt
+  freshness, and the one-hour cooldown. Never recover required checks by
+  `workflow_dispatch`.
 
 **Documentation and contract pins**:
 
@@ -193,7 +198,7 @@ After Phase 3 merges:
    `ci-recovery-workflow`, `ios-build-ci`, `stamp-release`,
    `release-macos-signing`, `src-tauri/release-runtime`.
 
-### Phase 5 — exercise promotion at the next release cut
+### Phase 5 — exercise promotion at a release cut (done: v0.5.13-rc.1 → v0.5.13, v0.5.14-rc.4 → v0.5.14)
 
 1. Stamp a release commit; create `git tag -s vX.Y.Z-rc.N <commit>`.
 2. Confirm the `Release candidate` workflow runs and the
@@ -244,8 +249,10 @@ Cargo invocations, so a warm cache cannot hide dependency drift.
 - **Contract tests** pin behavior, not text: `release-promotion` (tag
   parsing + provenance negatives), `release-promotion-workflow` (YAML DAG:
   PR gate exclusions, rollup fail-closed, release jobs downstream of
-  authorization), `ci-recovery-workflow` (one required context, no
-  `main` push trigger), plus `docs-index` keeping this document indexed.
+  authorization), `ci-recovery-workflow` (today the `Frontend build`
+  aggregate and `main` push concurrency; after Phase 3, one required
+  context and no `main` push trigger), plus `docs-index` keeping this
+  document indexed.
 
 ## 6. Rollout steps (ordered)
 
@@ -256,8 +263,8 @@ Cargo invocations, so a warm cache cannot hide dependency drift.
    contract, update required-check docs and pins. Merge through `PR checks`.
 4. [verify] Phase 4: new PR shows only `PR checks`; merge starts no `main`
    CI; contract suites pass.
-5. [release cut] Phase 5: signed RC → full validation → signed final tag →
-   authorized publication.
+5. [done] Phase 5: signed RC → full validation → signed final tag →
+   authorized publication (v0.5.14-rc.4 → v0.5.14 at `cd4965abc`).
 
 ## 7. Acceptance criteria (from the parent design)
 

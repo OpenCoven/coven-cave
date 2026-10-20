@@ -21,14 +21,14 @@ import {
 } from "../stitch.ts";
 
 export function stitchThreadsRoot(): string {
-  return path.join(covenKnowledgeRoot(), ".threads");
+  return path.join(/* turbopackIgnore: true */ covenKnowledgeRoot(), ".threads");
 }
 
 function threadPath(id: string): string {
   // Same containment stance as the vault's entryPath: the (validated) id is
   // the only user input that reaches the filesystem.
-  const root = path.resolve(stitchThreadsRoot());
-  const resolved = path.resolve(root, `${id}.json`);
+  const root = path.resolve(/* turbopackIgnore: true */ stitchThreadsRoot());
+  const resolved = path.resolve(/* turbopackIgnore: true */ root, `${id}.json`);
   if (!resolved.startsWith(root + path.sep) || path.dirname(resolved) !== root) {
     throw new Error("invalid thread id");
   }
@@ -72,7 +72,7 @@ function normalizeThread(id: string, value: unknown): StitchThread | null {
 export async function listStitchThreads(): Promise<StitchThread[]> {
   let names: string[];
   try {
-    names = await readdir(stitchThreadsRoot());
+    names = await readdir(/* turbopackIgnore: true */ stitchThreadsRoot());
   } catch {
     return [];
   }
@@ -82,7 +82,7 @@ export async function listStitchThreads(): Promise<StitchThread[]> {
     const id = name.slice(0, -5);
     if (!isValidThreadId(id)) continue;
     try {
-      const raw = await readFile(path.join(stitchThreadsRoot(), name), "utf8");
+      const raw = await readFile(path.join(/* turbopackIgnore: true */ stitchThreadsRoot(), name), "utf8");
       const thread = normalizeThread(id, JSON.parse(raw));
       if (thread) threads.push(thread);
     } catch {

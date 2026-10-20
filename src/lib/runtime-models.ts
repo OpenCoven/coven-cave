@@ -66,7 +66,9 @@ export type RuntimeModelDiscoveryIssue =
   /** Codex local mode: the configured endpoint is malformed or remote without opt-in. */
   | "local-endpoint-invalid"
   /** Codex local mode: the server answered, with no chat model that supports tools. */
-  | "local-no-tool-models";
+  | "local-no-tool-models"
+  /** Codex local mode: every tool-capable model runs on another computer through LM Link (#6094). */
+  | "local-models-on-other-computers";
 
 export type RuntimeModelInventory = {
   runtime: string;

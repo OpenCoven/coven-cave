@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   createOnboardingBootstrapState,
   normalizeResumableBootstrapState,
+  prepareOnboardingBootstrapRun,
   onboardingBootstrapPlatformPolicy,
   runOnboardingBootstrapStages,
   startSerializedOnboardingBootstrapRun,
@@ -225,3 +226,27 @@ test("concurrent bootstrap starts share one process-wide run", async () => {
 });
 
 console.log("onboarding-bootstrap.test.ts: ok");
+
+
+test("completed setup only rechecks components and the daemon after explicit confirmation", async () => {
+  const complete = createOnboardingBootstrapState(true);
+  complete.complete = true;
+  complete.status = "complete";
+  complete.needsSetup = false;
+  complete.stages.forEach((stage) => { stage.status = "complete"; });
+  assert.equal(prepareOnboardingBootstrapRun(complete, false), null,
+    "background resume must not rerun completed setup");
+  assert.equal(prepareOnboardingBootstrapRun(createOnboardingBootstrapState(false), false), null);
+  const fresh = prepareOnboardingBootstrapRun(complete, true)!;
+  const calls: string[] = [];
+  const result = await runOnboardingBootstrapStages(fresh, {
+    "core-tools": async () => { calls.push("tools"); return { ok: true, skipped: true, detail: "Kept" }; },
+    workspace: async () => { calls.push("workspace"); return { ok: true, skipped: true, detail: "Kept" }; },
+    daemon: async () => { calls.push("daemon"); return { ok: false, message: "Daemon could not start" }; },
+  }, async () => {});
+  assert.deepEqual(calls, ["tools", "workspace", "daemon"]);
+  assert.equal(result.complete, false);
+  assert.equal(result.failure?.stage, "daemon");
+  assert.equal(result.failure?.recoveryLabel, "Retry setup");
+  assert.equal(complete.complete, true, "preparation does not mutate the earlier snapshot");
+});

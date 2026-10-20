@@ -26,7 +26,7 @@ const execFileAsync = promisify(execFile);
 function containedPath(root: string, relativePath: string): string | null {
   if (!relativePath || relativePath.includes("\0") || path.isAbsolute(relativePath)) return null;
   if (relativePath.split(/[\\/]+/).includes("..")) return null;
-  const target = path.resolve(root, relativePath);
+  const target = path.resolve(/* turbopackIgnore: true */ root, relativePath);
   return target.startsWith(`${root}${path.sep}`) ? target : null;
 }
 
@@ -37,7 +37,7 @@ async function replaceAtomically(
   expectedHash?: string,
 ): Promise<StableProjectFileRead | null> {
   const parent = path.dirname(target);
-  const tempPath = path.join(parent, `.coven-canvas-${randomUUID()}.tmp`);
+  const tempPath = path.join(/* turbopackIgnore: true */ parent, `.coven-canvas-${randomUUID()}.tmp`);
   try {
     await writeFile(tempPath, content, { encoding: "utf8", flag: "wx", mode });
     const stableRead = expectedHash

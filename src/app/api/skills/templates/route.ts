@@ -39,7 +39,7 @@ function toSkillTemplate(option: PromptOption, source: SkillTemplate["source"]):
 
 export async function GET() {
   const user: PromptOption[] = [];
-  await scanPromptsDir(path.join(covenHome(), "skill-templates"), "user", user);
+  await scanPromptsDir(path.join(/* turbopackIgnore: true */ covenHome(), "skill-templates"), "user", user);
 
   const packs: SkillTemplate[] = [];
   try {
@@ -50,7 +50,7 @@ export async function GET() {
     for (const id of installed) {
       if (!await marketplacePluginHasDirectory(id, "skill-templates")) continue;
       const scanned: PromptOption[] = [];
-      await scanPromptsDir(path.join(await ensureMarketplacePlugin(id), "skill-templates"), `pack:${id}`, scanned);
+      await scanPromptsDir(path.join(/* turbopackIgnore: true */ await ensureMarketplacePlugin(id), "skill-templates"), `pack:${id}`, scanned);
       for (const option of scanned) packs.push(toSkillTemplate(option, `pack:${id}`));
     }
   } catch {

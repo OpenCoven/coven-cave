@@ -576,7 +576,7 @@ export async function listSkillDirectoryEntriesWithLocal(query?: string): Promis
 
 async function scanLocalSkillEntries(): Promise<LocalSkillEntry[]> {
   const rawLocals: LocalSkillEntry[] = [];
-  await scanSkillsDir(path.join(covenHome(), "skills"), "global", rawLocals);
+  await scanSkillsDir(path.join(/* turbopackIgnore: true */ covenHome(), "skills"), "global", rawLocals);
   await scanClaudeUserSkills().then((items) => rawLocals.push(...items));
   await scanCodexUserSkills().then((items) => rawLocals.push(...items));
   await scanAgentSharedSkills().then((items) => rawLocals.push(...items));

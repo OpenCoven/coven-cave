@@ -46,7 +46,7 @@ export type MemoryInspectorReport = {
   };
 };
 
-export const DEFAULT_WORKSPACE_ROOT = path.join(homedir(), ".openclaw", "workspace");
+export const DEFAULT_WORKSPACE_ROOT = path.join(/* turbopackIgnore: true */ homedir(), ".openclaw", "workspace");
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 const REQUIRED_FRONTMATTER = ["id", "type", "title", "date", "severity", "domain", "status"] as const;
@@ -55,7 +55,7 @@ export function workspacePathForFamiliar(workspaceRoot: string, familiarId: stri
   if (!/^[a-zA-Z0-9_-]+$/.test(familiarId)) {
     throw new Error("invalid familiar id");
   }
-  return familiarId === "main" ? workspaceRoot : path.join(workspaceRoot, familiarId);
+  return familiarId === "main" ? workspaceRoot : path.join(/* turbopackIgnore: true */ workspaceRoot, familiarId);
 }
 
 export function parseFailureDistillation(text: string, filePath: string): FailureDistillation {
@@ -93,10 +93,10 @@ export async function collectMemoryInspector({
 }): Promise<MemoryInspectorReport> {
   const workspacePath = workspacePathForFamiliar(workspaceRoot, familiarId);
   const [failures, memoryTier, phaseSignals, shortTermRecall] = await Promise.all([
-    collectFailures(path.join(workspacePath, "memory", "failures")),
-    collectMemoryTier(path.join(workspacePath, "MEMORY.md"), familiarId),
-    collectDreamArtifact(path.join(workspacePath, "memory", ".dreams", "phase-signals.json")),
-    collectDreamArtifact(path.join(workspacePath, "memory", ".dreams", "short-term-recall.json")),
+    collectFailures(path.join(/* turbopackIgnore: true */ workspacePath, "memory", "failures")),
+    collectMemoryTier(path.join(/* turbopackIgnore: true */ workspacePath, "MEMORY.md"), familiarId),
+    collectDreamArtifact(path.join(/* turbopackIgnore: true */ workspacePath, "memory", ".dreams", "phase-signals.json")),
+    collectDreamArtifact(path.join(/* turbopackIgnore: true */ workspacePath, "memory", ".dreams", "short-term-recall.json")),
   ]);
 
   return {
@@ -161,7 +161,7 @@ function parseWikilinks(body: string): string[] {
 async function collectFailures(failuresDir: string): Promise<FailureDistillation[]> {
   let names: string[];
   try {
-    names = await readdir(failuresDir);
+    names = await readdir(/* turbopackIgnore: true */ failuresDir);
   } catch {
     return [];
   }
@@ -169,7 +169,7 @@ async function collectFailures(failuresDir: string): Promise<FailureDistillation
   const entries: FailureDistillation[] = [];
   for (const name of names) {
     if (!name.endsWith(".md")) continue;
-    const fullPath = path.join(failuresDir, name);
+    const fullPath = path.join(/* turbopackIgnore: true */ failuresDir, name);
     try {
       const text = await readFile(fullPath, "utf8");
       entries.push(parseFailureDistillation(text, fullPath));

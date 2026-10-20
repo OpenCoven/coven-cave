@@ -1478,6 +1478,11 @@ export function Workspace() {
     await daemonConnectionSupervisorRef.current?.refresh({ fresh: opts?.fresh === true || opts?.trusted === true });
   }, []);
 
+  const openDaemonSetup = useCallback(() => {
+    onboardingOriginRef.current = "banner";
+    setOnboardingOpen(true);
+  }, []);
+
   const startDaemon = useCallback(async ({ automatic = false }: { automatic?: boolean } = {}) => {
     setDaemonRecovery((current) => daemonRecoveryPresentation(current, {
       type: automatic ? "automatic-start" : "manual-start",
@@ -1493,14 +1498,16 @@ export function Workspace() {
       reportError: (message) => pushBanner({
         id: "daemon-start-error",
         severity: "error",
-        title: `Daemon start failed — ${message}`,
+        title: "Couldn’t start the daemon",
+        detail: `${message} Open setup to check this machine’s installation and connection.`,
+        cta: { label: "Open setup", onClick: openDaemonSetup },
       }),
       refreshStatus: refreshDaemonStatus,
     });
     if (automatic) {
       setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "start-outcome", outcome }));
     }
-  }, [dismissBanner, pushBanner, refreshDaemonStatus]);
+  }, [dismissBanner, pushBanner, refreshDaemonStatus, openDaemonSetup]);
   startDaemonRef.current = startDaemon;
 
   useEffect(() => {
@@ -1796,16 +1803,15 @@ export function Workspace() {
       pushBanner({
         id: "daemon-offline",
         severity: "warning",
-        title: "Daemon offline — existing sessions visible but new tasks may not start.",
+        title: "Daemon offline — open setup to get connected.",
+        detail: "Existing chats are still available. Setup checks this machine’s installation and helps start the local service.",
         cta: {
-          label: "Start daemon",
-          onClick: () => {
-            void startDaemon();
-          },
+          label: "Open setup",
+          onClick: openDaemonSetup,
         },
       });
     }
-  }, [daemonOffline, daemonStatusResolved, daemonRecovery.quiet, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonOffline, daemonStatusResolved, daemonRecovery.quiet, pushBanner, dismissBanner, openDaemonSetup]);
 
   // A status-service failure, timeout, malformed response, or non-local target
   // problem does not prove the local daemon is stopped. Keep that uncertainty

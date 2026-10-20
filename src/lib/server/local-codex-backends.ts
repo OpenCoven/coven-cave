@@ -11,7 +11,9 @@
 // environment variable, then from Settings → Local models, then from the
 // backend default. A server on another computer is refused unless Settings or
 // CAVE_LOCAL_MODELS_ALLOW_REMOTE=1 allows it: "local" must not quietly send
-// prompts across the network.
+// prompts across the network. The same permission covers models that LM
+// Studio's LM Link serves from another computer through a local server
+// (#6094).
 
 import {
   LOCAL_CODEX_BACKENDS,
@@ -20,6 +22,7 @@ import {
   localCodexNativeModel,
   type LocalCodexBackend,
   type LocalCodexBackendInfo,
+  type LocalModelDeviceCheck,
   type LocalModelsBackendStatus,
   type LocalModelsStatus,
   type LocalSettingSource,
@@ -29,6 +32,7 @@ import {
   readLocalModelSettings,
   type LocalModelSettings,
 } from "./local-models-settings.ts";
+import { lmStudioModelLocation, readLmStudioDevices, type LmsRunner } from "./lmstudio-devices.ts";
 
 export type { LocalSettingSource };
 
@@ -113,10 +117,12 @@ export type LocalModel = {
   /** The server reports tool-calling support for this model. */
   tools: boolean;
   contextLength: number | null;
+  /** LM Studio serves this model from another computer through LM Link. */
+  lmLink?: { deviceName: string | null };
 };
 
 export type LocalBackendProbe =
-  | { kind: "available"; endpoint: string; version: string | null; models: LocalModel[] }
+  | { kind: "available"; endpoint: string; version: string | null; models: LocalModel[]; deviceCheck: LocalModelDeviceCheck }
   | { kind: "unreachable"; endpoint: string }
   | { kind: "invalid-response"; endpoint: string }
   | { kind: "invalid-endpoint"; reason: string };
@@ -194,10 +200,11 @@ async function probeOllama(endpoint: string, fetchImpl: FetchLike): Promise<Loca
     endpoint,
     version: record(version) && typeof version.version === "string" && version.version.length <= 40 ? version.version : null,
     models,
+    deviceCheck: "not-needed",
   };
 }
 
-async function probeLmStudio(endpoint: string, fetchImpl: FetchLike): Promise<LocalBackendProbe> {
+async function probeLmStudio(endpoint: string, fetchImpl: FetchLike, lms?: LmsRunner): Promise<LocalBackendProbe> {
   const listing = await getJson(fetchImpl, `${endpoint}/api/v0/models`);
   if (!record(listing) || !Array.isArray(listing.data)) throw new ProbeError("invalid-response");
   const models: LocalModel[] = [];
@@ -210,7 +217,23 @@ async function probeLmStudio(endpoint: string, fetchImpl: FetchLike): Promise<Lo
     models.push({ name, tools: capabilities.includes("tool_use"), contextLength: positiveInt(entry.max_context_length) });
   }
   models.sort((a, b) => a.name.localeCompare(b.name));
-  return { kind: "available", endpoint, version: null, models };
+  // A server on another computer is already gated by its address. One on this
+  // computer may still serve LM Link models from elsewhere, so ask `lms`.
+  if (!LOOPBACK_HOSTS.has(new URL(endpoint).hostname)) return { kind: "available", endpoint, version: null, models, deviceCheck: "not-needed" };
+  const devices = await readLmStudioDevices(lms);
+  for (const model of models) {
+    const location = lmStudioModelLocation(model.name, devices);
+    if (location.kind === "lm-link") model.lmLink = { deviceName: location.deviceName };
+  }
+  return { kind: "available", endpoint, version: null, models, deviceCheck: devices.ok ? "checked" : "unavailable" };
+}
+
+/**
+ * Whether a chat may run `model`: one served from another computer through LM
+ * Link needs the same permission as a server on another computer.
+ */
+export function localModelRunsHere(model: LocalModel, allowRemote: boolean): boolean {
+  return !model.lmLink || allowRemote;
 }
 
 type CacheEntry = { at: number; ttl: number; promise: Promise<LocalBackendProbe> };
@@ -224,7 +247,7 @@ export function clearLocalCodexProbeCache(): void {
 /** Probe one backend, cached briefly per endpoint so a chat turn and a model menu share one read. */
 export async function probeLocalCodexBackend(
   info: LocalCodexBackendInfo,
-  options: { env?: Env; settings?: LocalModelSettings; fetchImpl?: FetchLike; now?: () => number; fresh?: boolean } = {},
+  options: { env?: Env; settings?: LocalModelSettings; fetchImpl?: FetchLike; lms?: LmsRunner; now?: () => number; fresh?: boolean } = {},
 ): Promise<LocalBackendProbe> {
   const settings = options.settings ?? await readLocalModelSettings();
   const resolution = resolveLocalCodexEndpoint(info, options.env, settings);
@@ -237,7 +260,7 @@ export async function probeLocalCodexBackend(
   const entry: CacheEntry = {
     at: now(),
     ttl: CACHE_TTL_MS,
-    promise: (info.backend === "ollama" ? probeOllama : probeLmStudio)(resolution.endpoint, fetchImpl).catch((error) => {
+    promise: (info.backend === "ollama" ? probeOllama(resolution.endpoint, fetchImpl) : probeLmStudio(resolution.endpoint, fetchImpl, options.lms)).catch((error) => {
       entry.ttl = FAILURE_TTL_MS;
       return error instanceof ProbeError && error.kind === "invalid-response"
         ? { kind: "invalid-response" as const, endpoint: resolution.endpoint }
@@ -270,7 +293,8 @@ export type LocalCodexFailureCode =
   | "local_server_invalid"
   | "local_model_unselected"
   | "local_model_missing"
-  | "local_model_no_tools";
+  | "local_model_no_tools"
+  | "local_model_other_computer";
 
 /**
  * Whether this turn can run on the local server, and the exact Codex
@@ -280,7 +304,7 @@ export type LocalCodexFailureCode =
 export async function preflightLocalCodex(
   harness: string,
   modelId: string | null | undefined,
-  options: { env?: Env; settings?: LocalModelSettings; fetchImpl?: FetchLike; now?: () => number } = {},
+  options: { env?: Env; settings?: LocalModelSettings; fetchImpl?: FetchLike; lms?: LmsRunner; now?: () => number } = {},
 ): Promise<LocalCodexPreflight | null> {
   const info = localCodexBackendInfo(harness);
   if (!info) return null;
@@ -307,6 +331,13 @@ export async function preflightLocalCodex(
   }
   if (!model.tools) {
     return { ok: false, code: "local_model_no_tools", message: `${nativeModel} doesn't support tool calling, which Codex needs to work. Choose a model ${info.product} marks as tool-capable.` };
+  }
+  if (!localModelRunsHere(model, localModelsAllowRemote(options.env, settings).value)) {
+    return {
+      ok: false,
+      code: "local_model_other_computer",
+      message: `${nativeModel} runs on ${model.lmLink?.deviceName ?? "another computer"} through LM Link, not on this computer. To send prompts there, turn on “Allow servers on other computers” in Settings → Local models. Or choose a model on this computer.`,
+    };
   }
   const resolution = resolveLocalCodexEndpoint(info, options.env, settings);
   const endpoint = resolution.ok ? resolution.endpoint : probe.endpoint;
@@ -348,13 +379,14 @@ export async function readLocalModelsStatus(options: {
   env?: Env;
   settings?: LocalModelSettings;
   fetchImpl?: FetchLike;
+  lms?: LmsRunner;
   fresh?: boolean;
 }): Promise<LocalModelsStatus> {
   const env = options.env ?? process.env;
   const settings = options.settings ?? await readLocalModelSettings();
   const backends = await Promise.all(Object.values(LOCAL_CODEX_BACKENDS).map(async (info): Promise<LocalModelsBackendStatus> => {
     const resolution = resolveLocalCodexEndpoint(info, env, settings);
-    const probe = await probeLocalCodexBackend(info, { env, settings, fetchImpl: options.fetchImpl, fresh: options.fresh });
+    const probe = await probeLocalCodexBackend(info, { env, settings, fetchImpl: options.fetchImpl, lms: options.lms, fresh: options.fresh });
     return {
       backend: info.backend,
       harness: info.harness,
@@ -368,7 +400,12 @@ export async function readLocalModelsStatus(options: {
       source: resolution.source,
       savedEndpoint: settings.endpoints[info.backend] ?? null,
       server: probe.kind === "available"
-        ? { state: "running", version: probe.version, models: probe.models.map(({ name, tools, contextLength }) => ({ name, tools, contextLength })) }
+        ? {
+          state: "running",
+          version: probe.version,
+          models: probe.models.map(({ name, tools, contextLength, lmLink }) => ({ name, tools, contextLength, lmLink: lmLink ?? null })),
+          deviceCheck: probe.deviceCheck,
+        }
         : probe.kind === "unreachable" ? { state: "stopped" }
         : probe.kind === "invalid-response" ? { state: "unexpected" }
         : { state: "invalid-address", reason: probe.reason },

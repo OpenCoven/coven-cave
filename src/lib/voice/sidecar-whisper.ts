@@ -139,9 +139,9 @@ export async function transcribeSidecarWav(
   if (wav.byteLength === 0 || wav.byteLength > MAX_WHISPER_WAV_BYTES) {
     throw new SidecarWhisperError("whisper_failed", "The recorded utterance is too large for local Whisper.");
   }
-  const tempDir = await mkdtemp(path.join(options.tempRoot ?? os.tmpdir(), "coven-whisper-"));
-  const wavPath = path.join(tempDir, "utterance.wav");
-  const outputStem = path.join(tempDir, "transcript");
+  const tempDir = await mkdtemp(path.join(/* turbopackIgnore: true */ options.tempRoot ?? os.tmpdir(), "coven-whisper-"));
+  const wavPath = path.join(/* turbopackIgnore: true */ tempDir, "utterance.wav");
+  const outputStem = path.join(/* turbopackIgnore: true */ tempDir, "transcript");
   try {
     await writeFile(wavPath, wav, { mode: 0o600 });
     if (options.signal?.aborted) {
@@ -152,7 +152,7 @@ export async function transcribeSidecarWav(
       whisperCliArgs(model.path, wavPath, outputStem, options.lang),
       options.signal,
     );
-    const text = (await readFile(`${outputStem}.txt`, "utf8")).trim();
+    const text = (await readFile(/* turbopackIgnore: true */ `${outputStem}.txt`, "utf8")).trim();
     if (!text) {
       throw new SidecarWhisperError("whisper_empty", "Local Whisper did not hear any words. Try speaking a little closer to the microphone.");
     }
