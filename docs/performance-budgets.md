@@ -112,7 +112,8 @@ and completion. The uniquely indexed text is 89,294 bytes; framing is 618,430
 bytes. Burst delivery enqueues all frames together; paced delivery schedules
 100-frame batches 10 ms apart. Actual delivery times are recorded because
 timer scheduling is not an exact clock. Both patterns must render the complete
-ordered response, reach completion, send once and preserve the unsent draft.
+ordered response across all 100 paragraphs with word separators intact, reach
+completion, send once and preserve the unsent draft.
 
 The gate measures the longest main-thread Long Task overlapping stream release
 through confirmed rendered completion, including a task already running at
@@ -128,11 +129,16 @@ not change the five-sample list benchmark's median rule.
 
 `pnpm performance:stream --control` injects a 260 ms main-thread stall into six
 trials per pattern. It must fail the same p95 gate with complete samples.
-The workflow's `stream_control` input runs this deliberate failure; a failing
-control run is expected evidence, not a production regression.
+The workflow's `stream_control` input runs this deliberate failure, then
+`scripts/verify-stream-control.mjs` checks the CLI exit, complete raw samples,
+expected clean commit and Playwright results. The workflow passes only when
+both patterns fail solely on the expected latency assertion, with no runner
+errors, retries or missing evidence. The CLI still exits unsuccessfully.
 
 Reports, invocation/build/browser/machine metadata and initial screenshots live
-under `artifacts/stream-performance/<invocation-id>/`. Failed runs retain their
+under `artifacts/stream-performance/<invocation-id>/`, alongside Playwright's
+JSON result and, for a verified workflow control, `control-verification.json`.
+Failed runs retain their
 samples; the workflow uploads evidence even when the gate fails. The launcher
 removes ambient credential and Node injection variables, retains browser-cache
 access, and puts build/server homes, stores, vault and env-file paths under an

@@ -28,12 +28,13 @@ export function buildStreamInvocation({ sourceEnv, stateRoot, artifactRoot, cont
     CAVE_STREAM_CONTROL: control ? "1" : "0",
     CAVE_STREAM_STATE_ROOT: stateRoot,
     CAVE_STREAM_ARTIFACT_ROOT: artifactRoot,
+    PLAYWRIGHT_JSON_OUTPUT_FILE: path.join(artifactRoot, "playwright.json"),
     NEXT_TELEMETRY_DISABLED: "1",
   });
   return {
     cli: require.resolve("@playwright/test/cli"),
     args: ["test", "tests/chat-stream-performance.spec.ts", "--project=desktop",
-      "--workers=1", "--retries=0", "--no-deps", "--reporter=list",
+      "--workers=1", "--retries=0", "--no-deps", "--reporter=list,json",
       `--output=${path.join(artifactRoot, "results")}`],
     env,
   };

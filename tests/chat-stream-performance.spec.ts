@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { setup, openThread } from "./chat-context-fixture";
 import {
-  createStreamWorkload, evaluateStreamPerformance, overlappingLongTasks,
+  createStreamWorkload, evaluateStreamPerformance, hasCompleteStreamText, overlappingLongTasks,
   STREAM_PERFORMANCE_PROFILE as profile,
   type LongTask, type StreamPerformanceSample,
 } from "./fixtures/chat-stream-performance";
@@ -38,7 +38,7 @@ for (const pattern of profile.patterns) {
     const { frames, expectedText } = createStreamWorkload();
     const samples: Array<StreamPerformanceSample & {
       error?: string; tasks?: LongTask[]; producerMs?: number; renderedMs?: number;
-      renderedTurns?: number; cleanup?: boolean;
+      renderedTurns?: number; renderedParagraphs?: number; cleanup?: boolean;
     }> = [];
     const report = {
       invocation: JSON.parse(readFileSync(path.join(artifactRoot, "invocation.json"), "utf8")),
@@ -162,13 +162,15 @@ for (const pattern of profile.patterns) {
             for (const entry of probe.observer?.takeRecords() ?? []) {
               probe.tasks.push({ start: entry.startTime, duration: entry.duration });
             }
+            const prose = Array.from(document.querySelectorAll(
+              '[data-testid="chat-main"] .cave-linear-turn--assistant .streaming-turn-prose',
+            )).at(-1);
             return {
               observerSupported: probe.observerSupported, requests: probe.requests,
               produced: probe.produced, cancelled: probe.cancelled, tasks: probe.tasks,
               start: probe.start, producerEnd: probe.producerEnd,
-              text: Array.from(document.querySelectorAll(
-                '[data-testid="chat-main"] .cave-linear-turn--assistant .streaming-turn-prose',
-              )).at(-1)?.textContent ?? "",
+              text: prose?.textContent ?? "",
+              paragraphs: Array.from(prose?.querySelectorAll("p") ?? [], node => node.textContent ?? ""),
               renderedTurns: document.querySelectorAll('[data-testid="chat-main"] [data-turn-id]').length,
             };
           });
@@ -177,11 +179,12 @@ for (const pattern of profile.patterns) {
           Object.assign(sample, {
             observerSupported: observed.observerSupported, sendCount: observed.requests,
             eventCount: observed.produced,
-            textMatches: observed.text.replace(/\s/g, "") === expectedText.replace(/\s/g, ""),
+            textMatches: hasCompleteStreamText(observed.text, observed.paragraphs, expectedText),
             draftMatches: await composer.inputValue() === draft,
             longestTaskMs: Math.max(0, ...sample.tasks.map(entry => entry.duration)),
             producerMs: observed.producerEnd - observed.start, renderedMs: renderedAt - observed.start,
             renderedTurns: observed.renderedTurns,
+            renderedParagraphs: observed.paragraphs.length,
             complete: !observed.cancelled && errors.length === 0,
           });
           if (errors.length) sample.error = errors.join("; ");

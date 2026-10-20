@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -11,8 +13,10 @@ import {
 import {
   createStreamWorkload,
   evaluateStreamPerformance,
+  hasCompleteStreamText,
   overlappingLongTasks,
 } from "../tests/fixtures/chat-stream-performance.ts";
+import { verifyStreamControl } from "./verify-stream-control.mjs";
 
 function samples(pattern = "burst", longestTaskMs = 200) {
   return Array.from({ length: 100 }, (_, index) => ({
@@ -55,6 +59,22 @@ test("100 complete trials at the existing ceiling pass with the measured percent
   assert.equal(result.p95Ms, 200);
   assert.equal(result.maximumMs, 200);
   assert.deepEqual(result.failures, []);
+});
+
+test("rendered completeness preserves every paragraph and its word separators", () => {
+  const { expectedText } = createStreamWorkload();
+  const paragraphs = expectedText.split("\n\n").map(text => text.trim());
+  assert.equal(paragraphs.length, 100);
+  assert.equal(hasCompleteStreamText(paragraphs.join("\n"), paragraphs, expectedText), true);
+  for (const damaged of [
+    [paragraphs.join(" ")],
+    [paragraphs[0] + " " + paragraphs[1], ...paragraphs.slice(2)],
+    paragraphs.map(text => text.replaceAll(" ", "")),
+    paragraphs.slice(1),
+    [...paragraphs].reverse(),
+  ]) assert.equal(hasCompleteStreamText(damaged.join("\n"), damaged, expectedText), false);
+  assert.equal(hasCompleteStreamText(expectedText, null, expectedText), false);
+  assert.equal(hasCompleteStreamText(expectedText + "unexpected", paragraphs, expectedText), false);
 });
 
 test("six slow trials breach p95 while five affect the reported maximum", () => {
@@ -167,11 +187,92 @@ test("the real CLI invocation strips credentials and injection while fixing the 
   assert.ok(invocation.args.includes("--retries=0"));
   assert.ok(invocation.args.includes("--workers=1"));
   assert.ok(invocation.args.includes("--no-deps"));
+  assert.ok(invocation.args.includes("--reporter=list,json"));
+  assert.equal(invocation.env.PLAYWRIGHT_JSON_OUTPUT_FILE, "/synthetic/artifacts/playwright.json");
   assert.equal(invocation.args.some(arg => arg.includes("repeat-each")), false);
   assert.equal(buildStreamInvocation({
     stateRoot: "/synthetic/state", artifactRoot: "/synthetic/artifacts",
     sourceEnv: {}, control: true,
   }).env.CAVE_STREAM_CONTROL, "1");
+});
+
+const controlHead = "a".repeat(40);
+function controlEvidence() {
+  const reports = ["burst", "paced"].map(pattern => {
+    const trials = samples(pattern, 0).map(sample => ({
+      ...sample, cleanup: true, longestTaskMs: sample.index < 6 ? 260 : 0,
+    }));
+    return {
+      pattern, control: true, samples: trials,
+      invocation: { invocationId: "synthetic-control", head: controlHead, dirty: false, control: true },
+      verdict: evaluateStreamPerformance(pattern, trials),
+    };
+  });
+  const runner = {
+    errors: [], stats: { expected: 0, unexpected: 2, skipped: 0, flaky: 0 },
+    suites: [{ specs: reports.map(report => ({ tests: [{
+      results: [{ status: "failed", errors: [{ message: `Error: ${JSON.stringify(report.verdict)}\n` }] }],
+    }] })) }],
+  };
+  return { reports, runner };
+}
+
+test("control verification accepts only complete latency failures from the expected clean head", () => {
+  const { reports, runner } = controlEvidence();
+  assert.doesNotThrow(() => verifyStreamControl(1, reports, runner, controlHead));
+  for (const mutate of [
+    evidence => { evidence.exitCode = 0; },
+    evidence => { evidence.exitCode = 2; },
+    evidence => { evidence.reports.pop(); },
+    evidence => { evidence.reports[1] = evidence.reports[0]; },
+    evidence => { evidence.reports[0].invocation.head = "b".repeat(40); },
+    evidence => { evidence.reports[0].invocation.dirty = true; },
+    evidence => { evidence.reports[0].invocation.invocationId = "another-run"; },
+    evidence => { evidence.reports[0].control = false; },
+    evidence => { evidence.reports[0].samples[50].textMatches = false; },
+    evidence => { evidence.reports[0].samples[50].cleanup = false; },
+    evidence => { evidence.reports[0].samples[50].error = "unexpected error"; },
+    evidence => { evidence.reports[0].samples.pop(); },
+    evidence => { evidence.reports[0].samples[0].longestTaskMs = 0; },
+    evidence => { evidence.runner.errors.push({ message: "server cleanup failed" }); },
+    evidence => { evidence.runner.stats.skipped = 1; },
+    evidence => { evidence.runner.suites[0].specs[0].tests[0].results[0].status = "timedOut"; },
+    evidence => { evidence.runner.suites[0].specs[0].tests[0].results[0].errors[0].message = "browser crashed"; },
+  ]) {
+    const evidence = { exitCode: 1, ...controlEvidence() };
+    mutate(evidence);
+    assert.throws(() => verifyStreamControl(
+      evidence.exitCode, evidence.reports, evidence.runner, controlHead,
+    ));
+  }
+});
+
+test("control verification reads actual Playwright assertion failure records", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "stream-control-reporter-"));
+  try {
+    const { reports } = controlEvidence();
+    const require = createRequire(import.meta.url);
+    writeFileSync(path.join(directory, "control.spec.cjs"),
+      `const { test, expect } = require(${JSON.stringify(require.resolve("@playwright/test"))});
+       for (const report of ${JSON.stringify(reports.map(({ pattern, verdict }) => ({ pattern, verdict })))}) {
+         test(report.pattern, () => expect(report.verdict.failures, JSON.stringify(report.verdict)).toEqual([]));
+       }`);
+    const config = path.join(directory, "playwright.config.cjs");
+    writeFileSync(config, `module.exports = {
+      testDir: ${JSON.stringify(directory)}, testMatch: "control.spec.cjs",
+      workers: 1, retries: 0, reporter: [["json"]],
+      outputDir: ${JSON.stringify(path.join(directory, "results"))}
+    };`);
+    const invocation = buildStreamInvocation({
+      sourceEnv: process.env, stateRoot: directory, artifactRoot: directory, control: true,
+    });
+    const result = spawnSync(process.execPath, [invocation.cli, "test", "--config", config], {
+      cwd: directory, env: invocation.env, encoding: "utf8", timeout: 30_000,
+    });
+    assert.equal(result.status, 1, result.stderr);
+    const runner = JSON.parse(readFileSync(path.join(directory, "playwright.json"), "utf8"));
+    assert.doesNotThrow(() => verifyStreamControl(result.status, reports, runner, controlHead));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("a build with local dotenv files is refused without reading or modifying them", () => {

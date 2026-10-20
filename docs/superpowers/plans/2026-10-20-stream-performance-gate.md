@@ -1,6 +1,6 @@
 # Stream Performance Gate Implementation Plan
 
-> **For agentic workers:** Use superpowers:executing-plans to implement this plan inline. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use superpowers:executing-plans to implement this plan inline. Checkboxes describe planned steps and are not evidence of completion; current code, verified results and merged PRs are authoritative.
 
 **Goal:** Enforce the existing 200 ms p95 ceiling for a complete 10,000-event production Chat stream.
 
@@ -50,12 +50,13 @@
 
 ### Task 2: Production browser gate and automation
 
-**Files:** Create `tests/chat-context-fixture.ts`, `tests/chat-stream-performance.spec.ts`, and `scripts/run-stream-performance.mjs`; modify `tests/chat-context-performance.spec.ts`, `playwright.config.ts`, `package.json`, `.github/workflows/cave-performance.yml`, `src/lib/performance-budgets.ts`, its test, `scripts/cave-performance-report.mjs`, its test, and `docs/performance-budgets.md`.
+**Files:** Create `tests/chat-context-fixture.ts`, `tests/chat-stream-performance.spec.ts`, `scripts/run-stream-performance.mjs`, and `scripts/verify-stream-control.mjs`; modify `tests/chat-context-performance.spec.ts`, `playwright.config.ts`, `package.json`, `.github/workflows/cave-performance.yml`, `src/lib/performance-budgets.ts`, its test, `scripts/cave-performance-report.mjs`, its test, and `docs/performance-budgets.md`.
 
 **Interfaces:**
 
 - Extract the existing context setup, thread/project navigation and shared synthetic data without behavior changes; both specs import it.
 - `pnpm performance:stream` launches only the new spec through the existing production server/config, one worker and zero retries. Preserve per-invocation report artifacts. `--control` injects a 260 ms stall in six of the 100 trials per pattern and must exit unsuccessfully.
+- The workflow verifies that control failure against both complete raw reports and the Playwright JSON result; only the expected latency assertions from the clean delivery commit make the negative-control job pass.
 - The launcher passes an allowlisted environment to Playwright. Its existing browser cache may remain accessible; server/build HOME, Coven/Cave homes, vault, env file, socket and mutable stores point to owned synthetic paths. Do not inherit provider credentials.
 - The browser intercepts only the send response with a synthetic ReadableStream, then drives the real parser/coalescer/renderer. Other API traffic uses the shared fixture. External requests and live mutations are refused.
 - Add a `browser-performance` catalogue gate delegated to this spec. The list report reports delegation; it never fabricates a stream metric or applies its five-sample rule to this gate.

@@ -54,6 +54,14 @@ export function createStreamWorkload() {
   };
 }
 
+export function hasCompleteStreamText(text: string, paragraphs: unknown, expectedText: string) {
+  const expectedParagraphs = expectedText.split("\n\n").map(value => value.trim());
+  return text.replace(/\s/g, "") === expectedText.replace(/\s/g, "") &&
+    Array.isArray(paragraphs) && paragraphs.length === expectedParagraphs.length &&
+    paragraphs.every((value, index) =>
+      typeof value === "string" && value.trim() === expectedParagraphs[index]);
+}
+
 export function evaluateStreamPerformance(pattern: string, samples: unknown) {
   const failures: string[] = [];
   const unmeasured = () => ({ pass: false, p95Ms: null, maximumMs: null, failures });
