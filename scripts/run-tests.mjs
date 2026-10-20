@@ -242,6 +242,7 @@ export const SUITES = {
     "src-tauri/notch-window-chrome.test.mjs",
     "scripts/react-compiler-config.test.mjs",
     "scripts/turbopack-dev-cache.test.mjs",
+    "scripts/start-playwright-production.test.mjs",
     "scripts/turbopack-runtime-boundaries.test.mjs",
     "scripts/corepack-launch.test.mjs",
     "scripts/codemods/tokenize-tsx-design.test.mjs",

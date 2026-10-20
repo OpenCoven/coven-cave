@@ -12,8 +12,10 @@ import { resolvePort } from "./scripts/ports.mjs";
 // viewport, devicePixelRatio, hasTouch, and isMobile all match the
 // real device.
 //
-// The dev server: started via `webServer` so `pnpm test:e2e:mobile`
-// can run without a separate terminal. The port is fixed at the e2e
+// CI builds and serves the production app: a long-lived Turbopack dev graph
+// can abort while restoring evicted tasks (#6114). Local runs retain the dev
+// server for quick iteration. Both are owned by `webServer`, so tests can run
+// without a separate terminal. The port is fixed at the e2e
 // entry of the shared contract (scripts/ports.mjs) so e2e runs collide
 // neither with `pnpm dev` on 3000 nor with a packaged build on 3020.
 //
@@ -22,6 +24,7 @@ import { resolvePort } from "./scripts/ports.mjs";
 // need a daemon should mock /api/*).
 
 const PORT = resolvePort("e2e", process.env);
+const productionE2E = !!process.env.CI;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_RUN_ID = randomUUID();
 const E2E_PROJECTS_PATH = join(tmpdir(), `cave-e2e-projects-${E2E_RUN_ID}.json`);
@@ -230,17 +233,26 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm exec next dev -H 127.0.0.1 -p ${PORT}`,
+    command: productionE2E
+      ? `pnpm build && node scripts/start-playwright-production.mjs ${PORT}`
+      : `pnpm exec next dev -H 127.0.0.1 -p ${PORT}`,
     url: BASE_URL,
+    stdout: productionE2E ? "pipe" : "ignore",
     // The availability probe waits on the FIRST dev compile of "/", which can
     // run past two minutes on a loaded machine (observed 2m51s cold /
     // 1m51s warm on 2026-07-19); 120s read slow-compile as a dead server.
-    timeout: 240_000,
+    // CI readiness includes the full production build and its budget/trace
+    // gates. This does not increase any browser test or assertion timeout.
+    timeout: productionE2E ? 1_200_000 : 240_000,
     // Preference tests mutate the canonical app-owned store. Never attach them
     // to an arbitrary server that may be using the developer's real ~/.coven.
     reuseExistingServer: false,
     env: {
       COVEN_CAVE_E2E: "1",
+      // The existing suite covers every registered room, as next dev did.
+      // Keep that explicit in fixture builds; released apps keep their allowlist.
+      NEXT_PUBLIC_CAVE_ROOMS: "all",
+      // Local dev-mode E2E only; the CI production server has no compiler.
       // Full Turbopack eviction only runs after a filesystem-cache snapshot.
       // Next 16.3's own eviction fixture removes the minimum active window and
       // shortens the idle checkpoint so a cold multi-surface compile can be
