@@ -97,6 +97,56 @@ test("a missing binary returns failed evidence, not a successful empty benchmark
   assert.equal(result.samples.length, 0);
 });
 
+test("unverifiable cleanup returns redacted failed evidence", { skip: process.platform === "win32" }, async () => {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "cave-cleanup-test-")));
+  const binary = path.join(root, "fixture-coven");
+  const groups = new Set();
+  writeFileSync(binary, `#!${process.execPath}\nconsole.log('coven v0.0.1');\n`, { mode: 0o700 });
+  try {
+    for (const [phase, code, classification] of [
+      ["version", "EPERM", "permission_denied"],
+      ["version", "UNKNOWN", "probe_failed"],
+      ["sample", "EMFILE", "resource_exhausted"],
+    ]) {
+      const script = `
+        import { runDaemonLifecycleProbe } from ${JSON.stringify(new URL("./daemon-lifecycle-probe.mjs", import.meta.url).href)};
+        const kill = process.kill.bind(process);
+        let versionGroup;
+        process.kill = (pid, signal) => {
+          if (pid < 0 && signal === 0) {
+            versionGroup ??= pid;
+            if (${JSON.stringify(phase)} === "version" || pid !== versionGroup)
+              throw Object.assign(new Error("private fixture diagnostic"), {code: ${JSON.stringify(code)}});
+          }
+          return kill(pid, signal);
+        };
+        const report = await runDaemonLifecycleProbe({binary: ${JSON.stringify(binary)}, samples: 1});
+        console.log(JSON.stringify(report));
+      `;
+      const result = await runOwnedCommand(process.execPath, ["--input-type=module", "-e", script], {
+        cwd: root, env: {}, groups,
+      });
+      assert.equal(result.code, 0, "cleanup inspection must return a report rather than throw");
+      const report = JSON.parse(result.stdout);
+      assert.equal(report.pass, false);
+      if (phase === "version") {
+        assert.equal(report.error, "version_cleanup_failed");
+        assert.equal(report.cleanupFailure, classification);
+        assert.deepEqual(report.samples, []);
+      } else {
+        assert.equal(report.samples.length, 1);
+        assert.equal(report.samples[0].operations[0].failure, "status_invalid_json");
+        assert.equal(report.samples[0].cleanup, false);
+        assert.equal(report.samples[0].cleanupFailure, classification);
+      }
+      assert.doesNotMatch(result.stdout + result.stderr, /private fixture diagnostic/);
+    }
+  } finally {
+    await cleanupOwnedGroups(groups);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a descendant holding inherited pipes cannot outlive the command deadline", { skip: process.platform === "win32" }, async () => {
   const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "cave-pipe-test-")));
   const pidFile = path.join(root, "owned-child");

@@ -229,14 +229,21 @@ async function runSample(binary, index, signal) {
   } catch { /* Failed operation is retained; subsequent operations were not exercised. */ }
   finally {
     if (!signal?.aborted) await command(["daemon", "stop"]); // Only this synthetic home.
-    try { sample.cleanup = await cleanupOwnedGroups(groups); }
-    catch { sample.cleanup = false; }
+    try {
+      sample.cleanup = await cleanupOwnedGroups(groups);
+      if (!sample.cleanup) sample.cleanupFailure = "owned_groups_survived";
+    } catch (error) {
+      sample.cleanup = false;
+      sample.cleanupFailure = classifyFailure(error);
+    }
     sample.pass &&= sample.cleanup;
   }
   return sample;
 }
 
 function classifyFailure(error) {
+  if (["EPERM", "EACCES"].includes(error.code)) return "permission_denied";
+  if (["EMFILE", "ENFILE", "ENOMEM", "ENOSPC"].includes(error.code)) return "resource_exhausted";
   const known = new Set(["cancelled", "spawn_failed", "command_timeout", "command_output_limit", "command_failed",
     "status_invalid_json", "health_invalid_json", "health_http_failure", "health_output_limit", "health_timeout"]);
   return known.has(error.message) ? error.message : "probe_failed";
@@ -267,7 +274,11 @@ export async function runDaemonLifecycleProbe({ binary, samples = 5, signal }) {
   const version = await runOwnedCommand(binary, ["--version"], {
     cwd: versionRoot, env: isolatedEnvironment(versionRoot), groups: versionGroups, signal,
   });
-  const versionClean = await cleanupOwnedGroups(versionGroups);
+  let versionClean;
+  try { versionClean = await cleanupOwnedGroups(versionGroups); }
+  catch (error) {
+    return { ...report, error: "version_cleanup_failed", cleanupFailure: classifyFailure(error) };
+  }
   if (signal?.aborted) return { ...report, error: "cancelled" };
   if (version.code !== 0 || version.timedOut || !versionClean || version.outputExceeded || version.spawnFailed)
     return { ...report, error: "version_probe_failed" };

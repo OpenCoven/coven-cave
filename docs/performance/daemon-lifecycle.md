@@ -46,6 +46,13 @@ to prove cleanup fails the sample. Fixture directories remain at the report's
 `fixtureRoot` paths for diagnosis; their preservation is separate from process
 cleanup.
 
+Cleanup inspection failures retain a fixed `cleanupFailure` classification,
+including permission denial, resource exhaustion and surviving owned groups.
+Unknown errors remain `probe_failed`; raw exception messages and stacks are not
+exported. If version-command cleanup cannot be inspected, the probe returns a
+failed JSON report before starting samples. No inspection error counts as
+proof that a process exited.
+
 The report retains every failed sample, attempted-operation duration and cleanup
 result. A failed operation ends that sample's journey, so later operations are
 unmeasured for that sample. Cancellation stops further samples and retains the
