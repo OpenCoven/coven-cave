@@ -124,6 +124,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 
 Active initiatives. Parts have shipped; parts have not. Each states which.
 
+- [`core-contract-and-room-boundaries.md`](core-contract-and-room-boundaries.md) — the minimal product contract and source inventory for #6119: all workspace modes, role rooms, auxiliary subsystems and startup workers, with current boundaries separated from unverified extraction and recovery acceptance
 - [`desktop-onboarding.md`](desktop-onboarding.md) — the evidence baseline and product contract for download → first successful familiar response, separating confirmed behavior from proposals still needing usability and packaged-app testing
 - [`ci-implementation-plan.md`](ci-implementation-plan.md) — the release-candidate CI rollout: signed promotion, full validation, the parallel `PR checks` context, and promotion at real release cuts have shipped; the protection switch, retiring routine PR fanout, and verifying the lean gate remain, with no tracking issue yet (#6111)
 - [`roadmaps/coven-automations-v1.md`](roadmaps/coven-automations-v1.md) — the cross-repository Coven Automations v1 program (`OpenCoven/coven#854`) and its [machine-readable mapping](roadmaps/coven-automations-v1.mapping.json): foundation, protocol, scheduler reliability, embodiment, and authority have closed; dispatch-time trust (`coven#857`), certification (`coven#858`), the SDK, Cave oversight (#5217), Psyche, Docs, and organization canaries remain, and the 2026-10-18 release checkpoint is no-go
