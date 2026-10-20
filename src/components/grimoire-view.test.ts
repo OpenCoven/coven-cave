@@ -332,7 +332,7 @@ assert.match(view, /role="tabpanel"\s*\n\s*id=\{`grimoire-tabpanel-\$\{i\}`\}\s*
 assert.match(view, /key === selectedKey \? "h-full min-h-0" : "hidden"/, "inactive tab editors stay mounted, just hidden");
 assert.match(view, /kind !== "knowledge-new"/, "unsaved new-entry drafts are not restored across reloads");
 assert.match(view, /replaceTab\(key, \{ kind: "knowledge", id: saved\.id,[\s\S]{0,120}saved\.collection/, "saving a new entry swaps its draft tab for the real doc, preserving collection");
-assert.match(view, /const evictIndex = tabs\.findIndex/, "over-cap opens evict the oldest non-active tab");
+// Dirty-tab retention and the mount limit are exercised by grimoire-autosave.spec.ts.
 assert.match(view, /fromHash/, "a #grimoire: deep link merges into (and activates within) the restored tab set");
 
 // ── Reader-first documents ──────────────────────────────────────────────────
