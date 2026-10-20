@@ -3,9 +3,15 @@
 Cave treats a reachable socket as transport availability, not as runtime
 readiness. A local Coven daemon is adopted only after `/api/v1/health` reports:
 
-- a supported named API (`1` or `v1`);
-- a valid Coven SemVer value; and
-- the exact same version as the installed Coven command Cave manages.
+- `ok: true`;
+- a supported named API (`coven.daemon.v1`); and
+- a valid Coven SemVer value.
+
+`src/lib/daemon-startup-contract.ts` owns the supported contract set. Cave does
+not require the CLI package version and daemon runtime version to match; their
+release lines are independent. An unknown newer API contract is refused with
+an instruction to update Cave. Other unsupported or missing API identities
+direct the user to update Coven and restart it.
 
 If that contract is not met, Cave returns `runtime_incompatible` from daemon
 start and `incompatible` from daemon status. It does not restart an already
