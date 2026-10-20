@@ -823,8 +823,22 @@ test("an empty chat does not report missing response identity before its first r
   await expect(header).toBeVisible();
   await expect(header).not.toContainText("Runtime not recorded");
   await expect(header).not.toContainText("Model not reported");
-  // The actual offline recovery remains actionable before a first response.
-  await expect(header.getByRole("button", { name: /Start daemon/ })).toBeVisible();
+  // The offline action leads to a remedy, including on a fresh machine.
+  await page.route("**/api/onboarding/bootstrap**", (route) => route.fulfill({
+    json: {
+      ok: true, version: 1, confirmed: false, complete: false, needsSetup: true,
+      status: "idle", activeStage: null, failure: null,
+      stages: [
+        { id: "core-tools", label: "Check local components", status: "pending", detail: "Check this machine’s installation." },
+        { id: "workspace", label: "Create Cave defaults", status: "pending", detail: "Create local defaults." },
+        { id: "daemon", label: "Start local services", status: "pending", detail: "Start the local daemon." },
+      ],
+    },
+  }));
+  await header.getByRole("button", { name: "Open setup", exact: true }).click();
+  const setup = page.getByRole("dialog", { name: "Set up Cave", exact: true });
+  await expect(setup).toBeVisible();
+  await expect(setup.getByRole("button", { name: "Set up Cave", exact: true })).toBeVisible();
 });
 
 test("estimated context stays labelled and visible at the high-usage threshold", async ({ page }, testInfo) => {

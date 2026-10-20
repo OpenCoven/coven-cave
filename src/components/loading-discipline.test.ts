@@ -17,12 +17,12 @@ assert.doesNotMatch(
 assert.match(
   chatView,
   /function MetaLineStartDaemon\(\)/,
-  "The offline meta line owns an inline Start-daemon action",
+  "The offline meta line owns an inline recovery action",
 );
 assert.match(
   chatView,
-  /MetaLineStartDaemon[\s\S]{0,400}fetch\("\/api\/daemon\/start", \{ method: "POST" \}\)/,
-  "The inline action posts /api/daemon/start like the settings/onboarding start buttons",
+  /MetaLineStartDaemon[\s\S]{0,400}useSetupOpener\("banner"\)/,
+  "The inline action opens guided setup instead of ignoring start failures",
 );
 assert.match(
   chatView,
@@ -35,7 +35,7 @@ assert.match(
   "The inline action is keyboard-focusable with the shared focus ring",
 );
 
-const chatCss = read("../styles/cave-chat.css");
+const chatCss = read("../styles/cave-chat/activity.css");
 assert.match(
   chatCss,
   /\.cave-chat-meta-line__action:hover \{\s*color: var\(--accent-presence\);/,
@@ -92,7 +92,7 @@ assert.doesNotMatch(
 );
 
 // ── The shared skeleton's degradation contract stays pinned ─────────────────
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const globals = readFileSync(new URL("../styles/globals/primitives.css", import.meta.url), "utf8");
 assert.match(
   globals,
   /animation: ui-skeleton-shimmer 1\.4s ease-in-out infinite;/,
