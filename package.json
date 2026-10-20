@@ -53,6 +53,7 @@
     "bench:chat-projects": "node --experimental-strip-types scripts/chat-project-grouping-benchmark.mjs",
     "bench:store-reads": "node --experimental-strip-types scripts/store-read-benchmark.mjs",
     "bench:daemon-reliability": "node --experimental-strip-types scripts/daemon-reliability-benchmark.mjs",
+    "bench:daemon-lifecycle": "node --experimental-strip-types scripts/daemon-lifecycle-probe.mjs",
     "performance:report": "node --experimental-strip-types scripts/cave-performance-report.mjs",
     "ios:performance:capture": "node scripts/ios-performance-capture.mjs",
     "test:performance-report": "node --test scripts/cave-performance-report.test.mjs",
