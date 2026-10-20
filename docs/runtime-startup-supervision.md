@@ -43,3 +43,12 @@ After three failed managed launches in one minute, Cave pauses new launches
 until the rolling window expires and returns an actionable retry time. A healthy
 readiness handshake clears that failure history. Test seams bypass this
 process-wide guard so isolated lifecycle tests cannot affect production state.
+
+The visible frontend bounds each connection-status read, including its response
+body, to ten seconds. This leaves room beyond the server health probe's
+three-second hard transport deadline. A stalled read is aborted, reports unknown
+status, and releases waiting refresh callers before the existing jittered
+five-to-thirty-second polling cadence resumes. It does not authorize a daemon
+restart. Late results are ignored; a later healthy result restores the normal
+cadence. Hiding or stopping the supervisor cancels the read and its deadline.
+The separate thirty-second reconnect measurement episode remains unchanged.
