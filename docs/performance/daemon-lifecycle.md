@@ -35,9 +35,12 @@ Each sample verifies:
 - Shutdown: the status is stopped, health cannot be read, and every process
   group launched by this sample disappears.
 
-Commands have a 15-second harness hang guard, and health requests have a
-two-second deadline and 64 KiB response limit. These bounds do not alter Coven's
-own lifecycle deadlines. Teardown first requests an ordinary stop in the
+Commands have a 15-second harness deadline with up to two additional seconds
+for termination, and health requests have a two-second deadline and 64 KiB
+response limit. Captured pipes close on timeout even if a descendant has escaped
+the original group. These bounds do not alter Coven's own lifecycle deadlines.
+SIGINT/SIGTERM cancel the probe, retain interrupted failure evidence, and run
+bounded owned-group cleanup. Teardown normally requests an ordinary stop in the
 synthetic home, then terminates only process groups the probe created. Failure
 to prove cleanup fails the sample. Fixture directories remain at the report's
 `fixtureRoot` paths for diagnosis; their preservation is separate from process
@@ -45,7 +48,8 @@ cleanup.
 
 The report retains every failed sample, attempted-operation duration and cleanup
 result. A failed operation ends that sample's journey, so later operations are
-unmeasured for that sample. Median and range include failures. No timing budget
+unmeasured for that sample. Cancellation stops further samples and retains the
+requested sample count. Median and range include failures. No timing budget
 or statistical reliability claim is inferred from five smoke samples. Existing
 performance budgets remain unchanged.
 

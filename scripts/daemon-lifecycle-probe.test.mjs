@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import {
   cleanupOwnedGroups,
   isolatedEnvironment,
@@ -92,4 +95,72 @@ test("a missing binary returns failed evidence, not a successful empty benchmark
   assert.equal(result.pass, false);
   assert.equal(result.error, "binary_unavailable");
   assert.equal(result.samples.length, 0);
+});
+
+test("a descendant holding inherited pipes cannot outlive the command deadline", { skip: process.platform === "win32" }, async () => {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "cave-pipe-test-")));
+  const pidFile = path.join(root, "owned-child");
+  const groups = new Set();
+  let guard;
+  try {
+    const code = `const {spawn}=require('node:child_process');const fs=require('node:fs');
+      const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:['ignore',1,2]});
+      fs.writeFileSync(${JSON.stringify(pidFile)},String(child.pid));child.unref();`;
+    const result = await Promise.race([
+      runOwnedCommand(process.execPath, ["-e", code], { cwd: root, env: {}, groups, timeoutMs: 150 }),
+      new Promise((_, reject) => { guard = setTimeout(() => reject(new Error("command never settled")), 3000); }),
+    ]);
+    assert.equal(result.timedOut, true);
+  } finally {
+    clearTimeout(guard);
+    if (existsSync(pidFile)) {
+      try { process.kill(-Number(readFileSync(pidFile, "utf8")), "SIGKILL"); }
+      catch (error) { if (error.code !== "ESRCH") throw error; }
+    }
+    await cleanupOwnedGroups(groups);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("SIGTERM retains interrupted evidence and cleans the active detached command", { skip: process.platform === "win32" }, async () => {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "cave-interrupt-test-")));
+  const pidFile = path.join(root, "owned-command");
+  const binary = path.join(root, "fixture-coven");
+  writeFileSync(binary, `#!${process.execPath}
+import fs from 'node:fs';
+if(process.argv.includes('--version')) console.log('coven v0.0.1');
+else {fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=>{},1000);}
+`, { mode: 0o700 });
+  const script = fileURLToPath(new URL("./daemon-lifecycle-probe.mjs", import.meta.url));
+  const child = spawn(process.execPath, ["--experimental-strip-types", script, binary, "1"], { stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  child.stdout.on("data", data => { stdout += data; });
+  child.stderr.resume();
+  const closed = new Promise(resolve => child.once("close", code => resolve(code)));
+  let guard;
+  try {
+    const deadline = Date.now() + 5000;
+    while (!existsSync(pidFile) && Date.now() < deadline) await delay(10);
+    assert.ok(existsSync(pidFile), "fixture must announce its active command before interruption");
+    child.kill("SIGTERM");
+    const code = await Promise.race([closed,
+      new Promise((_, reject) => { guard = setTimeout(() => reject(new Error("interrupted probe did not finish")), 5000); }),
+    ]);
+    assert.equal(code, 1);
+    const report = JSON.parse(stdout);
+    assert.equal(report.pass, false);
+    assert.equal(report.error, "cancelled");
+    assert.equal(report.samples[0].cleanup, true);
+    assert.equal(report.samples[0].operations[0].failure, "cancelled");
+    assert.throws(() => process.kill(-Number(readFileSync(pidFile, "utf8")), 0), { code: "ESRCH" });
+  } finally {
+    clearTimeout(guard);
+    child.kill("SIGKILL");
+    if (existsSync(pidFile)) {
+      try { process.kill(-Number(readFileSync(pidFile, "utf8")), "SIGKILL"); }
+      catch (error) { if (error.code !== "ESRCH") throw error; }
+    }
+    await closed;
+    rmSync(root, { recursive: true, force: true });
+  }
 });

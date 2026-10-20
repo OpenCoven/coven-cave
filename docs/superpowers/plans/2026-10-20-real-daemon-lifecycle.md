@@ -32,13 +32,19 @@
 
 **Interfaces:** `validateReadyDaemon(status, health, home)` rejects anything except matching ready PID, socket, startup identity and supported contract. `runDaemonLifecycleProbe({ binary, samples })` returns a versioned report containing every sample and cleanup result. `runOwnedCommand(binary, args, options)` bounds execution/output and tracks owned groups. `cleanupOwnedGroups(groups, dependencies)` verifies group disappearance after TERM/KILL deadlines. Dependencies exist only to test cleanup refusal deterministically.
 
-- [ ] Write tests for incompatible/wrong-instance readiness, missing and hanging subprocesses, cleanup failure, and retained failed samples.
-- [ ] Run `node --experimental-strip-types --test scripts/daemon-lifecycle-probe.test.mjs`; observe the missing implementation failure.
-- [ ] Implement fresh start, already-running adoption, concurrent start, restart, marker preservation and shutdown per private sample. Use a minimal child environment, absolute native binary, short canonical temp roots, bounded HTTP response and command deadlines. Never kill by port or daemon-reported PID; cleanup only groups created by this process.
-- [ ] Run targeted tests and the probe with the installed native binary, five samples. Retain raw numeric evidence and limitations; fix harness defects rather than masking failed samples.
-- [ ] Correct stale startup API/version prose. Document invocation, evidence meaning and exclusions.
+- [x] Write tests for incompatible/wrong-instance readiness, missing and hanging subprocesses, cleanup failure, and retained failed samples.
+- [x] Run `node --experimental-strip-types --test scripts/daemon-lifecycle-probe.test.mjs`; observe the missing implementation failure.
+- [x] Implement fresh start, already-running adoption, concurrent start, restart, marker preservation and shutdown per private sample. Use a minimal child environment, absolute native binary, short canonical temp roots, bounded HTTP response and command deadlines. Never kill by port or daemon-reported PID; cleanup only groups created by this process.
+- [x] Run targeted tests and the probe with the installed native binary, five samples. Retain raw numeric evidence and limitations; fix harness defects rather than masking failed samples.
+- [x] Correct stale startup API/version prose. Document invocation, evidence meaning and exclusions.
 - [ ] Run test registration, lint/typecheck and relevant existing lifecycle contract tests. Review the diff independently, then commit/push/PR and merge only after exact-head checks pass.
 
 ## Execution rulings
 
 The maintainer's goal authorizes routine implementation and protected delivery; no additional plan-approval round is required. GitHub #6120 is the durable progress record, consistent with the repository's sole-queue contract. This plan is a scoped implementation artifact, not a parallel task queue.
+
+Independent review identified inherited pipes that could prevent timeout
+settlement and missing interruption cleanup. Both subprocess regressions failed
+on `ee8bc8058`, then passed after bounded pipe termination and cancellation were
+added. Escaped-descendant reclamation remains explicitly outside this smoke
+probe; it cannot prevent the probe from reporting a failed command.

@@ -45,19 +45,42 @@ export async function cleanupOwnedGroups(groups, { alive = groupAlive, signal = 
   return false;
 }
 
-export function runOwnedCommand(binary, args, { cwd, env, groups, timeoutMs = COMMAND_TIMEOUT_MS }) {
+export function runOwnedCommand(binary, args, { cwd, env, groups, signal, timeoutMs = COMMAND_TIMEOUT_MS }) {
+  if (signal?.aborted) return Promise.resolve({ code: null, cancelled: true, durationMs: 0, stdout: "", stderr: "" });
   return new Promise(resolve => {
     const started = performance.now();
     const child = spawn(binary, args, { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
     if (child.pid) groups.add(child.pid);
-    let stdout = "", stderr = "", bytes = 0, timedOut = false, spawnFailed = false, outputExceeded = false;
-    let killTimer;
-    const terminate = () => {
-      if (!child.pid) return;
-      signalGroup(child.pid, "SIGTERM");
-      killTimer ??= setTimeout(() => signalGroup(child.pid, "SIGKILL"), 1000);
+    let stdout = "", stderr = "", bytes = 0, timedOut = false, spawnFailed = false, outputExceeded = false, cancelled = false;
+    let killTimer, settlementTimer, settled = false, terminating = false;
+    const finish = (code, terminationSignal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer); clearTimeout(killTimer); clearTimeout(settlementTimer);
+      signal?.removeEventListener("abort", abort);
+      resolve({ code, signal: terminationSignal, stdout, stderr, timedOut, spawnFailed, outputExceeded, cancelled, durationMs: performance.now() - started });
     };
+    const terminate = () => {
+      if (terminating) return;
+      terminating = true;
+      // Escaped descendants can retain these pipes after the launcher exits.
+      // Closing captures bounds reporting; it does not claim those descendants
+      // were reclaimed. Group cleanup is checked independently by the caller.
+      child.stdout.destroy(); child.stderr.destroy();
+      const signalOwned = terminationSignal => {
+        try { if (child.pid) signalGroup(child.pid, terminationSignal); }
+        catch { /* Cleanup below must still report the surviving group. */ }
+      };
+      signalOwned("SIGTERM");
+      killTimer = setTimeout(() => signalOwned("SIGKILL"), 1000);
+      settlementTimer = setTimeout(() => {
+        child.unref();
+        finish(child.exitCode, child.signalCode);
+      }, 2000);
+    };
+    const abort = () => { cancelled = true; terminate(); };
     const timer = setTimeout(() => { timedOut = true; terminate(); }, timeoutMs);
+    signal?.addEventListener("abort", abort, { once: true });
     const receive = (chunk, stream) => {
       bytes += chunk.length;
       if (bytes > OUTPUT_LIMIT) { outputExceeded = true; terminate(); return; }
@@ -66,14 +89,12 @@ export function runOwnedCommand(binary, args, { cwd, env, groups, timeoutMs = CO
     child.stdout.on("data", chunk => receive(chunk, "stdout"));
     child.stderr.on("data", chunk => receive(chunk, "stderr"));
     child.on("error", () => { spawnFailed = true; });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer); clearTimeout(killTimer);
-      resolve({ code, signal, stdout, stderr, timedOut, spawnFailed, outputExceeded, durationMs: performance.now() - started });
-    });
+    child.on("close", finish);
   });
 }
 
 function requireCommand(result) {
+  if (result.cancelled) throw new Error("cancelled");
   if (result.spawnFailed) throw new Error("spawn_failed");
   if (result.timedOut) throw new Error("command_timeout");
   if (result.outputExceeded) throw new Error("command_output_limit");
@@ -134,14 +155,14 @@ export function summarizeSamples(samples) {
   return { pass: samples.length > 0 && passedSamples === samples.length, sampleCount: samples.length, passedSamples, operations };
 }
 
-async function runSample(binary, index) {
+async function runSample(binary, index, signal) {
   // Short paths are necessary for Darwin's Unix socket length bound.
   const root = realpathSync(mkdtempSync(path.join("/tmp", "cave-life-")));
   const env = isolatedEnvironment(root);
   for (const dir of [env.COVEN_HOME, env.HOME, env.TMPDIR]) mkdirSync(dir, { mode: 0o700 });
   const groups = new Set();
   const sample = { index, pass: false, cleanup: false, operations: [], fixtureRoot: root };
-  const command = args => runOwnedCommand(binary, args, { cwd: root, env, groups });
+  const command = args => runOwnedCommand(binary, args, { cwd: root, env, groups, signal });
   const status = async () => {
     const output = requireCommand(await command(["daemon", "status", "--json"]));
     try { return JSON.parse(output); } catch { throw new Error("status_invalid_json"); }
@@ -207,7 +228,7 @@ async function runSample(binary, index) {
     sample.pass = true;
   } catch { /* Failed operation is retained; subsequent operations were not exercised. */ }
   finally {
-    await command(["daemon", "stop"]); // Only this synthetic home.
+    if (!signal?.aborted) await command(["daemon", "stop"]); // Only this synthetic home.
     try { sample.cleanup = await cleanupOwnedGroups(groups); }
     catch { sample.cleanup = false; }
     sample.pass &&= sample.cleanup;
@@ -216,14 +237,14 @@ async function runSample(binary, index) {
 }
 
 function classifyFailure(error) {
-  const known = new Set(["spawn_failed", "command_timeout", "command_output_limit", "command_failed",
+  const known = new Set(["cancelled", "spawn_failed", "command_timeout", "command_output_limit", "command_failed",
     "status_invalid_json", "health_invalid_json", "health_http_failure", "health_output_limit", "health_timeout"]);
   return known.has(error.message) ? error.message : "probe_failed";
 }
 
-export async function runDaemonLifecycleProbe({ binary, samples = 5 }) {
+export async function runDaemonLifecycleProbe({ binary, samples = 5, signal }) {
   const report = { schemaVersion: 1, kind: "real-daemon-cli-lifecycle", runId: randomUUID(),
-    observedAt: new Date().toISOString(), pass: false, samples: [],
+    observedAt: new Date().toISOString(), pass: false, requestedSamples: samples, samples: [],
     machine: { platform: os.platform(), release: os.release(), architecture: os.arch(),
       cpu: os.cpus()[0]?.model, cpuCount: os.cpus().length, memoryBytes: os.totalmem() },
     limitations: ["CLI lifecycle smoke, not packaged-app or native-supervisor recovery",
@@ -244,24 +265,31 @@ export async function runDaemonLifecycleProbe({ binary, samples = 5 }) {
   const versionRoot = realpathSync(mkdtempSync("/tmp/cave-life-version-"));
   const versionGroups = new Set();
   const version = await runOwnedCommand(binary, ["--version"], {
-    cwd: versionRoot, env: isolatedEnvironment(versionRoot), groups: versionGroups,
+    cwd: versionRoot, env: isolatedEnvironment(versionRoot), groups: versionGroups, signal,
   });
   const versionClean = await cleanupOwnedGroups(versionGroups);
+  if (signal?.aborted) return { ...report, error: "cancelled" };
   if (version.code !== 0 || version.timedOut || !versionClean || version.outputExceeded || version.spawnFailed)
     return { ...report, error: "version_probe_failed" };
   const match = /^coven v([0-9]+\.[0-9]+\.[0-9]+[^\s]*)/m.exec(version.stdout);
   if (!match) return { ...report, error: "unrecognized_binary_version" };
   report.covenVersion = match[1];
   for (let index = 0; index < samples; index += 1) {
-    try { report.samples.push(await runSample(binary, index)); }
+    if (signal?.aborted) break;
+    try { report.samples.push(await runSample(binary, index, signal)); }
     catch { report.samples.push({ index, pass: false, cleanup: false, operations: [], error: "fixture_setup_or_cleanup_failed" }); }
   }
-  return { ...report, ...summarizeSamples(report.samples) };
+  return { ...report, ...summarizeSamples(report.samples),
+    ...(signal?.aborted ? { pass: false, error: "cancelled" } : {}) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [binary, count] = process.argv.slice(2);
-  const report = await runDaemonLifecycleProbe({ binary, samples: count === undefined ? 5 : Number(count) });
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  process.once("SIGINT", cancel); process.once("SIGTERM", cancel);
+  const report = await runDaemonLifecycleProbe({ binary, samples: count === undefined ? 5 : Number(count), signal: controller.signal });
+  process.removeListener("SIGINT", cancel); process.removeListener("SIGTERM", cancel);
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   process.exitCode = report.pass ? 0 : 1;
 }
