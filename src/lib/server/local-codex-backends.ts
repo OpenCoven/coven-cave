@@ -22,6 +22,7 @@ import {
   localCodexNativeModel,
   type LocalCodexBackend,
   type LocalCodexBackendInfo,
+  type LocalCodexRefusalCode,
   type LocalModelDeviceCheck,
   type LocalModelsBackendStatus,
   type LocalModelsStatus,
@@ -287,14 +288,8 @@ export type LocalCodexPreflight =
   }
   | { ok: false; code: LocalCodexFailureCode; message: string };
 
-export type LocalCodexFailureCode =
-  | "local_endpoint_invalid"
-  | "local_server_unreachable"
-  | "local_server_invalid"
-  | "local_model_unselected"
-  | "local_model_missing"
-  | "local_model_no_tools"
-  | "local_model_other_computer";
+/** The chat error banner shows these messages in full (#6095). */
+export type LocalCodexFailureCode = Exclude<LocalCodexRefusalCode, "local_codex_remote_host">;
 
 /**
  * Whether this turn can run on the local server, and the exact Codex
