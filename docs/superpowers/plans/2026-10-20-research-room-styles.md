@@ -2,6 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this plan inline, followed by one independent whole-branch review.
 
+Checkbox state is not evidence of completion. Verify current code, test results, and merged PRs; issue #6144 owns the work record.
+
 **Goal:** Keep Research styles out of core startup and absent-package builds while preserving the enabled room's appearance.
 
 **Architecture:** Move the Research-only suffix of the global role stylesheet into a room sheet. A capability-gated host entry imports that sheet before re-exporting the existing optional client; package detection selects the entry or the existing absent stub.
