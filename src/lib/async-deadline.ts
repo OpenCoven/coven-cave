@@ -3,6 +3,7 @@ export type DeadlineResult<T> =
   | { state: "unavailable"; value: null };
 
 type DeadlineOptions = {
+  signal?: AbortSignal;
   now?: () => number;
   schedule?: (callback: () => void, delayMs: number) => unknown;
   cancel?: (handle: unknown) => void;
@@ -16,7 +17,7 @@ export async function withinDeadline<T>(
 ): Promise<DeadlineResult<T>> {
   const now = options.now ?? Date.now;
   const remaining = Math.max(0, deadline - now());
-  if (remaining === 0) return { state: "unavailable", value: null };
+  if (remaining === 0 || options.signal?.aborted) return { state: "unavailable", value: null };
 
   const controller = new AbortController();
   const schedule = options.schedule ??
@@ -24,15 +25,21 @@ export async function withinDeadline<T>(
   const cancel = options.cancel ??
     ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   let timer: unknown;
+  let abort: (() => void) | undefined;
   try {
     const timeout = new Promise<DeadlineResult<T>>((resolve) => {
-      timer = schedule(() => {
+      abort = () => {
         controller.abort();
         resolve({ state: "unavailable", value: null });
-      }, remaining);
+      };
+      options.signal?.addEventListener("abort", abort, { once: true });
+      timer = schedule(abort, remaining);
     });
     const result = Promise.resolve()
-      .then(() => work(controller.signal))
+      .then(() => {
+        if (options.signal?.aborted) throw new DOMException("Read cancelled", "AbortError");
+        return work(controller.signal);
+      })
       .then<DeadlineResult<T>, DeadlineResult<T>>(
         (value) => ({ state: "ready", value }),
         () => ({ state: "unavailable", value: null }),
@@ -40,5 +47,6 @@ export async function withinDeadline<T>(
     return await Promise.race([result, timeout]);
   } finally {
     if (timer !== undefined) cancel(timer);
+    if (abort) options.signal?.removeEventListener("abort", abort);
   }
 }
