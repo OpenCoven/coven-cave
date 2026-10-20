@@ -292,6 +292,7 @@ for (const [runtime, id] of [
         { name: "plain-llm", tools: false, contextLength: 8192 },
         { name: "qwen/qwen3.8-27b", tools: true, contextLength: 262144 },
       ],
+      deviceCheck: "checked",
     }),
   });
   assert.deepEqual(probes, ["lmstudio"]);
@@ -311,7 +312,31 @@ for (const [runtime, id] of [
   assert.equal(await issue("codex-ollama", {
     kind: "available", endpoint: "http://127.0.0.1:11434", version: "0.21.0",
     models: [{ name: "llama2:7b", tools: false, contextLength: 4096 }],
+    deviceCheck: "not-needed",
   }), "local-no-tool-models", "a server with only tool-less models says so instead of offering models Codex cannot drive");
+
+  // LM Link (#6094): a model served from another computer needs the remote permission.
+  const linkedServer = {
+    kind: "available" as const, endpoint: "http://127.0.0.1:1234", version: null, deviceCheck: "checked" as const,
+    models: [
+      { name: "qwen/qwen3.8-27b", tools: true, contextLength: 262144, lmLink: { deviceName: "studio-mac.local" } },
+      { name: "qwen3-8b", tools: true, contextLength: 40960 },
+    ],
+  };
+  let permissionReads = 0;
+  const allow = (value: boolean) => async () => { permissionReads++; return value; };
+  const offeredWith = async (value: boolean, answer: Parameters<typeof probe>[0] = linkedServer) =>
+    (await listRuntimeModelInventory("codex-lmstudio", "sage", { probeLocalBackend: probe(answer), localAllowRemote: allow(value) }));
+  assert.deepEqual((await offeredWith(false)).models, [{ id: "lmstudio/qwen3-8b", label: "qwen3-8b" }],
+    "a linked model is not offered while servers on other computers are off");
+  assert.deepEqual((await offeredWith(true)).models.map((model) => model.id), ["lmstudio/qwen/qwen3.8-27b", "lmstudio/qwen3-8b"],
+    "the remote permission offers it");
+  const onlyLinked = await offeredWith(false, { ...linkedServer, models: [linkedServer.models[0]] });
+  assert.equal(onlyLinked.discoveryIssue, "local-models-on-other-computers");
+  assert.deepEqual(onlyLinked.models, []);
+  permissionReads = 0;
+  await offeredWith(false, { ...linkedServer, models: [linkedServer.models[1]] });
+  assert.equal(permissionReads, 0, "the permission is read only when a linked model is present");
 
   probes.length = 0;
   const remote = await listRuntimeModelInventory("codex-ollama", "sage", {

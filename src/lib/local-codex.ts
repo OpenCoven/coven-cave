@@ -151,7 +151,20 @@ export function localCodexAdapterManifest(info: LocalCodexBackendInfo): { adapte
 export type LocalSettingSource = "default" | "settings" | "environment";
 
 /** One model as Settings → Local models shows it. */
-export type LocalModelSummary = { name: string; tools: boolean; contextLength: number | null };
+export type LocalModelSummary = {
+  name: string;
+  tools: boolean;
+  contextLength: number | null;
+  /** Served from another computer through LM Studio's LM Link (#6094), with that computer's name when known. */
+  lmLink: { deviceName: string | null } | null;
+};
+
+/**
+ * Whether Cave could tell which computer each model runs on. Only LM Studio
+ * on this computer needs the check: its LM Link can serve other computers'
+ * models through the local server.
+ */
+export type LocalModelDeviceCheck = "not-needed" | "checked" | "unavailable";
 
 /** What Settings → Local models shows for one backend (GET /api/local-models). */
 export type LocalModelsBackendStatus = {
@@ -169,7 +182,7 @@ export type LocalModelsBackendStatus = {
   /** The address saved in Settings, even when the environment overrides it. */
   savedEndpoint: string | null;
   server:
-    | { state: "running"; version: string | null; models: LocalModelSummary[] }
+    | { state: "running"; version: string | null; models: LocalModelSummary[]; deviceCheck: LocalModelDeviceCheck }
     | { state: "stopped" }
     | { state: "unexpected" }
     | { state: "invalid-address"; reason: string };

@@ -103,6 +103,18 @@
   color: var(--color-success);
 }
 
+/* LM Link (#6094): the model runs on another computer. */
+.settings-local-models__badge[data-link] {
+  border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+}
+
+.settings-local-models__check {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
 .settings-local-models__switch-label {
   margin: 0;
   font-size: var(--text-base);
