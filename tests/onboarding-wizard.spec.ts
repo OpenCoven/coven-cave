@@ -817,3 +817,29 @@ test.describe("onboarding bootstrap", () => {
     await expect.poll(() => resumes).toBe(1);
   });
 });
+
+test("completed setup can explicitly recheck a later daemon failure", async ({ page }) => {
+  let confirmations = 0;
+  let current = state({
+    confirmed: true, complete: true, needsSetup: false, status: "complete",
+    stages: state().stages.map(stage => ({ ...stage, status: "complete" })),
+  });
+  await gotoApp(page, async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({ confirm: true });
+      confirmations += 1;
+      current = state({
+        confirmed: true, status: "failed", activeStage: "daemon",
+        stages: current.stages.map(stage => stage.id === "daemon"
+          ? { ...stage, status: "failed", detail: "The local service could not start." } : stage),
+        failure: { stage: "daemon", stageLabel: "Start local services",
+          message: "The local service could not start. Retry setup.", recoveryLabel: "Retry setup" },
+      });
+    }
+    await route.fulfill({ json: payload(current) });
+  }, { dismissed: true });
+  const dialog = setup(page);
+  await dialog.getByRole("button", { name: "Run setup again", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Retry setup", exact: true })).toBeVisible();
+  expect(confirmations).toBe(1);
+});

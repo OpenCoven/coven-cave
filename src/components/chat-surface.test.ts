@@ -52,8 +52,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /Start daemon/,
-  "Workspace should push a start-daemon CTA into the shared banner channel when daemon is offline",
+  /Open setup/,
+  "Workspace should offer setup recovery in the shared banner channel when daemon is offline",
 );
 
 assert.doesNotMatch(
