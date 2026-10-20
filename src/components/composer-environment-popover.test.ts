@@ -104,8 +104,8 @@ for (const gone of ["ChatEnvironmentPanel", "ENV_PANEL_", "resolveEnvPanelVisibl
 }
 assert.match(
   chatView,
-  /<ComposerContextChips[\s\S]*?ariaLabel=\{inlineComposer \? "New chat context" : "Session context"\}\s*\n\s*executionRuntime=\{session\?\.runtime \?\? null\}\s*\n\s*\/>/,
-  "the chips receive the session's execution runtime as the last prop",
+  /<ComposerContextChips[\s\S]*?ariaLabel=\{inlineComposer \? "New chat context" : "Session context"\}\s*\n\s*executionRuntime=\{runtimeHost && runtimeHost !== LOCAL_HOST_ID\s*\n\s*\? `ssh:\$\{runtimeHost\}`\s*\n\s*: modelState\?\.runtime \?\? session\?\.runtime \?\? \(modelState \? "local" : null\)\}\s*\n\s*\/>/,
+  "the chips receive the execution runtime as the last prop: a remote host first, then the model state's runtime, then the session's (#6098)",
 );
 // Phone engagement (#5546): focus moving into the body-portaled popover must
 // not disengage the composer, or the rest state hides the chip it hangs from.

@@ -1366,6 +1366,9 @@ export function HomeComposer({
               showProject={false}
               familiarId={selectedFamiliarId || null}
               runtime={selectedRuntime}
+              executionRuntime={runtimeHost && runtimeHost !== LOCAL_HOST_ID
+                ? `ssh:${runtimeHost}`
+                : modelState?.runtime ?? (modelState ? "local" : null)}
               modelValue={selectedModelId}
               modelOptions={runtimeModelOptions}
               modelInventory={runtimeModelInventory}
