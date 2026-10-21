@@ -204,7 +204,7 @@ export const PREREQUISITES: readonly PrerequisiteDefinition[] = [
     dependsOn: ["managed-node"],
     minimumVersion: "0.4.0",
     probe: "npm-package",
-    install: { kind: "managed-npm", package: npmPackage("@opencoven/cli", "0.4.0", "sha512-pqC5xE5KbF6zUDUh1IorzbNdtFEokXN3QYrEbeenETh4XwTxLVIOq8gFsEhdUwXLYFOb+X09LSbLUUTyiJen2g==", "coven") },
+    install: { kind: "managed-npm", package: npmPackage("@opencoven/cli", "0.4.10", "sha512-3sJy/55/3X9W7paERLmHb/76tIHV4OSXD2HInqOTDEBhLCIaO422VPJQhhmhJNgu7a/mIzJKEODgwcDCKW0UUA==", "coven") },
     requiresPrivilege: false,
     restart: "none",
     manualRecovery: "Run the exact documented package version with the Cave-managed Node/npm lane, then re-check.",
