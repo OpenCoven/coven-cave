@@ -527,7 +527,6 @@ fn native_readiness_accepts_chunked_http_and_rejects_malformed_chunks() {
         .contains("malformed chunk terminator"));
 }
 
-#[cfg(target_os = "windows")]
 #[test]
 fn startup_control_prevents_concurrent_workers_and_resets_cancellation() {
     let control = SidecarStartupControl::new();
@@ -543,7 +542,6 @@ fn startup_control_prevents_concurrent_workers_and_resets_cancellation() {
     control.finish();
 }
 
-#[cfg(target_os = "windows")]
 #[test]
 fn startup_status_uses_frontend_field_names() {
     let value =
@@ -1689,4 +1687,23 @@ fn a_stalled_sidecar_cannot_hold_the_readiness_wait_past_its_deadline() {
         elapsed < Duration::from_secs(45),
         "the wait must honour its own deadline, took {elapsed:?}"
     );
+}
+
+#[test]
+fn unused_startup_control_does_not_claim_service_startup() {
+    let control = SidecarStartupControl::new();
+    let initial = control.status().expect("initial native snapshot");
+    assert_eq!(
+        initial.phase, "idle",
+        "a dev server never starts the native worker"
+    );
+    assert!(!initial.can_retry);
+    assert!(!initial.can_cancel);
+    assert!(!control.is_running());
+    control.begin().expect("packaged startup admits its worker");
+    control
+        .set_status(SidecarStartupStatus::preparing())
+        .unwrap();
+    assert_eq!(control.status().unwrap().phase, "preparing");
+    control.finish();
 }

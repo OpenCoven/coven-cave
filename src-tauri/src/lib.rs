@@ -1,6 +1,6 @@
 #[cfg(desktop)]
 use rand::{rngs::OsRng, RngCore};
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 use serde::Serialize;
 #[cfg(desktop)]
 use std::net::TcpListener;
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(desktop)]
 use std::process::{Child, Stdio};
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(desktop)]
 use std::sync::{Arc, Mutex};
