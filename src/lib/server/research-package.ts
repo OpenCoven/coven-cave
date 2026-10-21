@@ -6,6 +6,33 @@ type Runtime = typeof import('./research-package-absent.ts');
 type Loader = () => Promise<Runtime>;
 const loadRuntime: Loader = () => import('@opencoven/research-runtime');
 
+type RuntimeResult = { ok: true; runtime: Runtime } | {
+  ok: false;
+  code: 'research-runtime-unavailable' | 'research-incompatible';
+  error: string;
+};
+
+async function loadCompatibleRuntime(load: Loader): Promise<RuntimeResult> {
+  let runtime: Runtime;
+  try {
+    runtime = await load();
+  } catch {
+    return {
+      ok: false,
+      code: 'research-runtime-unavailable',
+      error: 'Research could not be loaded. Repair or reinstall Research, then restart Cave.',
+    };
+  }
+  if (runtime.researchHostContractVersion !== 1) {
+    return {
+      ok: false,
+      code: 'research-incompatible',
+      error: 'Research is incompatible with this version of Cave. Update Cave and Research together, then restart Cave.',
+    };
+  }
+  return { ok: true, runtime };
+}
+
 export function researchUnavailable(capability: ResearchCapability): Response {
   return Response.json({
     ok: false,
@@ -31,9 +58,11 @@ export async function dispatchResearchRequest(
       : rejectNonLocalRequest(request);
   if (forbidden) return forbidden;
   if (!capability.enabled) return researchUnavailable(capability);
-  const runtime = await load();
-  if (runtime.researchHostContractVersion !== 1) throw new Error('Unsupported Research host contract');
-  return runtime.dispatchResearchRequest(route, method, request, context);
+  const result = await loadCompatibleRuntime(load);
+  if (!result.ok) return Response.json(result, { status: 503 });
+  // Handler failures may represent ambiguous mutations. Do not turn them into
+  // a load failure or retry them at this boundary.
+  return result.runtime.dispatchResearchRequest(route, method, request, context);
 }
 
 export async function startOptionalResearch(
@@ -41,9 +70,9 @@ export async function startOptionalResearch(
   load: Loader = loadRuntime,
 ): Promise<void> {
   if (!capability.enabled) return;
-  const runtime = await load();
-  if (runtime.researchHostContractVersion !== 1) throw new Error('Unsupported Research host contract');
-  await runtime.startResearchRuntime();
+  const result = await loadCompatibleRuntime(load);
+  if (!result.ok) throw new Error(result.error);
+  await result.runtime.startResearchRuntime();
 }
 
 export async function fetchOptionalGithubRepoView(
@@ -52,7 +81,7 @@ export async function fetchOptionalGithubRepoView(
   load: Loader = loadRuntime,
 ): Promise<GithubRepoSnapshotResult> {
   if (!capability.enabled) return { ok: false };
-  const runtime = await load();
-  if (runtime.researchHostContractVersion !== 1) throw new Error('Unsupported Research host contract');
-  return runtime.fetchGithubRepoSnapshot(input);
+  const result = await loadCompatibleRuntime(load);
+  if (!result.ok) return { ok: false };
+  return result.runtime.fetchGithubRepoSnapshot(input);
 }
