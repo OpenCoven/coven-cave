@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   bindingReadinessStep,
+  covenCliReadinessStep,
   classifyCommandPathFailure,
   environmentDiscoveryState,
   isConfirmedCommandMissing,
@@ -190,3 +191,50 @@ assert.deepEqual(
 );
 
 console.log("onboarding-status-probes.test.ts: ok");
+
+// Exercise actual local fact composition through the readiness consumer.
+const { composeOpenCovenToolReadinessStatus, OPEN_COVEN_TOOLS } = await import("./opencoven-tools-status.ts");
+const cliProbe = {
+  path: "/synthetic/bin/coven", executablePath: "/synthetic/node_modules/@opencoven/cli/bin/coven.js",
+  executableVerified: true, packageName: "@opencoven/cli", packagePath: "/synthetic/node_modules/@opencoven/cli",
+  version: "0.4.10-110-ga95aa9ed",
+};
+const cliStatus = (patch = {}) => composeOpenCovenToolReadinessStatus(OPEN_COVEN_TOOLS[0], { ...cliProbe, ...patch });
+const unverifiedStep = covenCliReadinessStep(cliStatus({ packageName: null, packagePath: null, executableVerified: false }), { state: "ready" });
+assert.equal(unverifiedStep.ok, false);
+assert.match(unverifiedStep.detail, /unverified/i);
+assert.doesNotMatch(unverifiedStep.detail, /below|minimum/i);
+assert.match(unverifiedStep.hint, /Repair Coven CLI/);
+assert.match(unverifiedStep.hint, /reviewed/);
+const unreadableStep = covenCliReadinessStep(cliStatus({ version: null, error: "version-probe-failed" }), { state: "ready" });
+assert.equal(unreadableStep.ok, false);
+assert.match(unreadableStep.detail, /unreadable/i);
+assert.match(unreadableStep.hint, /Repair Coven CLI/);
+const oldStep = covenCliReadinessStep(cliStatus({ version: "0.3.9" }), { state: "ready" });
+assert.equal(oldStep.ok, false);
+assert.match(oldStep.detail, /minimum.*0\.4\.0/i);
+assert.match(oldStep.hint, /Update Coven CLI/);
+const repairedStep = covenCliReadinessStep(cliStatus(), { state: "ready" });
+assert.equal(repairedStep.ok, true);
+assert.match(repairedStep.detail, /0\.4\.10-110-ga95aa9ed/);
+assert.equal(repairedStep.hint, undefined);
+const missingCli = cliStatus({ path: null, executablePath: null, executableVerified: false, packageName: null, packagePath: null, version: null });
+const missingStep = covenCliReadinessStep(missingCli, { state: "absent" });
+assert.equal(missingStep.ok, false);
+assert.match(missingStep.hint, /Install.*reviewed/);
+for (const [tool, pathProbe] of [
+  [undefined, { state: "unavailable" }],
+  [missingCli, { state: "unavailable" }],
+  [missingCli, { state: "ready" }],
+  [{ ...missingCli, discoveryError: "lookup-failed" }, { state: "absent" }],
+]) {
+  const step = covenCliReadinessStep(tool, pathProbe);
+  assert.equal(step.state, "unavailable");
+  assert.equal(step.ok, false);
+  assert.equal(onboardingStatusPayload({ covenCli: step }, [tool]).tools, null);
+}
+
+const brokenLauncher = covenCliReadinessStep(cliStatus({ version: null, executablePath: null, executableVerified: false, error: "launcher-unreadable" }), { state: "ready" });
+assert.equal(brokenLauncher.ok, false);
+assert.match(brokenLauncher.hint, /Repair Coven CLI/);
+assert.notEqual(onboardingStatusPayload({ covenCli: brokenLauncher }, [missingCli]).tools, null);

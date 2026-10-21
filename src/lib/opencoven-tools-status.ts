@@ -262,6 +262,7 @@ export async function discoverOpenCovenTool(
       version: null,
       packageName: null,
       packagePath: null,
+      ...(located.error ? { error: located.error } : {}),
     };
   }
   return probeOpenCovenBinaryAt(tool, located.path, env, { timeoutMs: options.timeoutMs });
@@ -499,14 +500,15 @@ export function composeOpenCovenToolStatus(
     packageVerified &&
     !!probe.version &&
     compareSemver(probe.version, tool.minimumVersion) >= 0;
-  // The six-state model reads the verified probe facts: an unverified package
-  // or failed version probe can never present as current/compatible.
+  // Preserve provenance separately from the version floor in presentation.
   const state = openCovenToolState({
     installed: !!probe.path,
     current: probe.version,
     latest,
     outdated,
     compatible,
+    packageVerified,
+    discoveryError: probe.error,
     minimumVersion: tool.minimumVersion,
   });
 
@@ -553,6 +555,8 @@ export function composeOpenCovenToolReadinessStatus(
     latest: null,
     outdated: false,
     compatible,
+    packageVerified,
+    discoveryError: probe.error,
     minimumVersion: tool.minimumVersion,
   });
 
