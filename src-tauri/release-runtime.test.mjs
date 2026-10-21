@@ -1204,3 +1204,22 @@ test("Windows fatal dialogs run outside the exiting host", async () => {
   assert.match(lifecycle, /spawn_fatal_dialog_helper\(msg\)/);
   assert.ok(setup.indexOf("run_fatal_dialog_helper_if_requested") < setup.indexOf("tauri::generate_context!"));
 });
+
+test("Windows startup PRs compile native code without release authority", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/windows-startup.yml", import.meta.url), "utf8");
+  assert.match(workflow, /pull_request:\n    branches: \[main\]/);
+  assert.match(workflow, /'src-tauri\/\*\*'/);
+  assert.match(workflow, /permissions:\n  contents: read/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /runs-on: windows-latest/);
+  assert.match(workflow, /timeout-minutes: 20/);
+  assert.match(workflow, /cargo build --manifest-path src-tauri\/Cargo.toml --locked --bin app/);
+  assert.match(workflow, /COVEN_STARTUP_DIALOG_TEST_EXE/);
+  for (const { filter } of WINDOWS_NATIVE_RUST_STEPS.slice(0, 2)) {
+    assert.ok(workflow.includes(`Invoke-NativeTest '${filter}' 1 -Exact`), filter);
+  }
+  assert.match(workflow, /Invoke-NativeTest 'sidecar_diagnostics::tests' 9/);
+  assert.match(workflow, /if \(\$testExitCode -ne 0\) \{ throw/);
+  assert.match(workflow, /if \(\(\$output -join "`n"\) -notmatch \$summary\) \{ throw/);
+  assert.doesNotMatch(workflow, /pull_request_target|secrets:|contents: write|workflow_dispatch|release\.yml|release-candidate\.yml/);
+});

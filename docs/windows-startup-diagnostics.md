@@ -79,8 +79,15 @@ test; it does not establish packaged foreground acceptance.
 Run Windows library tests with that variable set to the freshly built app;
 the lifecycle test intentionally fails when its executable is unavailable.
 The runtime matrix separately exercises Windows
-archive preparation after building the bundled sidecar. Ordinary PR Windows
-startup-controls coverage is Node conformance, not Rust compilation.
+archive preparation after building the bundled sidecar.
+
+For native-source pull requests, `.github/workflows/windows-startup.yml` builds
+the Windows executable and runs these startup tests plus diagnostic retention
+and preparation-message cases. It uses a read-only token, exact test counts,
+and no release or signing operations. The separate ordinary CI step named
+“Windows startup controls” still runs Node conformance, not Rust compilation.
+The PR lane supplies pre-merge native evidence; signed release-candidate and
+packaged hardware qualification remain separate gates.
 
 After the required Windows run is authorized, retain the exact commit/artifact,
 Windows version, test counts, failed attempts and logs. Use disposable profiles
