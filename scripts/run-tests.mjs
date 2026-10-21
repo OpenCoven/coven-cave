@@ -285,6 +285,7 @@ export const SUITES = {
     "src/lib/server/github-issue-queue.test.ts",
     "src/lib/cave-home-project-store-reconciliation.test.ts",
     "src/lib/cave-inbox-create.test.ts",
+    "src/lib/cave-inbox-preservation.test.ts",
     "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/cave-inbox-bulk.test.ts",
     "src/lib/session-finished-inbox.test.ts",
@@ -1584,6 +1585,7 @@ export const SUITES = {
     "src/app/api/canvas/route.test.ts",
     "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
+    "src/app/api/inbox/storage.test.ts",
     "src/lib/server/client-v1/authority-contract.test.ts",
     "src/lib/server/client-v1/authority-replay.test.ts",
     "src/lib/server/client-v1/authority-runtime.test.ts",
@@ -2192,6 +2194,9 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // Real inbox store and route regressions reach @/lib runtime imports.
+  "src/lib/cave-inbox-preservation.test.ts",
+  "src/app/api/inbox/storage.test.ts",
   "src/lib/server/saved-links-route.test.ts",
   "src/lib/collect-saved-link-urls.test.ts",
   "src/app/api/connectors/route.test.ts",
