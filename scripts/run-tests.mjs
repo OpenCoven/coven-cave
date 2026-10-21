@@ -1001,6 +1001,7 @@ export const SUITES = {
     "src/lib/familiar-heal-requests.test.ts",
     "src/lib/familiar-outcomes.test.ts",
     "src/lib/thread-self-report.test.ts",
+    "src/lib/auto-thread-reflection.test.ts",
     "src/lib/thread-self-report-timing.test.ts",
     "src/lib/threads-read.test.ts",
     "src/lib/proposal-authority-daemon.test.ts",
@@ -1018,6 +1019,7 @@ export const SUITES = {
     "src/components/ui/beautiful/ApprovalCard.test.tsx",
     "src/app/api/proposals-flow-e2e.test.ts",
     "src/app/api/familiar-self-report-route.test.ts",
+    "src/app/api/familiar-self-report-admission.test.ts",
     "src/app/api/familiar-outcomes-route.test.ts",
     "src/components/familiar-analytics-view.test.ts",
     "src/components/session-trace-overlay.test.ts",
@@ -2615,6 +2617,8 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/lib/auto-thread-reflection.test.ts",
+  "src/app/api/familiar-self-report-admission.test.ts",
   "src/lib/github-watcher.behavior.test.ts",
   "src/components/automations/cron-detail-panel-rebase.behavior.test.tsx",
   "src/components/model-inventory-feedback.test.tsx",

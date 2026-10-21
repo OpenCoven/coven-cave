@@ -1,5 +1,7 @@
 "use client";
 
+import { runAutoReflectionIfMissing } from "@/lib/auto-thread-reflection";
+
 import { mergeReasoningBlock, normalizeReasoningBlock, normalizeReasoningBlocks } from "@/lib/chat-reasoning-blocks";
 import { ResponseRunDetails } from "@/components/response-run-details";
 import { normalizeToolActivity } from "@/lib/chat-activity";
@@ -2240,32 +2242,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const autoReflectOnThread = useCallback(async (targetSessionId: string) => {
     if (!familiar.autoSelfReport || !reflectTranscript) return;
     try {
-      const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
-      const { text, error, sessionId: reviewSessionId } = await streamFamiliarText({
-        familiarId: familiar.id,
-        prompt,
-        origin: "enhance",
+      await runAutoReflectionIfMissing(familiar.id, targetSessionId, async () => {
+        const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
+        const { text, error, sessionId: reviewSessionId } = await streamFamiliarText({
+          familiarId: familiar.id,
+          prompt,
+          origin: "enhance",
+        });
+        if (error || !text.trim()) return;
+        const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sessionId: targetSessionId,
+            trigger: "auto",
+            threadTitle: session?.title ?? familiar.display_name,
+            payload: text,
+            ...(reviewSessionId ? { reviewSessionId } : {}),
+          }),
+        });
+        const json = await res.json().catch(() => null) as
+          | { ok: true; report: ThreadSelfReport; archivedAt?: string }
+          | { ok: false; error?: string }
+          | null;
+        if (json?.ok) {
+          setThreadSignalReport(json.report);
+          if (json.archivedAt) onSessionsChanged?.();
+        }
       });
-      if (error || !text.trim()) return;
-      const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sessionId: targetSessionId,
-          trigger: "auto",
-          threadTitle: session?.title ?? familiar.display_name,
-          payload: text,
-          ...(reviewSessionId ? { reviewSessionId } : {}),
-        }),
-      });
-      const json = await res.json().catch(() => null) as
-        | { ok: true; report: ThreadSelfReport; archivedAt?: string }
-        | { ok: false; error?: string }
-        | null;
-      if (json?.ok) {
-        setThreadSignalReport(json.report);
-        if (json.archivedAt) onSessionsChanged?.();
-      }
     } catch {
       /* Auto self-report is best-effort and intentionally silent. */
     }

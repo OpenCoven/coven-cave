@@ -76,6 +76,7 @@ authoritative absence; only a network failure can use offline history. The
 transport reuses the existing authenticated cache and revision/write guards.
 
 
+- [`thread-self-reports.md`](thread-self-reports.md) — familiar/session ownership, atomic automatic admission, manual repeats, and the persisted-report generation precheck
 - [`familiar-identity-context.md`](familiar-identity-context.md) — how a familiar's declared identity reaches the model, and what the injection may not do
 - [`local-models.md`](local-models.md) — Codex local mode on Ollama and LM Studio: setup, addresses, what stays on this computer, how Full access relates to Codex's own sandbox (cloud Codex too), limitations and troubleshooting
 - [`auto-mission-mode.md`](auto-mission-mode.md) — `/auto`, its status blocks, and the closing questionnaire
