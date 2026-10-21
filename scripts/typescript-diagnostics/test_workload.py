@@ -3,7 +3,10 @@ from workload import validate
 
 class ArtifactTests(unittest.TestCase):
     def setUp(self):
-        self.root=pathlib.Path(tempfile.mkdtemp(prefix='c6036-artifact-'))
+        self.temp=tempfile.TemporaryDirectory(prefix='c6036-artifact-')
+        self.addCleanup(self.temp.cleanup)
+        self.root=pathlib.Path(self.temp.name)/'measurement'
+        self.root.mkdir()
         self.oid='a'*40
         self.log=b'Files: 10\nTypes: 20\nMemory used: 100K\nTotal time: 1.00s\n'
         self.record={'exit_code':0,'stop_reason':None,'remaining_observed_pids':[],
@@ -16,6 +19,31 @@ class ArtifactTests(unittest.TestCase):
         (self.root/'samples.jsonl').write_text(json.dumps({'elapsed':.1,'processes':[], 'swap':'used = 0', 'vm_stat':'Pages free: 1'})+'\n')
     def test_valid_compiler_artifact(self):
         self.assertEqual(validate(self.root,'tsc')['command_seconds'],1.0)
+    def test_incremental_artifact_rejects_nonincremental_command(self):
+        self.record['command']=['pnpm','exec','tsc','--incremental','false']
+        self.write()
+        with self.assertRaises(ValueError):validate(self.root,'tsc-incremental')
+        self.record['command']=['pnpm','exec','tsc','--noEmit','--incremental','true',
+            '--extendedDiagnostics','--listFiles','--tsBuildInfoFile','/synthetic/.next/cache/.tsbuildinfo']
+        self.write()
+        provenance={'kind':'tsc-incremental','measurement_command':self.record['command'],
+                    'incremental_build_info_before':'absent','incremental_build_info_sha256':'a'*64}
+        receipt=self.root.parent/'provenance.json'
+        with self.assertRaisesRegex(ValueError,'provenance'):validate(self.root,'tsc-incremental')
+        for key,value in [('kind','tsc'),('measurement_command',[]),
+                          ('incremental_build_info_before','present'),
+                          ('incremental_build_info_sha256',None),
+                          ('incremental_build_info_sha256','invalid')]:
+            with self.subTest(key=key,value=value):
+                invalid={**provenance,key:value}
+                receipt.write_text(json.dumps(invalid))
+                with self.assertRaisesRegex(ValueError,'provenance'):validate(self.root,'tsc-incremental')
+        for malformed in ['not-json','[]']:
+            receipt.write_text(malformed)
+            with self.assertRaisesRegex(ValueError,'provenance'):validate(self.root,'tsc-incremental')
+        receipt.write_text(json.dumps(provenance))
+        self.assertEqual(validate(self.root,'tsc-incremental')['command_seconds'],1.0)
+        with self.assertRaises(ValueError):validate(self.root,'unknown')
     def test_failure_or_incomplete_measurement_rejected(self):
         for key,value in [('exit_code',7),('stop_reason','timeout'),('remaining_observed_pids',None),('command_seconds',None),('cleanup_error','sampling unavailable')]:
             with self.subTest(key=key):
@@ -37,6 +65,29 @@ class ArtifactTests(unittest.TestCase):
         for value in ['not-json',json.dumps({'elapsed':1}),json.dumps({'elapsed':-1,'processes':[],'swap':'x','vm_stat':'x'})]:
             (self.root/'samples.jsonl').write_text(value+'\n')
             with self.assertRaises(ValueError):validate(self.root,'tsc')
+
+
+class CompilerModeTests(unittest.TestCase):
+    def test_incremental_requires_cold_build_info_and_explicit_mode(self):
+        from workload import compiler_command
+        with tempfile.TemporaryDirectory() as tmp:
+            source=pathlib.Path(tmp)
+            command=compiler_command('tsc-incremental',source)
+            self.assertEqual(command[command.index('--incremental')+1],'true')
+            cache=pathlib.Path(command[command.index('--tsBuildInfoFile')+1])
+            self.assertEqual(cache,source/'.next/cache/.tsbuildinfo')
+            self.assertFalse(cache.exists())
+            cache.parent.mkdir(parents=True);cache.write_text('prior compilation')
+            with self.assertRaisesRegex(ValueError,'cold'):compiler_command('tsc-incremental',source)
+            self.assertEqual(cache.read_text(),'prior compilation')
+            cache.unlink();cache.symlink_to(source/'missing-build-info')
+            with self.assertRaisesRegex(ValueError,'cold'):compiler_command('tsc-incremental',source)
+            self.assertTrue(cache.is_symlink())
+            control=compiler_command('tsc',source)
+            self.assertEqual(control[control.index('--incremental')+1],'false')
+            self.assertNotIn('--tsBuildInfoFile',control)
+            with self.assertRaises(ValueError):compiler_command('unknown',source)
+
 
 
 class DependencyGraphTests(unittest.TestCase):

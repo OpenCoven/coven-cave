@@ -6,6 +6,12 @@ on:
       - .github/workflows/typescript-diagnostics.yml
       - scripts/typescript-diagnostics/**
   workflow_dispatch:
+    inputs:
+      experiment:
+        description: Frozen-source comparison to run
+        type: choice
+        options: [incremental-checker, phase-baseline]
+        default: incremental-checker
 
 permissions:
   contents: read
@@ -32,7 +38,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        kind: [tsc, build]
+        kind: ${{ fromJSON(inputs.experiment == 'phase-baseline' && '["tsc","build"]' || '["tsc","tsc-incremental"]') }}
         source:
           - name: baseline
             oid: 8b2f0baffdfbe67aa3c9dff0c98523adc305735a
