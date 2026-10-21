@@ -32,7 +32,7 @@ export async function main(argv = process.argv.slice(2)) {
 
   let assetsJson;
   try {
-    assetsJson = gh(["release", "view", tag, "--repo", repo, "--json", "assets"]);
+    assetsJson = gh(["release", "view", tag, "--repo", repo, "--json", "assets,body"]);
   } catch (e) {
     const msg = (e.stderr || e.message || "").trim();
     if (msg.includes("release not found") || msg.includes("Could not resolve to a Release")) {
@@ -43,7 +43,8 @@ export async function main(argv = process.argv.slice(2)) {
     }
     process.exit(1);
   }
-  const assets = JSON.parse(assetsJson).assets.map((a) => a.name);
+  const release = JSON.parse(assetsJson);
+  const assets = release.assets.map((a) => a.name);
 
   // Pull every signature file so we can read its contents locally.
   const dir = mkdtempSync(join(tmpdir(), "latestjson-"));
@@ -84,7 +85,10 @@ export async function main(argv = process.argv.slice(2)) {
     process.exit(2);
   }
 
-  const manifest = { version, pub_date: new Date().toISOString(), platforms };
+  const manifest = {
+    version, pub_date: new Date().toISOString(), platforms,
+    ...(typeof release.body === "string" && release.body.trim() ? { notes: release.body } : {}),
+  };
   process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { UpdateReleaseNotes } from "@/components/update-release-notes";
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
 import { forwardRef } from "react";
@@ -1635,6 +1636,7 @@ function ShellBannerStrip() {
           role={b.severity === "error" ? "alert" : "status"}
         >
           <span className="shell-banner__title">{b.title}</span>
+          <UpdateReleaseNotes key={b.title} notes={b.releaseNotes} />
           {b.detail ? (
             <details className="shell-banner__detail">
               <summary>Details</summary>

@@ -49,8 +49,8 @@ assert.match(preparationSrc, /update\.close\(\)/, "releases cancelled or discard
 assert.match(src, /\/api\/app\/latest-release/, "falls back to the server release check");
 assert.match(
   src,
-  /import \{ openInAppBrowserUrl \} from "@\/lib\/open-external"/,
-  "update fallback should use the explicit Cave Browser URL handoff",
+  /import \{ openSystemBrowserUrl \} from "@\/lib\/open-external"/,
+  "update fallback should use the explicit system-browser URL handoff",
 );
 assert.doesNotMatch(
   src,
@@ -149,7 +149,7 @@ assert.match(src, /Restart &amp; install/, "prepared update offers an explicit r
 assert.match(src, /Installing update/, "install state explains that the verified update is being installed");
 assert.match(src, />\s*Cancel\s*</, "settings row allows preparation cancellation");
 assert.match(src, /Check for updates/, "settings row offers a manual re-check");
-assert.match(src, /Open installer in Browser/, "fallback keeps installer recovery inside Cave's Browser surface");
+assert.match(src, /Open installer in system browser/, "fallback keeps installer recovery in the system browser");
 assert.match(src, /Native updater unavailable/, "settings row distinguishes native updater failure from a normal installer fallback");
 assert.match(src, /Retry native update/, "settings row makes retrying native update the primary recovery action");
 assert.match(
@@ -176,7 +176,7 @@ assert.match(
 assert.match(src, /Native updater still unavailable/, "banner escalates copy only after a failed native retry");
 assert.match(
   src,
-  /recommendNativeRetry[\s\S]{0,400}?"Retry native update"[\s\S]{0,200}?"Open release page in Browser"/,
+  /recommendNativeRetry[\s\S]{0,400}?"Retry native update"[\s\S]{0,200}?"Open release page in system browser"/,
   "banner CTA orders native retry ahead of the browser release page",
 );
 assert.match(
@@ -190,11 +190,11 @@ assert.match(
 // recovery inside Cave, and sends users to the canonical release page instead.
 assert.match(src, /phase: "failed"/, "tracks a dedicated failed state for a thrown install");
 assert.match(src, /message: err instanceof Error \? err\.message/, "captures the real failure reason instead of swallowing it");
-assert.match(src, /function openReleasePageInBrowser/, "centralizes failed-updater recovery");
-assert.match(src, /openInAppBrowserUrl\(RELEASES_PAGE\)/, "failed updater recovery opens the canonical release page");
+assert.match(src, /const openReleasePageInBrowser/, "centralizes failed-updater recovery");
+assert.match(src, /openUpdateUrl\(RELEASES_PAGE\)/, "failed updater recovery opens the canonical release page");
 assert.doesNotMatch(src, /openFallbackUpdateInBrowser/, "updater recovery must not resolve direct installer assets");
-assert.doesNotMatch(src, /fetchFallbackStatus\(\)[\s\S]*resolveDownloadUrl[\s\S]*openInAppBrowserUrl\(url\)/, "updater recovery must not open metadata-derived direct installer URLs");
-assert.match(src, /Open release page in Browser/, "updater recovery labels the destination as the release page");
+assert.doesNotMatch(src, /fetchFallbackStatus\(\)[\s\S]*resolveDownloadUrl[\s\S]*openSystemBrowserUrl\(url\)/, "updater recovery must not open metadata-derived direct installer URLs");
+assert.match(src, /Open release page in system browser/, "updater recovery labels the destination as the release page");
 assert.match(
   src,
   /state\.phase === "native-unavailable"[\s\S]{0,900}?onClick=\{openReleasePageInBrowser\}/,
@@ -202,7 +202,7 @@ assert.match(
 );
 assert.doesNotMatch(
   src,
-  /state\.phase === "native-unavailable"[\s\S]{0,900}?openInAppBrowserUrl\(r\.url\)/,
+  /state\.phase === "native-unavailable"[\s\S]{0,900}?openUpdateUrl\(r\.url\)/,
   "native-unavailable settings row must not reuse a stale installer URL from the initial check",
 );
 assert.doesNotMatch(src, /download manually/i, "failed updater copy should not imply leaving the app for manual recovery");

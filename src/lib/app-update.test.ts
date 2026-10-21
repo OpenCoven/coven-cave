@@ -151,3 +151,18 @@ test("pickDownloadUrl offers the other mac build on a macOS arch mismatch", () =
 });
 
 console.log("app-update.test.ts: ok");
+
+
+test("fallback classification preserves release notes without coercing malformed notes", () => {
+  const base = { current: "1.0.0", latest: "2.0.0", available: true,
+    url: "https://example.com/release", checkedAt: "2026-10-20T00:00:00.000Z" };
+  const notes = "## Changes\nRésumé <script> is text";
+  const result = classifyFallbackReleaseCheck(true, { ...base, notes });
+  assert.equal(result.kind, "available");
+  assert.equal(result.status.notes, notes);
+  for (const invalid of [undefined, null, "", "  ", 12, { text: "bad" }]) {
+    const parsed = classifyFallbackReleaseCheck(true, { ...base, notes: invalid });
+    assert.equal(parsed.kind, "available");
+    assert.equal(parsed.status.notes, undefined);
+  }
+});
