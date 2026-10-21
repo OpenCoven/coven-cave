@@ -451,7 +451,6 @@ function ThreadRow({
             <ProjectAvatar name={project.name} root={project.root} color={project.color} size="sm" />
           </span>
         ) : null}
-        {project ? <span className="sr-only">{`Project ${project.name} `}</span> : null}
         <ThreadSummary session={session} title={title} project={project} prStatus={prStatus} now={now} attentionLabel={attentionLabel} broadcast={broadcast} confirming={confirming} />
       </button>
       {attentionDescription ? (

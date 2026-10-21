@@ -79,6 +79,12 @@
   height: var(--space-6);
   z-index: 1;
 }
+/* The shared navigation's selected attention row offsets its inline badge.
+   This rail positions the badge absolutely, so that legacy margin would
+   push the independent PR control into the title gutter. */
+.workspace-sidebar.cnav .cnav__thread--flat.is-active.cnav__thread--pr:not([data-attention="none"]) .cnav__pr-badge {
+  margin-left: 0;
+}
 .workspace-sidebar.cnav .cnav__select-box {
   position: absolute;
   left: var(--space-2);
