@@ -239,6 +239,7 @@ export const SUITES = {
     "src/lib/opencoven-tools-update-cache.test.ts",
     "src/components/update-available.test.ts",
     "src/components/sidecar-recovery.behavior.test.tsx",
+    "src/components/update-available.behavior.test.tsx",
     "src-tauri/permissions/desktop-permissions.test.mjs",
     "src-tauri/release-runtime.test.mjs",
     "src-tauri/notch-window-chrome.test.mjs",
@@ -2198,6 +2199,7 @@ const ALIAS_LOADER = new Set([
   // Real inbox store and route regressions reach @/lib runtime imports.
   "src/lib/cave-inbox-preservation.test.ts",
   "src/app/api/inbox/storage.test.ts",
+  "src/app/api/app/latest-release/route.test.ts",
   "src/lib/server/saved-links-route.test.ts",
   "src/lib/collect-saved-link-urls.test.ts",
   "src/app/api/connectors/route.test.ts",
@@ -2627,6 +2629,7 @@ const VITEST_TESTS = new Set([
   "src/lib/auto-thread-reflection.test.ts",
   "src/app/api/familiar-self-report-admission.test.ts",
   "src/components/sidecar-recovery.behavior.test.tsx",
+  "src/components/update-available.behavior.test.tsx",
   "src/lib/github-watcher.behavior.test.ts",
   "src/components/automations/cron-detail-panel-rebase.behavior.test.tsx",
   "src/components/model-inventory-feedback.test.tsx",
