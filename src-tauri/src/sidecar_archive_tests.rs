@@ -469,6 +469,9 @@ fn low_space_preflight_fails_before_creating_staging() {
     .expect_err("low free space must fail");
 
     assert!(error.contains("not enough free space"));
+    assert!(error.contains("MB available"), "available space must use readable units: {error}");
+    assert!(error.contains("MB required"), "required space must use readable units: {error}");
+    assert!(!error.contains("bytes"), "raw bytes are not useful recovery guidance: {error}");
     assert!(!cache.join(cache_key(&manifest)).exists());
     assert!(!fs::read_dir(&cache)
         .expect("read cache")

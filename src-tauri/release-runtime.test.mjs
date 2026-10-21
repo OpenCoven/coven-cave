@@ -4,6 +4,16 @@ import test from "node:test";
 
 const WINDOWS_NATIVE_RUST_STEPS = [
   {
+    name: "Test Windows fatal-dialog helper lifecycle",
+    filter: "startup_failure_dialog::native_tests::helper_survives_failed_host_and_does_not_retain_port_claim",
+    exact: true,
+  },
+  {
+    name: "Test Windows per-port relaunch window discovery",
+    filter: "windows_instance_activation::native::tests::native_window_discovery_requires_port_marker_and_owner",
+    exact: true,
+  },
+  {
     name: "Test Windows native Browser lifecycle reducer",
     filter: "browser::lifecycle_tests",
     exact: false,
@@ -1168,4 +1178,29 @@ test("macOS updater tarball ships no AppleDouble entries (v0.0.167 'app is damag
     /codesign --verify --deep --strict "\$probe_dir\/CovenCave\.app"/,
     "the release script must round-trip the tarball and re-verify the extracted app's code seal",
   );
+});
+
+
+test("Windows setup errors are handled inside Tauri's callback before returning", async () => {
+  const setup = await readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8");
+  assert.match(setup, /let setup_result = \(\|\| -> Result<\(\), Box<dyn std::error::Error>>/);
+  assert.match(setup, /if let Err\(error\) = &setup_result[\s\S]*?shutdown_owned_processes\(app.handle\(\)\)[\s\S]*?fatal_exit\(&message\)/);
+  const lifecycle = await readFile(new URL("./src/platform_lifecycle.rs", import.meta.url), "utf8");
+  assert.match(lifecycle, /MessageBoxW/);
+});
+
+
+test("Windows relaunch uses a per-port main-window marker before refusal", async () => {
+  const lifecycle = await readFile(new URL("./src/platform_lifecycle.rs", import.meta.url), "utf8");
+  const mainWindow = await readFile(new URL("./src/main_window.rs", import.meta.url), "utf8");
+  assert.match(lifecycle, /focus_existing_port_owner\(port, pid\)/);
+  assert.match(mainWindow, /mark_main_window_port/);
+});
+
+
+test("Windows fatal dialogs run outside the exiting host", async () => {
+  const lifecycle = await readFile(new URL("./src/platform_lifecycle.rs", import.meta.url), "utf8");
+  const setup = await readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8");
+  assert.match(lifecycle, /spawn_fatal_dialog_helper\(msg\)/);
+  assert.ok(setup.indexOf("run_fatal_dialog_helper_if_requested") < setup.indexOf("tauri::generate_context!"));
 });

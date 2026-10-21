@@ -59,6 +59,10 @@ mod microphone;
 mod offline_cache;
 #[cfg(desktop)]
 mod platform_lifecycle;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod windows_instance_activation;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod startup_failure_dialog;
 #[cfg(desktop)]
 mod pty;
 #[cfg(desktop)]

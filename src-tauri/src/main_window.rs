@@ -159,6 +159,14 @@ impl MainWindowRegistry {
 }
 
 pub(super) fn register_main_window(app: &AppHandle, label: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let window = app.get_webview_window(label).ok_or("main window is missing")?;
+        let hwnd = window.hwnd().map_err(|error| error.to_string())?.0;
+        crate::windows_instance_activation::mark_main_window_port(
+            hwnd as _, crate::sidecar_ports::dedicated_port(),
+        )?;
+    }
     let registry = app.state::<MainWindowRegistry>();
     let was_registered = registry.is_registered(label);
     registry.register(label)?;
