@@ -1,0 +1,81 @@
+name: TypeScript diagnostics
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/typescript-diagnostics.yml
+      - scripts/typescript-diagnostics/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typescript-diagnostics-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s scripts/typescript-diagnostics -v
+
+  measure:
+    needs: qualify
+    runs-on: macos-15
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        kind: [tsc, build]
+        source:
+          - name: baseline
+            oid: 8b2f0baffdfbe67aa3c9dff0c98523adc305735a
+          - name: stopgap
+            oid: cd4965abc98023144023db07e58f8fde35d8c27d
+          - name: current-20261021
+            oid: 0a38e2ec43eac0289d1b436f1cd97dddad6238c8
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ matrix.source.oid }}
+          path: source
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 10.34.0
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.22.0
+      - name: Measure one workload without retries or restored caches
+        env:
+          SOURCE_OID: ${{ matrix.source.oid }}
+          WORKLOAD_KIND: ${{ matrix.kind }}
+          REPORT_ROOT: ${{ runner.temp }}/typescript-diagnostics
+        run: |
+          python3 harness/scripts/typescript-diagnostics/workload.py \
+            --source source --output "$REPORT_ROOT" \
+            --commit "$SOURCE_OID" --kind "$WORKLOAD_KIND"
+      - name: Preserve evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: typescript-${{ matrix.source.name }}-${{ matrix.kind }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/typescript-diagnostics/provenance.json
+            ${{ runner.temp }}/typescript-diagnostics/validation.json
+            ${{ runner.temp }}/typescript-diagnostics/*/result.json
+            ${{ runner.temp }}/typescript-diagnostics/*/command.log
+            ${{ runner.temp }}/typescript-diagnostics/*/samples.jsonl
+          if-no-files-found: error
+          retention-days: 30
