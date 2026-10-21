@@ -1,3 +1,5 @@
+import type { OpenCovenToolState } from "./opencoven-tools-state.ts";
+
 export type OpenCovenToolInstallTarget = "coven-cli";
 
 export type OpenCovenToolInstallStatus = {
@@ -6,6 +8,7 @@ export type OpenCovenToolInstallStatus = {
   installed: boolean;
   outdated: boolean;
   compatible?: boolean;
+  state?: OpenCovenToolState;
 };
 
 const OPEN_COVEN_TOOL_ORDER: OpenCovenToolInstallTarget[] = [
@@ -57,6 +60,7 @@ export function openCovenToolsPrimaryActionLabel(
   if (actions.length === 1) {
     const [tool] = actions;
     if (!tool.installed && tool.id === REQUIRED_TOOL) return "Install the Coven CLI";
+    if (tool.state === "unverified" || tool.state === "version-unreadable") return `Repair ${tool.label}`;
     return `${tool.installed ? "Update" : "Install"} ${tool.label}`;
   }
   if (actions.every((tool) => !tool.installed)) return "Install OpenCoven tools";

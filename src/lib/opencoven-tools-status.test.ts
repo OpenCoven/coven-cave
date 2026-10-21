@@ -7,7 +7,52 @@ import assert from "node:assert/strict";
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { openCovenToolStatuses } from "./opencoven-tools-status.ts";
+import { composeOpenCovenToolStatus, composeOpenCovenToolReadinessStatus, OPEN_COVEN_TOOLS, openCovenToolStatuses } from "./opencoven-tools-status.ts";
+
+// Cross-platform composition: a reported high version never substitutes for
+// verified package identity and executable provenance.
+const verifiedProbe = {
+  path: "/synthetic/bin/coven",
+  executablePath: "/synthetic/node_modules/@opencoven/cli/bin/coven.js",
+  executableVerified: true,
+  packageName: "@opencoven/cli",
+  packagePath: "/synthetic/node_modules/@opencoven/cli",
+  version: "0.4.10-110-ga95aa9ed",
+};
+const latestUnavailable = { status: "failed", checkedAt: "2026-10-20T00:00:00Z", error: "registry_error" } as const;
+for (const [label, probe] of [
+  ["bare source binary", { ...verifiedProbe, executableVerified: false, packageName: null, packagePath: null }],
+  ["wrong package", { ...verifiedProbe, packageName: "unrelated-package" }],
+  ["missing package path", { ...verifiedProbe, packagePath: null }],
+  ["missing executable path", { ...verifiedProbe, executablePath: null }],
+  ["unverified executable", { ...verifiedProbe, executableVerified: false }],
+] as const) {
+  for (const status of [
+    composeOpenCovenToolStatus(OPEN_COVEN_TOOLS[0], probe, latestUnavailable),
+    composeOpenCovenToolReadinessStatus(OPEN_COVEN_TOOLS[0], probe),
+  ]) {
+    assert.equal(status.state, "unverified", label);
+    assert.equal(status.compatible, false, label);
+    assert.equal(status.packageVerified, false, label);
+    assert.equal(status.outdated, false, label);
+  }
+}
+for (const [version, state, compatible] of [
+  ["0.3.9", "below-minimum", false],
+  [null, "version-unreadable", false],
+  ["0.4.0", "latest-unknown", true],
+  ["0.4.10-110-ga95aa9ed", "latest-unknown", true],
+] as const) {
+  for (const status of [
+    composeOpenCovenToolStatus(OPEN_COVEN_TOOLS[0], { ...verifiedProbe, version }, latestUnavailable),
+    composeOpenCovenToolReadinessStatus(OPEN_COVEN_TOOLS[0], { ...verifiedProbe, version }),
+  ]) {
+    assert.equal(status.state, state);
+    assert.equal(status.compatible, compatible);
+    assert.equal(status.packageVerified, true);
+  }
+}
+console.log("opencoven-tools-status.test.ts: composition cases passed");
 
 if (process.platform !== "win32") {
   console.log("opencoven-tools-status.test.ts: skipped Windows packaged-server probe (requires win32)");

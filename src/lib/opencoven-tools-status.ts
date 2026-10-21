@@ -499,14 +499,14 @@ export function composeOpenCovenToolStatus(
     packageVerified &&
     !!probe.version &&
     compareSemver(probe.version, tool.minimumVersion) >= 0;
-  // The six-state model reads the verified probe facts: an unverified package
-  // or failed version probe can never present as current/compatible.
+  // Preserve provenance separately from the version floor in presentation.
   const state = openCovenToolState({
     installed: !!probe.path,
     current: probe.version,
     latest,
     outdated,
     compatible,
+    packageVerified,
     minimumVersion: tool.minimumVersion,
   });
 
@@ -553,6 +553,7 @@ export function composeOpenCovenToolReadinessStatus(
     latest: null,
     outdated: false,
     compatible,
+    packageVerified,
     minimumVersion: tool.minimumVersion,
   });
 

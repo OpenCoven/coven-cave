@@ -37,6 +37,13 @@ const cases: Array<{
     copy: "Version unreadable",
   },
   {
+    name: "unverified installation cannot appear compatible",
+    input: { ...base, packageVerified: false },
+    state: "unverified",
+    action: "repair",
+    copy: "Installation unverified",
+  },
+  {
     name: "below minimum",
     input: { ...base, current: "0.9.0", latest: null, compatible: false },
     state: "below-minimum",
@@ -87,6 +94,9 @@ assert.equal(
   "unreadable tools offer a repair action",
 );
 
+assert.equal(openCovenToolState({ ...base, installed: false, packageVerified: false }), "missing");
+assert.equal(openCovenToolState({ ...base, current: null, packageVerified: false }), "unverified");
+
 const recoveryTransitions: Array<{
   name: string;
   before: OpenCovenToolStateInput;
@@ -96,6 +106,11 @@ const recoveryTransitions: Array<{
     name: "install a missing binary then recheck",
     before: { ...base, installed: false, current: null, latest: null, compatible: false },
     afterRecheck: base,
+  },
+  {
+    name: "verify a repaired installation then recheck",
+    before: { ...base, packageVerified: false, compatible: false },
+    afterRecheck: { ...base, packageVerified: true },
   },
   {
     name: "repair a broken shim then recheck",

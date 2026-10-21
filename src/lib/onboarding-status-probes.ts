@@ -1,3 +1,5 @@
+import type { OpenCovenToolReadinessStatus } from "./opencoven-tools-status.ts";
+import { openCovenToolActionLabel, openCovenToolPresentation } from "./opencoven-tools-state.ts";
 import type { AdapterReport } from "./harness-adapters.ts";
 import {
   onboardingContinuationDecision,
@@ -152,5 +154,49 @@ export function onboardingStatusPayload<TTools>(
     mayContinue: decision.mayContinue,
     steps,
     tools: safeTools,
+  };
+}
+
+const COVEN_CLI_INSTALL_GUIDANCE = "Install Cave-managed Node.js and npm first, then use Cave's reviewed Coven CLI installer.";
+
+export function covenCliReadinessStep(
+  tool: OpenCovenToolReadinessStatus | undefined,
+  pathProbe: { state: "ready" | "absent" | "unavailable" },
+): OnboardingStatusStep {
+  const installationFailure = tool?.installed && (
+    tool.discoveryError === "version-probe-failed" || tool.discoveryError === "launcher-unreadable"
+  );
+  if (!tool || (tool.discoveryError && !installationFailure)) {
+    return {
+      ok: false,
+      state: "unavailable",
+      hint: "Couldn’t verify the local Coven CLI. You can continue and retry later.",
+    };
+  }
+  if (!tool.installed) {
+    if (pathProbe.state !== "absent") {
+      return {
+        ok: false,
+        state: "unavailable",
+        hint: "Couldn’t verify the local Coven CLI. You can continue and retry later.",
+      };
+    }
+    return {
+      ok: false,
+      hint: `${COVEN_CLI_INSTALL_GUIDANCE} Then re-check.`,
+    };
+  }
+  if (!tool.compatible) {
+    const presentation = openCovenToolPresentation(tool);
+    return {
+      ok: false,
+      detail: presentation.statusText,
+      hint: `${COVEN_CLI_INSTALL_GUIDANCE} Use ${openCovenToolActionLabel(presentation.action ?? "repair", tool.label)}, then re-check.`,
+    };
+  }
+  const location = tool.path ?? tool.binary;
+  return {
+    ok: true,
+    detail: tool.current ? `${tool.current} at ${location}` : `${location} (version unknown)`,
   };
 }
