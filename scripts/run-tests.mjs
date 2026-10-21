@@ -1199,6 +1199,7 @@ export const SUITES = {
     "src/components/settings-action-buttons.test.ts",
     "src/components/settings-section-tabs.test.ts",
     "src/components/settings-overview.test.ts",
+    "src/components/access-groups-section.behavior.test.tsx",
     "src/components/settings-client-access.test.tsx",
     "src/components/settings-save-feedback.test.ts",
     "src/components/settings-save-feedback.behavior.test.tsx",
@@ -2680,6 +2681,7 @@ const VITEST_TESTS = new Set([
   // rendered JSX for the shared reviewable/all queue scope control
   "src/components/code-review-queue-controls.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
+  "src/components/access-groups-section.behavior.test.tsx",
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
   "src/components/settings-general-data.test.tsx",
