@@ -16,7 +16,13 @@ export async function GET() {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       unsubscribe = subscribe(controller);
-      await broadcastSnapshot(controller);
+      try {
+        await broadcastSnapshot(controller);
+      } catch (error) {
+        unsubscribe();
+        unsubscribe = null;
+        throw error;
+      }
       const enc = new TextEncoder();
       heartbeat = setInterval(() => {
         try {
