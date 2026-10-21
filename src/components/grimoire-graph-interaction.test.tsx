@@ -205,10 +205,11 @@ test("canceling a node drag unpins it without selecting or opening a document", 
 });
 
 for (const modifier of ["metaKey", "ctrlKey"]) {
-  test(`${modifier} click opens a document and saves its selection before leaving`, () => {
+  test.each([false, true])(`${modifier} click saves selection and preserves explorer visibility %s before leaving`, (explorerOpen) => {
     const saved = vi.fn();
     const open = vi.fn(() => expect(saved).toHaveBeenCalled());
     mount(graph, { onOpen: open, onNavigationChange: saved });
+    if (explorerOpen) act(() => button("Explore").props.onClick());
     saved.mockClear();
     const [x, y] = arcs[0];
     act(() => {
@@ -218,7 +219,11 @@ for (const modifier of ["metaKey", "ctrlKey"]) {
     expect(open).toHaveBeenCalledOnce();
     const navigation = saved.mock.calls.at(-1)![0];
     expect(navigation.trail).toContain(navigation.selectedId);
-    expect(navigation.explorerOpen).toBe(true);
+    expect(navigation.explorerOpen).toBe(explorerOpen);
+    act(() => root!.unmount());
+    root = undefined;
+    mount(graph, { initialNavigation: navigation });
+    expect(button(explorerOpen ? "Hide explorer" : "Explore")).toBeDefined();
   });
 
   test(`${modifier} drag over a node pans without moving or opening it`, () => {

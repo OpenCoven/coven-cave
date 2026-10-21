@@ -956,6 +956,7 @@ export function GrimoireView({
   // (grimoire-audit cave-vv2h) Per-tab unsaved-edits flags, reported by each
   // editor via onDirtyChange — they drive the tab dot and the close confirm.
   const [dirtyTabs, setDirtyTabs] = useState<Record<string, boolean>>({});
+  const [tabOpenError, setTabOpenError] = useState<string | null>(null);
   const [knowledgeDrafts, setKnowledgeDrafts] = useState<Record<string, string>>({});
   useEffect(() => {
     setKnowledgeDrafts((previous) => {
@@ -977,6 +978,16 @@ export function GrimoireView({
   }, []);
 
   const openDoc = useCallback((sel: GrimoireSelection) => {
+    const requestedKey = selectionKey(sel);
+    if (!openTabs.some((tab) => selectionKey(tab) === requestedKey)
+      && openTabs.length >= MAX_OPEN_TABS
+      && openTabs.every((tab) => dirtyTabs[selectionKey(tab)])) {
+      const message = "Save or close an unsaved document before opening another.";
+      setTabOpenError(message);
+      announce(message, "polite");
+      return;
+    }
+    setTabOpenError(null);
     setTabState((prev) => {
       const key = selectionKey(sel);
       if (prev.openTabs.some((t) => selectionKey(t) === key)) {
@@ -984,15 +995,18 @@ export function GrimoireView({
       }
       let tabs = [...prev.openTabs, sel];
       if (tabs.length > MAX_OPEN_TABS) {
-        // Evict the oldest non-active tab to stay within the mount budget.
+        // Preserve drafts while staying within the mount budget. Prefer an
+        // inactive clean tab; a clean active tab is also safe to replace.
         const activeKey = prev.selection ? selectionKey(prev.selection) : null;
-        const evictIndex = tabs.findIndex((t) => selectionKey(t) !== activeKey);
+        let evictIndex = prev.openTabs.findIndex((t) => selectionKey(t) !== activeKey && !dirtyTabs[selectionKey(t)]);
+        if (evictIndex < 0) evictIndex = prev.openTabs.findIndex((t) => !dirtyTabs[selectionKey(t)]);
+        if (evictIndex < 0) return prev;
         evictedRef.current = tabs[evictIndex] ?? null;
         tabs = tabs.filter((_, i) => i !== evictIndex);
       }
       return { openTabs: tabs, selection: sel };
     });
-  }, []);
+  }, [announce, dirtyTabs, openTabs]);
 
   // Launcher-driven stitch prefill (URL capture / template row): bumping the
   // nonce re-keys the StitchIntake mount so its mount-time initial state takes.
@@ -2491,9 +2505,11 @@ export function GrimoireView({
               />
             </div>
           </div>
-        ) : selection ? (
-          <div className="flex h-full min-h-0 flex-col">
-            {!focusMode ? (
+        ) : null}
+          {/* Keep document editors mounted across Memories views: memory files
+              require explicit saves, so unmounting would discard their drafts. */}
+          <div className={view === "docs" ? "flex h-full min-h-0 flex-col" : "hidden"}>
+            {selection && !focusMode ? (
               <div className="grimoire-mobile-back shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1">
               <button
                 type="button"
@@ -2507,6 +2523,11 @@ export function GrimoireView({
               <span className="min-w-0 flex-1" />
               </div>
             ) : null}
+            {tabOpenError ? (
+              <div role="alert" className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-warning)]">
+                {tabOpenError}
+              </div>
+            ) : null}
             {deleteError ? (
               <div role="alert" className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--color-warning)]">
                 {deleteError}
@@ -2514,9 +2535,6 @@ export function GrimoireView({
             ) : null}
             <div className="min-h-0 flex-1">{detail}</div>
           </div>
-        ) : (
-          detail
-        )}
       </main>
       </div>
     </div>

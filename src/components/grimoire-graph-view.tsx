@@ -900,12 +900,12 @@ export function GrimoireGraphView({
       if (node.ref) {
         // Publish synchronously: opening the reader unmounts this canvas before
         // a selection effect could save the new node and its traversal trail.
-        onNavigationChange?.({ selectedId: node.id, trail: [...trail.filter((id) => id !== node.id), node.id].slice(-TRAIL_LIMIT), query, explorerOpen: true });
+        onNavigationChange?.({ selectedId: node.id, trail: [...trail.filter((id) => id !== node.id), node.id].slice(-TRAIL_LIMIT), query, explorerOpen });
         announcer.announce(`Opening ${node.title}`, "polite");
         onOpen(node.ref);
       }
     },
-    [announcer, onNavigationChange, onOpen, query, trail],
+    [announcer, explorerOpen, onNavigationChange, onOpen, query, trail],
   );
 
   const goBack = useCallback(() => {
