@@ -45,7 +45,8 @@ vi.mock("@/lib/use-focus-trap", async (importOriginal) => ({
 }));
 vi.mock("@/lib/use-projects", () => ({ useProjects: () => mockProjects.state }));
 vi.mock("@/lib/use-project-overrides", () => ({ useProjectOverrides: () => ({}) }));
-vi.mock("@/lib/use-pinned-sessions", () => ({ usePinnedSessions: () => [] }));
+const pinnedState = vi.hoisted(() => ({ ids: [] as string[] }));
+vi.mock("@/lib/use-pinned-sessions", () => ({ usePinnedSessions: () => pinnedState.ids }));
 vi.mock("@/components/familiar-switcher", async () => {
   const { createElement } = await import("react");
   return { FamiliarSwitcher: () => createElement("div", { "data-testid": "familiar-switcher" }) };
@@ -157,6 +158,7 @@ function bucketLabels(renderer: ReactTestRenderer) {
 }
 
 beforeEach(() => {
+  pinnedState.ids = [];
   mockProjects.state.projects = [];
   mockProjects.state.loading = false;
   mockProjects.state.loadedSuccessfully = true;
@@ -194,7 +196,7 @@ afterEach(() => {
   dragSignals.end.mockReset();
 });
 
-test("running rail chats show runtime, work state, branch and PR context on separate lines", async () => {
+test("running rail chats retain runtime, work state and PR actions beneath a single title", async () => {
   const session = {
     ...makeSession(),
     id: "working-pr-chat",
@@ -226,11 +228,11 @@ test("running rail chats show runtime, work state, branch and PR context on sepa
   expect(textContent(findClass("cnav__thread-project").children)).toBe("repo");
   expect(findClass("cnav__thread-title").props.title).toContain("PR #5790");
   expect(
-    textContent(findClass("chat-row-title__head").children)
-    + textContent(findClass("chat-row-title__tail").children),
+    textContent(findClass("chat-row-title__head").children),
   ).toBe("Improve the rail");
+  expect(row.findAll((node) => node.props.className === "chat-row-title__tail")).toHaveLength(0);
   expect(findClass("cnav__thread-branch").props.title).toBe("Branch feat/issue-5790-chat-siderail");
-  expect(textContent(findClass("cnav__thread-branch").children)).toMatch(/^feat\/issue…hat-siderail$/);
+  expect(textContent(findClass("cnav__thread-branch").children)).toMatch(/^·feat\/issue…hat-siderail$/);
   expect(textContent(findClass("cnav__thread-pr-number").children)).toBe("#5790");
   expect(findClass("cnav__runtime").props.title).toBe("Runtime: Claude Code");
   const prButton = row.find((node) => node.type === "button"
@@ -324,9 +326,10 @@ test("reflection runs sit in their own collapsed section, never among live chats
   await act(async () => renderer.unmount());
 });
 
-test("actual thread buttons prefetch by hover, pointer down and focus, but never in select mode", async () => {
+test.each([false, true])("thread prefetch and split navigation respect select mode (pinned=%s)", async (pinned) => {
   let renderer!: ReactTestRenderer;
   const session = makeSession();
+  pinnedState.ids = pinned ? [session.id] : [];
   const props = {
     sessions: [session, { ...session, id: "second", title: "Second chat" }],
     onOpenSession: vi.fn(),
@@ -335,31 +338,64 @@ test("actual thread buttons prefetch by hover, pointer down and focus, but never
   };
   await act(async () => { renderer = create(createElement(SidebarChatsSection, props)); });
   const rows = () => renderer.root.findAllByProps({ className: "cnav__thread-main focus-ring" });
+  const target = () => rows().find((row) => textContent(row).includes("Fresh chat"))!;
+  expect(rows()).toHaveLength(2);
+  if (pinned) {
+    expect(textContent(sectionByLabel(renderer, "Pinned threads"))).toContain("Fresh chat");
+  }
   await act(async () => {
-    rows()[0].props.onPointerEnter();
-    rows()[0].props.onPointerDown();
-    rows()[0].props.onFocus();
-    rows()[0].props.onPointerLeave();
+    target().props.onPointerEnter();
+    target().props.onPointerDown();
+    target().props.onFocus();
+    target().props.onPointerLeave();
   });
-  const prefetchedId = prefetchSignals.hover.mock.calls[0][0];
-  expect(prefetchSignals.prefetch.mock.calls).toEqual([[prefetchedId], [prefetchedId]]);
+  expect(prefetchSignals.hover.mock.calls).toEqual([["session-time"]]);
+  expect(prefetchSignals.prefetch.mock.calls).toEqual([["session-time"], ["session-time"]]);
   expect(prefetchSignals.cancel).toHaveBeenCalled();
   const preventDefault = vi.fn();
-  await act(async () => { rows()[0].props.onKeyDown({ key: "Enter", altKey: true, preventDefault }); });
+  await act(async () => { target().props.onKeyDown({ key: "Enter", altKey: true, preventDefault }); });
   expect(preventDefault).toHaveBeenCalled();
   expect(props.onOpenSessionInSplit).toHaveBeenCalledTimes(1);
   await act(async () => { renderer.root.findByProps({ className: "cnav__select-enter focus-ring" }).props.onClick(); });
   prefetchSignals.hover.mockClear();
   prefetchSignals.prefetch.mockClear();
   await act(async () => {
-    rows()[0].props.onPointerEnter();
-    rows()[0].props.onPointerDown();
-    rows()[0].props.onFocus();
-    rows()[0].props.onKeyDown({ key: "Enter", altKey: true, preventDefault });
+    target().props.onPointerEnter();
+    target().props.onPointerDown();
+    target().props.onFocus();
+    target().props.onKeyDown({ key: "Enter", altKey: true, preventDefault });
   });
   expect(prefetchSignals.hover).not.toHaveBeenCalled();
   expect(prefetchSignals.prefetch).not.toHaveBeenCalled();
   expect(props.onOpenSessionInSplit).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.unmount());
+});
+
+test("a pinned chat moves between Pinned and Awaiting you without duplicating or losing its row", async () => {
+  const session = makeSession();
+  pinnedState.ids = [session.id];
+  const props = { onOpenSession: vi.fn(), onDeleteSession: async () => undefined };
+  let renderer!: ReactTestRenderer;
+  const renderSession = async (value: ReturnType<typeof makeSession>) => {
+    await act(async () => {
+      const element = createElement(SidebarChatsSection, { ...props, sessions: [value] });
+      if (renderer) renderer.update(element);
+      else renderer = create(element);
+    });
+    expect(renderer.root.findAllByProps({ className: "cnav__thread-main focus-ring" })).toHaveLength(1);
+  };
+  await renderSession(session);
+  expect(bucketLabels(renderer)).toContain("Pinned threads");
+  await renderSession({ ...session, attention: { state: "awaiting-human", since: session.updated_at, reason: "approval" } });
+  expect(bucketLabels(renderer)).not.toContain("Pinned threads");
+  expect(textContent(sectionByLabel(renderer, "Awaiting you"))).toContain("Blocked");
+  await renderSession(session);
+  expect(bucketLabels(renderer)).toContain("Pinned threads");
+  expect(bucketLabels(renderer)).not.toContain("Awaiting you");
+  pinnedState.ids = [];
+  await renderSession({ ...session });
+  expect(bucketLabels(renderer)).not.toContain("Pinned threads");
+  expect(textContent(sectionByLabel(renderer, "Today"))).toContain("Fresh chat");
   await act(async () => renderer.unmount());
 });
 
