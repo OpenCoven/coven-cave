@@ -124,11 +124,17 @@ async function tick(): Promise<void> {
 export function startScheduler(): void {
   if (globalThis.__inboxSchedulerStarted) return;
   globalThis.__inboxSchedulerStarted = true;
+  // A slow store must not accumulate one queued transaction per interval.
+  // Each pass reads current due items, so skipped timer events need no replay.
+  let running = false;
+  const run = () => {
+    if (running) return;
+    running = true;
+    void tick().catch(() => undefined).finally(() => { running = false; });
+  };
   // Boot tick (catch up reminders that fired while Cave was quit).
-  void tick().catch(() => undefined);
-  setInterval(() => {
-    void tick().catch(() => undefined);
-  }, TICK_MS);
+  run();
+  setInterval(run, TICK_MS);
 }
 
 /**
