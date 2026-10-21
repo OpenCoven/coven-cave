@@ -1,6 +1,6 @@
 # Reviewed CLI Footprint Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan inline. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan inline. Checkboxes are not evidence of completion; consult code, merged PRs and the execution ledger.
 
 **Goal:** Fresh setup installs the released lightweight CLI without the separate memory dashboard's application dependencies.
 
