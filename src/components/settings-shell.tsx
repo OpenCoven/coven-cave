@@ -689,7 +689,7 @@ function BackupSettingsGroup() {
 function ScheduledSyncSettings() {
   const { announce } = useAnnouncer();
   const { sync: syncResource } = useGeneralSettingsData()!;
-  const { value: overview, status: syncLoadState, refresh: loadOverview, publish: setOverview } = syncResource;
+  const { value: overview, status: syncLoadState, error: syncError, refresh: loadOverview, publish: setOverview } = syncResource;
   const [directoryDraft, setDirectoryDraft] = useState<string | null>(null);
   const [retainDraft, setRetainDraft] = useState<string | null>(null);
   const [passphraseDraft, setPassphraseDraft] = useState("");
@@ -757,7 +757,7 @@ function ScheduledSyncSettings() {
         <ErrorState
           compact
           headline="Couldn't load scheduled sync"
-          subtitle="Retry after the Cave sidecar is available."
+          subtitle={syncError ?? "Retry after the Cave sidecar is available."}
           actions={<Button size="sm" onClick={() => void loadOverview()}>Retry</Button>}
         />
       </section>
@@ -776,7 +776,7 @@ function ScheduledSyncSettings() {
       aria-labelledby="settings-backup-sync-title"
     >
       {syncLoadState === "error" ? (
-        <ErrorState compact headline="Scheduled sync details couldn't refresh" subtitle="Showing the last loaded settings."
+        <ErrorState compact headline="Scheduled sync details couldn't refresh" subtitle={syncError ?? "Showing the last loaded settings."}
           actions={<Button size="sm" onClick={() => void loadOverview()}>Retry</Button>} />
       ) : null}
       <div className="settings-backup-sync__header">
