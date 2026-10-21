@@ -63,10 +63,14 @@ export function subscribeOnboardingBootstrapStatus(listener: () => void): () => 
 export function subscribeOnboardingBootstrapCompletion(listener: () => void): () => void {
   const isComplete = () => snapshot.state?.status === "complete" && snapshot.state.complete === true;
   let wasComplete = isComplete();
+  let lastCompletion = wasComplete ? snapshot.state?.updatedAt : undefined;
   return subscribeOnboardingBootstrapStatus(() => {
     const complete = isComplete();
-    const becameComplete = complete && !wasComplete;
-    // Consume the edge first, including when a listener republishes state.
+    const completion = complete ? snapshot.state?.updatedAt : undefined;
+    const becameComplete = complete && !wasComplete && completion !== lastCompletion;
+    // A late running GET cannot replay the same server completion. Consume
+    // its identity before calling listeners, including re-entrant publishers.
+    if (complete) lastCompletion = completion;
     wasComplete = complete;
     if (becameComplete) listener();
   });

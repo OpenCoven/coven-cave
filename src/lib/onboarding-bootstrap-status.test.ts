@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { createOnboardingBootstrapState, type OnboardingBootstrapState } from "./onboarding-bootstrap.ts";
 import {
   getOnboardingBootstrapStatusSnapshot,
+  fetchOnboardingBootstrapStatus,
   publishOnboardingBootstrapState,
   resetOnboardingBootstrapStatus,
   setOnboardingDialogOpen,
@@ -146,17 +147,49 @@ test("setup completion notifies once per successful run and never treats failure
 test("a completion subscriber ignores retained history and consumes the edge before calling back", () => {
   resetOnboardingBootstrapStatus();
   const complete = { ...createOnboardingBootstrapState(true), status: "complete" as const, complete: true, needsSetup: false };
+  const finishedAgain = { ...complete, updatedAt: new Date(Date.parse(complete.updatedAt) + 1).toISOString() };
   publishOnboardingBootstrapState(complete);
   let completions = 0;
   const unsubscribe = subscribeOnboardingBootstrapCompletion(() => {
     completions += 1;
-    if (completions === 1) publishOnboardingBootstrapState({ ...complete });
+    if (completions === 1) publishOnboardingBootstrapState({ ...finishedAgain });
   });
   publishOnboardingBootstrapState({ ...complete });
   assert.equal(completions, 0, "mounting beside a finished setup does not replay its completion");
   publishOnboardingBootstrapState(running("daemon", "Starting…"));
-  publishOnboardingBootstrapState(complete);
+  publishOnboardingBootstrapState(finishedAgain);
   assert.equal(completions, 1, "re-entrant publication does not create another completion edge");
   unsubscribe();
   resetOnboardingBootstrapStatus();
+});
+
+test("a late running response cannot replay a completion already observed by another reader", async (context) => {
+  resetOnboardingBootstrapStatus();
+  const active = { ...running("daemon", "Starting…"), updatedAt: "2026-10-21T05:00:00Z" };
+  const complete = { ...active, status: "complete" as const, complete: true, needsSetup: false, updatedAt: "2026-10-21T05:00:01Z" };
+  let releaseOldRead!: (response: Response) => void;
+  let read = 0;
+  context.mock.method(globalThis, "fetch", async () => {
+    read += 1;
+    if (read === 1) return new Promise<Response>((resolve) => { releaseOldRead = resolve; });
+    return Response.json({ ok: true, ...complete });
+  });
+  let completions = 0;
+  const unsubscribe = subscribeOnboardingBootstrapCompletion(() => { completions += 1; });
+  try {
+    publishOnboardingBootstrapState(active);
+    const oldDialogRead = fetchOnboardingBootstrapStatus();
+    await fetchOnboardingBootstrapStatus();
+    assert.equal(completions, 1);
+    releaseOldRead(Response.json({ ok: true, ...active }));
+    await oldDialogRead;
+    await fetchOnboardingBootstrapStatus();
+    assert.equal(completions, 1, "one completed run still owns only one health recheck after reordered responses");
+    publishOnboardingBootstrapState({ ...active, updatedAt: "2026-10-21T05:00:02Z" });
+    publishOnboardingBootstrapState({ ...complete, updatedAt: "2026-10-21T05:00:03Z" });
+    assert.equal(completions, 2, "a distinct later completion still reconciles");
+  } finally {
+    unsubscribe();
+    resetOnboardingBootstrapStatus();
+  }
 });
