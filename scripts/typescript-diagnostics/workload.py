@@ -21,7 +21,29 @@ def digest(path):
 
 
 def validate(root, kind):
+    if kind not in ('tsc', 'tsc-incremental', 'build'):
+        raise ValueError('unknown workload kind')
     record=json.loads((root/'result.json').read_text())
+    if kind == 'tsc-incremental':
+        command=record.get('command')
+        if (not isinstance(command,list) or len(command)!=10
+            or command[:-1]!=['pnpm','exec','tsc','--noEmit','--incremental','true',
+                '--extendedDiagnostics','--listFiles','--tsBuildInfoFile']
+            or not isinstance(command[-1],str)
+            or not pathlib.Path(command[-1]).is_absolute()
+            or pathlib.Path(command[-1]).parts[-3:]!=('.next','cache','.tsbuildinfo')):
+            raise ValueError('incremental artifact has wrong compiler command')
+        try:
+            provenance=json.loads((root.parent/'provenance.json').read_text())
+        except (OSError,ValueError) as error:
+            raise ValueError('missing or malformed incremental provenance') from error
+        if (not isinstance(provenance,dict)
+            or provenance.get('kind')!='tsc-incremental'
+            or provenance.get('measurement_command')!=command
+            or provenance.get('incremental_build_info_before')!='absent'
+            or not isinstance(provenance.get('incremental_build_info_sha256'),str)
+            or not re.fullmatch('[0-9a-f]{64}',provenance['incremental_build_info_sha256'])):
+            raise ValueError('incomplete or inconsistent incremental provenance')
     if record.get('exit_code') != 0 or record.get('stop_reason') or record.get('cleanup_error') or record.get('direct_child_cleanup_error'):
         raise ValueError('command or measurement failed')
     seconds=record.get('command_seconds')
@@ -70,12 +92,26 @@ def capture(command, cwd):
     return subprocess.check_output(command,cwd=cwd,text=True,timeout=15).strip()
 
 
+def compiler_command(kind, source):
+    if kind not in ('tsc', 'tsc-incremental'):
+        raise ValueError('unknown compiler kind')
+    incremental = kind == 'tsc-incremental'
+    command = ['pnpm','exec','tsc','--noEmit','--incremental',
+               'true' if incremental else 'false','--extendedDiagnostics','--listFiles']
+    if incremental:
+        cache = source/'.next/cache/.tsbuildinfo'
+        if cache.exists() or cache.is_symlink():
+            raise ValueError('incremental comparison requires cold build info')
+        command.extend(['--tsBuildInfoFile',str(cache)])
+    return command
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--source',type=pathlib.Path,required=True)
     parser.add_argument('--output',type=pathlib.Path,required=True)
     parser.add_argument('--commit',required=True)
-    parser.add_argument('--kind',choices=['tsc','build'],required=True)
+    parser.add_argument('--kind',choices=['tsc','tsc-incremental','build'],required=True)
     args=parser.parse_args()
     source=args.source.resolve();out=args.output.resolve()
     # This is an operator-facing protocol guard, not authentication of a host.
@@ -101,11 +137,19 @@ def main():
     provenance['installed_graph']=installed_graph(source)
     (out/'provenance.json').write_text(json.dumps(provenance,indent=2))
     validate_graph(provenance['installed_graph'])
-    if args.kind=='tsc':
+    if args.kind in ('tsc','tsc-incremental'):
         if measure.run(['pnpm','exec','next','typegen'],source,out/'typegen',300,1):return 1
-        command=['pnpm','exec','tsc','--noEmit','--incremental','false','--extendedDiagnostics','--listFiles']
+        command=compiler_command(args.kind,source)
     else:command=['pnpm','build']
+    provenance['measurement_command']=command
+    provenance['incremental_build_info_before']='absent' if args.kind=='tsc-incremental' else 'not-applicable'
+    (out/'provenance.json').write_text(json.dumps(provenance,indent=2))
     if measure.run(command,source,out/'measurement',2700,1):return 1
+    if args.kind=='tsc-incremental':
+        cache=source/'.next/cache/.tsbuildinfo'
+        if not cache.is_file():raise ValueError('incremental compiler produced no build info')
+        provenance['incremental_build_info_sha256']=digest(cache)
+        (out/'provenance.json').write_text(json.dumps(provenance,indent=2))
     result=validate(out/'measurement',args.kind)
     (out/'validation.json').write_text(json.dumps(result,indent=2))
     return 0
