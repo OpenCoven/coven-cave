@@ -34,13 +34,51 @@ function signalGroup(pid, signal) {
   catch (error) { if (error.code !== "ESRCH") throw error; }
 }
 
+function permissionUncertain(error) {
+  return ["EPERM", "EACCES"].includes(error.code);
+}
+
+// Each owned group carries its unresolved observation error until proven absent.
+async function waitForGroupsToExit(groups, { alive, timeoutMs }) {
+  const deadline = performance.now() + timeoutMs;
+  for (;;) {
+    for (const pid of groups.keys()) {
+      try {
+        if (!alive(pid)) {
+          groups.delete(pid);
+        }
+      } catch (error) {
+        if (!permissionUncertain(error)) throw error;
+        groups.set(pid, error);
+      }
+    }
+    if (groups.size === 0) return true;
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) {
+      const uncertain = [...groups.values()].find(Boolean);
+      if (uncertain) throw uncertain;
+      return false;
+    }
+    // Darwin may return EPERM for an exited, unreaped group. Only a later
+    // definitive absence clears it; permission uncertainty is not success.
+    await delay(Math.min(25, remaining));
+  }
+}
+
 export async function cleanupOwnedGroups(groups, { alive = groupAlive, signal = signalGroup, timeoutMs = 2000 } = {}) {
   // A launcher exit does not prove that its descendants have exited.
   for (const termination of ["SIGTERM", "SIGKILL"]) {
-    for (const pid of groups) if (alive(pid)) signal(pid, termination);
-    const deadline = performance.now() + timeoutMs;
-    while ([...groups].some(alive) && performance.now() < deadline) await delay(25);
-    if (![...groups].some(alive)) return true;
+    for (const [pid, uncertain] of groups) {
+      if (uncertain) continue;
+      try {
+        if (alive(pid)) signal(pid, termination);
+        else groups.delete(pid);
+      } catch (error) {
+        if (!permissionUncertain(error)) throw error;
+        groups.set(pid, error);
+      }
+    }
+    if (await waitForGroupsToExit(groups, { alive, timeoutMs })) return true;
   }
   return false;
 }
@@ -50,7 +88,7 @@ export function runOwnedCommand(binary, args, { cwd, env, groups, signal, timeou
   return new Promise(resolve => {
     const started = performance.now();
     const child = spawn(binary, args, { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
-    if (child.pid) groups.add(child.pid);
+    if (child.pid) groups.set(child.pid, null);
     let stdout = "", stderr = "", bytes = 0, timedOut = false, spawnFailed = false, outputExceeded = false, cancelled = false;
     let killTimer, settlementTimer, settled = false, terminating = false;
     const finish = (code, terminationSignal) => {
@@ -58,6 +96,10 @@ export function runOwnedCommand(binary, args, { cwd, env, groups, signal, timeou
       settled = true;
       clearTimeout(timer); clearTimeout(killTimer); clearTimeout(settlementTimer);
       signal?.removeEventListener("abort", abort);
+      if (child.pid) {
+        try { if (!groupAlive(child.pid)) groups.delete(child.pid); }
+        catch (error) { groups.set(child.pid, error); }
+      }
       resolve({ code, signal: terminationSignal, stdout, stderr, timedOut, spawnFailed, outputExceeded, cancelled, durationMs: performance.now() - started });
     };
     const terminate = () => {
@@ -68,8 +110,9 @@ export function runOwnedCommand(binary, args, { cwd, env, groups, signal, timeou
       // were reclaimed. Group cleanup is checked independently by the caller.
       child.stdout.destroy(); child.stderr.destroy();
       const signalOwned = terminationSignal => {
-        try { if (child.pid) signalGroup(child.pid, terminationSignal); }
-        catch { /* Cleanup below must still report the surviving group. */ }
+        if (!child.pid || !groups.has(child.pid) || groups.get(child.pid)) return;
+        try { signalGroup(child.pid, terminationSignal); }
+        catch (error) { groups.set(child.pid, error); }
       };
       signalOwned("SIGTERM");
       killTimer = setTimeout(() => signalOwned("SIGKILL"), 1000);
@@ -160,7 +203,7 @@ async function runSample(binary, index, signal) {
   const root = realpathSync(mkdtempSync(path.join("/tmp", "cave-life-")));
   const env = isolatedEnvironment(root);
   for (const dir of [env.COVEN_HOME, env.HOME, env.TMPDIR]) mkdirSync(dir, { mode: 0o700 });
-  const groups = new Set();
+  const groups = new Map();
   const sample = { index, pass: false, cleanup: false, operations: [], fixtureRoot: root };
   const command = args => runOwnedCommand(binary, args, { cwd: root, env, groups, signal });
   const status = async () => {
@@ -221,9 +264,7 @@ async function runSample(binary, index, signal) {
       assert.equal((await status()).status, "stopped");
       // Verify endpoint disappearance separately from status rendering.
       await assert.rejects(readHealth(env.COVEN_SOCKET));
-      const deadline = performance.now() + 2000;
-      while ([...groups].some(groupAlive) && performance.now() < deadline) await delay(25);
-      assert.equal([...groups].some(groupAlive), false);
+      assert.equal(await waitForGroupsToExit(groups, { alive: groupAlive, timeoutMs: 2000 }), true);
     });
     sample.pass = true;
   } catch { /* Failed operation is retained; subsequent operations were not exercised. */ }
@@ -270,7 +311,7 @@ export async function runDaemonLifecycleProbe({ binary, samples = 5, signal }) {
   report.probeSha256 = createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url))).digest("hex");
   // Version discovery also runs inside a fixture; never invoke it in the user's cwd.
   const versionRoot = realpathSync(mkdtempSync("/tmp/cave-life-version-"));
-  const versionGroups = new Set();
+  const versionGroups = new Map();
   const version = await runOwnedCommand(binary, ["--version"], {
     cwd: versionRoot, env: isolatedEnvironment(versionRoot), groups: versionGroups, signal,
   });

@@ -51,7 +51,7 @@ test("one failed sample and cleanup failure cannot become aggregate success", ()
 
 test("cleanup inspects surviving groups, even after their leaders have exited", async () => {
   const signals = [];
-  const groups = new Set([123, 456]);
+  const groups = new Map([[123, null], [456, null]]);
   const result = await cleanupOwnedGroups(groups, {
     alive: pid => pid === 456,
     signal: (pid, signal) => signals.push([pid, signal]),
@@ -59,6 +59,180 @@ test("cleanup inspects surviving groups, even after their leaders have exited", 
   });
   assert.equal(result, false, "a surviving group must fail cleanup");
   assert.deepEqual(signals, [[456, "SIGTERM"], [456, "SIGKILL"]]);
+});
+
+test("transient permission uncertainty needs definitive absence and never authorizes a signal", async () => {
+  const groups = new Map([[123, null]]);
+  const signals = [];
+  let observations = 0;
+  const result = await cleanupOwnedGroups(groups, {
+    alive: () => {
+      if (++observations <= 2) throw Object.assign(new Error("unknown group"), { code: "EPERM" });
+      return false;
+    },
+    signal: (...args) => signals.push(args),
+  });
+  assert.equal(result, true);
+  assert.ok(observations >= 3, "the permission error is not proof of absence");
+  assert.deepEqual(signals, []);
+  assert.equal(groups.size, 0);
+});
+
+test("confirmed-absent group IDs are retired before later cleanup observations", async () => {
+  const groups = new Map([[123, null], [456, null]]);
+  const signals = [];
+  let absentObservations = 0;
+  await cleanupOwnedGroups(groups, {
+    alive: pid => {
+      if (pid === 123) {
+        assert.equal(++absentObservations, 1, "an absent ID must never be observed again");
+        return false;
+      }
+      return true;
+    },
+    signal: (...args) => signals.push(args),
+    timeoutMs: 0,
+  });
+  assert.deepEqual([...groups.keys()], [456]);
+  assert.deepEqual(signals, [[456, "SIGTERM"], [456, "SIGKILL"]]);
+});
+
+test("persistent uncertainty fails without signaling that group or hiding a live group", async () => {
+  const groups = new Map([[123, null], [456, null]]);
+  const signals = [];
+  await assert.rejects(cleanupOwnedGroups(groups, {
+    alive: pid => {
+      if (pid === 123) throw Object.assign(new Error("unknown group"), { code: "EPERM" });
+      return true;
+    },
+    signal: (...args) => signals.push(args),
+    timeoutMs: 0,
+  }), { code: "EPERM" });
+  assert.ok(groups.has(123) && groups.has(456));
+  assert.ok(signals.every(([pid]) => pid === 456));
+});
+
+test("uncertainty observed while waiting cannot be forgotten before escalation", async () => {
+  const groups = new Map([[123, null]]);
+  const signals = [];
+  let observations = 0;
+  await assert.rejects(cleanupOwnedGroups(groups, {
+    alive: () => {
+      observations++;
+      if (observations === 2) throw Object.assign(new Error("unknown group"), { code: "EPERM" });
+      return !signals.some(([, signal]) => signal === "SIGKILL");
+    },
+    signal: (...args) => signals.push(args),
+    timeoutMs: 1000,
+  }), { code: "EPERM" });
+  assert.ok(observations >= 3, "exercise a later live observation after uncertainty");
+  assert.deepEqual(signals, [[123, "SIGTERM"]]);
+  assert.ok(groups.has(123));
+});
+
+test("resolved uncertainty does not prevent escalation for a separate surviving group", async () => {
+  const groups = new Map([[123, null], [456, null]]);
+  const signals = [];
+  let uncertainObservations = 0;
+  assert.equal(await cleanupOwnedGroups(groups, {
+    alive: pid => {
+      if (pid === 123) {
+        if (++uncertainObservations === 1) throw Object.assign(new Error("unknown group"), { code: "EPERM" });
+        return false;
+      }
+      return !signals.some(([id, signal]) => id === 456 && signal === "SIGKILL");
+    },
+    signal: (...args) => signals.push(args),
+    timeoutMs: 0,
+  }), true);
+  assert.deepEqual(signals, [[456, "SIGTERM"], [456, "SIGKILL"]]);
+  assert.equal(groups.size, 0);
+});
+
+test("a completed command retires its definitively absent process group", { skip: process.platform === "win32" }, async () => {
+  const groups = new Map();
+  const result = await runOwnedCommand(process.execPath, ["-e", ""], { cwd: os.tmpdir(), env: {}, groups });
+  assert.equal(result.code, 0);
+  assert.equal(groups.size, 0);
+});
+
+test("command completion preserves uncertainty for subsequent cleanup", { skip: process.platform === "win32" }, async () => {
+  const groups = new Map();
+  const signals = [];
+  const kill = process.kill;
+  try {
+    try {
+      process.kill = function (pid, signal) {
+        if (pid < 0 && signal === 0) throw Object.assign(new Error("unknown group"), { code: "EPERM" });
+        return kill.call(this, pid, signal);
+      };
+      const result = await runOwnedCommand(process.execPath, ["-e", ""], { cwd: os.tmpdir(), env: {}, groups });
+      assert.equal(result.code, 0);
+    } finally {
+      process.kill = kill;
+    }
+    await assert.rejects(cleanupOwnedGroups(groups, {
+      alive: () => true,
+      signal: (...args) => signals.push(args),
+      timeoutMs: 0,
+    }), { code: "EPERM" });
+    assert.deepEqual(signals, []);
+  } finally {
+    await cleanupOwnedGroups(groups);
+  }
+});
+
+test("a denied command termination cannot escalate or forget the uncertainty", { skip: process.platform === "win32" }, async () => {
+  const groups = new Map();
+  const signals = [];
+  const kill = process.kill;
+  try {
+    try {
+      process.kill = function (pid, signal) {
+        if (pid < 0 && signal !== 0) {
+          signals.push(signal);
+          if (signal === "SIGTERM") throw Object.assign(new Error("synthetic denial"), { code: "EPERM" });
+        }
+        return kill.call(this, pid, signal);
+      };
+      const result = await runOwnedCommand(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+        cwd: os.tmpdir(), env: {}, groups, timeoutMs: 100,
+      });
+      assert.equal(result.timedOut, true);
+    } finally {
+      process.kill = kill;
+    }
+    assert.deepEqual(signals, ["SIGTERM"]);
+    assert.equal(groups.size, 1);
+    assert.equal([...groups.values()][0].code, "EPERM");
+  } finally {
+    // The denial above was injected: restore real signaling for this still-owned
+    // live fixture. No production cleanup may override actual uncertainty.
+    for (const pid of groups.keys()) {
+      try { kill.call(process, -pid, "SIGKILL"); }
+      catch (error) { if (error.code !== "ESRCH") throw error; }
+    }
+    await cleanupOwnedGroups(groups);
+  }
+});
+
+test("command completion retains a surviving descendant in the same group for cleanup", { skip: process.platform === "win32" }, async () => {
+  const groups = new Map();
+  try {
+    const code = `const {spawn}=require('node:child_process');
+      const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
+      console.log(child.pid);child.unref();`;
+    const result = await runOwnedCommand(process.execPath, ["-e", code], { cwd: os.tmpdir(), env: {}, groups });
+    assert.equal(result.code, 0);
+    const descendant = Number(result.stdout.trim());
+    assert.ok(Number.isSafeInteger(descendant) && descendant > 0);
+    assert.doesNotThrow(() => process.kill(descendant, 0));
+    assert.equal(groups.size, 1, "launcher exit must retain the descendant's group");
+    assert.equal(await cleanupOwnedGroups(groups), true);
+    assert.equal(groups.size, 0);
+  } finally {
+    await cleanupOwnedGroups(groups);
+  }
 });
 
 test("child environment uses only private fixture paths and an explicit allowlist", () => {
@@ -75,7 +249,7 @@ test("child environment uses only private fixture paths and an explicit allowlis
 
 test("missing and hung executables are bounded failures and leave no owned group", { skip: process.platform === "win32" }, async () => {
   const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "cave-probe-test-")));
-  const groups = new Set();
+  const groups = new Map();
   try {
     const missing = await runOwnedCommand(path.join(root, "missing"), [], { cwd: root, env: {}, groups });
     assert.equal(missing.spawnFailed, true);
@@ -100,7 +274,7 @@ test("a missing binary returns failed evidence, not a successful empty benchmark
 test("unverifiable cleanup returns redacted failed evidence", { skip: process.platform === "win32" }, async () => {
   const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "cave-cleanup-test-")));
   const binary = path.join(root, "fixture-coven");
-  const groups = new Set();
+  const groups = new Map();
   writeFileSync(binary, `#!${process.execPath}\nconsole.log('coven v0.0.1');\n`, { mode: 0o700 });
   try {
     for (const [phase, code, classification] of [
@@ -150,7 +324,7 @@ test("unverifiable cleanup returns redacted failed evidence", { skip: process.pl
 test("a descendant holding inherited pipes cannot outlive the command deadline", { skip: process.platform === "win32" }, async () => {
   const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "cave-pipe-test-")));
   const pidFile = path.join(root, "owned-child");
-  const groups = new Set();
+  const groups = new Map();
   let guard;
   try {
     const code = `const {spawn}=require('node:child_process');const fs=require('node:fs');
