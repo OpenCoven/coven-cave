@@ -2192,6 +2192,9 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // Real inbox store and route regressions reach @/lib runtime imports.
+  "src/lib/cave-inbox-preservation.test.ts",
+  "src/app/api/inbox/storage.test.ts",
   "src/lib/server/saved-links-route.test.ts",
   "src/lib/collect-saved-link-urls.test.ts",
   "src/app/api/connectors/route.test.ts",
