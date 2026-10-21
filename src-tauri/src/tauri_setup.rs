@@ -518,7 +518,7 @@ pub fn run() {
             } else {
                 #[cfg(target_os = "windows")]
                 {
-                    WebviewWindowBuilder::new(
+                    let window = WebviewWindowBuilder::new(
                         app,
                         PRIMARY_MAIN_WINDOW_LABEL,
                         WebviewUrl::App("startup.html".into()),
@@ -526,10 +526,12 @@ pub fn run() {
                         .title("CovenCave")
                         .inner_size(1320.0, 820.0)
                         .min_inner_size(960.0, 600.0)
+                        .visible(false)
                         .resizable(true)
                         .disable_drag_drop_handler()
                         .build()?;
                     register_main_window(app.handle(), PRIMARY_MAIN_WINDOW_LABEL)?;
+                    windows_window_state::initialize(&window)?;
 
                     let startup_control =
                         Arc::clone(app.state::<Arc<SidecarStartupControl>>().inner());
@@ -629,6 +631,10 @@ pub fn run() {
                 // `hidden_title` drops the native "CovenCave" label. The web side
                 // renders the centered Coven identity, reserves room for the
                 // traffic lights, and marks the strip as a deep drag region.
+                #[cfg(target_os = "windows")]
+                {
+                    main_window = main_window.visible(false);
+                }
                 #[cfg(target_os = "macos")]
                 {
                     main_window = main_window
@@ -653,6 +659,8 @@ pub fn run() {
                 match main_window.build() {
                     Ok(window) => {
                         register_main_window(app.handle(), window.label())?;
+                        #[cfg(target_os = "windows")]
+                        windows_window_state::initialize(&window)?;
                         #[cfg(not(target_os = "windows"))]
                         if let Some((started, success_evidence)) =
                             pending_native_startup_terminal.take()
@@ -917,6 +925,8 @@ pub fn run() {
             setup_result
         })
         .on_window_event(|window, event| {
+            #[cfg(target_os = "windows")]
+            windows_window_state::on_event(window, event);
             if matches!(event, tauri::WindowEvent::Focused(true)) {
                 window
                     .app_handle()

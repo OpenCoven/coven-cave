@@ -1223,3 +1223,17 @@ test("Windows startup PRs compile native code without release authority", async 
   assert.match(workflow, /if \(\(\$output -join "`n"\) -notmatch \$summary\) \{ throw/);
   assert.doesNotMatch(workflow, /pull_request_target|secrets:|contents: write|workflow_dispatch|release\.yml|release-candidate\.yml/);
 });
+
+test("Windows window placement covers packaged and development startup with native regression gates", async () => {
+  const setup = await readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8");
+  const policy = await readFile(new URL("./src/window_placement.rs", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/windows-startup.yml", import.meta.url), "utf8");
+  assert.equal(setup.match(/windows_window_state::initialize\(&window\)\?/g)?.length, 2);
+  assert.match(setup, /windows_window_state::on_event\(window, event\)/);
+  assert.match(policy, /pixels\(1320\.0\), pixels\(820\.0\)/);
+  assert.match(policy, /pixels\(960\.0\)\.min\(available\.0\)/);
+  assert.match(policy, /pixels\(600\.0\)\.min\(available\.1\)/);
+  for (const [filter, count] of [["window_placement::tests", 14], ["windows_window_state::tests", 5], ["windows_tray::tests", 2]]) {
+    assert.ok(workflow.includes(`Invoke-NativeTest '${filter}' ${count}`), filter);
+  }
+});
