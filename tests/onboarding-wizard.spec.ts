@@ -843,3 +843,84 @@ test("completed setup can explicitly recheck a later daemon failure", async ({ p
   await expect(dialog.getByRole("button", { name: "Retry setup", exact: true })).toBeVisible();
   expect(confirmations).toBe(1);
 });
+
+
+for (const scenario of ["foreground", "background", "unavailable"] as const) {
+  test(`setup completion reconciles daemon health (${scenario})`, async ({ page }) => {
+    let current = state();
+    let freshReads = 0;
+    let familiarReads = 0;
+    let releaseHealth: (() => void) | undefined;
+    const health = new Promise<void>((resolve) => { releaseHealth = resolve; });
+    const offline = { running: false, availability: "offline", reason: "daemon offline", target: { mode: "local" } };
+    await page.route("**/api/daemon/connection**", async (route) => {
+      if (new URL(route.request().url()).searchParams.get("fresh") === "1" && current.complete) {
+        freshReads += 1;
+        await health;
+        await route.fulfill({ json: scenario === "unavailable"
+          ? { running: false, availability: "unreachable", reason: "ECONNREFUSED", target: { mode: "local" } }
+          : { running: true, availability: "online", target: { mode: "local" } } });
+        return;
+      }
+      // Ordinary polls deliberately stay offline: the completion bridge must
+      // initiate a fresh authoritative read, not wait out its retry cadence.
+      await route.fulfill({ json: offline });
+    });
+    await page.route("**/api/harnesses**", (route) => route.fulfill({ json: { ok: true, harnesses: [] } }));
+    await page.route("**/api/onboarding/install**", (route) => route.fulfill({ json: { status: "idle", npmBusy: false } }));
+    await gotoApp(page, async (route) => {
+      if (route.request().method() === "POST") {
+        current = state({ confirmed: true, status: "running", activeStage: "daemon" });
+      }
+      await route.fulfill({ json: payload(current) });
+    }, { dismissed: true, openOnboarding: false });
+    // This route supersedes baseRoutes after Workspace has mounted; a verified
+    // running transition must refetch its dependent roster.
+    await page.route("**/api/familiars**", (route) => {
+      familiarReads += 1;
+      return route.fulfill({ json: { ok: true, familiars: [] } });
+    });
+    const offlineBanner = page.locator(".shell-banner").filter({ hasText: "Daemon offline — open setup to get connected." });
+    await expect(offlineBanner).toBeVisible({ timeout: 15_000 });
+    await offlineBanner.getByRole("button", { name: "Open setup", exact: true }).click();
+    await setup(page).getByRole("button", { name: "Set up Cave", exact: true }).click();
+    await expect(setup(page).getByRole("button", { name: "Run in background" })).toBeVisible();
+    expect(freshReads).toBe(0);
+    if (scenario === "background") {
+      await setup(page).getByRole("button", { name: "Run in background" }).click();
+      await expect(setup(page)).toHaveCount(0);
+    }
+    const rosterBefore = familiarReads;
+    current = state({ confirmed: true, complete: true, needsSetup: false, status: "complete",
+      stages: state().stages.map((stage) => ({ ...stage, status: "complete", detail: "Ready." })) });
+    try {
+      if (scenario === "background") {
+        await expect(page.locator(".shell-banner").filter({ hasText: "Cave is set up." })).toBeVisible({ timeout: 10_000 });
+      } else {
+        await expect(setup(page).getByRole("button", { name: "Run setup again" })).toBeVisible({ timeout: 10_000 });
+      }
+      await expect.poll(() => freshReads, { timeout: 2_000 }).toBe(1);
+      await expect(offlineBanner).toBeVisible();
+      const healthResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/daemon/connection" && new URL(response.url()).searchParams.get("fresh") === "1");
+      releaseHealth!();
+      await (await healthResponse).finished();
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      if (scenario === "unavailable") {
+        await expect(offlineBanner).toBeVisible();
+        expect(familiarReads).toBe(rosterBefore);
+      } else {
+        await expect(offlineBanner).toHaveCount(0, { timeout: 2_000 });
+        await expect.poll(() => familiarReads, { timeout: 2_000 }).toBeGreaterThan(rosterBefore);
+      }
+      // Reopening the shared dialog republishes the complete snapshot. It is
+      // not another run, and cannot issue another fresh read.
+      if (scenario !== "background") await setup(page).getByRole("button", { name: "Not now", exact: true }).click();
+      await page.evaluate(() => window.dispatchEvent(new Event("cave:onboarding-open")));
+      await expect(setup(page).getByRole("button", { name: "Run setup again" })).toBeVisible();
+      await setup(page).getByRole("button", { name: "Not now", exact: true }).click();
+      expect(freshReads).toBe(1);
+    } finally {
+      releaseHealth!();
+    }
+  });
+}

@@ -7,6 +7,7 @@ import {
   resetOnboardingBootstrapStatus,
   setOnboardingDialogOpen,
   subscribeOnboardingBootstrapStatus,
+  subscribeOnboardingBootstrapCompletion,
   summarizeOnboardingBootstrap,
 } from "./onboarding-bootstrap-status.ts";
 
@@ -114,5 +115,48 @@ test("the store publishes state and dialog visibility to subscribers", () => {
     "identical publishes do not re-notify and unsubscribed listeners stay quiet",
   );
   assert.equal(getOnboardingBootstrapStatusSnapshot().state, null);
+  resetOnboardingBootstrapStatus();
+});
+
+
+test("setup completion notifies once per successful run and never treats failure as readiness", () => {
+  resetOnboardingBootstrapStatus();
+  let completions = 0;
+  const unsubscribe = subscribeOnboardingBootstrapCompletion(() => { completions += 1; });
+  const complete = { ...createOnboardingBootstrapState(true), status: "complete" as const, complete: true, needsSetup: false };
+  publishOnboardingBootstrapState(running("daemon", "Starting…"));
+  publishOnboardingBootstrapState({ ...complete, status: "failed" });
+  publishOnboardingBootstrapState({ ...complete, complete: false });
+  assert.equal(completions, 0, "only successful complete state can request verification");
+  publishOnboardingBootstrapState(complete);
+  publishOnboardingBootstrapState({ ...complete, updatedAt: "2026-10-21T05:00:01Z" });
+  setOnboardingDialogOpen(true);
+  setOnboardingDialogOpen(false);
+  assert.equal(completions, 1, "snapshot copies and dialog changes cannot repeat verification");
+  publishOnboardingBootstrapState(running("daemon", "Starting again…"));
+  publishOnboardingBootstrapState({ ...complete, updatedAt: "2026-10-21T05:00:02Z" });
+  assert.equal(completions, 2, "a subsequent explicit run can reconcile again");
+  unsubscribe();
+  publishOnboardingBootstrapState(running("daemon", "Starting after unmount…"));
+  publishOnboardingBootstrapState(complete);
+  assert.equal(completions, 2, "an unmounted owner cannot issue more verification");
+  resetOnboardingBootstrapStatus();
+});
+
+test("a completion subscriber ignores retained history and consumes the edge before calling back", () => {
+  resetOnboardingBootstrapStatus();
+  const complete = { ...createOnboardingBootstrapState(true), status: "complete" as const, complete: true, needsSetup: false };
+  publishOnboardingBootstrapState(complete);
+  let completions = 0;
+  const unsubscribe = subscribeOnboardingBootstrapCompletion(() => {
+    completions += 1;
+    if (completions === 1) publishOnboardingBootstrapState({ ...complete });
+  });
+  publishOnboardingBootstrapState({ ...complete });
+  assert.equal(completions, 0, "mounting beside a finished setup does not replay its completion");
+  publishOnboardingBootstrapState(running("daemon", "Starting…"));
+  publishOnboardingBootstrapState(complete);
+  assert.equal(completions, 1, "re-entrant publication does not create another completion edge");
+  unsubscribe();
   resetOnboardingBootstrapStatus();
 });

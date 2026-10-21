@@ -59,6 +59,19 @@ export function subscribeOnboardingBootstrapStatus(listener: () => void): () => 
   };
 }
 
+/** Observe new successful completions without replaying a retained snapshot. */
+export function subscribeOnboardingBootstrapCompletion(listener: () => void): () => void {
+  const isComplete = () => snapshot.state?.status === "complete" && snapshot.state.complete === true;
+  let wasComplete = isComplete();
+  return subscribeOnboardingBootstrapStatus(() => {
+    const complete = isComplete();
+    const becameComplete = complete && !wasComplete;
+    // Consume the edge first, including when a listener republishes state.
+    wasComplete = complete;
+    if (becameComplete) listener();
+  });
+}
+
 /** Test seam: drop every published value. */
 export function resetOnboardingBootstrapStatus(): void {
   snapshot = SERVER_SNAPSHOT;
