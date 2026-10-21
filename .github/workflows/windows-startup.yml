@@ -1,0 +1,60 @@
+name: Windows startup native validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src-tauri/**'
+      - 'scripts/sidecar-runtime-budget.json'
+      - '.github/workflows/windows-startup.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-startup-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  startup:
+    name: Windows startup native tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Prepare native test resources
+        shell: bash
+        run: |
+          mkdir -p src-tauri/resources/server src-tauri/resources/node
+          touch src-tauri/resources/server/.cargo-test-placeholder
+          touch src-tauri/resources/node/.cargo-test-placeholder
+      - name: Build native helper and exercise startup boundaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --manifest-path src-tauri/Cargo.toml --locked --bin app
+          if ($LASTEXITCODE -ne 0) { throw 'Native app build failed.' }
+          $env:COVEN_STARTUP_DIALOG_TEST_EXE = (Resolve-Path src-tauri/target/debug/app.exe).Path
+          function Invoke-NativeTest {
+            param([string]$Filter, [int]$Count, [switch]$Exact)
+            $testArgs = @('test', '--color', 'never', '--manifest-path', 'src-tauri/Cargo.toml', '--locked', '--lib', $Filter, '--', '--nocapture')
+            if ($Exact) { $testArgs += '--exact' }
+            $output = @(& cargo @testArgs 2>&1)
+            $testExitCode = $LASTEXITCODE
+            $output | ForEach-Object { Write-Host $_ }
+            if ($testExitCode -ne 0) { throw "Native test failed: $Filter" }
+            $summary = '(?m)^test result: ok\. ' + $Count + ' passed; 0 failed;'
+            if (($output -join "`n") -notmatch $summary) { throw "Unexpected test count: $Filter" }
+          }
+          Invoke-NativeTest 'sidecar_diagnostics::tests' 9
+          Invoke-NativeTest 'windows_instance_activation::native::tests::native_window_discovery_requires_port_marker_and_owner' 1 -Exact
+          Invoke-NativeTest 'startup_failure_dialog::native_tests::helper_survives_failed_host_and_does_not_retain_port_claim' 1 -Exact
+          Invoke-NativeTest 'app_lifecycle_tests::port_conflicts_offer_packaged_app_recovery_without_development_commands' 1 -Exact
+          Invoke-NativeTest 'app_lifecycle_tests::preparation_errors_give_accurate_packaged_recovery' 1 -Exact
+          Invoke-NativeTest 'app_lifecycle_tests::capacity_guidance_rounds_available_down_and_required_up' 1 -Exact

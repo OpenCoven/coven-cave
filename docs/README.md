@@ -45,6 +45,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`model-catalog-pipeline.md`](model-catalog-pipeline.md) — the declarative source, generator, and validation workflow for harness model catalogs and context metadata
 - [`first-run-setup-diagnostics.md`](first-run-setup-diagnostics.md) — server-classified failure codes for the first-run bootstrap
 - [`settings-persistence.md`](settings-persistence.md) — why the desktop shell cannot use origin-keyed browser storage as its authoritative store
+- [`windows-startup-diagnostics.md`](windows-startup-diagnostics.md) — per-port relaunch, native failure reporting and retained private startup evidence
 - [`windows-runtime-cache.md`](windows-runtime-cache.md) — the content-addressed archive layer and its two digests
 - [`windows-sidecar-recovery.md`](windows-sidecar-recovery.md) — loaded-shell recovery, native Retry and Windows qualification limits
 - [`windows-update-preparation.md`](windows-update-preparation.md) — download, verify, and install as three distinct phases

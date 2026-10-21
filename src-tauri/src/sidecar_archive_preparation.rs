@@ -157,8 +157,9 @@ pub(super) fn prepare_runtime_from_files_with_space(
     let required_space = required_free_space(&manifest)?;
     let free_space = available_space(cache_root)?;
     if free_space < required_space {
-        return Err(format!(
-            "not enough free space to prepare the sidecar runtime: {free_space} bytes available, {required_space} required"
+        return Err(crate::sidecar_startup::insufficient_runtime_space_message(
+            free_space,
+            required_space,
         ));
     }
 

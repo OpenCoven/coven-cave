@@ -300,6 +300,31 @@ pub(super) fn already_running_message(port: u16, owner_pid: Option<u32>) -> Stri
     )
 }
 
+/// Capacity guidance shared with Windows archive preparation so its formatting
+/// can be exercised on every desktop test host.
+#[cfg(desktop)]
+pub(super) fn insufficient_runtime_space_message(available: u64, required: u64) -> String {
+    const MB: u64 = 1_000_000;
+    let available = if available < MB {
+        "less than 1".to_string()
+    } else {
+        (available / MB).to_string()
+    };
+    // Avoid making a failing preflight look sufficient after rounding, and
+    // avoid overflow even for a corrupt or extreme capacity requirement.
+    let required = required / MB + u64::from(required % MB != 0);
+    format!("There is not enough free space to prepare CovenCave: {available} MB available, {required} MB required. Free some space and try again.")
+}
+
+#[cfg(desktop)]
+pub(super) fn missing_node_message(packaged: bool) -> String {
+    if packaged {
+        "CovenCave could not find its bundled Node.js runtime. Reinstall CovenCave from the official release and try again.".to_string()
+    } else {
+        "Could not find a `node` binary. Install Node.js from https://nodejs.org and re-launch CovenCave.".to_string()
+    }
+}
+
 /// The operator-facing text for a port this copy cannot have.
 #[cfg(desktop)]
 pub(super) fn port_conflict_message(port: u16, occupant: &PortOccupant) -> String {
@@ -312,8 +337,7 @@ pub(super) fn port_conflict_message(port: u16, occupant: &PortOccupant) -> Strin
              again now.\n\nRe-launch CovenCave."
         ),
         PortOccupant::Cave => format!(
-            "Port {port} is already serving CovenCave — either another copy of the app, or a \
-             dev server started with `pnpm dev`.\n\nSwitch to it, or stop it and re-launch. {}",
+            "Port {port} is already serving another CovenCave instance.\n\nSwitch to it, or stop it and re-launch. {}",
             second_copy_hint()
         ),
         PortOccupant::Gated => format!(
@@ -970,8 +994,7 @@ fn run_sidecar_runtime(
     let node = find_node(&resource_dir).ok_or_else(|| {
         SidecarStartError::failed(
             ReliabilityFailureClass::Compatibility,
-            "Could not find a `node` binary. Install Node.js from https://nodejs.org and re-launch CovenCave."
-                .to_string(),
+            missing_node_message(!cfg!(debug_assertions)),
         )
     })?;
     log::info!("[cave] using node at {}", node.display());
@@ -1345,8 +1368,15 @@ Bounded sidecar output tail:
 pub(super) fn publish_sidecar_startup_status(
     app: &tauri::AppHandle,
     control: &SidecarStartupControl,
-    status: SidecarStartupStatus,
+    mut status: SidecarStartupStatus,
 ) -> Result<(), String> {
+    if status.phase == "failed" {
+        let path = app.path().app_local_data_dir().ok()
+            .map(|dir| dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME));
+        status.message = sidecar_diagnostics::startup_failure_message(
+            &status.message, path.as_deref(), &app.package_info().version.to_string(), "sidecar-startup",
+        );
+    }
     control.set_status(status.clone())?;
     let mut first_error = None;
     for window in main_webview_windows(app) {
