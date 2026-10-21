@@ -32,7 +32,7 @@ export function openCovenToolActionTargets(
   if (tools.length === 0) return [REQUIRED_TOOL];
   const actionable = new Set(
     tools
-      .filter((tool) => !tool.installed || tool.compatible === false)
+      .filter((tool) => tool.state !== "unavailable" && (!tool.installed || tool.compatible === false))
       .map((tool) => tool.id),
   );
   return OPEN_COVEN_TOOL_ORDER.filter((id) => actionable.has(id));
@@ -56,7 +56,11 @@ export function openCovenToolsPrimaryActionLabel(
   const actions = tools.filter((tool) =>
     openCovenToolActionTargets(tools).includes(tool.id),
   );
-  if (actions.length === 0) return "Coven CLI ready";
+  if (actions.length === 0) {
+    return tools.some((tool) => tool.state === "unavailable")
+      ? "Coven CLI check unavailable"
+      : "Coven CLI ready";
+  }
   if (actions.length === 1) {
     const [tool] = actions;
     if (!tool.installed && tool.id === REQUIRED_TOOL) return "Install the Coven CLI";

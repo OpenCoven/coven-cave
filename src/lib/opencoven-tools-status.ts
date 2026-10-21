@@ -262,6 +262,7 @@ export async function discoverOpenCovenTool(
       version: null,
       packageName: null,
       packagePath: null,
+      ...(located.error ? { error: located.error } : {}),
     };
   }
   return probeOpenCovenBinaryAt(tool, located.path, env, { timeoutMs: options.timeoutMs });
@@ -507,6 +508,7 @@ export function composeOpenCovenToolStatus(
     outdated,
     compatible,
     packageVerified,
+    discoveryError: probe.error,
     minimumVersion: tool.minimumVersion,
   });
 
@@ -554,6 +556,7 @@ export function composeOpenCovenToolReadinessStatus(
     outdated: false,
     compatible,
     packageVerified,
+    discoveryError: probe.error,
     minimumVersion: tool.minimumVersion,
   });
 

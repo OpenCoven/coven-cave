@@ -23,6 +23,13 @@ const cases: Array<{
   copy: string;
 }> = [
   {
+    name: "failed discovery is not confirmed absence",
+    input: { ...base, installed: false, current: null, compatible: false, discoveryError: "lookup-failed" },
+    state: "unavailable",
+    action: null,
+    copy: "Check again",
+  },
+  {
     name: "missing binary",
     input: { ...base, installed: false, current: null, latest: null, compatible: false },
     state: "missing",

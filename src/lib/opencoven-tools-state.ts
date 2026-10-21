@@ -1,4 +1,5 @@
 export type OpenCovenToolState =
+  | "unavailable"
   | "missing"
   | "unverified"
   | "version-unreadable"
@@ -16,6 +17,7 @@ export type OpenCovenToolStateInput = {
   outdated: boolean;
   compatible: boolean;
   packageVerified?: boolean;
+  discoveryError?: string | null;
   minimumVersion: string;
 };
 
@@ -34,6 +36,7 @@ export type OpenCovenToolPresentation = {
 export function openCovenToolState(
   tool: OpenCovenToolStateInput,
 ): OpenCovenToolState {
+  if (tool.discoveryError === "lookup-failed") return "unavailable";
   if (!tool.installed) return "missing";
   if (tool.packageVerified === false) return "unverified";
   if (!tool.current) return "version-unreadable";
@@ -48,6 +51,13 @@ export function openCovenToolPresentation(
 ): OpenCovenToolPresentation {
   const state = openCovenToolState(tool);
   switch (state) {
+    case "unavailable":
+      return {
+        state,
+        versionText: "Installation unknown",
+        statusText: "Couldn't check the installation. Check again.",
+        action: null,
+      };
     case "unverified":
       return {
         state,

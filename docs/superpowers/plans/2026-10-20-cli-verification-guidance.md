@@ -47,3 +47,7 @@
 - [ ] Re-run affected tests through canonical arguments. Expected: every file passes; provenance failures stay incompatible, unrelated states unchanged.
 - [ ] Run related tool verification/resolution/update/display and onboarding tests, typecheck, scoped ESLint, test wiring, clock consistency, design/token and plan hygiene checks. Expected: successful exits and clean diff. Walk design checklist section9: no layout/style/motion/new control, existing focus/announcements intact; copy accurately names action. Browser/native qualification is not inferred from these unit tests.
 - [ ] Commit scoped paths, push, run task-done with the canonical test selection, obtain one fresh independent exact-diff review, fix substantive findings with failing-first tests, and follow branch-to-merge for all selected exact-head hosted checks.
+
+## Review correction
+
+The independent review identified lost `lookup-failed` evidence in actual discovery. Preserve that probe marker, classify it as `unavailable` before absence, and suppress install targets and ready/not-found copy. This adds the marker to existing probe/client types and display handling, with no installer/admission change. The regression invokes real discovery with an isolated empty PATH, then a controlled finder confirming absence with exit1; both composers and action/readiness consumers are checked. The POSIX finder exercise is platform-specific; the shared unavailable-state test runs on every platform.

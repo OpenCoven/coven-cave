@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { composeOpenCovenToolStatus, composeOpenCovenToolReadinessStatus, OPEN_COVEN_TOOLS, openCovenToolStatuses } from "./opencoven-tools-status.ts";
+import { composeOpenCovenToolStatus, composeOpenCovenToolReadinessStatus, discoverOpenCovenTool, OPEN_COVEN_TOOLS, openCovenToolStatuses } from "./opencoven-tools-status.ts";
 
 // Cross-platform composition: a reported high version never substitutes for
 // verified package identity and executable provenance.
@@ -53,6 +53,42 @@ for (const [version, state, compatible] of [
   }
 }
 console.log("opencoven-tools-status.test.ts: composition cases passed");
+
+// A failed finder cannot authorize installation. Drive real discovery with
+// an empty synthetic PATH, then a finder that confirms absence with exit 1.
+if (process.platform !== "win32") {
+  const lookupRoot = await mkdtemp(path.join(os.tmpdir(), "coven-tool-lookup-"));
+  try {
+    const lookupEnv = { PATH: lookupRoot, HOME: lookupRoot };
+    const failed = await discoverOpenCovenTool(OPEN_COVEN_TOOLS[0], { env: lookupEnv });
+    assert.equal(failed.error, "lookup-failed");
+    const { openCovenToolPresentation } = await import("./opencoven-tools-state.ts");
+    const { openCovenToolActionTargets, openCovenToolsPrimaryActionLabel } = await import("./opencoven-tools-install.ts");
+    const { covenCliReadinessStep, onboardingStatusPayload } = await import("./onboarding-status-probes.ts");
+    const { toolStatusText } = await import("./opencoven-tools-status-display.ts");
+    for (const status of [
+      composeOpenCovenToolStatus(OPEN_COVEN_TOOLS[0], failed, latestUnavailable),
+      composeOpenCovenToolReadinessStatus(OPEN_COVEN_TOOLS[0], failed),
+    ]) {
+      assert.equal(status.discoveryError, "lookup-failed");
+      assert.equal(status.state, "unavailable");
+      assert.equal(openCovenToolPresentation(status).action, null);
+      assert.deepEqual(openCovenToolActionTargets([status]), []);
+      assert.match(openCovenToolsPrimaryActionLabel([status]), /unavailable/i);
+      assert.doesNotMatch(toolStatusText(status), /not found|up to date/i);
+      const step = covenCliReadinessStep(status, { state: "absent" });
+      assert.equal(step.state, "unavailable");
+      assert.equal(onboardingStatusPayload({ covenCli: step }, [status]).tools, null);
+    }
+    await writeFile(path.join(lookupRoot, "which"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    const absent = await discoverOpenCovenTool(OPEN_COVEN_TOOLS[0], { env: lookupEnv });
+    assert.equal(absent.error, undefined);
+    const status = composeOpenCovenToolStatus(OPEN_COVEN_TOOLS[0], absent, latestUnavailable);
+    assert.equal(status.state, "missing");
+    assert.equal(openCovenToolPresentation(status).action, "install");
+    assert.deepEqual(openCovenToolActionTargets([status]), ["coven-cli"]);
+  } finally { await rm(lookupRoot, { recursive: true, force: true }); }
+}
 
 if (process.platform !== "win32") {
   console.log("opencoven-tools-status.test.ts: skipped Windows packaged-server probe (requires win32)");
