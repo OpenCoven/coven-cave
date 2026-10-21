@@ -28,9 +28,11 @@
 
 ### Task 1: Reconcile the verified runtime
 
-**Files:** modify `src/lib/server/onboarding-core-tools.ts` and `src/lib/server/onboarding-core-tools.test.ts`; retain this plan.
+**Files:** modify `src/lib/server/onboarding-core-tools.ts` and `src/lib/server/onboarding-core-tools.test.ts`; after review, also the onboarding `install-service.ts`, its behavior test and existing route contract; retain this plan.
 
 **Interfaces:** unchanged `ensureOnboardingCoreTools(onProgress, dependencies): Promise<OnboardingBootstrapStageResult>` and its existing `inspect`, `startInstall`, `readInstall` dependencies. Consume `ReviewedInstallResult.code` and `OnboardingCoreToolsInspection.runtimeReady`; produce the existing successful or failed stage result.
+
+**Accepted review fix:** Explicit cancellation must dominate the managed installer result in the service, including cancellation while the final probe returns `verification_failed`. Keep cancellation classified as `unknown_failure`, consistent with the existing catch path. Give `startOnboardingInstall` an optional internal installer dependency defaulting to the real toolchain installer; the request contract remains unchanged. Test actual orchestration, service and DELETE cancellation with the real installer and synthetic archive/probe dependencies. A later ready inspection must not install the CLI or report success, and the install lane must release. The managed toolchain implementation remains unchanged.
 
 - [ ] Add a regression where managed-node installation ends with `verification_failed`, its fresh inspection is ready, the missing CLI is installed once, final inspection passes, and the stage returns success without stale diagnostics. The unchanged implementation must fail on `result.ok`.
 - [ ] Cover unusable reinspection, all other installer failure codes despite a ready runtime, CLI verification failure, and final inspection becoming unusable. Assert installer targets/order and no replay.
