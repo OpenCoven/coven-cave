@@ -53,6 +53,9 @@ jobs:
             if (($output -join "`n") -notmatch $summary) { throw "Unexpected test count: $Filter" }
           }
           Invoke-NativeTest 'sidecar_diagnostics::tests' 9
+          Invoke-NativeTest 'window_placement::tests' 14
+          Invoke-NativeTest 'windows_tray::tests' 2
+          Invoke-NativeTest 'windows_window_state::tests' 5
           Invoke-NativeTest 'windows_instance_activation::native::tests::native_window_discovery_requires_port_marker_and_owner' 1 -Exact
           Invoke-NativeTest 'startup_failure_dialog::native_tests::helper_survives_failed_host_and_does_not_retain_port_claim' 1 -Exact
           Invoke-NativeTest 'app_lifecycle_tests::port_conflicts_offer_packaged_app_recovery_without_development_commands' 1 -Exact

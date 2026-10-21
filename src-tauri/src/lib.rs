@@ -98,6 +98,12 @@ mod speech;
 mod tauri_setup;
 #[cfg(desktop)]
 mod window_geometry;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod window_placement;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod windows_window_state;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod windows_tray;
 #[cfg(all(desktop, target_os = "windows"))]
 mod windows_command;
 #[cfg(all(desktop, target_os = "windows"))]

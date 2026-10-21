@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 
 pub(super) const PRIMARY_MAIN_WINDOW_LABEL: &str = "main";
 const SECONDARY_MAIN_WINDOW_PREFIX: &str = "main-";
-const SECONDARY_MAIN_WINDOW_PERMISSIONS: [&str; 16] = [
+const SECONDARY_MAIN_WINDOW_PERMISSIONS: &[&str] = &[
     "allow-pty-start",
     "allow-pty-write",
     "allow-pty-resize",
@@ -23,6 +23,8 @@ const SECONDARY_MAIN_WINDOW_PERMISSIONS: [&str; 16] = [
     "allow-browser-reload",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
+    #[cfg(target_os = "windows")]
+    "core:window:allow-set-theme",
 ];
 
 #[derive(Default)]
@@ -166,6 +168,9 @@ pub(super) fn register_main_window(app: &AppHandle, label: &str) -> Result<(), S
         crate::windows_instance_activation::mark_main_window_port(
             hwnd as _, crate::sidecar_ports::dedicated_port(),
         )?;
+        if let Err(error) = crate::windows_tray::observe(&window) {
+            log::warn!("[cave] could not schedule taskbar appearance observer: {error}");
+        }
     }
     let registry = app.state::<MainWindowRegistry>();
     let was_registered = registry.is_registered(label);
