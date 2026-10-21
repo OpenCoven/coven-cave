@@ -596,6 +596,7 @@ jobs:
         run: bash scripts/install-playwright-ci.sh chromium webkit
 
       - name: Validate end-to-end behavior
+        id: e2e
         env:
           PLAYWRIGHT_SHARD: ${{ matrix.shard }}
         run: |
@@ -625,6 +626,15 @@ jobs:
             --shard="$PLAYWRIGHT_SHARD/8" \
             --workers=1 \
             --reporter="github,line"
+
+      - name: Preserve failed Playwright evidence
+        if: failure() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7
 
   frontend-e2e-agentic:
     name: Frontend E2E (agentic)
