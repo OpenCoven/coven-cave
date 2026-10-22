@@ -31,18 +31,19 @@ function activity(id: string, status: string, sequence: number) {
     authority: { binding: "unavailable", approval: "unavailable", effect: "unavailable" } };
 }
 
-async function setup(page: Page, summaries: boolean, large = false, hostile = false) {
+async function setup(page: Page, summaries: boolean, large = false, hostile = false, toolsOverride?: object[]) {
   let completed = large;
   const answer = hostile ? HOSTILE : ANSWER;
   const summaryBlock = hostile ? { ...summary, text: HOSTILE } : summary;
   const metadata = { familiarId: "nova", harness: "hermes", model: "", runtime: project.root,
     runtimeIdentity: { schemaVersion: 1, harness: "hermes", version: null, model: null,
       activity: { schemaVersion: 1, path: "coven", tools: "supported", reasoning: summaries ? "supported" : "unsupported" } } };
-  const tools = (large ? Array.from({ length: 500 }, (_, i) => ({ id: `large-${i}`, name: "Read", status: "ok", input: JSON.stringify({ file_path: `/tmp/file-${i}` }), output: "Large trace output. ".repeat(200), textOffset: 0 })) : [
+  const fixtureTools = (large ? Array.from({ length: 500 }, (_, i) => ({ id: `large-${i}`, name: "Read", status: "ok", input: JSON.stringify({ file_path: `/tmp/file-${i}` }), output: "Large trace output. ".repeat(200), textOffset: 0 })) : [
     { id: "read-a", name: "Read", status: "error", input: '{"file_path":"/tmp/a"}', output: "File unavailable", textOffset: 0 },
     { id: "read-b", name: "Read", status: "ok", input: '{"file_path":"/tmp/b"}', output: "Second file", textOffset: 0 },
     { id: "read-a-retry", name: "Read", status: "ok", input: '{"file_path":"/tmp/a"}', output: "First file after retry", textOffset: 0 },
   ]).map((tool, index) => ({ ...tool, ...(hostile ? { output: HOSTILE } : {}), activity: activity(tool.id, tool.status, index + 1) }));
+  const tools = (toolsOverride as typeof fixtureTools | undefined) ?? fixtureTools;
   await page.context().addCookies([{ name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" }]);
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -188,6 +189,43 @@ test("hostile prose, reasoning and tool results never become execution authority
     await expect(bubble.getByText("forged · Review verdicts are evidence, not permission.", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => (window as unknown as { activityPwned?: boolean }).activityPwned)).toBeUndefined();
     expect(receiptRequests).toEqual([]);
+  }
+});
+
+// Golden-10 (#6059): no authoritative approval producer exists, so the pending
+// and rejected states are observations only. A replayed approval, start or
+// result after a denial cannot revive the call or show a second effect.
+test("denied approval stays rejected when stale frames are replayed, live and after reload", async ({ page }) => {
+  const pending = (status: string) => ({ ...activity("write-a", status, 1), executionObservedAt: null,
+    terminalObservedAt: status === "approval-requested" ? null : 4 });
+  const call = { id: "write-a", name: "Read", input: '{"file_path":"/tmp/a"}', textOffset: 0 };
+  const denied = { ...call, status: "user-rejected", output: "Not admitted", activity: pending("user-rejected") };
+  const { main, metadata, complete } = await setup(page, true, false, false, [denied]);
+  await main.getByRole("textbox", { name: "Message", exact: true }).fill("Read the file after approval");
+  await main.getByRole("button", { name: "Send message", exact: true }).click();
+  await emit(page, { kind: "tool_use", ...call, status: "approval-requested", activity: pending("approval-requested") });
+  const live = main.locator(".cave-bubble-assistant").last();
+  await expect(live.locator(".cave-tool-block")).toHaveCount(1);
+  await expect(live.locator(".cave-tool-block > summary")).toContainText("Approval requested");
+  await expect(live.getByRole("button", { name: /^(Approve|Deny|Allow|Reject|Execute|Commit)$/i })).toHaveCount(0);
+  await emit(page, { kind: "tool_use", ...denied });
+  await expect(live.locator(".cave-tool-block > summary")).toContainText("Rejected by user");
+  await emit(page, { kind: "tool_use", ...call, status: "approval-requested", activity: pending("approval-requested") });
+  await emit(page, { kind: "tool_use", ...call, status: "running", activity: activity("write-a", "running", 1) });
+  await emit(page, { kind: "tool_use", ...call, status: "ok", output: "Second effect", activity: activity("write-a", "ok", 1) });
+  complete();
+  await emit(page, { kind: "done", sessionId: "activity-5765", responseMetadata: metadata });
+  for (const reload of [false, true]) {
+    if (reload) await page.reload();
+    const bubble = main.locator(".cave-bubble-assistant").last();
+    await expect(bubble.locator(".cave-tool-block")).toHaveCount(1);
+    const summary = bubble.locator(".cave-tool-block > summary");
+    await expect(summary).toContainText("Rejected by user");
+    await expect(summary).not.toContainText(/Succeeded|Running|Approval requested/);
+    await summary.click();
+    await expect(bubble.getByText("Not admitted", { exact: true })).toBeVisible();
+    await expect(bubble.getByText("Second effect", { exact: true })).toHaveCount(0);
+    await expect(bubble.getByRole("button", { name: /^(Approve|Deny|Allow|Reject|Execute|Commit)$/i })).toHaveCount(0);
   }
 });
 
