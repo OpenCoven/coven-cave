@@ -25,6 +25,11 @@ assert.match(source, /binding\.harness === "openclaw"[\s\S]*?return reserveNativ
 assert.match(source, /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]*?return reserveNativeChatTask\(\)/, "local Copilot uses the override-preserving native handoff");
 assert.match(
   source,
+  /if \(isLocalCodexHarness\(binding\.harness\)\) \{\s*return reserveNativeChatTask\(\);[\s\S]*?path: "\/api\/v1\/sessions"/,
+  "Codex local mode takes the native Chat handoff, with its local preflight, before any daemon session (#6049)",
+);
+assert.match(
+  source,
   /validateProjectRoot:\s*validateCaveProjectRoot/,
   "Board task chat should reject a project root that no longer resolves to a directory",
 );

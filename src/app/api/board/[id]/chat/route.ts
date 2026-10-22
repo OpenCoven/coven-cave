@@ -19,6 +19,7 @@ import { issueContentionKey, shouldIsolateInWorktree, type IssueWorktreeKind } f
 import { provisionIssueWorktree, resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
 import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/project-permissions";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
+import { isLocalCodexHarness } from "@/lib/local-codex";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 
 // Match the daemon's "harness X is not a supported harness" rejection
@@ -378,6 +379,12 @@ export async function POST(
   const sshBound = isSshRuntime(binding.runtime);
   const hubAuthority = config.multiHost?.mode === "hub";
   if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
+    return reserveNativeChatTask();
+  }
+  // Codex local mode (#6049) runs only through Chat, which checks the local
+  // server and model and pins this computer's server address. The daemon
+  // can do neither, so a local task always takes the native bridge.
+  if (isLocalCodexHarness(binding.harness)) {
     return reserveNativeChatTask();
   }
 

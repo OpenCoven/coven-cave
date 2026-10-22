@@ -202,11 +202,21 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
 // circle grows first-class support for their install and binding flow.
 export const SUMMONABLE_LOCAL_HARNESS_IDS = [
   "codex",
+  "codex-ollama",
+  "codex-lmstudio",
   "claude",
   "copilot",
   "hermes",
   "grok",
 ] as const;
+
+// Runtimes that run only on the Cave host, never over SSH: Grok Build has no
+// native remote launcher yet, and Codex local mode uses this computer's
+// inference server (#6049).
+export function isHostOnlyHarness(harness: string): boolean {
+  const id = canonicalHarnessId(harness);
+  return id === "grok" || localCodexBackendInfo(id) !== null;
+}
 
 const SUMMONABLE_LOCAL_HARNESSES = new Set<string>(SUMMONABLE_LOCAL_HARNESS_IDS);
 

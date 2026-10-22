@@ -68,7 +68,9 @@ export type RuntimeModelDiscoveryIssue =
   /** Codex local mode: the server answered, with no chat model that supports tools. */
   | "local-no-tool-models"
   /** Codex local mode: every tool-capable model runs on another computer through LM Link (#6094). */
-  | "local-models-on-other-computers";
+  | "local-models-on-other-computers"
+  /** Codex local mode: every tool-capable model is an Ollama cloud model, which runs off this computer. */
+  | "local-models-in-cloud";
 
 export type RuntimeModelInventory = {
   runtime: string;

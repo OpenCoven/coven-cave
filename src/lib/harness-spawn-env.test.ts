@@ -225,7 +225,7 @@ assert.doesNotMatch(chatSendSource, /covenSpawnEnv/, "chat/send no longer forwar
 const oneShotSource = read("./server/coven-oneshot.ts");
 assert.match(
   oneShotSource,
-  /env: covenWrapperSpawnEnv\(harnessSpawnEnv\(familiarId\)\)/,
+  /const env = covenWrapperSpawnEnv\(harnessSpawnEnv\(familiarId\)\);\s*launch\.applyEnv\?\.\(env\);[\s\S]*?\benv,\n/,
   "one-shot Coven wrapper spawn stays familiar-scoped and opts into hidden native launch",
 );
 assert.doesNotMatch(oneShotSource, /covenSpawnEnv/);
