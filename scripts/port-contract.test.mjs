@@ -105,7 +105,7 @@ assert.match(
 // --- the claim runs before anything a refused copy must not touch -------------
 // This is a source-ORDER contract, and it exists because the ordering broke
 // twice. The claim was hoisted into the setup hook precisely so a copy that is
-// about to be refused does not first truncate the running copy's diagnostics,
+// about to be refused does not first rewrite the running copy's diagnostics,
 // prune its reliability store, start a second Discord presence worker, or build
 // a second tray icon. A later "move it below the translocation check" moved it
 // below the whole prologue instead, silently restoring the harm; no test
@@ -115,7 +115,7 @@ const setup = await read("src-tauri/src/tauri_setup.rs");
 const claimAt = setup.indexOf("sidecar_port_lock::claim_dedicated_port(");
 assert.notEqual(claimAt, -1, "the setup hook must take the dedicated-port claim");
 for (const [label, needle] of [
-  ["the native diagnostics reset", "reset_native_diagnostics_file("],
+  ["native diagnostics retention", "retain_native_diagnostics_file("],
   ["the reliability store", "app.state::<Arc<ReliabilityRecorder>>()"],
   ["the offline cache", "offline_cache::OfflineCacheState>>()"],
   ["Discord presence", "discord_presence::start()"],

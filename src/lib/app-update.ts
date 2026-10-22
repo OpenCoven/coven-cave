@@ -14,6 +14,8 @@ export type DownloadUrls = Partial<Record<DownloadTarget, string>>;
 export type UpdateStatus = {
   /** The running app's version (from package.json via APP_VERSION). */
   current: string;
+  /** Optional untrusted release text; render as text, never executable HTML. */
+  notes?: string;
   /** Latest released version (tag without the leading "v"), or null if unknown. */
   latest: string | null;
   /** True when `latest` is strictly newer than `current`. */
@@ -83,6 +85,7 @@ export function classifyFallbackReleaseCheck(
     available,
     url,
     checkedAt,
+    ...(typeof body.notes === "string" && body.notes.trim() ? { notes: body.notes } : {}),
     ...(record(body.downloads) ? { downloads: body.downloads as DownloadUrls } : {}),
   };
   return available ? { kind: "available", status } : { kind: "current", status };

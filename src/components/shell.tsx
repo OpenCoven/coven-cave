@@ -1,5 +1,6 @@
 "use client";
 
+import { UpdateReleaseNotes } from "@/components/update-release-notes";
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
 import { forwardRef } from "react";
@@ -13,6 +14,7 @@ import {
 } from "react-resizable-panels";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
+import { SidecarRecoveryTrigger } from "@/components/sidecar-recovery";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
@@ -995,6 +997,8 @@ function ShellInner({
       const panel = navRef.current;
       if (!panel) return;
 
+      markShellMinimizeApplied(groupId);
+      if (navPolicy === "remembered") writeNavOpenPref(panel.isCollapsed(), "user");
       if (panel.isCollapsed()) {
         panel.expand();
       } else {
@@ -1067,7 +1071,7 @@ function ShellInner({
       window.removeEventListener("keydown", bottomToggle);
       window.removeEventListener("cave:toggle-left-panel", onToggleLeft);
     };
-  }, [twoPane, hasBottom, hasRightChat, isMobile, listPolicy, panelShortcuts, preferredRightChatWidth, rightChatOpen, toggleRightChat]);
+  }, [twoPane, hasBottom, hasRightChat, isMobile, listPolicy, panelShortcuts, preferredRightChatWidth, rightChatOpen, toggleRightChat, groupId, navPolicy]);
 
   // Couple the left nav to the code rail (desktop only — mobile nav is a
   // drawer, so this must never touch it). When the rail opens we collapse the
@@ -1354,9 +1358,8 @@ function ShellInner({
             !railAutoCollapsedNavRef.current &&
             !chatRailNavRef.current.autoCollapsed
           ) {
-            // The ONE user-authored write — everything else that touches this
-            // key is seeding, and the policy handoff must be able to tell them
-            // apart.
+            // Resize persistence joins explicit toggle writes as user intent;
+            // layout restoration only seeds, so policy handoff can distinguish it.
             writeNavOpenPref(open, "user");
           }
         }}
@@ -1395,6 +1398,7 @@ function ShellInner({
       )}
       <Panel id="detail" className="shell-detail-panel" minSize={`${SHELL_DETAIL_MIN_PX}px`}>
         <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
+          <SidecarRecoveryTrigger />
           <UpdateBannerTrigger />
           <OpenCovenToolsBannerTrigger />
           <CaveHomeMigrationBannerTrigger />
@@ -1459,6 +1463,10 @@ function ShellInner({
   const toggleNavPanel = () => {
     const panel = navRef.current;
     if (!panel) return;
+    // An early user toggle outranks the delayed startup minimize/restore.
+    // Resize-based persistence is still disarmed during that startup window.
+    markShellMinimizeApplied(groupId);
+    if (navPolicy === "remembered") writeNavOpenPref(panel.isCollapsed(), "user");
     // No optimistic setNavOpen here: navOpen is derived from the panel's
     // measured width by the Panel onResize callback, so the toggle drives
     // the Panel and the callback converges the aria state (cave-az3ha).
@@ -1630,6 +1638,7 @@ function ShellBannerStrip() {
           role={b.severity === "error" ? "alert" : "status"}
         >
           <span className="shell-banner__title">{b.title}</span>
+          <UpdateReleaseNotes key={b.title} notes={b.releaseNotes} />
           {b.detail ? (
             <details className="shell-banner__detail">
               <summary>Details</summary>

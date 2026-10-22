@@ -45,7 +45,10 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`model-catalog-pipeline.md`](model-catalog-pipeline.md) — the declarative source, generator, and validation workflow for harness model catalogs and context metadata
 - [`first-run-setup-diagnostics.md`](first-run-setup-diagnostics.md) — server-classified failure codes for the first-run bootstrap
 - [`settings-persistence.md`](settings-persistence.md) — why the desktop shell cannot use origin-keyed browser storage as its authoritative store
+- [`windows-startup-diagnostics.md`](windows-startup-diagnostics.md) — per-port relaunch, native failure reporting and retained private startup evidence
+- [`windows-window-placement.md`](windows-window-placement.md) — fitted and persisted main-window geometry, Quick Chat placement, title-bar/tray appearance, recovery and outstanding Windows acceptance
 - [`windows-runtime-cache.md`](windows-runtime-cache.md) — the content-addressed archive layer and its two digests
+- [`windows-sidecar-recovery.md`](windows-sidecar-recovery.md) — loaded-shell recovery, native Retry and Windows qualification limits
 - [`windows-update-preparation.md`](windows-update-preparation.md) — download, verify, and install as three distinct phases
 - [`windows-upgrade-benchmark.md`](windows-upgrade-benchmark.md) — what `scripts/windows-upgrade-diagnostics.ps1` captures
 - [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the daemon connectivity launch flow, readiness checks, fault coverage, and measurement contract; the `cave-58eoq` program's tracked work all merged (#4485–#4528), and its residual risks have no issue yet
@@ -76,8 +79,9 @@ authoritative absence; only a network failure can use offline history. The
 transport reuses the existing authenticated cache and revision/write guards.
 
 
+- [`thread-self-reports.md`](thread-self-reports.md) — familiar/session ownership, atomic automatic admission, manual repeats, and the persisted-report generation precheck
 - [`familiar-identity-context.md`](familiar-identity-context.md) — how a familiar's declared identity reaches the model, and what the injection may not do
-- [`local-models.md`](local-models.md) — Codex local mode on Ollama and LM Studio: setup, addresses, what stays on this computer, limitations and troubleshooting
+- [`local-models.md`](local-models.md) — Codex local mode on Ollama and LM Studio: setup, addresses, what stays on this computer, how Full access relates to Codex's own sandbox (cloud Codex too), limitations and troubleshooting
 - [`auto-mission-mode.md`](auto-mission-mode.md) — `/auto`, its status blocks, and the closing questionnaire
 - [`orchestration-ready-tasks.md`](orchestration-ready-tasks.md) — the shared task contract every familiar and orchestrator reads and writes
 - [`role-surfaces.md`](role-surfaces.md) — role-aware rooms, and why the Cave is not role-hardcoded
@@ -124,6 +128,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 
 Active initiatives. Parts have shipped; parts have not. Each states which.
 
+- [`core-contract-and-room-boundaries.md`](core-contract-and-room-boundaries.md) — the minimal product contract and source inventory for #6119: all workspace modes, role rooms, auxiliary subsystems and startup workers, with current boundaries separated from unverified extraction and recovery acceptance
 - [`desktop-onboarding.md`](desktop-onboarding.md) — the evidence baseline and product contract for download → first successful familiar response, separating confirmed behavior from proposals still needing usability and packaged-app testing
 - [`ci-implementation-plan.md`](ci-implementation-plan.md) — the release-candidate CI rollout: signed promotion, full validation, the parallel `PR checks` context, and promotion at real release cuts have shipped; the protection switch, retiring routine PR fanout, and verifying the lean gate remain, with no tracking issue yet (#6111)
 - [`roadmaps/coven-automations-v1.md`](roadmaps/coven-automations-v1.md) — the cross-repository Coven Automations v1 program (`OpenCoven/coven#854`) and its [machine-readable mapping](roadmaps/coven-automations-v1.mapping.json): foundation, protocol, scheduler reliability, embodiment, and authority have closed; dispatch-time trust (`coven#857`), certification (`coven#858`), the SDK, Cave oversight (#5217), Psyche, Docs, and organization canaries remain, and the 2026-10-18 release checkpoint is no-go
@@ -149,6 +154,7 @@ Point-in-time records. Read for intent, not for current behavior.
 - [`golden-paths.md`](golden-paths.md) — the eight journeys mapped on 2026-07-09; every path's enablement plan has shipped (#2767–#5132), and several surfaces it describes have since moved
 - [`craft-ux.md`](craft-ux.md) — the craft authoring audit and redesign; all six checkpoints shipped on 2026-07-15 (#3188–#3208), and `marketplace.md` (Living, above) describes the flow now
 - [`research-extraction-verification.md`](research-extraction-verification.md) — candidate compatibility evidence and size and timing measurements for the Research extraction, which merged as #6025 (#5997 closed)
+- [`reviewed-cli-install-verification.md`](reviewed-cli-install-verification.md) — the 2026-10-21 fresh-install footprint and recovery measurements for the reviewed CLI 0.4.10 adoption (#6164)
 - [`plans/2026-07-26-dynamic-claude-opus-5.md`](plans/2026-07-26-dynamic-claude-opus-5.md) — capability-gated Claude Opus 5 across Claude Code, Copilot CLI, and OpenCode; shipped in #3954, and #5541 later limited the `opus` alias to Claude Code below 2.1.280
 - [`plans/2026-07-29-ios-new-chat-project-contract.md`](plans/2026-07-29-ios-new-chat-project-contract.md) — binding native iOS first turns to a familiar-authorized project; shipped in #4067 and reworked by the chat-only shell (#5379); the current contract is [`specs/ios-new-chat-project-contract.md`](specs/ios-new-chat-project-contract.md)
 - [`contracts/mobile-recovery-contract.md`](contracts/mobile-recovery-contract.md) — the transport-recovery contract proposed after the 2026-08-26 Serve-drift incident (#5051); #5056 and #5270 implemented its core rules differently, and `mobile-tailscale.md` (Living, above) describes current behavior

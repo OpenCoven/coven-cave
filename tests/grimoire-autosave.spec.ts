@@ -75,7 +75,7 @@ const EMPTY_RUNNING_ACTIVITY = {
   unavailable: [],
 } as const;
 
-async function gotoGrimoire(page: Page, readyTimeout = 60_000) {
+async function gotoGrimoire(page: Page, readyTimeout = 60_000, extraDocuments = 0, extraMemories = 0) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     // Pin the shared MdEditor to MARKDOWN (CodeMirror) mode — typing goes
@@ -96,9 +96,13 @@ async function gotoGrimoire(page: Page, readyTimeout = 60_000) {
       knowledgePosts.push(route.request().postDataJSON());
       return route.fulfill({ json: { ok: true, entry: { ...KNOWLEDGE_ENTRY } } });
     }
-    return route.fulfill({ json: { ok: true, entries: [KNOWLEDGE_ENTRY, OPERATIONS_GUIDE, INCIDENT_PLAYBOOK] } });
+    return route.fulfill({ json: { ok: true, entries: [KNOWLEDGE_ENTRY, OPERATIONS_GUIDE, INCIDENT_PLAYBOOK,
+      ...Array.from({ length: extraDocuments }, (_, index) => ({ ...OPERATIONS_GUIDE, id: `extra-${index}`, title: `Reference ${index}` })),
+    ] } });
   });
-  await page.route("**/api/memory", (route) => route.fulfill({ json: { ok: true, entries: [MEMORY_ENTRY] } }));
+  await page.route("**/api/memory", (route) => route.fulfill({ json: { ok: true, entries: [MEMORY_ENTRY,
+    ...Array.from({ length: extraMemories }, (_, index) => ({ ...MEMORY_ENTRY, fullPath: `/home/e2e/.coven/memory/draft-${index}.md`, relPath: `memory/draft-${index}.md` })),
+  ] } }));
   await page.route("**/api/memory/file**", (route) => {
     if (route.request().method() === "PUT") {
       memoryPuts.push(route.request().postDataJSON());
@@ -176,6 +180,34 @@ async function typeInEditor(page: Page, text: string) {
 }
 
 test.describe("grimoire autosave (desktop)", () => {
+  test("Memories reading surfaces fit narrow panes across supported theme modes", async ({ page }, testInfo) => {
+    await gotoGrimoire(page);
+    const capture = async (surface: string) => {
+      for (const [mode, theme] of [["dark", "coven"], ["light", "coven"], ["dark", "tide"]]) {
+        await page.evaluate(({ mode, theme }) => {
+          document.documentElement.dataset.mode = mode;
+          document.documentElement.dataset.theme = theme;
+        }, { mode, theme });
+        await page.screenshot({ path: testInfo.outputPath(`${surface}-${mode}-${theme}.png`), animations: "disabled" });
+      }
+      await page.setViewportSize({ width: 640, height: 900 });
+      await expect(page.locator(".grimoire-view")).toBeVisible();
+      expect(await page.locator(".grimoire-view").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`${surface}-narrow.png`), animations: "disabled" });
+      await page.setViewportSize({ width: 1280, height: 720 });
+    };
+    await capture("library");
+    await rail(page).getByRole("button", { name: /Release checklist/ }).click();
+    await expect(page.getByRole("region", { name: "Document reader" })).toContainText("Stamp the version");
+    await capture("stitch-reader");
+    await rail(page).getByRole("button", { name: /notes\.md/ }).click();
+    await expect(page.getByRole("region", { name: "Document reader" })).toContainText("Remember the thing");
+    await capture("memory-reader");
+    await page.getByRole("button", { name: "Journal", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Journal entry" })).toBeVisible();
+    await capture("journal");
+  });
+
   test("Memories home separates Continue, Recall, and Weave", async ({ page }) => {
     await gotoGrimoire(page);
 
@@ -326,6 +358,57 @@ test.describe("grimoire autosave (desktop)", () => {
     await expect(reader.getByRole("heading", { name: "Release checklist" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Discard this title" })).toHaveCount(0);
     expect(knowledgePosts).toHaveLength(0);
+  });
+
+  test("opening a ninth document retains an older unsaved memory tab", async ({ page }) => {
+    await gotoGrimoire(page, 60_000, 8);
+    await rail(page).getByRole("button", { name: /notes\.md/ }).click();
+    await startEditing(page);
+    await typeInEditor(page, " Keep my oldest draft.");
+    await expect(page.getByText("Unsaved changes")).toBeVisible();
+    for (let index = 0; index < 8; index++) {
+      await rail(page).getByRole("button", { name: new RegExp(`Reference ${index}`) }).click();
+    }
+    await expect(page.getByRole("tab", { name: "notes.md", exact: true })).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Open documents" }).getByRole("tab")).toHaveCount(8);
+    await page.getByRole("tab", { name: "notes.md", exact: true }).click();
+    await expect(page.locator(".cm-content:visible")).toContainText("Keep my oldest draft.");
+    expect(memoryPuts).toHaveLength(0);
+  });
+
+  test("a full set of dirty tabs refuses another document without losing drafts", async ({ page }) => {
+    await gotoGrimoire(page, 60_000, 0, 8);
+    for (let index = 0; index < 8; index++) {
+      await rail(page).getByRole("button", { name: new RegExp(`draft-${index}\\.md`) }).click();
+      await startEditing(page);
+      await typeInEditor(page, ` Keep draft ${index}.`);
+      await expect(page.getByRole("button", { name: `Close draft-${index}.md (unsaved changes)` })).toBeVisible();
+    }
+    await rail(page).getByRole("button", { name: /Release checklist/ }).click();
+    await expect(page.locator(".grimoire-view").getByRole("alert")).toContainText("Save or close an unsaved document");
+    await expect(page.getByRole("tablist", { name: "Open documents" }).getByRole("tab")).toHaveCount(8);
+    await expect(page.getByRole("tab", { name: "Release checklist", exact: true })).toHaveCount(0);
+    await page.getByRole("tab", { name: "draft-0.md", exact: true }).click();
+    await expect(page.locator(".cm-content:visible")).toContainText("Keep draft 0.");
+    expect(memoryPuts).toHaveLength(0);
+  });
+
+  test("unsaved memory survives switching to Relations and Journal", async ({ page }) => {
+    await gotoGrimoire(page);
+    await rail(page).getByRole("button", { name: /notes\.md/ }).click();
+    await startEditing(page);
+    await typeInEditor(page, " Retain this unsaved decision.");
+    await expect(page.getByText("Unsaved changes")).toBeVisible();
+    for (const view of ["Relations", "Journal"]) {
+      await page.getByRole("button", { name: view, exact: true }).click();
+      await page.getByRole("button", { name: "Library", exact: true }).click();
+      await expect(page.locator(".cm-content:visible")).toContainText("Retain this unsaved decision.");
+      await expect(page.getByText("Unsaved changes")).toBeVisible();
+    }
+    expect(memoryPuts).toHaveLength(0);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => memoryPuts.length).toBe(1);
+    expect(memoryPuts[0].text).toContain("Retain this unsaved decision.");
   });
 
   test("memory files never autosave — typing leaves the draft unsaved", async ({ page }) => {

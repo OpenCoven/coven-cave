@@ -527,7 +527,6 @@ fn native_readiness_accepts_chunked_http_and_rejects_malformed_chunks() {
         .contains("malformed chunk terminator"));
 }
 
-#[cfg(target_os = "windows")]
 #[test]
 fn startup_control_prevents_concurrent_workers_and_resets_cancellation() {
     let control = SidecarStartupControl::new();
@@ -543,7 +542,6 @@ fn startup_control_prevents_concurrent_workers_and_resets_cancellation() {
     control.finish();
 }
 
-#[cfg(target_os = "windows")]
 #[test]
 fn startup_status_uses_frontend_field_names() {
     let value =
@@ -1386,6 +1384,16 @@ fn a_silent_listener_holds_the_port_even_though_it_never_answers() {
 }
 
 #[test]
+fn port_conflicts_offer_packaged_app_recovery_without_development_commands() {
+    for occupant in [PortOccupant::Cave, PortOccupant::Gated, PortOccupant::Stranger] {
+        let message = port_conflict_message(3020, &occupant);
+        assert!(!message.contains("pnpm"), "packaged recovery must not require development tooling: {message}");
+        assert!(message.contains("3020"));
+        assert!(message.contains(sidecar_ports::CAVE_PORT_ENV));
+    }
+}
+
+#[test]
 fn every_refusal_offers_the_documented_way_to_run_a_second_copy() {
     // COVEN_CAVE_PORT is why the claim is keyed on the port rather than on the
     // app. A message that forgot to mention it would leave "quit the other
@@ -1689,4 +1697,43 @@ fn a_stalled_sidecar_cannot_hold_the_readiness_wait_past_its_deadline() {
         elapsed < Duration::from_secs(45),
         "the wait must honour its own deadline, took {elapsed:?}"
     );
+}
+
+#[test]
+fn unused_startup_control_does_not_claim_service_startup() {
+    let control = SidecarStartupControl::new();
+    let initial = control.status().expect("initial native snapshot");
+    assert_eq!(
+        initial.phase, "idle",
+        "a dev server never starts the native worker"
+    );
+    assert!(!initial.can_retry);
+    assert!(!initial.can_cancel);
+    assert!(!control.is_running());
+    control.begin().expect("packaged startup admits its worker");
+    control
+        .set_status(SidecarStartupStatus::preparing())
+        .unwrap();
+    assert_eq!(control.status().unwrap().phase, "preparing");
+    control.finish();
+}
+
+#[test]
+fn preparation_errors_give_accurate_packaged_recovery() {
+    let message = insufficient_runtime_space_message(64_000_000, 128_000_000);
+    assert!(message.contains("64 MB available"), "{message}");
+    assert!(message.contains("128 MB required"), "{message}");
+    assert!(!message.contains("bytes"));
+    let packaged = missing_node_message(true);
+    assert!(packaged.contains("Reinstall"), "{packaged}");
+    assert!(!packaged.contains("Install Node.js"));
+    assert!(missing_node_message(false).contains("Install Node.js"));
+}
+
+#[test]
+fn capacity_guidance_rounds_available_down_and_required_up() {
+    assert_eq!(insufficient_runtime_space_message(999_999, 1_000_001),
+        "There is not enough free space to prepare CovenCave: less than 1 MB available, 2 MB required. Free some space and try again.");
+    let maximum = insufficient_runtime_space_message(0, u64::MAX);
+    assert!(maximum.contains("18446744073710 MB required"), "{maximum}");
 }

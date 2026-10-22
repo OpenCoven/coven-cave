@@ -105,6 +105,29 @@ Cave then uses one of two transports:
 On both transports Cave clears any `CODEX_OSS_BASE_URL` or `CODEX_OSS_PORT`
 inherited from its own environment, so only the configured server is used.
 
+## Full access and Codex's sandbox
+
+The composer's access chip offers **Full access** and **Read only**. Cave
+enforces Read only by passing `--sandbox read-only` to Codex, directly or as
+`coven run --permission read-only`. Full access passes nothing, so Codex keeps
+the sandbox its own configuration sets. A chat can't widen a runtime's
+sandbox (#3297). This applies to the cloud `codex` runtime as well as
+`codex-ollama` and `codex-lmstudio`.
+
+Codex reads the sandbox from `sandbox_mode` in `~/.codex/config.toml`.
+Without that setting, `codex exec` runs read-only: a turn can read files, but
+every write is refused, even with Full access selected.
+
+| `sandbox_mode` | Commands Codex runs can |
+|---|---|
+| `read-only` | Read files. `codex exec` uses this when the setting is absent. |
+| `workspace-write` | Also write in the folder the chat runs in and the folders Cave grants with `--add-dir`. |
+| `danger-full-access` | Run with no sandbox. |
+
+Which one to use is your choice, and Cave doesn't change that file. The #6049
+smoke test confirmed writes on both local servers with
+`sandbox_mode = "danger-full-access"` and `approval_policy = "never"`.
+
 ## Limitations
 
 - Research missions don't offer the local runtimes. Research launches through
@@ -132,6 +155,7 @@ inherited from its own environment, so only the configured server is used.
 | … isn't this computer | The address is on another computer. Allow remote servers in Settings, or use a local address. |
 | … runs on *computer* through LM Link | LM Studio serves that model from another computer. Load a model on this computer, or allow servers on other computers in Settings. |
 | The model menu is empty | Settings → Local models says why: server stopped, address invalid, no tool-capable model, or only LM Link models while servers on other computers are off. |
+| `operation not permitted`, or another refused write, while **Full access** is selected | Codex's own sandbox refused the write. Without `sandbox_mode` in `~/.codex/config.toml`, it is read-only. See [Full access and Codex's sandbox](#full-access-and-codexs-sandbox). |
 
 Codex sends long instructions with every turn. If replies seem to ignore the
 conversation, the server may be truncating the prompt. Raise the model's

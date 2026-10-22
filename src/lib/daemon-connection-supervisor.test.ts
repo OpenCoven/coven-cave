@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import test from "node:test";
 
 import {
@@ -232,8 +233,7 @@ test("ordinary refreshes coalesce and timer-driven polls stay serial", async () 
   assert.equal(rig.requests.length, 1);
   assert.equal(rig.inFlight, 1);
   assert.equal(rig.peakInFlight, 1);
-  assert.equal(rig.pendingTimers().length, 1);
-  assert.equal(rig.latestPendingTimer().delayMs, 30_000);
+  assert.deepEqual(rig.pendingTimers().map((timer) => timer.delayMs), [30_000, 10_000]);
 
   await rig.resolveRequest(0, runningPoll());
   await Promise.all([first, second]);
@@ -251,9 +251,8 @@ test("ordinary refreshes coalesce and timer-driven polls stay serial", async () 
   assert.equal(third, fourth);
   assert.equal(rig.requests.length, 2);
   assert.equal(rig.timers.length, timerCountBeforePendingCoalesce);
-  assert.equal(rig.pendingTimers().length, 1);
-  assert.equal(rig.latestPendingTimer().delayMs, 30_000);
-  assert.equal(rig.timers.filter((timer) => timer.cancelled).length, 1);
+  assert.deepEqual(rig.pendingTimers().map((timer) => timer.delayMs), [30_000, 10_000]);
+  assert.equal(rig.timers.filter((timer) => timer.cancelled).length, 2);
 
   await rig.resolveRequest(1, runningPoll("hub"));
   await Promise.all([third, fourth]);
@@ -306,6 +305,135 @@ test("a running poll after failures resets the cadence", async () => {
   assert.equal(rig.latestPendingTimer().delayMs, 5_000);
 });
 
+test("a stalled status read times out, releases refresh callers, and recovers on the next poll", async () => {
+  const rig = createRig();
+  rig.supervisor.start();
+  const stalled = rig.supervisor.refresh();
+
+  rig.advanceNow(10_000);
+  const deadline = rig.firePendingTimer(10_000);
+  await stalled;
+
+  assert.equal(rig.requestAt(0).signal.aborted, true);
+  assert.deepEqual(rig.publishes.map(({ poll }) => poll), [{
+    responseStatus: 0,
+    responseOk: false,
+    payload: null,
+    error: "status request timed out",
+  }]);
+  assert.equal(rig.latestPendingTimer().delayMs, 5_000);
+  deadline.callback();
+  assert.equal(rig.publishes.length, 1);
+
+  rig.advanceNow(5_000);
+  rig.firePendingTimer(5_000);
+  await rig.resolveRequest(1, runningPoll());
+  assert.equal(rig.publishes.length, 2);
+  assert.equal(rig.observations.length, 1);
+  assert.equal(rig.observations[0]?.outcome, "success");
+  assert.equal(rig.observations[0]?.attempts, 2);
+  assert.equal(rig.observations[0]?.durationMs, 15_000);
+  assert.equal(rig.latestPendingTimer().delayMs, 5_000);
+
+  await rig.resolveRequest(0, offlinePoll());
+  assert.equal(rig.publishes.length, 2, "late timed-out data cannot replace recovered health");
+  assert.equal(rig.pendingTimers().length, 1);
+  rig.supervisor.stop();
+  assert.equal(rig.pendingTimers().length, 0);
+});
+
+for (const cancel of ["stop", "hide", "fresh"] as const) {
+  test(`${cancel} settles a read even when the transport ignores cancellation`, { timeout: 1_000 }, async () => {
+    const rig = createRig();
+    rig.supervisor.start();
+    const pending = rig.supervisor.refresh();
+    const deadline = rig.pendingTimers().find((timer) => timer.delayMs === 10_000);
+    assert.ok(deadline);
+
+    if (cancel === "stop") rig.supervisor.stop();
+    else if (cancel === "hide") rig.supervisor.setVisible(false);
+    else void rig.supervisor.refresh({ fresh: true });
+    await pending;
+
+    assert.equal(rig.requestAt(0).signal.aborted, true);
+    assert.equal(deadline.cancelled, true);
+    deadline.callback();
+    await rig.resolveRequest(0, runningPoll());
+    assert.equal(rig.publishes.length, 0);
+    if (cancel === "fresh") {
+      assert.equal(rig.requestAt(1).signal.aborted, false);
+      await rig.resolveRequest(1, runningPoll());
+      assert.equal(rig.publishes.length, 1);
+    } else {
+      assert.equal(rig.pendingTimers().length, 0);
+    }
+    rig.supervisor.stop();
+  });
+}
+
+test("a stalled HTTP body is disconnected before a later healthy poll", { timeout: 10_000 }, async (t) => {
+  const readingBody = deferred<void>();
+  const disconnected = deferred<void>();
+  const timers = new Map<number, { callback: () => void; delayMs: number }>();
+  const published: DaemonConnectionPoll[] = [];
+  let sequence = 0;
+  let calls = 0;
+  const server = createServer((_request, response) => {
+    calls += 1;
+    response.writeHead(200, { "content-type": "application/json" });
+    if (calls === 1) {
+      response.write('{"running":');
+      response.once("close", () => disconnected.resolve());
+    } else {
+      response.end(JSON.stringify(runningPoll().payload));
+    }
+  });
+  const supervisor = createDaemonConnectionSupervisor({
+    request: async ({ signal }) => {
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      const response = await fetch(`http://127.0.0.1:${address.port}`, { signal });
+      readingBody.resolve();
+      return { responseStatus: response.status, responseOk: response.ok, payload: await response.json() };
+    },
+    publish: (poll) => { published.push(poll); },
+    schedule: (callback, delayMs) => {
+      const handle = ++sequence;
+      timers.set(handle, { callback, delayMs });
+      return handle;
+    },
+    cancelSchedule: (handle) => { timers.delete(handle); },
+    random: () => 0.5,
+  });
+  t.after(async () => {
+    supervisor.stop();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  supervisor.start();
+  const pending = supervisor.refresh();
+  await readingBody.promise;
+  const deadline = [...timers.values()].find((timer) => timer.delayMs === 10_000);
+  assert.ok(deadline);
+  deadline.callback();
+  await pending;
+  await disconnected.promise;
+  assert.equal(published[0]?.error, "status request timed out");
+  assert.equal(calls, 1);
+
+  const retry = [...timers].find(([, timer]) => timer.delayMs === 5_000);
+  assert.ok(retry);
+  timers.delete(retry[0]);
+  retry[1].callback();
+  await supervisor.refresh();
+  assert.equal(calls, 2);
+  assert.deepEqual(published[1], runningPoll());
+  supervisor.stop();
+  assert.equal(timers.size, 0);
+});
+
 test("fresh refresh aborts and supersedes the older request", async () => {
   const rig = createRig();
 
@@ -345,8 +473,7 @@ test("fresh refresh cancels a scheduled timer before starting a new request", as
   const pending = rig.supervisor.refresh({ fresh: true });
 
   assert.equal(staleTimer.cancelled, true);
-  assert.equal(rig.pendingTimers().length, 1);
-  assert.equal(rig.latestPendingTimer().delayMs, 30_000);
+  assert.deepEqual(rig.pendingTimers().map((timer) => timer.delayMs), [30_000, 10_000]);
   assert.equal(rig.requests.length, 2);
   assert.equal(rig.requestAt(1).fresh, true);
 
@@ -442,6 +569,17 @@ test("abort rejections are neutral and still let refresh callers await completio
   assert.equal(rig.pendingTimers().length, 0);
 });
 
+test("an AbortError without supervisor cancellation remains a retryable read failure", async () => {
+  const rig = createRig();
+  rig.supervisor.start();
+  await rig.rejectRequest(0, abortError());
+  assert.equal(rig.requestAt(0).signal.aborted, false);
+  assert.equal(rig.publishes[0]?.poll.error, "status request failed");
+  assert.equal(rig.latestPendingTimer().delayMs, 5_000);
+  rig.supervisor.stop();
+  assert.equal(rig.pendingTimers().length, 0);
+});
+
 test("coalescing onto a synchronously failing start preserves the retry timer", async () => {
   const publishes: Array<{ poll: DaemonConnectionPoll; context: { fresh: boolean } }> = [];
   const timers: TimerRecord[] = [];
@@ -492,7 +630,7 @@ test("coalescing onto a synchronously failing start preserves the retry timer", 
     },
   ]);
   assert.equal(timers.filter((timer) => !timer.cancelled && !timer.fired).length, 2);
-  assert.equal(timers.filter((timer) => timer.cancelled).length, 0);
+  assert.deepEqual(timers.filter((timer) => timer.cancelled).map((timer) => timer.delayMs), [10_000]);
   assert.ok(timers.some((timer) => timer.delayMs === 5_000 && !timer.cancelled));
   assert.equal(
     publishes.some(({ poll }) => poll.error?.includes("socket exploded loudly") ?? false),
@@ -629,7 +767,12 @@ test("late authenticated success after timeout establishes health without fabric
   const rig = createRig({ random: () => 0.5 });
 
   rig.supervisor.start();
-  rig.advanceNow(30_000);
+  await rig.resolveRequest(0, offlinePoll());
+  // A delayed retry starts near the episode boundary; its own read deadline
+  // has not elapsed when the older measurement episode times out.
+  rig.advanceNow(25_000);
+  rig.firePendingTimer(5_000);
+  rig.advanceNow(5_000);
   rig.firePendingTimer(30_000);
 
   assert.deepEqual(rig.observations, [{
@@ -638,22 +781,22 @@ test("late authenticated success after timeout establishes health without fabric
     failureClass: "timeout",
     readiness: "none",
     durationMs: 30_000,
-    attempts: 1,
-    backoffMs: 0,
+    attempts: 2,
+    backoffMs: 5_000,
     timeoutMs: 30_000,
     crashCount: 0,
     restartCount: 0,
   }]);
 
-  await rig.resolveRequest(0, runningPoll());
+  await rig.resolveRequest(1, runningPoll());
   assert.equal(rig.observations.length, 1);
   assert.equal(rig.latestPendingTimer().delayMs, 5_000);
 
   rig.firePendingTimer(5_000);
   rig.advanceNow(25);
-  await rig.resolveRequest(1, runningPoll());
+  await rig.resolveRequest(2, runningPoll());
 
-  assert.equal(rig.publishes.length, 2);
+  assert.equal(rig.publishes.length, 3);
   assert.equal(rig.observations.length, 1);
 });
 

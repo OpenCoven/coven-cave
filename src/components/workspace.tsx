@@ -119,6 +119,7 @@ import {
   type DaemonConnectionPoll,
 } from "@/lib/daemon-connection-supervisor";
 import { createTauriDaemonReliabilityObserver } from "@/lib/daemon-reliability";
+import { subscribeOnboardingBootstrapCompletion } from "@/lib/onboarding-bootstrap-status";
 import { createDaemonTravelReconcileRequester } from "@/lib/daemon-travel-reconcile-client";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -1557,7 +1558,12 @@ export function Workspace() {
     requester.setActive(!document.hidden);
     document.addEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
     supervisor.start();
+    const unsubscribeSetupCompletion = subscribeOnboardingBootstrapCompletion(() => {
+      // Setup is a reason to verify readiness, not evidence of readiness.
+      void supervisor.refresh({ fresh: true });
+    });
     return () => {
+      unsubscribeSetupCompletion();
       document.removeEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
       requester.stop();
       supervisor.stop();

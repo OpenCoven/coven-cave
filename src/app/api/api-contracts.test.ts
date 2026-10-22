@@ -1018,7 +1018,9 @@ for (const contract of contracts) {
     }
     const bridge = readFileSync(path.join(root, 'src/lib/server/research-package.ts'), 'utf8');
     assert.match(bridge, /if \(!capability\.enabled\) return researchUnavailable\(capability\)/);
-    assert.ok(bridge.indexOf('if (forbidden) return forbidden') < bridge.indexOf('const runtime = await load()'));
+    const authorization = bridge.indexOf('if (forbidden) return forbidden');
+    const runtimeLoad = bridge.indexOf('const result = await loadCompatibleRuntime(load)');
+    assert.ok(authorization >= 0 && runtimeLoad > authorization);
     continue;
   }
   assert.equal(usesJsonResponse(effectiveSource), true, `${contract.route} must return an explicit Response/NextResponse`);

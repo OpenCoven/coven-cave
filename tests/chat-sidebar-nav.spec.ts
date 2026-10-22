@@ -76,6 +76,12 @@ const SESSIONS = [
 // The rail lives inside the chat surface now, NOT inside aside[aria-label="Sidebar"].
 const RAIL = 'aside[aria-label="Chat threads"] .chat-sidebar';
 
+// End-truncated rail titles expose a full accessible title separately from
+// their visible text. Require the visible renderer without masking duplicate rows.
+function railTitle(root: Locator, title: string) {
+  return root.getByText(title, { exact: true }).and(root.locator(".chat-row-title__head"));
+}
+
 async function renderedBox(locator: Locator) {
   return locator.evaluate((element) => {
     const style = window.getComputedStyle(element);
@@ -89,56 +95,21 @@ async function renderedBox(locator: Locator) {
   });
 }
 
-async function narrowChatRail(page: Page) {
+async function narrowChatRail(page: Page, width = 200) {
   const cnav = page.locator(RAIL);
-  await cnav.evaluate((element) => {
+  await cnav.evaluate((element, width) => {
     const nav = element as HTMLElement;
     const host = nav.closest<HTMLElement>(".chat-inner-rail");
     for (const node of [host, nav]) {
       if (!node) continue;
       Object.assign(node.style, {
-        width: "200px",
-        minWidth: "200px",
-        maxWidth: "200px",
+        width: `${width}px`,
+        minWidth: `${width}px`,
+        maxWidth: `${width}px`,
       });
     }
-  });
-  await expect.poll(async () => (await cnav.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(212);
-}
-
-async function activeCueBoxes(row: Locator) {
-  return row.evaluate((element) => {
-    const rowRect = element.getBoundingClientRect();
-    const boxFor = (selector: string) => {
-      const rect = element.querySelector(selector)?.getBoundingClientRect();
-      if (!rect) throw new Error(`Missing ${selector}`);
-      return { left: rect.left, right: rect.right };
-    };
-    const selection = window.getComputedStyle(element, "::before");
-    const selectionLeft = rowRect.left + Number.parseFloat(selection.left);
-    return {
-      selection: {
-        left: selectionLeft,
-        right: selectionLeft + Number.parseFloat(selection.width),
-      },
-      attention: boxFor(".cnav__attention-tick"),
-      runtime: boxFor(".cnav__tick"),
-      pullRequest: boxFor(".cnav__pr-badge"),
-    };
-  });
-}
-
-function expectHorizontalSeparation(
-  boxes: Awaited<ReturnType<typeof activeCueBoxes>>,
-  viewport: "normal" | "narrow",
-) {
-  const ordered = [boxes.selection, boxes.attention, boxes.runtime, boxes.pullRequest];
-  for (let index = 1; index < ordered.length; index += 1) {
-    expect(
-      ordered[index - 1].right,
-      `${viewport} cue ${index - 1} must end before cue ${index} begins`,
-    ).toBeLessThanOrEqual(ordered[index].left);
-  }
+  }, width);
+  await expect.poll(async () => (await cnav.boundingBox())?.width ?? Number.POSITIVE_INFINITY).toBeLessThan(width + 12);
 }
 
 async function ensureChatSurface(page: Page, { expectRail = true } = {}) {
@@ -195,20 +166,20 @@ test.describe("chat threads rail", () => {
   test("a degraded refresh updates local rows and quietly retains daemon chats (#6027)", async ({ page }) => {
     await gotoChat(page);
     const rail = page.locator(RAIL);
-    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
+    await expect(railTitle(rail, "Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
     // Daemon unreachable: the server answers ok with only the local rows.
     await page.route("**/api/sessions/list**", (route) =>
       route.fulfill({ json: { ok: true, degraded: true, error: "daemon http 503", sessions: [{ ...SESSIONS[0], title: "Updated local chat" }] } }),
     );
-    await expect(rail.getByText("Updated local chat")).toBeVisible({ timeout: 20_000 });
+    await expect(railTitle(rail, "Updated local chat")).toBeVisible({ timeout: 20_000 });
     await expect(rail.getByText("Coven isn't reachable", { exact: false })).toHaveCount(0);
-    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
+    await expect(railTitle(rail, "Wire deploy pipeline")).toBeVisible();
   });
 
   test("failed refreshes keep chats quiet and recover automatically (#6027)", async ({ page }) => {
     await gotoChat(page);
     const rail = page.locator(RAIL);
-    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
+    await expect(railTitle(rail, "Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
     let failures = 0;
     let failing = true;
     await page.route("**/api/sessions/list**", (route) => {
@@ -223,12 +194,12 @@ test.describe("chat threads rail", () => {
     // Two failed polls prove that retries keep running while cached chats stay
     // usable, without relying on the removed banner as a synchronization hook.
     await expect.poll(() => failures, { timeout: 25_000 }).toBeGreaterThanOrEqual(2);
-    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
+    await expect(railTitle(rail, "Wire deploy pipeline")).toBeVisible();
     await expect(rail.getByText("Couldn't refresh chats", { exact: false })).toHaveCount(0);
     await expect(rail.getByRole("button", { name: "Retry loading chats" })).toHaveCount(0);
     failing = false;
-    await expect(rail.getByText("Recovered chat title")).toBeVisible({ timeout: 25_000 });
-    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
+    await expect(railTitle(rail, "Recovered chat title")).toBeVisible({ timeout: 25_000 });
+    await expect(railTitle(rail, "Wire deploy pipeline")).toBeVisible();
   });
 
   test("a #chat deep link survives a failed first list load (#5563)", async ({ page }) => {
@@ -286,7 +257,7 @@ test.describe("chat threads rail", () => {
   test("an unchanged list poll is answered with 304 and keeps the rows (#5571)", async ({ page }) => {
     await gotoChat(page);
     const rail = page.locator(RAIL);
-    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
+    await expect(railTitle(rail, "Wire deploy pipeline")).toBeVisible({ timeout: 30_000 });
     let tag = '"list-v1"';
     let rows = SESSIONS;
     const conditional: Array<string | null> = [];
@@ -302,19 +273,43 @@ test.describe("chat threads rail", () => {
     });
     // The next poll picks up the tag, the ones after it send it back.
     await expect.poll(() => notModified, { timeout: 30_000 }).toBeGreaterThan(1);
-    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
-    await expect(rail.getByText("Refactor auth flow")).toBeVisible();
+    await expect(railTitle(rail, "Wire deploy pipeline")).toBeVisible();
+    await expect(railTitle(rail, "Refactor auth flow")).toBeVisible();
     expect(conditional.some((sent) => sent === '"list-v1"')).toBe(true);
 
     // A changed list gets a new tag and a full body, and the rail shows it.
     rows = SESSIONS.map((session) => (session.id === "s4" ? { ...session, title: "Wire the release pipeline" } : session));
     tag = '"list-v2"';
-    await expect(rail.getByText("Wire the release pipeline")).toBeVisible({ timeout: 30_000 });
+    await expect(railTitle(rail, "Wire the release pipeline")).toBeVisible({ timeout: 30_000 });
   });
 
-  test("session rows retain symmetric corners and side insets outside the app sidebar", async ({ page }) => {
+  test("minimal sidebar remains legible across rail widths and palettes", async ({ page }, testInfo) => {
     await page.addInitScript(() => {
-      localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s5"]));
+      localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s2"]));
+    });
+    await gotoChat(page);
+    const rail = page.locator(RAIL);
+    for (const width of [220, 280, 400]) {
+      await narrowChatRail(page, width);
+      for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+        await page.evaluate(([theme, mode]) => {
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.mode = mode;
+        }, [theme, mode]);
+        await expect(rail.locator(".cnav__thread-main")).toHaveCount(SESSIONS.length);
+        for (const session of SESSIONS) await expect(railTitle(rail, session.title)).toBeVisible();
+        const screenshot = testInfo.outputPath(`sidebar-${width}-${theme}-${mode}.png`);
+        await rail.screenshot({ path: screenshot });
+        await testInfo.attach(`sidebar-${width}-${theme}-${mode}`, {
+          path: screenshot, contentType: "image/png",
+        });
+      }
+    }
+  });
+
+  test("flat rows stay unique with symmetric control radii and side insets", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("cave:chat:pinned-sessions", JSON.stringify(["s2", "s5"]));
     });
     await gotoChat(page);
     const rail = page.locator(RAIL);
@@ -326,7 +321,7 @@ test.describe("chat threads rail", () => {
       for (const radius of ["0px", "12px", "20px"]) {
         await page.evaluate(({ mode, radius }) => {
           document.documentElement.dataset.mode = mode;
-          document.documentElement.style.setProperty("--radius-card", radius);
+          document.documentElement.style.setProperty("--radius-control", radius);
         }, { mode, radius });
         const geometry = await rail.evaluate((element) => {
           const scroller = element.querySelector(".cnav__scroll")!;
@@ -344,25 +339,23 @@ test.describe("chat threads rail", () => {
             paddingRight: scrollStyle.paddingRight,
             rows: rows.map((thread) => ({
               corners: corners(getComputedStyle(thread)),
-              backdrop: thread.classList.contains("is-active")
-                ? corners(getComputedStyle(thread, "::after"))
-                : null,
+              backdropDisplay: getComputedStyle(thread, "::after").display,
             })),
           };
         });
         expect(geometry.insideShellNav).toBe(false);
         expect(geometry.paddingLeft).toBe("4px");
         expect(geometry.paddingRight).toBe("4px");
-        expect(geometry.rows.length).toBeGreaterThan(SESSIONS.length);
+        expect(geometry.rows).toHaveLength(SESSIONS.length);
         for (const thread of geometry.rows) {
           expect(thread.corners).toEqual(Array(4).fill(radius));
-          if (thread.backdrop) expect(thread.backdrop).toEqual(thread.corners);
+          expect(thread.backdropDisplay).toBe("none");
         }
       }
     }
   });
 
-  test("middle ellipsis preserves title tails in narrow rail and session rows", async ({ page }) => {
+  test("rail titles retain their start while session-list titles retain their tail", async ({ page }) => {
     const title = "Investigate a shared deployment prefix and keep the distinguishing release suffix";
     const pinnedTitle = "Review a second shared deployment prefix and preserve the production suffix";
     await page.addInitScript(() => {
@@ -375,6 +368,29 @@ test.describe("chat threads rail", () => {
       })),
     });
     await narrowChatRail(page);
+
+    const assertRailTitle = async (fullTitle: string) => {
+      const renderer = page.locator(RAIL).locator(`.chat-row-title[title="${fullTitle}"]`);
+      await expect(renderer).toHaveCount(1);
+      await expect(renderer.locator(".sr-only")).toHaveText(fullTitle);
+      await expect(renderer.locator(".chat-row-title__tail")).toHaveCount(0);
+      const head = renderer.locator(".chat-row-title__head");
+      await expect(head).toHaveText(fullTitle);
+      await expect(head).toHaveCSS("text-overflow", "ellipsis");
+      await expect(head).toHaveCSS("white-space", "pre");
+      await expect(head).toHaveCSS("overflow", "hidden");
+      const bounds = await head.evaluate((element) => ({
+        width: element.clientWidth, fullWidth: element.scrollWidth,
+        left: element.getBoundingClientRect().left,
+        right: element.getBoundingClientRect().right,
+        rowRight: element.closest(".cnav__thread")!.getBoundingClientRect().right,
+      }));
+      expect(bounds.width).toBeGreaterThan(0);
+      expect(bounds.fullWidth).toBeGreaterThan(bounds.width);
+      expect(bounds.right).toBeLessThanOrEqual(bounds.rowRight);
+      await expect(renderer.locator("xpath=ancestor::button[1]")).toHaveAccessibleName(new RegExp(fullTitle));
+      return bounds.left;
+    };
 
     const assertTailVisible = async (root: Locator, fullTitle: string) => {
       const renderer = root.locator(`.chat-row-title[title="${fullTitle}"]`).first();
@@ -405,8 +421,9 @@ test.describe("chat threads rail", () => {
         document.documentElement.dataset.theme = theme;
         document.documentElement.dataset.mode = mode;
       }, [theme, mode]);
-      await assertTailVisible(page.locator(RAIL), title);
-      await assertTailVisible(page.locator(RAIL), pinnedTitle);
+      const ordinaryLeft = await assertRailTitle(title);
+      const pinnedLeft = await assertRailTitle(pinnedTitle);
+      expect(ordinaryLeft).toBe(pinnedLeft);
     }
     await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Projects", exact: true }).click();
     await page.getByRole("tablist", { name: "Chat sections" }).getByRole("tab", { name: "Chats", exact: true }).click();
@@ -490,14 +507,13 @@ test.describe("chat threads rail", () => {
     }
     await narrowChatRail(page);
     const titleAndActions = await row.evaluate((element) => ({
-      titleRight: element.querySelector(".cnav__thread-copy")!.getBoundingClientRect().right,
-      actionsLeft: element.querySelector(".cnav__row-actions")!.getBoundingClientRect().left,
+      titleBottom: element.querySelector(".cnav__thread-title")!.getBoundingClientRect().bottom,
+      actionsTop: element.querySelector(".cnav__row-actions")!.getBoundingClientRect().top,
     }));
-    expect(titleAndActions.titleRight).toBeLessThanOrEqual(titleAndActions.actionsLeft);
+    expect(titleAndActions.titleBottom).toBeLessThanOrEqual(titleAndActions.actionsTop);
 
     await actions.first().click();
-    const pinnedUnpin = page.locator(RAIL).locator('button[title="Unpin chat"]')
-      .and(page.getByRole("button", { name: "Unpin Refactor auth flow", exact: true }));
+    const pinnedUnpin = page.locator(RAIL).getByRole("button", { name: "Unpin Refactor auth flow", exact: true });
     await expect(pinnedUnpin).toBeVisible();
     const pinnedBox = await renderedBox(pinnedUnpin);
     expect(pinnedBox.width).toBeGreaterThanOrEqual(32);
@@ -560,7 +576,7 @@ test.describe("chat threads rail", () => {
     await expect(rail.getByText("Today", { exact: true })).toBeVisible();
     await expect(rail.getByText("Older", { exact: true })).toBeVisible();
     for (const s of SESSIONS) {
-      await expect(rail.getByText(s.title, { exact: false }).first()).toBeVisible();
+      await expect(railTitle(rail, s.title)).toBeVisible();
     }
     // Bare row times — no "ago" suffix anywhere in the rail.
     await expect(rail.locator(".cnav__time").filter({ hasText: /\bago\b/ })).toHaveCount(0);
@@ -584,78 +600,56 @@ test.describe("chat threads rail", () => {
     // view: it has to survive opening a conversation, which is exactly when you
     // want to switch threads.
     await expect(rail).toBeVisible();
-    await expect(rail.getByText("Wire deploy pipeline", { exact: false }).first()).toBeVisible();
+    await expect(railTitle(rail, "Wire deploy pipeline")).toBeVisible();
   });
 
-  test("narrow rail keeps the attention label rendered after the project tile collapses", async ({ page }) => {
+  test("blocked attention stays visible and accessible in wide and narrow rails", async ({ page }) => {
     await gotoChat(page);
     const rail = page.locator(RAIL);
-    const attentionRow = rail.locator(".cnav__thread", { hasText: "Approve release checklist" }).first();
-    const attentionButton = attentionRow.locator("button.cnav__thread-main");
-    const projectTile = attentionRow.locator(".cnav__thread-proj");
-    const attentionCue = attentionRow.locator(".cnav__attention");
-    const attentionLabel = attentionCue.locator("span:not(.cnav__attention-dot)").first();
-
-    await expect(rail.getByRole("heading", { name: "Awaiting you" })).toHaveCount(0);
-    await expect(rail.locator('section[aria-label="Awaiting you"]')).toBeVisible();
-    await expect(attentionRow.getByText("Approve release checklist", { exact: true })).toBeVisible();
-    await expect(projectTile).toBeVisible();
-    await expect(attentionCue).toBeVisible();
-    // This session is seeded with reason "approval" — a gate the run cannot
-    // pass without the reader — so its visible state is Blocked. The SECTION
-    // above stays "Awaiting you": it groups what needs you, it does not name
-    // each row's state.
-    await expect(attentionLabel).toHaveText("Blocked");
-    const timestamp = (await attentionRow.locator(".cnav__time").textContent())?.trim();
-    expect(timestamp).toBeTruthy();
-    await expect(attentionButton).toHaveAccessibleName(
-      new RegExp(`^Project alpha\\s+${timestamp}\\s+Approve release checklist\\s+Runtime: Codex\\s+Blocked$`),
-    );
-
-    await narrowChatRail(page);
-
-    const projectState = await renderedBox(projectTile);
-    expect(projectState.display).toBe("none");
-    expect(projectState.visibility).not.toBe("hidden");
-    expect(projectState.width).toBe(0);
-    expect(projectState.height).toBe(0);
-
-    const cueState = await renderedBox(attentionCue);
-    expect(cueState.display).not.toBe("none");
-    expect(cueState.visibility).not.toBe("hidden");
-    expect(cueState.width).toBeGreaterThan(0);
-    expect(cueState.height).toBeGreaterThan(0);
-
-    const labelState = await renderedBox(attentionLabel);
-    expect(labelState.display).not.toBe("none");
-    expect(labelState.visibility).not.toBe("hidden");
-    expect(labelState.width).toBeGreaterThan(0);
-    expect(labelState.height).toBeGreaterThan(0);
-    await expect(attentionButton).toHaveAccessibleName(
-      new RegExp(`^Project alpha\\s+${timestamp}\\s+Approve release checklist\\s+Runtime: Codex\\s+Blocked$`),
-    );
+    const row = rail.locator(".cnav__thread", { hasText: "Approve release checklist" });
+    const button = row.locator("button.cnav__thread-main");
+    for (const narrow of [false, true]) {
+      if (narrow) await narrowChatRail(page);
+      await expect(rail.locator('section[aria-label="Awaiting you"]')).toBeVisible();
+      await expect(railTitle(row, "Approve release checklist")).toBeVisible();
+      await expect(row.locator(".cnav__thread-project")).toBeVisible();
+      await expect(row.locator(".cnav__attention")).toBeVisible();
+      await expect(row.locator(".cnav__attention")).toHaveText("Blocked");
+      await expect(button).toHaveAccessibleName(/^Approve release checklist.*alpha.*Runtime: Codex.*Blocked$/);
+      await expect(button).toHaveAttribute("aria-describedby", /.+/);
+      await expect(button).toHaveAccessibleDescription(/.+/);
+    }
   });
 
-  test("active PR attention row keeps selection, attention, runtime, and PR cues in separate gutters", async ({ page }) => {
+  test("selected failed PR row keeps its independent PR control without redundant waiting cues", async ({ page }) => {
     await gotoChat(page);
     const rail = page.locator(RAIL);
-    const row = rail.locator(".cnav__thread", { hasText: "Review active pull request" }).first();
-    const rowButton = row.locator("button.cnav__thread-main");
-
-    await rowButton.click();
-    await expect(rowButton).toHaveAttribute("aria-current", "page");
-    await expect(row.locator(".cnav__attention-tick")).toBeVisible();
-    await expect(row.locator(".cnav__tick")).toBeVisible();
-    await expect(row.locator(".cnav__pr-badge")).toBeVisible();
-
-    const normalBoxes = await activeCueBoxes(row);
-    expectHorizontalSeparation(normalBoxes, "normal");
-
-    await narrowChatRail(page);
-
-    await expect(rowButton).toHaveAttribute("aria-current", "page");
-    const narrowBoxes = await activeCueBoxes(row);
-    expectHorizontalSeparation(narrowBoxes, "narrow");
+    const row = rail.locator(".cnav__thread", { hasText: "Review active pull request" });
+    const button = row.locator("button.cnav__thread-main");
+    const pr = row.getByRole("button", { name: /^Open pull request/ });
+    await button.click();
+    for (const narrow of [false, true]) {
+      if (narrow) await narrowChatRail(page);
+      await expect(button).toHaveAttribute("aria-current", "page");
+      await expect(row.locator(".cnav__runtime-state")).toHaveText("Failed");
+      await expect(row.locator(".cnav__runtime-state")).toBeVisible();
+      await expect(row.locator(".cnav__attention")).toBeHidden();
+      await expect(button).toHaveAccessibleDescription(/.+/);
+      await expect(pr).toBeVisible();
+      const geometry = await row.evaluate((element) => {
+        const badge = element.querySelector(".cnav__pr-badge")!;
+        const box = badge.getBoundingClientRect();
+        const title = element.querySelector(".cnav__thread-title")!.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return { prRight: box.right, titleLeft: title.left, reachable: hit !== null && badge.contains(hit) };
+      });
+      expect(geometry.prRight).toBeLessThanOrEqual(geometry.titleLeft);
+      expect(geometry.reachable).toBe(true);
+      await button.focus();
+      await page.keyboard.press("Shift+Tab");
+      await expect(pr).toBeFocused();
+      await expect(pr).toHaveCSS("outline-style", "solid");
+    }
   });
 
   // cave-lryhx. The reported crash was a TypeError escaping the shell's
@@ -756,7 +750,7 @@ test.describe("chat threads on mobile", () => {
     await toggle.click();
     const sheet = page.getByRole("dialog", { name: "Chat threads" });
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByText("Refactor auth flow", { exact: false }).first()).toBeVisible();
+    await expect(railTitle(sheet, "Refactor auth flow")).toBeVisible();
 
     await sheet.locator(".cnav__thread", { hasText: "Refactor auth flow" })
       .first()

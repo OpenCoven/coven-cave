@@ -109,7 +109,7 @@ import {
 } from "@/lib/codex-compatibility";
 import { codexLaunchCommand } from "@/lib/codex-bin";
 import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
-import { isCodexFamilyHarness, isLocalCodexHarness, localCodexBackendInfo } from "@/lib/local-codex";
+import { isCodexFamilyHarness, isLocalCodexHarness, localCodexBackendInfo, type LocalCodexRefusalCode } from "@/lib/local-codex";
 import { applyLocalCodexSpawnEnv, preflightLocalCodex } from "@/lib/server/local-codex-backends";
 import { codexReasoningForwardable } from "@/lib/server/direct-transport-reasoning-gates";
 import {
@@ -2997,7 +2997,7 @@ async function postAdmittedChat(
     if (sshRuntime) {
       return NextResponse.json({
         ok: false,
-        code: "local_codex_remote_host",
+        code: "local_codex_remote_host" satisfies LocalCodexRefusalCode,
         error: `${info.label} runs on this computer with its own ${info.product} server. Switch the host to this computer to use it.`,
       }, { status: 409 });
     }
@@ -3257,7 +3257,8 @@ async function postAdmittedChat(
   const mentionedFiles = imagesSupported
     ? await resolveMentionedFiles(
         body.mentionedFiles,
-        resolvedFamiliarWorkspace,
+        cwd,
+        body.mentionedFilesRoot,
       )
     : [];
   const dailyMemoryContext = metaRun

@@ -53,7 +53,9 @@
     "bench:chat-projects": "node --experimental-strip-types scripts/chat-project-grouping-benchmark.mjs",
     "bench:store-reads": "node --experimental-strip-types scripts/store-read-benchmark.mjs",
     "bench:daemon-reliability": "node --experimental-strip-types scripts/daemon-reliability-benchmark.mjs",
+    "bench:daemon-lifecycle": "node --experimental-strip-types scripts/daemon-lifecycle-probe.mjs",
     "performance:report": "node --experimental-strip-types scripts/cave-performance-report.mjs",
+    "performance:stream": "node scripts/run-stream-performance.mjs",
     "ios:performance:capture": "node scripts/ios-performance-capture.mjs",
     "test:performance-report": "node --test scripts/cave-performance-report.test.mjs",
     "analyze:bundle": "next experimental-analyze --output",
@@ -190,7 +192,14 @@
       "nanoid@3": "3.3.18",
       "postcss@<8.5.23": "^8.5.26",
       "sharp": "0.35.5",
-      "@opencoven/sdk-core": "file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz"
+      "@opencoven/sdk-core": "file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz",
+      "vite@>=8.0.0 <8.1.6": "8.1.6",
+      "dompurify@<3.4.16": "3.4.16",
+      "katex@<0.18.2": "0.18.2",
+      "source-map-js@<1.2.2": "1.2.2",
+      "vue@<3.5.42": "3.5.42",
+      "prosemirror-view@<1.42.3": "1.42.3",
+      "brace-expansion@>=4.0.0 <5.0.12": "5.0.12"
     },
     "supportedArchitectures": {
       "os": [
