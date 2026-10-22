@@ -89,6 +89,8 @@ mod sidecar_lifecycle;
 mod sidecar_port_lock;
 #[cfg(desktop)]
 mod sidecar_ports;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod sidecar_runtime_retention;
 #[cfg(desktop)]
 mod sidecar_startup;
 #[cfg(desktop)]

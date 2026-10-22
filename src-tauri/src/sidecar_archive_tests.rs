@@ -20,10 +20,14 @@ fn test_root(name: &str) -> PathBuf {
 }
 
 fn fixture_files() -> Vec<(&'static str, &'static [u8])> {
+    fixture_files_with_build(b"fixture-build")
+}
+
+fn fixture_files_with_build(build_id: &'static [u8]) -> Vec<(&'static str, &'static [u8])> {
     vec![
         ("server.mjs", b"console.log('fixture')"),
         (".next/required-server-files.json", b"{}"),
-        (".next/BUILD_ID", b"fixture-build"),
+        (".next/BUILD_ID", build_id),
         ("node_modules/@next/env/package.json", b"{}"),
         ("node_modules/@swc/helpers/_/index", b"fixture"),
         ("node_modules/node-pty/package.json", b"{}"),
@@ -32,9 +36,16 @@ fn fixture_files() -> Vec<(&'static str, &'static [u8])> {
 }
 
 fn write_fixture(root: &Path) -> (PathBuf, PathBuf, SidecarArchiveManifest) {
+    write_fixture_with_build(root, b"fixture-build")
+}
+
+fn write_fixture_with_build(
+    root: &Path,
+    build_id: &'static [u8],
+) -> (PathBuf, PathBuf, SidecarArchiveManifest) {
     let source = root.join("source");
     fs::create_dir(&source).expect("create fixture source");
-    let files = fixture_files();
+    let files = fixture_files_with_build(build_id);
     for (path, contents) in &files {
         let destination = source.join(path);
         fs::create_dir_all(destination.parent().expect("fixture parent"))
@@ -469,9 +480,18 @@ fn low_space_preflight_fails_before_creating_staging() {
     .expect_err("low free space must fail");
 
     assert!(error.contains("not enough free space"));
-    assert!(error.contains("MB available"), "available space must use readable units: {error}");
-    assert!(error.contains("MB required"), "required space must use readable units: {error}");
-    assert!(!error.contains("bytes"), "raw bytes are not useful recovery guidance: {error}");
+    assert!(
+        error.contains("MB available"),
+        "available space must use readable units: {error}"
+    );
+    assert!(
+        error.contains("MB required"),
+        "required space must use readable units: {error}"
+    );
+    assert!(
+        !error.contains("bytes"),
+        "raw bytes are not useful recovery guidance: {error}"
+    );
     assert!(!cache.join(cache_key(&manifest)).exists());
     assert!(!fs::read_dir(&cache)
         .expect("read cache")
@@ -598,36 +618,86 @@ fn rejects_a_payload_digest_mismatch_without_activation() {
     fs::remove_dir_all(root).expect("remove test root");
 }
 
+fn write_complete_marker(runtime: &Path, payload: char, tree: char) {
+    fs::write(
+        runtime.join(".complete.json"),
+        serde_json::to_vec(&CompletionMarker {
+            schema_version: MANIFEST_SCHEMA_VERSION,
+            payload_sha256: payload.to_string().repeat(64),
+            tree_sha256: tree.to_string().repeat(64),
+        })
+        .expect("serialize marker"),
+    )
+    .expect("write marker");
+}
+
 #[test]
-fn cleanup_retains_all_complete_generations_without_process_leases() {
+fn two_updates_leave_two_runtime_generations() {
+    let root = test_root("two-updates");
+    let cache = root.join("cache");
+    let mut generations = Vec::new();
+    let builds: [&'static [u8]; 3] = [b"build-1", b"build-2", b"build-3"];
+    for (index, build_id) in builds.into_iter().enumerate() {
+        let version = root.join(format!("version-{index}"));
+        fs::create_dir_all(&version).expect("create version");
+        let (archive, manifest, _) = write_fixture_with_build(&version, build_id);
+        let (runtime, lease) = prepare_leased_runtime_from_files(&archive, &manifest, &cache)
+            .expect("prepare version runtime");
+        // Record activity explicitly so the rollback choice does not depend
+        // on wall-clock resolution between back-to-back preparations.
+        drop(lease);
+        let name = runtime
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("generation name")
+            .to_string();
+        let lease = crate::sidecar_runtime_retention::acquire_runtime_lease_at(
+            &cache,
+            &name,
+            1_000 * (index as u128 + 1),
+        )
+        .expect("record version activity");
+        // Startup cleanup runs after the sidecar is ready, then the app
+        // exits for the next update.
+        cleanup_stale_sidecar_runtimes(&runtime);
+        generations.push(runtime);
+        if index < 2 {
+            drop(lease);
+        } else {
+            let remaining: Vec<_> = fs::read_dir(&cache)
+                .expect("list cache")
+                .filter_map(Result::ok)
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .filter(|name| !name.starts_with('.'))
+                .collect();
+            assert_eq!(remaining.len(), 2, "remaining generations: {remaining:?}");
+            assert!(
+                !generations[0].exists(),
+                "a generation two updates old must be reclaimed"
+            );
+            assert!(
+                generations[1].exists(),
+                "the previous generation is the rollback copy"
+            );
+            assert!(
+                generations[2].exists(),
+                "the current generation must survive"
+            );
+            drop(lease);
+        }
+    }
+    fs::remove_dir_all(root).expect("remove test root");
+}
+
+#[test]
+fn cleanup_retains_leased_generations_beyond_the_rollback_copy() {
     let root = test_root("rollback");
     let current = root.join("v2-current");
     create_required_runtime(&current);
-    fs::write(
-        current.join(".complete.json"),
-        serde_json::to_vec(&CompletionMarker {
-            schema_version: MANIFEST_SCHEMA_VERSION,
-            payload_sha256: "a".repeat(64),
-            tree_sha256: "c".repeat(64),
-        })
-        .expect("serialize current marker"),
-    )
-    .expect("write current marker");
-
+    write_complete_marker(&current, 'a', 'c');
     let older = root.join("v2-older");
     create_required_runtime(&older);
-    fs::write(
-        older.join(".complete.json"),
-        serde_json::to_vec(&CompletionMarker {
-            schema_version: MANIFEST_SCHEMA_VERSION,
-            payload_sha256: "b".repeat(64),
-            tree_sha256: "d".repeat(64),
-        })
-        .expect("serialize older marker"),
-    )
-    .expect("write older marker");
-    thread::sleep(Duration::from_millis(20));
-
+    write_complete_marker(&older, 'b', 'd');
     let legacy = root.join("legacy");
     create_required_runtime(&legacy);
     fs::write(
@@ -640,16 +710,49 @@ fn cleanup_retains_all_complete_generations_without_process_leases() {
         .expect("serialize legacy marker"),
     )
     .expect("write legacy marker");
+    let incomplete = root.join("incomplete");
+    fs::create_dir(&incomplete).expect("create incomplete cache");
+
+    let running_older_copy =
+        crate::sidecar_runtime_retention::acquire_runtime_lease_at(&root, "v2-older", 1_000)
+            .expect("lease older generation");
+    drop(
+        crate::sidecar_runtime_retention::acquire_runtime_lease_at(&root, "legacy", 2_000)
+            .expect("record legacy activity"),
+    );
+    let current_lease =
+        crate::sidecar_runtime_retention::acquire_runtime_lease_at(&root, "v2-current", 3_000)
+            .expect("lease current generation");
 
     cleanup_stale_sidecar_runtimes(&current);
     assert!(
+        !incomplete.exists(),
+        "incomplete generations are still removed"
+    );
+    assert!(
         legacy.exists(),
-        "legacy complete runtime must remain available for rollback"
+        "the newest other generation is the rollback copy"
     );
     assert!(
         older.exists(),
-        "content-addressed generations may still serve running older apps"
+        "a generation a running app holds must never be retired"
     );
+    assert!(
+        root.join(crate::sidecar_runtime_retention::LEASE_DIR_NAME)
+            .join("v2-current")
+            .exists(),
+        "cleanup must not treat the lease directory as an incomplete generation"
+    );
+
+    drop(running_older_copy);
+    cleanup_stale_sidecar_runtimes(&current);
+    assert!(
+        !older.exists(),
+        "an unleased generation beyond the rollback copy is retired"
+    );
+    assert!(legacy.exists());
+    assert!(current.exists());
+    drop(current_lease);
     fs::remove_dir_all(root).expect("remove test root");
 }
 
