@@ -223,13 +223,21 @@ fn concurrent_preparations_extract_once_under_the_process_lock() {
         1,
         "only the lock winner may extract"
     );
+    // Exactly one generation; the lease directory is cache metadata.
     assert_eq!(
         fs::read_dir(&cache)
             .expect("read cache")
             .filter_map(Result::ok)
-            .filter(|entry| entry.path().is_dir())
+            .filter(|entry| entry.path().is_dir()
+                && entry.file_name() != crate::sidecar_runtime_retention::LEASE_DIR_NAME)
             .count(),
         1
+    );
+    assert!(
+        cache
+            .join(crate::sidecar_runtime_retention::LEASE_DIR_NAME)
+            .is_dir(),
+        "every preparation must lease its generation"
     );
     fs::remove_dir_all(root).expect("remove test root");
 }
