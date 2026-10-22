@@ -1219,6 +1219,9 @@ test("Windows startup PRs compile native code without release authority", async 
     assert.ok(workflow.includes(`Invoke-NativeTest '${filter}' 1 -Exact`), filter);
   }
   assert.match(workflow, /Invoke-NativeTest 'sidecar_diagnostics::tests' 9/);
+  // Runtime generation retention (#5981) must run on Windows for every PR.
+  assert.match(workflow, /Invoke-NativeTest 'sidecar_archive::tests' 24/);
+  assert.match(workflow, /Invoke-NativeTest 'sidecar_runtime_retention::tests' 5/);
   assert.match(workflow, /if \(\$testExitCode -ne 0\) \{ throw/);
   assert.match(workflow, /if \(\(\$output -join "`n"\) -notmatch \$summary\) \{ throw/);
   assert.doesNotMatch(workflow, /pull_request_target|secrets:|contents: write|workflow_dispatch|release\.yml|release-candidate\.yml/);
