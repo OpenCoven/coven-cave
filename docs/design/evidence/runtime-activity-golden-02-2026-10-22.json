@@ -6,8 +6,13 @@
     5767,
     5761
   ],
-  "scope": "golden-02: no, disabled, unverified and provider-withheld reasoning, plus opaque continuation state, across display, replay, history, copy/export, logs, notifications, analytics and caches. Development-head evidence; NOT an exact-candidate qualification.",
-  "candidateNomination": "none: #5767 has no nominated candidate as of 2026-10-22. The support claim stays withheld until Val nominates a candidate and this packet is rerun on it, or Val records a disposition.",
+  "scope": "golden-02: no, disabled, unverified and provider-withheld reasoning, plus opaque continuation state, across display, replay, history, copy/export, logs, notifications, analytics and caches. Exact-candidate evidence for the golden-02 candidate Val nominated; not a full #5767 packet acceptance.",
+  "candidateNomination": {
+    "candidate": "4588a3d253bfbdd00b69965f4c5dd5612774290c",
+    "nominatedBy": "Val, 2026-10-22 (recorded on #6057 comment 6350216592 and #5767 comment 6350217147)",
+    "meaning": "golden-02 only: PR #6176 head = main 611759242 + golden-02 changes. Not a nomination or acceptance of the full #5767 114-entry packet.",
+    "packetCommit": "This file is added in a docs-only commit on top of the candidate. Every source hash below is computed from the candidate tree."
+  },
   "verificationBaseOid": "61175924280813bcee6e3f6d97612a81daed9010",
   "states": {
     "S1-absent": "Path has no reasoning adapter: runtimeIdentity.activity.reasoning = unsupported.",
@@ -20,7 +25,8 @@
     "existing-test-evidence": "covered by a test on main before this packet",
     "new-test-evidence-this-packet": "covered by a test added or extended in this packet",
     "by-construction-no-dedicated-test": "the code path takes no reasoning input or stores only projected payloads; no dedicated test",
-    "out-of-scope": "no reasoning input exists on this surface, or another issue owns it"
+    "out-of-scope": "no reasoning input exists on this surface, or another issue owns it",
+    "exact-candidate": "every matrix cell's evidence (new or existing tests) was rerun green on the candidate head; by-construction and out-of-scope cells carry their recorded rationale"
   },
   "matrix": {
     "liveSse": {
@@ -265,11 +271,70 @@
     }
   },
   "omissions": [
-    "Exact-candidate rerun: no candidate nominated (#5767).",
     "Real provider canary and real daemon vertical slice: non-goals here.",
     "Human/device acceptance, including VoiceOver and physical lock screen: separate gate.",
     "Tauri encrypted offline cache: not exercised from a browser.",
-    "Packaged desktop (Tauri) copy/export: only the web production build was exercised."
+    "Packaged desktop (Tauri) copy/export: only the web production build was exercised.",
+    "Hosted CI E2E shards on the candidate: a runner package outage (#6178) blocked them; the same spec passed locally on the candidate."
   ],
-  "contributors": "coven-cave-a8 (a concurrent session) wrote the original fixture, the desktop test, the D1 fix and the route-test extensions; Val directed adoption. coven-cave-e0 integrated, verified and extended them."
+  "contributors": "coven-cave-a8 (a concurrent session) wrote the original fixture, the desktop test, the D1 fix and the route-test extensions; Val directed adoption. coven-cave-e0 integrated, verified and extended them.",
+  "candidateRun": {
+    "head": "4588a3d253bfbdd00b69965f4c5dd5612774290c",
+    "headAfter": "4588a3d253bfbdd00b69965f4c5dd5612774290c",
+    "treeCleanBefore": true,
+    "treeCleanAfter": true,
+    "nextBuildId": "6fesbn9-TSWNNqXtpKqpX",
+    "startedAt": {
+      "hermes": "2026-10-22T20:10:55Z",
+      "tests-wired": "2026-10-22T20:10:41Z",
+      "claude": "2026-10-22T20:10:42Z",
+      "typecheck": "2026-10-22T20:09:31Z",
+      "test-api": "2026-10-22T20:27:56Z",
+      "playwright": "2026-10-22T20:42:53Z",
+      "corpus": "2026-10-22T20:10:42Z",
+      "lint": "2026-10-22T20:09:48Z",
+      "test-app": "2026-10-22T20:11:03Z",
+      "xcodegen": "2026-10-22T20:44:56Z",
+      "native": "2026-10-22T20:44:57Z"
+    },
+    "results": {
+      "typecheck": 0,
+      "lint": 0,
+      "checkTestsWired": 0,
+      "corpus": 0,
+      "claudeRoute": 0,
+      "hermesRoute": 0,
+      "testApp": "1475 files passed",
+      "testApi": "538 files passed",
+      "playwrightFullSpec": "14 passed, none flaky, CI=true production standalone build",
+      "xcodegen": 0,
+      "native": "AgentActivityUITests 13/13 + ActivityCorpusTests 5/5; 18 starts for 18 tests, no retries"
+    },
+    "nativeClient": {
+      "configuration": "Debug simulator",
+      "simulator": "golden02-6057, iPhone 17, iOS 27.0 (24A434), D7939CFA-054E-4568-816F-E6E38DD9A876; owned, shut down after the run",
+      "xcode": "27.1 (27A9275)",
+      "version": "0.5.14",
+      "build": "2026101514",
+      "executableSha256": "08f113876375755d2c241b95fd7ceb546a10034c63a0210ca92fa96c75932c86"
+    },
+    "firstFailuresAndRetries": "None on the candidate run: every lane passed on its first attempt. The development-head first failures are listed in attempts[].",
+    "logSha256": {
+      "claude.log": "5a7106db1b710b5f7bbf68f517b2b7cfca0e3b07d629cbda5fb47c47f29e676b",
+      "corpus.log": "c1b4631a5a19d9ac8911e936b7ffaf1026582b3836cd075c5178b09f50624f90",
+      "hermes.log": "341de1a20ea0c9660664a487cd7296d84b29065e3ffa891f481b8d5de42f7d9d",
+      "lint.log": "b721a02998c92bfe174378b4be5dce54c40941a6b2b2588d0f2f8546099d2253",
+      "native.log": "4b4c485eee935221f94714956a6c41fabdf7c16421e849250cba306025459534",
+      "playwright.log": "9ca250bc18b0a7e4f97ad785c39135726828ca42e524d345df27b235376f5b61",
+      "test-api.log": "917053f77f0f268399385521d60b150f162f80640f5296b3a3106e843d398ce2",
+      "test-app.log": "bec5b3f17230e47edb14cd7995e3e08cecc64705bbd194a5e77b7dc195eca1d0",
+      "tests-wired.log": "a439e19436195930f8a6e45f29f9a2c4975ea613004abdf8b12f0c36919fb976",
+      "typecheck.log": "c9b14278a8d504f158202da1aa371f87b341c7bc9035c301cdf4185848f8e3f0",
+      "xcodegen.log": "43dd0389d253465d89926bdd44d845938a1e94775ecb0dc56d115c5bb5e8335f"
+    }
+  },
+  "hostedCi": {
+    "run": "39834989904 (CI) attempts 1 and 2",
+    "result": "failure only on E2E shards at 'Playwright system packages did not install in 2 attempts of 15m each'; no tests ran on those shards; main da32081f fails the same way. Tracked in #6178. Every other check passed. Recorded as a named omission for hosted E2E on the candidate."
+  }
 }
