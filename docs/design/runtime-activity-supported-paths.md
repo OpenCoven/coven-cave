@@ -35,10 +35,14 @@ continuation state, real conversations or arbitrary error payloads in the packet
 | --- | --- | --- |
 | Hermes Responses API | `hermes-responses-v1`; model identity comes from the served response, not the requested alias | Controlled-provider daemon/client lanes; actual service requires an authorized canary |
 | Codex direct JSONL | Installed help capabilities plus a selected reviewed schema in `codex-routing.ts` | An unknown version uses the existing Coven fallback; it is not admitted as a direct structured path |
+| Codex · Ollama / Codex · LM Studio, direct | Local endpoint, installed tool-capable model and existing Codex schema admission; no cloud fallback | Launch/preflight fixtures from #6088 do not qualify activity end to end. Local-model reasoning/tool exposure through live UI, replay and history remains unverified under #5763 / #6071 |
+| Codex · Ollama / Codex · LM Studio, Coven fallback | Existing local adapter manifest when the Codex version lacks direct admission; custom endpoints remain refused on this path | A successful launch or local inventory is not tool/reasoning evidence. Qualify this transport separately under #5763 / #6071; do not inherit direct-path receipts |
 | OpenCode run JSON | Verified launch-file/help/version contract and `opencode-compatibility.ts` | Read-only execution remains refused with 501; never switch to Full access to turn a failed canary green |
 | Grok direct CLI | Capability probe and reviewed schema in `grok-compatibility.ts` | No compatible schema means plain output; structured tools/reasoning remain unqualified |
 | Coven relay / SSH | Existing authenticated launch and environment boundary | A direct/API fixture does not qualify relay or remote transport |
 | Native iOS | Shared decoder corpus plus real native transport/rendering and device acceptance | Simulator/source checks cannot replace human VoiceOver or physical-device performance |
+
+The local Codex paths above were added by [#6088](https://github.com/OpenCoven/coven-cave/pull/6088), after the frozen 2026-10-18 packet. Their presence in the application does not extend that packet's supported activity claims. The merged local inventory deliberately retains every installed tool-capable model, including older releases; cloud inventories continue to apply the newest-supported-release-per-family filter. This is the existing local-inventory exception, not a new policy change or evidence that a selected model exposes reasoning. See `src/lib/server/runtime-model-options.ts` and its local-backend tests.
 
 Refresh installed versions with `scripts/runtime-activity-runtime-matrix.mjs`.
 It runs bounded help/version probes with credential-bearing environment variables
