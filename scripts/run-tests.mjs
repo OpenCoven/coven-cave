@@ -812,6 +812,7 @@ export const SUITES = {
     "src/lib/chat-tool-events.test.ts",
     "src/lib/chat-tool-outcomes.test.ts",
     "src/lib/chat-tool-provenance.test.ts",
+    "src/lib/chat-activity-replay-guards.test.ts",
     "src/lib/chat-reasoning-blocks.test.ts",
     "src/lib/chat-display-disclosure.test.ts",
     "src/lib/server/legacy-reasoning-projection.test.ts",
