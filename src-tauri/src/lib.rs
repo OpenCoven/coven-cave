@@ -110,6 +110,8 @@ mod windows_tray;
 mod windows_command;
 #[cfg(all(desktop, target_os = "windows"))]
 mod windows_process_job;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod windows_update_recovery;
 
 #[cfg(desktop)]
 use desktop_reachability::*;
