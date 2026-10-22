@@ -133,7 +133,7 @@ function isInventoryResponse(
       typeof option.id === "string" &&
       typeof option.label === "string"
     ) &&
-    (value.discoveryIssue === undefined || ["discovery-failed", "runtime-managed", "remote-runtime", "local-only", "profile-managed", "local-server-unavailable", "local-endpoint-invalid", "local-no-tool-models", "local-models-on-other-computers"].includes(value.discoveryIssue)) &&
+    (value.discoveryIssue === undefined || ["discovery-failed", "runtime-managed", "remote-runtime", "local-only", "profile-managed", "local-server-unavailable", "local-endpoint-invalid", "local-no-tool-models", "local-models-on-other-computers", "local-models-in-cloud"].includes(value.discoveryIssue)) &&
     typeof value.provenance === "string" &&
     PROVENANCE.has(value.provenance as RuntimeModelInventoryProvenance) &&
     typeof value.freshness === "string" &&
