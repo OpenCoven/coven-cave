@@ -113,33 +113,65 @@ pub(super) fn activate_extracted_cache_with(
     unreachable!("activation attempts are bounded by a non-empty delay schedule")
 }
 
+fn available_cache_space(path: &Path) -> Result<u64, String> {
+    fs2::available_space(path).map_err(|error| {
+        format!(
+            "could not determine free space for sidecar cache {}: {error}",
+            path.display()
+        )
+    })
+}
+
+pub(super) fn prepare_leased_runtime_from_files(
+    archive_path: &Path,
+    manifest_path: &Path,
+    cache_root: &Path,
+) -> Result<(PathBuf, RuntimeLease), String> {
+    prepare_leased_runtime_with_space(
+        archive_path,
+        manifest_path,
+        cache_root,
+        &available_cache_space,
+    )
+}
+
+#[cfg(test)]
 pub(super) fn prepare_runtime_from_files(
     archive_path: &Path,
     manifest_path: &Path,
     cache_root: &Path,
 ) -> Result<PathBuf, String> {
-    prepare_runtime_from_files_with_space(archive_path, manifest_path, cache_root, &|path| {
-        fs2::available_space(path).map_err(|error| {
-            format!(
-                "could not determine free space for sidecar cache {}: {error}",
-                path.display()
-            )
-        })
-    })
+    prepare_runtime_from_files_with_space(
+        archive_path,
+        manifest_path,
+        cache_root,
+        &available_cache_space,
+    )
 }
 
+#[cfg(test)]
 pub(super) fn prepare_runtime_from_files_with_space(
     archive_path: &Path,
     manifest_path: &Path,
     cache_root: &Path,
     available_space: &(dyn Fn(&Path) -> Result<u64, String> + Sync),
 ) -> Result<PathBuf, String> {
+    prepare_leased_runtime_with_space(archive_path, manifest_path, cache_root, available_space)
+        .map(|(runtime, _lease)| runtime)
+}
+
+/// Prepares the generation and leases it in one cache-locked scope. Startup
+/// cleanup retires generations under the same lock, so a generation found
+/// ready here cannot be retired before its lease exists.
+fn prepare_leased_runtime_with_space(
+    archive_path: &Path,
+    manifest_path: &Path,
+    cache_root: &Path,
+    available_space: &(dyn Fn(&Path) -> Result<u64, String> + Sync),
+) -> Result<(PathBuf, RuntimeLease), String> {
     let manifest = read_manifest(manifest_path)?;
     let key = cache_key(&manifest);
     let destination = cache_root.join(&key);
-    if cache_is_ready(&destination, &manifest) {
-        return Ok(destination);
-    }
     fs::create_dir_all(cache_root).map_err(|error| {
         format!(
             "could not create sidecar cache {}: {error}",
@@ -148,7 +180,8 @@ pub(super) fn prepare_runtime_from_files_with_space(
     })?;
     let _lock = acquire_cache_lock(cache_root)?;
     if cache_is_ready(&destination, &manifest) {
-        return Ok(destination);
+        let lease = acquire_runtime_lease(cache_root, &key)?;
+        return Ok((destination, lease));
     }
 
     cleanup_staging_before_extraction(cache_root, &key)?;
@@ -218,5 +251,6 @@ pub(super) fn prepare_runtime_from_files_with_space(
         |source, destination| fs::rename(source, destination),
         thread::sleep,
     )?;
-    Ok(destination)
+    let lease = acquire_runtime_lease(cache_root, &key)?;
+    Ok((destination, lease))
 }
