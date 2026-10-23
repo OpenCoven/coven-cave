@@ -75,7 +75,7 @@ function planFor(bytes: Buffer, id: string, missionId: string, timezone: string)
 }
 
 async function boundedRead(file: string, limit = MAX_BYTES): Promise<Buffer> {
-  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  const handle = await open(/* turbopackIgnore: true */ file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await handle.stat();
     if (!stat.isFile() || stat.size > limit) refuse("source-size-or-type");
@@ -95,24 +95,24 @@ async function boundedRead(file: string, limit = MAX_BYTES): Promise<Buffer> {
  * by ordinary scheduling, reconciliation, or cancellation. */
 export function createResearchLegacyImporter(options: { home?: string; planRoot?: string; create?: typeof createResearchAutomation } = {}) {
   const home = options.home ?? os.homedir();
-  const planRoot = options.planRoot ?? path.join(caveHome(), "research-automation-import-plans");
+  const planRoot = options.planRoot ?? path.join(/* turbopackIgnore: true */ caveHome(), "research-automation-import-plans");
   const create = options.create ?? createResearchAutomation;
   async function source(id: string): Promise<Buffer> {
     if (!ID.test(id)) refuse("invalid-identity");
-    const base = await realpath(home);
-    const file = path.join(base, ".codex", "automations", id, "automation.toml");
+    const base = await realpath(/* turbopackIgnore: true */ home);
+    const file = path.join(/* turbopackIgnore: true */ base, ".codex", "automations", id, "automation.toml");
     // Refuse all links in the selected relative path, including parent links.
-    if (await realpath(file) !== file) refuse("source-link");
+    if (await realpath(/* turbopackIgnore: true */ file) !== file) refuse("source-link");
     return boundedRead(file);
   }
   return {
     async preview(id: string, missionId: string, timezone: string): Promise<ResearchLegacyImportPlan> {
       const plan = planFor(await source(id), id, missionId, timezone);
-      await mkdir(planRoot, { recursive: true, mode: 0o700 });
-      const file = path.join(planRoot, `${plan.planId}.json`);
+      await mkdir(/* turbopackIgnore: true */ planRoot, { recursive: true, mode: 0o700 });
+      const file = path.join(/* turbopackIgnore: true */ planRoot, `${plan.planId}.json`);
       const serialized = JSON.stringify(plan);
       if (Buffer.byteLength(serialized) > MAX_PLAN_BYTES) refuse("plan-too-large");
-      try { await writeFile(file, serialized, { flag: "wx", mode: 0o600 }); }
+      try { await writeFile(/* turbopackIgnore: true */ file, serialized, { flag: "wx", mode: 0o600 }); }
       catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
         if ((await boundedRead(file, MAX_PLAN_BYTES)).toString() !== serialized) refuse("plan-conflict");
@@ -121,7 +121,7 @@ export function createResearchLegacyImporter(options: { home?: string; planRoot?
     },
     async apply(planId: string) {
       if (!/^[a-f0-9]{64}$/.test(planId)) refuse("invalid-plan");
-      const saved: unknown = JSON.parse((await boundedRead(path.join(planRoot, `${planId}.json`), MAX_PLAN_BYTES)).toString());
+      const saved: unknown = JSON.parse((await boundedRead(path.join(/* turbopackIgnore: true */ planRoot, `${planId}.json`), MAX_PLAN_BYTES)).toString());
       if (!saved || typeof saved !== "object" || !("id" in saved) || typeof saved.id !== "string" || !("missionId" in saved) || typeof saved.missionId !== "string" || !("input" in saved) || !saved.input || typeof saved.input !== "object" || !("timezone" in saved.input) || typeof saved.input.timezone !== "string") refuse("invalid-plan");
       const plan = planFor(await source(saved.id), saved.id, saved.missionId, saved.input.timezone);
       if (plan.planId !== planId || JSON.stringify(plan) !== JSON.stringify(saved)) refuse("source-changed-or-plan-invalid");
