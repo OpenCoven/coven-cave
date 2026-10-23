@@ -81,7 +81,7 @@ test("after the last attempt the pull fails with a clear error", () => {
 test("run executes the command in the image as the runner, with the host tree and toolchain", () => {
   const home = mkdtempSync(path.join(tmpdir(), "pw-home-"));
   const { status, calls } = run(["run", "pnpm", "exec", "playwright", "test", "--shard=3/8"], {
-    env: { HOME: home, RUNNER_TEMP: "", CI: "true", NEXT_PUBLIC_CAVE_CRAFTS: "1", PLAYWRIGHT_BROWSERS_PATH: "/host" },
+    env: { HOME: home, RUNNER_TEMP: "", CI: "true", SHELL: "/bin/bash", NEXT_PUBLIC_CAVE_CRAFTS: "1", PLAYWRIGHT_BROWSERS_PATH: "/host" },
   });
   assert.equal(status, 0);
   const args = calls.filter((c) => c.startsWith("arg ")).map((c) => c.slice(4));
@@ -94,7 +94,7 @@ test("run executes the command in the image as the runner, with the host tree an
   assert.equal(new Set(volumes).size, volumes.length, "no duplicate mount points");
   assert.ok(volumes.includes("/etc/passwd:/etc/passwd:ro"));
   const envs = flag("-e");
-  for (const name of ["CI", "HOME", "PATH", "NEXT_PUBLIC_CAVE_CRAFTS"]) assert.ok(envs.includes(name), name);
+  for (const name of ["CI", "HOME", "PATH", "SHELL", "NEXT_PUBLIC_CAVE_CRAFTS"]) assert.ok(envs.includes(name), name);
   // The image's browsers win over any host setting.
   assert.ok(!envs.includes("PLAYWRIGHT_BROWSERS_PATH"));
   assert.ok(envs.includes("PLAYWRIGHT_BROWSERS_PATH=/ms-playwright"));

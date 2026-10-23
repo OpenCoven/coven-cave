@@ -75,7 +75,7 @@ run() {
   local env_args=() name
   while IFS= read -r name; do
     env_args+=(-e "$name")
-  done < <(compgen -e | grep -E '^(CI|HOME|PATH|LANG|TZ|GITHUB_.+|RUNNER_.+|NEXT_PUBLIC_.+|CAVE_.+|COVEN_.+|NODE_.+|PNPM_.+|PLAYWRIGHT_.+|npm_config_.+)$' | grep -vx PLAYWRIGHT_BROWSERS_PATH || true)
+  done < <(compgen -e | grep -E '^(CI|HOME|PATH|SHELL|USER|LOGNAME|LANG|TZ|GITHUB_.+|RUNNER_.+|NEXT_PUBLIC_.+|CAVE_.+|COVEN_.+|NODE_.+|PNPM_.+|PLAYWRIGHT_.+|npm_config_.+)$' | grep -vx PLAYWRIGHT_BROWSERS_PATH || true)
 
   exec docker run --rm --init --ipc=host --network=host \
     --user "$(id -u):$(id -g)" \
