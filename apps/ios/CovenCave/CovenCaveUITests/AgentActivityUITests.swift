@@ -63,7 +63,7 @@ final class AgentActivityUITests: XCTestCase {
         tool.tap()
         XCTAssertTrue(app.staticTexts["Checking the relevant source."].exists)
         XCTAssertTrue(app.buttons["Show output for Read"].exists)
-        XCUIDevice.shared.press(.home)
+        app.sendToBackground()
         app.activate()
         XCTAssertTrue(app.staticTexts["Checking the relevant source."].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Show output for Read"].exists)
@@ -148,14 +148,14 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(before.staticTexts["Reasoning summary"].frame.minY, before.frame.minY)
         XCTAssertLessThanOrEqual(before.staticTexts["Reasoning summary"].frame.maxY, before.frame.maxY)
         XCTAssertGreaterThanOrEqual(before.frame.minX, 0)
-        XCTAssertLessThanOrEqual(before.frame.maxX, app.frame.width)
+        XCTAssertLessThanOrEqual(before.frame.maxX, viewport(app).width)
         try attachScreenshot(named: "timeline-native-accessibility-start")
         let tool = timelineTool(in: app)
         for _ in 0..<5 where !tool.isHittable { transcript.swipeUp() }
         // A tappable row may still sit under the translucent sticky date.
         // Place the entire chip below that header for visual qualification.
-        for _ in 0..<4 where abs(tool.frame.minY - app.frame.height * 0.35) > 20 {
-            let delta = min(150, max(-150, app.frame.height * 0.35 - tool.frame.minY))
+        for _ in 0..<4 where abs(tool.frame.minY - viewport(app).height * 0.35) > 20 {
+            let delta = min(150, max(-150, viewport(app).height * 0.35 - tool.frame.minY))
             let start = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
             start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: delta)),
                         withVelocity: .slow, thenHoldForDuration: 0.3)
@@ -169,7 +169,7 @@ final class AgentActivityUITests: XCTestCase {
                                     "the wrapping title must not draw over the preceding tool")
         XCTAssertTrue(tool.label.contains("Read · src/example.ts · Succeeded"))
         XCTAssertGreaterThanOrEqual(tool.frame.minX, 0)
-        XCTAssertLessThanOrEqual(tool.frame.maxX, app.frame.width)
+        XCTAssertLessThanOrEqual(tool.frame.maxX, viewport(app).width)
         try attachScreenshot(named: "timeline-native-accessibility-tool")
     }
 
@@ -235,7 +235,7 @@ final class AgentActivityUITests: XCTestCase {
         app.buttons["Show output for Read"].tap()
         let result = app.staticTexts["NATIVE_TOOL_OUTPUT_PREVIEW\nSecond result line."]
         XCTAssertTrue(result.waitForExistence(timeout: 5))
-        XCUIDevice.shared.press(.home)
+        app.sendToBackground()
         app.activate()
         XCTAssertTrue(app.buttons["Show output for Read"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Tool output"].exists)
@@ -340,7 +340,7 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertTrue(identity.isHittable, "the reported identity is visible in the transcript")
         try attachScreenshot(named: "runtime-identity-reported")
 
-        XCUIDevice.shared.press(.home)
+        app.sendToBackground()
         app.activate()
         XCTAssertTrue(identity.waitForExistence(timeout: 5), "the response report survives background/foreground")
         assertReportedIdentity(identity)
@@ -352,9 +352,9 @@ final class AgentActivityUITests: XCTestCase {
         let identity = reportedIdentity(in: app)
         assertReportedIdentity(identity)
         XCTAssertTrue(identity.isHittable, "the report remains reachable at accessibility text size")
-        XCTAssertLessThanOrEqual(identity.frame.maxX, app.frame.maxX,
+        XCTAssertLessThanOrEqual(identity.frame.maxX, viewport(app).maxX,
                                  "the identity stays within the viewport")
-        XCTAssertGreaterThanOrEqual(identity.frame.minX, app.frame.minX,
+        XCTAssertGreaterThanOrEqual(identity.frame.minX, viewport(app).minX,
                                     "the identity does not overflow the leading edge")
         try attachScreenshot(named: "runtime-identity-accessibility-text")
 
@@ -373,8 +373,10 @@ final class AgentActivityUITests: XCTestCase {
         // A slow drag held at its end, so the scroll stops where the finger
         // did: a released flick carries momentum past the start of the rows
         // now that the wrapped Run details summary sits above them (#6045).
+        // Ten tenth-height drags, not five: a short landscape viewport (iPhone
+        // Duo's open inner display is 669pt tall) needs more of them.
         let upperThird = visibleTop + (transcript.frame.maxY - visibleTop) / 3
-        for _ in 0..<5 {
+        for _ in 0..<10 {
             if identity.frame.minY <= upperThird { break }
             transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
                 .press(forDuration: 0.05, thenDragTo: transcript.coordinate(
@@ -427,6 +429,15 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertTrue(identity.label.contains("Tool details: available"))
         XCTAssertTrue(identity.label.contains("Reasoning summaries: not verified on this path"))
         XCTAssertFalse(identity.label.contains("gpt-5.6"), "the familiar's current model cannot overwrite a response report")
+    }
+
+    /// The app's viewport, in the same space as element frames. On iPhone
+    /// Duo's open inner display `app.frame` reports the portrait-native panel
+    /// (669pt wide) while elements lay out in the landscape window, so
+    /// measure the window instead.
+    @MainActor
+    private func viewport(_ app: XCUIApplication) -> CGRect {
+        app.windows.firstMatch.frame
     }
 
     /// Saves a full-screen PNG next to the test run and attaches it, so the

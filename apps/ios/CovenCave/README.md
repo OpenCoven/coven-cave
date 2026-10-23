@@ -156,7 +156,10 @@ simulator. Each display puts the status bar in a column on the trailing
 edge, so trailing safe-area insets are large and opposite insets are never
 equal. Layout follows size classes and live window geometry, never the
 device idiom, the interface orientation, or `UIScreen.main`. Opening or
-closing the device resizes the window.
+closing the device resizes the window. Two columns need 700pt of width
+(`SplitWidth`). The open inner display (867pt inside its safe area) splits
+the list from the conversation. Rotated upright (669pt), it stacks like a
+phone, even though the system reports a regular width there.
 
 The hinge arrives as an iOS 27.1 *division* reserved region.
 `Theme/DisplayFold.swift` reads it once at the root and publishes
