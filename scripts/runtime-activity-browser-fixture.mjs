@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { freePort, startCave, stopCave } from './client-v1-conformance.mjs';
+import { loopbackOriginResponds } from './dev-app-origin-health.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [execute, evidence, mode] = process.argv.slice(2);
@@ -28,6 +29,7 @@ const projectRoot = path.join(root, 'project');
 const token = 'fixture-browser-' + randomUUID();
 const adminToken = 'fixture-sidecar-' + randomUUID();
 const providerToken = 'fixture-provider-' + randomUUID();
+const readinessToken = 'fixture-readiness-' + randomUUID();
 const marker = 'CAVE_BROWSER_' + randomUUID();
 const covenBin = process.env.COVEN_BIN || execFileSync('which', ['coven'], { encoding: 'utf8' }).trim();
 assert.ok(path.isAbsolute(covenBin), 'COVEN_BIN must identify an absolute qualified executable.');
@@ -75,6 +77,7 @@ try {
     COVEN_PREFERENCES_PATH: path.join(root, 'preferences.json'), COVEN_THEME_PATH: path.join(root, 'theme.json'),
     CAVE_PROJECTS_PATH_OVERRIDE: path.join(root, 'projects.json'), CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: path.join(root, 'permissions.json'),
     CAVE_QUEUE_PROJECT_PATH_OVERRIDE: path.join(root, 'queue-project.json'),
+    ...(human ? { COVEN_CAVE_DEV_PROBE_TOKEN: readinessToken } : {}),
   });
   delete process.env.COVEN_CAVE_E2E;
   const scenarioBytes = await readFile(path.join(repo, human ? 'scripts/runtime-activity-human-scenario.json' : 'apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-http-v1.json'));
@@ -141,9 +144,14 @@ try {
   report.serverPid = cave.child.pid;
   const connection = { origin: cave.origin, token, adminToken, project, marker, familiarId: 'nativeactivity' };
   if (human) {
+    // Match dev-app.sh's initial document readiness budget, not its short
+    // already-running origin/watchdog probe. API health can precede the page.
+    assert.ok(await loopbackOriginResponds({ port: cave.port, probeToken: readinessToken, timeoutMs: 180_000 }),
+      'The native wrapper must authenticate the production fixture readiness probe.');
+    report.desktopReadinessVerified = true;
     // Private handoff for launching the native wrapper against the SAME isolated
     // daemon and homes. These are fixture credentials, never a user's vault.
-    const names = ['COVEN_HOME', 'COVEN_CAVE_HOME', 'COVEN_SOCKET', 'COVEN_BIN',
+    const names = ['COVEN_HOME', 'COVEN_CAVE_HOME', 'COVEN_SOCKET', 'COVEN_BIN', 'COVEN_CAVE_DEV_PROBE_TOKEN',
       'COVEN_WORKSPACE_ROOT', 'COVEN_WORKSPACES_ROOT', 'COVEN_VAULT_FILE',
       'COVEN_CAVE_ENV_FILE', 'COVEN_CAVE_LOCAL_VAULT_FILE', 'COVEN_CAVE_LOCAL_VAULT_KEY_FILE',
       'COVEN_PREFERENCES_PATH', 'COVEN_THEME_PATH', 'CAVE_PROJECTS_PATH_OVERRIDE',

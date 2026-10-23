@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-23",
+  "issue": 5765,
+  "pullRequest": 6108,
+  "layoutDecision": {
+    "actor": "Val",
+    "verbatim": "Keep inline details and wide Activity rail",
+    "evidence": "https://github.com/OpenCoven/coven-cave/issues/5765#issuecomment-6372948697",
+    "viewports": [
+      1720,
+      1440,
+      390
+    ],
+    "chatRowThreshold": 1280
+  },
+  "environment": {
+    "macOS": "27.0.1 (26A434)",
+    "browser": "Dia 1.54.2",
+    "node": "v24.22.0"
+  },
+  "web": {
+    "candidate": {
+      "head": "abd44932de64af38b84ab4f03c3a81b6457bf437",
+      "buildId": "PQ9jzy0tP31L9ita68kTm"
+    },
+    "classification": "Built Cave, real isolated daemon, controlled provider tool observations; no actual tool execution.",
+    "providerRequests": 1,
+    "toolInvocations": 0,
+    "fixturePassed": true,
+    "humanAcceptance": "UNTESTED",
+    "scenarioSha256": "6a56a84e6c0b4747584726301c328009ad4bf6c30778271344b9d71352164927",
+    "covenVersion": "coven v0.4.10 (engine coven-code 0.8.0, pinned 0.8.0)",
+    "savedProjectionVerified": true,
+    "serverStopped": true,
+    "daemonStopped": true,
+    "fixtureRootRemoved": true
+  },
+  "browserObservations": {
+    "classification": "automated real browser observations, not human acceptance",
+    "evidence": [
+      {
+        "stage": "parallel-running",
+        "tools": [
+          {
+            "text": "read_file\n\u00b7 a.txt\nRunning\nOBSERVATION\n\nRuntime report \u00b7 hermes \u00b7 version unavailable\n\nApproval and change confirmation unavailable.\n\nINPUT\nPath\na.txt\nRaw JSON",
+            "open": true,
+            "sameFirst": true,
+            "focusRetained": true
+          },
+          {
+            "text": "read_file\n\u00b7 b.txt\nRunning",
+            "open": false,
+            "sameFirst": true,
+            "focusRetained": true
+          }
+        ]
+      },
+      {
+        "stage": "failure",
+        "tools": [
+          {
+            "text": "read_file\n\u00b7 a.txt\nFailed\n16s\nOBSERVATION\n\nRuntime report \u00b7 hermes \u00b7 version unavailable\n\nApproval and change confirmation unavailable.\n\nINPUT\nPath\na.txt\nRaw JSON\nOUTPUT\nTEXT\nquoted\nCopy\nFile unavailable on the first attempt.",
+            "open": true,
+            "sameFirst": true,
+            "focusRetained": true
+          },
+          {
+            "text": "read_file\n\u00b7 b.txt\nSucceeded\n16s",
+            "open": false,
+            "sameFirst": true,
+            "focusRetained": true
+          }
+        ]
+      },
+      {
+        "stage": "retry-running",
+        "tools": [
+          {
+            "text": "read_file\n\u00b7 a.txt\nFailed\n16s\nOBSERVATION\n\nRuntime report \u00b7 hermes \u00b7 version unavailable\n\nApproval and change confirmation unavailable.\n\nINPUT\nPath\na.txt\nRaw JSON\nOUTPUT\nTEXT\nquoted\nCopy\nFile unavailable on the first attempt.",
+            "open": true,
+            "sameFirst": true,
+            "focusRetained": true
+          },
+          {
+            "text": "read_file\n\u00b7 b.txt\nSucceeded\n16s",
+            "open": false,
+            "sameFirst": true,
+            "focusRetained": true
+          },
+          {
+            "text": "read_file\n\u00b7 a.txt\nRunning",
+            "open": false,
+            "sameFirst": true,
+            "focusRetained": true
+          }
+        ]
+      },
+      {
+        "stage": "completed",
+        "tools": [
+          {
+            "text": "read_file\n\u00b7 a.txt\nFailed\n16s\nOBSERVATION\n\nRuntime report \u00b7 hermes \u00b7 version unavailable\n\nApproval and change confirmation unavailable.\n\nINPUT\nPath\na.txt\nRaw JSON\nOUTPUT\nTEXT\nquoted\nCopy\nFile unavailable on the first attempt.",
+            "open": true,
+            "sameFirst": true,
+            "focusRetained": true
+          },
+          {
+            "text": "read_file\n\u00b7 b.txt\nSucceeded\n16s",
+            "open": false,
+            "sameFirst": true,
+            "focusRetained": true
+          },
+          {
+            "text": "read_file\n\u00b7 a.txt\nSucceeded\n5s",
+            "open": false,
+            "sameFirst": true,
+            "focusRetained": true
+          }
+        ]
+      },
+      {
+        "stage": "reloaded",
+        "tools": [
+          {
+            "text": "read_file\n\u00b7 a.txt\nFailed\n16s",
+            "open": false,
+            "sameFirst": false,
+            "focusRetained": false
+          },
+          {
+            "text": "read_file\n\u00b7 b.txt\nSucceeded\n16s",
+            "open": false,
+            "sameFirst": false,
+            "focusRetained": false
+          },
+          {
+            "text": "read_file\n\u00b7 a.txt\nSucceeded\n5s",
+            "open": false,
+            "sameFirst": false,
+            "focusRetained": false
+          }
+        ]
+      }
+    ]
+  },
+  "verification": {
+    "build": "passed, including bundle and standalone budgets",
+    "typecheck": "passed",
+    "lint": "passed",
+    "testWiring": "2095 files wired",
+    "appSuite": "1453 files passed using the previously retained per-file temporary-home harness",
+    "playwright": "15 tests passed: CI=true pnpm exec playwright test tests/chat-activity-acceptance.spec.ts tests/chat-activity-updates.spec.ts --project=desktop",
+    "milestones": "passed",
+    "disclosure": "6 tests passed",
+    "nativeReadiness": "passed after sharing COVEN_CAVE_DEV_PROBE_TOKEN",
+    "nativeRendering": "blocked: sandbox_extension_issue_file_to_process failed (Operation not permitted), then WebKit content process terminated; no rendered-native acceptance",
+    "humanKeyboard": "pending",
+    "humanVoiceOver": "pending"
+  },
+  "retainedFailures": [
+    {
+      "stage": "app-suite-sandbox",
+      "failure": "macOS denied spawning /bin/ps; reproduced even with allow-default sandbox. Original run retained. Per-file temporary-home harness passed."
+    },
+    {
+      "stage": "native-first-launch",
+      "failure": "No readiness proof; fixture omitted shared readiness token. Wrapper stopped before native launch. Fixture cleanup passed."
+    },
+    {
+      "stage": "native-second-launch",
+      "failure": "Readiness and native build passed; WebKit content process termination logged and bare debug executable not addressable by UI tooling. No native render proof. Owned process and fixture cleanup passed."
+    },
+    {
+      "stage": "native-third-launch",
+      "failure": "Separately identified temporary .app confirmed sandbox extension denial before usable native UI. Server/daemon/root cleanup passed; owned wrapper/app stopped."
+    },
+    {
+      "stage": "human-web-startup",
+      "failure": "New readiness assertion used the helper's 1500ms watcher budget on a cold document and failed. Changed to dev-app.sh's existing 180000ms initial-document readiness budget; next fixture startup passed. No assertions disabled."
+    }
+  ],
+  "limits": [
+    "Controlled provider observations do not execute tools or establish execution authority.",
+    "Browser automation is not a human keyboard or VoiceOver pass.",
+    "Desktop native and human acceptance remain incomplete.",
+    "No merge or release performed."
+  ],
+  "sourceSha256": {
+    "scripts/runtime-activity-browser-fixture.mjs": "4e53efb1fc9bea291d8560bc691c5d47f59ee8ab18830292c8d1378f244c77c5",
+    "scripts/runtime-activity-human-scenario.json": "6a56a84e6c0b4747584726301c328009ad4bf6c30778271344b9d71352164927",
+    "src/components/chat-view.tsx": "63bc3ff61075003e9bb39dadd3ea018824f46dd196244b2544c8ffc033793453",
+    "src/components/chat-run-rail.tsx": "bfadbfde4288e0feb51b5787435c3ad8ad45ce1dccc1ec4147a46ac4ada17f4e"
+  },
+  "layoutScreenshots": [
+    "runtime-activity-human-layout-wide-2026-10-23.png",
+    "runtime-activity-human-layout-below-threshold-2026-10-23.png",
+    "runtime-activity-human-layout-narrow-2026-10-23.png"
+  ],
+  "fixtureDelta": "Web four-stage receipt predates the readiness-only fixture patch. Production renderer and scenario are unchanged; subsequent live fixture startups verify authenticated readiness with the patch."
+}
