@@ -33,6 +33,7 @@
 // Unix only: Cave reaches the daemon over its Unix socket here.
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -614,7 +615,39 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
     delete process.env.COVEN_SOCKET;
     await guarded(start());
     const client = await import("../src/lib/server/coven-automations-client.ts");
-    const { createAutomationReadClient } = await import("../src/lib/server/coven-automations-sdk.ts");
+    const { createAutomationReadClient, createAutomationCommandClient } = await import("../src/lib/server/coven-automations-sdk.ts");
+    const research = await import("../src/lib/research-host/lib/codex-automations.ts");
+    const researchContext = { missionId: "canary-mission", automationId: "research-canary-mission", adoptionKey: "research-create:canary-mission" };
+    const researchInput = {
+      name: "Research canary", prompt: "Do not execute; definition-only canary", rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      cwds: [work], familiars: ["canary-familiar"], model: "canary-model", tags: ["research-mission:canary-mission", "preserve-metadata"],
+      reasoningEffort: "", executionEnvironment: "", skillPath: null,
+    };
+    const createdResearch = await research.createCodexAutomation(researchInput, researchContext);
+    assert.equal(createdResearch.status, "PAUSED");
+    for (const unsupported of [{ reasoningEffort: "high" }, { executionEnvironment: "worktree" }, { skillPath: "/fixture/skill" }, { familiars: ["one", "two"] }]) {
+      await assert.rejects(research.createCodexAutomation({ ...researchInput, ...unsupported }, researchContext), { code: "unsupported-research-automation-fields" });
+    }
+    assert.deepEqual(await research.createCodexAutomation(researchInput, researchContext), createdResearch, "same-key create must replay");
+    const researchReader = createAutomationReadClient();
+    const observedResearch = await researchReader.get(researchContext.automationId);
+    assert.ok(observedResearch.routine);
+    assert.equal(observedResearch.routine.id, researchContext.automationId);
+    assert.equal(observedResearch.routine.cwd, work);
+    assert.equal(observedResearch.routine.familiarId, "canary-familiar");
+    assert.equal(observedResearch.routine.model, "canary-model");
+    assert.deepEqual(observedResearch.routine.tags, researchInput.tags);
+    assert.equal(observedResearch.routine.prompt, researchInput.prompt);
+    assert.deepEqual((await researchReader.runs(researchContext.automationId)).runs, []);
+    // Creation prepares a non-running paused definition; activation is explicit.
+    const activeResearch = await research.updateCodexAutomation(researchContext.automationId, { status: "ACTIVE" }, { ...researchContext, expectedRevision: createdResearch.revision, adoptionKey: "research-activate:canary-mission" });
+    const researchPause = { ...researchContext, expectedRevision: activeResearch.revision, adoptionKey: "research-pause:canary-mission:2" };
+    const pausedResearch = await research.updateCodexAutomation(researchContext.automationId, { status: "PAUSED" }, researchPause);
+    assert.equal(pausedResearch.status, "PAUSED");
+    assert.deepEqual(await research.updateCodexAutomation(researchContext.automationId, { status: "PAUSED" }, researchPause), pausedResearch);
+    await assert.rejects(research.updateCodexAutomation(researchContext.automationId, { status: "PAUSED" }, { ...researchPause, adoptionKey: "research-stale:canary-mission" }), { code: "REVISION_CONFLICT" });
+    const removedResearch = await createAutomationCommandClient().tombstone(researchContext.automationId, pausedResearch.revision, { adoptionKey: "research-remove:canary-mission", intent: "Remove canary fixture", principalId: "cave" });
+    assert.notEqual(removedResearch.outcome, "rejected");
     const { GET } = await import("../src/app/api/coven-automations/[id]/events/route.ts");
     const createRoute = await import("../src/app/api/codex-automations/route.ts");
     const overviewRoute = await import("../src/app/api/coven-automation-lifecycle/route.ts");
@@ -684,6 +717,7 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
       },
       stopDaemon: stop,
     }, { runCwd: work }));
+    await assert.rejects(research.getCodexAutomation(researchContext.automationId), { code: "unavailable" });
     return { ...summary, covenVersion: version, daemonStarts: starts };
   } catch (error) {
     const output = Buffer.concat(log).toString("utf8").trim();
@@ -731,6 +765,7 @@ async function main(signal: AbortSignal): Promise<void> {
     "historyResumeAcrossRestart=passed",
     `lifecycleCommands=${result.lifecycleCommands}`,
     "createPaused=passed",
+    "researchHostCreateReplayMetadataPauseConflict=passed",
     "revisionConflict=typed",
     "runNowFailure=reported",
     `occurrences=${result.occurrences}`,

@@ -476,6 +476,7 @@ export const SUITES = {
     "src/lib/server/research-resource-recovery.test.ts",
     "src/lib/server/research-maintenance-boundary.test.ts",
     "src/lib/server/research-package.test.ts",
+    "src/lib/server/research-automation-boundary.test.ts",
     "src/lib/server/saved-links-route.test.ts",
     "src/lib/collect-saved-link-urls.test.ts",
     "src/lib/server/backup-research-resource-restore.test.ts",
