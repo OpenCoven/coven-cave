@@ -53,6 +53,9 @@ jobs:
             if (($output -join "`n") -notmatch $summary) { throw "Unexpected test count: $Filter" }
           }
           Invoke-NativeTest 'sidecar_diagnostics::tests' 9
+          Invoke-NativeTest 'sidecar_archive::tests' 24
+          Invoke-NativeTest 'sidecar_runtime_retention::tests' 5
+          Invoke-NativeTest 'windows_update_recovery::tests' 5
           Invoke-NativeTest 'window_placement::tests' 14
           Invoke-NativeTest 'windows_tray::tests' 2
           Invoke-NativeTest 'windows_window_state::tests' 5
