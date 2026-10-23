@@ -1222,6 +1222,8 @@ test("Windows startup PRs compile native code without release authority", async 
   // Runtime generation retention (#5981) must run on Windows for every PR.
   assert.match(workflow, /Invoke-NativeTest 'sidecar_archive::tests' 24/);
   assert.match(workflow, /Invoke-NativeTest 'sidecar_runtime_retention::tests' 5/);
+  // Declined or failed msiexec recovery (#5981) must compile and run on Windows for every PR.
+  assert.match(workflow, /Invoke-NativeTest 'windows_update_recovery::tests' 5/);
   assert.match(workflow, /if \(\$testExitCode -ne 0\) \{ throw/);
   assert.match(workflow, /if \(\(\$output -join "`n"\) -notmatch \$summary\) \{ throw/);
   assert.doesNotMatch(workflow, /pull_request_target|secrets:|contents: write|workflow_dispatch|release\.yml|release-candidate\.yml/);
