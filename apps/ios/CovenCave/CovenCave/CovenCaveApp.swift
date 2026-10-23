@@ -92,6 +92,9 @@ struct CovenCaveApp: App {
                 }
                 .animation(nil, value: appLock.isPrivacyShielded)
             }
+                // iPhone Duo's hinge, for the split boundary and the fixed
+                // lock/connect compositions to keep clear of (DisplayFold.swift).
+                .readsDisplayFold()
                 .environment(app)
                 .environment(appLock)
                 .defaultAppStorage(appDefaults)
@@ -291,7 +294,9 @@ struct CovenCaveApp: App {
 /// for two real columns (cave-bgmg). Non-Max iPhones report `.compact` in
 /// landscape, collapsing every NavigationSplitView into one sparse full-width
 /// column; ≥700pt of width is the same bar Apple's Max phones clear. Narrow
-/// windows keep the inherited class untouched.
+/// windows keep the inherited class untouched, so iPhone Duo's inner display
+/// (already `.regular`) and its compact outer display read as the system says,
+/// and the class follows the window live as the device opens and closes.
 private struct WideSplitEnabler<Content: View>: View {
     @Environment(\.horizontalSizeClass) private var inherited
     @ViewBuilder var content: Content

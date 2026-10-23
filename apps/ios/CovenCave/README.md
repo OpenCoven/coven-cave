@@ -143,8 +143,39 @@ CovenCave/
   State/         AppModel (connection, familiars, threads), ChatThread (1:1 + group fan-out)
   Views/         Connection, ChatsHome, NewChat (group picker), Chat, MessageBubble,
                  Settings, Permissions (Access / Requests / Audit console), Avatar
-  Theme/         per-familiar colour + initials
+  Theme/         per-familiar colour + initials, glass chrome,
+                 DisplayFold (iPhone Duo hinge)
 ```
+
+## iPhone Duo
+
+Build with Xcode 27.1 (iOS 27.1 SDK) for the full-screen layout on both
+displays. The closed outer display is a compact width, about 466×678pt. The
+open inner display is a regular width and landscape-native, 951×669pt in the
+simulator. Each display puts the status bar in a column on the trailing
+edge, so trailing safe-area insets are large and opposite insets are never
+equal. Layout follows size classes and live window geometry, never the
+device idiom, the interface orientation, or `UIScreen.main`. Opening or
+closing the device resizes the window.
+
+The hinge arrives as an iOS 27.1 *division* reserved region.
+`Theme/DisplayFold.swift` reads it once at the root and publishes
+`\.displayFold`. When the device is folded in book pose, the split views
+keep the list before the hinge and the conversation or task after it
+(`sidebarColumn`/`splitDetailColumn`). The lock, connecting, and connect
+screens move as a unit into one pane (`foldAvoiding`). Scrolling content
+stays where it is. The reader compiles only against the 27.1 SDK
+(`canImport(SwiftUI, _version: 8.0.85)`), so older Xcodes, CI's included,
+still build.
+
+To test, choose the **iPhone Duo** simulator and use Device Hub's controls
+to open, close, rotate, and fold it. `xcrun simctl io <udid> enumerate` lists
+both panels. Pass `--display=<uuid>` to `simctl io … screenshot` to capture
+one. A closed device's inner panel captures black. Neither `simctl` nor
+XCTest can fold the device, so DEBUG builds accept `--ui-simulate-fold`. It
+reports an active hinge across the middle of the window's long side, on any
+simulator: book pose in a wide window, tabletop in a tall one.
+`FoldLayoutUITests` uses it.
 
 ## Familiar permissions & phone write access
 
