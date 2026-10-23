@@ -17,9 +17,12 @@ import { useShellBanners } from "@/lib/shell-banners";
 import { openSystemBrowserUrl } from "@/lib/open-external";
 import {
   classifyFallbackReleaseCheck,
+  describeUpdateInstallOutcome,
+  parseUpdateInstallOutcome,
   pickDownloadUrl,
   resolveFallbackAfterNative,
   type FallbackReleaseCheck,
+  type UpdateInstallOutcome,
   type UpdateStatus,
 } from "@/lib/app-update";
 import { relativeTime } from "@/lib/relative-time";
@@ -39,6 +42,7 @@ import { updateCovenCli } from "@/lib/app-update-daemon";
 import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
 
 const BANNER_ID = "update-available";
+const INSTALL_OUTCOME_BANNER_ID = "update-install-outcome";
 const DAEMON_ALIGNMENT_BANNER_ID = "daemon-release-alignment";
 const RELEASES_PAGE = "https://github.com/OpenCoven/coven-cave/releases/latest";
 const DISMISS_KEY = (version: string) => `cave:update:dismissed:${version}`;
@@ -98,13 +102,67 @@ async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
   }
 }
 
+async function isWindowsDesktop(): Promise<boolean> {
+  try {
+    const { platform } = await import("@tauri-apps/plugin-os");
+    return platform() === "windows";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Windows exits inside install() and the MSI relaunches only after a
+ * successful install. Arm the native watcher first so a declined UAC prompt
+ * or failed msiexec relaunches this version with a recorded outcome (#5981).
+ * Arming failure aborts the install rather than risk leaving Cave closed.
+ */
+async function armWindowsInstallRecovery(): Promise<() => Promise<void>> {
+  if (!(await isWindowsDesktop())) return async () => {};
+  const { invoke } = await import("@tauri-apps/api/core");
+  try {
+    await invoke("arm_update_install_recovery");
+  } catch (err) {
+    throw new Error(`couldn't prepare install recovery: ${errorMessage(err, "unknown error")}`);
+  }
+  return async () => {
+    await invoke("disarm_update_install_recovery").catch(() => {});
+  };
+}
+
 /** Install an already downloaded and verified update, then relaunch where supported. */
-async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
-  await update.install();
+export async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
+  const disarmRecovery = await armWindowsInstallRecovery();
+  try {
+    await update.install();
+  } catch (err) {
+    await disarmRecovery();
+    throw err;
+  }
   // Windows exits inside install() and AUTOLAUNCHAPP handles restart. Other
   // desktop platforms return and need an explicit relaunch.
   const { relaunch } = await import("@tauri-apps/plugin-process");
   await relaunch();
+}
+
+/** The recorded outcome of a Windows install that did not complete, if any. */
+async function readWindowsInstallOutcome(): Promise<UpdateInstallOutcome | null> {
+  if (!(await isWindowsDesktop())) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return parseUpdateInstallOutcome(await invoke<unknown>("update_install_outcome"));
+  } catch {
+    return null;
+  }
+}
+
+async function clearWindowsInstallOutcome(): Promise<void> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("clear_update_install_outcome");
+  } catch {
+    /* The record is cleared again when the next install is armed. */
+  }
 }
 
 /**
@@ -483,6 +541,29 @@ export function UpdateBannerTrigger() {
       dismissBanner(BANNER_ID);
       runCheck();
     });
+    // After a declined or failed Windows install, the watcher relaunched this
+    // version. Explain why, and offer the update again.
+    void readWindowsInstallOutcome().then((outcome) => {
+      if (cancelled || !outcome) return;
+      const { title, detail } = describeUpdateInstallOutcome(outcome);
+      pushBanner({
+        id: INSTALL_OUTCOME_BANNER_ID,
+        severity: "warning",
+        title,
+        detail,
+        cta: {
+          label: "Retry update",
+          onClick: () => {
+            dismissBanner(INSTALL_OUTCOME_BANNER_ID);
+            void clearWindowsInstallOutcome();
+            if (busy) return;
+            dismissBanner(BANNER_ID);
+            runCheck();
+          },
+        },
+        onDismiss: () => { void clearWindowsInstallOutcome(); },
+      });
+    });
     runCheck();
     const interval = window.setInterval(runCheck, RECHECK_INTERVAL_MS);
     return () => {
@@ -499,6 +580,7 @@ export function UpdateBannerTrigger() {
       window.clearInterval(interval);
       unsubscribe();
       dismissBanner(BANNER_ID);
+      dismissBanner(INSTALL_OUTCOME_BANNER_ID);
     };
   }, [isDesktop, pushBanner, dismissBanner, openUpdateUrl, openReleasePageInBrowser]);
 

@@ -9908,6 +9908,8 @@ function TurnRowImpl({
   const renderReasoning = (block: NonNullable<typeof reasoningBlocks>[number]) => (
     <ReasoningBlock key={block.id} plainText
       reasoning={block.text ?? (block.unavailableReason === "provider-withheld" ? "Provider withheld this summary." : block.phase === "running" && pending ? "Summary in progress." : "Summary unavailable.")}
+      // A placeholder describes a missing summary; its length is not one (#6057).
+      countWords={block.text !== undefined}
       pending={block.phase === "running" && pending}
       label={block.representation === "provider-progress" ? "Provider progress" : block.representation === "application-activity" ? "Activity description" : block.representation === "legacy-unverified" ? "Unverified reasoning text" : "Reasoning summary"}
       source={`${block.observation.producer.harness} · ${block.observation.source === "runtime-report" ? "provider report" : "Cave observation"}`}
@@ -10247,7 +10249,7 @@ function TurnRowImpl({
   );
 }
 
-function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning summary", source, plainText }: { reasoning: string; durationMs?: number; pending: boolean; label?: string; source?: string; plainText?: boolean }) {
+function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning summary", source, plainText, countWords = true }: { reasoning: string; durationMs?: number; pending: boolean; label?: string; source?: string; plainText?: boolean; countWords?: boolean }) {
   const wordCount = useMemo(
     () => reasoning.split(/\s+/).filter(Boolean).length,
     [reasoning],
@@ -10258,11 +10260,13 @@ function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning sum
           <Icon name="ph:brain" width={12} aria-hidden />
           {label}
         </span>
-        <span className="ml-auto font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
-          {typeof durationMs === "number" && durationMs > 0
-            ? `Worked for ${fmtDuration(durationMs)}`
-            : `${wordCount} ${wordCount === 1 ? "word" : "words"}`}
-        </span>
+        {(typeof durationMs === "number" && durationMs > 0) || countWords ? (
+          <span className="ml-auto font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
+            {typeof durationMs === "number" && durationMs > 0
+              ? `Worked for ${fmtDuration(durationMs)}`
+              : `${wordCount} ${wordCount === 1 ? "word" : "words"}`}
+          </span>
+        ) : null}
     </>}>
       <div className="cave-reasoning-body mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
         {source ? <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{source}</p> : null}

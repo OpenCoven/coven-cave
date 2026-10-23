@@ -36,8 +36,28 @@ assert.doesNotMatch(
 );
 assert.match(
   src,
-  /async function installPreparedUpdate\([^)]*\): Promise<void> \{\s*await update\.install\(\)/,
-  "installs the prepared native update directly (install() is the first action, no daemon npm install in between)",
+  /export async function installPreparedUpdate\([^)]*\): Promise<void> \{\s*const disarmRecovery = await armWindowsInstallRecovery\(\);\s*try \{\s*await update\.install\(\);\s*\} catch \(err\) \{\s*await disarmRecovery\(\);\s*throw err;\s*\}/,
+  "installs the prepared native update directly: only Windows install recovery is armed first (no daemon npm install in between), and a failed install() disarms it and still surfaces the error",
+);
+
+// Declined or failed Windows msiexec recovery (#5981): the watcher is armed
+// before install(), arming failure aborts the install (fail closed), and the
+// relaunched app explains the outcome with a Retry until the user acts.
+assert.match(
+  src,
+  /async function armWindowsInstallRecovery\(\)[\s\S]*?if \(!\(await isWindowsDesktop\(\)\)\) return async \(\) => \{\};[\s\S]*?invoke\("arm_update_install_recovery"\)[\s\S]*?throw new Error\(`couldn't prepare install recovery/,
+  "Windows arms install recovery and refuses to install when it cannot",
+);
+assert.match(src, /invoke\("disarm_update_install_recovery"\)/, "a failed install() disarms recovery");
+assert.match(
+  src,
+  /parseUpdateInstallOutcome\(await invoke<unknown>\("update_install_outcome"\)\)/,
+  "the relaunched app reads the native outcome through the validating parser",
+);
+assert.match(
+  src,
+  /id: INSTALL_OUTCOME_BANNER_ID,\s*severity: "warning",[\s\S]*?label: "Retry update"[\s\S]*?clearWindowsInstallOutcome\(\)[\s\S]*?runCheck\(\);[\s\S]*?onDismiss: \(\) => \{ void clearWindowsInstallOutcome\(\); \}/,
+  "the outcome banner offers Retry and clears the record only when the user acts",
 );
 assert.doesNotMatch(src, /downloadAndInstall/, "does not combine download with immediate process exit");
 assert.match(src, /@tauri-apps\/plugin-process/, "relaunches via the process plugin");

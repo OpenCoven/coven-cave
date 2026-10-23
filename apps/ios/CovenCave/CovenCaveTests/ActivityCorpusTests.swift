@@ -11,6 +11,13 @@ final class ActivityCorpusTests: XCTestCase {
         return try XCTUnwrap(corpus[key] as? [[String: Any]])
     }
 
+    private func privateReasoningSentinels() throws -> [String] {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "runtime-activity-v1", withExtension: "json"))
+        let corpus = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let section = try XCTUnwrap(corpus["reasoningPrivacySentinels"] as? [String: Any])
+        return try XCTUnwrap(section["private"] as? [String: String]).values.sorted()
+    }
+
     private func json(_ value: Any) throws -> String {
         String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed]), as: UTF8.self)
     }
@@ -95,6 +102,11 @@ final class ActivityCorpusTests: XCTestCase {
             let saved = try JSONDecoder().decode([ChatReasoningBlock].self, from: JSONSerialization.data(withJSONObject: expected))
             XCTAssertEqual(blocks, saved, id)
             XCTAssertEqual(try JSONDecoder().decode([ChatReasoningBlock].self, from: JSONEncoder().encode(blocks)), saved, id)
+            // Withheld text and opaque continuation siblings never survive the fold (#6057).
+            let stored = String(decoding: try JSONEncoder().encode(blocks), as: UTF8.self)
+            for sentinel in try privateReasoningSentinels() {
+                XCTAssertFalse(stored.contains(sentinel), "\(id): \(sentinel)")
+            }
         }
     }
 
