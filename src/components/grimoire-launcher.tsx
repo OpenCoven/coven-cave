@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { relativeTime } from "@/lib/relative-time";
 import { STITCH_PATTERNS } from "@/lib/stitch-patterns";
 import type { DocGraph } from "@/lib/grimoire-graph";
@@ -81,6 +84,10 @@ export function GrimoireLauncher({
   onBlankEntry,
   onShowJournal,
   onShowGraph,
+  loading = false,
+  loadError,
+  errorLive = true,
+  onRetry,
 }: {
   knowledge: LauncherKnowledgeInput[];
   memory: LauncherMemoryInput[];
@@ -95,6 +102,11 @@ export function GrimoireLauncher({
   onBlankEntry: () => void;
   onShowJournal: () => void;
   onShowGraph: () => void;
+  loading?: boolean;
+  loadError?: string | null;
+  /** The host may announce shared inventory failures outside responsive panels. */
+  errorLive?: boolean;
+  onRetry?: () => void;
 }) {
   const [captureValue, setCaptureValue] = useState("");
   const [nowMs] = useState(() => Date.now());
@@ -121,9 +133,25 @@ export function GrimoireLauncher({
     onNewStitch({ pinUrl: capture.url });
   };
 
+  const failure = loadError ? (
+    <ErrorState
+      compact
+      live={errorLive}
+      headline="Couldn't load memories"
+      subtitle={items.length ? `${loadError} Showing the last loaded documents.` : loadError}
+      actions={onRetry ? <Button size="sm" onClick={onRetry}>Retry</Button> : undefined}
+    />
+  ) : null;
+  if (items.length === 0 && (loadError || loading)) {
+    return <div className="gl-root"><div className="gl-col">
+      {failure ?? <div role="status" aria-label="Loading memories" aria-busy={true}><SkeletonRows count={5} /></div>}
+    </div></div>;
+  }
+
   return (
     <div className="gl-root">
       <div className="gl-col">
+        {failure}
         <header className="gl-intro">
           <p className="gl-intro__eyebrow">Threaded reading room</p>
           <h2>Continue what matters. Recall it when needed. Weave it forward.</h2>

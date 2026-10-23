@@ -160,6 +160,8 @@ test("markdown includes comparison and reliability evidence", () => {
   assert.match(markdown, /Conversation list warm cache p95/);
   assert.match(markdown, /native startup/);
   assert.match(markdown, /deterministic daemon startup, reconnect, and recovery contract/);
+  assert.match(markdown, /Enforced by separate gates:/);
+  assert.match(markdown, /enforced by `tests\/chat-stream-performance\.spec\.ts`/);
 });
 
 test("failed daemon reliability contract fails the report summary", () => {

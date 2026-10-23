@@ -155,7 +155,9 @@ const contracts: RouteContract[] = [
   { route: "/coven-automations/[id]/occurrences", methods: ["GET"], kind: "json" },
   { route: "/coven-automations/[id]/occurrences/[occurrenceId]", methods: ["GET"], kind: "json" },
   { route: "/coven-automations/[id]/feed", methods: ["GET"], kind: "json" },
+  { route: "/codex-automations/[id]/definition", methods: ["GET"], kind: "json" },
   { route: "/coven-automation-lifecycle", methods: ["GET"], kind: "json" },
+  { route: "/coven-automation-occurrences", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/import", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -256,6 +258,8 @@ const contracts: RouteContract[] = [
   { route: "/knowledge/packs/seed", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/launch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  // Reads are open to signed-in clients; PUT is guarded inside the handler (#6049).
+  { route: "/local-models", methods: ["GET", "PUT"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/mobile-handoff", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/mobile-token/refresh", methods: ["POST"], kind: "json" },
   { route: "/mcp", methods: ["GET"], kind: "json" },
@@ -1014,7 +1018,9 @@ for (const contract of contracts) {
     }
     const bridge = readFileSync(path.join(root, 'src/lib/server/research-package.ts'), 'utf8');
     assert.match(bridge, /if \(!capability\.enabled\) return researchUnavailable\(capability\)/);
-    assert.ok(bridge.indexOf('if (forbidden) return forbidden') < bridge.indexOf('const runtime = await load()'));
+    const authorization = bridge.indexOf('if (forbidden) return forbidden');
+    const runtimeLoad = bridge.indexOf('const result = await loadCompatibleRuntime(load)');
+    assert.ok(authorization >= 0 && runtimeLoad > authorization);
     continue;
   }
   assert.equal(usesJsonResponse(effectiveSource), true, `${contract.route} must return an explicit Response/NextResponse`);

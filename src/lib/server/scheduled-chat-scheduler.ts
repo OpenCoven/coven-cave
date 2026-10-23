@@ -3,7 +3,7 @@ import { caveHome } from '../coven-paths.ts';
 import { createScheduledChatStore, type ScheduledDispatch } from './scheduled-chat-store.ts';
 import { scheduledChatResult } from './scheduled-chat-dispatch.ts';
 
-export const scheduledChatStore = () => createScheduledChatStore(path.join(caveHome(), 'scheduled-chat-replies.json'));
+export const scheduledChatStore = () => createScheduledChatStore(path.join(/* turbopackIgnore: true */ caveHome(), 'scheduled-chat-replies.json'));
 const dispatch: ScheduledDispatch = async (message, runId) => {
   const { loadConversation } = await import('../cave-conversations.ts');
   const conversation = await loadConversation(message.sessionId);

@@ -1,6 +1,6 @@
 #[cfg(desktop)]
 use rand::{rngs::OsRng, RngCore};
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 use serde::Serialize;
 #[cfg(desktop)]
 use std::net::TcpListener;
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(desktop)]
 use std::process::{Child, Stdio};
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(desktop)]
 use std::sync::{Arc, Mutex};
@@ -59,6 +59,10 @@ mod microphone;
 mod offline_cache;
 #[cfg(desktop)]
 mod platform_lifecycle;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod windows_instance_activation;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod startup_failure_dialog;
 #[cfg(desktop)]
 mod pty;
 #[cfg(desktop)]
@@ -85,6 +89,8 @@ mod sidecar_lifecycle;
 mod sidecar_port_lock;
 #[cfg(desktop)]
 mod sidecar_ports;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod sidecar_runtime_retention;
 #[cfg(desktop)]
 mod sidecar_startup;
 #[cfg(desktop)]
@@ -94,10 +100,18 @@ mod speech;
 mod tauri_setup;
 #[cfg(desktop)]
 mod window_geometry;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod window_placement;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod windows_window_state;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod windows_tray;
 #[cfg(all(desktop, target_os = "windows"))]
 mod windows_command;
 #[cfg(all(desktop, target_os = "windows"))]
 mod windows_process_job;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod windows_update_recovery;
 
 #[cfg(desktop)]
 use desktop_reachability::*;

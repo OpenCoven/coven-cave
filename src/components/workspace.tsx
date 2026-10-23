@@ -119,6 +119,7 @@ import {
   type DaemonConnectionPoll,
 } from "@/lib/daemon-connection-supervisor";
 import { createTauriDaemonReliabilityObserver } from "@/lib/daemon-reliability";
+import { subscribeOnboardingBootstrapCompletion } from "@/lib/onboarding-bootstrap-status";
 import { createDaemonTravelReconcileRequester } from "@/lib/daemon-travel-reconcile-client";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -1478,6 +1479,11 @@ export function Workspace() {
     await daemonConnectionSupervisorRef.current?.refresh({ fresh: opts?.fresh === true || opts?.trusted === true });
   }, []);
 
+  const openDaemonSetup = useCallback(() => {
+    onboardingOriginRef.current = "banner";
+    setOnboardingOpen(true);
+  }, []);
+
   const startDaemon = useCallback(async ({ automatic = false }: { automatic?: boolean } = {}) => {
     setDaemonRecovery((current) => daemonRecoveryPresentation(current, {
       type: automatic ? "automatic-start" : "manual-start",
@@ -1493,14 +1499,16 @@ export function Workspace() {
       reportError: (message) => pushBanner({
         id: "daemon-start-error",
         severity: "error",
-        title: `Daemon start failed — ${message}`,
+        title: "Couldn’t start the daemon",
+        detail: `${message} Open setup to check this machine’s installation and connection.`,
+        cta: { label: "Open setup", onClick: openDaemonSetup },
       }),
       refreshStatus: refreshDaemonStatus,
     });
     if (automatic) {
       setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "start-outcome", outcome }));
     }
-  }, [dismissBanner, pushBanner, refreshDaemonStatus]);
+  }, [dismissBanner, pushBanner, refreshDaemonStatus, openDaemonSetup]);
   startDaemonRef.current = startDaemon;
 
   useEffect(() => {
@@ -1550,7 +1558,12 @@ export function Workspace() {
     requester.setActive(!document.hidden);
     document.addEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
     supervisor.start();
+    const unsubscribeSetupCompletion = subscribeOnboardingBootstrapCompletion(() => {
+      // Setup is a reason to verify readiness, not evidence of readiness.
+      void supervisor.refresh({ fresh: true });
+    });
     return () => {
+      unsubscribeSetupCompletion();
       document.removeEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
       requester.stop();
       supervisor.stop();
@@ -1796,16 +1809,15 @@ export function Workspace() {
       pushBanner({
         id: "daemon-offline",
         severity: "warning",
-        title: "Daemon offline — existing sessions visible but new tasks may not start.",
+        title: "Daemon offline — open setup to get connected.",
+        detail: "Existing chats are still available. Setup checks this machine’s installation and helps start the local service.",
         cta: {
-          label: "Start daemon",
-          onClick: () => {
-            void startDaemon();
-          },
+          label: "Open setup",
+          onClick: openDaemonSetup,
         },
       });
     }
-  }, [daemonOffline, daemonStatusResolved, daemonRecovery.quiet, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonOffline, daemonStatusResolved, daemonRecovery.quiet, pushBanner, dismissBanner, openDaemonSetup]);
 
   // A status-service failure, timeout, malformed response, or non-local target
   // problem does not prove the local daemon is stopped. Keep that uncertainty

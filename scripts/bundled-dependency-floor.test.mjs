@@ -10,6 +10,7 @@ import {
   BUNDLED_DEPENDENCY_FLOORS,
   checkBundledDependencyFloor,
   collectBundledDependencyFloorProblems,
+  collectPinnedFloorProblems,
   compareFinalVersions,
   parseFinalVersion,
 } from "./bundled-dependency-floor.mjs";
@@ -75,6 +76,63 @@ test("the repository's own pins clear the floor, so main never builds a bundle t
       `${name} pin ${pin} is below the #5339 floor ${floor.minimum}`,
     );
   }
+});
+
+test("a release's package.json pins are checked against the floor (#6076)", async () => {
+  // The rollback gate reads an already-published baseline's pins rather than
+  // its bundled bytes. The repository's own package.json is the shape every
+  // patched tag has, and it must read clean through the same function.
+  const own = JSON.parse(await readFile(path.join(REPO_ROOT, "package.json"), "utf8"));
+  const clean = collectPinnedFloorProblems(own);
+  assert.deepEqual(clean.problems, []);
+  assert.deepEqual(Object.keys(clean.versions), ["next", "sharp"]);
+
+  const pinned = (next, sharp, override = sharp) => ({
+    dependencies: { next, sharp },
+    pnpm: { overrides: { sharp: override } },
+  });
+
+  // v0.4.1's real pins: every floored field is named, the override included.
+  const v041 = collectPinnedFloorProblems(pinned("16.3.1", "0.35.3"));
+  assert.deepEqual(v041.versions, { next: "16.3.1", sharp: "0.35.3" });
+  assert.deepEqual(
+    v041.problems.map((problem) => problem.split(" is ")[0]),
+    ["dependencies.next 16.3.1", "dependencies.sharp 0.35.3", "pnpm.overrides.sharp 0.35.3"],
+  );
+  assert.match(v041.problems[0], /below the patched minimum 16\.3\.3 \(GHSA-p293-qw3h-jr36 and GHSA-2xp9-vwfh-vxw4, #5339\)$/);
+
+  // At the floor is clear; one patch below it is not.
+  assert.deepEqual(collectPinnedFloorProblems(pinned("16.3.3", "0.35.4")).problems, []);
+  assert.equal(collectPinnedFloorProblems(pinned("16.3.2", "0.35.4")).problems.length, 1);
+
+  // The override is what pnpm installs, so it is checked on its own.
+  const override = collectPinnedFloorProblems(pinned("16.3.8", "0.35.5", "0.35.3"));
+  assert.deepEqual(override.problems.length, 1);
+  assert.match(override.problems[0], /^pnpm\.overrides\.sharp 0\.35\.3 is below/);
+  // No override at all is fine: the dependency pin is then what installs.
+  assert.deepEqual(collectPinnedFloorProblems({ dependencies: { next: "16.3.8", sharp: "0.35.5" } }).problems, []);
+});
+
+test("a pin the floor cannot compare fails closed", () => {
+  const problemsFor = (manifest) => collectPinnedFloorProblems(manifest).problems;
+  assert.match(problemsFor({ dependencies: { sharp: "0.35.5" } })[0], /^package\.json pins no next in dependencies; the floor is 16\.3\.3/);
+  for (const pin of ["^16.3.3", "~16.3.8", "16.3.8-canary.1", "latest", "workspace:*", "", 16.3, null]) {
+    const problems = problemsFor({ dependencies: { next: pin, sharp: "0.35.5" } });
+    assert.equal(problems.length, 1, `${JSON.stringify(pin)} must not pass`);
+    assert.match(problems[0], /^dependencies\.next .* is not a final MAJOR\.MINOR\.PATCH version/);
+  }
+  // Inherited properties are not pins.
+  assert.match(
+    problemsFor({ dependencies: Object.create({ next: "16.3.8", sharp: "0.35.5" }) })[0],
+    /pins no next in dependencies/,
+  );
+  for (const manifest of [null, [], "16.3.8", 7]) {
+    assert.deepEqual(problemsFor(manifest), ["package.json is not a JSON object"]);
+  }
+  assert.throws(
+    () => collectPinnedFloorProblems({ dependencies: { next: "16.3.8" } }, [{ name: "next", minimum: "16.3", reason: "x" }]),
+    /floor for next is not a final version/,
+  );
 });
 
 test("only final MAJOR.MINOR.PATCH releases parse", () => {

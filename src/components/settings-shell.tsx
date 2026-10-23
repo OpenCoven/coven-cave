@@ -45,6 +45,7 @@ const PhoneSection = dynamic(() => import("./settings-phone").then((m) => m.Phon
 const SettingsClientAccess = dynamic(() => import("./settings-client-access").then((m) => m.SettingsClientAccess), { loading: SettingsSectionFallback });
 const VoiceEngineSettings = dynamic(() => import("@/components/voice-engine-settings").then((m) => m.VoiceEngineSettings), { loading: SettingsSectionFallback });
 const VoiceProviderSettings = dynamic(() => import("@/components/voice-provider-settings").then((m) => m.VoiceProviderSettings), { loading: SettingsSectionFallback });
+const LocalModelsSection = dynamic(() => import("./settings-local-models").then((m) => m.LocalModelsSection), { loading: SettingsSectionFallback });
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
@@ -328,6 +329,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
           {section === "profile" && <ProfileSection />}
           {section === "general" && <GeneralSection />}
           {section === "voice" && <VoiceSection />}
+          {section === "local-models" && <LocalModelsSection />}
           {section === "daemon" && (
             <DaemonSection
               suggestedHubUrl={suggestedHubUrl}

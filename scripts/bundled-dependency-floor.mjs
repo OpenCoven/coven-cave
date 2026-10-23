@@ -116,6 +116,50 @@ export async function collectBundledDependencyFloorProblems(runtimeRoot, floors 
   return { versions, problems };
 }
 
+/**
+ * Compare a release's `package.json` pins with the floors, for a release whose
+ * bundled bytes are not at hand. The rollback target that
+ * `release-rollback-readiness.mjs` selects is an already-published release, so
+ * the floor reads its tag's pins: `dependencies.<name>`, which must exist, and
+ * `pnpm.overrides.<name>` when present. Patched releases pin both exactly, and
+ * every published tag's pins match its lockfile, so the pin names the version
+ * the release bundles. A range, a prerelease or a missing pin fails closed.
+ */
+export function collectPinnedFloorProblems(manifest, floors = BUNDLED_DEPENDENCY_FLOORS) {
+  const versions = {};
+  const problems = [];
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    return { versions, problems: ["package.json is not a JSON object"] };
+  }
+  const dependencies = manifest.dependencies && typeof manifest.dependencies === "object" ? manifest.dependencies : {};
+  const overrides = manifest.pnpm?.overrides && typeof manifest.pnpm.overrides === "object" ? manifest.pnpm.overrides : {};
+  for (const floor of floors) {
+    const minimum = parseFinalVersion(floor.minimum);
+    if (!minimum) throw new Error(`floor for ${floor.name} is not a final version: ${JSON.stringify(floor.minimum)}`);
+    if (!Object.hasOwn(dependencies, floor.name)) {
+      problems.push(`package.json pins no ${floor.name} in dependencies; the floor is ${floor.minimum} (${floor.reason})`);
+      continue;
+    }
+    const pins = [["dependencies", dependencies[floor.name]]];
+    if (Object.hasOwn(overrides, floor.name)) pins.push(["pnpm.overrides", overrides[floor.name]]);
+    for (const [field, pin] of pins) {
+      const pinned = parseFinalVersion(pin);
+      if (!pinned) {
+        problems.push(
+          `${field}.${floor.name} ${JSON.stringify(pin)} is not a final MAJOR.MINOR.PATCH version; ` +
+            `the floor is ${floor.minimum} (${floor.reason})`,
+        );
+        continue;
+      }
+      if (field === "dependencies") versions[floor.name] = pin;
+      if (compareFinalVersions(pinned, minimum) < 0) {
+        problems.push(`${field}.${floor.name} ${pin} is below the patched minimum ${floor.minimum} (${floor.reason})`);
+      }
+    }
+  }
+  return { versions, problems };
+}
+
 /** Throw when any floored package is missing, unreadable, or below its floor. */
 export async function checkBundledDependencyFloor(runtimeRoot, floors = BUNDLED_DEPENDENCY_FLOORS) {
   const { versions, problems } = await collectBundledDependencyFloorProblems(runtimeRoot, floors);

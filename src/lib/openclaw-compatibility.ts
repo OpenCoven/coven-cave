@@ -758,11 +758,11 @@ function meetsOpenClawCheckpoint(
 
 function defaultOpenClawCacheDir(): string {
   const covenRoot = covenHomePath();
-  return process.env.COVEN_CAVE_HOME || path.join(covenRoot, "cave");
+  return process.env.COVEN_CAVE_HOME || path.join(/* turbopackIgnore: true */ covenRoot, "cave");
 }
 
 function openClawCacheFile(cacheDir?: string): string {
-  return path.join(cacheDir || defaultOpenClawCacheDir(), CACHE_FILE);
+  return path.join(/* turbopackIgnore: true */ cacheDir || defaultOpenClawCacheDir(), CACHE_FILE);
 }
 
 function trustAnchorFile(file: string): string {
@@ -775,7 +775,7 @@ function trustAnchorJournalDir(file: string): string {
 
 function trustAnchorJournalEntry(file: string, anchor: OpenClawTrustAnchor): string {
   return path.join(
-    trustAnchorJournalDir(file),
+    /* turbopackIgnore: true */ trustAnchorJournalDir(file),
     `${anchor.sequence}-${anchor.payloadHash}.json`,
   );
 }
@@ -789,7 +789,7 @@ function acceptedCacheJournalEntry(
   bundle: OpenClawSchemaBundle,
 ): string {
   return path.join(
-    acceptedCacheJournalDir(file),
+    /* turbopackIgnore: true */ acceptedCacheJournalDir(file),
     `${bundle.sequence}-${openClawSchemaBundlePayloadHash(bundle)}.json`,
   );
 }
@@ -853,7 +853,7 @@ async function readJournalTrustAnchors(file: string): Promise<OpenClawTrustAncho
       if (!entry.isFile() || !match) {
         throw new OpenClawCacheTrustConflictError("Invalid OpenClaw trust journal entry");
       }
-      const raw = await readBoundedFile(path.join(trustAnchorJournalDir(file), entry.name), 1024);
+      const raw = await readBoundedFile(path.join(/* turbopackIgnore: true */ trustAnchorJournalDir(file), entry.name), 1024);
       const parsed = raw === null ? null : JSON.parse(raw) as unknown;
       const anchor = parsed && validTrustAnchor(parsed) ? parsed : null;
       if (
@@ -1080,7 +1080,7 @@ async function readAcceptedCacheJournal(
       const match = /^(\d{1,16})-([a-f0-9]{64})\.json$/.exec(entry.name);
       if (!entry.isFile() || !match) return null;
       const raw = await readBoundedFile(
-        path.join(acceptedCacheJournalDir(file), entry.name),
+        path.join(/* turbopackIgnore: true */ acceptedCacheJournalDir(file), entry.name),
         MAX_CACHE_BYTES,
       );
       const cached = raw === null
@@ -1143,7 +1143,7 @@ async function writeAcceptedCacheJournal(
   await Promise.all(records
     .filter((record) => !retained.has(record.name))
     .map((record) => registryFs.rm(
-      path.join(acceptedCacheJournalDir(file), record.name),
+      path.join(/* turbopackIgnore: true */ acceptedCacheJournalDir(file), record.name),
       { force: true },
     ).catch(() => undefined)));
   return true;
@@ -1195,19 +1195,19 @@ async function acquireOpenClawCacheLock(file: string): Promise<OpenClawCacheLock
   await registryFs.mkdir(path.dirname(file), { recursive: true });
   while (Date.now() <= deadline) {
     try {
-      const handle = await registryFs.open(lock, "wx", 0o600);
+      const handle = await registryFs.open(/* turbopackIgnore: true */ lock, "wx", 0o600);
       const ownerToken = `${process.pid}:${randomBytes(16).toString("hex")}`;
       try {
         await handle.writeFile(ownerToken);
       } catch (error) {
         await handle.close().catch(() => undefined);
-        await registryFs.rm(lock, { force: true }).catch(() => undefined);
+        await registryFs.rm(/* turbopackIgnore: true */ lock, { force: true }).catch(() => undefined);
         throw error;
       }
       await handle.close();
       const owns = async () => {
         try {
-          return await registryFs.readFile(lock, "utf8") === ownerToken;
+          return await registryFs.readFile(/* turbopackIgnore: true */ lock, "utf8") === ownerToken;
         } catch {
           return false;
         }
@@ -1215,17 +1215,17 @@ async function acquireOpenClawCacheLock(file: string): Promise<OpenClawCacheLock
       return {
         owns,
         release: async () => {
-          if (await owns()) await registryFs.rm(lock, { force: true });
+          if (await owns()) await registryFs.rm(/* turbopackIgnore: true */ lock, { force: true });
         },
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
       try {
-        const stat = await registryFs.stat(lock);
+        const stat = await registryFs.stat(/* turbopackIgnore: true */ lock);
         if (Date.now() - stat.mtimeMs >= CACHE_LOCK_STALE_MS) {
           const stale = `${lock}.${process.pid}.${randomBytes(6).toString("hex")}.stale`;
           try {
-            await registryFs.rename(lock, stale);
+            await registryFs.rename(/* turbopackIgnore: true */ lock, stale);
             await registryFs.rm(stale, { force: true });
             continue;
           } catch {
@@ -1333,7 +1333,7 @@ async function waitForOpenClawCacheWriter(
       ?? await readRecoverableCache(file, publicKeys, checkpoint, now, anchor);
     let lockExists = true;
     try {
-      await registryFs.stat(lock);
+      await registryFs.stat(/* turbopackIgnore: true */ lock);
     } catch {
       lockExists = false;
     }

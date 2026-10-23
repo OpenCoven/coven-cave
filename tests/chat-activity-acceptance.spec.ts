@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createOnboardingBootstrapState, ONBOARDING_BOOTSTRAP_BOUNDARIES } from "../src/lib/onboarding-bootstrap";
+import { privateSentinelsIn, reasoningStateBlocks } from "./fixtures/reasoning-states";
 
 const ISO = "2026-10-18T12:00:00.000Z";
 const RUN = "11111111-1111-4111-8111-111111111111";
@@ -31,18 +32,19 @@ function activity(id: string, status: string, sequence: number) {
     authority: { binding: "unavailable", approval: "unavailable", effect: "unavailable" } };
 }
 
-async function setup(page: Page, summaries: boolean, large = false, hostile = false) {
+async function setup(page: Page, summaries: boolean, large = false, hostile = false, toolsOverride?: object[], blocks?: object[], reasoningCapability?: string) {
   let completed = large;
   const answer = hostile ? HOSTILE : ANSWER;
   const summaryBlock = hostile ? { ...summary, text: HOSTILE } : summary;
   const metadata = { familiarId: "nova", harness: "hermes", model: "", runtime: project.root,
     runtimeIdentity: { schemaVersion: 1, harness: "hermes", version: null, model: null,
-      activity: { schemaVersion: 1, path: "coven", tools: "supported", reasoning: summaries ? "supported" : "unsupported" } } };
-  const tools = (large ? Array.from({ length: 500 }, (_, i) => ({ id: `large-${i}`, name: "Read", status: "ok", input: JSON.stringify({ file_path: `/tmp/file-${i}` }), output: "Large trace output. ".repeat(200), textOffset: 0 })) : [
+      activity: { schemaVersion: 1, path: "coven", tools: "supported", reasoning: reasoningCapability ?? (summaries ? "supported" : "unsupported") } } };
+  const fixtureTools = (large ? Array.from({ length: 500 }, (_, i) => ({ id: `large-${i}`, name: "Read", status: "ok", input: JSON.stringify({ file_path: `/tmp/file-${i}` }), output: "Large trace output. ".repeat(200), textOffset: 0 })) : [
     { id: "read-a", name: "Read", status: "error", input: '{"file_path":"/tmp/a"}', output: "File unavailable", textOffset: 0 },
     { id: "read-b", name: "Read", status: "ok", input: '{"file_path":"/tmp/b"}', output: "Second file", textOffset: 0 },
     { id: "read-a-retry", name: "Read", status: "ok", input: '{"file_path":"/tmp/a"}', output: "First file after retry", textOffset: 0 },
   ]).map((tool, index) => ({ ...tool, ...(hostile ? { output: HOSTILE } : {}), activity: activity(tool.id, tool.status, index + 1) }));
+  const tools = (toolsOverride as typeof fixtureTools | undefined) ?? fixtureTools;
   await page.context().addCookies([{ name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" }]);
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
@@ -81,7 +83,7 @@ async function setup(page: Page, summaries: boolean, large = false, hostile = fa
     else if (path === "/api/sessions/list") payload = { ok: true, sessions: [{ id: "activity-5765", title: "Activity acceptance", status: "completed", origin: "chat", project_root: project.root, harness: "hermes", familiarId: "nova", exit_code: 0, archived_at: null, created_at: ISO, updated_at: ISO }] };
     else if (path.startsWith("/api/chat/conversation/")) payload = { ok: true, context: { task: null, github: [] }, conversation: { familiarId: "nova", activeLeafId: "answer", turns: [
       { id: "request", parentId: null, role: "user", text: "Compare the files", createdAt: ISO },
-      { id: "answer", parentId: "request", role: "assistant", text: completed ? answer : "Ready for the comparison.", createdAt: ISO, lifecycle: "complete", ...(completed ? { responseMetadata: metadata, tools, reasoningBlocks: summaries ? [summaryBlock] : [] } : {}) },
+      { id: "answer", parentId: "request", role: "assistant", text: completed ? answer : "Ready for the comparison.", createdAt: ISO, lifecycle: "complete", ...(completed ? { responseMetadata: metadata, tools, reasoningBlocks: summaries ? blocks ?? [summaryBlock] : [] } : {}) },
     ] } };
     await route.fulfill({ json: payload });
   });
@@ -191,6 +193,43 @@ test("hostile prose, reasoning and tool results never become execution authority
   }
 });
 
+// Golden-10 (#6059): no authoritative approval producer exists, so the pending
+// and rejected states are observations only. A replayed approval, start or
+// result after a denial cannot revive the call or show a second effect.
+test("denied approval stays rejected when stale frames are replayed, live and after reload", async ({ page }) => {
+  const pending = (status: string) => ({ ...activity("write-a", status, 1), executionObservedAt: null,
+    terminalObservedAt: status === "approval-requested" ? null : 4 });
+  const call = { id: "write-a", name: "Read", input: '{"file_path":"/tmp/a"}', textOffset: 0 };
+  const denied = { ...call, status: "user-rejected", output: "Not admitted", activity: pending("user-rejected") };
+  const { main, metadata, complete } = await setup(page, true, false, false, [denied]);
+  await main.getByRole("textbox", { name: "Message", exact: true }).fill("Read the file after approval");
+  await main.getByRole("button", { name: "Send message", exact: true }).click();
+  await emit(page, { kind: "tool_use", ...call, status: "approval-requested", activity: pending("approval-requested") });
+  const live = main.locator(".cave-bubble-assistant").last();
+  await expect(live.locator(".cave-tool-block")).toHaveCount(1);
+  await expect(live.locator(".cave-tool-block > summary")).toContainText("Approval requested");
+  await expect(live.getByRole("button", { name: /^(Approve|Deny|Allow|Reject|Execute|Commit)$/i })).toHaveCount(0);
+  await emit(page, { kind: "tool_use", ...denied });
+  await expect(live.locator(".cave-tool-block > summary")).toContainText("Rejected by user");
+  await emit(page, { kind: "tool_use", ...call, status: "approval-requested", activity: pending("approval-requested") });
+  await emit(page, { kind: "tool_use", ...call, status: "running", activity: activity("write-a", "running", 1) });
+  await emit(page, { kind: "tool_use", ...call, status: "ok", output: "Second effect", activity: activity("write-a", "ok", 1) });
+  complete();
+  await emit(page, { kind: "done", sessionId: "activity-5765", responseMetadata: metadata });
+  for (const reload of [false, true]) {
+    if (reload) await page.reload();
+    const bubble = main.locator(".cave-bubble-assistant").last();
+    await expect(bubble.locator(".cave-tool-block")).toHaveCount(1);
+    const summary = bubble.locator(".cave-tool-block > summary");
+    await expect(summary).toContainText("Rejected by user");
+    await expect(summary).not.toContainText(/Succeeded|Running|Approval requested/);
+    await summary.click();
+    await expect(bubble.getByText("Not admitted", { exact: true })).toBeVisible();
+    await expect(bubble.getByText("Second effect", { exact: true })).toHaveCount(0);
+    await expect(bubble.getByRole("button", { name: /^(Approve|Deny|Allow|Reject|Execute|Commit)$/i })).toHaveCount(0);
+  }
+});
+
 test("live region announces each parallel tool milestone without token chatter", async ({ page }) => {
   const { main, tools } = await setup(page, true);
   await page.evaluate(() => {
@@ -249,5 +288,67 @@ for (const saved of [null, "0", "1"] as const) {
     expect(frames.every((open) => open === (saved !== "0"))).toBe(true);
     await expect(main.locator(".cave-tool-block").first()).toContainText("Failed");
     await expect(main.locator(".cave-tool-block").first()).toBeVisible();
+  });
+}
+
+// golden-02 (#6057): a no-text reasoning state is shown honestly. Its placeholder
+// is not a summary, so no length is reported for it, and opaque fields a
+// leaking server might attach never reach display, copy, export or web storage.
+for (const [capability, capabilityLabel] of [["unknown", "not verified on this path"], ["disabled", "off for this turn"]] as const) {
+  test(`withheld and unavailable reasoning report no invented summary live and after reload (reasoning=${capability})`, async ({ page }) => {
+    const states = reasoningStateBlocks({ runId: RUN, attemptId: ATTEMPT, withOpaqueFields: true });
+    await page.addInitScript(() => {
+      const copied: string[] = [];
+      Object.assign(window, { golden02Copied: copied });
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text: string) => { copied.push(text); } } });
+    });
+    const { main, metadata, complete } = await setup(page, true, false, false, undefined, [states.providerWithheld, states.unavailable], capability);
+    await main.getByRole("textbox", { name: "Message", exact: true }).fill("Compare the files");
+    await main.getByRole("button", { name: "Send message", exact: true }).click();
+    await emit(page, { kind: "response_metadata", responseMetadata: metadata });
+    await emit(page, { kind: "reasoning", block: states.providerWithheld });
+    await emit(page, { kind: "reasoning", block: states.unavailable });
+    await emit(page, { kind: "assistant_chunk", text: ANSWER });
+    complete();
+    await emit(page, { kind: "done", sessionId: "activity-5765", responseMetadata: metadata });
+
+    const verify = async () => {
+      const blocks = main.locator(".cave-reasoning-block");
+      await expect(blocks).toHaveCount(2);
+      await expect(blocks.nth(0)).toContainText("Provider withheld this summary.");
+      await expect(blocks.nth(1)).toContainText("Summary unavailable.");
+      for (const block of await blocks.all()) {
+        await expect(block.locator(":scope > summary")).toContainText("Reasoning summary");
+        await expect(block.locator(":scope > summary")).not.toContainText(/\d+ words?/);
+      }
+      await main.locator(".cave-run-details > summary").last().click();
+      await expect(main.locator(".cave-run-details__row").filter({ hasText: "Reasoning summaries" }).last()).toContainText(capabilityLabel);
+      const answer = main.locator(".cave-bubble-assistant").last();
+      await expect(answer.getByText(ANSWER, { exact: true })).toBeVisible();
+      await answer.hover();
+      await main.getByRole("button", { name: "Copy completed response", exact: true }).last().click();
+      const copied = await page.evaluate(() => (window as unknown as { golden02Copied: string[] }).golden02Copied.at(-1));
+      expect(copied).toBe(ANSWER);
+      await main.getByRole("button", { name: "More response actions", exact: true }).last().click();
+      await page.getByRole("menuitem", { name: "Open reader" }).click();
+      await page.getByRole("button", { name: "Export answer", exact: true }).click();
+      const download = page.waitForEvent("download");
+      await page.getByRole("menuitem", { name: /Markdown/ }).click();
+      const exported = await (await download).createReadStream().then(async (stream) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream) chunks.push(chunk as Buffer);
+        return Buffer.concat(chunks).toString("utf8");
+      });
+      expect(exported.trim()).toBe(ANSWER);
+      await page.keyboard.press("Escape");
+      const surfaces = await page.evaluate(() => [document.documentElement.outerHTML,
+        JSON.stringify({ ...localStorage }), JSON.stringify({ ...sessionStorage })].join("\n"));
+      expect(privateSentinelsIn([surfaces, copied, exported].join("\n"))).toEqual([]);
+      expect([copied, exported].join("\n")).not.toMatch(/withheld|unavailable|Reasoning summary/i);
+    };
+    await verify();
+    await page.reload();
+    await expect(main.getByText(ANSWER, { exact: true })).toBeVisible();
+    await verify();
   });
 }

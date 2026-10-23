@@ -1,0 +1,139 @@
+/* Settings → Local models (#6049). Imported by settings-local-models.tsx only. */
+@import "./settings-switch.css";
+
+.settings-local-models__card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+}
+
+.settings-local-models__status-row,
+.settings-local-models__switch-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.settings-local-models__status {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.settings-local-models__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+  transform: translateY(-1px);
+}
+
+.settings-local-models__status[data-tone="success"] .settings-local-models__dot { background: var(--color-success); }
+.settings-local-models__status[data-tone="warning"] .settings-local-models__dot { background: var(--color-warning); }
+.settings-local-models__status[data-tone="danger"] .settings-local-models__dot { background: var(--color-danger); }
+
+.settings-local-models__field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings-local-models__field-row > input {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-local-models__models {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.settings-local-models__model {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+.settings-local-models__model:last-child { border-bottom: 0; }
+.settings-local-models__model[data-tools] { color: var(--text-primary); }
+
+.settings-local-models__model-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.settings-local-models__model-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.settings-local-models__badge {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+}
+
+/* The tint recipe (docs/coven-design-language.md §3). */
+.settings-local-models__badge[data-tools] {
+  border-color: color-mix(in oklch, var(--color-success) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-success) 14%, transparent);
+  color: var(--color-success);
+}
+
+/* LM Link (#6094): the model runs on another computer. */
+.settings-local-models__badge[data-link] {
+  border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+}
+
+.settings-local-models__check {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.settings-local-models__switch-label {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.settings-local-models__help,
+.settings-local-models__empty {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.settings-local-models__error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
+@container (max-width: 420px) {
+  .settings-local-models__field-row { flex-direction: column; align-items: stretch; }
+}

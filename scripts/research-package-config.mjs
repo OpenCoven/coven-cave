@@ -19,6 +19,9 @@ export function researchPackageConfig(root = process.cwd()) {
     '@opencoven/research-client': available
       ? '@opencoven/research/client'
       : './src/components/role-surfaces/research-package-absent.tsx',
+    '@opencoven/research-room': available
+      ? './src/components/role-surfaces/researcher-room.ts'
+      : './src/components/role-surfaces/research-package-absent.tsx',
   };
   const adapterRoot = path.join(root, 'src/lib/research-host');
   function walk(relative = '') {

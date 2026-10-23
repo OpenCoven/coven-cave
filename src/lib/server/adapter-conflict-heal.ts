@@ -50,7 +50,7 @@ export function detectBuiltinAdapterConflict(
 
 /** The adapters directory Cave scaffolds into (honors COVEN_HOME). */
 export function covenAdaptersDir(): string {
-  return path.join(covenHomePath(), "adapters");
+  return path.join(/* turbopackIgnore: true */ covenHomePath(), "adapters");
 }
 
 export function shadowedMarkerPath(manifestPath: string): string {
@@ -66,7 +66,7 @@ export async function isManifestShadowedByBuiltin(
   manifestPath: string,
 ): Promise<boolean> {
   try {
-    return (await stat(shadowedMarkerPath(manifestPath))).isFile();
+    return (await stat(/* turbopackIgnore: true */ shadowedMarkerPath(manifestPath))).isFile();
   } catch {
     return false;
   }
@@ -83,15 +83,15 @@ export async function healBuiltinShadowedManifest(
   conflict: BuiltinAdapterConflict,
   adaptersRoot: string = covenAdaptersDir(),
 ): Promise<boolean> {
-  const root = path.resolve(adaptersRoot);
-  const resolved = path.resolve(conflict.manifestPath);
+  const root = path.resolve(/* turbopackIgnore: true */ adaptersRoot);
+  const resolved = path.resolve(/* turbopackIgnore: true */ conflict.manifestPath);
   const contained =
     resolved === root || resolved.startsWith(root + path.sep);
   if (!contained || resolved === root) return false;
   if (!resolved.endsWith(".json")) return false;
   try {
     if (!(await stat(resolved)).isFile()) return false;
-    await rename(resolved, shadowedMarkerPath(resolved));
+    await rename(/* turbopackIgnore: true */ resolved, shadowedMarkerPath(resolved));
     return true;
   } catch {
     return false;

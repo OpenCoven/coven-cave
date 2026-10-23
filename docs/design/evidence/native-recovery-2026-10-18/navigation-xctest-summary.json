@@ -1,0 +1,36 @@
+{
+  "devicesAndConfigurations": [
+    {
+      "device": {
+        "architecture": "arm64",
+        "deviceId": "3A31EAE7-E679-4B64-BF28-838C1BCC7D68",
+        "deviceName": "Cave 6069 Native Recovery",
+        "modelName": "iPhone 16 Pro",
+        "osBuildNumber": "23F77",
+        "osVersion": "26.5",
+        "platform": "iOS Simulator"
+      },
+      "expectedFailures": 0,
+      "failedTests": 0,
+      "passedTests": 3,
+      "skippedTests": 0,
+      "testPlanConfiguration": {
+        "configurationId": "1",
+        "configurationName": "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.1",
+  "expectedFailures": 0,
+  "failedTests": 0,
+  "finishTime": 1792326954.369,
+  "passedTests": 3,
+  "result": "Passed",
+  "skippedTests": 0,
+  "startTime": 1792326643.062,
+  "statistics": [],
+  "testFailures": [],
+  "title": "Test - CovenCave",
+  "topInsights": [],
+  "totalTestCount": 3
+}

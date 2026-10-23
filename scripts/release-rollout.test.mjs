@@ -45,10 +45,25 @@ function readinessVerdict(overrides = {}) {
     },
     baselineWaived: false,
     platforms: ["darwin-aarch64", "windows-x86_64"],
+    missingPlatforms: ["darwin-x86_64", "linux-x86_64"],
+    baselineFloor: CLEAR_FLOOR,
     ready: true,
     ...overrides,
   };
 }
+
+/** `baselineFloor` as the readiness gate records a patched baseline (#6076). */
+const CLEAR_FLOOR = Object.freeze({ clear: true, versions: { next: "16.3.8", sharp: "0.35.5" }, problems: [] });
+
+/** …and as it records one below the #5339 floor, from v0.4.1's real pins. */
+const UNPATCHED_FLOOR = Object.freeze({
+  clear: false,
+  versions: { next: "16.3.1", sharp: "0.35.3" },
+  problems: [
+    "dependencies.next 16.3.1 is below the patched minimum 16.3.3 (GHSA-p293-qw3h-jr36 and GHSA-2xp9-vwfh-vxw4, #5339)",
+    "dependencies.sharp 0.35.3 is below the patched minimum 0.35.4 (libheif 1.23.2 for GHSA-g89c-p67h-r497 via sharp-libvips 1.3.3, #5339)",
+  ],
+});
 
 function greenState(overrides = {}) {
   return {
@@ -700,6 +715,156 @@ test("a waived baseline rolls out, but never silently", () => {
   assert.match(waivedRollback, /patch forward/, "the one line that remains is still the one that says there is no target");
 });
 
+test("a baseline below the bundled-dependency floor rolls out, but is never a restore target", () => {
+  // #5339's rule (#6076): never put back a release that bundles a dependency
+  // the incident replaced. Like the waiver, it is not a hold. The release being
+  // rolled out is the patched one, and holding it because the only way back is
+  // unpatched would keep users on the unpatched release instead.
+  const unpatched = greenState({ rollbackReadiness: readinessVerdict({ baselineFloor: UNPATCHED_FLOOR }) });
+
+  const result = evaluateRolloutGate(unpatched);
+  assert.equal(result.decision, "advance", "the patched release still widens");
+  assert.equal(result.rollbackBaselineBelowFloor, "0.9.4", "a caller branching on the way back can see why there is none");
+  assert.match(
+    formatGateReport(result),
+    /^rollback target: none — 0\.9\.4 is below the bundled-dependency floor \(#5339\); the only remedy is patching forward$/m,
+    "an operator widening the rollout is told the way back is a patch forward, not a restore",
+  );
+
+  // A hard-stop regression still rolls the candidate back, but with no target:
+  // naming 0.9.4 here is exactly the restore this rule forbids.
+  const regressed = evaluateRolloutGate({ ...unpatched, regressions: [{ class: "crash", id: "diag-7" }] });
+  assert.equal(regressed.decision, "rollback");
+  assert.equal(regressed.rollbackTarget, null);
+  const report = formatGateReport(regressed);
+  assert.match(
+    report,
+    /^rollback target: none — 0\.9\.4 is below the bundled-dependency floor \(#5339\); do not restore it, patch forward$/m,
+  );
+  assert.equal(report.match(/^rollback target:/gm).length, 1, "one target line, not two differently worded ones");
+
+  // A clean floor changes nothing about the ordinary path.
+  const clean = evaluateRolloutGate({ ...greenState(), regressions: [{ class: "crash", id: "diag-7" }] });
+  assert.equal(clean.rollbackTarget, "0.9.4");
+  assert.equal(clean.rollbackBaselineBelowFloor, null);
+
+  // And the drill refuses, quoting what is below the floor.
+  assert.throws(
+    () => runCli({ argv: ["restore-plan", "state.json"], readFileImpl: () => JSON.stringify(unpatched), log: () => {} }),
+    (error) =>
+      /^'0\.9\.4' is below the bundled-dependency floor \(#5339\): dependencies\.next 16\.3\.1 is below the patched minimum 16\.3\.3/.test(
+        error.message,
+      ) && /the remedy is a patch-forward version, not a drill$/.test(error.message),
+  );
+});
+
+test("a verdict that does not record the floor holds until the readiness gate is re-run", () => {
+  // Written before the readiness gate checked pins, or hand-copied without
+  // `baselineFloor`. Assuming either answer is wrong: "clear" could start a
+  // rollout whose only way back is unpatched, and "below" would drop a real
+  // restore target. Only an exact boolean counts as recorded.
+  for (const [label, baselineFloor] of [
+    ["no baselineFloor", undefined],
+    ["a null baselineFloor", null],
+    ["a string 'true'", { clear: "true", versions: {}, problems: [] }],
+    ["a floor with no clear flag", { versions: { next: "16.3.8" }, problems: [] }],
+  ]) {
+    const state = greenState({ rollbackReadiness: readinessVerdict({ baselineFloor }) });
+    const result = evaluateRolloutGate(state);
+    assert.equal(result.decision, "hold", `${label} is not a recorded floor`);
+    assert.match(
+      detailsOf(result),
+      /does not record whether '0\.9\.4' clears the bundled-dependency floor; re-run the rollback-readiness gate/,
+    );
+    assert.equal(result.rollbackBaselineBelowFloor, null, `${label} is unknown, not below the floor`);
+    assert.throws(
+      () => runCli({ argv: ["restore-plan", "state.json"], readFileImpl: () => JSON.stringify(state), log: () => {} }),
+      /does not record whether '0\.9\.4' clears the bundled-dependency floor/,
+      `${label} is not rehearsed`,
+    );
+  }
+
+  // A hard-stop regression on such a file still rolls back and still names the
+  // baseline, as a not-ready verdict does, but never as a plain target: this
+  // line is what an operator acts on mid-incident.
+  const unrecorded = greenState({
+    rollbackReadiness: readinessVerdict({ baselineFloor: undefined }),
+    regressions: [{ class: "crash", id: "diag-9" }],
+  });
+  const rolledBack = evaluateRolloutGate(unrecorded);
+  assert.equal(rolledBack.decision, "rollback");
+  assert.equal(rolledBack.rollbackTarget, "0.9.4");
+  assert.match(
+    formatGateReport(rolledBack),
+    /^rollback target: 0\.9\.4 \(ready: true; bundled-dependency floor not recorded — re-run rollback readiness before restoring it\)$/m,
+  );
+  assert.match(
+    formatGateReport({ ...rolledBack, rollbackFloorRecorded: true }),
+    /^rollback target: 0\.9\.4 \(ready: true\)$/m,
+    "a recorded, clear floor reads exactly as before",
+  );
+});
+
+test("the state file the runbook documents is one this gate advances on", async () => {
+  // docs/workflows/production-rollout.md shows an operator the shape to copy.
+  // If that example stops advancing, the runbook teaches a file that holds.
+  const doc = await import("node:fs/promises").then(({ readFile }) =>
+    readFile(new URL("../docs/workflows/production-rollout.md", import.meta.url), "utf8"),
+  );
+  const block = doc.split("## The state file")[1]?.match(/```json\n([\s\S]*?)\n```/)?.[1];
+  assert.ok(block, "the runbook still has its state-file example");
+  const state = JSON.parse(block.replace('"url": "…"', '"url": "https://github.invalid/"'));
+  const result = evaluateRolloutGate(state);
+  assert.equal(result.decision, "advance", formatGateReport(result));
+  assert.deepEqual(
+    Object.keys(state.rollbackReadiness).sort(),
+    Object.keys(readinessVerdict()).sort(),
+    "the example carries every field the readiness gate emits",
+  );
+});
+
+test("the readiness verdict this gate reads is the one that script emits", async () => {
+  // readinessVerdict() claims to copy the producer field for field. Run the
+  // producer and hold it to that, so a field it adds or drops shows up here
+  // instead of in a state file at 2am.
+  const { verifyRollbackReadiness } = await import("./release-rollback-readiness.mjs");
+  const api = "https://api.github.test";
+  const download = (name) => ({ name, browser_download_url: `https://download.github.test/v0.9.4/${name}` });
+  const names = ["CovenCave-v0.9.4-aarch64.dmg", "CovenCave_0.9.4_x64_en-US.msi", "CovenCave_0.9.4_amd64.AppImage", "SHA256SUMS", "latest.json"];
+  const release = {
+    tag_name: "v0.9.4",
+    draft: false,
+    prerelease: false,
+    published_at: "2026-07-01T00:00:00Z",
+    html_url: "https://github.invalid/OpenCoven/coven-cave/releases/tag/v0.9.4",
+    assets: names.map(download),
+  };
+  const manifest = {
+    version: "0.9.4",
+    platforms: {
+      "darwin-aarch64": { url: download("CovenCave-v0.9.4-aarch64.dmg").browser_download_url, signature: "c2ln" },
+      "windows-x86_64": { url: download("CovenCave_0.9.4_x64_en-US.msi").browser_download_url, signature: "c2ln" },
+    },
+  };
+  const verdict = await verifyRollbackReadiness({
+    repository: "OpenCoven/coven-cave",
+    token: "token",
+    tag: "v1.0.0",
+    apiUrl: api,
+    fetchImpl: async (url) => {
+      const body = new URL(url).pathname.endsWith("/contents/package.json")
+        ? { dependencies: { next: "16.3.8", sharp: "0.35.5" }, pnpm: { overrides: { sharp: "0.35.5" } } }
+        : url.startsWith(`${api}/repos/`)
+          ? new URL(url).searchParams.get("page") === "1" ? [release] : []
+          : manifest;
+      return { ok: true, status: 200, json: async () => body };
+    },
+  });
+  assert.deepEqual(Object.keys(verdict).sort(), Object.keys(readinessVerdict()).sort());
+  assert.deepEqual(Object.keys(verdict.baseline).sort(), Object.keys(readinessVerdict().baseline).sort());
+  assert.deepEqual(verdict.baselineFloor, CLEAR_FLOOR);
+});
+
 test("a drill that cannot name what it would restore is refused, waiver or not", () => {
   const restorePlan = (state) =>
     runCli({ argv: ["restore-plan", "state.json"], readFileImpl: () => JSON.stringify(state), log: () => {} });
@@ -728,11 +893,21 @@ test("a drill that cannot name what it would restore is refused, waiver or not",
   );
 
   // A named-but-unproven baseline is still a rehearsal worth printing: the
-  // operator knows which release they would be putting back.
+  // operator knows which release they would be putting back. It still has to
+  // be proven to clear the #5339 floor (#6076): the 2026-09-21 Phase 7 record
+  // rehearsed restoring v0.4.1, which bundles Next 16.3.1, from exactly this
+  // kind of hand-copied verdict.
   assert.equal(
-    restorePlan(greenState({ rollbackReadiness: { ready: false, baseline: { tag: "v0.9.4" } } })),
+    restorePlan(
+      greenState({ rollbackReadiness: { ready: false, baseline: { tag: "v0.9.4" }, baselineFloor: CLEAR_FLOOR } }),
+    ),
     0,
     "readiness that is merely unproven still names the release the drill would restore",
+  );
+  assert.throws(
+    () => restorePlan(greenState({ rollbackReadiness: { ready: false, baseline: { tag: "v0.9.4" } } })),
+    /does not record whether 'v0\.9\.4' clears the bundled-dependency floor/,
+    "an unproven baseline whose floor nobody checked is not rehearsed",
   );
 });
 
@@ -748,7 +923,9 @@ test("the drill prints the baseline the guard admitted it on, never the placehol
     runCli({
       argv: ["restore-plan", "state.json"],
       readFileImpl: () =>
-        JSON.stringify(greenState({ rollbackReadiness: { ready: true, baseline, baselineWaived: false } })),
+        JSON.stringify(
+          greenState({ rollbackReadiness: { ready: true, baseline, baselineWaived: false, baselineFloor: CLEAR_FLOOR } }),
+        ),
       log: (line) => lines.push(line),
     });
     return lines.join("\n");

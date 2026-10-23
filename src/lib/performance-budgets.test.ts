@@ -28,6 +28,16 @@ function budget(overrides: Partial<PerformanceBudget> = {}): PerformanceBudget {
   };
 }
 
+test("the stream ceiling delegates to the browser gate without grading list-run metrics", () => {
+  const stream = PERFORMANCE_BUDGETS.find((entry) => entry.id === "stream.10k-event.input-blocking-p95-ms")!;
+  assert.equal(stream.gate, "browser-performance");
+  assert.equal(stream.limit, 200);
+  const report = evaluatePerformanceBudgets([{ id: stream.id, value: 1 }], [stream]);
+  assert.equal(report.results[0].verdict, "delegated");
+  assert.equal(report.results[0].value, null);
+  assert.equal(report.enforcedCount, 0);
+});
+
 test("every surface named by the hardening plan carries at least one budget", () => {
   for (const surface of PERFORMANCE_BUDGET_SURFACES) {
     assert.ok(

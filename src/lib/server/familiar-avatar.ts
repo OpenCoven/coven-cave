@@ -77,11 +77,11 @@ export type ResolvedAvatar = {
 /** Locate the avatar file for a familiar, or null when there is none. */
 export async function resolveFamiliarAvatar(id: string): Promise<ResolvedAvatar | null> {
   if (!isValidFamiliarId(id)) return null;
-  const avatarsDir = path.join(await familiarWorkspace(id), "avatars");
+  const avatarsDir = path.join(/* turbopackIgnore: true */ await familiarWorkspace(id), "avatars");
 
   let entries: string[];
   try {
-    entries = await readdir(avatarsDir);
+    entries = await readdir(/* turbopackIgnore: true */ avatarsDir);
   } catch {
     return null; // no avatars dir
   }
@@ -89,7 +89,7 @@ export async function resolveFamiliarAvatar(id: string): Promise<ResolvedAvatar 
   const fileName = pickAvatarFile(entries, id);
   if (!fileName) return null;
 
-  const absPath = path.join(avatarsDir, fileName);
+  const absPath = path.join(/* turbopackIgnore: true */ avatarsDir, fileName);
   try {
     const st = await stat(absPath);
     if (!st.isFile()) return null;

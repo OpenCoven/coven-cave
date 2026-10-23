@@ -435,30 +435,30 @@ async function reclaimAbandonedCacheLock(lockPath: string): Promise<boolean> {
   const guardPath = `${lockPath}.takeover`;
   let guard: Awaited<ReturnType<typeof open>> | null = null;
   try {
-    guard = await open(guardPath, "wx", 0o600);
+    guard = await open(/* turbopackIgnore: true */ guardPath, "wx", 0o600);
   } catch {
     return false;
   }
   try {
-    const raw = await readFile(lockPath, "utf8");
+    const raw = await readFile(/* turbopackIgnore: true */ lockPath, "utf8");
     const observed = parseCacheLockLease(raw);
     if (observed && pidIsAlive(observed.pid)) return false;
     if (!observed) {
-      const metadata = await stat(lockPath);
+      const metadata = await stat(/* turbopackIgnore: true */ lockPath);
       // A just-created lock can be momentarily empty while its creator writes
       // the lease. Only recover malformed locks after the normal bounded
       // acquisition window has elapsed.
       if (Date.now() - metadata.mtimeMs < CACHE_LOCK_TIMEOUT_MS) return false;
     }
     const tombstone = `${lockPath}.abandoned.${observed?.token ?? crypto.randomUUID()}`;
-    await rename(lockPath, tombstone);
-    try { await unlink(tombstone); } catch { /* best effort */ }
+    await rename(/* turbopackIgnore: true */ lockPath, tombstone);
+    try { await unlink(/* turbopackIgnore: true */ tombstone); } catch { /* best effort */ }
     return true;
   } catch {
     return false;
   } finally {
     try { await guard.close(); } catch { /* best effort */ }
-    try { await unlink(guardPath); } catch { /* best effort */ }
+    try { await unlink(/* turbopackIgnore: true */ guardPath); } catch { /* best effort */ }
   }
 }
 
@@ -476,7 +476,7 @@ async function acquireCacheWriteLock(cachePath: string): Promise<(() => Promise<
     let ownershipToken: string | null = null;
     try {
       await mkdir(path.dirname(cachePath), { recursive: true });
-      handle = await open(lockPath, "wx", 0o600);
+      handle = await open(/* turbopackIgnore: true */ lockPath, "wx", 0o600);
       ownershipToken = crypto.randomUUID();
       await handle.writeFile(JSON.stringify({ token: ownershipToken, pid: process.pid }), "utf8");
       await handle.close();
@@ -486,14 +486,14 @@ async function acquireCacheWriteLock(cachePath: string): Promise<(() => Promise<
           // Never delete a replacement lock acquired by another process after
           // this writer finished. The token is an ownership proof, not merely
           // a stale-file hint.
-          if (parseCacheLockLease(await readFile(lockPath, "utf8"))?.token === ownershipToken) await unlink(lockPath);
+          if (parseCacheLockLease(await readFile(/* turbopackIgnore: true */ lockPath, "utf8"))?.token === ownershipToken) await unlink(/* turbopackIgnore: true */ lockPath);
         } catch { /* best effort */ }
       };
     } catch (error) {
       try { await handle?.close(); } catch { /* best effort */ }
       if (ownershipToken) {
         try {
-          if (parseCacheLockLease(await readFile(lockPath, "utf8"))?.token === ownershipToken) await unlink(lockPath);
+          if (parseCacheLockLease(await readFile(/* turbopackIgnore: true */ lockPath, "utf8"))?.token === ownershipToken) await unlink(/* turbopackIgnore: true */ lockPath);
         } catch { /* best effort */ }
       }
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
@@ -566,7 +566,7 @@ async function readCodexSchemaWatermark(
 async function syncCacheFile(filePath: string): Promise<void> {
   // Windows only permits fsync on a writable handle, even though the file is
   // already closed and no longer needs modification.
-  const handle = await open(filePath, "r+");
+  const handle = await open(/* turbopackIgnore: true */ filePath, "r+");
   try {
     await handle.sync();
   } finally {
@@ -592,13 +592,13 @@ async function writeDurableSchemaDocument(filePath: string, serialized: string):
   const temp = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {
     await mkdir(dir, { recursive: true });
-    await writeFile(temp, serialized, { encoding: "utf8", mode: 0o600 });
+    await writeFile(/* turbopackIgnore: true */ temp, serialized, { encoding: "utf8", mode: 0o600 });
     await syncCacheFile(temp);
-    await rename(temp, filePath);
+    await rename(/* turbopackIgnore: true */ temp, filePath);
     await syncCacheDirectory(dir);
     return true;
   } catch {
-    try { await unlink(temp); } catch { /* best effort */ }
+    try { await unlink(/* turbopackIgnore: true */ temp); } catch { /* best effort */ }
     return false;
   }
 }
@@ -736,7 +736,7 @@ export const CODEX_SCHEMA_TRUSTED_KEYS: Readonly<Record<string, string>> = {
 };
 
 export function codexSchemaCachePath(home = os.homedir()): string {
-  return path.join(home, ".coven", "cache", "codex-schemas.json");
+  return path.join(/* turbopackIgnore: true */ home, ".coven", "cache", "codex-schemas.json");
 }
 
 /**

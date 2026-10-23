@@ -293,7 +293,7 @@ export async function saveJournalAutomation(
         familiarName: name,
         journalDir,
         workspaceDir,
-        boardPath: deps.boardPath === undefined ? path.join(caveHome(), "board.json") : deps.boardPath,
+        boardPath: deps.boardPath === undefined ? path.join(/* turbopackIgnore: true */ caveHome(), "board.json") : deps.boardPath,
       }),
       // An explicit choice wins; otherwise keep whatever the routine runs on
       // (it may have been switched in Rituals), and only a new one defaults.

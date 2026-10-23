@@ -192,18 +192,15 @@ assert.equal(
 );
 assert.equal(
   agenticE2e.run,
-  "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+  "bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
   "the enabled journeys run in a separate desktop server with only their necessary flags",
 );
 const bundleRun = ciWorkflow.jobs["frontend-bundle"].steps.at(-1)?.run;
 assert.ok(bundleRun, "the frontend bundle job ends with a build script");
-assert.match(bundleRun, /if \[ "\$attempt" -lt 3 \]; then/);
-assert.match(bundleRun, /::error::pnpm build failed after 3 attempts/);
-assert.doesNotMatch(
-  bundleRun,
-  /echo "::warning::pnpm build attempt \$attempt failed; retrying with clean \.next"\n\s*rm -rf \.next\n\s*done/,
-  "the terminal build failure must not claim that another retry will run",
-);
+// The retry, its terminal message and the build-gate stop live in one script
+// shared with full validation and the release build (#6087); its own test
+// covers that a terminal failure never claims another retry.
+assert.equal(bundleRun, "node scripts/build-with-retry.mjs");
 assert.equal(
   ciWorkflow["run-name"],
   "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}",

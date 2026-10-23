@@ -342,3 +342,46 @@ for (const [version, expected] of Object.entries(expectedSequences)) {
 }
 
 console.log("codex-routing tests passed");
+
+// ── Codex local mode (#6049) ────────────────────────────────────────────────
+// `codex-ollama` and `codex-lmstudio` share the direct transport. They reach
+// their server only through `-c` overrides, so a CLI that cannot take them on
+// this turn's launch shape is a mismatch (the route then refuses the turn
+// rather than falling back to the cloud Coven path).
+{
+  const report = { version: "0.145.0", capabilities: fullCapabilities };
+  for (const harness of ["codex-ollama", "codex-lmstudio"]) {
+    const direct = resolveCodexChatRouting({ harness, isSshRuntime: false, report });
+    assert.equal(direct.mode, "direct", `${harness} uses the direct Codex transport`);
+    const resumed = resolveCodexChatRouting({ harness, isSshRuntime: false, report, resumeSessionId: "01a15036-ed83-7243-9196-365e85754a1a" });
+    assert.equal(resumed.mode, "direct", `${harness} resumes over the direct transport`);
+  }
+  const noConfig = resolveCodexChatRouting({
+    harness: "codex-ollama", isSshRuntime: false, report: { version: "0.145.0", capabilities: { ...fullCapabilities, config: false } },
+  });
+  assert.equal(noConfig.mode, "fallback");
+  assert.equal(noConfig.diagnosticCode, "capability-mismatch", "local mode needs `-c` on a fresh launch");
+  const noResumeConfig = resolveCodexChatRouting({
+    harness: "codex-lmstudio", isSshRuntime: false, report: { version: "0.145.0", capabilities: { ...fullCapabilities, resumeConfig: false } },
+    resumeSessionId: "01a15036-ed83-7243-9196-365e85754a1a",
+  });
+  assert.equal(noResumeConfig.diagnosticCode, "capability-mismatch", "a local resume needs `-c` on `exec resume`");
+  const cloudWithoutConfig = resolveCodexChatRouting({
+    harness: "codex", isSshRuntime: false, report: { version: "0.145.0", capabilities: { ...fullCapabilities, config: false } },
+  });
+  assert.equal(cloudWithoutConfig.mode, "direct", "cloud Codex does not depend on `-c`");
+  const sshLocal = resolveCodexChatRouting({ harness: "codex-ollama", isSshRuntime: true, report });
+  assert.equal(sshLocal.mode, "fallback", "local mode never routes over SSH");
+
+  const local = ["-c", 'web_search="disabled"', "-c", 'model_provider="ollama"'];
+  assert.deepEqual(
+    buildCodexExecArgs({ prompt: "hi", resumeSessionId: null, capabilities: fullCapabilities, model: "qwen3:8b", readOnly: false, addDirs: [], localConfigArgs: local }),
+    ["exec", "--json", "--model", "qwen3:8b", ...local, "--skip-git-repo-check", "--color", "never", "--", "hi"],
+    "a fresh local turn carries the provider and web-search overrides",
+  );
+  assert.deepEqual(
+    buildCodexExecArgs({ prompt: "again", resumeSessionId: "01a15036-ed83-7243-9196-365e85754a1a", capabilities: fullCapabilities, model: "qwen3:8b", readOnly: true, addDirs: [], localConfigArgs: local }),
+    ["exec", "resume", "01a15036-ed83-7243-9196-365e85754a1a", "--json", "--model", "qwen3:8b", ...local, "--skip-git-repo-check", "--", "again"],
+    "a resumed local turn stays on the same provider",
+  );
+}

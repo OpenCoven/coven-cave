@@ -24,7 +24,7 @@ import type {
 
 export type { AutomationStatus, CodexAutomation, CodexAutomationPatch };
 
-const AUTOMATIONS_DIR = path.join(homedir(), ".codex", "automations");
+const AUTOMATIONS_DIR = path.join(/* turbopackIgnore: true */ homedir(), ".codex", "automations");
 
 // ── TOML minimal parser ──────────────────────────────────────────────────────
 
@@ -252,7 +252,7 @@ export async function listCodexAutomations(): Promise<CodexAutomationRecord[]> {
   const results: CodexAutomationRecord[] = [];
 
   for (const entry of entries.sort()) {
-    const tomlPath = path.join(AUTOMATIONS_DIR, entry, "automation.toml");
+    const tomlPath = path.join(/* turbopackIgnore: true */ AUTOMATIONS_DIR, entry, "automation.toml");
     try {
       await access(tomlPath);
       const raw = await readFile(tomlPath, "utf8");
@@ -361,9 +361,9 @@ export async function createCodexAutomation(
     const base = slugifyAutomationId(input.name);
     let id = base;
     for (let n = 2; taken.has(id); n += 1) id = `${base}-${n}`;
-    const dir = path.join(AUTOMATIONS_DIR, id);
+    const dir = path.join(/* turbopackIgnore: true */ AUTOMATIONS_DIR, id);
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, "automation.toml"), serializeAutomationToml({ ...input, id }), "utf8");
+    await writeFile(path.join(/* turbopackIgnore: true */ dir, "automation.toml"), serializeAutomationToml({ ...input, id }), "utf8");
     const created = (await listCodexAutomations()).find((a) => a.id === id);
     if (!created) throw new Error("automation created but could not be read back");
     return created;
@@ -373,7 +373,7 @@ export async function createCodexAutomation(
 /** Delete an automation's directory; returns whether it existed. Path-guarded. */
 export async function deleteCodexAutomation(id: string): Promise<boolean> {
   return withCodexAutomationLock(async () => {
-    const dir = path.join(AUTOMATIONS_DIR, id);
+    const dir = path.join(/* turbopackIgnore: true */ AUTOMATIONS_DIR, id);
     let resolved: string;
     try {
       resolved = await realpath(dir);

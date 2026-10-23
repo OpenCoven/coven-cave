@@ -1,0 +1,33 @@
+{
+  "sourceOid": "2d623fcf3744ef0ca960cc7ffd22256e2860e9a8",
+  "nextBuildId": "RmbJx8XNjDdNt1HhIXIqA",
+  "sourceChangedForThisEvidence": false,
+  "designation": "Development build; no release candidate nominated",
+  "nativeClient": {
+    "configuration": "Debug, ad-hoc signed simulator app",
+    "os": "iOS 26.5",
+    "simulatorId": "3A31EAE7-E679-4B64-BF28-838C1BCC7D68",
+    "appVersion": "0.5.14",
+    "appBuild": "2026101514",
+    "executableSha256": "a1275f3b0b3f0f8afffd49685d8bd789457b7527b6a69d4beb6b536c50005abf",
+    "debugDylibSha256": "471da71c43e88281ea4040b6f0dfdfceaa84d985939a0812a65f2d361cae5ea9"
+  },
+  "host": {
+    "node": "v24.18.1",
+    "xcode": "Xcode 26.6, build 17F113"
+  },
+  "runtime": {
+    "daemon": "coven v0.4.9 (engine coven-code 0.8.0, pinned 0.8.0)",
+    "provider": "Synthetic external Hermes Responses fixture",
+    "schema": "hermes-responses-v1",
+    "servedModel": "served-fixture-v3",
+    "runtimeVersion": "unavailable"
+  },
+  "sourceSha256": {
+    "scripts/runtime-activity-native-transport.mjs": "7d078637885c961e5070aedd073950e905c5ded7305a16efd79862fa4be2084a",
+    "apps/ios/CovenCave/CovenCaveUITests/ActivityRecoveryUITests.swift": "5a17bd589aaaa00ec6a8bd2ca90ddc993db6b503d00ef0d44bf52129f0414b86",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "e74181beea9a4ec1a98255c5328adaf6b4d2db855c5ea5afb972892ebb50c8cf",
+    "apps/ios/CovenCave/CovenCaveUITests/PerformanceBaselineUITests.swift": "fab86b7858ba5e69c1c948fdbed344b1d68d8ad9e32eb76a86f729deb951812f",
+    "apps/ios/CovenCave/project.yml": "83f3c0d15bc13c522ddbe2fb8882c800f263e3d28d60da97f63d59c77671a42f"
+  }
+}

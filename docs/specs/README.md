@@ -6,6 +6,18 @@ and [`../superpowers/plans`](../superpowers/plans). Nothing new belongs here.
 The 55 files already in this directory **stay where they are**, permanently.
 They are not scheduled for migration and should not be moved.
 
+### Three files arrived after the freeze
+
+The freeze landed on 2026-08-14 (#4607). Three files were added afterwards
+anyway, and they stay for the same path-stability reason:
+
+- [`2026-08-20-cave-sidecar-lock-spec.md`](2026-08-20-cave-sidecar-lock-spec.md), cited by `scripts/sidecar-lock.mjs`
+- [`2026-08-31-familiar-presence-design.md`](2026-08-31-familiar-presence-design.md), cited by a `superpowers/specs` design
+- [`2026-09-04-ios-project-workspaces-direction.md`](2026-09-04-ios-project-workspaces-direction.md)
+
+That makes 58 documents plus this README. `scripts/docs-index.test.mjs` now
+fails on a 59th, so the next new file goes to `superpowers/` instead.
+
 ## Why frozen rather than migrated
 
 Older work records cite these files **by path**. `cave-ltl38.6` ("Connect

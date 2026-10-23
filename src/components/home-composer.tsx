@@ -517,15 +517,16 @@ export function HomeComposer({
   });
 
 
-  // Focus on mount — unless a modal dialog (e.g. the onboarding wizard) is
-  // open. The 80ms delay means this fires AFTER a dialog's focus trap has
-  // placed focus, so an unconditional focus() would steal it out of the
-  // modal and strand keyboard users in a composer they can't even see.
+  // Offer initial focus only while the user has not focused another control.
+  // A lazy dialog may not exist yet when its search trigger is clicked; do
+  // not steal that trigger before the dialog captures its return target.
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (document.activeElement !== document.body) return;
       textareaRef.current?.focus();
     }, 80);
+    return () => clearTimeout(timer);
   }, []);
 
   // Maps a familiar id to its display name for the Continue column.

@@ -2,11 +2,11 @@
 // Re-generate with: node scripts/sync-model-catalog.mjs
 //
 // Source: config/runtime-model-catalog.json
-// sha256: 8e5c250fe13523770d7e958e7979c81d681467216e985a5c6869d3d99fc0c36e
+// sha256: 18d26b13e7c45f52625e052e1207db3510ec8fcc75c0faa6b2cf584479a542d9
 
 export const MODEL_CATALOG_SOURCE = {
   schemaVersion: 1,
-  sha256: "8e5c250fe13523770d7e958e7979c81d681467216e985a5c6869d3d99fc0c36e",
+  sha256: "18d26b13e7c45f52625e052e1207db3510ec8fcc75c0faa6b2cf584479a542d9",
 } as const;
 
 export type GeneratedRuntimeProvider =
@@ -15,6 +15,8 @@ export type GeneratedRuntimeProvider =
   | "github"
   | "nous"
   | "xai"
+  | "ollama"
+  | "lmstudio"
   | null;
 
 export type GeneratedRuntimeModelCatalog = {
@@ -67,6 +69,20 @@ export const GENERATED_RUNTIME_MODEL_CATALOG: Record<
         "label": "GPT-5.3 Codex Spark"
       }
     ],
+    "allowCustom": true,
+    "defaultOwner": "cave"
+  },
+  "codex-ollama": {
+    "runtime": "codex-ollama",
+    "provider": "ollama",
+    "models": [],
+    "allowCustom": true,
+    "defaultOwner": "cave"
+  },
+  "codex-lmstudio": {
+    "runtime": "codex-lmstudio",
+    "provider": "lmstudio",
+    "models": [],
     "allowCustom": true,
     "defaultOwner": "cave"
   },

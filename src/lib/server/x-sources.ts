@@ -471,7 +471,7 @@ async function withAllSourcesLock<T>(
 ): Promise<T> {
   await ensureRealDirectory(sourcesRoot());
   return withTransactionLock(
-    path.join(sourcesRoot(), ".all-sources"),
+    path.join(/* turbopackIgnore: true */ sourcesRoot(), ".all-sources"),
     "X sources",
     operation,
   );

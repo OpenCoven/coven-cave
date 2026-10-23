@@ -1,6 +1,6 @@
 # Research core boundary
 
-Decision for [#5993](https://github.com/OpenCoven/coven-cave/issues/5993): Research should become an optional application subsystem. Its desk, mission engine, ingestion, indexing, and media processing do not belong in the baseline shell startup path. The extraction preserves existing data formats and makes Research installation and activation explicit. Delivery and verification status are tracked in [#5997](https://github.com/OpenCoven/coven-cave/issues/5997) and the [verification report](research-extraction-verification.md).
+Decision for [#5993](https://github.com/OpenCoven/coven-cave/issues/5993): Research is an optional application subsystem. Its desk, mission engine, ingestion, indexing, and media processing are outside the baseline shell startup path. The extraction preserved existing data formats and made Research installation and activation explicit. It shipped in PR #6025 (merged 2026-10-15); [#5997](https://github.com/OpenCoven/coven-cave/issues/5997) is closed, and the [verification report](research-extraction-verification.md) records the evidence.
 
 The Research UI already loads on demand through `researcher-surface-loader.tsx`. Moving that UI alone is therefore unlikely to materially reduce ordinary typing lag. The performance opportunity is its server startup and background work; the surface reduction requires extracting the implementation and its tests together.
 

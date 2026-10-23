@@ -18,7 +18,13 @@
 // reads the occurrence, run and failed attempt Coven recorded
 // (`GET /api/coven-automations/[id]/occurrences[/occurrenceId]`) and follows
 // the automation, occurrence and run streams of the changefeed
-// (`GET /api/coven-automations/[id]/feed`) from a checkpoint. Finally it stops
+// (`GET /api/coven-automations/[id]/feed`) from a checkpoint. A save at a
+// revision Coven no longer holds must be refused through Cave's edit route,
+// reviewed against the definition and revision Coven reports
+// (`GET /api/codex-automations/[id]/definition`), and re-applied at that
+// revision without undoing the other change. The overview's scheduler read
+// (`GET /api/coven-automation-occurrences`) must report that routine's claimed
+// Run now occurrence and nothing else in flight. Finally it stops
 // the daemon and requires Cave to report it unavailable rather than fall back.
 //
 //   pnpm canary:automations-release            # install the pinned release
@@ -117,6 +123,12 @@ export interface CanaryDependencies {
   occurrence(id: string, occurrenceId: string): Promise<CanaryResponse>;
   /** `GET /api/coven-automations/[id]/feed?…` */
   feed(id: string, query: Record<string, string>): Promise<CanaryResponse>;
+  /** `PATCH /api/codex-automations/[id]`, as the detail panel saves. */
+  saveViaRoute(id: string, body: Record<string, unknown>): Promise<CanaryResponse>;
+  /** `GET /api/codex-automations/[id]/definition` */
+  definition(id: string): Promise<CanaryResponse>;
+  /** `GET /api/coven-automation-occurrences` */
+  inFlight(): Promise<CanaryResponse>;
   restartDaemon(): Promise<void>;
   stopDaemon(): Promise<void>;
 }
@@ -355,6 +367,14 @@ export async function runCaveAutomationsScenario(
   if (/spawn|No such file/u.test(JSON.stringify(listed.body) + JSON.stringify(inspected.body))) {
     fail("occurrences: the daemon's free-text reason reached Cave's answer.");
   }
+  // The overview rows: Coven's scheduler views name the one claimed occurrence, for the one routine that has it.
+  const overview = await cave.inFlight();
+  expectAnswer("in-flight overview", { status: overview.status, body: { kind: overview.body.kind, byAutomation: overview.body.byAutomation, truncated: overview.body.truncated } }, 200, {
+    kind: "available",
+    byAutomation: { [RUN_ROUTINE_ID]: { state: "claimed", count: 1, since: occurrence.scheduledFor, manual: true } },
+    truncated: [],
+  });
+
   // The changefeed: each stream from the beginning, then from its checkpoint.
   const runStream = { stream: "run", streamId: String(run.id) };
   const runCheckpoint = expectFeed("run stream", await cave.feed(RUN_ROUTINE_ID, runStream), [
@@ -370,6 +390,32 @@ export async function runCaveAutomationsScenario(
   const definitionCheckpoint = expectFeed("automation stream", await cave.feed(RUN_ROUTINE_ID, {}), ["Definition created:Revision 1"]);
   // A position Coven does not hold is a reset for the caller, not an outage.
   expectAnswer("a checkpoint Coven never issued", await cave.feed(RUN_ROUTINE_ID, { checkpoint: "cave-canary-unknown-checkpoint" }), 410, { kind: "expired" });
+
+  // A change lands elsewhere while the panel still shows revision 1. Cave's
+  // save at revision 1 must be refused, the review must read Coven's body and
+  // revision together, and the rebased save must keep the other change.
+  const elsewhere = "Report that the Cave canary was changed elsewhere.";
+  await cave.updateRoutine({ ...draft, id: RUN_ROUTINE_ID, name: "Cave release canary (run now)", cwd: runCwd, prompt: elsewhere });
+  const stale = await cave.saveViaRoute(RUN_ROUTINE_ID, { name: "Cave release canary (renamed in Cave)", expectedRevision: 1 });
+  if (stale.status !== 409 || stale.body.conflict !== true || stale.body.currentRevision !== 2) {
+    fail(`save at a stale revision: expected 409 with currentRevision 2, received ${stale.status} ${describe(stale.body)}.`);
+  }
+  const current = await cave.definition(RUN_ROUTINE_ID);
+  const currentAutomation = current.body.automation as { name?: unknown; prompt?: unknown } | undefined;
+  if (current.status !== 200 || current.body.ok !== true || current.body.revision !== 2 ||
+    currentAutomation?.prompt !== elsewhere || currentAutomation.name !== "Cave release canary (run now)") {
+    fail(`definition after the change: expected revision 2 with the other change, received ${current.status} ${describe(current.body)}.`);
+  }
+  const rebased = await cave.saveViaRoute(RUN_ROUTINE_ID, { name: "Cave release canary (renamed in Cave)", expectedRevision: 2 });
+  const rebasedAutomation = rebased.body.automation as { name?: unknown; prompt?: unknown } | undefined;
+  if (rebased.status !== 200 || rebased.body.ok !== true || rebasedAutomation?.name !== "Cave release canary (renamed in Cave)" ||
+    rebasedAutomation.prompt !== elsewhere) {
+    fail(`rebased save: expected the new name with the other change kept, received ${rebased.status} ${describe(rebased.body)}.`);
+  }
+  const settled = await cave.definition(RUN_ROUTINE_ID);
+  if (settled.status !== 200 || settled.body.revision !== 3) {
+    fail(`definition after the rebased save: expected revision 3, received ${settled.status} ${describe(settled.body)}.`);
+  }
 
   const updated = await cave.updateRoutine({ ...created, prompt: "Report that the Cave canary was revised." });
   if (updated.id !== ROUTINE_ID || updated.prompt !== "Report that the Cave canary was revised.") {
@@ -411,8 +457,13 @@ export async function runCaveAutomationsScenario(
     { command: "activate", expectedRevision: 1, adoptionKey: `cave-${randomUUID()}` }), 503, { kind: "unavailable" });
   expectAnswer("occurrences with the daemon stopped", await cave.occurrences(RUN_ROUTINE_ID), 503, { kind: "unavailable" });
   expectAnswer("the changefeed with the daemon stopped", await cave.feed(RUN_ROUTINE_ID, { checkpoint: definitionCheckpoint }), 503, { kind: "unavailable" });
+  expectAnswer("the in-flight overview with the daemon stopped", await cave.inFlight(), 503, { kind: "unavailable" });
+  const offlineDefinition = await cave.definition(RUN_ROUTINE_ID);
+  if (offlineDefinition.status !== 503 || offlineDefinition.body.degraded !== true) {
+    fail(`definition with the daemon stopped: expected 503 degraded, received ${offlineDefinition.status} ${describe(offlineDefinition.body)}.`);
+  }
 
-  return { mutations: 8, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 };
+  return { mutations: 10, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 };
 }
 
 function covenCommand(coven: string): [string, string[]] {
@@ -572,11 +623,14 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
     const occurrencesRoute = await import("../src/app/api/coven-automations/[id]/occurrences/route.ts");
     const occurrenceRoute = await import("../src/app/api/coven-automations/[id]/occurrences/[occurrenceId]/route.ts");
     const feedRoute = await import("../src/app/api/coven-automations/[id]/feed/route.ts");
+    const editRoute = await import("../src/app/api/codex-automations/[id]/route.ts");
+    const definitionRoute = await import("../src/app/api/codex-automations/[id]/definition/route.ts");
+    const inFlightRoute = await import("../src/app/api/coven-automation-occurrences/route.ts");
     const { TOKEN_HEADER } = await import("../src/proxy-helpers.ts");
     // Mutating routes accept only a local origin, as the desktop app sends them.
     const token = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
-    const local = (url: string, body: unknown) => new Request(url, {
-      method: "POST",
+    const local = (url: string, body: unknown, method = "POST") => new Request(url, {
+      method,
       headers: { host: "127.0.0.1:3000", "content-type": "application/json", ...(token ? { [TOKEN_HEADER]: token } : {}) },
       body: JSON.stringify(body),
     });
@@ -619,6 +673,11 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
       feed: async (id, query) => answer(await feedRoute.GET(
         new Request(`http://127.0.0.1:3000/api/coven-automations/${encodeURIComponent(id)}/feed?${new URLSearchParams(query)}`),
         { params: Promise.resolve({ id }) })),
+      saveViaRoute: async (id, body) => answer(await editRoute.PATCH(
+        local(`http://127.0.0.1:3000/api/codex-automations/${encodeURIComponent(id)}`, body, "PATCH"), { params: Promise.resolve({ id }) })),
+      inFlight: async () => answer(await inFlightRoute.GET(new Request("http://127.0.0.1:3000/api/coven-automation-occurrences"))),
+      definition: async (id) => answer(await definitionRoute.GET(
+        new Request(`http://127.0.0.1:3000/api/codex-automations/${encodeURIComponent(id)}/definition`), { params: Promise.resolve({ id }) })),
       restartDaemon: async () => {
         await stop();
         await start();
@@ -679,6 +738,9 @@ async function main(signal: AbortSignal): Promise<void> {
     `feedEvents=${result.feedEvents}`,
     "feedResume=passed",
     "feedLostPosition=expired",
+    "staleSave=refused",
+    "conflictRebase=kept-both",
+    "inFlight=claimed",
     "offline=reported-unavailable",
   ].join(" ") + "\n");
 }

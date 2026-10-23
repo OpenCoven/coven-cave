@@ -1,5 +1,7 @@
 "use client";
 
+import { runAutoReflectionIfMissing } from "@/lib/auto-thread-reflection";
+
 import { mergeReasoningBlock, normalizeReasoningBlock, normalizeReasoningBlocks } from "@/lib/chat-reasoning-blocks";
 import { ResponseRunDetails } from "@/components/response-run-details";
 import { normalizeToolActivity } from "@/lib/chat-activity";
@@ -145,6 +147,7 @@ import {
 } from "@/lib/initial-prompt-handoff";
 import { useCopy } from "@/lib/use-copy";
 import { authRecoveryHarness, parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
+import { isLocalCodexRefusalCode, type LocalCodexRefusalCode } from "@/lib/local-codex";
 import { ComposerModelPopover, runtimeModelLabel } from "@/components/composer-runtime-chip";
 import type { ComposerModelInventory } from "@/components/model-inventory-feedback";
 import type { RuntimeModelOption } from "@/lib/runtime-models";
@@ -163,6 +166,7 @@ import { ArchiveChatButton, ChatTitleEditable, SessionOverflowMenu, VoiceCallBut
 import { runtimeDisplayName } from "@/components/runtime-logo";
 import { Popover, PopoverBody } from "@/components/ui/popover";
 import { ChatSendLater } from "@/components/chat-send-later";
+import { useSetupOpener } from "@/components/onboarding-local-setup-host";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useToolMilestones } from "@/lib/use-tool-milestones";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
@@ -869,6 +873,7 @@ function ChatErrorStrip({
   modelInventory,
   onRetryWithModel,
   onManageUsage,
+  localRefusal,
 }: {
   message: string;
   code?: string;
@@ -916,11 +921,17 @@ function ChatErrorStrip({
   onRetryWithModel?: (modelId: string) => void;
   /** Opens the runtime vendor's usage page through the host's URL path. */
   onManageUsage?: () => void;
+  /** The send was refused for a local session before anything ran (#6095). */
+  localRefusal?: LocalCodexRefusalCode;
 }) {
   const { copied, copy } = useCopy();
   const usageLimit = code === "harness_usage_limit";
   const erroredTools = (failingTurn?.tools ?? []).filter((t) => t.status === "error");
   const erroredSteps = (failingTurn?.progress ?? []).filter((p) => p.status === "error");
+  // The refused `connect` step only repeats the message above, so it says
+  // that instead of claiming detail is withheld. It applies only while the
+  // message still names the refusal; every other step keeps the fallback.
+  const refusalShown = Boolean(localRefusal && message.includes(localRefusal));
   const hasDetail = Boolean(code) || erroredTools.length > 0 || erroredSteps.length > 0;
   const [open, setOpen] = useState(true);
   // Re-expand whenever a *new* error fires so the latest detail is front-and-centre.
@@ -1162,7 +1173,12 @@ function ChatErrorStrip({
                 <pre className={pre}>A tool failed. Its input and output are withheld to protect project data.</pre>
               </div>
             ))}
-            {erroredSteps.map((p) => (
+            {erroredSteps.map((p) => refusalShown && p.id === "connect" ? (
+              <div key={p.id}>
+                <div className={kicker}>request refused</div>
+                <pre className={pre}>Nothing ran. The reason is shown above.</pre>
+              </div>
+            ) : (
               <div key={p.id}>
                 <div className={kicker}>step failure</div>
                 <pre className={pre}>{safeRuntimeProcessDetail(p) ?? "A runtime step failed. Its detail is withheld to protect project data."}</pre>
@@ -1606,32 +1622,21 @@ function turnMetaPeekTitle(turn: Turn): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
-/** Inline remedy for the offline meta line: the old copy said "start it from
- *  the banner above", but the banner can be dismissed or off-screen — a broken
- *  reference. The action lives in the notice itself, self-contained like the
- *  settings/onboarding start buttons; the workspace's 5s status poll picks up
- *  the flip and clears the offline state (cave-5qmm). */
+/** Keep offline recovery in reach even when the shell banner was dismissed.
+ * Setup checks prerequisites and reports start failures with recovery guidance. */
 function MetaLineStartDaemon() {
-  const [starting, setStarting] = useState(false);
+  const { openSetup, setupHost } = useSetupOpener("banner");
   return (
-    <button
-      type="button"
-      className="cave-chat-meta-line__action focus-ring"
-      disabled={starting}
-      onClick={async () => {
-        setStarting(true);
-        try {
-          await fetch("/api/daemon/start", { method: "POST" });
-        } catch {
-          // The meta line keeps reading "daemon offline" and the button
-          // re-arms — the workspace banner surfaces start errors in detail.
-        } finally {
-          setStarting(false);
-        }
-      }}
-    >
-      {starting ? "starting…" : "Start daemon"}
-    </button>
+    <>
+      <button
+        type="button"
+        className="cave-chat-meta-line__action focus-ring"
+        onClick={openSetup}
+      >
+        Open setup
+      </button>
+      {setupHost}
+    </>
   );
 }
 
@@ -2237,32 +2242,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const autoReflectOnThread = useCallback(async (targetSessionId: string) => {
     if (!familiar.autoSelfReport || !reflectTranscript) return;
     try {
-      const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
-      const { text, error, sessionId: reviewSessionId } = await streamFamiliarText({
-        familiarId: familiar.id,
-        prompt,
-        origin: "enhance",
+      await runAutoReflectionIfMissing(familiar.id, targetSessionId, async () => {
+        const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
+        const { text, error, sessionId: reviewSessionId } = await streamFamiliarText({
+          familiarId: familiar.id,
+          prompt,
+          origin: "enhance",
+        });
+        if (error || !text.trim()) return;
+        const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sessionId: targetSessionId,
+            trigger: "auto",
+            threadTitle: session?.title ?? familiar.display_name,
+            payload: text,
+            ...(reviewSessionId ? { reviewSessionId } : {}),
+          }),
+        });
+        const json = await res.json().catch(() => null) as
+          | { ok: true; report: ThreadSelfReport; archivedAt?: string }
+          | { ok: false; error?: string }
+          | null;
+        if (json?.ok) {
+          setThreadSignalReport(json.report);
+          if (json.archivedAt) onSessionsChanged?.();
+        }
       });
-      if (error || !text.trim()) return;
-      const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sessionId: targetSessionId,
-          trigger: "auto",
-          threadTitle: session?.title ?? familiar.display_name,
-          payload: text,
-          ...(reviewSessionId ? { reviewSessionId } : {}),
-        }),
-      });
-      const json = await res.json().catch(() => null) as
-        | { ok: true; report: ThreadSelfReport; archivedAt?: string }
-        | { ok: false; error?: string }
-        | null;
-      if (json?.ok) {
-        setThreadSignalReport(json.report);
-        if (json.archivedAt) onSessionsChanged?.();
-      }
     } catch {
       /* Auto self-report is best-effort and intentionally silent. */
     }
@@ -2554,9 +2561,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Debug context for the inline error strip below the chat: which turn failed
   // and an optional machine code. `seq` increments per occurrence so the strip
   // re-expands its detail every time a *new* error fires (not just the first).
-  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string; harness?: string; model?: string | null } | null>(null);
+  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string; harness?: string; model?: string | null; localRefusal?: LocalCodexRefusalCode } | null>(null);
   const debugErrorSeqRef = useRef(0);
-  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string; harness?: string; model?: string | null }) => {
+  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string; harness?: string; model?: string | null; localRefusal?: LocalCodexRefusalCode }) => {
     debugErrorSeqRef.current += 1;
     const seq = debugErrorSeqRef.current;
     setDebugError((previous) => ({
@@ -5715,7 +5722,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       });
       if (!res.ok) {
         const refusal = res.status === 409
-          ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown } | null
+          ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown; code?: unknown } | null
           : null;
         const message = await chatBridgeFailureMessage(res);
         let surfacedMessage = message;
@@ -5779,7 +5786,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           liveGeneration.sessionId,
           liveStreamMetadata(liveGeneration),
         );
-        raiseDebugError({ turnId: assistantId, code: `HTTP ${res.status}` });
+        // A local session refused before anything ran (#6095): the message
+        // above is Cave's own copy and the whole reason.
+        raiseDebugError({
+          turnId: assistantId,
+          code: `HTTP ${res.status}`,
+          ...(isLocalCodexRefusalCode(refusal?.code) ? { localRefusal: refusal.code } : {}),
+        });
         publishStreamHealth({
           type: "degrade",
           at: new Date().toISOString(),
@@ -8773,6 +8786,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         <ChatErrorStrip
           message={error}
           code={debugError?.code}
+          localRefusal={debugError?.localRefusal}
           errorSeq={debugError?.seq ?? 0}
           failingTurn={
             debugError?.turnId ? turns.find((t) => t.id === debugError.turnId) ?? null : null
@@ -9842,6 +9856,8 @@ function TurnRowImpl({
   const renderReasoning = (block: NonNullable<typeof reasoningBlocks>[number]) => (
     <ReasoningBlock key={block.id} plainText
       reasoning={block.text ?? (block.unavailableReason === "provider-withheld" ? "Provider withheld this summary." : block.phase === "running" && pending ? "Summary in progress." : "Summary unavailable.")}
+      // A placeholder describes a missing summary; its length is not one (#6057).
+      countWords={block.text !== undefined}
       pending={block.phase === "running" && pending}
       label={block.representation === "provider-progress" ? "Provider progress" : block.representation === "application-activity" ? "Activity description" : block.representation === "legacy-unverified" ? "Unverified reasoning text" : "Reasoning summary"}
       source={`${block.observation.producer.harness} · ${block.observation.source === "runtime-report" ? "provider report" : "Cave observation"}`}
@@ -10181,7 +10197,7 @@ function TurnRowImpl({
   );
 }
 
-function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning summary", source, plainText }: { reasoning: string; durationMs?: number; pending: boolean; label?: string; source?: string; plainText?: boolean }) {
+function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning summary", source, plainText, countWords = true }: { reasoning: string; durationMs?: number; pending: boolean; label?: string; source?: string; plainText?: boolean; countWords?: boolean }) {
   const wordCount = useMemo(
     () => reasoning.split(/\s+/).filter(Boolean).length,
     [reasoning],
@@ -10192,11 +10208,13 @@ function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning sum
           <Icon name="ph:brain" width={12} aria-hidden />
           {label}
         </span>
-        <span className="ml-auto font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
-          {typeof durationMs === "number" && durationMs > 0
-            ? `Worked for ${fmtDuration(durationMs)}`
-            : `${wordCount} ${wordCount === 1 ? "word" : "words"}`}
-        </span>
+        {(typeof durationMs === "number" && durationMs > 0) || countWords ? (
+          <span className="ml-auto font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
+            {typeof durationMs === "number" && durationMs > 0
+              ? `Worked for ${fmtDuration(durationMs)}`
+              : `${wordCount} ${wordCount === 1 ? "word" : "words"}`}
+          </span>
+        ) : null}
     </>}>
       <div className="cave-reasoning-body mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
         {source ? <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{source}</p> : null}

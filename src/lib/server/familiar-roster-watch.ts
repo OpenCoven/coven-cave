@@ -20,9 +20,9 @@ export const FAMILIAR_WATCH_COALESCE_MS = 100;
 /** The roster's source files. */
 export function familiarRosterSourceFiles(): string[] {
   return [
-    path.join(caveHome(), "config.json"),
-    path.join(caveHome(), "removed-familiars.json"),
-    path.join(covenHome(), "familiars.toml"),
+    path.join(/* turbopackIgnore: true */ caveHome(), "config.json"),
+    path.join(/* turbopackIgnore: true */ caveHome(), "removed-familiars.json"),
+    path.join(/* turbopackIgnore: true */ covenHome(), "familiars.toml"),
   ];
 }
 

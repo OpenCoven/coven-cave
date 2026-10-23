@@ -20,6 +20,7 @@ import {
   lifecycleStateLabel,
   type AutomationLifecycleView,
 } from "@/lib/automations/lifecycle";
+import { inFlightDescription, inFlightRowText, type InFlightView } from "@/lib/automations/in-flight";
 
 function relTime(iso: string | undefined | null): string {
   return iso ? relativeTimeSigned(iso) : "—";
@@ -31,6 +32,8 @@ export type ScheduleActions = {
   /** Coven's canonical lifecycle for one automation. Rows read their state
    *  from this, never from the legacy routine mirror's `status`. */
   lifecycleOf: (id: string) => AutomationLifecycleView;
+  /** What Coven's scheduler reports each automation doing right now. Optional: rows without it show none. */
+  inFlightOf?: (id: string) => InFlightView;
   /** The automation with a mutation in flight, if any. Rows disable their own
    *  actions against it so a double-click cannot submit the same run twice —
    *  the second POST comes back 409. The detail panel already did this; the
@@ -108,6 +111,9 @@ function AutomationScheduleRow({
   const glyphLabel = known ? undefined : lifecycle ? lifecycleStateLabel(lifecycle) : "Not verified";
   const freshnessNote = lifecycle ? lifecycleFreshnessNote(lifecycle, (iso) => formatTimestamp(iso, readDateTimePrefs())) : null;
   const control = lifecycle ? lifecycleControl(lifecycle) : null;
+  // Coven's own occurrence state, by name: never one spinner for claimed, running and recovery.
+  const inFlight = actions?.inFlightOf?.(auto.id) ?? null;
+  const inFlightText = inFlight ? inFlightRowText(inFlight) : null;
   const busy = actions?.busyId === auto.id;
   const toggleDisabled = busy || !control || control.disabledReason !== null;
   const toggleLabel = `${isActive ? "Pause" : "Resume"} ${auto.name}${control?.disabledReason ? `: ${control.disabledReason}` : ""}`;
@@ -133,6 +139,16 @@ function AutomationScheduleRow({
         {lifecycle && freshnessNote ? (
           <span className="rituals-cron-row__tag" title={freshnessNote}>
             {lifecycle.freshness === "stale" ? `${lifecycleStateLabel(lifecycle)} · stale` : lifecycleStateLabel(lifecycle)}
+          </span>
+        ) : null}
+        {inFlight?.entry && inFlightText ? (
+          <span
+            className="rituals-cron-row__tag"
+            title={inFlightDescription(inFlight.entry, (iso) => formatTimestamp(iso, readDateTimePrefs()))}
+            // Recovery needs a person; the label says so, the tint only helps it stand out.
+            style={inFlight.entry.state === "recovery_required" ? { color: "var(--color-warning)" } : undefined}
+          >
+            {inFlightText}
           </span>
         ) : null}
       </span>
@@ -264,6 +280,7 @@ export function AutomationsPanel({
   active,
   paused,
   unverified,
+  inFlightNote = null,
   failingCount,
   selectedId,
   familiarsById,
@@ -274,6 +291,8 @@ export function AutomationsPanel({
   paused: CodexAutomation[];
   /** Automations whose lifecycle Coven has not confirmed: still checking, unreachable, or unreadable. */
   unverified: CodexAutomation[];
+  /** Why rows cannot be trusted to show what is running (stale, failed or truncated read); null when they can. */
+  inFlightNote?: string | null;
   failingCount: number;
   selectedId: string | null;
   familiarsById: Map<string, ResolvedFamiliar>;
@@ -282,6 +301,9 @@ export function AutomationsPanel({
 }) {
   return (
     <>
+      {inFlightNote ? (
+        <p className="px-1 pb-2 text-[length:var(--text-xs)] [color:var(--text-muted)]!" role="note">{inFlightNote}</p>
+      ) : null}
       <AutomationScheduleSection title="Active" items={active}
         failingCount={failingCount}
         selectedId={selectedId}

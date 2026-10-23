@@ -16,7 +16,7 @@ afterEach(async () => {
   if (renderer) await act(async () => renderer?.unmount());
   renderer = null;
   vi.unstubAllGlobals();
-  vi.doUnmock("@opencoven/research-client");
+  vi.doUnmock("@opencoven/research-room");
 });
 
 function deferred() {
@@ -39,7 +39,7 @@ async function fixture() {
       },
     };
   });
-  vi.doMock("@opencoven/research-client", imported);
+  vi.doMock("@opencoven/research-room", imported);
   const { ResearcherSurfaceLoader } = await import("./researcher-surface-loader");
   const view = (id: string) => createElement(ResearcherSurfaceLoader, {
     context: context(id), fallback: createElement("span", null, "Loading"),

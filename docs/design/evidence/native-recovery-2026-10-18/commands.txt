@@ -1,0 +1,31 @@
+# Working directory: .worktrees/issue-6069-native-recovery at source
+# 2d623fcf3744ef0ca960cc7ffd22256e2860e9a8. No product/test edits.
+pnpm install --offline --frozen-lockfile
+pnpm mobile:ios:xcodegen
+# Original build/test ran concurrently with first pnpm build; both stopped at disk pressure.
+COVEN_HOME=/tmp/cave-6069-state/coven COVEN_CAVE_HOME=/tmp/cave-6069-state/coven/cave xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave -destination 'platform=iOS Simulator,id=3A31EAE7-E679-4B64-BF28-838C1BCC7D68' -derivedDataPath /tmp/cave-6069-derived -resultBundlePath /tmp/cave-6069-background-baseline.xcresult -only-testing:CovenCaveUITests/AgentActivityUITests/testToolOutputClearsWhenBackgroundedAndCanBeLoadedAgain -parallel-testing-enabled NO -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+# Serial retry, same source and compiled binaries:
+COVEN_HOME=/tmp/cave-6069-state/coven COVEN_CAVE_HOME=/tmp/cave-6069-state/coven/cave xcodebuild test-without-building -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave -destination 'platform=iOS Simulator,id=3A31EAE7-E679-4B64-BF28-838C1BCC7D68' -derivedDataPath /tmp/cave-6069-derived -resultBundlePath /tmp/cave-6069-background-retry1.xcresult -only-testing:CovenCaveUITests/AgentActivityUITests/testToolOutputClearsWhenBackgroundedAndCanBeLoadedAgain -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+# Both production attempts used this command; second ran alone and passed:
+COVEN_HOME=/tmp/cave-6069-state/coven COVEN_CAVE_HOME=/tmp/cave-6069-state/coven/cave pnpm build
+# First live attempt ran against a Shutdown simulator and failed before dispatch:
+node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-native-transport.mjs --execute --destination 3A31EAE7-E679-4B64-BF28-838C1BCC7D68 --derived-data /tmp/cave-6069-derived --evidence /tmp/cave-6069-live-baseline --live-ui-send
+xcrun simctl boot 3A31EAE7-E679-4B64-BF28-838C1BCC7D68
+xcrun simctl bootstatus 3A31EAE7-E679-4B64-BF28-838C1BCC7D68 -b
+node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-native-transport.mjs --execute --destination 3A31EAE7-E679-4B64-BF28-838C1BCC7D68 --derived-data /tmp/cave-6069-derived --evidence /tmp/cave-6069-live-retry1 --live-ui-send
+# First navigation run: Performance suite skipped; Agent fixture showed pairing screen.
+COVEN_HOME=/tmp/cave-6069-state/coven COVEN_CAVE_HOME=/tmp/cave-6069-state/coven/cave xcodebuild test-without-building -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave -destination 'platform=iOS Simulator,id=3A31EAE7-E679-4B64-BF28-838C1BCC7D68' -derivedDataPath /tmp/cave-6069-derived -resultBundlePath /tmp/cave-6069-navigation.xcresult -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink -only-testing:CovenCaveUITests/AgentActivityUITests/testTimelineKeepsLocalChoicesThroughCompletionAndBackground -parallel-testing-enabled NO
+# Retry clears only this session's test app on its owned simulator.
+xcrun simctl uninstall 3A31EAE7-E679-4B64-BF28-838C1BCC7D68 ai.opencoven.cave
+python3 - <<'PLAN'
+import pathlib, plistlib
+root = pathlib.Path('/tmp/cave-6069-derived/Build/Products')
+data = plistlib.loads((root / 'CovenCave_iphonesimulator26.5-arm64.xctestrun').read_bytes())
+data.pop('CovenCaveTests', None)
+target = data['CovenCaveUITests']
+target.pop('SkipTestIdentifiers', None)
+target['OnlyTestIdentifiers'] = ['AgentActivityUITests/testTimelineKeepsLocalChoicesThroughCompletionAndBackground', 'PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess', 'PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink']
+(root / 'Cave6069Navigation.xctestrun').write_bytes(plistlib.dumps(data))
+PLAN
+COVEN_HOME=/tmp/cave-6069-state/coven COVEN_CAVE_HOME=/tmp/cave-6069-state/coven/cave xcodebuild test-without-building -xctestrun /tmp/cave-6069-derived/Build/Products/Cave6069Navigation.xctestrun -destination 'platform=iOS Simulator,id=3A31EAE7-E679-4B64-BF28-838C1BCC7D68' -resultBundlePath /tmp/cave-6069-navigation-retry1.xcresult -parallel-testing-enabled NO
+xcrun simctl shutdown 3A31EAE7-E679-4B64-BF28-838C1BCC7D68

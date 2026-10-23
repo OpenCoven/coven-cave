@@ -503,13 +503,13 @@ function configuredGrokRegistrySource(): RegistrySource {
 }
 
 function defaultCachePath(): string {
-  return path.join(process.env.COVEN_CAVE_HOME || path.join(covenHomePath(), "cave"), "grok-schema-bundle-v1.json");
+  return path.join(/* turbopackIgnore: true */ process.env.COVEN_CAVE_HOME || path.join(/* turbopackIgnore: true */ covenHomePath(), "cave"), "grok-schema-bundle-v1.json");
 }
 
 function trustAnchorPath(file: string): string { return `${file}.anchor`; }
 function trustAnchorJournalPath(file: string): string { return `${trustAnchorPath(file)}.journal`; }
 function trustAnchorJournalEntryPath(file: string, anchor: TrustAnchor): string {
-  return path.join(trustAnchorJournalPath(file), `${anchor.sequence}-${anchor.payloadHash}.json`);
+  return path.join(/* turbopackIgnore: true */ trustAnchorJournalPath(file), `${anchor.sequence}-${anchor.payloadHash}.json`);
 }
 function cacheLockPath(file: string): string { return `${file}.lock`; }
 
@@ -553,7 +553,7 @@ async function readBoundedRegistryBody(response: Response): Promise<string> {
 
 async function readLegacyTrustAnchor(file: string): Promise<TrustAnchor | null> {
   try {
-    const raw = await fs.readFile(trustAnchorPath(file), "utf8");
+    const raw = await fs.readFile(/* turbopackIgnore: true */ trustAnchorPath(file), "utf8");
     if (Buffer.byteLength(raw) > 1024) return null;
     const anchor = JSON.parse(raw);
     return validTrustAnchor(anchor) ? anchor : null;
@@ -628,8 +628,8 @@ async function writeJsonAtomic(file: string, value: unknown): Promise<boolean> {
   const temporary = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   try {
     await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
-    await fs.rename(temporary, file);
+    await fs.writeFile(/* turbopackIgnore: true */ temporary, JSON.stringify(value), { mode: 0o600 });
+    await fs.rename(/* turbopackIgnore: true */ temporary, file);
     return true;
   } catch { return false; /* Cache is an optimization; a failed write never broadens parsing. */ }
 }
@@ -672,24 +672,24 @@ async function acquireCacheLock(file: string): Promise<CacheLock | null> {
   while (Date.now() < deadline) {
     try {
       await fs.mkdir(path.dirname(file), { recursive: true });
-      const handle = await fs.open(lock, "wx", 0o600);
+      const handle = await fs.open(/* turbopackIgnore: true */ lock, "wx", 0o600);
       const token = `${process.pid}:${randomBytes(8).toString("hex")}`;
       await handle.writeFile(token);
       await handle.close();
       const owns = async () => {
-        try { return await fs.readFile(lock, "utf8") === token; } catch { return false; }
+        try { return await fs.readFile(/* turbopackIgnore: true */ lock, "utf8") === token; } catch { return false; }
       };
       return {
         owns,
         // A stale-lock taker may install its own lock before this writer
         // resumes. Never let the former owner remove that newer lock.
-        release: async () => { if (await owns()) await fs.rm(lock, { force: true }); },
+        release: async () => { if (await owns()) await fs.rm(/* turbopackIgnore: true */ lock, { force: true }); },
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null;
       try {
-        const stat = await fs.stat(lock);
-        if (Date.now() - stat.mtimeMs > CACHE_LOCK_STALE_MS) await fs.rm(lock, { force: true });
+        const stat = await fs.stat(/* turbopackIgnore: true */ lock);
+        if (Date.now() - stat.mtimeMs > CACHE_LOCK_STALE_MS) await fs.rm(/* turbopackIgnore: true */ lock, { force: true });
       } catch { /* another writer released or replaced the lock */ }
       await new Promise((resolve) => setTimeout(resolve, CACHE_LOCK_POLL_MS));
     }

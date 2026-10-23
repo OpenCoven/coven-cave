@@ -47,7 +47,7 @@ export async function loadCraftDefinition(
   let plugins: CatalogPlugin[];
   try {
     const parsed = JSON.parse(
-      await readFile(path.join(marketplaceDir, "catalog.json"), "utf8"),
+      await readFile(path.join(/* turbopackIgnore: true */ marketplaceDir, "catalog.json"), "utf8"),
     ) as { plugins?: unknown };
     if (!Array.isArray(parsed.plugins)) return null;
     plugins = parsed.plugins as CatalogPlugin[];
@@ -99,7 +99,7 @@ export async function resolveCatalogComponents(
   let plugins: CatalogPlugin[] = [];
   try {
     const parsed = JSON.parse(
-      await readFile(path.join(marketplaceDir, "catalog.json"), "utf8"),
+      await readFile(path.join(/* turbopackIgnore: true */ marketplaceDir, "catalog.json"), "utf8"),
     ) as { plugins?: unknown };
     if (Array.isArray(parsed.plugins)) plugins = parsed.plugins as CatalogPlugin[];
   } catch {

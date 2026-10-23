@@ -146,7 +146,7 @@ async function familiarLocalSkillsSection(workspace: string): Promise<{
   section: string | null;
   loaded: string[];
 }> {
-  const skillsRoot = path.join(workspace, "skills");
+  const skillsRoot = path.join(/* turbopackIgnore: true */ workspace, "skills");
   let workspaceRoot: string;
   let root: string;
   try {
@@ -178,7 +178,7 @@ async function familiarLocalSkillsSection(workspace: string): Promise<{
     .sort((a, b) => a.name.localeCompare(b.name))
     .slice(0, MAX_FAMILIAR_LOCAL_SKILLS)) {
     try {
-      const resolved = await realpath(path.join(root, entry.name, "SKILL.md"));
+      const resolved = await realpath(path.join(/* turbopackIgnore: true */ root, entry.name, "SKILL.md"));
       const relative = path.relative(root, resolved);
       if (
         !relative
