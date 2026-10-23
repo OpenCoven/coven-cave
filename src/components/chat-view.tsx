@@ -4024,8 +4024,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // server can hand the harness resolvable absolute paths.
   const [mentionedFiles, setMentionedFiles] = useState<string[]>([]);
   // Prompt enhancement (cave-b6c2): shared model-backed hook — streams a real
-  // rewrite from this thread's familiar (rule engine as offline fallback) and
-  // owns the race-safe apply/suggest/revert lifecycle.
+  // rewrite from this thread's familiar (no scripted fallback; failures keep
+  // the draft) and owns the race-safe apply/suggest/revert lifecycle.
   const preparedPromptEnhancement = prepareChatPromptEnhancement(
     input,
     Boolean(activeProjectRoot),
@@ -7632,6 +7632,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onEnhance: promptEnhance.enhance,
           disabled: busy || !input.trim(),
           loading: promptEnhance.state.phase === "loading",
+          unavailableReason: promptEnhance.unavailableReason,
         },
       }}
       response={{
@@ -8105,6 +8106,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onDismiss={promptEnhance.dismiss}
                 onRevert={promptEnhance.revert}
                 onCancel={promptEnhance.cancel}
+                onRetry={promptEnhance.retry}
                 onFocusComposer={() => inputRef.current?.focus()}
               />
               {queuedMessages.length > 0 ? (
@@ -8225,6 +8227,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       onEnhance={promptEnhance.enhance}
                       onCancel={promptEnhance.cancel}
                       disabled={busy || !input.trim()}
+                      unavailableReason={promptEnhance.unavailableReason}
                     />
                     <button
                       type="button"

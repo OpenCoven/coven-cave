@@ -1686,7 +1686,6 @@ export const SUITES = {
     "src/app/api/runtime-models/[runtime]/route.test.ts",
     "src/app/api/runtime-models/[runtime]/route-behavior.test.ts",
     "src/app/api/runtime-models/opencode/route.test.ts",
-    "src/app/api/prompt/enhance/route.test.ts",
     "src/app/api/prompts/route.test.ts",
     "src/app/api/marketplace/pack-prompts-route.test.ts",
     "src/app/api/app/latest-release/route.test.ts",
