@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { freePort, startCave, stopCave } from './client-v1-conformance.mjs';
 import { loopbackOriginResponds } from './dev-app-origin-health.mjs';
+import { startFixtureKeepalive } from './runtime-activity-fixture-keepalive.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [execute, evidence, mode] = process.argv.slice(2);
@@ -105,6 +106,7 @@ try {
       assert.equal(report.providerRequests, 1, 'history/reconnect must not dispatch again');
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
       if (human) {
+        startFixtureKeepalive(res);
         assert.equal(scenario.stages.length, 4);
         for (let index = 0; index < scenario.stages.length; index++) {
           if (index) await stageGates[index - 1];

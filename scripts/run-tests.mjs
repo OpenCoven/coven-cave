@@ -96,6 +96,7 @@ export const SUITES = {
     "src/lib/surface-preferences.test.ts",
     "src/lib/surface-warm-cache.test.ts",
     "scripts/test-alias-loader.test.mjs",
+    "scripts/runtime-activity-fixture-keepalive.test.mjs",
     "scripts/check-version-continuity.test.mjs",
     "scripts/maintenance-gate.test.mjs",
     "scripts/install-playwright-ci.test.mjs",

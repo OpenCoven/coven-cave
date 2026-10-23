@@ -14,6 +14,14 @@ The first native-wrapper attempt exposed a missing readiness credential in the f
 
 ## Controlled session
 
+### Human-session findings — 2026-10-23
+
+Val reported “all worked” and confirmed the earlier fixture URL, but that invocation recorded zero provider requests and the inspected tab still showed an empty chat. Preserve the report without assigning it to a completed stage. In a subsequent invocation at head `237dada46ca911644cba78515db9b1caf77fffa1`, build `SeUfUd6oV82gka2T3hkH4`, the facilitator sent the prompt and verified both calls were Running before handing over keyboard control. Val reported “only the x is visible”. Inspection then found the turn interrupted at approximately five minutes with both tools marked Outcome unknown, while the fixture process remained alive. The facilitator focused the first disclosure and asked Val to press Space; the result remains pending. These observations do not establish keyboard or VoiceOver acceptance.
+
+The provider previously emitted no bytes while waiting at human gates. The installed Node fetch transport defaults to a five-minute idle-body timeout, matching the interruption; the original transport error code was not retained. The human fixture now sends SSE keepalive comments every 15 seconds, without activity events or stage advancement, and stops them when the response finishes or closes. Application timeouts and the fixture’s 30-minute deadline are unchanged. Process liveness alone must never be reported as a still-running chat: inspect both the provider stage and rendered turn state before each human handoff.
+
+Keepalive verification: all three regression tests failed against the no-op implementation, then passed with the fix; focused ESLint, fixture syntax and test wiring passed. A real loopback HTTP stream consumed by Node v24.22.0 fetch remained open for 315,108 ms and delivered 21 keepalive comments, each producing zero frames through Cave’s HermesSseDecoder. Reader cancellation and server shutdown completed with exit 0. This verifies the transport helper across the idle-timeout boundary, not a complete rerun of the four-stage production fixture or human/native acceptance.
+
 Use the exact candidate production build in the issue-owned worktree; record its commit and build ID. Reuse #6108 without rebasing unless a real conflict requires it. The fixture uses a Coven daemon for familiar discovery and Cave's own Hermes HTTP transport for chat. Set `COVEN_BIN` to its absolute executable path when it is not the executable found on PATH. Do not replace the user's runtime or enable an unqualified adapter to make the fixture appear to pass.
 
 Run from that worktree with an attached terminal:
