@@ -477,6 +477,7 @@ export const SUITES = {
     "src/lib/server/research-maintenance-boundary.test.ts",
     "src/lib/server/research-package.test.ts",
     "src/lib/server/research-automation-boundary.test.ts",
+    "src/lib/server/research-automation-import.test.ts",
     "src/lib/server/saved-links-route.test.ts",
     "src/lib/collect-saved-link-urls.test.ts",
     "src/lib/server/backup-research-resource-restore.test.ts",
@@ -1512,6 +1513,7 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
   ],
   api: [
+    "src/app/api/research-automation-import/route.test.ts",
     "src/app/api/proposals/submit/route.test.ts",
     "src/lib/server/proposal-submission.test.ts",
     "src/app/api/wikis/route.test.ts",

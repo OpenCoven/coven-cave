@@ -11,6 +11,8 @@ export type ResearchAutomationContext = {
 };
 
 export type ResearchAutomationInput = {
+  importedFrom?: string;
+  timezone?: string;
   name: string;
   rrule: string;
   prompt: string;
@@ -30,8 +32,8 @@ export type ResearchAutomationRecord = {
   revision: number;
 };
 
-function refuse(code: string): never {
-  throw Object.assign(new Error(`Research automation refused: ${code}`), { code });
+function refuse(code: string, definitiveRejection = false): never {
+  throw Object.assign(new Error(`Research automation refused: ${code}`), { code, definitiveRejection });
 }
 
 function contextFor(value: ResearchAutomationContext | undefined) {
@@ -48,10 +50,11 @@ function contextFor(value: ResearchAutomationContext | undefined) {
   };
 }
 
-function committed(answer: CovenAutomationCommandResult): number {
+function committed(answer: CovenAutomationCommandResult, creation = false): number {
   if (answer.outcome === "rejected") {
     throw Object.assign(new Error(`Research automation refused: ${answer.error.code}`), {
       code: answer.error.code, currentRevision: answer.error.currentRevision,
+      definitiveRejection: creation && answer.error.code !== "ADOPTION_REPLAY_MISMATCH",
     });
   }
   return answer.revision;
@@ -96,14 +99,15 @@ export async function createResearchAutomation(
   // These fields have no executable mapping in the released base profile.
   // Do not hide them in extensions where the executor would ignore them.
   if (input.reasoningEffort || input.executionEnvironment || input.skillPath
-    || input.cwds.length !== 1 || input.familiars.length !== 1) refuse("unsupported-research-automation-fields");
-  if (!input.tags.includes(`research-mission:${context!.missionId}`)) refuse("mission-correlation-mismatch");
+    || input.cwds.length !== 1 || input.familiars.length !== 1) refuse("unsupported-research-automation-fields", true);
+  if (!input.tags.includes(`research-mission:${context!.missionId}`)) refuse("mission-correlation-mismatch", true);
   const schedule = covenRoutineRrule(input.rrule);
-  if (!schedule.ok) refuse("unsupported-research-schedule");
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  if (!timezone || timezone === "local") refuse("research-timezone-unresolved");
+  if (!schedule.ok) refuse("unsupported-research-schedule", true);
+  const timezone = input.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (!timezone || timezone === "local") refuse("research-timezone-unresolved", true);
   const definition: CovenAutomationDraftInput = {
     schemaVersion: "coven.automations.v1",
+    ...(input.importedFrom ? { provenance: { createdBy: { principalId: "cave" }, importedFrom: input.importedFrom } } : {}),
     automationId: context!.automationId,
     display: { name: input.name, tags: [...input.tags] },
     trigger: { variant: "schedule", version: 1, schedule: { rrule: schedule.rrule, timezone } },
@@ -119,7 +123,17 @@ export async function createResearchAutomation(
     },
   };
   const client = createAutomationCommandClient();
-  const createdRevision = committed(await client.createDraft(definition, command));
+  let createdRevision: number;
+  try {
+    createdRevision = committed(await client.createDraft(definition, command), true);
+  } catch (error) {
+    // SDK option validation happens before dispatch. Transport uncertainty and
+    // any failure after successful creation must keep the pending intent.
+    if (error && typeof error === "object" && "code" in error && error.code === "invalid_options") {
+      Object.assign(error, { definitiveRejection: true });
+    }
+    throw error;
+  }
   // The released lifecycle requires draft -> revise(paused) before an
   // explicit activation. Both steps retain the reviewed body and stable keys.
   const readyKey = `research-ready:${createHash("sha256").update(command.adoptionKey).digest("hex")}`;
