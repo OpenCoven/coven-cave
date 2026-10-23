@@ -41,7 +41,14 @@
     "home-fixtures.audit.log": "e7d73b13fd84d25504a78656dc44575706a2800b3bd4f33f209587f5555c7b4b",
     "home-fixtures.json": "3a3d42bb347a9f7f6ae3775ad8d148ce01a3e0e6838a97a59534c9186912996a",
     "test-app.seventh.log": "b1498b2398eefa3ed453f95ce9c9b68a929a8effc6e72a97045a4036b3ee238a",
-    "test-api.fifth.log": "3c96d7b77c261fe6236b40eaca2fc0e90cdfdf5ddcc30a6f4eb5173e75a8e0a8"
+    "test-api.fifth.log": "3c96d7b77c261fe6236b40eaca2fc0e90cdfdf5ddcc30a6f4eb5173e75a8e0a8",
+    "playwright.rebase.log": "ed1385d303eaab390ef4588c66deb674496cbf22e3bdacddaa3b07e6e3d848ef",
+    "lint.rebase.log": "4f0953e4d7f9498ddd0fe0addbb3c5f6f6eb8d6294d2e00252d6c238a69a1b95",
+    "typecheck.rebase.log": "d1ab7a2b016be12deaf1f0e88b1bec12ce165dfa7ae877fc944574d1618641cc",
+    "test-app.rebase.log": "114688ab2adc4c1c121661c5144aa76b3d995aa5348fb09fbcb781469862787e",
+    "test-api.rebase.log": "035295353b7df6eba76138ccd7c6f188e02f1a093ef25b92041b990e47bd4bd3",
+    "real-client-reconnect-rebase.log": "0e41ad1a8983cccdc6763837576350f73fea9c65dce331d6d7d2887cc52697a9",
+    "access-expiry-rebase.log": "1767d354d85c033760d84d24b59c52301fe8f86650c475a5647ddcc421b99c31"
   },
   "durableAbsenceAttempts": "Initial fixture attempts exposed missing browser perf globals and asynchronous purge completion; final harness checks HTTP 404 explicitly and awaits the controlled purge signal. validated-red runs the corrected harness against the pre-repair adapter; final runs the repaired source."
 }

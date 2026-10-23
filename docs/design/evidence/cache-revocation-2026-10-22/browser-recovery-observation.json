@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "buildId": "6ES-pFr2IJW12ks2CTJH6",
-  "browser": "Google Chrome for Testing",
+  "buildId": "ukbio8raWS63ofFRQoE_o",
+  "browser": "Google Chrome for Testing (chromium-1234)",
   "interaction": "Native accessibility and screenshot inspection via cua_repl; actual composer send, transparent SSE fault proxy, reload and tool disclosure reopen",
   "fixture": "real-client-reconnect.json",
   "observations": [
@@ -25,16 +25,15 @@
       "authority": "Approval and change confirmation unavailable."
     }
   ],
-  "sendActions": 2,
+  "sendActions": 1,
   "retryActions": 0,
-  "fixtureTabClosed": null,
+  "fixtureTabClosed": false,
   "screenshots": "Inspected in the tool transcript, with only the dedicated scratch fixture window visible. No screenshot files published.",
   "limits": [
     "Controlled external provider and durable counter; no real provider or protected effect authority",
     "No human accessibility or physical-device acceptance",
-    "Revocation rendering separately covered by the 13-case production Playwright run"
+    "Revocation rendering separately covered by the 14-case production Playwright run"
   ],
   "dispatchedSends": 1,
-  "preDispatchRefusal": "First click required a project and did not dispatch. Selected the scratch project, then clicked Send; actual proxy recorded one POST /api/chat/send.",
-  "windowCloseObservation": "Close action targeted the sole scratch fixture window after its URL was verified; subsequent native observations timed out, so closure remains unverified."
+  "windowDisposition": "Dedicated scratch tab intentionally left open; fixture server and daemon stopped and scratch root removed."
 }

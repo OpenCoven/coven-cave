@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "issue": 5764,
-  "base": "5c9813795dc98efba7d4fd6fb0becb77645e400e",
-  "sourceState": "Qualification recorded before commit; sourceSha256 binds the tested candidate to these source files.",
-  "buildId": "6ES-pFr2IJW12ks2CTJH6",
+  "base": "b7a8ad2f41c2482bd64886347c7099e297106baf",
+  "sourceState": "Rebased implementation commit; subsequent documentation-only receipt updates do not change tested product bytes.",
+  "buildId": "ukbio8raWS63ofFRQoE_o",
   "sourceSha256": {
     "src/components/chat-view-chunk-coalescing.test.ts": "04d1b2ac7b5cdcdbe3ca08d73f73cd60c840739e51be811462ceb94c0bb9d499",
     "src/components/chat-view-polish-header-composer.test.ts": "a456258bb7de2b5316bc41e5e0af9827ffab227a0bbf9e9925ef47024db6d539",
@@ -27,15 +27,15 @@
     "src/lib/tool-output-fetch.ts": "0dee01b8d2b24e1d0360744a72db2146e2aed681ddc4b6ab82b05f2f5e73409a",
     "src/lib/use-tool-output.test.ts": "f62432ed408f8e44338c1330809e181431ac1807b2715900707f4a7e9a4b5a85",
     "src/lib/use-tool-output.ts": "b337ca0c859677a1164b530944024467c7c0b825f12d060c5ddb0c9bba93b248",
-    "tests/chat-activity-acceptance.spec.ts": "8c8ef7ec71018df268548c45302387fcbf6ef3e135abf051f88df93fcc513bef",
+    "tests/chat-activity-acceptance.spec.ts": "69ab5d6d2a8ca4383f10903b27a966d30d0c6f6b1f9460ecbcfd1adf12dc5501",
     "src/lib/chat-access-invalidation.ts": "0da269bdca371cadf0810b8934d44d8f622dd85b04fe5b20759aa7464ebf57e5"
   },
   "productionBrowser": {
     "command": "CI=true COVEN_CAVE_PORT=49900 pnpm exec playwright test tests/chat-activity-acceptance.spec.ts --project=desktop --workers=1 --retries=0 --reporter=line",
-    "passed": 13,
+    "passed": 14,
     "failed": 0,
     "retries": 0,
-    "duration": "2.1m",
+    "duration": "4.0m",
     "classification": "Production web build, controlled route/provider responses; not real provider or native qualification"
   },
   "focused": {
@@ -51,20 +51,20 @@
   },
   "gates": {
     "lint": "passed final full run",
-    "testsWired": "passed final 2129 files",
+    "testsWired": "passed 2130 files after rebase",
     "typecheck": "passed final standalone and production build",
     "build": "passed final production Playwright rebuild, including typecheck and bundle budgets",
-    "app": "passed full seventh run: 1476 test files, audited per-child scratch isolation",
-    "api": "passed full fifth run: 538 test files, audited per-child scratch isolation"
+    "app": "passed full rebase run: 1477 test files, audited per-child scratch isolation",
+    "api": "passed full rebase run: 538 test files, audited per-child scratch isolation"
   },
   "omissions": [
     "Physical remote ingress and broader delegated authorization unqualified (#6072)",
     "Packaged/native restart purge and real keychain behavior not exercised",
-    "No PR, merge, release or complete #5764 claim"
+    "PR #6190 open; no merge, release or complete #5764 claim"
   ],
   "realClientRecovery": {
     "passed": true,
-    "buildId": "6ES-pFr2IJW12ks2CTJH6",
+    "buildId": "ukbio8raWS63ofFRQoE_o",
     "counterAfterInterruption": 1,
     "counterAfterReload": 1,
     "providerRequests": 1,
@@ -77,7 +77,7 @@
   "managedAccessAndExpiry": {
     "passed": true,
     "receipt": "managed-access-expiry.json",
-    "buildId": "6ES-pFr2IJW12ks2CTJH6",
+    "buildId": "ukbio8raWS63ofFRQoE_o",
     "finishedBufferExpiryVerified": true,
     "activeStreamClosedOnRevocation": true,
     "providerRequests": 1,
@@ -89,5 +89,6 @@
     "productOrAssertionsChanged": false,
     "log": "home-fixtures.audit.log",
     "note": "Explicit fixture list and wrapper are retained in verification.md; non-listed children keep isolated COVEN_HOME."
-  }
+  },
+  "qualifiedCodeHead": "c94dd4bbe00631a489190519cdc1d7c3648220c1"
 }

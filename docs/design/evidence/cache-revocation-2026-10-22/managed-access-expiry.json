@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scenario": "hermes-durable-effect-recovery",
-  "startedAt": "2026-10-22T23:10:29.636Z",
+  "startedAt": "2026-10-22T23:47:43.925Z",
   "omissions": [
     "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
     "Coven-specific state is isolated; HOME is unchanged.",
@@ -9,8 +9,8 @@
     "Ring eviction not run; use --ring-eviction.",
     "Persistence failure not injected; use --persistence-failure separately."
   ],
-  "head": "5c9813795dc98efba7d4fd6fb0becb77645e400e",
-  "buildId": "6ES-pFr2IJW12ks2CTJH6",
+  "head": "c94dd4bbe00631a489190519cdc1d7c3648220c1",
+  "buildId": "ukbio8raWS63ofFRQoE_o",
   "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
   "passed": true,
   "checkpoints": [
@@ -77,9 +77,9 @@
     "cancelAfterEffect": false
   },
   "timingsMs": {
-    "firstActivity": 2230.2302919999997,
-    "toolResult": 61.96583400000054,
-    "terminal": 3873.6659999999997
+    "firstActivity": 2316.9363329999996,
+    "toolResult": 89.07779200000004,
+    "terminal": 4107.794083
   },
   "covenVersion": "coven v0.4.10 (engine coven-code 0.8.0, pinned 0.8.0)",
   "stage": "final qualification counter after independent negative control",
@@ -190,12 +190,12 @@
   "serverStopped": true,
   "daemonStopped": true,
   "fixtureRootRemoved": true,
-  "finishedAt": "2026-10-22T23:12:49.083Z",
-  "candidateSourceState": "Final uncommitted cache-revocation candidate. Full changed source hashes are in qualification-progress.json; raw runner checks only its named server product files.",
-  "rawReceiptSha256": "32566d53c387b05b92d0e758f9556b2f36ad569ee63a53468ecb2fa34d6afd8d",
+  "finishedAt": "2026-10-22T23:50:04.139Z",
   "additionalAssertedProbes": {
     "pendingDeviceKnownRun": 403,
     "allowedDeviceUnknownRun": 404,
     "source": "scripts/runtime-activity-access-probes.mjs; assertions must pass before result.passed is true"
-  }
+  },
+  "rawReceiptSha256": "c82df8c2baad24e3d8d9e553236f10815e848408a247cd7168ba1e452842f348",
+  "sourceState": "Rebased candidate c94dd4bbe00631a489190519cdc1d7c3648220c1; exact source hashes in qualification-progress.json."
 }
