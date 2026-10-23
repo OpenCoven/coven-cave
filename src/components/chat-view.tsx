@@ -82,6 +82,7 @@ import {
 } from "@/lib/familiar-drag";
 import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
+import { createChatStreamAccessGuard, invalidateChatAccess, subscribeChatAccessInvalidation } from "@/lib/chat-access-invalidation";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { useToolOutput } from "@/lib/use-tool-output";
 import { deleteOfflineCacheEntry } from "@/lib/offline-cache";
@@ -3582,6 +3583,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     });
   }
 
+  useEffect(() => subscribeChatAccessInvalidation((change) => {
+    if (change.sessionId !== undefined && change.sessionId !== currentSessionRef.current) return;
+    transcriptResetRevisionRef.current += 1;
+    refetchOnSettleRef.current = null;
+    turnsRef.current = [];
+    setTurns([]);
+    setActiveLeafId("");
+    setLinkedContext(null);
+    setFlowTranscriptFallback(null);
+    setLastFailedSend(null);
+    abortRef.current?.abort();
+    abortRef.current = null;
+    streamOwnerRef.current = false;
+    currentStreamHealthRunIdRef.current = null;
+    setBusy(false);
+    setHistoryState(change.reason === "missing" ? "missing" : "error");
+    setError("Chat access changed. Reload history to check current access.");
+    announce("Chat access changed. History was cleared.");
+  }), [announce]);
+
   useEffect(() => {
     if (!sessionId) return;
     return subscribeLiveChatGeneration(sessionId, (live) => {
@@ -4441,7 +4462,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       sessionId,
       isThreadSwitch,
       flowBackedSession,
-      sources: chatHistorySources,
+      sources: {
+        ...chatHistorySources,
+        subscribeInvalidation: (targetSessionId, invalidate) => subscribeChatAccessInvalidation((change) => {
+          if (change.sessionId === undefined || change.sessionId === targetSessionId) {
+            invalidate(change.reason === "missing");
+          }
+        }),
+      },
       view: {
         readTurns: () => turnsRef.current,
         syncTurns: (next) => { turnsRef.current = next; },
@@ -5570,12 +5598,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         attentionSettlement.reconcileNow();
       },
     };
+    const accessGuard = createChatStreamAccessGuard(controller, () => liveGeneration.sessionAliases);
     const publishStreamHealth = (
       action: Exclude<
         ChatStreamHealthAction,
         { type: "hydrate" } | { type: "connect" } | { type: "reset" }
       >,
     ) => {
+      if (accessGuard.revoked()) return;
       generationStreamHealth = chatStreamHealthReducer(generationStreamHealth, action);
       if (liveGeneration.sessionId) {
         const metadata = {
@@ -5618,6 +5648,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const chunkCoalescer = createChunkCoalescer({
       flushMs: CHUNK_FLUSH_MS,
       apply: (text) => {
+        if (accessGuard.revoked()) return;
         flushPendingStreamHealthEvent();
         applyAssistantChunk(text, assistantId, liveGeneration);
       },
@@ -5720,6 +5751,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }),
         signal: controller.signal,
       });
+      if (res.status === 401 || res.status === 403) {
+        invalidateChatAccess({ sessionId: liveGeneration.sessionId ?? undefined, reason: "denied" });
+        // Keep the existing project repair action, without retaining the
+        // rejected prompt as a retryable send or repainting its transcript.
+        if (res.status === 403) {
+          const message = await chatBridgeFailureMessage(res);
+          if (/project_access_denied|project access denied|not registered/i.test(message)
+            && currentSessionRef.current === liveGeneration.sessionId) {
+            const failingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
+            setProjectAccessRoot(failingRoot || null);
+          }
+        }
+      }
+      if (accessGuard.revoked()) return;
       if (!res.ok) {
         const refusal = res.status === 409
           ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown; code?: unknown } | null
@@ -5830,6 +5875,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }, liveGeneration.sessionId, liveStreamMetadata(liveGeneration));
       let cursor = 0;
       const applyStreamEvent = (ev: StreamEvent, eventCursor: number | null) => {
+        if (accessGuard.revoked()) return;
         if (eventCursor != null) {
           cursor = Math.max(cursor, eventCursor);
           pendingStreamHealthEvent = { cursor, at: new Date().toISOString() };
@@ -5883,6 +5929,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             `/api/chat/stream?runId=${encodeURIComponent(runId)}&cursor=${cursor}`,
             { cache: "no-store", signal: controller.signal },
           );
+          if (recovery.status === 401 || recovery.status === 403) {
+            invalidateChatAccess({ sessionId: liveGeneration.sessionId ?? undefined, reason: "denied" });
+          }
+          if (accessGuard.revoked()) return;
           if (recovery.ok && recovery.body) {
             const resumed = await consumeChatSse(recovery.body, applyStreamEvent, cursor);
             cursor = Math.max(cursor, resumed.cursor);
@@ -5912,6 +5962,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } catch (err) {
+      if (accessGuard.revoked()) return;
       // Apply any buffered streamed text FIRST — the handlers below read
       // t.text (e.g. the cancelled fallback label) and must see all of it.
       flushStreamUpdates();
@@ -5961,6 +6012,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } finally {
+      accessGuard.dispose();
       attentionSettlement.reconcileIfNeeded();
       // All terminal exits — HTTP rejection, missing body, exhausted recovery,
       // abort, and stream exceptions — reach here. Calling
@@ -5969,7 +6021,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       // Always retire THIS generation's registry entry (keyed by session).
       clearLiveChatGenerationAliases(liveGeneration.sessionAliases, runId);
-      if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
+      if (!accessGuard.revoked() && needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
         setHistoryRetryKey((k) => k + 1);
       }
       // But only tear down the SHARED stream wiring if we still own it. After a

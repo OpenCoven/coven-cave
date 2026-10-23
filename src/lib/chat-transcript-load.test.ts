@@ -122,13 +122,14 @@ test("ChatView binds saved-history loading to current owner refs and keeps all r
   }
   visit(parsed);
   assert.ok(effect, "the admitted history effect delegates to the coordinator");
-  assert.equal(resets, 3, "each of the three explicit clear surfaces fences pending history");
+  assert.equal(resets, 4, "the three explicit clear surfaces and access invalidation fence pending history");
   const start = effect.statements.findIndex(statement => ts.isVariableStatement(statement) && statement.declarationList.declarations.some(declaration => declaration.name.getText(parsed) === "endThreadSpan"));
   assert.ok(start >= 0, "the owning view starts the existing thread-open span");
   const body = ts.transpile(effect.statements.slice(start).map(statement => statement.getText(parsed)).join("\n"), { target: ts.ScriptTarget.ESNext });
   const turnsRef = { current: [{ id: "saved" }] };
   const resetRef = { current: 7 };
-  const sources = {};
+  const sources = { loadNetwork: () => Promise.resolve(null) };
+  let invalidateListener: ((change: { sessionId?: string; reason: string }) => void) | undefined;
   let captured: Record<string, unknown> | undefined;
   const cleanup = () => {};
   const spanCalls: string[] = [];
@@ -136,15 +137,26 @@ test("ChatView binds saved-history loading to current owner refs and keeps all r
   let active = false;
   const setters = Array.from({ length: 5 }, () => () => {});
   const keepLiveSession = () => true;
-  const run = new Function("startChatHistoryLoad", "sessionId", "isThreadSwitch", "flowBackedSession", "chatHistorySources", "turnsRef", "transcriptResetRevisionRef", "readLiveChatGeneration", "isLiveSnapshotActive", "keepLiveSession", "setTurns", "setActiveLeafId", "setHistoryState", "setLinkedContext", "setFlowTranscriptFallback", "startSpan", "THREAD_OPEN_SPAN", "markStartupSettled", body);
+  const run = new Function("startChatHistoryLoad", "sessionId", "isThreadSwitch", "flowBackedSession", "chatHistorySources", "turnsRef", "transcriptResetRevisionRef", "readLiveChatGeneration", "isLiveSnapshotActive", "keepLiveSession", "setTurns", "setActiveLeafId", "setHistoryState", "setLinkedContext", "setFlowTranscriptFallback", "startSpan", "THREAD_OPEN_SPAN", "markStartupSettled", "subscribeChatAccessInvalidation", body);
   const returned = run((options: Record<string, unknown>) => { captured = options; return cleanup; }, "chat", true, false, sources, turnsRef, resetRef,
     (id: string) => { assert.equal(id, "chat"); return active ? {} : null; }, () => active, keepLiveSession, ...setters,
-    (name: string) => { spanCalls.push(name); return () => { spanCalls.push("painted"); }; }, "chat:thread-open", () => { settled += 1; });
+    (name: string) => { spanCalls.push(name); return () => { spanCalls.push("painted"); }; }, "chat:thread-open", () => { settled += 1; },
+    (listener: typeof invalidateListener) => { invalidateListener = listener; return cleanup; });
   assert.equal(returned, cleanup, "React cleanup fences the delegated loader");
   assert.equal(captured?.sessionId, "chat");
   assert.equal(captured?.isThreadSwitch, true);
   assert.equal(captured?.flowBackedSession, false);
-  assert.equal(captured?.sources, sources);
+  const boundSources = captured?.sources as typeof sources & {
+    subscribeInvalidation: (id: string, invalidate: (missing: boolean) => void) => () => void;
+  };
+  assert.equal(boundSources.loadNetwork, sources.loadNetwork, "transport identity remains unchanged");
+  const invalidations: boolean[] = [];
+  assert.equal(boundSources.subscribeInvalidation("chat", (missing) => invalidations.push(missing)), cleanup);
+  invalidateListener?.({ sessionId: "other", reason: "denied" });
+  assert.deepEqual(invalidations, [], "foreign-session invalidation is ignored");
+  invalidateListener?.({ sessionId: "chat", reason: "missing" });
+  invalidateListener?.({ reason: "policy" });
+  assert.deepEqual(invalidations, [true, false], "the owner injects scoped invalidation without importing runtime state into history");
   const view = captured?.view as import("./chat/history-load.ts").ChatHistoryView;
   assert.equal(view.readTurns(), turnsRef.current);
   const next = [{ id: "new", role: "user" as const, text: "New", createdAt: "2026-10-05T00:00:00.000Z" }];

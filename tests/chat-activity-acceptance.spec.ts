@@ -32,8 +32,9 @@ function activity(id: string, status: string, sequence: number) {
     authority: { binding: "unavailable", approval: "unavailable", effect: "unavailable" } };
 }
 
-async function setup(page: Page, summaries: boolean, large = false, hostile = false, toolsOverride?: object[], blocks?: object[], reasoningCapability?: string) {
-  let completed = large;
+async function setup(page: Page, summaries: boolean, large = false, hostile = false, toolsOverride?: object[], blocks?: object[], reasoningCapability?: string, lazy = false) {
+  let completed = large || lazy;
+  let deniedOutputs = false;
   const answer = hostile ? HOSTILE : ANSWER;
   const summaryBlock = hostile ? { ...summary, text: HOSTILE } : summary;
   const metadata = { familiarId: "nova", harness: "hermes", model: "", runtime: project.root,
@@ -43,7 +44,7 @@ async function setup(page: Page, summaries: boolean, large = false, hostile = fa
     { id: "read-a", name: "Read", status: "error", input: '{"file_path":"/tmp/a"}', output: "File unavailable", textOffset: 0 },
     { id: "read-b", name: "Read", status: "ok", input: '{"file_path":"/tmp/b"}', output: "Second file", textOffset: 0 },
     { id: "read-a-retry", name: "Read", status: "ok", input: '{"file_path":"/tmp/a"}', output: "First file after retry", textOffset: 0 },
-  ]).map((tool, index) => ({ ...tool, ...(hostile ? { output: HOSTILE } : {}), activity: activity(tool.id, tool.status, index + 1) }));
+  ]).map((tool, index) => ({ ...tool, ...(hostile ? { output: HOSTILE } : {}), ...(lazy ? { output: undefined, outputChars: 64 } : {}), activity: activity(tool.id, tool.status, index + 1) }));
   const tools = (toolsOverride as typeof fixtureTools | undefined) ?? fixtureTools;
   await page.context().addCookies([{ name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" }]);
   await page.addInitScript(() => {
@@ -52,6 +53,7 @@ async function setup(page: Page, summaries: boolean, large = false, hostile = fa
     localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     const original = window.fetch.bind(window);
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+    Object.assign(window, { activitySendCount: 0 });
     Object.assign(window, { activityFrame(frame: object) {
       if (!controller) throw new Error("No active fixture stream");
       controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
@@ -61,6 +63,7 @@ async function setup(page: Page, summaries: boolean, large = false, hostile = fa
       const input = args[0];
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (new URL(url, location.href).pathname === "/api/chat/send") {
+        (window as unknown as { activitySendCount: number }).activitySendCount += 1;
         return new Response(new ReadableStream<Uint8Array>({ start(value) { controller = value; } }), { headers: { "content-type": "text/event-stream" } });
       }
       return original(...args);
@@ -69,6 +72,11 @@ async function setup(page: Page, summaries: boolean, large = false, hostile = fa
   await page.context().routeWebSocket((url) => url.pathname !== "/_next/hmr", (socket) => socket.close());
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/tool-output")) {
+      await route.fulfill({ status: deniedOutputs ? 403 : 200, json: deniedOutputs
+        ? { ok: false, error: "Denied" } : { ok: true, output: "Authorized lazy output" } });
+      return;
+    }
     const bootstrap = createOnboardingBootstrapState(true);
     let payload: object = { ok: true };
     if (path === "/api/onboarding/bootstrap") payload = { ...bootstrap, ok: true, complete: true, needsSetup: false, status: "complete", stages: bootstrap.stages.map((stage) => ({ ...stage, status: "complete" })), boundaries: ONBOARDING_BOOTSTRAP_BOUNDARIES };
@@ -89,8 +97,8 @@ async function setup(page: Page, summaries: boolean, large = false, hostile = fa
   });
   await page.goto("/?mode=chat#chat-activity-5765", { waitUntil: "domcontentloaded" });
   const main = page.getByTestId("chat-main");
-  await expect(main.getByText(large ? ANSWER : "Ready for the comparison.")).toBeVisible({ timeout: 45_000 });
-  return { main, tools, metadata, summaryBlock, complete: () => { completed = true; } };
+  await expect(main.getByText(large || lazy ? ANSWER : "Ready for the comparison.")).toBeVisible({ timeout: 45_000 });
+  return { main, tools, metadata, summaryBlock, denyOutputs: () => { deniedOutputs = true; }, complete: () => { completed = true; } };
 }
 
 async function emit(page: Page, frame: object) {
@@ -291,6 +299,30 @@ for (const saved of [null, "0", "1"] as const) {
   });
 }
 
+
+test("output access revocation clears history and a live owner without replaying a send", async ({ page }) => {
+  const { main, denyOutputs } = await setup(page, false, false, false, undefined, undefined, undefined, true);
+  const card = main.locator(".cave-tool-block").first();
+  await card.locator(":scope > summary").click();
+  await expect(card.getByText("Authorized lazy output", { exact: true })).toBeVisible();
+  await card.locator(":scope > summary").click();
+  await main.getByRole("textbox", { name: "Message", exact: true }).fill("Continue the comparison");
+  await main.getByRole("button", { name: "Send message", exact: true }).click();
+  await emit(page, { kind: "assistant_chunk", text: "Visible before revocation" });
+  await expect(main.getByText("Visible before revocation", { exact: true })).toBeVisible();
+  denyOutputs();
+  await card.locator(":scope > summary").click();
+  await expect(main.getByText("Chat access changed. Reload history to check current access.", { exact: true })).toBeVisible();
+  await expect(main.getByText(ANSWER, { exact: true })).toHaveCount(0);
+  await expect(main.getByText("Authorized lazy output", { exact: true })).toHaveCount(0);
+  await expect(main.getByText("Visible before revocation", { exact: true })).toHaveCount(0);
+  // The fixture intentionally ignores fetch abort, exercising the owner's
+  // late-frame fence rather than relying on transport cancellation alone.
+  await emit(page, { kind: "assistant_chunk", text: "Late restricted output" });
+  await emit(page, { kind: "done", sessionId: "activity-5765" });
+  await expect(main.getByText("Late restricted output", { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { activitySendCount: number }).activitySendCount)).toBe(1);
+});
 // golden-02 (#6057): a no-text reasoning state is shown honestly. Its placeholder
 // is not a summary, so no length is reported for it, and opaque fields a
 // leaking server might attach never reach display, copy, export or web storage.
