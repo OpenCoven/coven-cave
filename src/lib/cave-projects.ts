@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -27,6 +28,18 @@ export function projectsFilePath(): string {
   );
 }
 
+// Expand a leading ~ — a manually-typed ~/code/app was stored literally and
+// never matched the daemon's absolute project_root, so Sessions/Git/Tasks
+// stayed empty and the project looked dead (cave-psp8).
+function expandHomeShortcut(root: string): string {
+  const trimmed = root.trim();
+  if (trimmed === "~") return homedir();
+  if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+    return path.join(/* turbopackIgnore: true */ homedir(), trimmed.slice(2));
+  }
+  return trimmed;
+}
+
 /**
  * Server-side project root: {@link normalizeProjectRoot} PLUS `~` expansion.
  *
@@ -42,15 +55,7 @@ export function projectsFilePath(): string {
  * do their own validation and must not be routed through any display path.
  */
 function normalizeRootExpandingHome(root: string): string {
-  let trimmed = root.trim();
-  // Expand a leading ~ — a manually-typed ~/code/app was stored literally and
-  // never matched the daemon's absolute project_root, so Sessions/Git/Tasks
-  // stayed empty and the project looked dead (cave-psp8).
-  if (trimmed === "~") trimmed = homedir();
-  else if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
-    trimmed = path.join(/* turbopackIgnore: true */ homedir(), trimmed.slice(2));
-  }
-  const normalized = trimmed.replace(/\\/g, "/");
+  const normalized = expandHomeShortcut(root).replace(/\\/g, "/");
   let endIndex = normalized.length;
   while (endIndex > 0 && normalized[endIndex - 1] === "/") endIndex--;
   return normalized.slice(0, endIndex) || "/";
@@ -268,6 +273,59 @@ export function projectForRoot(
   if (!root?.trim()) return null;
   const normalized = normalizeRootExpandingHome(root);
   return projects.find((project) => normalizeRootExpandingHome(project.root) === normalized) ?? null;
+}
+
+// The on-disk path an existing local directory has right now. Only `~` is
+// expanded: the path is otherwise taken as spelled, so a backslash stays part
+// of a POSIX name. `.native` returns the on-disk letter case, matching the
+// runtime cwd that resolveLocalRuntimeCwd persists.
+function existingRealpath(root: string | null | undefined): string | null {
+  if (!root?.trim()) return null;
+  const expanded = expandHomeShortcut(root);
+  if (!path.isAbsolute(expanded)) return null;
+  try {
+    return realpathSync.native(/* turbopackIgnore: true */ expanded);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every registered project whose root is the same existing directory as
+ * `root`, compared in the filesystem's canonical namespace.
+ *
+ * `projectForRoot` compares spellings, so a project registered through an
+ * alias — a symlinked ancestor (macOS `/tmp -> /private/tmp` being the
+ * everyday case) or another letter case on a case-insensitive volume — never
+ * matched the realpathed cwd a chat persists and resumes from, and the resumed
+ * turn failed closed as unregistered (#6210).
+ *
+ * Identity is the directory each spelling names right now: a path that does
+ * not exist has none, and for this comparison a registered symlink retargeted
+ * elsewhere stops naming its old target. Equality only, never containment or a
+ * shared prefix, and a root that is not a local absolute path never takes part.
+ */
+export function projectsForCanonicalRoot(
+  root: string | null | undefined,
+  projects: CaveProject[],
+): CaveProject[] {
+  const target = existingRealpath(root);
+  if (!target) return [];
+  return projects.filter((project) => existingRealpath(project.root) === target);
+}
+
+/**
+ * The one registered project {@link projectsForCanonicalRoot} finds. Two
+ * records naming one directory are ambiguous, so this returns null rather than
+ * choosing whose grant applies. Matching a project only selects which grant
+ * the caller must hold; it concedes no access.
+ */
+export function projectForCanonicalRoot(
+  root: string | null | undefined,
+  projects: CaveProject[],
+): CaveProject | null {
+  const matches = projectsForCanonicalRoot(root, projects);
+  return new Set(matches.map((project) => project.id)).size === 1 ? matches[0] : null;
 }
 
 export function projectById(

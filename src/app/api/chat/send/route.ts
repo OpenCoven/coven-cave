@@ -199,7 +199,11 @@ import {
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { resolveInferenceLaunchPlan } from "@/lib/server/inference-launch-plan";
 import { loadProjects } from "@/lib/cave-projects";
-import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-project-access";
+import {
+  chatProjectAccessId,
+  resumeRootIsRegisteredProject,
+  taskWorktreeProjectAccessId,
+} from "@/lib/chat-project-access";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
@@ -275,6 +279,7 @@ import {
   buildRuntimeAccessFingerprint,
   buildPromptWithRuntimeScope,
   resolveLocalRuntimeCwd,
+  runtimeGrantDirs,
   type RuntimeScope,
 } from "@/lib/chat-runtime-scope";
 import {
@@ -2602,19 +2607,16 @@ async function postAdmittedChat(
   // The workspace exemption assumes a workspace directory is not a registered
   // project. A user can register one whose root lives under the familiar's
   // workspace, so ask the registry rather than trusting containment: a resume
-  // root that resolves to a real project id is gated like any other project
-  // root (cave-g8fqc). `unregistered:<root>` is the fail-closed sentinel and
-  // does NOT count as registered.
-  const resumeProjectAccessId = resumeCwd
-    ? chatProjectAccessId({
+  // root that names a registered project — through any spelling, and even when
+  // two records make its grant ambiguous — is gated like any other project
+  // root (cave-g8fqc, #6210).
+  const resumeCwdIsRegisteredProject = resumeCwd
+    ? resumeRootIsRegisteredProject({
         projects,
         resumeCwd,
         resolvedCwd: resumeCwdResolved ?? resumeCwd,
       })
-    : null;
-  const resumeCwdIsRegisteredProject = Boolean(
-    resumeProjectAccessId && !resumeProjectAccessId.startsWith("unregistered:"),
-  );
+    : false;
   const projectlessLaunch = projectlessGenerationLaunch({
     origin: generationOrigin,
     hasRequestedProjectRoot: Boolean(body.projectRoot),
@@ -3434,20 +3436,15 @@ async function postAdmittedChat(
   // only writable project roots and the familiar workspace; runtime skill
   // roots are advertised as read-only and must never be promoted through an
   // `--add-dir` grant. The spawn cwd is already trusted implicitly, so it is
-  // excluded. Generic forwarding remains gated on the `--add-dir` probe and
-  // local runtimes only (SSH runtimes own their remote filesystem).
-  const spawnRoot = cwd;
+  // excluded, by canonical identity (#6210). Generic forwarding remains gated
+  // on the `--add-dir` probe and local runtimes only (SSH runtimes own their
+  // remote filesystem).
   const grantDirs = !sshRuntime
-    ? Array.from(
-        new Set(
-          [
-            ...grantedProjectRoots,
-            ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
-          ]
-            .map((root) => root.trim())
-            .filter((root) => root && root !== spawnRoot),
-        ),
-      )
+    ? runtimeGrantDirs({
+        spawnRoot: cwd,
+        grantedProjectRoots,
+        familiarWorkspace: resolvedFamiliarWorkspace,
+      })
     : [];
   const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
   const runtimeAccessFingerprint = buildRuntimeAccessFingerprint({

@@ -1,7 +1,9 @@
+import { realpathSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
+import { realpathOrResolve } from "./server/canonical-path.ts";
 
 type RuntimeScopeErrorCode =
   | "project_root_required"
@@ -106,6 +108,50 @@ function isInsideRoot(root: string, candidate: string): boolean {
       !rel.split(path.sep).includes("..")
     )
   );
+}
+
+// The directory a path names on disk, in on-disk letter case — the same form
+// resolveLocalRuntimeCwd's realpath gives the spawn cwd.
+function onDiskPath(root: string): string {
+  try {
+    return realpathSync.native(root);
+  } catch {
+    return realpathOrResolve(root);
+  }
+}
+
+/**
+ * The directories a local harness receives as `--add-dir` grants: the granted
+ * project roots and the familiar workspace, minus the spawn root the harness
+ * already trusts as its cwd, one grant per directory. Forwarded roots keep
+ * their registered spelling.
+ *
+ * The spawn root arrives realpathed from {@link resolveLocalRuntimeCwd}, while
+ * a granted root keeps the spelling it was registered under, so directories
+ * are compared by canonical identity: a project registered through an alias of
+ * the spawn directory (macOS `/tmp -> /private/tmp`, another letter case on a
+ * case-insensitive volume; #6210) is not handed back to the harness as a
+ * second grant of its own cwd.
+ */
+export function runtimeGrantDirs(input: {
+  spawnRoot: string;
+  grantedProjectRoots: readonly string[];
+  familiarWorkspace?: string;
+}): string[] {
+  const seen = new Set([onDiskPath(input.spawnRoot)]);
+  const dirs: string[] = [];
+  for (const candidate of [
+    ...input.grantedProjectRoots,
+    ...(input.familiarWorkspace ? [input.familiarWorkspace] : []),
+  ]) {
+    const root = candidate.trim();
+    if (!root || root === input.spawnRoot) continue;
+    const identity = onDiskPath(root);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    dirs.push(root);
+  }
+  return dirs;
 }
 
 export async function resolveLocalRuntimeCwd(
