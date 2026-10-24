@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createOnboardingBootstrapState, ONBOARDING_BOOTSTRAP_BOUNDARIES } from "../src/lib/onboarding-bootstrap";
-import { privateSentinelsIn, reasoningStateBlocks } from "./fixtures/reasoning-states";
+import { privateSentinelsIn, reasoningStateBlocks, TOOL_PAYLOAD_SENTINELS, toolSentinelsIn } from "./fixtures/reasoning-states";
 
 const ISO = "2026-10-18T12:00:00.000Z";
 const RUN = "11111111-1111-4111-8111-111111111111";
@@ -461,6 +461,59 @@ test("output access revocation clears history and a live owner without replaying
   await expect(main.getByText("Late restricted output", { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { activitySendCount: number }).activitySendCount)).toBe(1);
 });
+// golden-13 (#6061): an authorized tool card may show its argument and lazy
+// result, but neither reaches copy, export or web storage, its opaque payload
+// signature is never displayed, and revocation removes both at request time.
+// Route fixtures prove client behavior only, not server authorization.
+test("tool payload sentinels stay inside the authorized card and leave on revocation", async ({ page }) => {
+  await page.addInitScript(() => {
+    const copied: string[] = [];
+    Object.assign(window, { golden13Copied: copied });
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text: string) => { copied.push(text); } } });
+  });
+  const tool = { id: "golden13-read", name: "Read", status: "ok", input: JSON.stringify({ file_path: "/tmp/a", note: TOOL_PAYLOAD_SENTINELS.argument }),
+    outputChars: 64, textOffset: 0, signature: TOOL_PAYLOAD_SENTINELS.payloadSignature, encrypted_content: TOOL_PAYLOAD_SENTINELS.payloadSignature,
+    activity: activity("golden13-read", "ok", 1) };
+  const { main, denyOutputs } = await setup(page, false, false, false, [tool], undefined, undefined, true);
+  let revoked = false;
+  await page.route("**/api/chat/conversation/*/tool-output?*", async (route) => {
+    await route.fulfill({ status: revoked ? 403 : 200, json: revoked ? { ok: false, error: "Denied" } : { ok: true, output: TOOL_PAYLOAD_SENTINELS.result } });
+  });
+  const surfaces = () => page.evaluate(() => [document.documentElement.outerHTML, JSON.stringify({ ...localStorage }), JSON.stringify({ ...sessionStorage })].join("\n"));
+  const card = main.locator(".cave-tool-block").first();
+  await card.locator(":scope > summary").click();
+  await expect(card).toContainText(TOOL_PAYLOAD_SENTINELS.result);
+  await expect(card).toContainText(TOOL_PAYLOAD_SENTINELS.argument);
+  expect(await surfaces()).not.toContain(TOOL_PAYLOAD_SENTINELS.payloadSignature);
+
+  const answer = main.locator(".cave-bubble-assistant").last();
+  await answer.hover();
+  await main.getByRole("button", { name: "Copy completed response", exact: true }).last().click();
+  const copied = await page.evaluate(() => (window as unknown as { golden13Copied: string[] }).golden13Copied.at(-1));
+  expect(copied).toBe(ANSWER);
+  await main.getByRole("button", { name: "More response actions", exact: true }).last().click();
+  await page.getByRole("menuitem", { name: "Open reader" }).click();
+  await page.getByRole("button", { name: "Export answer", exact: true }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: /Markdown/ }).click();
+  const exported = await (await download).createReadStream().then(async (stream) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks).toString("utf8");
+  });
+  expect(exported.trim()).toBe(ANSWER);
+  await page.keyboard.press("Escape");
+  const storage = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
+  expect(toolSentinelsIn([copied, exported, storage].join("\n"))).toEqual([]);
+
+  revoked = true;
+  denyOutputs();
+  await card.locator(":scope > summary").click();
+  await card.locator(":scope > summary").click();
+  await expect(main.getByText("Chat access changed. Reload history to check current access.", { exact: true })).toBeVisible();
+  expect(toolSentinelsIn(await surfaces())).toEqual([]);
+});
+
 // golden-02 (#6057): a no-text reasoning state is shown honestly. Its placeholder
 // is not a summary, so no length is reported for it, and opaque fields a
 // leaking server might attach never reach display, copy, export or web storage.

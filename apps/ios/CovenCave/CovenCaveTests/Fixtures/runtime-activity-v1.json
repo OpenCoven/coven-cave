@@ -1223,6 +1223,12 @@
       "opaqueState": "PRIVATE_GOLDEN02_OPAQUE_STATE",
       "legacyThought": "PRIVATE_GOLDEN02_LEGACY_THOUGHT"
     },
+    "toolScope": "golden-13 (#6061). The argument and result may appear only inside an authorized tool card; they must stay out of copy, export, web storage, notifications and Live Activity state, and leave the display once access is revoked. The payload signature is opaque and must never be displayed.",
+    "tool": {
+      "argument": "PRIVATE_GOLDEN13_TOOL_ARGUMENT",
+      "result": "PRIVATE_GOLDEN13_TOOL_RESULT",
+      "payloadSignature": "PRIVATE_GOLDEN13_PAYLOAD_SIGNATURE"
+    },
     "continuationToken": "resp_golden02-opaque.continuation_7f3a9c"
   }
 }
