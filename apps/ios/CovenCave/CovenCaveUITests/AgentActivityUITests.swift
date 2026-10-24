@@ -207,6 +207,7 @@ final class AgentActivityUITests: XCTestCase {
         let open = app.buttons["Show output for Read"]
         XCTAssertTrue(open.waitForExistence(timeout: 5), "successful native tools expose their saved output")
         guard open.exists else { return }
+        revealBelowHeader(open, in: app)
         open.tap()
         XCTAssertTrue(app.staticTexts["Tool output"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["NATIVE_TOOL_OUTPUT_PREVIEW\nSecond result line."].waitForExistence(timeout: 5))
@@ -240,6 +241,7 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Show output for Read"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Tool output"].exists)
         XCTAssertFalse(result.exists)
+        revealBelowHeader(app.buttons["Show output for Read"], in: app)
         app.buttons["Show output for Read"].tap()
         XCTAssertTrue(result.waitForExistence(timeout: 5))
     }
@@ -262,7 +264,24 @@ final class AgentActivityUITests: XCTestCase {
         XCTAssertTrue(chip.waitForExistence(timeout: 15))
         chip.tap()
         XCTAssertTrue(app.buttons["Show output for Read"].waitForExistence(timeout: 5))
+        revealBelowHeader(app.buttons["Show output for Read"], in: app)
         return app
+    }
+
+    /// Scroll the transcript until `element` sits below the header. Expanding
+    /// the trail grows the bottom-anchored transcript upward, so on a short
+    /// screen (iPhone Duo's closed outer display is 678pt) its first rows land
+    /// under the navigation bar, where a tap hits the bar instead. Small, slow
+    /// drags so the row isn't flung past the other edge.
+    @MainActor
+    private func revealBelowHeader(_ element: XCUIElement, in app: XCUIApplication) {
+        let transcript = app.scrollViews["Chat transcript"].firstMatch
+        for _ in 0..<6 where element.frame.minY < app.navigationBars.firstMatch.frame.maxY + 8 {
+            transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                .press(forDuration: 0.05, thenDragTo: transcript.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)
+                ), withVelocity: .slow, thenHoldForDuration: 0.2)
+        }
     }
 
     @MainActor

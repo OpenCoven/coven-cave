@@ -32,7 +32,9 @@ final class ChatHeaderBackNavigationUITests: XCTestCase {
         try XCTSkipIf(listIsBesideConversation(app),
                       "a wide window shows the list beside the conversation; there is no Back")
 
-        let back = app.navigationBars[threadTitle].buttons["Back"]
+        // App-wide, like Open navigation: on iPhone Duo (iOS 27.1 SDK) the bar's
+        // buttons lay out in a column under the status bar, outside the bar.
+        let back = app.buttons["Back"].firstMatch
         XCTAssertTrue(back.waitForExistence(timeout: 5), "the header keeps a labelled Back control")
         XCTAssertTrue(app.buttons["Open navigation"].exists, "Open navigation stays beside Back")
         back.tap()
