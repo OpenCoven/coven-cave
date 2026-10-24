@@ -1,5 +1,6 @@
 // Opt-in built-server fixture for manual/CLI browser qualification.
-// Only the external provider is synthetic. Commands on stdin: release, finish.
+// Only the external provider is synthetic. Default commands: release, finish.
+// --human pauses controlled tool observations with next; it records no human acceptance.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -11,11 +12,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { freePort, startCave, stopCave } from './client-v1-conformance.mjs';
+import { loopbackOriginResponds } from './dev-app-origin-health.mjs';
+import { startFixtureKeepalive } from './runtime-activity-fixture-keepalive.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const [execute, evidence] = process.argv.slice(2);
-assert.ok(execute === '--execute' && evidence && path.isAbsolute(evidence) && process.argv.length === 4,
-  'Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-browser-fixture.mjs --execute <new-absolute-evidence-directory>');
+const [execute, evidence, mode] = process.argv.slice(2);
+const human = mode === "--human";
+assert.ok(execute === '--execute' && evidence && path.isAbsolute(evidence) && (process.argv.length === 4 || (process.argv.length === 5 && human)),
+  'Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-browser-fixture.mjs --execute <new-absolute-evidence-directory> [--human]');
+// Fail before creating a fixture home if no production renderer is available.
+const buildId = (await readFile(path.join(repo, '.next/BUILD_ID'), 'utf8')).trim();
 await mkdir(evidence, { recursive: false, mode: 0o700 });
 const root = await realpath(await mkdtemp(path.join(tmpdir(), 'cave-browser-activity-')));
 const covenHome = path.join(root, 'coven');
@@ -24,16 +30,28 @@ const projectRoot = path.join(root, 'project');
 const token = 'fixture-browser-' + randomUUID();
 const adminToken = 'fixture-sidecar-' + randomUUID();
 const providerToken = 'fixture-provider-' + randomUUID();
+const readinessToken = 'fixture-readiness-' + randomUUID();
 const marker = 'CAVE_BROWSER_' + randomUUID();
-const covenBin = execFileSync('which', ['coven'], { encoding: 'utf8' }).trim();
+const covenBin = process.env.COVEN_BIN || execFileSync('which', ['coven'], { encoding: 'utf8' }).trim();
+assert.ok(path.isAbsolute(covenBin), 'COVEN_BIN must identify an absolute qualified executable.');
 const report = { schemaVersion: 1, startedAt: new Date().toISOString(), root,
   candidate: { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
-    buildId: (await readFile(path.join(repo, '.next/BUILD_ID'), 'utf8')).trim() },
+    buildId },
   classification: 'built Cave, real Coven daemon, synthetic external Hermes provider; browser assertions recorded separately',
   providerRequests: 0, toolInvocations: 0, modelInventoryRequests: 0, fixturePassed: false };
 let provider, cave, daemonStarted = false, release, timedOut = false;
 const gate = new Promise((resolve) => { release = resolve; });
 const input = createInterface({ input: process.stdin });
+let humanStage = -1;
+const stageReleases = [];
+const stageGates = [];
+for (let index = 0; index < 3; index++) {
+  stageGates.push(new Promise(resolve => stageReleases.push(resolve)));
+}
+if (human) Object.assign(report, {
+  classification: 'Built Cave, real isolated daemon, controlled provider tool observations; no actual tool execution.',
+  humanAcceptance: 'UNTESTED',
+});
 const deadline = setTimeout(() => { timedOut = true; input.close(); }, 30 * 60_000);
 const native = (args) => execFileSync(covenBin, args, {
   env: process.env, cwd: projectRoot, encoding: 'utf8', timeout: 20_000, stdio: ['ignore', 'pipe', 'pipe'],
@@ -60,9 +78,10 @@ try {
     COVEN_PREFERENCES_PATH: path.join(root, 'preferences.json'), COVEN_THEME_PATH: path.join(root, 'theme.json'),
     CAVE_PROJECTS_PATH_OVERRIDE: path.join(root, 'projects.json'), CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: path.join(root, 'permissions.json'),
     CAVE_QUEUE_PROJECT_PATH_OVERRIDE: path.join(root, 'queue-project.json'),
+    ...(human ? { COVEN_CAVE_DEV_PROBE_TOKEN: readinessToken } : {}),
   });
   delete process.env.COVEN_CAVE_E2E;
-  const scenarioBytes = await readFile(path.join(repo, 'apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-http-v1.json'));
+  const scenarioBytes = await readFile(path.join(repo, human ? 'scripts/runtime-activity-human-scenario.json' : 'apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-http-v1.json'));
   report.scenarioSha256 = createHash('sha256').update(scenarioBytes).digest('hex');
   const scenario = JSON.parse(scenarioBytes.toString().replaceAll('{{MARKER}}', marker));
   provider = createServer(async (req, res) => {
@@ -86,6 +105,19 @@ try {
       await appendFile(ledger, JSON.stringify({ kind: 'provider', ordinal: report.providerRequests }) + '\n');
       assert.equal(report.providerRequests, 1, 'history/reconnect must not dispatch again');
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
+      if (human) {
+        startFixtureKeepalive(res);
+        assert.equal(scenario.stages.length, 4);
+        for (let index = 0; index < scenario.stages.length; index++) {
+          if (index) await stageGates[index - 1];
+          if (res.destroyed) return;
+          humanStage = index;
+          frames(res, scenario.stages[index].events);
+          console.log(JSON.stringify({ phase: scenario.stages[index].name,
+            instruction: scenario.stages[index].instruction }));
+        }
+        res.end(); return;
+      }
       frames(res, scenario.beforeRelease);
       await gate;
       const value = await readFile(path.join(projectRoot, 'marker.txt'), 'utf8');
@@ -113,19 +145,51 @@ try {
     adminToken, mobileAccessToken: token });
   report.serverPid = cave.child.pid;
   const connection = { origin: cave.origin, token, adminToken, project, marker, familiarId: 'nativeactivity' };
+  if (human) {
+    // Match dev-app.sh's initial document readiness budget, not its short
+    // already-running origin/watchdog probe. API health can precede the page.
+    assert.ok(await loopbackOriginResponds({ port: cave.port, probeToken: readinessToken, timeoutMs: 180_000 }),
+      'The native wrapper must authenticate the production fixture readiness probe.');
+    report.desktopReadinessVerified = true;
+    // Private handoff for launching the native wrapper against the SAME isolated
+    // daemon and homes. These are fixture credentials, never a user's vault.
+    const names = ['COVEN_HOME', 'COVEN_CAVE_HOME', 'COVEN_SOCKET', 'COVEN_BIN', 'COVEN_CAVE_DEV_PROBE_TOKEN',
+      'COVEN_WORKSPACE_ROOT', 'COVEN_WORKSPACES_ROOT', 'COVEN_VAULT_FILE',
+      'COVEN_CAVE_ENV_FILE', 'COVEN_CAVE_LOCAL_VAULT_FILE', 'COVEN_CAVE_LOCAL_VAULT_KEY_FILE',
+      'COVEN_PREFERENCES_PATH', 'COVEN_THEME_PATH', 'CAVE_PROJECTS_PATH_OVERRIDE',
+      'CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE', 'CAVE_QUEUE_PROJECT_PATH_OVERRIDE'];
+    const env = Object.fromEntries(names.map(name => [name, process.env[name]]));
+    Object.assign(env, { COVEN_CAVE_PORT: String(cave.port), COVEN_CAVE_AUTH_TOKEN: adminToken, COVEN_CAVE_ACCESS_TOKEN: token });
+    await writeFile(path.join(evidence, 'desktop-env.json'), JSON.stringify(env, null, 2), { mode: 0o600 });
+  }
   await writeFile(path.join(evidence, 'connection.json'), JSON.stringify(connection, null, 2), { mode: 0o600 });
   assert.ok(!input.closed, 'Browser fixture needs an open control input; start the command with tty=true.');
   console.log(JSON.stringify({ phase: 'ready', origin: cave.origin, connection: path.join(evidence, 'connection.json'),
-    commands: ['release', 'finish'] }));
+    commands: human ? ['next', 'finish'] : ['release', 'finish'] }));
   for await (const line of input) {
-    if (line.trim() === 'release') { release(); console.log(JSON.stringify({ phase: 'released' })); }
+    if (human && line.trim() === 'next') {
+      if (humanStage >= 0 && humanStage < stageReleases.length) stageReleases[humanStage]();
+      else console.log('No next stage: send the first message or inspect the completed history.');
+    }
+    if (!human && line.trim() === 'release') { release(); console.log(JSON.stringify({ phase: 'released' })); }
     if (line.trim() === 'finish') {
-      assert.equal(report.providerRequests, 1); assert.equal(report.toolInvocations, 1);
+      assert.equal(report.providerRequests, 1); assert.equal(report.toolInvocations, human ? 0 : 1);
+      if (human) assert.equal(humanStage, 3, "Advance through all human observation stages before finishing.");
       assert.equal(report.providerFailure, undefined);
       const { listConversations, loadConversation } = await imp('src/lib/cave-conversations.ts');
       const saved = await listConversations(); assert.equal(saved.length, 1);
       const conversation = await loadConversation(saved[0].sessionId);
       await writeFile(path.join(evidence, 'saved-conversation.json'), JSON.stringify(conversation, null, 2), { mode: 0o600 });
+      if (human) {
+        const replies = conversation.turns.filter(turn => turn.role === 'assistant');
+        const reply = replies.at(-1);
+        assert.ok(reply?.text.includes('The comparison is complete.'));
+        assert.deepEqual(reply.tools.map(tool => [tool.id, tool.status]), [
+          ['read-a', 'error'], ['read-b', 'ok'], ['read-a-retry', 'ok'],
+        ]);
+        assert.ok(reply.reasoningBlocks?.some(block => block.text.includes('compare two files')));
+        report.savedProjectionVerified = true;
+      }
       report.fixturePassed = true; break;
     }
   }
@@ -133,6 +197,7 @@ try {
 } catch (error) { report.failure = error.message; process.exitCode = 1; }
 finally {
   clearTimeout(deadline); input.close(); release();
+  for (const releaseStage of stageReleases) releaseStage();
   if (cave) {
     try { await stopCave(cave, cave.port); report.serverStopped = true; }
     catch { report.serverStopped = false; process.exitCode = 1; }
