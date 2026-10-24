@@ -61,6 +61,27 @@ class ArtifactTests(unittest.TestCase):
         self.log=b'Running TypeScript ...\nFinished TypeScript in 1s\n'
         self.record['log_sha256']=hashlib.sha256(self.log).hexdigest();self.record['log_snapshot_bytes']=len(self.log);self.write()
         self.assertEqual(validate(self.root,'build')['command_seconds'],1.0)
+    def test_observed_build_requires_bound_receipts_and_log_offsets(self):
+        from test_observations import ObservationTests
+        fixture=ObservationTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
+        self.log=b'Running TypeScript ...\nFinished TypeScript in 1s\n'
+        self.record.update(command=['pnpm','build'],node_observation=True,
+                           log_sha256=hashlib.sha256(self.log).hexdigest(),log_snapshot_bytes=len(self.log))
+        self.write()
+        provenance={'kind':'build-observed','measurement_command':['pnpm','build'],'node_observation':True}
+        (self.root.parent/'provenance.json').write_text(json.dumps(provenance))
+        directory=self.root/'node-observations';directory.mkdir()
+        (directory/'compiler.jsonl').write_text(''.join(json.dumps(e)+'\n' for e in fixture.events))
+        sample={'elapsed':.1,'processes':[],'swap':'used=0','vm_stat':'free=1','log_bytes':len(self.log)}
+        samples=self.root/'samples.jsonl';samples.write_text(json.dumps(sample)+'\n')
+        self.assertEqual(validate(self.root,'build-observed')['node_observations']['checking_invocations'],1)
+        for value in [-1,len(self.log)+1,None]:
+            samples.write_text(json.dumps({**sample,'log_bytes':value})+'\n')
+            with self.assertRaises(ValueError):validate(self.root,'build-observed')
+        samples.write_text(json.dumps(sample)+'\n')
+        self.record['node_observation']=False;self.write()
+        with self.assertRaises(ValueError):validate(self.root,'build-observed')
+
     def test_malformed_samples_rejected(self):
         for value in ['not-json',json.dumps({'elapsed':1}),json.dumps({'elapsed':-1,'processes':[],'swap':'x','vm_stat':'x'})]:
             (self.root/'samples.jsonl').write_text(value+'\n')
@@ -109,5 +130,17 @@ class DependencyGraphTests(unittest.TestCase):
         (root/'package.json').write_text('{}')
         with self.assertRaises(ValueError):validate_graph(installed_graph(root))
         research.unlink();validate_graph(installed_graph(root))
+
+    def test_research_version_is_an_explicit_per_source_expectation(self):
+        from workload import installed_graph, validate_graph
+        root=pathlib.Path(tempfile.mkdtemp(prefix='c6036-graph-'))
+        for name,version in [('next','16.3.8'),('typescript','6.0.3'),('react','19.2.8'),('@opencoven/research','0.2.0')]:
+            package=root/'node_modules'/name/'package.json';package.parent.mkdir(parents=True)
+            package.write_text(json.dumps({'version':version}))
+        (root/'package.json').write_text(json.dumps({'optionalDependencies':{'@opencoven/research':'fixture'}}))
+        graph=installed_graph(root)
+        validate_graph(graph,research_version='0.2.0')
+        with self.assertRaises(ValueError):validate_graph(graph)
+        with self.assertRaises(ValueError):validate_graph(graph,research_version='0.3.0')
 
 if __name__=='__main__':unittest.main()
