@@ -742,18 +742,17 @@ details[open] > .cave-tool-summary::before {
   font-size: var(--text-sm);
 }
 
-/* Chat-revamp 1b: the session's familiar leads the header — a 24px circle
-   before the title. Photo avatars fill it; glyph avatars center on the quiet
-   accent tint. */
+/* The familiar spans the title and metadata rows. Photos fill the rounded
+   square; glyphs stay centered on the quiet accent tint. */
 .cave-chat-header-avatar {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: calc(var(--space-6) + var(--space-5));
+  height: calc(var(--space-6) + var(--space-5));
   flex: 0 0 auto;
   overflow: hidden;
   border: 1px solid color-mix(in oklch, var(--accent-presence) 22%, transparent);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--accent-presence) 9%, var(--bg-raised));
   color: var(--accent-presence);
 }
@@ -936,43 +935,32 @@ details[open] > .cave-tool-summary::before {
   display: none;
 }
 
-/* ── One title row (#5953) ─────────────────────────────────────────────────
-   identity · run status · actions. The stats strip and the Last run strip
-   used to stack as two bands under the title; they ride the row now.
-   Above 52rem the row stays one line and space is given up in order (#6008):
-   a long title truncates first, down to a protected floor; then the run
-   status wraps its stats and Last run onto two lines inside its own box. A
-   long "Last run needs attention" status used to keep its full width while
-   the title fell to "Capabil…". Below 52rem the status takes its own line. */
+/* Title and metadata share two rows beside the actions. Activity has at
+   most one additional row, so narrow panes cannot create a fourth band. */
 .cave-chat-header-row {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   column-gap: var(--space-3);
   row-gap: var(--space-1);
   min-width: 0;
 }
 
 .cave-chat-header-row > .cave-chat-meta-line {
-  /* Start from the identity's own width and give up space first (the high
-     shrink factor), but never below the floor: 24rem keeps a typical title
-     (about 30 characters) whole beside the avatar and status pill. The
-     identity line under the title is usually wider than that anyway, so a
-     short title rarely reserves space it doesn't use. */
-  flex: 1 100 auto;
-  min-width: min(100%, 24rem);
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
   width: auto;
-  /* Title and pill on the first line, the identity under them: the exact
-     runtime/model ID keeps wrapping (never an ellipsis) without taking the
-     row's width from the run status and actions. */
   display: grid;
   grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr);
+  grid-template-rows: minmax(var(--space-6), auto) var(--space-5);
   align-items: center;
   row-gap: 0;
 }
 
-/* Icon buttons never give up width; the identity and the status do. */
 .cave-chat-header-row > .cave-chat-session-actions {
+  grid-column: 2;
+  grid-row: 1;
   flex: none;
 }
 
@@ -980,29 +968,60 @@ details[open] > .cave-tool-summary::before {
   grid-row: 1 / span 2;
 }
 
+.cave-chat-header-row .cave-chat-title,
+.cave-chat-header-row .cave-chat-title-input {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Preserve the exact runtime details on one horizontally scrollable line.
+   The focusable status span also supports keyboard scrolling. */
 .cave-chat-header-row .cave-chat-meta-line__meta {
   grid-column: 2 / -1;
   grid-row: 2;
   max-width: none;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.cave-chat-header-row .cave-chat-meta-line__meta::-webkit-scrollbar {
+  display: none;
 }
 
 .cave-chat-header-status {
+  grid-column: 1 / -1;
+  grid-row: 2;
   display: flex;
-  flex: 0 1 auto;
-  /* Squeezed beside a protected title, the stats and the Last run strip
-     stack, right-aligned, instead of pushing the title out (#6008). */
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex-wrap: nowrap;
+  justify-content: safe flex-end;
   min-width: 0;
   align-items: center;
-  gap: 0 var(--space-2);
+  gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.cave-chat-header-status::-webkit-scrollbar {
+  display: none;
 }
 
 .cave-chat-header-status:empty {
   display: none;
 }
 
-/* On the title row the stats are inline facts, not a band. */
+.cave-chat-header-status > * {
+  flex: none;
+}
+
+/* Keep focus indicators inside the horizontal scroll regions. */
+.cave-chat-header-status .focus-ring,
+.cave-chat-meta-line__meta .focus-ring {
+  --ring-offset: calc(-1 * var(--ring-width));
+}
+
+/* The stats remain inline facts, with their existing detail popovers. */
 .cave-chat-header-status .cave-chat-context-row {
   min-height: 0;
   padding: 0;
@@ -1010,23 +1029,17 @@ details[open] > .cave-tool-summary::before {
   background: none;
 }
 
-@container chat-header (max-width: 52rem) {
-  .cave-chat-header-row {
-    flex-wrap: wrap;
-  }
-  .cave-chat-header-status {
-    order: 1;
-    flex: 1 0 100%;
-    justify-content: flex-end;
-  }
-}
-
-/* A split pane or narrow window: the identity takes the whole first line so
-   the title and its runtime/model line stay readable, and the actions and
-   run status wrap beneath it instead of squeezing the title to a sliver. */
+/* In split panes, preserve title room by sharing the activity row with the
+   actions. The two identity rows still span the full width above them. */
 @container chat-header (max-width: 40rem) {
   .cave-chat-header-row > .cave-chat-meta-line {
-    flex-basis: 100%;
+    grid-column: 1 / -1;
+  }
+  .cave-chat-header-row > .cave-chat-session-actions {
+    grid-row: 2;
+  }
+  .cave-chat-header-status {
+    grid-column: 1;
   }
 }
 

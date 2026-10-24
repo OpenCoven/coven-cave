@@ -554,9 +554,9 @@ export function HomeComposer({
   });
 
 
-  // Prompt enhancement (cave-b6c2): the shared model-backed hook — streaming
-  // rewrite via the selected familiar with the rule engine as fallback, plus
-  // the race-safe apply/suggest/revert state machine.
+  // Prompt enhancement (cave-b6c2): the shared model-backed hook — a streamed
+  // rewrite from the selected familiar (no scripted fallback; failures keep
+  // the draft), plus the race-safe apply/suggest/revert state machine.
   const promptEnhance = usePromptEnhance({
     draft: text,
     setDraft: setText,
@@ -1168,6 +1168,7 @@ export function HomeComposer({
           onDismiss={promptEnhance.dismiss}
           onRevert={promptEnhance.revert}
           onCancel={promptEnhance.cancel}
+          onRetry={promptEnhance.retry}
           onFocusComposer={() => textareaRef.current?.focus()}
         />
 
@@ -1255,6 +1256,7 @@ export function HomeComposer({
                   onEnhance: promptEnhance.enhance,
                   disabled: sending || !text.trim(),
                   loading: promptEnhance.state.phase === "loading",
+                  unavailableReason: promptEnhance.unavailableReason,
                 }}
                 promptSnippets={{ onSelect: () => setSnippetsBrowserOpen(true) }}
                 onOpenModelTuning={

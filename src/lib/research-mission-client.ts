@@ -12,6 +12,7 @@ import {
 } from "./research-missions.ts";
 import type { AutomationStatus } from "./codex-automations-types.ts";
 import type { ResearchAutomationScheduleInput } from "./research-automation-contract.ts";
+import { parseLifecycleCommandResult } from "./automations/lifecycle.ts";
 import { publishSchedulesChanged } from "./board-cache-events.ts";
 
 export type ResearchMissionListResponse = {
@@ -237,15 +238,30 @@ export async function scheduleResearchMission(
 export async function setResearchAutomationStatus(
   id: string,
   status: AutomationStatus,
-): Promise<{ ok: boolean; error?: string }> {
-  const response = await fetch(`/api/codex-automations/${encodeURIComponent(id)}`, {
-    method: "PATCH",
+  expectedRevision?: number,
+): Promise<{ ok: boolean; error?: string; revision?: number }> {
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision! < 1) {
+    return { ok: false, error: "Refresh the scheduled job before changing it." };
+  }
+  const command = status === "ACTIVE" ? "activate" : "pause";
+  // Deterministic per reviewed revision: transport retries, including after a
+  // browser reload, must reuse the exact lifecycle command's adoption key.
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([id, command, expectedRevision])));
+  const adoptionKey = `cave-research-${Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("")}`;
+  const response = await fetch(`/api/coven-automations/${encodeURIComponent(id)}/lifecycle`, {
+    method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ command, expectedRevision, adoptionKey }),
   });
-  const result = await readJson(response) as { ok: boolean; error?: string };
-  if (result.ok) publishSchedulesChanged();
-  return result;
+  const result = parseLifecycleCommandResult(await readJson(response));
+  if (result.kind === "committed") {
+    publishSchedulesChanged();
+    return { ok: true, revision: result.revision };
+  }
+  return { ok: false, error: result.kind === "conflict"
+    ? "The scheduled job changed. Refresh it before retrying."
+    : result.kind === "unknown" ? "The scheduled job may have changed. Retry to confirm the same request."
+    : "The scheduled job could not be changed. Refresh it and try again." };
 }
 
 export async function runResearchAutomationNow(

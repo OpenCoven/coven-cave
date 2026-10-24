@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import test from "node:test";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = path.join(process.cwd(), "artifacts", "backup-sync-test");
@@ -134,6 +137,119 @@ assert.equal(JSON.stringify(overview).includes(passphrase), false, "overview nev
 // Status survives a reload from disk.
 const persisted = await loadBackupSyncStatus();
 assert.equal(persisted.lastSuccessAt, (await getBackupSyncOverview()).status.lastSuccessAt);
+
+const statePath = path.join(home, "cave", "backup-sync.json");
+const validState = await readFile(statePath, "utf8");
+const invalidStateMessage = /invalid.*restore.*backup-sync\.json/i;
+const rejectedStates = [
+  { name: "malformed JSON", bytes: "{not-json\n", message: invalidStateMessage },
+  { name: "null root", bytes: "null\n", message: invalidStateMessage },
+  { name: "array root", bytes: "[]\n", message: invalidStateMessage },
+  { name: "missing version", bytes: '{"config":{},"status":{}}', message: invalidStateMessage },
+  { name: "invalid version", bytes: '{"version":0,"config":{},"status":{}}', message: invalidStateMessage },
+  { name: "string version", bytes: '{"version":"1","config":{},"status":{}}', message: invalidStateMessage },
+  { name: "invalid config", bytes: '{"version":1,"config":[],"status":{}}', message: invalidStateMessage },
+  { name: "invalid status", bytes: '{"version":1,"config":{},"status":null}', message: invalidStateMessage },
+  { name: "newer version", bytes: JSON.stringify({ ...JSON.parse(validState), version: 2, futureField: "preserve me" }), message: /newer.*update Cave/i },
+];
+
+for (const fixture of rejectedStates) {
+  await test(`rejected backup state preserves ${fixture.name} on reads, writes and backup runs`, async () => {
+    await writeFile(statePath, fixture.bytes);
+    const snapshots = await readdir(destination);
+    try {
+      for (const read of [loadBackupSyncConfig, loadBackupSyncStatus, getBackupSyncOverview]) {
+        await assert.rejects(read(), fixture.message);
+      }
+      await assert.rejects(updateBackupSyncConfig({ retainCount: 3 }), fixture.message);
+      for (const reason of ["manual", "scheduled", "quit"] as const) {
+        await assert.rejects(runBackupSync(reason), fixture.message);
+      }
+      assert.equal(await readFile(statePath, "utf8"), fixture.bytes);
+      assert.deepEqual(await readdir(destination), snapshots, "rejected state cannot write or prune snapshots");
+      assert.equal(await readFile(path.join(destination, "unrelated.txt"), "utf8"), "not a snapshot");
+    } finally {
+      await writeFile(statePath, validState);
+    }
+  });
+}
+
+await test("an unreadable backup state is not replaced with defaults", async () => {
+  const savedPath = `${statePath}.original`;
+  await rename(statePath, savedPath);
+  await mkdir(statePath);
+  try {
+    await assert.rejects(loadBackupSyncConfig(), /read.*backup-sync\.json.*access/i);
+    await assert.rejects(updateBackupSyncConfig({ enabled: false }), /read.*backup-sync\.json.*access/i);
+    await assert.rejects(runBackupSync("manual"), /read.*backup-sync\.json.*access/i);
+    assert.ok((await stat(statePath)).isDirectory(), "the unreadable path remains untouched");
+    assert.equal(await readFile(savedPath, "utf8"), validState);
+  } finally {
+    await rm(statePath, { recursive: true });
+    await rename(savedPath, statePath);
+  }
+});
+
+await test("backup API refuses rejected state before saving or clearing the passphrase", async () => {
+  const { GET, PUT } = await import("../../app/api/backup/sync/route.ts");
+  const { POST } = await import("../../app/api/backup/sync/run/route.ts");
+  const { getLocalEncryptedSecret } = await import("../local-encrypted-vault.ts");
+  const invalid = "{invalid backup configuration\n";
+  await writeFile(statePath, invalid);
+  const request = (method: string, body?: object) => new Request("http://localhost/api/backup/sync", {
+    method,
+    headers: { host: "localhost", "content-type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  try {
+    const read = await GET(request("GET"));
+    assert.equal(read.status, 500);
+    assert.match((await read.json()).error, invalidStateMessage);
+    for (const patch of [{ passphrase: "replacement synthetic passphrase" }, { clearPassphrase: true }, { retainCount: 3, clearPassphrase: true }]) {
+      const response = await PUT(request("PUT", patch));
+      assert.equal(response.status, 400);
+      assert.match((await response.json()).error, invalidStateMessage);
+      assert.equal(getLocalEncryptedSecret("BACKUP_SYNC_PASSPHRASE"), passphrase);
+      assert.equal(await readFile(statePath, "utf8"), invalid);
+    }
+    const run = await POST(request("POST"));
+    assert.equal(run.status, 400);
+    assert.match((await run.json()).error, invalidStateMessage);
+    assert.equal(await readFile(statePath, "utf8"), invalid);
+  } finally {
+    await writeFile(statePath, validState);
+    setBackupSyncPassphrase(passphrase);
+  }
+});
+
+await test("a status write preserves state replaced after a snapshot was written", async (t) => {
+  const newerState = JSON.stringify({ ...JSON.parse(validState), version: 2, futureField: "preserve after archive" });
+  const originalStat = fsPromises.stat;
+  let writtenSnapshot: string | null = null;
+  // Interpose at the real archive's post-write stat, then let the real status
+  // writer read a changed file. Archive creation and filesystem IO stay real.
+  const hook = t.mock.method(fsPromises, "stat", async (...args: Parameters<typeof fsPromises.stat>) => {
+    const result = await Reflect.apply(originalStat, fsPromises, args);
+    const target = args[0];
+    if (typeof target === "string" && target.startsWith(destination + path.sep) && target.endsWith(BACKUP_FILE_SUFFIX)) {
+      writtenSnapshot = target;
+      await writeFile(statePath, newerState);
+    }
+    return result;
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(runBackupSync("manual"), /newer.*update Cave/i);
+    assert.ok(writtenSnapshot, "the accepted archive was written before the state changed");
+    assert.equal(await readFile(statePath, "utf8"), newerState);
+    const saved = await decryptBackupArchive(await readFile(writtenSnapshot), passphrase);
+    assert.ok(saved.manifest.entries.some((entry) => entry.path === "backup-sync.json"));
+  } finally {
+    hook.mock.restore();
+    syncBuiltinESMExports();
+    await writeFile(statePath, validState);
+  }
+});
 
 clearBackupSyncPassphrase();
 assert.equal(hasBackupSyncPassphrase(), false);

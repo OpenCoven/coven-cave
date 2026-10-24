@@ -12,8 +12,8 @@ const depBlocks = ["dependencies", "devDependencies", "optionalDependencies", "p
 
 // Independently released Research: one reviewed URL with locked content integrity.
 // Do not allow arbitrary URL, git, or local-path dependencies.
-const researchPin = "https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz";
-const researchIntegrity = "sha512-3FkNXEyn7BDNdhAAeKOaELqB5RsncuKUJkBVzaOJMshM4iqjRvxydDu8E6uUrQ3T3n36gcQIPmGxpKiJGgKhIQ==";
+const researchPin = "https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz";
+const researchIntegrity = "sha512-Q1t+fwEODkY3oY92jSlSfdCTQv6yKjnmvS7v8z6DHCTM3RKForiVwGQ7y3ysonCaNBqjlFgdYhNMMIJPf3Mdrg==";
 assert.equal(packageJson.optionalDependencies?.["@opencoven/research"], researchPin);
 
 // The selected SDK is not published. These two reviewed tarballs are immutable
