@@ -212,7 +212,10 @@ function linuxProcessInfo(
       ? parseLinuxProcessInfoForScan(stat, bootId)
       : parseLinuxProcessInfo(stat, bootId);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    // A process can disappear after procfs open, while its stat is being read.
+    // Linux reports ESRCH at that boundary rather than ENOENT from open.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ESRCH") return null;
     throw error;
   }
 }

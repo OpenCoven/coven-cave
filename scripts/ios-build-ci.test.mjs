@@ -436,8 +436,14 @@ assert.match(nativeRunner, /if \(unitSuite\) \{\s*delete target\.OnlyTestIdentif
   "full-suite mode must not retain the transport-only selector");
 assert.match(nativeRunner, /target\.EnvironmentVariables = \{[\s\S]*CAVE_NATIVE_ACTIVITY_FIXTURE: JSON\.stringify/,
   "the XCTest plan supplies the real TCP fixture configuration");
-assert.match(nativeRunner, /if \(!unitSuite\) \{\s*const uiTarget/,
+assert.match(nativeRunner, /if \(!unitSuite && !transportOnly\) \{\s*const uiTarget/,
   "routine CI leaves the separate native UI gate opt-in");
+assert.match(nativeRunner, /const transportOnly = args\.includes\('--transport-only'\)/,
+  "local consecutive-pass diagnosis may select the existing real TCP scenario alone");
+assert.ok(!testRun.includes("--transport-only"),
+  "the transport-only diagnostic selector must not replace full native CI coverage");
+assert.match(nativeRunner, /selectedModes > 1/,
+  "transport-only, full-suite, and live-UI modes cannot be combined");
 assert.ok(runScripts.some((run) => run.includes("pnpm build") && run.includes("installPinnedRelease")),
   "CI prepares a production server and the existing integrity-verified pinned CLI");
 // The fixture build may skip Next's own TypeScript pass (the typecheck job

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -124,6 +124,60 @@ test("Linux process-table scanning skips unrelated kernel entries with zero grou
     /missing identity fields/,
     "strict validation still rejects zero group/session identities",
   );
+});
+
+test("Linux identity reads treat a process lost after procfs open as absent", () => {
+  // Isolate the syscall seam from the real process tests in this file. Linux
+  // uses a real procfs descriptor opened before exit; macOS supplies the same
+  // documented ESRCH read outcome so this regression also runs locally.
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", `
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs';
+    import { spawn } from 'node:child_process';
+    import { once } from 'node:events';
+    import { syncBuiltinESMExports } from 'node:module';
+    const nativeLinux = process.platform === 'linux';
+    let descriptor;
+    let pid = 424242;
+    if (nativeLinux) {
+      const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
+      await once(child, 'spawn');
+      pid = child.pid;
+      try {
+        descriptor = fs.openSync('/proc/' + pid + '/stat', 'r');
+      } finally {
+        const exited = once(child, 'exit');
+        child.kill('SIGKILL');
+        await exited;
+      }
+      assert.throws(() => fs.readFileSync(descriptor, 'utf8'), { code: 'ESRCH' });
+    }
+    const read = fs.readFileSync;
+    const readdir = fs.readdirSync;
+    let failureCode = 'ESRCH';
+    fs.readFileSync = (path, ...args) => {
+      if (path === '/proc/sys/kernel/random/boot_id') return 'fixture-boot';
+      if (path === '/proc/' + pid + '/stat') {
+        if (descriptor !== undefined && failureCode === 'ESRCH') return read(descriptor, ...args);
+        throw Object.assign(new Error('procfs read: ' + failureCode), { code: failureCode });
+      }
+      return read(path, ...args);
+    };
+    fs.readdirSync = (path, ...args) => path === '/proc' ? [String(pid)] : readdir(path, ...args);
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    syncBuiltinESMExports();
+    const { kernelProcessIdentity, scanProcessTable } = await import(${JSON.stringify(new URL("./mobile-process-ownership.ts", import.meta.url).href)});
+    try {
+      assert.equal(await kernelProcessIdentity(pid), null);
+      assert.deepEqual(await scanProcessTable(), []);
+      failureCode = 'EACCES';
+      await assert.rejects(kernelProcessIdentity(pid), { code: 'EACCES' });
+      await assert.rejects(scanProcessTable(), { code: 'EACCES' });
+    } finally {
+      if (descriptor !== undefined) fs.closeSync(descriptor);
+    }
+  `], { encoding: "utf8", timeout: 10_000 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
 test("launch persists independent supervisor and backend-root anchors atomically", async () => {
@@ -540,7 +594,7 @@ test("stubborn backend escalation waits for readiness and drains the supervised 
     owner = readProcessOwner(ownerPath);
     assert.ok(owner?.backendRoot);
     const stopped = await stopOwnedProcessTree(ownerPath, { termWaitMs: 80, killWaitMs: 1000 });
-    assert.equal(stopped.kind, "stopped");
+    assert.equal(stopped.kind, "stopped", JSON.stringify(stopped));
     await waitForExit(backendPid);
     await waitForExit(owner.backendRoot.pid);
     await waitForExit(owner.supervisor.pid);

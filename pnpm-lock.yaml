@@ -170,6 +170,9 @@ importers:
       shiki:
         specifier: 4.3.1
         version: 4.3.1
+      smol-toml:
+        specifier: 1.9.1
+        version: 1.9.1
       sucrase:
         specifier: 3.35.1
         version: 3.35.1
@@ -248,8 +251,8 @@ importers:
         version: 4.1.11(@types/node@24.13.2)(vite@8.1.6(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
     optionalDependencies:
       '@opencoven/research':
-        specifier: https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz
-        version: https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz(@types/node@24.13.2)(next@16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.0)(@types/node@24.13.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz
+        version: https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz(@types/node@24.13.2)(next@16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.0)(@types/node@24.13.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
 
 packages:
 
@@ -1206,9 +1209,9 @@ packages:
     version: 0.0.1
     engines: {node: '>=24.18.0 <25'}
 
-  '@opencoven/research@https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz':
-    resolution: {integrity: sha512-3FkNXEyn7BDNdhAAeKOaELqB5RsncuKUJkBVzaOJMshM4iqjRvxydDu8E6uUrQ3T3n36gcQIPmGxpKiJGgKhIQ==, tarball: https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz}
-    version: 0.1.0
+  '@opencoven/research@https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz':
+    resolution: {integrity: sha512-Q1t+fwEODkY3oY92jSlSfdCTQv6yKjnmvS7v8z6DHCTM3RKForiVwGQ7y3ysonCaNBqjlFgdYhNMMIJPf3Mdrg==, tarball: https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz}
+    version: 0.2.0
     engines: {node: '>=24.18.0 <25'}
     peerDependencies:
       next: 16.3.8
@@ -3286,6 +3289,10 @@ packages:
     resolution: {integrity: sha512-94Bdh3cC2PKrbgSOUqTiGPWVZeSiXfKOVZNJniWoqrWrRkB1CJzBU3NEbiTsPcYy1lDsANA/THzS+9WBiy5nfQ==}
     engines: {node: '>= 10'}
 
+  smol-toml@1.9.1:
+    resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
+    engines: {node: '>= 18'}
+
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
@@ -4847,7 +4854,7 @@ snapshots:
     dependencies:
       '@opencoven/sdk-core': file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz
 
-  '@opencoven/research@https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz(@types/node@24.13.2)(next@16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.0)(@types/node@24.13.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@opencoven/research@https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz(@types/node@24.13.2)(next@16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.0)(@types/node@24.13.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       next: 16.3.8(@babel/core@7.29.7)(@playwright/test@1.62.0)(@types/node@24.13.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       pdfjs-dist: 6.2.108
@@ -7206,6 +7213,8 @@ snapshots:
       '@polka/url': 1.0.0-next.29
       mrmime: 2.0.1
       totalist: 3.0.1
+
+  smol-toml@1.9.1: {}
 
   source-map-js@1.2.2: {}
 

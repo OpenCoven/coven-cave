@@ -57,8 +57,8 @@ assert.match(
 // ── 6. The coalescer is declared outside the try and preserves ordering ─────
 assert.match(
   src,
-  /const chunkCoalescer = createChunkCoalescer\(\{\s*\n\s*flushMs: CHUNK_FLUSH_MS,\s*\n\s*apply: \(text\) => \{\s*\n\s*flushPendingStreamHealthEvent\(\);\s*\n\s*applyAssistantChunk\(text, assistantId, liveGeneration\);\s*\n\s*\},/,
-  "the coalescer must use the current send's liveGeneration and publish stream health before applying the buffered chunk",
+  /const chunkCoalescer = createChunkCoalescer\(\{\s*\n\s*flushMs: CHUNK_FLUSH_MS,\s*\n\s*apply: \(text\) => \{\s*\n\s*if \(accessGuard\.revoked\(\)\) return;\s*\n\s*flushPendingStreamHealthEvent\(\);\s*\n\s*applyAssistantChunk\(text, assistantId, liveGeneration\);\s*\n\s*\},/,
+  "the coalescer must reject revoked streams, then use the current send's liveGeneration and publish stream health before applying the buffered chunk",
 );
 
 // ── 7. One application path: the extracted applyAssistantChunk ───────────────

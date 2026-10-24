@@ -937,6 +937,127 @@
           "textOffset": 19
         }
       ]
+    },
+    {
+      "id": "withheld-block-with-text-is-rejected",
+      "blocks": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:withheld-text",
+          "representation": "provider-summary",
+          "phase": "unavailable",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable"
+          },
+          "unavailableReason": "provider-withheld",
+          "text": "PRIVATE_GOLDEN02_WITHHELD_SUMMARY"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "provider-withheld-reason-requires-unavailable-phase",
+      "blocks": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:forged-reason",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable"
+          },
+          "unavailableReason": "provider-withheld",
+          "text": "PRIVATE_GOLDEN02_WITHHELD_SUMMARY"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "opaque-continuation-siblings-are-not-retained",
+      "blocks": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:opaque-siblings",
+          "representation": "provider-summary",
+          "phase": "unavailable",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable"
+          },
+          "unavailableReason": "provider-withheld",
+          "signature": "PRIVATE_GOLDEN02_OPAQUE_STATE",
+          "encrypted_content": "PRIVATE_GOLDEN02_OPAQUE_STATE",
+          "data": "PRIVATE_GOLDEN02_OPAQUE_STATE"
+        }
+      ],
+      "expected": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:opaque-siblings",
+          "representation": "provider-summary",
+          "phase": "unavailable",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable"
+          },
+          "unavailableReason": "provider-withheld"
+        }
+      ]
     }
-  ]
+  ],
+  "reasoningPrivacySentinels": {
+    "scope": "golden-02 (#6057) and golden-13 (#6061) share these values. Each private sentinel must be absent from every display, replay, history, log, copy, export, notification and cache surface. The continuation token must instead reach execution unchanged.",
+    "private": {
+      "withheldSummary": "PRIVATE_GOLDEN02_WITHHELD_SUMMARY",
+      "opaqueState": "PRIVATE_GOLDEN02_OPAQUE_STATE",
+      "legacyThought": "PRIVATE_GOLDEN02_LEGACY_THOUGHT"
+    },
+    "continuationToken": "resp_golden02-opaque.continuation_7f3a9c"
+  }
 }

@@ -394,3 +394,72 @@ test("Windows replacement uses replace-existing write-through semantics", () => 
   assert.match(native, /MOVEFILE_REPLACE_EXISTING \| MOVEFILE_WRITE_THROUGH/);
   assert.match(manifest, /"Win32_Storage_FileSystem"/);
 });
+
+for (const operation of ["delete", "clear"]) {
+  test(`${operation} fences a pending durable read`, async () => {
+    let finishRead;
+    let started;
+    const reading = new Promise((resolve) => { started = resolve; });
+    const dependencies = {
+      supported: () => true,
+      invoke: async (command) => {
+        if (command === "offline_cache_read") {
+          started();
+          return new Promise((resolve) => { finishRead = resolve; });
+        }
+      },
+    };
+    await writeOfflineCache("conversation", `pending-${operation}`, { text: "revoked" }, "r1", dependencies);
+    const pending = readOfflineCache("conversation", `pending-${operation}`, dependencies);
+    await reading;
+    if (operation === "delete") await deleteOfflineCacheEntry("conversation", `pending-${operation}`, dependencies);
+    else await clearOfflineCache("conversation", dependencies);
+    finishRead(hit(JSON.stringify({ text: "revoked" })));
+    assert.equal(await pending, null);
+  });
+
+  test(`${operation} cannot be overtaken by a pending durable write`, async () => {
+    let finishWrite;
+    let started;
+    const writing = new Promise((resolve) => { started = resolve; });
+    let disk = null;
+    const dependencies = {
+      supported: () => true,
+      invoke: async (command, args) => {
+        if (command === "offline_cache_write") {
+          started();
+          await new Promise((resolve) => { finishWrite = resolve; });
+          disk = args.payload;
+        } else if (command === "offline_cache_delete" || command === "offline_cache_clear") {
+          disk = null;
+        }
+      },
+    };
+    const pending = writeOfflineCache("conversation", `writing-${operation}`, { text: "revoked" }, "r1", dependencies);
+    await writing;
+    const invalidation = operation === "delete"
+      ? deleteOfflineCacheEntry("conversation", `writing-${operation}`, dependencies)
+      : clearOfflineCache("conversation", dependencies);
+    finishWrite();
+    assert.equal(await pending, false, "invalidated writes cannot report a reusable revision");
+    assert.equal(await invalidation, true);
+    assert.equal(disk, null, "invalidation finishes after earlier native writes");
+  });
+}
+
+test("a failed native purge stays unreadable until a fresh successful write", async () => {
+  let disk = JSON.stringify({ text: "old" });
+  const dependencies = {
+    supported: () => true,
+    invoke: async (command, args) => {
+      if (command === "offline_cache_delete") throw new Error("unavailable");
+      if (command === "offline_cache_write") disk = args.payload;
+      if (command === "offline_cache_read") return hit(disk);
+    },
+  };
+  await writeOfflineCache("conversation", "failed-purge", { text: "old" }, "r1", dependencies);
+  assert.equal(await deleteOfflineCacheEntry("conversation", "failed-purge", dependencies), false);
+  assert.equal(await readOfflineCache("conversation", "failed-purge", dependencies), null);
+  assert.equal(await writeOfflineCache("conversation", "failed-purge", { text: "fresh" }, "r2", dependencies), true);
+  assert.deepEqual((await readOfflineCache("conversation", "failed-purge", dependencies))?.data, { text: "fresh" });
+});

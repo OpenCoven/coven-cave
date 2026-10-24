@@ -89,6 +89,8 @@ mod sidecar_lifecycle;
 mod sidecar_port_lock;
 #[cfg(desktop)]
 mod sidecar_ports;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod sidecar_runtime_retention;
 #[cfg(desktop)]
 mod sidecar_startup;
 #[cfg(desktop)]
@@ -108,6 +110,8 @@ mod windows_tray;
 mod windows_command;
 #[cfg(all(desktop, target_os = "windows"))]
 mod windows_process_job;
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+mod windows_update_recovery;
 
 #[cfg(desktop)]
 use desktop_reachability::*;

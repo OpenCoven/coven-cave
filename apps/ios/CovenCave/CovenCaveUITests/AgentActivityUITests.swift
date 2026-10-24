@@ -93,6 +93,21 @@ final class AgentActivityUITests: XCTestCase {
         try attachScreenshot(named: "timeline-native-hidden-failure")
     }
 
+    /// golden-02 (#6057): a provider-withheld block is a labelled no-text state,
+    /// never a fabricated summary, and keeps its place in the timeline.
+    @MainActor
+    func testTimelineShowsProviderWithheldSummaryHonestly() throws {
+        let app = launchTimeline(extraArguments: ["--ui-preview-timeline-withheld"])
+        let withheld = summary("after", in: app)
+        XCTAssertTrue(withheld.waitForExistence(timeout: 10))
+        XCTAssertEqual(withheld.label, "Reasoning summary")
+        XCTAssertTrue(app.staticTexts["Provider withheld this summary."].exists)
+        XCTAssertFalse(app.staticTexts["The source check is complete."].exists)
+        XCTAssertLessThan(timelineTool(in: app).frame.maxY, withheld.frame.minY)
+        XCTAssertLessThan(withheld.frame.minY, app.staticTexts["Ready to review."].frame.minY)
+        try attachScreenshot(named: "timeline-native-provider-withheld")
+    }
+
     @MainActor
     func testTimelineGlobalPreferenceResetsLocalChoices() throws {
         let app = launchTimeline()

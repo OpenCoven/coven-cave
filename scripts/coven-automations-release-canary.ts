@@ -33,7 +33,9 @@
 // Unix only: Cave reaches the daemon over its Unix socket here.
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import * as fs from "node:fs/promises";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -611,10 +613,119 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
     // Cave resolves the daemon from COVEN_HOME on every request; the socket
     // override must not point it anywhere else.
     process.env.COVEN_HOME = home;
+    process.env.HOME = home;
+    process.env.COVEN_CAVE_HOME = path.join(home, "cave");
     delete process.env.COVEN_SOCKET;
     await guarded(start());
     const client = await import("../src/lib/server/coven-automations-client.ts");
-    const { createAutomationReadClient } = await import("../src/lib/server/coven-automations-sdk.ts");
+    const { createAutomationReadClient, createAutomationCommandClient } = await import("../src/lib/server/coven-automations-sdk.ts");
+    const research = await import("../src/lib/research-host/lib/codex-automations.ts");
+    const researchContext = { missionId: "canary-mission", automationId: "research-canary-mission", adoptionKey: "research-create:canary-mission" };
+    const researchInput = {
+      name: "Research canary", prompt: "Do not execute; definition-only canary", rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      cwds: [work], familiars: ["canary-familiar"], model: "canary-model", tags: ["research-mission:canary-mission", "preserve-metadata"],
+      reasoningEffort: "", executionEnvironment: "", skillPath: null,
+    };
+    const importRoute = await import("../src/app/api/research-automation-import/route.ts");
+    const legacySerializer = await import("../src/lib/codex-automations.ts");
+    const legacyId = "research-import-canary";
+    const legacyFile = path.join(home, ".codex", "automations", legacyId, "automation.toml");
+    await fs.mkdir(path.dirname(legacyFile), { recursive: true });
+    const legacyBytes = legacySerializer.serializeAutomationToml({ ...researchInput, id: legacyId });
+    await fs.writeFile(legacyFile, legacyBytes);
+    const importRequest = (body: unknown) => importRoute.POST(new Request("http://127.0.0.1:3000/api/research-automation-import", {
+      method: "POST", headers: { host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000", "content-type": "application/json" }, body: JSON.stringify(body),
+    }));
+    const previewResponse = await importRequest({ action: "preview", id: legacyId, missionId: researchContext.missionId, timezone: "UTC" });
+    assert.equal(previewResponse.status, 200);
+    const preview = await previewResponse.json();
+    assert.equal(preview.plan.targetStatus, "PAUSED");
+    assert.equal((await createAutomationReadClient().get(legacyId)).routine, null, "preview must not create a definition");
+    const appliedResponse = await importRequest({ action: "apply", planId: preview.plan.planId });
+    assert.equal(appliedResponse.status, 200, await appliedResponse.clone().text());
+    const applied = await appliedResponse.json();
+    const replayResponse = await importRequest({ action: "apply", planId: preview.plan.planId });
+    assert.equal(replayResponse.status, 200);
+    assert.deepEqual(await replayResponse.json(), applied);
+    const imported = await createAutomationReadClient().get(legacyId);
+    assert.ok(imported.routine);
+    assert.equal(imported.routine.id, legacyId);
+    assert.equal(imported.routine.status, "PAUSED");
+    assert.equal(imported.routine.name, researchInput.name);
+    assert.equal(imported.routine.prompt, preview.plan.input.prompt);
+    assert.equal(imported.routine.cwd, work);
+    assert.equal(imported.routine.familiarId, "canary-familiar");
+    assert.equal(imported.routine.model, researchInput.model);
+    assert.deepEqual(imported.routine.tags, researchInput.tags);
+    assert.deepEqual(await research.getCodexAutomation(legacyId), applied.automation);
+    const importedActive = await research.updateCodexAutomation(legacyId, { status: "ACTIVE" }, {
+      missionId: researchContext.missionId, automationId: legacyId, expectedRevision: imported.revision, adoptionKey: "research-import-canary-activate",
+    });
+    const importedPaused = await research.updateCodexAutomation(legacyId, { status: "PAUSED" }, {
+      missionId: researchContext.missionId, automationId: legacyId, expectedRevision: importedActive.revision, adoptionKey: "research-import-canary-cancel",
+    });
+    assert.equal(importedPaused.status, "PAUSED");
+    assert.equal(await fs.readFile(legacyFile, "utf8"), legacyBytes);
+    const removedImport = await createAutomationCommandClient().tombstone(legacyId, importedPaused.revision, { adoptionKey: "research-import-canary-remove", intent: "Remove imported fixture", principalId: "cave" });
+    assert.notEqual(removedImport.outcome, "rejected");
+    // Replaying an import never resurrects a tombstoned original ID.
+    assert.notEqual((await importRequest({ action: "apply", planId: preview.plan.planId })).status, 200);
+    const rejectedContext = { ...researchContext, automationId: "research-rejected-intent", adoptionKey: "research-create:rejected-intent:1" };
+    await assert.rejects(research.createCodexAutomation({ ...researchInput, rrule: "RRULE:FREQ=MONTHLY;BYHOUR=9" }, rejectedContext), { definitiveRejection: true });
+    const corrected = await research.createCodexAutomation(researchInput, { ...rejectedContext, adoptionKey: "research-create:rejected-intent:2" });
+    assert.equal(corrected.status, "PAUSED");
+    const removedCorrected = await createAutomationCommandClient().tombstone(corrected.id, corrected.revision, { adoptionKey: "research-remove:rejected-intent", intent: "Remove corrected canary fixture", principalId: "cave" });
+    assert.notEqual(removedCorrected.outcome, "rejected");
+    const createdResearch = await research.createCodexAutomation(researchInput, researchContext);
+    assert.equal(createdResearch.status, "PAUSED");
+    for (const unsupported of [{ reasoningEffort: "high" }, { executionEnvironment: "worktree" }, { skillPath: "/fixture/skill" }, { familiars: ["one", "two"] }]) {
+      await assert.rejects(research.createCodexAutomation({ ...researchInput, ...unsupported }, researchContext), { code: "unsupported-research-automation-fields" });
+    }
+    assert.deepEqual(await research.createCodexAutomation(researchInput, researchContext), createdResearch, "same-key create must replay");
+    const researchReader = createAutomationReadClient();
+    const observedResearch = await researchReader.get(researchContext.automationId);
+    assert.ok(observedResearch.routine);
+    assert.equal(observedResearch.routine.id, researchContext.automationId);
+    assert.equal(observedResearch.routine.cwd, work);
+    assert.equal(observedResearch.routine.familiarId, "canary-familiar");
+    assert.equal(observedResearch.routine.model, "canary-model");
+    assert.deepEqual(observedResearch.routine.tags, researchInput.tags);
+    assert.equal(observedResearch.routine.prompt, researchInput.prompt);
+    assert.deepEqual((await researchReader.runs(researchContext.automationId)).runs, []);
+    // Exercise the actual Research browser client through the real typed route.
+    const researchBrowser = await import("../src/lib/research-mission-client.ts");
+    const researchLifecycleRoute = await import("../src/app/api/coven-automations/[id]/lifecycle/route.ts");
+    const savedFetch = globalThis.fetch;
+    let activeRevision = 0;
+    let pausedResearch: Awaited<ReturnType<typeof research.getCodexAutomation>>;
+    try {
+      globalThis.fetch = (async (input, init) => {
+        assert.equal(String(input), `/api/coven-automations/${researchContext.automationId}/lifecycle`);
+        assert.equal(init?.method, "POST");
+        return researchLifecycleRoute.POST(new Request(`http://127.0.0.1:3000${String(input)}`, {
+          ...init, headers: { host: "127.0.0.1:3000", "content-type": "application/json" },
+        }), { params: Promise.resolve({ id: researchContext.automationId }) });
+      }) as typeof fetch;
+      const active = await researchBrowser.setResearchAutomationStatus(researchContext.automationId, "ACTIVE", createdResearch.revision);
+      assert.equal(active.ok, true, active.error);
+      assert.ok(active.revision);
+      activeRevision = active.revision;
+      const paused = await researchBrowser.setResearchAutomationStatus(researchContext.automationId, "PAUSED", activeRevision);
+      assert.equal(paused.ok, true, paused.error);
+      assert.deepEqual(await researchBrowser.setResearchAutomationStatus(researchContext.automationId, "PAUSED", activeRevision), paused);
+      pausedResearch = await research.getCodexAutomation(researchContext.automationId);
+      assert.equal(pausedResearch?.status, "PAUSED");
+      const afterControls = await researchReader.get(researchContext.automationId);
+      assert.ok(afterControls.routine);
+      assert.deepEqual(afterControls.routine.tags, researchInput.tags);
+      assert.equal(afterControls.routine.cwd, work);
+      assert.equal(afterControls.routine.model, researchInput.model);
+    } finally { globalThis.fetch = savedFetch; }
+    assert.ok(pausedResearch);
+    const researchPause = { ...researchContext, expectedRevision: activeRevision, adoptionKey: "research-pause:canary-mission:stale" };
+    await assert.rejects(research.updateCodexAutomation(researchContext.automationId, { status: "PAUSED" }, { ...researchPause, adoptionKey: "research-stale:canary-mission" }), { code: "REVISION_CONFLICT" });
+    const removedResearch = await createAutomationCommandClient().tombstone(researchContext.automationId, pausedResearch.revision, { adoptionKey: "research-remove:canary-mission", intent: "Remove canary fixture", principalId: "cave" });
+    assert.notEqual(removedResearch.outcome, "rejected");
     const { GET } = await import("../src/app/api/coven-automations/[id]/events/route.ts");
     const createRoute = await import("../src/app/api/codex-automations/route.ts");
     const overviewRoute = await import("../src/app/api/coven-automation-lifecycle/route.ts");
@@ -684,6 +795,7 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
       },
       stopDaemon: stop,
     }, { runCwd: work }));
+    await assert.rejects(research.getCodexAutomation(researchContext.automationId), { code: "unavailable" });
     return { ...summary, covenVersion: version, daemonStarts: starts };
   } catch (error) {
     const output = Buffer.concat(log).toString("utf8").trim();
@@ -731,6 +843,8 @@ async function main(signal: AbortSignal): Promise<void> {
     "historyResumeAcrossRestart=passed",
     `lifecycleCommands=${result.lifecycleCommands}`,
     "createPaused=passed",
+    "researchHostCreateReplayMetadataPauseConflict=passed",
+    "researchExplicitImportReplayMetadataSourcePreservation=passed",
     "revisionConflict=typed",
     "runNowFailure=reported",
     `occurrences=${result.occurrences}`,
