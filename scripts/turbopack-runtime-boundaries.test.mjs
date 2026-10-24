@@ -3,6 +3,15 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expectedBoundaries = new Map([
+  ["../src/lib/server/research-automation-import.ts", [
+    ['path.join(/* turbopackIgnore: true */ caveHome(), "research-automation-import-plans")', 1],
+    ['path.join(/* turbopackIgnore: true */ base, ".codex", "automations", id, "automation.toml")', 1],
+    ['path.join(/* turbopackIgnore: true */ planRoot, `${plan.planId}.json`)', 1],
+    ['path.join(/* turbopackIgnore: true */ planRoot, `${planId}.json`)', 1],
+    ['open(/* turbopackIgnore: true */ file,', 1],
+    ['realpath(/* turbopackIgnore: true */ home)', 1],
+    ['realpath(/* turbopackIgnore: true */ file)', 1],
+  ]],
   // A `caveHome()` join matches by partial name: `"state.json"` traced Xcode's
   // `workspace-state.json` and failed the #6082 leak guard; `"config.json"`
   // traced `tsconfig.json` into every entry (#6093).

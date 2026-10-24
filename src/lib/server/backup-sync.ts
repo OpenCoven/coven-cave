@@ -158,16 +158,37 @@ function sanitizeStatus(raw: unknown): BackupSyncStatus {
 }
 
 async function loadState(): Promise<BackupSyncState> {
+  let raw: string;
   try {
-    const raw = JSON.parse(await readFile(stateFilePath(), "utf8")) as Partial<BackupSyncState>;
-    return {
-      version: 1,
-      config: sanitizeConfig(raw.config),
-      status: sanitizeStatus(raw.status),
-    };
-  } catch {
-    return { version: 1, config: defaultBackupSyncConfig(), status: emptyStatus() };
+    raw = await readFile(stateFilePath(), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return { version: 1, config: defaultBackupSyncConfig(), status: emptyStatus() };
+    }
+    throw new Error("Could not read backup-sync.json. Check file access and retry.", { cause: error });
   }
+
+  const invalid = () => new Error("Scheduled backup settings are invalid. Restore a valid backup-sync.json backup before changing settings.");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw invalid();
+  }
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+  if (!isRecord(parsed)) throw invalid();
+  const version = parsed.version;
+  if (typeof version !== "number" || !Number.isSafeInteger(version) || version < 1) throw invalid();
+  if (version > 1) {
+    throw new Error("Scheduled backup settings were written by a newer version of Cave. Update Cave before changing settings.");
+  }
+  if (!isRecord(parsed.config) || !isRecord(parsed.status)) throw invalid();
+  return {
+    version: 1,
+    config: sanitizeConfig(parsed.config),
+    status: sanitizeStatus(parsed.status),
+  };
 }
 
 async function saveState(state: BackupSyncState): Promise<void> {

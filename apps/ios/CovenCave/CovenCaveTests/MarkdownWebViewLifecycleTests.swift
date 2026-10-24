@@ -247,18 +247,63 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
     }
 
     @MainActor
-    func testRepeatedTeardownDoesNotAccumulateCoordinators() {
-        for _ in 0..<100 {
-            autoreleasepool {
-                var coordinator: MarkdownWebView.Coordinator? = .init()
-                weak var observed = coordinator
-                let webView = coordinator!.webView
-                MarkdownWebView.dismantleUIView(webView, coordinator: coordinator!)
-                coordinator = nil
-                XCTAssertNil(observed)
-                XCTAssertNil(webView.navigationDelegate)
+    func testRepeatedTeardownDoesNotAccumulateCoordinators() async throws {
+        // Bound in-flight WebKit startups while retaining all 100 lifetime
+        // checks. Swift deallocation does not finish asynchronous process startup.
+        for _ in 0..<10 {
+            var coordinators: [MarkdownWebView.Coordinator?] = autoreleasepool {
+                (0..<10).map { _ in MarkdownWebView.Coordinator() }
+            }
+            defer { coordinators.forEach { $0?.invalidate() } }
+            for index in coordinators.indices {
+                weak var observed = coordinators[index]
+                let webView = coordinators[index]!.webView
+                try await waitForRenderer(webView)
+                autoreleasepool {
+                    MarkdownWebView.dismantleUIView(webView, coordinator: coordinators[index]!)
+                    coordinators[index] = nil
+                    XCTAssertNil(observed)
+                    XCTAssertNil(webView.navigationDelegate)
+                }
             }
         }
+    }
+
+    @MainActor
+    private func waitForRenderer(_ webView: WKWebView) async throws {
+        let loaded = expectation(description: "Bundled renderer navigation completed")
+        var completed = false
+        let observation = webView.observe(\.isLoading, options: [.initial, .new]) { view, change in
+            if change.newValue == false, view.url?.isFileURL == true, !completed {
+                completed = true
+                loaded.fulfill()
+            }
+        }
+        await fulfillment(of: [loaded], timeout: 30)
+        observation.invalidate()
+        guard completed else {
+            throw NSError(domain: "RendererReadiness", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Navigation did not finish: \(String(describing: webView.url))"])
+        }
+        let evaluated = expectation(description: "Bundled renderer script is ready")
+        var ready = false
+        var diagnostic = "JavaScript readiness callback did not complete"
+        webView.evaluateJavaScript("""
+            JSON.stringify({ready: typeof window.caveRender === 'function', url: location.href,
+                            state: document.readyState, scripts: document.scripts.length,
+                            errors: window.__caveTestErrors})
+            """) { result, error in
+            diagnostic = error.map { String(describing: $0) } ?? String(describing: result)
+            if let json = result as? String,
+               let data = json.data(using: .utf8),
+               let state = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                ready = state["ready"] as? Bool == true
+            }
+            evaluated.fulfill()
+        }
+        await fulfillment(of: [evaluated], timeout: 5)
+        XCTAssertTrue(ready, "The bundled renderer must be ready before proceeding: \(diagnostic)")
+        guard ready else { throw NSError(domain: "RendererReadiness", code: 2) }
     }
 
     @MainActor
@@ -286,22 +331,7 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
             window.rootViewController = nil
             previousKeyWindow?.makeKeyAndVisible()
         }
-        let clock = ContinuousClock()
-        let readyDeadline = clock.now.advanced(by: .seconds(30))
-        var rendererReady = false
-        while !rendererReady, clock.now < readyDeadline {
-            rendererReady = (try? await coordinator.webView.evaluateJavaScript(
-                "typeof window.caveRender === 'function'"
-            )) as? Bool == true
-            if !rendererReady { try await Task.sleep(for: .milliseconds(10)) }
-        }
-        if !rendererReady {
-            let diagnostic = try? await coordinator.webView.evaluateJavaScript(
-                "JSON.stringify({url:location.href, state:document.readyState, scripts:document.scripts.length, errors:window.__caveTestErrors})"
-            )
-            XCTFail("The bundled renderer must load before injecting a transient failure: \(String(describing: diagnostic))")
-        }
-        guard rendererReady else { return }
+        try await waitForRenderer(coordinator.webView)
         _ = try await coordinator.webView.evaluateJavaScript("""
             window.caveRender = async function(md, opts) {
                 if (opts.streaming) throw new Error('transient streaming render');
@@ -313,22 +343,29 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
         coordinator.onFailure = { failures += 1 }
         coordinator.apply(markdown: "Partial", streaming: true,
                           fontScale: 1, theme: .dark, accentHex: nil, reader: false)
-        let streamDeadline = clock.now.advanced(by: .seconds(5))
-        while recorder.snapshot()["markdown.render.streaming"] == nil, clock.now < streamDeadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        let streamingCompleted = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            // XCTest may evaluate predicates off the actor; read the recorder
+            // on its owning actor without a handwritten polling/sleep loop.
+            let completed: @MainActor () -> Bool = {
+                recorder.snapshot()["markdown.render.streaming"]?.count == 1
+            }
+            if Thread.isMainThread { return MainActor.assumeIsolated { completed() } }
+            return DispatchQueue.main.sync { MainActor.assumeIsolated { completed() } }
+        }, object: nil)
+        await fulfillment(of: [streamingCompleted], timeout: 5)
         await drainMainQueue()
         XCTAssertEqual(recorder.snapshot()["markdown.render.streaming"]?.count, 1)
         XCTAssertEqual(failures, 0, "A streaming rejection must not trigger terminal fallback")
 
         var settledHeight: CGFloat?
-        coordinator.onHeight = { settledHeight = $0 }
+        let settled = expectation(description: "Settled render completed after streaming rejection")
+        coordinator.onHeight = {
+            if settledHeight == nil { settled.fulfill() }
+            settledHeight = $0
+        }
         coordinator.apply(markdown: "Complete", streaming: false,
                           fontScale: 1, theme: .dark, accentHex: nil, reader: false)
-        let settledDeadline = clock.now.advanced(by: .seconds(5))
-        while recorder.snapshot()["markdown.render.settled"] == nil, clock.now < settledDeadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        await fulfillment(of: [settled], timeout: 5)
         await drainMainQueue()
         XCTAssertEqual(recorder.snapshot()["markdown.render.settled"]?.count, 1)
         XCTAssertGreaterThan(settledHeight ?? 0, 0)

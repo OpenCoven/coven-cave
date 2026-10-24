@@ -61,6 +61,7 @@ export function ComposerPlusMenu({
     onEnhance: (intent: EnhanceIntent) => void;
     disabled?: boolean;
     loading?: boolean;
+    unavailableReason?: string | null;
   };
   /** Opens the existing composer options panel ("Model & tuning…"). */
   onOpenModelTuning?: () => void;

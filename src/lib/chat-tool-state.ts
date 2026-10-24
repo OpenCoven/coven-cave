@@ -30,6 +30,31 @@ export function toolStatusLabel(status: ToolStatus): string {
         : status === "ok" ? "Succeeded" : status === "rejected" ? "Rejected" : "Failed";
 }
 
+export type ToolStatusCounts = { running: number; requested: number; ok: number; error: number; rejected: number; cancelled: number; unknown: number };
+
+/** Compact counters group exact states into the families a summary shows;
+ * per-call rows keep toolStatusLabel's exact state. A requested cancellation
+ * may still be executing, and an approval request has not executed. */
+export function toolStatusCounts(statuses: Iterable<ToolStatus>): ToolStatusCounts {
+  const counts: ToolStatusCounts = { running: 0, requested: 0, ok: 0, error: 0, rejected: 0, cancelled: 0, unknown: 0 };
+  for (const raw of statuses) {
+    const status = normalizeToolStatus(raw);
+    if (status === "running" || status === "cancel-requested") counts.running += 1;
+    else if (status === "requested" || status === "approval-requested") counts.requested += 1;
+    else if (status === "rejected" || status === "policy-rejected" || status === "user-rejected") counts.rejected += 1;
+    else counts[status] += 1;
+  }
+  return counts;
+}
+
+/** Progress-row state: only success is done, and no terminal state reads as running. */
+export function toolProgressStatus(status: ToolStatus): "running" | "done" | "error" | "notice" {
+  status = normalizeToolStatus(status);
+  if (status === "ok") return "done";
+  if (status === "error") return "error";
+  return isToolActive(status) ? "running" : "notice";
+}
+
 /** The first known outcome wins. An unknown outcome can be resolved by a
  * result, but a replayed request/start must not revive it. */
 export function retainToolStatus(previous: ToolStatus | undefined, incoming: ToolStatus): ToolStatus {

@@ -5,7 +5,7 @@ import { runAutoReflectionIfMissing } from "@/lib/auto-thread-reflection";
 import { mergeReasoningBlock, normalizeReasoningBlock, normalizeReasoningBlocks } from "@/lib/chat-reasoning-blocks";
 import { ResponseRunDetails } from "@/components/response-run-details";
 import { normalizeToolActivity } from "@/lib/chat-activity";
-import { isToolActive, mergeToolObservation, normalizeToolStatus, settleToolObservations, toolStatusLabel, type ToolStatus } from "@/lib/chat-tool-state";
+import { isToolActive, mergeToolObservation, normalizeToolStatus, settleToolObservations, toolProgressStatus, toolStatusCounts, toolStatusLabel, type ToolStatus } from "@/lib/chat-tool-state";
 import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
@@ -82,6 +82,7 @@ import {
 } from "@/lib/familiar-drag";
 import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
+import { createChatStreamAccessGuard, invalidateChatAccess, subscribeChatAccessInvalidation } from "@/lib/chat-access-invalidation";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { useToolOutput } from "@/lib/use-tool-output";
 import { deleteOfflineCacheEntry } from "@/lib/offline-cache";
@@ -1801,10 +1802,9 @@ function MetaLine({
     // text that actually changes keeps the announcements and takes the
     // controls out of them (cave-fh9so).
     <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} data-lifecycle={state}>
-      {/* Chat-revamp 1b: the session's familiar leads the header as a small
-          circular avatar, so the title row reads avatar · title · meta. */}
+      {/* The familiar spans the title and metadata rows. */}
       <span className="cave-chat-header-avatar" aria-hidden="true">
-        <FamiliarIcon familiar={familiar} size="md" />
+        <FamiliarIcon familiar={familiar} size="lg" />
       </span>
       {session ? (
         <ChatTitleEditable
@@ -1829,7 +1829,7 @@ function MetaLine({
           transport={sessionState.transport}
         />
       ) : null}
-      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined} role="status" aria-live="polite">
+      <span className="cave-chat-meta-line__meta focus-ring-inset" title={metaModel ?? undefined} role="status" aria-live="polite" tabIndex={0}>
         {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
             — "<familiar> · <model> · <branch>" — while the heavier provenance
             (cwd · duration · tokens · cost + meters) stays in the adjacent
@@ -3582,6 +3582,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     });
   }
 
+  useEffect(() => subscribeChatAccessInvalidation((change) => {
+    if (change.sessionId !== undefined && change.sessionId !== currentSessionRef.current) return;
+    transcriptResetRevisionRef.current += 1;
+    refetchOnSettleRef.current = null;
+    turnsRef.current = [];
+    setTurns([]);
+    setActiveLeafId("");
+    setLinkedContext(null);
+    setFlowTranscriptFallback(null);
+    setLastFailedSend(null);
+    abortRef.current?.abort();
+    abortRef.current = null;
+    streamOwnerRef.current = false;
+    currentStreamHealthRunIdRef.current = null;
+    setBusy(false);
+    setHistoryState(change.reason === "missing" ? "missing" : "error");
+    setError("Chat access changed. Reload history to check current access.");
+    announce("Chat access changed. History was cleared.");
+  }), [announce]);
+
   useEffect(() => {
     if (!sessionId) return;
     return subscribeLiveChatGeneration(sessionId, (live) => {
@@ -4024,8 +4044,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // server can hand the harness resolvable absolute paths.
   const [mentionedFiles, setMentionedFiles] = useState<string[]>([]);
   // Prompt enhancement (cave-b6c2): shared model-backed hook — streams a real
-  // rewrite from this thread's familiar (rule engine as offline fallback) and
-  // owns the race-safe apply/suggest/revert lifecycle.
+  // rewrite from this thread's familiar (no scripted fallback; failures keep
+  // the draft) and owns the race-safe apply/suggest/revert lifecycle.
   const preparedPromptEnhancement = prepareChatPromptEnhancement(
     input,
     Boolean(activeProjectRoot),
@@ -4441,7 +4461,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       sessionId,
       isThreadSwitch,
       flowBackedSession,
-      sources: chatHistorySources,
+      sources: {
+        ...chatHistorySources,
+        subscribeInvalidation: (targetSessionId, invalidate) => subscribeChatAccessInvalidation((change) => {
+          if (change.sessionId === undefined || change.sessionId === targetSessionId) {
+            invalidate(change.reason === "missing");
+          }
+        }),
+      },
       view: {
         readTurns: () => turnsRef.current,
         syncTurns: (next) => { turnsRef.current = next; },
@@ -5570,12 +5597,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         attentionSettlement.reconcileNow();
       },
     };
+    const accessGuard = createChatStreamAccessGuard(controller, () => liveGeneration.sessionAliases);
     const publishStreamHealth = (
       action: Exclude<
         ChatStreamHealthAction,
         { type: "hydrate" } | { type: "connect" } | { type: "reset" }
       >,
     ) => {
+      if (accessGuard.revoked()) return;
       generationStreamHealth = chatStreamHealthReducer(generationStreamHealth, action);
       if (liveGeneration.sessionId) {
         const metadata = {
@@ -5618,6 +5647,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const chunkCoalescer = createChunkCoalescer({
       flushMs: CHUNK_FLUSH_MS,
       apply: (text) => {
+        if (accessGuard.revoked()) return;
         flushPendingStreamHealthEvent();
         applyAssistantChunk(text, assistantId, liveGeneration);
       },
@@ -5720,6 +5750,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }),
         signal: controller.signal,
       });
+      if (res.status === 401 || res.status === 403) {
+        invalidateChatAccess({ sessionId: liveGeneration.sessionId ?? undefined, reason: "denied" });
+        // Keep the existing project repair action, without retaining the
+        // rejected prompt as a retryable send or repainting its transcript.
+        if (res.status === 403) {
+          const message = await chatBridgeFailureMessage(res);
+          if (/project_access_denied|project access denied|not registered/i.test(message)
+            && currentSessionRef.current === liveGeneration.sessionId) {
+            const failingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
+            setProjectAccessRoot(failingRoot || null);
+          }
+        }
+      }
+      if (accessGuard.revoked()) return;
       if (!res.ok) {
         const refusal = res.status === 409
           ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown; code?: unknown } | null
@@ -5830,6 +5874,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }, liveGeneration.sessionId, liveStreamMetadata(liveGeneration));
       let cursor = 0;
       const applyStreamEvent = (ev: StreamEvent, eventCursor: number | null) => {
+        if (accessGuard.revoked()) return;
         if (eventCursor != null) {
           cursor = Math.max(cursor, eventCursor);
           pendingStreamHealthEvent = { cursor, at: new Date().toISOString() };
@@ -5883,6 +5928,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             `/api/chat/stream?runId=${encodeURIComponent(runId)}&cursor=${cursor}`,
             { cache: "no-store", signal: controller.signal },
           );
+          if (recovery.status === 401 || recovery.status === 403) {
+            invalidateChatAccess({ sessionId: liveGeneration.sessionId ?? undefined, reason: "denied" });
+          }
+          if (accessGuard.revoked()) return;
           if (recovery.ok && recovery.body) {
             const resumed = await consumeChatSse(recovery.body, applyStreamEvent, cursor);
             cursor = Math.max(cursor, resumed.cursor);
@@ -5912,6 +5961,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } catch (err) {
+      if (accessGuard.revoked()) return;
       // Apply any buffered streamed text FIRST — the handlers below read
       // t.text (e.g. the cancelled fallback label) and must see all of it.
       flushStreamUpdates();
@@ -5961,6 +6011,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } finally {
+      accessGuard.dispose();
       attentionSettlement.reconcileIfNeeded();
       // All terminal exits — HTTP rejection, missing body, exhausted recovery,
       // abort, and stream exceptions — reach here. Calling
@@ -5969,7 +6020,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       // Always retire THIS generation's registry entry (keyed by session).
       clearLiveChatGenerationAliases(liveGeneration.sessionAliases, runId);
-      if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
+      if (!accessGuard.revoked() && needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
         setHistoryRetryKey((k) => k + 1);
       }
       // But only tear down the SHARED stream wiring if we still own it. After a
@@ -6963,7 +7014,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 id: "tools",
                 label: toolStatusLabel(mergedTool.status),
                 detail: argSummary ? `${incoming.name}(${argSummary})` : incoming.name,
-                status: mergedTool.status === "error" ? "error" : mergedTool.status === "ok" ? "done" : mergedTool.status === "unknown" || mergedTool.status === "rejected" ? "notice" : "running",
+                status: toolProgressStatus(mergedTool.status),
                 durationMs: mergedTool.durationMs,
               }),
             };
@@ -7632,6 +7683,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onEnhance: promptEnhance.enhance,
           disabled: busy || !input.trim(),
           loading: promptEnhance.state.phase === "loading",
+          unavailableReason: promptEnhance.unavailableReason,
         },
       }}
       response={{
@@ -8105,6 +8157,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onDismiss={promptEnhance.dismiss}
                 onRevert={promptEnhance.revert}
                 onCancel={promptEnhance.cancel}
+                onRetry={promptEnhance.retry}
                 onFocusComposer={() => inputRef.current?.focus()}
               />
               {queuedMessages.length > 0 ? (
@@ -8225,6 +8278,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       onEnhance={promptEnhance.enhance}
                       onCancel={promptEnhance.cancel}
                       disabled={busy || !input.trim()}
+                      unavailableReason={promptEnhance.unavailableReason}
                     />
                     <button
                       type="button"
@@ -8371,10 +8425,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             generateTitle={generateTitleFromTranscript}
             readOnly={offlineReadOnly}
           />
-          {/* #5953: the run's stats and its Last run summary ride the title row
-              between the identity and the actions, instead of stacking as two
-              bands under it. On a narrow header the cluster wraps to its own
-              line; on phones it is the one band under the mobile header. */}
+          {/* Stats and run activity share the optional third header row. */}
           <div className="cave-chat-header-status">
             {sessionId !== null || turns.length > 0 ? (
               <ChatSessionContextRow
@@ -10313,11 +10364,13 @@ function ProgressRow({ event, pending }: { event: ProgressEvent; pending: boolea
  *  readers get, plus the running/error counts that otherwise live only in a
  *  tinted (color-only) chip — so a screen reader hears "3 running" and
  *  "1 error" exactly like the eye sees them. */
-function toolGroupAriaLabel(summary: string, running: number, errors: number, requested = 0, unknown = 0): string {
+function toolGroupAriaLabel(summary: string, running: number, errors: number, requested = 0, unknown = 0, rejected = 0, cancelled = 0): string {
   return [
     summary ? `Tool activity: ${summary}` : "",
     requested ? `${requested} requested` : "",
     unknown ? `${unknown} outcome unknown` : "",
+    rejected ? `${rejected} rejected` : "",
+    cancelled ? `${cancelled} cancelled` : "",
     running ? `${running} running` : "",
     errors ? `${errors} ${errors === 1 ? "error" : "errors"}` : "",
   ]
@@ -10335,11 +10388,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   // The per-tool rows mount on the group's first open (#5572): a collapsed
   // group otherwise builds every tool card of the turn up front.
   const [runsMounted, setRunsMounted] = useState(false);
-  const running = tools.filter((tool) => tool.status === "running").length;
-  const errors = tools.filter((tool) => tool.status === "error").length;
-  const requested = tools.filter((tool) => tool.status === "requested").length;
-  const unknown = tools.filter((tool) => tool.status === "unknown").length;
-  const rejected = tools.filter((tool) => tool.status === "rejected").length;
+  const { running, error: errors, requested, unknown, rejected, cancelled } = toolStatusCounts(tools.map((tool) => tool.status));
   // The turn's own compact activity summary — count + distinct categories,
   // e.g. "6 calls · read, shell". Running/error calls keep their own tinted
   // counters beside it, so trouble never reads as neutral mono.
@@ -10394,7 +10443,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         <summary
           className="cave-tool-summary focus-ring"
           aria-expanded={open}
-          aria-label={toolGroupAriaLabel(summary, running, errors, requested, unknown)}
+          aria-label={toolGroupAriaLabel(summary, running, errors, requested, unknown, rejected, cancelled)}
         >
           <Icon name="ph:wrench" width={12} className="cave-tool-icon shrink-0" aria-hidden />
           <span className="cave-work-line__label">{summary}</span>
@@ -10404,6 +10453,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
             {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+            {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           </span>
         </summary>
         {runsMounted ? (
@@ -10473,18 +10523,14 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
   const repeated = tools.length > 1;
   const visual = toolVisual(name);
   const displayName = name.trim() || "Tool";
-  const running = tools.filter((tool) => tool.status === "running").length;
-  const errors = tools.filter((tool) => tool.status === "error").length;
-  const requested = tools.filter((tool) => tool.status === "requested").length;
-  const unknown = tools.filter((tool) => tool.status === "unknown").length;
-  const rejected = tools.filter((tool) => tool.status === "rejected").length;
+  const { running, error: errors, requested, unknown, rejected, cancelled } = toolStatusCounts(tools.map((tool) => tool.status));
 
   return (
     <ChatToolRunDisclosure
       repeated={repeated}
       statuses={tools.map((tool) => tool.status)}
       category={visual.category}
-      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${requested ? `, ${requested} requested` : ""}${unknown ? `, ${unknown} outcome unknown` : ""}${rejected ? `, ${rejected} rejected` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
+      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${requested ? `, ${requested} requested` : ""}${unknown ? `, ${unknown} outcome unknown` : ""}${rejected ? `, ${rejected} rejected` : ""}${cancelled ? `, ${cancelled} cancelled` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
       summary={
         <>
           <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
@@ -10496,6 +10542,7 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
             {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+            {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           </span>
         </>
       }
@@ -10930,22 +10977,15 @@ function RunActivityStrip({
   const progress = turn.progress ?? [];
   if (tools.length === 0 && progress.length === 0) return null;
 
-  const runningTool = [...tools].reverse().find((t) => t.status === "running");
+  const toolCounts = toolStatusCounts(tools.map((t) => t.status));
+  const runningTool = [...tools].reverse().find((t) => toolStatusCounts([t.status]).running);
   const runningToolDetail = live && runningTool ? toolArgDetail(runningTool.name, runningTool.input) : "";
   const step = currentProgress(progress);
-  const running =
-    tools.filter((t) => t.status === "running").length +
-    progress.filter((p) => p.status === "running").length;
-  const issues =
-    tools.filter((t) => t.status === "error").length +
-    progress.filter((p) => p.status === "error").length;
-  const requested = tools.filter((t) => t.status === "requested").length;
-  const unknown = tools.filter((t) => t.status === "unknown").length;
-  const rejected = tools.filter((t) => t.status === "rejected").length;
+  const running = toolCounts.running + progress.filter((p) => p.status === "running").length;
+  const issues = toolCounts.error + progress.filter((p) => p.status === "error").length;
+  const { requested, unknown, rejected, cancelled } = toolCounts;
   const notices = progress.filter((p) => p.status === "notice").length;
-  const done =
-    tools.filter((t) => t.status === "ok").length +
-    progress.filter((p) => p.status === "done").length;
+  const done = toolCounts.ok + progress.filter((p) => p.status === "done").length;
 
   let headline: string;
   if (live && runningTool) {
@@ -10957,7 +10997,7 @@ function RunActivityStrip({
     headline = issues ? "Last run needs attention" : "Last run";
   }
 
-  const tint = live ? "is-live" : issues ? "is-issue" : notices || unknown || rejected ? "is-notice" : "is-ok";
+  const tint = live ? "is-live" : issues ? "is-issue" : notices || unknown || rejected || cancelled ? "is-notice" : "is-ok";
   return (
     <div className={`cave-run-activity ${tint}`}>
       <button
@@ -10972,7 +11012,7 @@ function RunActivityStrip({
         title={live && runningTool && runningToolDetail ? `${runningTool.name}(${runningToolDetail})` : headline}
       >
         <Icon
-          name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected ? "ph:info" : "ph:check-circle"}
+          name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected || cancelled ? "ph:info" : "ph:check-circle"}
           width={13}
           className={`cave-run-activity__icon${live ? " animate-spin" : ""}`}
           aria-hidden
@@ -10984,6 +11024,7 @@ function RunActivityStrip({
           {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
           {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
           {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
+          {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
           {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
           {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}
