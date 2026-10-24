@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import measure
+from observations import validate_observations
 
 
 def digest(path):
@@ -21,9 +22,18 @@ def digest(path):
 
 
 def validate(root, kind):
-    if kind not in ('tsc', 'tsc-incremental', 'build'):
+    if kind not in ('tsc', 'tsc-incremental', 'build', 'build-observed'):
         raise ValueError('unknown workload kind')
     record=json.loads((root/'result.json').read_text())
+    observation=None
+    if kind == 'build-observed':
+        try:provenance=json.loads((root.parent/'provenance.json').read_text())
+        except (OSError,ValueError) as error:raise ValueError('missing observed-build provenance') from error
+        if (not isinstance(provenance,dict) or provenance.get('kind')!=kind
+            or provenance.get('node_observation') is not True or record.get('node_observation') is not True
+            or record.get('command')!=['pnpm','build'] or provenance.get('measurement_command')!=record['command']):
+            raise ValueError('inconsistent observed-build provenance')
+        observation=validate_observations(root/'node-observations')
     if kind == 'tsc-incremental':
         command=record.get('command')
         if (not isinstance(command,list) or len(command)!=10
@@ -55,6 +65,7 @@ def validate(root, kind):
     if log.stat().st_size != record.get('log_snapshot_bytes') or digest(log) != record.get('log_sha256'):
         raise ValueError('log changed after observer snapshot')
     previous=-1
+    previous_bytes=0
     count=0
     with (root/'samples.jsonl').open() as stream:
         for line in stream:
@@ -64,12 +75,17 @@ def validate(root, kind):
                 raise ValueError('invalid sample timing')
             if not isinstance(sample.get('processes'),list) or not sample.get('swap') or not sample.get('vm_stat'):
                 raise ValueError('incomplete resource sample')
+            if kind=='build-observed':
+                offset=sample.get('log_bytes')
+                if type(offset) is not int or offset<previous_bytes or offset>record['log_snapshot_bytes']:
+                    raise ValueError('invalid log progress')
+                previous_bytes=offset
             previous=elapsed;count+=1
     if not count:raise ValueError('missing resource samples')
     text=log.read_text(errors='replace')
-    markers=('Running TypeScript', 'Finished TypeScript') if kind=='build' else ('Files:', 'Types:', 'Memory used:', 'Total time:')
+    markers=('Running TypeScript', 'Finished TypeScript') if kind in ('build','build-observed') else ('Files:', 'Types:', 'Memory used:', 'Total time:')
     if not all(marker in text for marker in markers):raise ValueError('missing compiler phase evidence')
-    return {'command_seconds':seconds,'sample_count':count,'log_sha256':record['log_sha256'],
+    return {'command_seconds':seconds,'sample_count':count,'node_observations':observation,'log_sha256':record['log_sha256'],
             'descendant_cleanup':'unknown','interpretation':'completed observed workload; not a containment or causal proof'}
 
 
@@ -111,7 +127,7 @@ def main():
     parser.add_argument('--source',type=pathlib.Path,required=True)
     parser.add_argument('--output',type=pathlib.Path,required=True)
     parser.add_argument('--commit',required=True)
-    parser.add_argument('--kind',choices=['tsc','tsc-incremental','build'],required=True)
+    parser.add_argument('--kind',choices=['tsc','tsc-incremental','build','build-observed'],required=True)
     args=parser.parse_args()
     source=args.source.resolve();out=args.output.resolve()
     # This is an operator-facing protocol guard, not authentication of a host.
@@ -142,9 +158,10 @@ def main():
         command=compiler_command(args.kind,source)
     else:command=['pnpm','build']
     provenance['measurement_command']=command
+    provenance['node_observation']=args.kind=='build-observed'
     provenance['incremental_build_info_before']='absent' if args.kind=='tsc-incremental' else 'not-applicable'
     (out/'provenance.json').write_text(json.dumps(provenance,indent=2))
-    if measure.run(command,source,out/'measurement',2700,1):return 1
+    if measure.run(command,source,out/'measurement',2700,1,observe_node=args.kind=='build-observed'):return 1
     if args.kind=='tsc-incremental':
         cache=source/'.next/cache/.tsbuildinfo'
         if not cache.is_file():raise ValueError('incremental compiler produced no build info')

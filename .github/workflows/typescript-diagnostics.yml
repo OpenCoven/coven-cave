@@ -10,8 +10,8 @@ on:
       experiment:
         description: Frozen-source comparison to run
         type: choice
-        options: [incremental-checker, phase-baseline]
-        default: incremental-checker
+        options: [build-observation, incremental-checker, phase-baseline]
+        default: build-observation
 
 permissions:
   contents: read
@@ -28,6 +28,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.22.0
       - run: python3 -m unittest discover -s scripts/typescript-diagnostics -v
 
   measure:
@@ -38,14 +41,8 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        kind: ${{ fromJSON(inputs.experiment == 'phase-baseline' && '["tsc","build"]' || '["tsc","tsc-incremental"]') }}
-        source:
-          - name: baseline
-            oid: 8b2f0baffdfbe67aa3c9dff0c98523adc305735a
-          - name: stopgap
-            oid: cd4965abc98023144023db07e58f8fde35d8c27d
-          - name: current-20261021
-            oid: 0a38e2ec43eac0289d1b436f1cd97dddad6238c8
+        kind: ${{ fromJSON((inputs.experiment == 'build-observation' || github.event_name == 'pull_request') && '["build-observed"]' || inputs.experiment == 'phase-baseline' && '["tsc","build"]' || '["tsc","tsc-incremental"]') }}
+        source: ${{ fromJSON((inputs.experiment == 'build-observation' || github.event_name == 'pull_request') && '[{"name":"stopgap","oid":"cd4965abc98023144023db07e58f8fde35d8c27d"}]' || '[{"name":"baseline","oid":"8b2f0baffdfbe67aa3c9dff0c98523adc305735a"},{"name":"stopgap","oid":"cd4965abc98023144023db07e58f8fde35d8c27d"},{"name":"current-20261021","oid":"0a38e2ec43eac0289d1b436f1cd97dddad6238c8"}]') }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -83,5 +80,6 @@ jobs:
             ${{ runner.temp }}/typescript-diagnostics/*/result.json
             ${{ runner.temp }}/typescript-diagnostics/*/command.log
             ${{ runner.temp }}/typescript-diagnostics/*/samples.jsonl
+            ${{ runner.temp }}/typescript-diagnostics/measurement/node-observations/*.jsonl
           if-no-files-found: error
           retention-days: 30
