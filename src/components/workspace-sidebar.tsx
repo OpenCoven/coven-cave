@@ -206,7 +206,7 @@ function sessionProjectName(session: SessionRow, project?: { name: string } | nu
 function ThreadSummary({ session, title, project, prStatus, now, attentionLabel, broadcast, confirming = false }: {
   session: SessionRow;
   title: string;
-  project?: { name: string } | null;
+  project?: { name: string; color?: string | null } | null;
   prStatus: SessionPrStatus | null;
   now: number;
   attentionLabel: string | null;
@@ -216,6 +216,8 @@ function ThreadSummary({ session, title, project, prStatus, now, attentionLabel,
   const running = session.status === "running";
   const branch = sessionWorkBranch(session);
   const lastActive = bareTimeAt(session.updated_at || session.created_at, now);
+  // Title first in the DOM so assistive tech reads it first; the head line
+  // (project · time) is ordered above it visually in workspace-sidebar.css.
   return (
     <span className="cnav__thread-copy">
       <span className="cnav__thread-line">
@@ -225,31 +227,42 @@ function ThreadSummary({ session, title, project, prStatus, now, attentionLabel,
           displayTitle={stripLeadingTrailingEmoji(session.title || "(untitled chat)")}
           truncate="end"
         />
-        {!confirming ? <span className="cnav__time" title={`Last active ${relativeTime(session.updated_at || session.created_at, now)}`}>{lastActive}</span> : null}
       </span>
-      <span className="cnav__thread-context">
+      <span className="cnav__thread-head">
+        <ProjectAvatar
+          name={sessionProjectName(session, project)}
+          root={session.project_root}
+          color={project?.color ?? null}
+          size="sm"
+          className="cnav__thread-avatar"
+        />
         <span className="cnav__thread-project" title={session.project_root || undefined}>
           {sessionProjectName(session, project)}
         </span>
+        {!confirming ? <span className="cnav__time" title={`Last active ${relativeTime(session.updated_at || session.created_at, now)}`}>{lastActive}</span> : null}
+      </span>
+      <span className="cnav__thread-context">
         {branch ? (
           <span className="cnav__thread-branch" title={`Branch ${branch}`}>
-            <span aria-hidden>·</span><span>{truncateBranch(branch)}</span>
+            <Icon name="ph:git-branch" width={11} aria-hidden /><span>{truncateBranch(branch)}</span>
           </span>
         ) : null}
         {prStatus && session.pullRequest?.number != null ? (
           <span className="cnav__thread-pr-number" data-pr-state={prStatus.key} aria-hidden>#{session.pullRequest.number}</span>
         ) : null}
-        <span className="cnav__runtime" title={`Runtime: ${runtimeDisplayName(session.harness)}`}>
-          <RuntimeLogo runtime={session.harness} size={13} />
-          <span className="sr-only">Runtime: {runtimeDisplayName(session.harness)}</span>
+        <span className="cnav__thread-context-end">
+          {running ? <span className="cnav__working"><span className="cnav__working-ring" aria-hidden />Working</span> : null}
+          {!session.archived_at && ["failed", "paused", "queued"].includes(session.status) ? (
+            <span className="cnav__runtime-state" data-status={session.status}>{session.status === "failed" ? "Failed" : session.status === "paused" ? "Paused" : "Queued"}</span>
+          ) : null}
+          <span className="cnav__runtime" title={`Runtime: ${runtimeDisplayName(session.harness)}`}>
+            <RuntimeLogo runtime={session.harness} size={13} />
+            <span className="sr-only">Runtime: {runtimeDisplayName(session.harness)}</span>
+          </span>
+          {broadcast ? <span className="cnav__broadcast" data-state={broadcast}>{broadcast === "sent" ? "Sent" : "Failed"}</span> : null}
+          <ThreadAttentionCue label={attentionLabel} />
         </span>
       </span>
-      {running ? <span className="cnav__working"><span className="cnav__working-ring" aria-hidden />Working</span> : null}
-      {!session.archived_at && ["failed", "paused", "queued"].includes(session.status) ? (
-        <span className="cnav__runtime-state" data-status={session.status}>{session.status === "failed" ? "Failed" : session.status === "paused" ? "Paused" : "Queued"}</span>
-      ) : null}
-      {broadcast ? <span className="cnav__broadcast" data-state={broadcast}>{broadcast === "sent" ? "Sent" : "Failed"}</span> : null}
-      <ThreadAttentionCue label={attentionLabel} />
     </span>
   );
 }

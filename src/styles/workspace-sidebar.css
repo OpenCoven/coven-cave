@@ -41,42 +41,61 @@
   height: var(--space-1);
   background: var(--color-warning);
 }
+/* Session rows are outlined cards: a head line (project · time), the title,
+   then work context (branch · PR) with live state and runtime on the right.
+   A slim gutter carries the row's status channel — dot, PR badge, glyph or
+   select box — aligned with the title so every title starts at one edge. */
+.workspace-sidebar.cnav {
+  --cnav-gutter: var(--space-6);
+  --cnav-gutter-mark: var(--space-5);
+  --cnav-gutter-top: calc(var(--space-2) + var(--space-4) + var(--space-1));
+}
 .workspace-sidebar.cnav .cnav__thread {
-  border-color: transparent;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text-primary);
+  margin: 0 var(--space-2) var(--space-1);
   padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  transition: background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 .workspace-sidebar.cnav .cnav__thread:hover,
-.workspace-sidebar.cnav .cnav__thread:focus-within { background: var(--bg-hover); }
+.workspace-sidebar.cnav .cnav__thread:focus-within {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
 .workspace-sidebar.cnav .cnav__thread.is-active {
   --cnav-active-background: color-mix(in oklch, var(--color-warning) 6%, var(--bg-raised));
   background: var(--cnav-active-background);
-  border-color: transparent;
+  border-color: var(--border-strong);
 }
 .workspace-sidebar.cnav .cnav__thread::before,
 .workspace-sidebar.cnav .cnav__thread::after,
 .workspace-sidebar.cnav .cnav__tick,
 .workspace-sidebar.cnav .cnav__attention-tick,
-.workspace-sidebar.cnav .cnav__thread-proj,
-.workspace-sidebar.cnav .cnav__thread-main > .cnav__dot,
-.workspace-sidebar.cnav .cnav__thread-main > .cnav__lead:not(.cnav__select-box) { display: none; }
+.workspace-sidebar.cnav .cnav__thread-proj { display: none; }
 .workspace-sidebar.cnav .cnav__thread-main {
-  min-height: calc(var(--space-8) * 2);
-  padding: var(--space-4) var(--space-3);
-  align-items: center;
+  min-height: 0;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--cnav-gutter);
+  align-items: stretch;
 }
-/* A real PR retains its separate accessible link, occupying a fixed gutter.
-   All titles align with it whether a row has a PR, a checkbox, or neither. */
-.workspace-sidebar.cnav .cnav__thread-main { padding-left: var(--space-8); }
+.workspace-sidebar.cnav .cnav__thread-main > .cnav__dot,
+.workspace-sidebar.cnav .cnav__thread-main > .cnav__lead {
+  position: absolute;
+  left: calc(var(--space-1) + var(--cnav-gutter-mark) / 2);
+  top: calc(var(--cnav-gutter-top) + var(--cnav-gutter-mark) / 2);
+  margin: 0;
+  transform: translate(-50%, -50%);
+}
+.workspace-sidebar.cnav .cnav__thread-main > .cnav__lead:not(.cnav__select-box) { color: var(--text-muted); }
 .workspace-sidebar.cnav .cnav__pr-badge {
   position: absolute;
   left: var(--space-1);
-  top: var(--space-4);
+  top: var(--cnav-gutter-top);
   margin-left: 0;
-  width: var(--space-6);
-  height: var(--space-6);
+  width: var(--cnav-gutter-mark);
+  height: var(--cnav-gutter-mark);
   z-index: 1;
 }
 /* The shared navigation's selected attention row offsets its inline badge.
@@ -85,25 +104,40 @@
 .workspace-sidebar.cnav .cnav__thread--flat.is-active.cnav__thread--pr:not([data-attention="none"]) .cnav__pr-badge {
   margin-left: 0;
 }
-.workspace-sidebar.cnav .cnav__select-box {
-  position: absolute;
-  left: var(--space-2);
-  top: var(--space-5);
-}
 .workspace-sidebar.cnav .cnav__thread:has([role="checkbox"]) .cnav__pr-badge { display: none; }
-.workspace-sidebar.cnav .cnav__thread-title {
-  font-size: var(--text-base);
+.workspace-sidebar.cnav .cnav__thread-copy { gap: var(--space-1); }
+.workspace-sidebar.cnav .cnav__thread-head {
+  order: -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--space-4);
+  font-size: var(--text-2xs);
+  line-height: 1.3;
+}
+.workspace-sidebar.cnav .cnav__thread-project {
+  flex: 1 1 auto;
   font-weight: 500;
+  color: var(--text-secondary);
+}
+.workspace-sidebar.cnav .cnav__thread-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.35;
   color: var(--text-primary);
 }
-.workspace-sidebar.cnav .cnav__thread-project { font-weight: 400; flex: 0 1 auto; }
-.workspace-sidebar.cnav .cnav__thread-context { justify-content: flex-start; }
+.workspace-sidebar.cnav .cnav__thread-context { justify-content: flex-start; color: var(--text-muted); }
 .workspace-sidebar.cnav .cnav__thread-branch { flex: 0 1 auto; }
-.workspace-sidebar.cnav .cnav__thread-pr-number { flex: none; font-weight: 400; }
-.workspace-sidebar.cnav .cnav__runtime { margin-left: auto; opacity: 0; flex: none; }
+.workspace-sidebar.cnav .cnav__thread-pr-number { flex: none; font-weight: 500; }
+.workspace-sidebar.cnav .cnav__thread-context-end { margin-left: auto; gap: var(--space-2); }
+.workspace-sidebar.cnav .cnav__thread-context-end { min-width: 0; }
+/* The runtime mark closes the line visually; live state and attention read
+   before it, while the DOM keeps attention last for its accessible name. */
+.workspace-sidebar.cnav .cnav__runtime { flex: none; order: 1; opacity: 0.7; }
 .workspace-sidebar.cnav .cnav__thread:hover .cnav__runtime,
 .workspace-sidebar.cnav .cnav__thread:focus-within .cnav__runtime { opacity: 1; }
-.workspace-sidebar.cnav .cnav__time { font-size: var(--text-2xs); }
+.workspace-sidebar.cnav .cnav__time { flex: none; font-size: var(--text-2xs); }
 /* The section is the waiting cue. Keep the distinct Blocked state and the
    detailed aria-describedby explanation; search/other sections keep labels. */
 .workspace-sidebar.cnav section[aria-label="Awaiting you"] .cnav__thread[data-attention-kind="awaiting"] .cnav__attention { display: none; }
@@ -112,16 +146,24 @@
 .workspace-sidebar.cnav .cnav__runtime-state { color: var(--text-muted); }
 .workspace-sidebar.cnav .cnav__runtime-state[data-status="failed"] { color: var(--color-danger); }
 .workspace-sidebar.cnav .cnav__thread.is-archived .cnav__thread-title { color: var(--text-muted); }
-/* Reveal actions without changing title width or making the row jump. The
-   actions own an opaque backing and remain reachable by keyboard and touch. */
+/* Actions take the head line's trailing edge (where the time sits) on hover,
+   so the title and context never reflow. They keep an opaque backing and stay
+   reachable by keyboard and touch. */
 .workspace-sidebar.cnav .cnav__thread:hover .cnav__thread-main,
 .workspace-sidebar.cnav .cnav__thread:has(.cnav__row-actions:focus-within) .cnav__thread-main { padding-right: var(--space-3); }
 .workspace-sidebar.cnav .cnav__row-actions {
-  top: auto;
-  bottom: var(--space-2);
-  right: var(--space-2);
+  top: var(--space-1);
+  bottom: auto;
+  right: var(--space-1);
   border-radius: var(--radius-control);
   background: var(--bg-hover);
+}
+.workspace-sidebar.cnav .cnav__thread .cnav__icon-btn {
+  width: var(--space-6);
+  height: var(--space-6);
+}
+@container cnav (max-width: 212px) {
+  .workspace-sidebar.cnav .cnav__thread-avatar { display: none; }
 }
 @media (hover: none), (pointer: coarse) {
   .workspace-sidebar.cnav .cnav__row-actions { position: static; opacity: 1; pointer-events: auto; flex-wrap: wrap; }
