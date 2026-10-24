@@ -1,11 +1,103 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { setImmediate } from "node:timers/promises";
+import { MANAGED_NODE_VERSION, nodeArchiveFor } from "@/lib/onboarding-prerequisites";
+import { globalNpmInstallOwner } from "@/lib/server/global-npm-install-lane";
+import { installManagedNodeToolchain, managedNodePaths } from "@/lib/server/managed-node-toolchain";
+import { ensureOnboardingCoreTools } from "@/lib/server/onboarding-core-tools";
 import {
   canRepairDetectedCovenWithHostNpm,
   classifyOnboardingInstallFailure,
   installerErrorCode,
   installStartErrorMessage,
+  DELETE,
+  readOnboardingInstall,
+  startOnboardingInstall,
 } from "./install-service.ts";
+
+test("cancellation during final Node verification stops setup even if reinspection is ready", { timeout: 5_000 }, async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "coven-install-cancel-"));
+  const env = { NODE_ENV: "test" } as const;
+  const paths = managedNodePaths("linux", "x64", env, home);
+  const artifact = nodeArchiveFor("linux", "x64");
+  assert.ok(paths);
+  assert.ok(artifact);
+  let probes = 0;
+  let inspections = 0;
+  const starts: string[] = [];
+  const install: typeof installManagedNodeToolchain = (options) => installManagedNodeToolchain({
+    ...options,
+    platform: "linux",
+    architecture: "x64",
+    env,
+    home,
+    fetch: async () => {
+      const response = new Response("synthetic reviewed archive");
+      Object.defineProperty(response, "url", { value: artifact.url });
+      return response;
+    },
+    dependencies: {
+      digest: () => artifact.sha256,
+      extractArchive: async (_format, _archive, destination) => {
+        await mkdir(path.join(destination, `node-v${MANAGED_NODE_VERSION}-linux-x64`));
+      },
+      probe: async () => {
+        if (++probes === 1) return { status: "missing", paths };
+        const cancelled = await DELETE(new Request("http://localhost/api/onboarding/install?target=managed-node", {
+          method: "DELETE",
+          headers: { host: "localhost" },
+        }));
+        assert.equal(cancelled.status, 200);
+        assert.equal(options?.signal?.aborted, true);
+        return { status: "unusable", paths, detail: "Node probe timed out" };
+      },
+    },
+  });
+  try {
+    assert.equal(globalNpmInstallOwner(), null);
+    const result = await ensureOnboardingCoreTools(async () => {}, {
+      platform: "linux",
+      inspect: async () => {
+        inspections += 1;
+        return {
+          runtimeReady: inspections > 1,
+          coreToolsReady: inspections > 2,
+          components: {
+            managedNode: inspections > 1 ? "ready" : "missing",
+            covenCli: inspections > 2 ? "ready" : "missing",
+          },
+        };
+      },
+      startInstall: async (target) => {
+        starts.push(target);
+        return target === "managed-node"
+          ? startOnboardingInstall(target, install)
+          : { status: 202, body: { status: "started", started: true } };
+      },
+      readInstall: (target) => target === "managed-node"
+        ? readOnboardingInstall(target)
+        : { status: "done", ok: true, code: 0 },
+      probeManagedNodeWrite: async () => ({ exists: true, writeProbe: "passed" }),
+      now: Date.now,
+      wait: async () => { await setImmediate(); },
+    });
+    assert.equal(result.ok, false, "a later ready inspection must not override user cancellation");
+    assert.deepEqual(starts, ["managed-node"], "cancellation must not launch the CLI installer");
+    assert.equal(inspections, 2);
+    assert.equal(probes, 2);
+    const job = readOnboardingInstall("managed-node");
+    assert.equal(job.status, "done");
+    assert.equal(job.ok, false);
+    assert.equal(job.error, "install cancelled");
+    assert.equal(job.failureCode, "unknown_failure");
+    assert.equal(globalNpmInstallOwner(), null, "cancellation releases the install lane");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
 
 test("Coven CLI repair uses host npm only for Windows npm command shims", () => {
   assert.equal(canRepairDetectedCovenWithHostNpm("C:\\Users\\coven.cmd", "win32"), true);

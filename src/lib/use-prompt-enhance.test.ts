@@ -5,9 +5,10 @@ import { readFile } from "node:fs/promises";
 // Source pins for the shared model-backed enhance hook (cave-b6c2). The pure
 // protocol (instruction builder, extractor, race rule) is executed in
 // prompt-enhancer.test.ts; these hold the hook's lifecycle mechanics — the
-// generation guard, the ephemeral-run controls, and the offline fallback —
-// which regressions historically snuck past (the old per-composer copies lost
-// the Revert original when the user typed mid-flight).
+// generation guard, the ephemeral-run controls, and the absence of any
+// scripted fallback (#5920) — which regressions historically snuck past (the
+// old per-composer copies lost the Revert original when the user typed
+// mid-flight).
 
 const source = await readFile(new URL("./use-prompt-enhance.ts", import.meta.url), "utf8");
 
@@ -49,12 +50,12 @@ assert.match(
 );
 assert.match(
   source,
-  /phase: "suggested",[\s\S]*?enhanced: recommendation\.payload\.enhanced,[\s\S]*?applied,[\s\S]*?offline,[\s\S]*?recommendation,/,
+  /phase: "suggested",[\s\S]*?enhanced: recommendation\.payload\.enhanced,[\s\S]*?applied,[\s\S]*?recommendation,/,
   "a draft edited mid-flight downgrades the rewrite to a suggestion while preserving the request-time apply target",
 );
 assert.match(
   source,
-  /original: activeRequest\.originalDraft,[\s\S]*?offline,[\s\S]*?recommendation,/,
+  /original: activeRequest\.originalDraft,[\s\S]*?recommendation,/,
   "the applied phase keeps the full pre-enhance composer value for a correct revert target",
 );
 assert.match(
@@ -89,7 +90,7 @@ assert.match(
 );
 assert.match(
   source,
-  /return enhanced \? toRecommendationOutput\(enhanced, false\) : "\{\}";/,
+  /return enhanced \? toRecommendationOutput\(enhanced\) : "\{\}";/,
   "tagless or unterminated frames stay malformed for the shared one-retry path",
 );
 assert.match(
@@ -132,31 +133,46 @@ assert.match(
   "streaming previews and the final result run through the tag extractor",
 );
 
-// ── Fallback: local rule engine, never the dead API route ────────────────────
+// ── Failure: keep the draft, never a scripted rewrite (#5920) ────────────────
 assert.match(
   source,
   /ENHANCE_FIRST_TOKEN_TIMEOUT_MS = 30_000/,
-  "cold harness startup gets 30s before falling back to the local rule engine",
+  "cold harness startup gets 30s before the run is reported as not starting",
 );
 assert.match(
   source,
   /ENHANCE_GENERATION_TIMEOUT_MS = 120_000/,
   "a stream that starts but stalls cannot leave enhancement loading indefinitely",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /draft: activeRequest\.baseDraft,[\s\S]*?mode,[\s\S]*?context: contextRef\.current/,
-  "the local rule engine survives as the offline/failure fallback",
+  /buildPromptEnhancement|localRecommendation|offline/,
+  "no rule-engine or offline-labelled output can stand in for the familiar's rewrite",
 );
 assert.match(
   source,
-  /if \(!familiarIdRef\.current\)/,
-  "no familiar selected → immediate local fallback (no doomed stream attempt)",
+  /if \(timeout\.failure\) throw fail\(timeout\.failure\);\s*if \(error\) throw fail\(\{ kind: "stream", detail: error \}\);/,
+  "timeouts and stream errors become reported failures rather than successes",
+);
+assert.match(
+  source,
+  /if \(request\.signal\.aborted \|\| error instanceof PromptEnhanceFailure\) throw error;\s*throw fail\(/,
+  "an unexpected throw is reported, and a cancelled run stays silent",
+);
+assert.match(
+  source,
+  /if \(!familiarIdRef\.current\) \{\s*setState\(\{ phase: "error", message: PROMPT_ENHANCE_NO_FAMILIAR_REASON, retryable: false \}\);\s*return;\s*\}/,
+  "no familiar selected → the reason is shown and nothing is generated or rewritten",
+);
+assert.match(
+  source,
+  /const unavailableReason = familiarId \? null : PROMPT_ENHANCE_NO_FAMILIAR_REASON;/,
+  "callers can disable the control with the same visible reason",
 );
 assert.doesNotMatch(
   source,
   /fetch\(\"\/api\/prompt\/enhance/,
-  "the hook never calls the dead /api/prompt/enhance route",
+  "the hook never calls the retired /api/prompt/enhance route",
 );
 
 // ── Announcements ────────────────────────────────────────────────────────────
@@ -167,8 +183,8 @@ assert.match(
 );
 assert.match(
   source,
-  /announce\(offline \? "Prompt enhanced offline\." : "Prompt enhanced\.", "polite"\)/,
-  "an in-place apply is announced, with the offline path labelled",
+  /announce\("Prompt enhanced\.", "polite"\)/,
+  "an in-place apply is announced",
 );
 assert.match(
   source,

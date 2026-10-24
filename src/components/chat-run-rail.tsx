@@ -153,9 +153,9 @@ export function ChatActivityMap({
       aria-label="Activity map"
     >
       <Counters model={model} />
-      {model.requested || model.rejected || model.unknown ? (
+      {model.requested || model.rejected || model.cancelled || model.unknown ? (
         <p className="cave-runrail__trailing">
-          {[model.requested ? `${model.requested} requested` : "", model.rejected ? `${model.rejected} rejected` : "", model.unknown ? `${model.unknown} outcome unknown` : ""].filter(Boolean).join(" · ")}
+          {[model.requested ? `${model.requested} requested` : "", model.rejected ? `${model.rejected} rejected` : "", model.cancelled ? `${model.cancelled} cancelled` : "", model.unknown ? `${model.unknown} outcome unknown` : ""].filter(Boolean).join(" · ")}
         </p>
       ) : null}
 

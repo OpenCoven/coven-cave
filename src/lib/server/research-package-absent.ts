@@ -1,5 +1,5 @@
 import type { GithubRepoSnapshotInput, GithubRepoSnapshotResult } from "../research-github-snapshot-contract.ts";
-export const researchHostContractVersion: number = 1;
+export const researchHostContractVersion: number = 2;
 export async function dispatchResearchRequest(
   _route: string,
   _method: string,
