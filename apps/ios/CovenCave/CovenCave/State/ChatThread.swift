@@ -1955,6 +1955,17 @@ final class ChatThread: Identifiable, Hashable {
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope
         )
+        // `@path` mentions (#6104) are read from the prompt itself, so first
+        // sends, retries and queued replays all carry the same files. A group
+        // chat's `@` names familiars, and a chat without a project has no root
+        // the paths could be relative to.
+        if !isGroup, let projectRoot {
+            let mentioned = FileMention.paths(in: prompt)
+            if !mentioned.isEmpty {
+                body.mentionedFiles = mentioned
+                body.mentionedFilesRoot = projectRoot
+            }
+        }
         #if DEBUG
         if NativeActivityRecoveryPreview.configuration?.providerCanary == true {
             body.permissionMode = "read"

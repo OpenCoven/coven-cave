@@ -940,6 +940,15 @@ struct CaveClient {
         value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
     }
 
+    /// Percent-encode one query value strictly enough for a filesystem path:
+    /// `.urlQueryAllowed` keeps `&`, `=`, `+` and `?`, and a server parsing
+    /// `URLSearchParams` would split on the first two and read `+` as a space.
+    static func queryValue(_ value: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+?#")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
+
     /// The model this chat resolves to, plus the pickable menu for its runtime.
     /// `previewModel` is read-only and resolves controls for a staged model
     /// before a new chat has a server session or durable model intent.
@@ -1032,6 +1041,11 @@ struct CaveClient {
         /// the send instead of mutating the familiar's global default.
         var modelOverride: String? = nil
         var modelOverrideScope: ChatModelOverrideScope? = nil
+        /// Repo-relative files the prompt `@`-mentions, and the project root
+        /// they are relative to (CHAT-D1-04, #6104). The server keeps only real
+        /// files inside the chat's validated root.
+        var mentionedFiles: [String]? = nil
+        var mentionedFilesRoot: String? = nil
     }
 
     /// One decoded SSE frame: the event plus the server's `id:` (the run
@@ -1270,6 +1284,22 @@ struct CaveClient {
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(PromptsResponse.self, from: data).prompts
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// `GET /api/project/files?root=&familiarId=` — the git-visible files under
+    /// a chat's project root, relative to it, for the composer's `@` picker in
+    /// a one-to-one chat (#6104). The same index the desktop's picker uses; a
+    /// root outside a git work tree yields no files.
+    func projectFiles(root: String, familiarId: String) async throws -> [String] {
+        let req = try request(
+            "api/project/files?root=\(Self.queryValue(root))&familiarId=\(Self.queryValue(familiarId))")
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(ProjectFilesResponse.self, from: data).indexedFiles
         } catch {
             throw CaveError.decoding(String(describing: error))
         }

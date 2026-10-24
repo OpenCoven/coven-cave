@@ -2716,6 +2716,17 @@ final class AppModel {
                              tags: ["daily"], body: "Yesterday:\nToday:\nBlockers:"),
             ]
         )
+        // Files for the one-to-one chat's `@` picker (#6104).
+        composerSuggestions.seedProjectFiles(
+            [
+                "README.md",
+                "package.json",
+                "src/components/chat-view.tsx",
+                "src/lib/file-mention.ts",
+                "apps/ios/CovenCave/CovenCave/Views/ChatView.swift",
+            ],
+            root: previewProject.root
+        )
 
         connectionState = .connected
     }

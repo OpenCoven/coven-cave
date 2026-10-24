@@ -39,4 +39,45 @@ assert.match(
   "picking a familiar should insert the mention into the draft",
 );
 
+// One-to-one chats with a project mention files (#6104), ported from the
+// desktop's src/lib/file-mention.ts and sent the way CHAT-D1-04 sends them.
+assert.match(
+  input,
+  /guard !partial\.contains\("@"\) else \{ return nil \}/,
+  "a second @ ends a mention, like the desktop's fileMentionToken",
+);
+const fileMention = await read("Models/FileMention.swift");
+assert.match(fileMention, /enum FileMention \{/, "the FileMention helper should exist");
+assert.match(
+  fileMention,
+  /if base\.hasPrefix\(q\) \{ rank = 0 \}[\s\S]*base\.contains\(q\) \{ rank = 1 \}[\s\S]*path\.contains\(q\) \{ rank = 2 \}[\s\S]*isSubsequence\(q, of: path\) \{ rank = 3 \}/,
+  "file ranking follows the desktop: name prefix, name, path, then subsequence",
+);
+assert.match(fileMention, /static let maxPerSend = 10/, "at most ten mentions go with a send, as on the desktop and server");
+assert.match(
+  chat,
+  /private var fileMentionRoot: String\? \{\s*guard !thread\.isGroup, !thread\.isFlowRun,\s*let root = thread\.projectRoot/,
+  "file mentions are for one-to-one chats with a project",
+);
+assert.match(chat, /files: fileMentionMatches\)/, "the suggestion menu carries the file matches");
+assert.match(
+  chat,
+  /case \.file\(let path\):\s*draft = MentionInput\.insert\(name: path, into: draft\)/,
+  "picking a file inserts its repo-relative path",
+);
+const client = await read("Networking/CaveClient.swift");
+assert.match(
+  client,
+  /request\(\s*"api\/project\/files\?root=\\\(Self\.queryValue\(root\)\)&familiarId=/,
+  "the file index comes from the desktop picker's route, with a strictly encoded root",
+);
+assert.match(client, /var mentionedFiles: \[String\]\? = nil\s*var mentionedFilesRoot: String\? = nil/,
+  "the send body carries mentions and their root");
+const thread = await read("State/ChatThread.swift");
+assert.match(
+  thread,
+  /if !isGroup, let projectRoot \{\s*let mentioned = FileMention\.paths\(in: prompt\)[\s\S]{0,160}body\.mentionedFiles = mentioned\s*body\.mentionedFilesRoot = projectRoot/,
+  "makeSendBody reads mentions from the prompt, so retry and queued replay carry them too",
+);
+
 console.log("ios-group-mentions: ok");
