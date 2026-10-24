@@ -32,7 +32,7 @@ function activity(id: string, status: string, sequence: number) {
     authority: { binding: "unavailable", approval: "unavailable", effect: "unavailable" } };
 }
 
-async function setup(page: Page, summaries: boolean, large = false, hostile = false, toolsOverride?: object[], blocks?: object[], reasoningCapability?: string, lazy = false) {
+async function setup(page: Page, summaries: boolean, large = false, hostile = false, toolsOverride?: object[], blocks?: object[], reasoningCapability?: string, lazy = false, transcript: "typed" | "legacy" = "typed") {
   let completed = large || lazy;
   let deniedOutputs = false;
   const answer = hostile ? HOSTILE : ANSWER;
@@ -91,7 +91,7 @@ async function setup(page: Page, summaries: boolean, large = false, hostile = fa
     else if (path === "/api/sessions/list") payload = { ok: true, sessions: [{ id: "activity-5765", title: "Activity acceptance", status: "completed", origin: "chat", project_root: project.root, harness: "hermes", familiarId: "nova", exit_code: 0, archived_at: null, created_at: ISO, updated_at: ISO }] };
     else if (path.startsWith("/api/chat/conversation/")) payload = { ok: true, context: { task: null, github: [] }, conversation: { familiarId: "nova", activeLeafId: "answer", turns: [
       { id: "request", parentId: null, role: "user", text: "Compare the files", createdAt: ISO },
-      { id: "answer", parentId: "request", role: "assistant", text: completed ? answer : "Ready for the comparison.", createdAt: ISO, lifecycle: "complete", ...(completed ? { responseMetadata: metadata, tools, reasoningBlocks: summaries ? blocks ?? [summaryBlock] : [] } : {}) },
+      { id: "answer", parentId: "request", role: "assistant", text: completed ? (transcript === "legacy" ? `<thinking>${SUMMARY}</thinking>\n${answer}` : answer) : "Ready for the comparison.", createdAt: ISO, lifecycle: "complete", ...(completed ? { responseMetadata: metadata, tools, reasoningBlocks: summaries && transcript === "typed" ? blocks ?? [summaryBlock] : [] } : {}) },
     ] } };
     await route.fulfill({ json: payload });
   });
@@ -273,8 +273,9 @@ test("live region announces each parallel tool milestone without token chatter",
 });
 
 
-for (const saved of [null, "0", "1"] as const) {
-  test(`reasoning preference ${saved ?? "default"} survives hydration without hiding failed tools`, async ({ page }) => {
+for (const transcript of ["typed", "legacy"] as const) {
+for (const saved of [null, "0", "1", "unrecognized"] as const) {
+  test(`${transcript} reasoning preference ${saved ?? "default"} survives hydration without hiding failed tools`, async ({ page }) => {
     await page.addInitScript((saved) => {
       if (saved === null) localStorage.removeItem("cave:chat:show-thinking");
       else localStorage.setItem("cave:chat:show-thinking", saved);
@@ -287,15 +288,62 @@ for (const saved of [null, "0", "1"] as const) {
       };
       requestAnimationFrame(sample);
     }, saved);
-    const { main, complete } = await setup(page, true);
+    const { main, complete } = await setup(page, true, false, false, undefined, undefined, undefined, false, transcript);
     complete();
     await page.reload();
     await expect(main.locator(".cave-reasoning-block")).toBeVisible();
     await expect.poll(() => page.evaluate(() => (window as unknown as { reasoningFrames: boolean[] }).reasoningFrames.length)).toBeGreaterThan(0);
     const frames = await page.evaluate(() => (window as unknown as { reasoningFrames: boolean[] }).reasoningFrames);
     expect(frames.every((open) => open === (saved !== "0"))).toBe(true);
+    await expect(main.getByText(ANSWER, { exact: true })).toBeVisible();
+    await expect(main.locator(".cave-reasoning-body")).toContainText(SUMMARY);
     await expect(main.locator(".cave-tool-block").first()).toContainText("Failed");
     await expect(main.locator(".cave-tool-block").first()).toBeVisible();
+  });
+}
+}
+
+for (const transcript of ["typed", "legacy"] as const) {
+  test(`${transcript} reasoning toggle during streaming persists through history hydration`, async ({ page }) => {
+    await page.addInitScript(() => {
+      // Seed only the first navigation: subsequent reloads must read the
+      // preference written by the actual menu action, not a test reset.
+      if (!sessionStorage.getItem("activity-preference-seeded")) {
+        localStorage.setItem("cave:chat:show-thinking", "1");
+        sessionStorage.setItem("activity-preference-seeded", "1");
+      }
+      const frames: boolean[] = [];
+      Object.assign(window, { reasoningFrames: frames });
+      const sample = () => {
+        const block = document.querySelector<HTMLDetailsElement>('[data-testid="chat-main"] .cave-reasoning-block');
+        if (block && frames.length < 300) frames.push(block.open);
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    const { main, tools, metadata, complete } = await setup(page, true, false, false, undefined, undefined, undefined, false, transcript);
+    await main.getByRole("textbox", { name: "Message", exact: true }).fill("Exercise the saved reasoning preference");
+    await main.getByRole("button", { name: "Send message", exact: true }).click();
+    await emit(page, { kind: "response_metadata", responseMetadata: metadata });
+    if (transcript === "typed") await emit(page, { kind: "reasoning", block: summary });
+    else await emit(page, { kind: "assistant_chunk", text: `<thinking>${SUMMARY}</thinking>\n` });
+    const disclosure = main.locator(".cave-reasoning-block").last();
+    await expect(disclosure).toHaveAttribute("open", "");
+    await main.getByRole("button", { name: "Session options", exact: true }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Hide thinking", exact: true }).click();
+    await expect(disclosure).not.toHaveAttribute("open");
+    expect(await page.evaluate(() => localStorage.getItem("cave:chat:show-thinking"))).toBe("0");
+    await emit(page, { kind: "tool_use", ...tools[0] });
+    await emit(page, { kind: "assistant_chunk", text: ANSWER });
+    complete();
+    await emit(page, { kind: "done", sessionId: "activity-5765", responseMetadata: metadata });
+    await page.reload();
+    await expect(main.locator(".cave-reasoning-block")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { reasoningFrames: boolean[] }).reasoningFrames.length)).toBeGreaterThan(0);
+    expect(await page.evaluate(() => (window as unknown as { reasoningFrames: boolean[] }).reasoningFrames.every((open) => !open))).toBe(true);
+    expect(await page.evaluate(() => localStorage.getItem("cave:chat:show-thinking"))).toBe("0");
+    await expect(main.getByText(ANSWER, { exact: true })).toBeVisible();
+    await expect(main.locator(".cave-tool-block").first()).toContainText("Failed");
   });
 }
 
