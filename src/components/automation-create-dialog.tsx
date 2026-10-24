@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import {
   RRULE_DAY_ORDER,
@@ -9,11 +9,9 @@ import {
   composeAutomationPrompt,
   type ScheduleMode,
 } from "@/lib/codex-automation-form";
-import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
-import { SkillSelect } from "@/components/automation-skill-select";
+import { StandardSelect } from "@/components/ui/select";
 import { CwdPickerField } from "@/components/cwd-picker-field";
 import { Button } from "@/components/ui/button";
-import { StandardSelect } from "@/components/ui/select";
 import { parseListInput } from "@/lib/automations/list-input";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { CronPromptBar } from "@/components/cron-prompt-bar";
@@ -30,16 +28,15 @@ export type AutomationCreateInput = {
   tags: string[];
   familiars: string[];
   model: string;
-  reasoning_effort: string;
-  execution_environment: string;
-  skill_path: string | null;
-  /** New routines are always created paused. `active` resumes the new
-   *  definition afterwards, at the revision Coven reports for it. */
+  /** New definitions are paused. `active` requests a separate review of the
+   * stored definition before a revision-checked activation. */
   start: "paused" | "active";
 };
 
 type Props = {
   resolvedFamiliars: ResolvedFamiliar[];
+  busy?: boolean;
+  error?: string | null;
   onClose: () => void;
   onCreate: (input: AutomationCreateInput) => void;
 };
@@ -47,12 +44,12 @@ type Props = {
 const fieldBaseClass =
   "w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
 const inputClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
-const selectClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
 const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[length:var(--text-sm)] leading-relaxed`;
 const monoTextareaClass = `${textareaClass} font-mono text-[length:var(--text-xs)]`;
 
-export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }: Props) {
+export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, busy = false, error }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const familiarHelpId = useId();
   useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
 
   const [name, setName] = useState("");
@@ -63,12 +60,9 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
   const [goals, setGoals] = useState("");
   const [deliverables, setDeliverables] = useState("");
   const [model, setModel] = useState("");
-  const [reasoningEffort, setReasoningEffort] = useState("medium");
-  const [executionEnvironment, setExecutionEnvironment] = useState("worktree");
   const [cwds, setCwds] = useState("");
   const [tagsText, setTagsText] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [skillPath, setSkillPath] = useState<string | null>(null);
+  const [selected, setSelected] = useState("");
   const [start, setStart] = useState<AutomationCreateInput["start"]>("paused");
 
   const toggleDay = (day: string) => {
@@ -117,7 +111,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
         ? days.length > 0
         : true; // daily is always valid
 
-  const canCreate = name.trim().length > 0 && validSchedule;
+  const canCreate = !busy && name.trim().length > 0 && validSchedule && selected.length > 0 && parseListInput(cwds).length <= 1;
 
   const handleCreate = () => {
     if (!canCreate) return;
@@ -128,11 +122,8 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
       prompt,
       cwds: parseListInput(cwds),
       tags: parseListInput(tagsText),
-      familiars: [...selected],
+      familiars: [selected],
       model: model.trim(),
-      reasoning_effort: reasoningEffort,
-      execution_environment: executionEnvironment,
-      skill_path: skillPath,
       start,
     });
   };
@@ -266,7 +257,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
                     </label>
                     <label className="flex items-start gap-2 text-[length:var(--text-sm)]">
                       <input type="radio" name="automation-start" value="active" checked={start === "active"} onChange={() => setStart("active")} />
-                      <span>Resume it now, so it runs from its next scheduled slot.</span>
+                      <span>Review activation after creation. It stays paused until you confirm.</span>
                     </label>
                   </fieldset>
 
@@ -316,11 +307,15 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
             </div>
             <div className="automation-create-dialog__runtime-grid">
               <div className="workflow-field automation-create-dialog__field automation-create-dialog__field--wide">
-                <span>Familiars</span>
-                <FamiliarMultiSelect
-                  familiars={resolvedFamiliars}
-                  selected={selected}
+                <span>Familiar</span>
+                <p id={familiarHelpId} className="text-[length:var(--text-xs)] [color:var(--text-secondary)]!">Choose exactly one familiar. Reasoning, environment and skill overrides are unavailable.</p>
+                <StandardSelect
+                  label="Familiar"
+                  aria-describedby={familiarHelpId}
+                  value={selected}
                   onChange={setSelected}
+                  options={[{ value: "", label: "Choose a familiar" }, ...resolvedFamiliars.map(familiar => ({ value: familiar.id, label: familiar.display_name }))]}
+                  className={inputClass}
                 />
               </div>
 
@@ -335,34 +330,9 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
                 />
               </label>
 
-              <label className="workflow-field automation-create-dialog__field">
-                <span>Reasoning</span>
-                <StandardSelect
-                  label="Reasoning"
-                  value={reasoningEffort}
-                  onChange={setReasoningEffort}
-                  options={[
-                    { value: "low", label: "low" },
-                    { value: "medium", label: "medium" },
-                    { value: "high", label: "high" },
-                  ]}
-                  className={selectClass}
-                />
-              </label>
 
-              <label className="workflow-field automation-create-dialog__field">
-                <span>Environment</span>
-                <StandardSelect
-                  label="Environment"
-                  value={executionEnvironment}
-                  onChange={setExecutionEnvironment}
-                  options={[
-                    { value: "worktree", label: "worktree" },
-                    { value: "repo", label: "repo" },
-                  ]}
-                  className={selectClass}
-                />
-              </label>
+
+
             </div>
           </section>
 
@@ -372,11 +342,11 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
             </div>
             <div className="automation-create-dialog__scope-grid">
               <label className="workflow-field automation-create-dialog__field automation-create-dialog__field--wide">
-                <span>Working directories</span>
+                <span>Working directory · Optional</span>
                 <CwdPickerField
                   value={cwds}
                   onChange={setCwds}
-                  familiarId={[...selected][0] ?? ""}
+                  familiarId={selected}
                   textareaClass={monoTextareaClass}
                 />
               </label>
@@ -392,18 +362,12 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
                 />
               </label>
 
-              <label className="workflow-field automation-create-dialog__field">
-                <span>Skill</span>
-                <SkillSelect
-                  value={skillPath}
-                  onChange={setSkillPath}
-                  className={selectClass}
-                />
-              </label>
+
             </div>
           </section>
         </div>
 
+        {error && <p role="alert" className="text-[length:var(--text-sm)] [color:var(--color-danger)]!">{error}</p>}
         <div className="workflow-dialog-actions automation-create-dialog__footer">
           <Button variant="secondary" onClick={onClose}>
             Cancel
@@ -420,7 +384,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
                 computed, so the label costs nothing it does not already know.
                 It falls back to plain "Create" rather than inventing a summary
                 when there is no readable plan to name. */}
-            {planLabel ? `Create · ${planLabel}` : "Create"}
+            {busy ? "Creating…" : planLabel ? `Create · ${planLabel}` : "Create"}
           </Button>
         </div>
       </div>

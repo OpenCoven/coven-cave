@@ -106,6 +106,7 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
       if (!/^[A-Za-z0-9_.-]+$/u.test(String(draft.id))) {
         return Promise.reject(new CovenAutomationsUnavailableError("id may contain only ASCII letters", flaws.refusalLooksOffline === true));
       }
+      if (draft.id === "cave-release-canary-edit") return Promise.resolve({ id: "cave-release-canary-edit", status: "PAUSED" });
       if (draft.id === "cave-release-canary-run") return Promise.resolve({ id: "cave-release-canary-run", status: "PAUSED" });
       routine = { ...(draft as unknown as CanaryRoutine), ...(flaws.createsActive === true ? { status: "ACTIVE" } : {}) };
       record("created");
@@ -117,7 +118,7 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
     },
     listRoutines: () => Promise.resolve(routine === null ? [] : [{ ...routine }]),
     updateRoutine: (definition) => {
-      if (definition.id === "cave-release-canary-run") {
+      if (definition.id === "cave-release-canary-edit") {
         runDefinition = { name: String(definition.name), prompt: String(definition.prompt), revision: runDefinition.revision + 1 };
         return Promise.resolve({ id: definition.id, status: "PAUSED", prompt: runDefinition.prompt });
       }
@@ -154,7 +155,7 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
       if (flaws.formRuleRefused === true && /BYMINUTE/u.test(String(body.rrule))) {
         return Promise.resolve({ status: 500, body: { ok: false, error: "rrule key `BYMINUTE` is not supported" } });
       }
-      form = { state: flaws.formCreatedActive === true ? "active" : "paused", revision: 1 };
+      form = { state: flaws.formCreatedActive === true ? "active" : "paused", revision: 2 };
       return Promise.resolve({ status: 200, body: { ok: true, automation: { id: body.id, status: form.state === "active" ? "ACTIVE" : "PAUSED" } } });
     },
     lifecycle: (ids): Promise<CanaryResponse> => {
@@ -302,7 +303,7 @@ const options = { formHour: 15, runCwd: "/tmp/cave-canary-work" };
 
 test("passes against a daemon Cave reports faithfully", async () => {
   assert.deepEqual(await runCaveAutomationsScenario(fakeCave(), options),
-    { mutations: 10, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 });
+    { mutations: 11, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 });
 });
 
 for (const [label, flaws, message] of [

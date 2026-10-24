@@ -5,7 +5,7 @@ import type { AutomationRunRecord } from "@/lib/automation-runs";
 import {
   listRoutineRuns,
   listRoutines,
-} from "@/lib/server/coven-automations-client";
+} from "@/lib/server/automation-consumer-reads";
 import { listFlowRuns } from "@/lib/server/flow-store";
 import { listRuns as listWorkflowRuns } from "@/lib/workflow-runs";
 import { sessionStatusTone } from "@/lib/session-status";

@@ -1053,6 +1053,8 @@ export const SUITES = {
     "src/components/automations-detail-inputs.test.ts",
     "src/lib/cron-prompt.test.ts",
     "src/components/automation-create-dialog.test.ts",
+    "src/components/automation-create-dialog.behavior.test.tsx",
+    "src/components/journal/journal-automation-card.behavior.test.tsx",
     "src/components/automation-familiar-select.test.ts",
     "src/components/automations-view.test.ts",
     "src/components/cwd-picker-field.test.ts",
@@ -1083,6 +1085,8 @@ export const SUITES = {
     "src/components/automations/automation-occurrences.test.ts",
     // #5217: revision-conflict review and rebase
     "src/lib/automations/revision-rebase.test.ts",
+    "src/lib/automations/create-intent.test.ts",
+    "src/lib/automations/pending-intent-store.test.ts",
     "src/components/automations/revision-conflict-review.test.ts",
     "src/components/automations/cron-detail-panel-rebase.behavior.test.tsx",
     // #5217: current occurrence state on the overview rows
@@ -1605,6 +1609,11 @@ export const SUITES = {
     "src/lib/server/client-v1/hpke-bound-v1.test.ts",
     "src/lib/server/coven-automations-client.test.ts",
     "src/lib/server/coven-automations-sdk.test.ts",
+    "src/lib/server/automation-definition-snapshot.test.ts",
+    "src/lib/server/automation-consumer-reads.test.ts",
+    "src/lib/server/automation-consumer-commands.test.ts",
+    "src/lib/server/journal-command-intent.test.ts",
+    "src/lib/server/automation-consumer-routes.test.ts",
     "scripts/coven-automations-release-canary.test.ts",
     "src/lib/server/automation-last-runs.test.ts",
     "src/lib/server/automation-history.test.ts",
@@ -2206,6 +2215,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/server/automation-consumer-routes.test.ts",
   // Real inbox store and route regressions reach @/lib runtime imports.
   "src/lib/cave-inbox-preservation.test.ts",
   "src/app/api/inbox/storage.test.ts",
@@ -2644,6 +2654,8 @@ const VITEST_TESTS = new Set([
   "src/components/tauri-windows-theme.behavior.test.tsx",
   "src/lib/github-watcher.behavior.test.ts",
   "src/components/automations/cron-detail-panel-rebase.behavior.test.tsx",
+  "src/components/automation-create-dialog.behavior.test.tsx",
+  "src/components/journal/journal-automation-card.behavior.test.tsx",
   "src/components/model-inventory-feedback.test.tsx",
   "src/components/settings-local-models.test.tsx",
   "src/components/familiar-note-generation-controls.test.tsx",

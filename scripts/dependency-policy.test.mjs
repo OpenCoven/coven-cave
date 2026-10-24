@@ -20,11 +20,11 @@ assert.equal(packageJson.optionalDependencies?.["@opencoven/research"], research
 // source-pinned exceptions, not general permission for file/git dependencies.
 const sdkPins = {
   "@opencoven/sdk-core": ["opencoven-sdk-core-0.0.1.tgz", "5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b"],
-  "@opencoven/coven-client": ["opencoven-coven-client-0.0.1.tgz", "5333c508bfb2e4bf4c5fce8e488a9f343e0894f10bdbac75f69427654a231180"],
+  "@opencoven/coven-client": ["opencoven-coven-client-0.0.1.tgz", "43ea917c8b9930b999373db63c07dd048a2ca1a5e3c1e4817389697821e305ec"],
 };
 const sdkProvenance = JSON.parse(await readFile(new URL("../vendor/opencoven-sdk/provenance.json", import.meta.url), "utf8"));
 assert.equal(sdkProvenance.repository, "https://github.com/OpenCoven/sdk");
-assert.equal(sdkProvenance.revision, "d19fdbe3912c012b3730932d5a03eff10ba3d32d");
+assert.equal(sdkProvenance.revision, "89685543a62008533237478c31ecce565798ddf6");
 assert.equal(sdkProvenance.packages.length, 2);
 for (const [name, [file, digest]] of Object.entries(sdkPins)) {
   const bytes = await readFile(new URL(`../vendor/opencoven-sdk/${file}`, import.meta.url));

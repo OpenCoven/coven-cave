@@ -3,6 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expectedBoundaries = new Map([
+  ["../src/lib/server/journal-command-intent.ts", [
+    ['path.join(/* turbopackIgnore: true */ await realpath(/* turbopackIgnore: true */ directory), ".cave-command-intents")', 1],
+    ['path.join(/* turbopackIgnore: true */ root, `${digest(adoptionKey)}.json`)', 1],
+    ['path.join(/* turbopackIgnore: true */ root, `.prepare-${randomUUID()}`)', 1],
+    ['open(/* turbopackIgnore: true */ file,', 1],
+    ['open(/* turbopackIgnore: true */ temporary,', 1],
+  ]],
   ["../src/lib/server/research-automation-import.ts", [
     ['path.join(/* turbopackIgnore: true */ caveHome(), "research-automation-import-plans")', 1],
     ['path.join(/* turbopackIgnore: true */ base, ".codex", "automations", id, "automation.toml")', 1],
