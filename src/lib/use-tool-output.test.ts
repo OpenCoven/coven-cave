@@ -121,3 +121,21 @@ test("replacing a history record revokes its loaded output even when IDs match",
     assert.equal(f.state().text, undefined);
   } finally { await act(async () => view?.unmount()); }
 });
+
+test("access invalidation removes ready output and fences a delayed output without redispatch", async () => {
+  const { invalidateChatAccess } = await import("./chat-access-invalidation.ts");
+  for (const ready of [false, true]) {
+    const f = fixture(); let view;
+    try {
+      await act(async () => { view = create(createElement(f.Probe, { open: true })); });
+      if (ready) await act(async () => f.calls[0].resolve("restricted"));
+      await act(async () => invalidateChatAccess({ sessionId: "s", reason: "denied" }));
+      assert.equal(f.state().text, undefined);
+      assert.equal(f.state().status, "error");
+      assert.equal(f.calls[0].signal.aborted, true);
+      if (!ready) await act(async () => f.calls[0].resolve("late restricted"));
+      assert.equal(f.state().text, undefined);
+      assert.equal(f.calls.length, 1);
+    } finally { await act(async () => view?.unmount()); }
+  }
+});

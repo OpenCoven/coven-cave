@@ -612,8 +612,8 @@ assert.match(
 );
 assert.match(
   pendingHealthSection,
-  /apply: \(text\) => \{\s*flushPendingStreamHealthEvent\(\);\s*applyAssistantChunk\(text, assistantId, liveGeneration\);\s*\}/,
-  "Health cursor publication shares the assistant chunk coalescer cadence",
+  /apply: \(text\) => \{\s*if \(accessGuard\.revoked\(\)\) return;\s*flushPendingStreamHealthEvent\(\);\s*applyAssistantChunk\(text, assistantId, liveGeneration\);\s*\}/,
+  "Revocation fences the shared health cursor and assistant chunk coalescer cadence",
 );
 
 const applyStreamEventSection =
@@ -677,7 +677,7 @@ assert.match(
   "Dynamic HTTP response text is bounded before stream health stores it",
 );
 const outerSendCatch =
-  source.match(/\} catch \(err\) \{\n      \/\/ Apply any buffered streamed text FIRST[\s\S]*?\n    \} finally \{/)?.[0] ?? "";
+  source.match(/\} catch \(err\) \{\n      if \(accessGuard\.revoked\(\)\) return;\n      \/\/ Apply any buffered streamed text FIRST[\s\S]*?\n    \} finally \{/)?.[0] ?? "";
 assert.match(
   outerSendCatch,
   /const message = conciseStreamError\(err, "send failed"\);[\s\S]*?error: message/,

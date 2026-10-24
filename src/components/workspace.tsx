@@ -9,6 +9,7 @@ import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { parseGitHubItemUrl } from "@/lib/github-item-url";
 import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
+import { invalidateChatAccess } from "@/lib/chat-access-invalidation";
 import { invalidateConversation, loadConversation } from "@/lib/conversation-cache";
 import {
   mergeDegradedSessionList,
@@ -2113,7 +2114,10 @@ export function Workspace() {
     // Drop a highlight pointing at a deleted session; the sidebars guard by
     // row lookup anyway, but keep the mirrored state honest.
     setActiveChatSessionId((cur) => (cur && confirmedIds.includes(cur) ? null : cur));
-    for (const sessionId of confirmedIds) invalidateConversation(sessionId);
+    for (const sessionId of confirmedIds) {
+      invalidateConversation(sessionId);
+      invalidateChatAccess({ sessionId, reason: "missing" });
+    }
     void loadSessions();
   }, [loadSessions]);
 
