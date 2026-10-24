@@ -78,6 +78,8 @@ function headerGeometry(page: Page) {
       pane: Math.round(rowBox.width),
       truncated,
       text: title?.textContent?.trim() ?? "",
+      titleWidth: title?.getBoundingClientRect().width ?? 0,
+      metadataWidth: meta?.width ?? 0,
       actionsVisible: actions.length > 0 && actions.every(Boolean),
       statusBesideMetadata: Boolean(meta && status && Math.abs((status.top + status.bottom) / 2 - (meta.top + meta.bottom) / 2) <= 2),
       height: rowBox.height,
@@ -135,6 +137,8 @@ test("two-row header retains actions and keyboard details in narrow split panes"
     expect(geometry.height).toBeLessThanOrEqual(48);
     expect(geometry.statusBesideMetadata).toBe(true);
     expect(geometry.actionsVisible).toBe(true);
+    expect(geometry.titleWidth).toBeGreaterThanOrEqual(96);
+    expect(geometry.metadataWidth).toBeGreaterThanOrEqual(160);
     const metadata = page.locator(".cave-chat-meta-line__meta");
     await metadata.focus();
     await expect(metadata).toBeFocused();

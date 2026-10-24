@@ -1815,6 +1815,8 @@ function MetaLine({
           readOnly={readOnly}
         />
       ) : null}
+      <div className="cave-chat-meta-line__details">
+        <span className="cave-chat-meta-line__meta focus-ring-inset" title={metaModel ?? undefined} role="status" aria-live="polite" tabIndex={0}>
       {/* One status, stated once (cave-dkdev). The same <SessionStatusPill>
           the Sessions list renders, so a chat reads identically whether you
           are looking at it or looking for it. Transport ("connecting",
@@ -1829,8 +1831,6 @@ function MetaLine({
           transport={sessionState.transport}
         />
       ) : null}
-      <div className="cave-chat-meta-line__details">
-        <span className="cave-chat-meta-line__meta focus-ring-inset" title={metaModel ?? undefined} role="status" aria-live="polite" tabIndex={0}>
           {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
               — "<familiar> · <model> · <branch>" — while the heavier provenance
               (cwd · duration · tokens · cost + meters) stays in the adjacent

@@ -383,7 +383,7 @@ assert.equal(source.match(/<ChatSessionContextRow\b/g)?.length, 1, "the stats re
 // #6201 follow-up: metadata and activity share the second identity row.
 assert.match(
   styles,
-  /\.cave-chat-header-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns: minmax\(0, 1fr\) auto;/,
+  /\.cave-chat-header-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns: auto minmax\(0, 1fr\) auto;/,
   "the title and action cluster share a grid instead of independently wrapping",
 );
 assert.match(

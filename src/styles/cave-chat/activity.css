@@ -938,37 +938,33 @@ details[open] > .cave-tool-summary::before {
 /* Two rows: title/actions, then metadata/activity beside the familiar. */
 .cave-chat-header-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  column-gap: var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: var(--space-6) var(--space-5);
+  align-items: center;
+  column-gap: var(--space-2);
   row-gap: var(--space-1);
   min-width: 0;
 }
 
 .cave-chat-header-row > .cave-chat-meta-line {
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
-  width: auto;
-  display: grid;
-  grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr);
-  grid-template-rows: minmax(var(--space-6), auto) var(--space-5);
-  align-items: center;
-  row-gap: 0;
+  display: contents;
 }
 
 .cave-chat-header-row > .cave-chat-session-actions {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1;
   flex: none;
 }
 
 .cave-chat-header-row > .cave-chat-meta-line > .cave-chat-header-avatar {
+  grid-column: 1;
   grid-row: 1 / span 2;
 }
 
 .cave-chat-header-row .cave-chat-title,
 .cave-chat-header-row .cave-chat-title-input {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   max-width: 100%;
 }
@@ -985,11 +981,17 @@ details[open] > .cave-tool-summary::before {
 /* Preserve exact runtime details on one keyboard-scrollable metadata line. */
 .cave-chat-header-row .cave-chat-meta-line__meta {
   flex: 1 1 0;
+  min-width: min(100%, calc(var(--space-8) * 5));
   max-width: none;
   white-space: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+}
+
+.cave-chat-header-row .cave-chat-meta-line__meta > .ui-session-pill {
+  margin-inline-end: var(--space-2);
+  vertical-align: middle;
 }
 
 .cave-chat-header-row .cave-chat-meta-line__meta::-webkit-scrollbar {

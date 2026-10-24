@@ -62,6 +62,10 @@
   display: none;
 }
 
+.right-chat .cave-chat-meta-line__meta {
+  min-width: 0;
+}
+
 /* Steps/active stats and the Last run strip. */
 .right-chat .cave-chat-header-status {
   display: none;
