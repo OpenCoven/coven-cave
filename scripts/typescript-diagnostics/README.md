@@ -5,9 +5,15 @@ measurement workflow, not a production repair or a new release gate. Existing
 PR typechecking, fixture-only skips, release builds and deadlines are unchanged.
 
 The workflow runs helper qualification, then an isolated hosted measurement.
-The default `build-observation` experiment (also selected for pull requests)
-runs one observed full build at the frozen stopgap source
-`cd4965abc98023144023db07e58f8fde35d8c27d`, previously slow in the phase baseline.
+The default `build-observation` experiment runs one observed full build at the
+frozen stopgap source `cd4965abc98023144023db07e58f8fde35d8c27d`, previously
+slow in the phase baseline. Pull requests run one observed full build at main
+`777d6a0ad2177d730223701694e3478adcb013d2`. Manual `typecheck-before-compile`
+is the single-variable A/B for #6217: that main once, then its fix commit
+`50bab3ee522dc4fc60d216c9c23db9867d556c06` (the same tree plus the change that
+runs Next's TypeScript pass before compiling) twice. These sources install
+`@opencoven/research` 0.2.0, which the workload checks via `--research-version`;
+the 2026-10 anchors keep the 0.1.0 default.
 Manual `incremental-checker` compares cold incremental/nonincremental commands
 at all three frozen sources; `phase-baseline` retains the original
 standalone/full-build matrix. Each workload gets a fresh standard `macos-15`
