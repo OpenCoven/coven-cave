@@ -11,6 +11,7 @@ export {
   sortProjectsAlphabetically,
 } from "./cave-projects-types.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
+import { realpathNativeOrResolve } from "./server/canonical-path.ts";
 import { readCachedStore } from "./server/store-read-cache.ts";
 import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
 import { caveHome } from "./coven-paths.ts";
@@ -291,6 +292,35 @@ function existingRealpath(root: string | null | undefined): string | null {
 }
 
 /**
+ * A registered root in the canonical on-disk namespace: `existing` is its
+ * realpath when the directory exists (null otherwise), and `resolved` its
+ * nearest-existing-ancestor form, which also places a root that does not
+ * exist yet in that namespace for containment checks.
+ */
+export type CanonicalProjectRoot = (project: CaveProject) => {
+  existing: string | null;
+  resolved: string;
+};
+
+/**
+ * Each registered root's canonical forms, resolved at most once for the life
+ * of the returned function. Share one across the lookup steps of a single
+ * registry answer so no root is canonicalized twice (#6216).
+ */
+export function canonicalProjectRootCache(): CanonicalProjectRoot {
+  const cache = new Map<string, { existing: string | null; resolved: string }>();
+  return (project) => {
+    let entry = cache.get(project.root);
+    if (!entry) {
+      const existing = existingRealpath(project.root);
+      entry = { existing, resolved: existing ?? realpathNativeOrResolve(expandHomeShortcut(project.root)) };
+      cache.set(project.root, entry);
+    }
+    return entry;
+  };
+}
+
+/**
  * Every registered project whose root is the same existing directory as
  * `root`, compared in the filesystem's canonical namespace.
  *
@@ -308,10 +338,11 @@ function existingRealpath(root: string | null | undefined): string | null {
 export function projectsForCanonicalRoot(
   root: string | null | undefined,
   projects: CaveProject[],
+  canonicalRoot: CanonicalProjectRoot = canonicalProjectRootCache(),
 ): CaveProject[] {
   const target = existingRealpath(root);
   if (!target) return [];
-  return projects.filter((project) => existingRealpath(project.root) === target);
+  return projects.filter((project) => canonicalRoot(project).existing === target);
 }
 
 /**
@@ -323,8 +354,9 @@ export function projectsForCanonicalRoot(
 export function projectForCanonicalRoot(
   root: string | null | undefined,
   projects: CaveProject[],
+  canonicalRoot: CanonicalProjectRoot = canonicalProjectRootCache(),
 ): CaveProject | null {
-  const matches = projectsForCanonicalRoot(root, projects);
+  const matches = projectsForCanonicalRoot(root, projects, canonicalRoot);
   return new Set(matches.map((project) => project.id)).size === 1 ? matches[0] : null;
 }
 

@@ -22,9 +22,25 @@ import path from "node:path";
  * when no ancestor exists at all.
  */
 export function realpathOrResolve(value: string): string {
+  return canonicalize(value, (target) => fs.realpathSync(target));
+}
+
+/**
+ * {@link realpathOrResolve} in on-disk letter case. `fs.realpathSync` keeps
+ * the case a path was spelled in, while `fs.realpathSync.native` — like the
+ * `fs.promises.realpath` that resolveLocalRuntimeCwd uses for the runtime cwd
+ * — reports each directory's on-disk name. Compare against a runtime cwd with
+ * this, so a root spelled in another case on a case-insensitive volume is the
+ * same directory (#6216).
+ */
+export function realpathNativeOrResolve(value: string): string {
+  return canonicalize(value, (target) => fs.realpathSync.native(target));
+}
+
+function canonicalize(value: string, realpath: (target: string) => string): string {
   const resolved = path.resolve(/* turbopackIgnore: true */ value);
   try {
-    return fs.realpathSync(/* turbopackIgnore: true */ resolved);
+    return realpath(/* turbopackIgnore: true */ resolved);
   } catch {
     /* nonexistent (or unreadable) — canonicalize via the nearest ancestor */
   }
@@ -36,7 +52,7 @@ export function realpathOrResolve(value: string): string {
     tail.unshift(path.basename(ancestor));
     ancestor = parent;
     try {
-      return path.join(fs.realpathSync(/* turbopackIgnore: true */ ancestor), ...tail);
+      return path.join(realpath(/* turbopackIgnore: true */ ancestor), ...tail);
     } catch {
       /* keep walking up */
     }

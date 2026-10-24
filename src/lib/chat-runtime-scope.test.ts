@@ -299,6 +299,38 @@ assert.equal(
       "a grant of the spawn directory in another letter case is not forwarded again",
     );
   }
+
+  // REGRESSION (#6216): the runtime-scope preamble lists each granted
+  // directory once, under its first registered spelling, and never repeats the
+  // primary root. Spellings of one directory merge to the most permissive
+  // level, matching how effective access combines grants.
+  const preamble = buildRuntimeScopePreamble({
+    kind: "local",
+    root: spawn,
+    allowedProjectRoots: [aliasSpawn, extra, aliasExtra],
+    projectRootAccess: { [aliasSpawn]: "write", [extra]: "read", [aliasExtra]: "write" },
+    readOnlyResourceRoots: [aliasSpawn, workspace],
+  });
+  const rootLines = preamble.split("\n").filter((line) => line.startsWith("  - "));
+  assert.deepEqual(
+    rootLines,
+    [`  - ${extra} (read + write)`, `  - ${workspace} (read-only)`],
+    "an alias of the primary root and a second spelling of a grant are not listed again",
+  );
+  assert.doesNotMatch(
+    preamble,
+    /Roots marked \(read-only\) above permit reading/,
+    "a directory granted write under any spelling is not described as read-only",
+  );
+
+  // Decision recorded on #6216: the persisted runtime access fingerprint keeps
+  // comparing spellings, so existing native sessions are not forced to
+  // refresh. Only the preamble above dedupes by directory.
+  assert.deepEqual(
+    JSON.parse(buildRuntimeAccessFingerprint({ primaryRoot: spawn, grantedProjectRoots: [aliasSpawn] })).roots,
+    [{ root: aliasSpawn, access: "write" }],
+    "the persisted fingerprint format is unchanged",
+  );
 }
 
 console.log("chat-runtime-scope.test.ts: ok");
