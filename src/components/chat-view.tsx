@@ -321,6 +321,7 @@ import { ChatSpecCard } from "@/components/chat-spec-card";
 import { ChatFileReader, type ChatFileReaderTarget } from "@/components/chat-file-reader";
 import { joinProjectPath } from "@/components/message-dom-wiring";
 import { ChatPreviewCard } from "@/components/chat-preview-card";
+import { UiBlockHostContext, UiBlockStateScope, splitSegmentsForUiBlocks, type UiBlockHost } from "@/components/chat-ui-block";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillRunSummary, SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -3333,6 +3334,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Native UI tier: a coven:ui Button may PREFILL the composer for review. It
+  // never sends; an existing draft is kept and the text is appended below it.
+  const prefillComposerFromUiBlock = useCallback((text: string) => {
+    setInput((current) => (current.trim() ? `${current.replace(/\s+$/, "")}\n\n${text}` : text));
+    requestAnimationFrame(() => {
+      const field = inputRef.current;
+      if (!field) return;
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    });
+    announce("Draft added to the composer. Nothing was sent.");
+  }, [announce, setInput]);
   const toggleMobileAutoMode = useCallback(() => {
     if (autoMissionActive) {
       const statusDraft = autoMissionStatusDraft(input);
@@ -7577,6 +7590,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
   const offlineReadOnly = historyState === "offline" || flowBackedSession;
+  // Native UI tier host: opts this chat's transcript into coven:ui rendering.
+  // Memoized so the context value is stable across composer keystrokes.
+  const uiBlockHost = useMemo<UiBlockHost>(
+    () => ({ prefill: offlineReadOnly ? null : prefillComposerFromUiBlock, announce }),
+    [offlineReadOnly, prefillComposerFromUiBlock, announce],
+  );
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const hasStagedComposerInput =
@@ -8336,6 +8355,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
 
   return (
+    <UiBlockHostContext.Provider value={uiBlockHost}>
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
@@ -9000,6 +9020,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </div>
       </Modal>
     </section>
+    </UiBlockHostContext.Provider>
   );
 });
 
@@ -9822,7 +9843,7 @@ function TurnRowImpl({
           splitSegmentsForApprove(
             splitSegmentsForImages(
               splitSegmentsForPreviews(
-                splitSegmentsForSpecs([{ kind: "text", text: protectedQuestions.text }], onOpenUrl),
+                splitSegmentsForSpecs(splitSegmentsForUiBlocks([{ kind: "text", text: protectedQuestions.text }]), onOpenUrl),
                 onOpenPreview,
                 onOpenUrl,
               ),
@@ -9980,11 +10001,11 @@ function TurnRowImpl({
         const projection = extractChatRenderedText(text, { pending });
         if (pending) {
           const blocks = partitionStreamingMarkdown(projection.visible, { turnId: key, settled: !trailing });
-          return <StreamingMarkdownBlocks {...blocks} live={trailing} />;
+          return <UiBlockStateScope key={key}><StreamingMarkdownBlocks {...blocks} live={trailing} /></UiBlockStateScope>;
         }
-        return richProseSegments(projection.cardText).map((segment, index) => segment.kind === "text"
+        return <UiBlockStateScope key={key}>{richProseSegments(projection.cardText).map((segment, index) => segment.kind === "text"
           ? <ProgressiveMarkdownBlock key={`prose-${index}`} text={segment.text} />
-          : <div key={segment.key} className="my-2">{segment.node}</div>);
+          : <div key={segment.key} className="my-2">{segment.node}</div>)}</UiBlockStateScope>;
       }} />
     {rehydratedResearchBlock?.kind === "block" ? rehydratedResearchBlock.node : null}
   </> : undefined;
@@ -10113,6 +10134,7 @@ function TurnRowImpl({
   );
 
   return (
+    <UiBlockStateScope key={turn.id}>
     <div
       data-turn-id={turn.id}
       className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}${foldFaded ? " cave-linear-turn--fold-faded" : ""}`}
@@ -10245,6 +10267,7 @@ function TurnRowImpl({
         </div>
       </div>
     </div>
+    </UiBlockStateScope>
   );
 }
 
