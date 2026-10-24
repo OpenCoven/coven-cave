@@ -78,9 +78,19 @@ export type BackupSyncOverview = {
   due: boolean;
 };
 
+type BackupSyncScheduler = {
+  wanted: boolean;
+  revision: number;
+  transitions: Set<Promise<void>>;
+  timer?: ReturnType<typeof setInterval>;
+  starting?: Promise<void>;
+  pending?: Promise<void>;
+  draining?: Promise<void>;
+};
+
 declare global {
   // eslint-disable-next-line no-var
-  var __backupSyncSchedulerStarted: boolean | undefined;
+  var __backupSyncScheduler: BackupSyncScheduler | undefined;
   // eslint-disable-next-line no-var
   var __backupSyncQuitHookInstalled: boolean | undefined;
   // eslint-disable-next-line no-var
@@ -259,6 +269,8 @@ export async function updateBackupSyncConfig(
   const state = await loadState();
   const next = sanitizeConfig({ ...state.config, ...patch });
   await saveState({ ...state, config: next });
+  const owner = globalThis.__backupSyncScheduler;
+  if (owner?.wanted) await configureScheduler(owner, next);
   return next;
 }
 
@@ -371,21 +383,93 @@ export async function runBackupSync(reason: BackupSyncReason): Promise<BackupSyn
   return run;
 }
 
-async function tick(): Promise<void> {
-  const state = await loadState();
-  if (!isBackupSyncDue(state.config, state.status)) return;
-  if (!hasBackupSyncPassphrase()) return;
-  await runBackupSync("scheduled");
+function schedulerOwner(): BackupSyncScheduler {
+  return globalThis.__backupSyncScheduler ??= { wanted: false, revision: 0, transitions: new Set() };
+}
+
+function clearSchedulerTimer(owner: BackupSyncScheduler): void {
+  if (owner.timer !== undefined) clearInterval(owner.timer);
+  owner.timer = undefined;
+}
+
+function tick(owner: BackupSyncScheduler, revision: number): void {
+  if (!owner.wanted || owner.revision !== revision || owner.pending) return;
+  const pending = (async () => {
+    const state = await loadState();
+    // Reads are not archive admission. Stop or a configuration change can
+    // fence a slow eligibility read without cancelling an admitted archive.
+    if (!owner.wanted || owner.revision !== revision) return;
+    if (!isBackupSyncDue(state.config, state.status) || !hasBackupSyncPassphrase()) return;
+    await runBackupSync("scheduled");
+  })().catch(error => {
+    console.warn("[backup-sync] Could not process scheduled backup:", error);
+  }).finally(() => {
+    if (owner.pending === pending) owner.pending = undefined;
+  });
+  owner.pending = pending;
+}
+
+function activateScheduler(owner: BackupSyncScheduler, revision: number, config: BackupSyncConfig): void {
+  if (!owner.wanted || owner.revision !== revision || !config.enabled) return;
+  owner.timer = setInterval(() => { tick(owner, revision); }, TICK_MS);
+  owner.timer.unref?.();
+  tick(owner, revision);
+}
+
+function trackStarting(owner: BackupSyncScheduler, starting: Promise<void>): Promise<void> {
+  owner.starting = starting;
+  owner.transitions.add(starting);
+  const settled = () => {
+    owner.transitions.delete(starting);
+    if (owner.starting === starting) owner.starting = undefined;
+  };
+  void starting.then(settled, settled);
+  return starting;
+}
+
+function configureScheduler(owner: BackupSyncScheduler, config: BackupSyncConfig): Promise<void> {
+  clearSchedulerTimer(owner);
+  const revision = ++owner.revision;
+  const activate = () => { activateScheduler(owner, revision, config); };
+  // Retain the previous pass until it settles. A new configuration cannot
+  // start another pass alongside an archive admitted under the old one.
+  const starting = owner.pending ? owner.pending.then(activate) : Promise.resolve().then(activate);
+  return trackStarting(owner, starting);
+}
+
+/** Stop admission immediately; a deadline observer must retain this drain. */
+export function stopBackupSyncScheduler(options: { pushOnQuit?: boolean } = {}): Promise<void> {
+  const owner = schedulerOwner();
+  owner.wanted = false;
+  owner.revision += 1;
+  clearSchedulerTimer(owner);
+  if (owner.draining) return owner.draining;
+  // Capture before awaiting: joining a run that completes during drain must
+  // not turn into a second quit snapshot afterward.
+  const admitted = globalThis.__backupSyncInFlight;
+  const draining = (async () => {
+    const results = await Promise.allSettled([...owner.transitions, owner.pending, admitted]);
+    const failures = results.filter(result => result.status === "rejected");
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason), "Backup worker drain failed.");
+    if (!options.pushOnQuit || admitted) return;
+    const state = await loadState();
+    if (!state.config.enabled || !state.config.onQuitPush || !hasBackupSyncPassphrase()) return;
+    await runBackupSync("quit");
+  })();
+  owner.draining = draining;
+  return draining;
 }
 
 async function pushOnQuit(): Promise<void> {
-  const state = await loadState();
-  if (!state.config.enabled || !state.config.onQuitPush) return;
-  if (!hasBackupSyncPassphrase()) return;
-  await Promise.race([
-    runBackupSync("quit"),
-    new Promise<void>((resolve) => setTimeout(resolve, QUIT_PUSH_BUDGET_MS).unref?.()),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      stopBackupSyncScheduler({ pushOnQuit: true }),
+      new Promise<void>(resolve => { timer = setTimeout(resolve, QUIT_PUSH_BUDGET_MS); timer.unref?.(); }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function installQuitHook(): void {
@@ -404,15 +488,27 @@ function installQuitHook(): void {
   }
 }
 
-export function startBackupSyncScheduler(): void {
-  if (globalThis.__backupSyncSchedulerStarted) return;
-  globalThis.__backupSyncSchedulerStarted = true;
-  // Boot tick catches up snapshots missed while Cave was quit.
-  void tick().catch(() => undefined);
-  setInterval(() => {
-    void tick().catch(() => undefined);
-  }, TICK_MS).unref?.();
-  // Dev servers own their signals (Ctrl-C teardown); only the packaged
-  // sidecar should trade quit latency for a final snapshot.
+export function startBackupSyncScheduler(): Promise<void> {
+  if (process.env.NEXT_PHASE === "phase-production-build") return Promise.resolve();
+  const owner = schedulerOwner();
+  if (owner.wanted) return owner.starting ?? Promise.resolve();
+  owner.wanted = true;
+  const revision = ++owner.revision;
+  const priorDrain = owner.draining;
+  owner.draining = undefined;
+  const starting = (async () => {
+    // A completed failure is still drained; it must not permanently prevent
+    // a later explicit restart. Never replay the previous archive itself.
+    if (priorDrain) await Promise.allSettled([priorDrain]);
+    if (!owner.wanted || owner.revision !== revision) return;
+    const state = await loadState();
+    activateScheduler(owner, revision, state.config);
+  })().catch(error => {
+    if (owner.revision === revision) owner.wanted = false;
+    throw error;
+  });
+  // Dev servers own Ctrl-C teardown. Standalone production retains its
+  // existing bounded quit push until a custom coordinator takes ownership.
   if (process.env.NODE_ENV === "production") installQuitHook();
+  return trackStarting(owner, starting);
 }

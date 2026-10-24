@@ -419,6 +419,7 @@ export const SUITES = {
     "src/lib/server/marketplace-payload.test.ts",
     "src/lib/server/marketplace-registry.test.ts",
     "src/lib/server/backup-archive.test.ts",
+    "src/lib/server/backup-sync-scheduler.behavior.test.ts",
     "src/lib/server/backup-sync.test.ts",
     "src/lib/server/role-crafts.test.ts",
     "src/app/api/marketplace/owned-route.test.ts",
@@ -2636,6 +2637,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/lib/server/backup-sync-scheduler.behavior.test.ts",
   "src/lib/server/scheduled-chat-scheduler.behavior.test.ts",
   "src/lib/auto-thread-reflection.test.ts",
   "src/app/api/familiar-self-report-admission.test.ts",
