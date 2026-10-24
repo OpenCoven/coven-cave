@@ -49,6 +49,10 @@ For native Tauri acceptance, use a separate fixture invocation. Launch the attac
 
 ## Human record
 
+### Completed web disclosure — 2026-10-24
+
+Candidate source: `2bb2619f74bf087bd2963fd61fe72894359d3825`; production renderer build: `SeUfUd6oV82gka2T3hkH4`. The facilitator prepared the completed controlled conversation, showed a screenshot identifying the first `read_file · a.txt · Failed` row, and opened the saved conversation in the user's default browser. Instruction: “Tab to that row, then press Space to open its details.” Val replied verbatim: “okay yes it works”. This records a reported successful opening of the first disclosure in the completed web chat. The exact browser/version, keys actually used, focus-ring visibility and scroll behavior were not separately supplied. The follow-up request to press Space again and report whether focus remains visibly on that row is pending. No live-update, VoiceOver or native acceptance is inferred from this observation.
+
 Record build and source commit, macOS/browser/native version, VoiceOver version, window width, chat-row width, sidebar state and reasoning preference. Run the scenario once keyboard-only and once with VoiceOver on each surface. Record the actual keys, focus destination, expanded state, scroll movement and spoken words at each stage. Include missed/duplicate announcements and ambiguous same-name calls. Repeat default reasoning and saved opt-out, then qualify unsupported-summary behavior separately. Verify narrow layout, long inputs/results and reduced motion.
 
 Ask Val to decide whether inline disclosures and the Activity map satisfy the detail-view requirement, or require the filterable panel/narrow-screen sheet. The map appears at 1280 px of parent chat-row width, which can exceed the available row in a 1440 px window with its sidebar open.
