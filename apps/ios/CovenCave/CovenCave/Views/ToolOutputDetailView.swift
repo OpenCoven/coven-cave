@@ -130,14 +130,6 @@ struct ToolOutputDetailView: View {
     }
 
     private var statusLabel: String {
-        switch target.step.status {
-        case .requested: "Requested"
-        case .running: "Running when observed"
-        case .ok: "Succeeded"
-        case .error: "Failed"
-        case .rejected: "Rejected"
-        case .notice: "Notice"
-        case .unknown: "Outcome unknown"
-        }
+        target.step.status == .running ? "Running when observed" : target.step.status.label
     }
 }
