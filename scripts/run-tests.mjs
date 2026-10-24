@@ -30,6 +30,7 @@ export const SUITES = {
     "src/lib/chat-tool-milestones.test.ts",
     "src/app/api/chat/scheduled/route.test.ts",
     "src/components/chat-send-later.test.ts",
+    "src/lib/server/scheduled-chat-scheduler.behavior.test.ts",
     "src/lib/server/scheduled-chat-store.test.ts",
     "src/lib/server/scheduled-chat-dispatch.test.ts",
     "src/lib/chat-origins.test.ts",
@@ -2635,6 +2636,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/lib/server/scheduled-chat-scheduler.behavior.test.ts",
   "src/lib/auto-thread-reflection.test.ts",
   "src/app/api/familiar-self-report-admission.test.ts",
   "src/components/sidecar-recovery.behavior.test.tsx",
