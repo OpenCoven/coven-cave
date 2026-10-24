@@ -219,6 +219,6 @@
     }
   },
   "optionalDependencies": {
-    "@opencoven/research": "https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz"
+    "@opencoven/research": "https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz"
   }
 }
