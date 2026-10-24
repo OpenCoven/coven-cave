@@ -18,6 +18,7 @@ import {
   type UiNode,
 } from "./ui-blocks.ts";
 import {
+  FAILED_CHILD_TEXT,
   MALFORMED_DASHBOARD,
   MINI_DASHBOARD,
   PRICING_CALCULATOR,
@@ -287,6 +288,34 @@ test("a malformed block isolates each failure to its own error node", () => {
   assert.equal(failed[1].children[0]?.kind === "text" ? failed[1].children[0].text : "", "Unknown prop");
 });
 
+test("a failed node keeps its validated children, and markup inside it never becomes raw HTML", () => {
+  const doc = buildUiBlock(FAILED_CHILD_TEXT);
+  assert.equal(doc.status, "ok");
+  const failed = errors(doc);
+  assert.deepEqual(failed.map((node) => node.label), ["Text", "Sparkline", "script", "img", "Text"]);
+  // An inline component keeps its spacing, so its text can still read as one line.
+  assert.deepEqual(failed[0].children.map((child) => child.kind), ["text", "expr", "text"]);
+  assert.equal(failed[0].children[0].kind === "text" ? failed[0].children[0].text : "", "Score: ");
+  // A lower-case tag is an unknown component: its text survives as text and nothing else does.
+  assert.deepEqual(failed[2].children.map((child) => child.kind === "text" ? child.text : child.kind), [
+    "window.__covenUiInjected = true",
+  ]);
+  assert.deepEqual(failed[3].children, []);
+  // Tag-shaped text in a string literal stays a literal value.
+  const literal = failed[4].children[1];
+  assert.equal(literal.kind === "expr" ? evaluateUiExpression(literal.expr, {}).ok : false, true);
+  for (const node of all(doc)) {
+    assert.ok(["text", "expr", "component", "error", "pending"].includes(node.kind), node.kind);
+    if (node.kind === "component") assert.ok(node.type in UI_BLOCK_CATALOG, node.type);
+  }
+  // A dynamic tone builds, then fails only once State resolves it.
+  const toned = components(doc, "Text")[0];
+  const resolved = resolveUiProps(toned, uiBlockStateValues(doc.states, {}));
+  assert.equal(resolved.ok, false);
+  assert.match(resolved.ok ? "" : resolved.issues.join(" "), /tone must be one of/);
+  assert.equal(components(doc, "Badge").length, 1);
+});
+
 test("event handlers, raw markup and unknown lower-case tags are rejected per node", () => {
   const doc = buildUiBlock('<Stack><Button onClick={1}>Go</Button><script>alert(1)</script><div class="x">Hi</div><Badge>Kept</Badge></Stack>');
   const failed = errors(doc);
@@ -405,6 +434,8 @@ test("a trailing partial tag of a known component becomes a pending placeholder 
 
 // ── every-prefix streaming ─────────────────────────────────────────────────
 
+const BROKEN_FIXTURES = new Set(["malformed-dashboard", "failed-child-text"]);
+
 for (const [name, body] of Object.entries(UI_BLOCK_FIXTURES)) {
   test(`every streaming prefix of ${name} parses, never throws, and grows monotonically`, () => {
     const settled = buildUiBlock(body);
@@ -421,7 +452,7 @@ for (const [name, body] of Object.entries(UI_BLOCK_FIXTURES)) {
       }
       const states = doc.states.map((state) => `${state.name}=${JSON.stringify(state.initial)}`);
       assert.deepEqual(states.slice(0, previousStates.length), previousStates, `${name}@${length}: state changed`);
-      if (name !== "malformed-dashboard") {
+      if (!BROKEN_FIXTURES.has(name)) {
         assert.deepEqual(errors(doc).map((node) => node.issues), [], `${name}@${length}: no error flash`);
       }
       previous = current;

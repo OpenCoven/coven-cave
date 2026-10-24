@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
 
 import {
+  FAILED_CHILD_TEXT,
   MALFORMED_DASHBOARD,
   MINI_DASHBOARD,
   PRICING_CALCULATOR,
@@ -13,8 +14,8 @@ import {
 
 // Native UI tier (docs/chat-native-ui-tier.md), daemon-less: an assistant turn
 // carrying ```coven:ui fences renders Cave-native components in place, with
-// local State, per-node error chips, and a Button that only prefills the
-// composer. Every API surface is page.route-mocked (COVEN_CAVE_E2E=1).
+// local State, per-node error chips with the failed node's text beneath
+// them, and a Button that only prefills the composer. Every API surface is page.route-mocked (COVEN_CAVE_E2E=1).
 //
 // Screenshots: set CAVE_UI_BLOCK_SHOT_DIR to keep light/dark captures outside
 // the working tree; otherwise they go to this test's output folder.
@@ -35,6 +36,8 @@ const SHOWCASE_REPLY = [
 ].join("\n\n");
 
 const MALFORMED_REPLY = ["Some of this block is broken on purpose.", uiBlockFence(MALFORMED_DASHBOARD), "Prose after the block."].join("\n\n");
+
+const FAILED_CHILD_REPLY = ["Here is the release check.", uiBlockFence(FAILED_CHILD_TEXT), "Prose after the block."].join("\n\n");
 
 // A tilde outer fence: the shipped Markdown renderer closes a backtick fence
 // at the next backtick fence of any length (see fencedRanges), so a ````
@@ -212,6 +215,41 @@ test("a malformed block shows per-node error chips and renders the rest", async 
   for (const mode of ["light", "dark"] as const) {
     await setTheme(page, mode);
     await capture(block, testInfo, `malformed-dashboard-${mode}`);
+  }
+});
+
+test("a failed component keeps its text readable and its markup inert", async ({ page }, testInfo) => {
+  await page.setViewportSize(CAPTURE_VIEWPORT);
+  const { chat } = await setup(page, FAILED_CHILD_REPLY);
+  const block = chat.getByRole("group", { name: "Release check" });
+  await expect(block).toBeVisible();
+  await expect(block.getByRole("note")).toHaveCount(6);
+  await expect(block.locator("[data-ui-block-error]")).toHaveCount(6);
+  // Each failure's text reads as one line beneath its chip, in reading order.
+  for (const line of ["Score: 3 of 5 checks pass", "Mood is glow today", "Trend is up"]) {
+    await expect(block.locator("p.chat-ui-text").filter({ hasText: new RegExp(`^${line}$`) })).toHaveCount(1);
+  }
+  const text = await block.innerText();
+  const order = [
+    'Couldn\'t render <Text>: Unknown prop "colour" on <Text>',
+    "Score: 3 of 5 checks pass",
+    "Couldn't render <Text>: tone must be one of",
+    "Mood is glow today",
+    "Couldn't render <Sparkline>",
+    "Trend is up",
+    "Still rendered",
+  ].map((part) => text.indexOf(part));
+  expect(order.every((at) => at >= 0)).toBe(true);
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+  await expect(block.getByText("Still rendered", { exact: true })).toBeVisible();
+  await expect(chat.getByText("Prose after the block.", { exact: true })).toBeVisible();
+  // Script- and HTML-like markup stays text: no element is created and nothing runs.
+  await expect(block.locator("script, img, iframe, b")).toHaveCount(0);
+  await expect(block.getByText("Shown as <b onclick='window.__covenUiInjected = true'>text</b>", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as { __covenUiInjected?: unknown }).__covenUiInjected)).toBeUndefined();
+  for (const mode of ["light", "dark"] as const) {
+    await setTheme(page, mode);
+    await capture(block, testInfo, `failed-child-text-${mode}`);
   }
 });
 

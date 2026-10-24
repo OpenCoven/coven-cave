@@ -91,9 +91,11 @@ Each chunk re-parses the whole block so far (`buildUiBlock(source, { streaming: 
 
 ## Failure isolation
 
-- **Build time:** an unknown component, unknown prop, bad prop type, unparseable or undeclared expression, or illegal child turns that node into an error chip. Its children still render, and so do its siblings.
-- **Render time:** `resolveUiProps` evaluates expressions against current State. A failure, such as a dynamic `tone` outside the token list, becomes a chip for that node only.
-- **Exceptions:** each component renders inside its own error boundary.
+A failed node renders an inline chip (`role="note"`, "Couldn't render &lt;label&gt;: &lt;issues&gt;"). Its validated children follow the chip in reading order, and its siblings still render. This applies to each kind of failure below (#6067). The children are the same validated text, expressions and components used everywhere else, never raw HTML. The text of an inline component (Heading, Text, Badge, Button) stays on one line beneath its chip.
+
+- **Build time:** an unknown component, unknown prop, bad prop type, unparseable or undeclared expression, or illegal child turns that node into an error chip. A lower-case tag such as `<script>` or `<img>` is an unknown component. Two cases render the chip only: a node past the nesting cap, and text inside a component that takes no children, where the text itself is the failure.
+- **Render time:** `resolveUiProps` evaluates expressions against current State. A failure, such as a dynamic `tone` outside the token list, becomes a chip for that node only, with its children after it.
+- **Exceptions:** each component renders inside its own error boundary. A component that throws renders the chip, then its children, each inside its own boundary.
 - **Total failure:** a body with no markup (JSON or prose) falls back to its source as a code block.
 - **Settled blocks only:** a block that ends early or leaves tags open renders what it has, plus one block-level note.
 

@@ -84,11 +84,30 @@ export const MALFORMED_DASHBOARD = `<Card title="Partly broken">
   <Text>Still rendered after the failures.</Text>
 </Card>`;
 
+/**
+ * Deliberately broken around readable text (#6067): a bad prop on a Text with
+ * an expression inside, a dynamic tone outside the token list, and HTML-like
+ * markup (a script tag, an img with onerror, and a string that looks like a
+ * tag). Each failed node shows its chip, then its validated text in reading
+ * order; the markup stays inert and the sibling after the failures renders.
+ */
+export const FAILED_CHILD_TEXT = `<Card title="Release check">
+  <State name="score" initial={3} />
+  <State name="mood" initial="glow" />
+  <Text colour="red">Score: {score} of 5 checks pass</Text>
+  <Text tone={mood}>Mood is {mood} today</Text>
+  <Sparkline><script>window.__covenUiInjected = true</script>Trend is up</Sparkline>
+  <img src="x" onerror="window.__covenUiInjected = true" />
+  <Text size="huge">Shown as {"<b onclick='window.__covenUiInjected = true'>text</b>"}</Text>
+  <Badge tone="success">Still rendered</Badge>
+</Card>`;
+
 export const UI_BLOCK_FIXTURES = {
   "pricing-calculator": PRICING_CALCULATOR,
   "status-table": STATUS_TABLE,
   "mini-dashboard": MINI_DASHBOARD,
   "malformed-dashboard": MALFORMED_DASHBOARD,
+  "failed-child-text": FAILED_CHILD_TEXT,
 } as const;
 
 /** Wrap a body in the fence a familiar emits. */

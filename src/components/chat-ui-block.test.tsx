@@ -3,12 +3,14 @@
 // Behavioral test for the native UI tier renderer: local State drives
 // computed values, State survives streamed re-parses (including the real
 // StreamingMarkdownBlocks seam), a Button only sets State or prefills the
-// composer, and every failure stays an inline chip beside rendered siblings.
+// composer, and every failure stays an inline chip beside rendered siblings,
+// followed by the failed node's validated text in reading order (#6067).
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
 import { partitionStreamingMarkdown } from "@/lib/streaming-markdown-blocks";
 import {
+  FAILED_CHILD_TEXT,
   MALFORMED_DASHBOARD,
   MINI_DASHBOARD,
   PRICING_CALCULATOR,
@@ -27,6 +29,19 @@ vi.mock("@/components/ui/charts/bar-chart", () => ({
     return <svg data-bar-count={data.length} />;
   },
 }));
+
+// A ghost Button throws, so a component with text children can fail while
+// rendering; every other Button is the real one.
+vi.mock("@/components/ui/button", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/ui/button")>();
+  return {
+    ...actual,
+    Button: (props) => {
+      if (props.variant === "ghost") throw new Error("button exploded");
+      return <actual.Button {...props} />;
+    },
+  };
+});
 
 vi.mock("@/components/ui/select", () => ({
   StandardSelect: ({ label, value, options, onChange }) => (
@@ -72,6 +87,36 @@ function button(renderer: ReactTestRenderer, label: string): ReactTestInstance {
 
 function errorChips(renderer: ReactTestRenderer): ReactTestInstance[] {
   return renderer.root.findAll((node) => typeof node.type === "string" && node.props["data-ui-block-error"] !== undefined);
+}
+
+type HostNode = { type: string; props: Record<string, unknown>; children: Array<HostNode | string> | null };
+
+function hostText(node: HostNode | string | undefined): string {
+  if (node === undefined) return "";
+  if (typeof node === "string") return node;
+  return (node.children ?? []).map(hostText).join("");
+}
+
+/** Each failure chip, in document order, with the host node right after it. */
+function chipsInOrder(renderer: ReactTestRenderer): Array<{ label: string; role: unknown; text: string; next: HostNode | string | undefined }> {
+  const out = [];
+  const visit = (node: HostNode | string) => {
+    if (typeof node === "string") return;
+    const children = node.children ?? [];
+    children.forEach((child, index) => {
+      if (typeof child !== "string" && child.props["data-ui-block-error"] !== undefined) {
+        out.push({ label: String(child.props["data-ui-block-error"]), role: child.props.role, text: hostText(child), next: children[index + 1] });
+      }
+      visit(child);
+    });
+  };
+  visit(renderer.toJSON() as HostNode);
+  return out;
+}
+
+function expectParagraph(node: HostNode | string | undefined, text: string) {
+  expect(typeof node === "string" ? node : { type: node?.type, className: node?.props.className }).toEqual({ type: "p", className: "chat-ui-text" });
+  expect(hostText(node)).toBe(text);
 }
 
 describe("ChatUiBlock", () => {
@@ -237,6 +282,73 @@ describe("ChatUiBlock", () => {
     error.mockRestore();
     expect(errorChips(renderer).map((chip) => chip.props["data-ui-block-error"])).toEqual(["BarChart"]);
     expect(textOf(renderer.root)).toContain("Sibling");
+  });
+
+  it("keeps a build error's text readable beneath its chip, as one line", () => {
+    const source = '<Stack><State name="score" initial={3} /><Text colour="red">Score: {score} of 5 checks pass</Text><Badge>Sibling</Badge></Stack>';
+    const renderer = render(<ChatUiBlock source={source} />);
+    const chips = chipsInOrder(renderer);
+    expect(chips.map((chip) => [chip.label, chip.role])).toEqual([["Text", "note"]]);
+    expectParagraph(chips[0].next, "Score: 3 of 5 checks pass");
+    expect(textOf(renderer.root)).toBe(`Couldn't render <Text>: Unknown prop "colour" on <Text>Score: 3 of 5 checks passSibling`);
+  });
+
+  it("keeps a dynamic prop failure's text readable beneath its chip, as one line", () => {
+    const source = '<Stack><State name="mood" initial="glow" /><Text tone={mood}>Mood is {mood} today</Text><Badge>Sibling</Badge></Stack>';
+    const renderer = render(<ChatUiBlock source={source} />);
+    const chips = chipsInOrder(renderer);
+    expect(chips.map((chip) => [chip.label, chip.role])).toEqual([["Text", "note"]]);
+    expect(chips[0].text).toMatch(/tone must be one of/);
+    expectParagraph(chips[0].next, "Mood is glow today");
+    expect(textOf(renderer.root)).toMatch(/^Couldn't render <Text>: tone must be one of [^]*Mood is glow todaySibling$/);
+  });
+
+  it("keeps a throwing component's text readable beneath its chip", () => {
+    const source = '<Stack><State name="n" initial={0} /><Row><Button variant="ghost" set="n" to={1}>Try again</Button><Badge>Sibling</Badge></Row></Stack>';
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const renderer = render(<ChatUiBlock source={source} />);
+    error.mockRestore();
+    const chips = chipsInOrder(renderer);
+    expect(chips.map((chip) => [chip.label, chip.role, chip.text])).toEqual([["Button", "note", "Couldn't render <Button>: button exploded"]]);
+    expectParagraph(chips[0].next, "Try again");
+    expect(renderer.root.findAll((node) => node.type === "button")).toHaveLength(0);
+    expect(textOf(renderer.root)).toBe("Couldn't render <Button>: button explodedTry againSibling");
+  });
+
+  it("keeps script- and HTML-like markup inside failed nodes inert text, in reading order", () => {
+    const renderer = render(<ChatUiBlock source={FAILED_CHILD_TEXT} />);
+    const hosts = renderer.root.findAll((node) => typeof node.type === "string");
+    for (const tag of ["script", "img", "iframe", "b"]) {
+      expect(hosts.filter((node) => node.type === tag), tag).toHaveLength(0);
+    }
+    expect(hosts.filter((node) => Object.keys(node.props).some((key) => /^on[a-z]/.test(key)))).toHaveLength(0);
+
+    const chips = chipsInOrder(renderer);
+    expect(chips.map((chip) => chip.label)).toEqual(["Text", "Text", "Sparkline", "script", "img", "Text"]);
+    // The only innerHTML is each chip's bundled icon; no block text reaches it.
+    const inner = hosts.filter((node) => node.props.dangerouslySetInnerHTML !== undefined);
+    expect(inner.map((node) => node.type)).toEqual(chips.map(() => "svg"));
+    expect(inner.map((node) => node.props.dangerouslySetInnerHTML.__html).join("")).not.toMatch(/covenUiInjected|script|onerror|onclick|<b\b/);
+    expect(chips.every((chip) => chip.role === "note")).toBe(true);
+    expectParagraph(chips[0].next, "Score: 3 of 5 checks pass");
+    expectParagraph(chips[1].next, "Mood is glow today");
+    expectParagraph(chips[3].next, "window.__covenUiInjected = true");
+    expectParagraph(chips[5].next, "Shown as <b onclick='window.__covenUiInjected = true'>text</b>");
+    expect(textOf(renderer.root)).toBe([
+      "Release check",
+      `Couldn't render <Text>: Unknown prop "colour" on <Text>`,
+      "Score: 3 of 5 checks pass",
+      "Couldn't render <Text>: tone must be one of neutral, muted, accent, success, warning, danger, info",
+      "Mood is glow today",
+      "Couldn't render <Sparkline>: Unknown component <Sparkline>",
+      "Couldn't render <script>: Unknown component <script>",
+      "window.__covenUiInjected = true",
+      "Trend is up",
+      "Couldn't render <img>: Unknown component <img>",
+      "Couldn't render <Text>: size must be one of xs, sm, md, lg",
+      "Shown as <b onclick='window.__covenUiInjected = true'>text</b>",
+      "Still rendered",
+    ].join(""));
   });
 
   it("falls back to the source as a code block when the body is not markup", () => {

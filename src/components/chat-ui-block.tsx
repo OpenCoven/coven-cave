@@ -11,7 +11,8 @@
  * - State belongs to the enclosing turn/text-span scope, keyed by block ordinal
  *   and State name, so interaction survives re-parses and settlement remounts.
  * - Each node renders inside its own error boundary; a failing node becomes
- *   an inline error chip and its siblings still render.
+ *   an inline error chip followed by its validated children, and its
+ *   siblings still render.
  * - A Button may set local State or prefill the composer through
  *   UiBlockHostContext. Nothing here sends a message, fetches, or links.
  */
@@ -36,7 +37,9 @@ import { StandardSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Icon } from "@/lib/icon";
 import {
+  UI_BLOCK_CATALOG,
   buildUiBlock,
+  isUiComponentType,
   sliceUiBlocks,
   evaluateUiExpression,
   formatUiValue,
@@ -131,7 +134,7 @@ export function UiBlockErrorChip({ label, issues }: { label: string; issues: str
 }
 
 class UiNodeBoundary extends Component<
-  { label: string; resetKey: string; children: ReactNode },
+  { label: string; resetKey: string; childrenOnFailure: () => ReactNode; children: ReactNode },
   { failed: string | null; resetKey: string }
 > {
   state = { failed: null as string | null, resetKey: this.props.resetKey };
@@ -153,7 +156,12 @@ class UiNodeBoundary extends Component<
 
   render() {
     if (this.state.failed) {
-      return <UiBlockErrorChip label={this.props.label} issues={[this.state.failed]} />;
+      return (
+        <>
+          <UiBlockErrorChip label={this.props.label} issues={[this.state.failed]} />
+          {this.props.childrenOnFailure()}
+        </>
+      );
     }
     return this.props.children;
   }
@@ -161,6 +169,18 @@ class UiNodeBoundary extends Component<
 
 function renderNodes(nodes: UiNode[], ctx: RenderContext, inline: boolean): ReactNode[] {
   return nodes.map((node) => <UiNodeView key={node.id} node={node} ctx={ctx} inline={inline} />);
+}
+
+/**
+ * What stays readable beneath a failed node's chip, whichever way it failed:
+ * its validated children, in their own flow. An inline component's text stays
+ * one line instead of splitting into a paragraph per span.
+ */
+function renderFailedChildren(type: string, children: UiNode[], ctx: RenderContext, inline: boolean): ReactNode {
+  if (inline || !isUiComponentType(type) || UI_BLOCK_CATALOG[type].children !== "inline") {
+    return renderNodes(children, ctx, inline);
+  }
+  return children.length ? <p className="chat-ui-text">{renderNodes(children, ctx, true)}</p> : null;
 }
 
 function UiNodeView({ node, ctx, inline }: { node: UiNode; ctx: RenderContext; inline: boolean }) {
@@ -186,12 +206,16 @@ function UiNodeView({ node, ctx, inline }: { node: UiNode; ctx: RenderContext; i
       return (
         <>
           <UiBlockErrorChip label={node.label} issues={node.issues} />
-          {renderNodes(node.children, ctx, inline)}
+          {renderFailedChildren(node.label, node.children, ctx, inline)}
         </>
       );
     case "component":
       return (
-        <UiNodeBoundary label={node.type} resetKey={JSON.stringify(ctx.values)}>
+        <UiNodeBoundary
+          label={node.type}
+          resetKey={JSON.stringify(ctx.values)}
+          childrenOnFailure={() => renderFailedChildren(node.type, node.children, ctx, false)}
+        >
           <UiComponentView node={node} ctx={ctx} />
         </UiNodeBoundary>
       );
@@ -208,7 +232,7 @@ function UiComponentView({ node, ctx }: { node: UiComponentNode; ctx: RenderCont
     return (
       <>
         <UiBlockErrorChip label={node.type} issues={resolved.issues} />
-        {renderNodes(node.children, ctx, false)}
+        {renderFailedChildren(node.type, node.children, ctx, false)}
       </>
     );
   }
