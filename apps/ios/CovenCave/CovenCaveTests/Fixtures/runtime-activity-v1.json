@@ -570,6 +570,171 @@
           "status": "unknown"
         }
       ]
+    },
+    {
+      "id": "policy-rejected-survives-replay",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "approval-requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "policy-rejected",
+          "durationMs": 12
+        },
+        {
+          "kind": "tool_use",
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "ok",
+          "durationMs": 30
+        }
+      ],
+      "expected": [
+        {
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "policy-rejected",
+          "durationMs": 12
+        }
+      ]
+    },
+    {
+      "id": "user-rejected-survives-replay",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "approval-requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "user-rejected",
+          "durationMs": 12
+        },
+        {
+          "kind": "tool_use",
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "ok",
+          "durationMs": 30
+        }
+      ],
+      "expected": [
+        {
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "user-rejected",
+          "durationMs": 12
+        }
+      ]
+    },
+    {
+      "id": "cancelled-survives-replay",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "cancelled",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "cancelled",
+          "name": "Read",
+          "status": "approval-requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "cancelled",
+          "name": "Read",
+          "status": "cancelled",
+          "durationMs": 12
+        },
+        {
+          "kind": "tool_use",
+          "id": "cancelled",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "cancelled",
+          "name": "Read",
+          "status": "ok",
+          "durationMs": 30
+        }
+      ],
+      "expected": [
+        {
+          "id": "cancelled",
+          "name": "Read",
+          "status": "cancelled",
+          "durationMs": 12
+        }
+      ]
+    },
+    {
+      "id": "cancel-request-is-not-cancelled-on-settlement",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "pending",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "pending",
+          "name": "Read",
+          "status": "cancel-requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "pending",
+          "name": "Read",
+          "status": "running"
+        }
+      ],
+      "expected": [
+        {
+          "id": "pending",
+          "name": "Read",
+          "status": "unknown"
+        }
+      ]
     }
   ],
   "reasoningScenarios": [
