@@ -9,6 +9,7 @@ import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, writeFile, appendFile, readdir, rm, lstat, realpath } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { once } from 'node:events';
+import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -37,10 +38,12 @@ const evidence = option('--evidence');
 const derived = option('--derived-data');
 const liveUISend = args.includes('--live-ui-send');
 const unitSuite = args.includes('--unit-suite');
+const transportOnly = args.includes('--transport-only');
+const selectedModes = [liveUISend, unitSuite, transportOnly].filter(Boolean).length;
 const fixtureId = randomUUID();
 if (process.platform !== 'darwin' || !args.includes('--execute') || !destination ||
-    !evidence || !derived || !path.isAbsolute(evidence) || !path.isAbsolute(derived) || (liveUISend && unitSuite) || args.length !== (liveUISend || unitSuite ? 8 : 7)) {
-  console.error('Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-native-transport.mjs --execute --destination <owned-simulator-uuid> --derived-data <absolute-path> --evidence <new-absolute-directory> [--live-ui-send | --unit-suite]');
+    !evidence || !derived || !path.isAbsolute(evidence) || !path.isAbsolute(derived) || selectedModes > 1 || args.length !== (selectedModes === 1 ? 8 : 7)) {
+  console.error('Usage: node --experimental-strip-types --import ./scripts/test-alias-register.mjs scripts/runtime-activity-native-transport.mjs --execute --destination <owned-simulator-uuid> --derived-data <absolute-path> --evidence <new-absolute-directory> [--live-ui-send | --unit-suite | --transport-only]');
   process.exitCode = 2;
 } else {
 await mkdir(evidence, { recursive: false, mode: 0o700 });
@@ -67,13 +70,14 @@ const runReport = {
   candidate: { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
     sourceBefore: await sourceFingerprint() },
   host: { node: process.version, xcode: execFileSync('xcodebuild', ['-version'], { encoding: 'utf8' }).trim() },
-  scenario: unitSuite ? 'full-unit-suite-with-native-tcp-recovery' : liveUISend ? 'hermes-live-native-send-termination-restart-hydration' : 'hermes-summary-tool-reconnect-restart-native-supervisor-history',
+  scenario: unitSuite ? 'full-unit-suite-with-native-tcp-recovery' : transportOnly ? 'native-tcp-recovery-only' : liveUISend ? 'hermes-live-native-send-termination-restart-hydration' : 'hermes-summary-tool-reconnect-restart-native-supervisor-history',
   classification: unitSuite
     ? 'full XCTest unit suite with real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider'
+    : transportOnly ? 'real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider'
     : 'real built Cave and Coven daemon, native TCP and scene-supervisor recovery; synthetic external Hermes provider',
   passed: false, providerRequests: 0, toolInvocations: 0,
   limitations: ['Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.',
-    unitSuite ? 'Unit suite only; no rendered UI, human VoiceOver, physical-device performance or real provider qualification.' : liveUISend ? 'UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.' : 'UI starts from an accepted-delivery fixture and uses real recovery/history/output; not managed pairing, human VoiceOver, physical-device performance or a real provider.',
+    (unitSuite || transportOnly) ? 'Native tests only; no rendered UI, human VoiceOver, physical-device performance or real provider qualification.' : liveUISend ? 'UI starts from an empty isolated thread, then uses actual send/persistence/hydration; external provider remains synthetic.' : 'UI starts from an accepted-delivery fixture and uses real recovery/history/output; not managed pairing, human VoiceOver, physical-device performance or a real provider.',
     'The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt.'],
 };
 let caveServer;
@@ -170,6 +174,16 @@ async function run(label, command, commandArgs, timeoutMs = 10 * 60_000) {
   currentChild = child;
   child.stdout.pipe(log, { end: false });
   child.stderr.pipe(log, { end: false });
+  // Keep named test boundaries in CI output even when a timeout prevents the
+  // result bundle from finalizing. Never emit fixture configuration or tokens.
+  const stageLines = label === 'native-transport' ? createInterface({ input: child.stdout, crlfDelay: Infinity }) : null;
+  stageLines?.on('line', (line) => {
+    const match = /CAVE_NATIVE_ACTIVITY_STAGE ([a-z0-9-]+) elapsed_ms=(\d+(?:\.\d+)?)/.exec(line);
+    if (!match) return;
+    const stage = { stage: match[1], elapsedMs: Number(match[2]) };
+    (runReport.testStages ??= []).push(stage);
+    console.log(JSON.stringify({ phase: 'native-test-stage', ...stage }));
+  });
   let forceTimer;
   const timeout = setTimeout(() => {
     child.kill('SIGTERM');
@@ -179,6 +193,7 @@ async function run(label, command, commandArgs, timeoutMs = 10 * 60_000) {
   try { [code] = await once(child, 'close'); }
   finally {
     clearTimeout(timeout); clearTimeout(forceTimer); currentChild = null;
+    stageLines?.close();
     await new Promise((resolve) => log.end(resolve));
   }
   await writeFile(path.join(evidence, `${label}.json`), JSON.stringify({ command: [command, ...commandArgs], startedAt, finishedAt: new Date().toISOString(), exitCode: code }, null, 2));
@@ -261,10 +276,19 @@ try {
         assert.equal(runReport.providerRequests, 1);
         assert.equal(runReport.toolInvocations, 1, 'restart only after the controlled tool completes');
         restartTask = (async () => {
+          const restartStarted = performance.now();
+          const recordStage = (stage) => {
+            const value = { stage, elapsedMs: performance.now() - restartStarted };
+            (runReport.restartStages ??= []).push(value);
+            console.log(JSON.stringify({ phase: 'native-restart-stage', ...value }));
+          };
           const previous = caveServer;
+          recordStage('stop-wait');
           await stopCave(previous, previous.port);
+          recordStage('stopped');
           assert.ok(previous.child.exitCode !== null || previous.child.signalCode !== null);
           caveServer = await startCave(caveInput);
+          recordStage('ready');
           assert.notEqual(caveServer.child.pid, previous.child.pid);
           assert.equal(caveServer.origin, previous.origin);
           for (const credential of [null, 'fixture-invalid']) {
@@ -274,6 +298,7 @@ try {
             } });
             assert.equal(response.status, 401, 'restart preserves the real ingress gate');
           }
+          recordStage('ingress-verified');
           runReport.restart = { previousPid: previous.child.pid, newPid: caveServer.child.pid,
             previousStopped: true, sameOrigin: true, ingressRefusalsVerified: true };
           await appendFile(ledger, JSON.stringify({ kind: 'server_restart', ordinal: 1 }) + '\n');
@@ -405,7 +430,7 @@ try {
     acceptedRunId = conversation?.turns.find((turn) => turn.role === 'user')?.attentionClearOperationId;
     assert.ok(acceptedRunId, 'the UI must reconcile the exact accepted delivery');
   }
-  if (!unitSuite) {
+  if (!unitSuite && !transportOnly) {
     const uiTarget = targets.find((entry) => entry?.BlueprintName === 'CovenCaveUITests' || entry?.TestBundlePath?.endsWith('/CovenCaveUITests.xctest'));
     assert.ok(uiTarget, 'the generated plan must contain the native UI target');
     uiTarget.OnlyTestIdentifiers = ['ActivityRecoveryUITests'];
@@ -444,8 +469,10 @@ try {
     runReport.renderedRecoveryVerified = true;
     runReport.sceneSupervisorRecoveryVerified = true;
     runReport.liveUISendTerminationHydrationVerified = liveUISend;
-  } else {
+  } else if (unitSuite) {
     runReport.fullUnitSuiteExecuted = true;
+  } else {
+    runReport.transportOnlyExecuted = true;
   }
   assert.equal((await readFile(path.join(repo, '.next/BUILD_ID'), 'utf8')).trim(), runReport.candidate.buildId,
     'candidate build changed during qualification; serialize build-mutating suites');
