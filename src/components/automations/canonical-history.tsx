@@ -2,6 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { AUTOMATION_HISTORY_METADATA_FILENAME, serializeAutomationHistoryMetadata } from "@/lib/automations/history-export";
 import { CronDetailSection } from "@/components/automations/cron-detail-primitives";
 import { parseAutomationHistory, type AutomationHistoryResult } from "@/lib/automations/history";
 
@@ -14,6 +16,8 @@ const failures = {
 };
 
 function HistoryPageView({ automationId }: { automationId: string }) {
+  const { announce } = useAnnouncer();
+  const [exportError, setExportError] = useState(false);
   const [page, setPage] = useState<HistoryPage | null>(null);
   const [failure, setFailure] = useState<keyof typeof failures | null>(null);
   const [loading, setLoading] = useState(false);
@@ -44,6 +48,33 @@ function HistoryPageView({ automationId }: { automationId: string }) {
     }
   }
 
+  function exportMetadata() {
+    if (!page || loading) return;
+    setExportError(false);
+    let url: string | null = null;
+    let link: HTMLAnchorElement | null = null;
+    try {
+      const text = serializeAutomationHistoryMetadata(page, failure ? "stale" : "read");
+      const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+      url = URL.createObjectURL(blob);
+      link = document.createElement("a");
+      link.href = url;
+      link.download = AUTOMATION_HISTORY_METADATA_FILENAME;
+      link.click();
+      const preparedUrl = url;
+      // Match the existing download pattern: keep the URL alive through the click's browser frame.
+      requestAnimationFrame(() => URL.revokeObjectURL(preparedUrl));
+      url = null;
+      announce("History metadata download prepared.");
+    } catch {
+      if (url !== null) URL.revokeObjectURL(url);
+      setExportError(true);
+      announce("Couldn't prepare history metadata. Try exporting again.", "assertive");
+    } finally {
+      link?.remove();
+    }
+  }
+
   useEffect(() => {
     void load();
     return () => { active.current?.abort(); active.current = null; };
@@ -68,7 +99,10 @@ function HistoryPageView({ automationId }: { automationId: string }) {
       {page.withheld > 0 && <p>{page.withheld} protected {page.withheld === 1 ? "entry omitted" : "entries omitted"}.</p>}
       <p>One page is shown at a time, in recorded sequence.</p>
     </>}
+    {exportError && <p role="alert">Couldn't prepare history metadata. Try exporting again.</p>}
+    <p>Metadata exports cover this page only and do not authenticate receipts.</p>
     <div className="flex flex-wrap gap-2">
+      <Button size="xs" disabled={loading || !page} onClick={exportMetadata}>Export metadata</Button>
       <Button size="xs" disabled={loading} onClick={() => void load()}>Start again</Button>
       {failure !== "expired" && <Button size="xs" disabled={loading} onClick={() => void load(page?.checkpoint)}>
         {page ? "Check for newer events" : "Retry"}
