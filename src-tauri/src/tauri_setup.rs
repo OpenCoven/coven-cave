@@ -178,6 +178,10 @@ pub fn run() {
     if let Some(code) = startup_failure_dialog::run_fatal_dialog_helper_if_requested() {
         std::process::exit(code);
     }
+    #[cfg(all(desktop, target_os = "windows"))]
+    if let Some(code) = windows_update_recovery::run_update_install_watcher_if_requested() {
+        std::process::exit(code);
+    }
     #[cfg(desktop)]
     let context = tauri::generate_context!();
 
@@ -329,6 +333,14 @@ pub fn run() {
             retry_sidecar_startup,
             #[cfg(target_os = "windows")]
             cancel_sidecar_startup,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::arm_update_install_recovery,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::disarm_update_install_recovery,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::update_install_outcome,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::clear_update_install_outcome,
         ])
         .manage(SidecarState(Arc::clone(&sidecar_process)))
         .manage(Arc::clone(&reachability_runtime))
@@ -498,6 +510,19 @@ pub fn run() {
                     std::process::id()
                 ));
                 log::info!("[cave] updater MSI log -> {}", log_path.display());
+                // A declined UAC prompt or failed msiexec must relaunch Cave
+                // instead of leaving it closed (#5981). The guard rides the
+                // same resource-table drop that stops the sidecar.
+                let install_watch = Arc::new(windows_update_recovery::UpdateInstallWatch::new(
+                    &app.path().app_local_data_dir()?,
+                    log_path.clone(),
+                ));
+                let _ = app
+                    .resources_table()
+                    .add(windows_update_recovery::UpdateInstallWatchGuard(Arc::clone(
+                        &install_watch,
+                    )));
+                app.manage(install_watch);
                 updater_builder.installer_args(msi_verbose_log_installer_args(&log_path))
             };
             app.handle().plugin(updater_builder.build())?;

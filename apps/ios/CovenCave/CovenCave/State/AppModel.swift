@@ -3288,7 +3288,17 @@ final class AppModel {
             )
         }
         message.reasoningBlocks = [summary("before", "Checking the relevant source.", sequence: 0, offset: 0)]
-        if completed {
+        if completed && ProcessInfo.processInfo.arguments.contains("--ui-preview-timeline-withheld") {
+            // A provider-redacted block carries no text (#6057).
+            message.reasoningBlocks?.append(ChatReasoningBlock(
+                schemaVersion: 1, id: "\(attempt):after", representation: "provider-summary",
+                phase: "unavailable", text: nil, textOffset: first.utf16.count, disclosure: "withheld",
+                unavailableReason: "provider-withheld",
+                observation: .init(runId: run, attemptId: attempt, source: "runtime-report",
+                                   producer: producer, firstObservedAt: 100, sequence: 2,
+                                   updatedAt: 200, completedAt: nil, binding: "unavailable")
+            ))
+        } else if completed {
             message.reasoningBlocks?.append(summary("after", "The source check is complete.", sequence: 2, offset: first.utf16.count))
         }
         return message

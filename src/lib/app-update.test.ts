@@ -10,6 +10,8 @@ import {
   downloadTargetFor,
   pickDownloadUrl,
   resolveFallbackAfterNative,
+  parseUpdateInstallOutcome,
+  describeUpdateInstallOutcome,
 } from "./app-update.ts";
 
 // Mirrors a real release's asset list (see releases/v0.0.114).
@@ -165,4 +167,40 @@ test("fallback classification preserves release notes without coercing malformed
     assert.equal(parsed.kind, "available");
     assert.equal(parsed.status.notes, undefined);
   }
+});
+
+test("a declined or failed Windows install outcome is validated before display", () => {
+  assert.deepEqual(
+    parseUpdateInstallOutcome({ kind: "cancelled", exitCode: 1602, logPath: "C:\\logs\\msi.log" }),
+    { kind: "cancelled", exitCode: 1602, logPath: "C:\\logs\\msi.log" },
+  );
+  assert.deepEqual(
+    parseUpdateInstallOutcome({ kind: "notStarted", exitCode: null, logPath: "  " }),
+    { kind: "notStarted", exitCode: null, logPath: null },
+  );
+  for (const invalid of [
+    null, undefined, "cancelled", [], {},
+    { kind: "succeeded", exitCode: 0, logPath: null },
+    { kind: "failed", exitCode: -1, logPath: null },
+    { kind: "failed", exitCode: 1.5, logPath: null },
+    { kind: "failed", exitCode: "1603", logPath: null },
+    { kind: "failed", exitCode: 1603, logPath: 7 },
+  ]) {
+    assert.equal(parseUpdateInstallOutcome(invalid), null, JSON.stringify(invalid));
+  }
+});
+
+test("install outcome copy names the failure, keeps the current version and offers a next step", () => {
+  const cancelled = describeUpdateInstallOutcome({ kind: "cancelled", exitCode: 1602, logPath: null });
+  assert.equal(cancelled.title, "Update wasn't installed: the Windows permission prompt was declined or cancelled");
+  assert.match(cancelled.detail, /still on the current version\. Retry the update/);
+  assert.match(cancelled.detail, /Installer code: 1602\./);
+
+  const failed = describeUpdateInstallOutcome({ kind: "failed", exitCode: 1603, logPath: "C:\\logs\\msi.log" });
+  assert.equal(failed.title, "Update wasn't installed: the Windows installer failed (installer code 1603)");
+  assert.match(failed.detail, /Installer log: C:\\logs\\msi\.log$/);
+
+  const notStarted = describeUpdateInstallOutcome({ kind: "notStarted", exitCode: null, logPath: null });
+  assert.equal(notStarted.title, "Update wasn't installed: the Windows installer didn't start");
+  assert.doesNotMatch(notStarted.detail, /code|log/i);
 });
