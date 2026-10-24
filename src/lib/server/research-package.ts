@@ -23,7 +23,9 @@ async function loadCompatibleRuntime(load: Loader): Promise<RuntimeResult> {
       error: 'Research could not be loaded. Repair or reinstall Research, then restart Cave.',
     };
   }
-  if (runtime.researchHostContractVersion !== 1) {
+  // v2 requires mission correlation, stable adoption keys and revisions for
+  // Coven-owned automations. A v1 package cannot safely issue those commands.
+  if (runtime.researchHostContractVersion !== 2) {
     return {
       ok: false,
       code: 'research-incompatible',

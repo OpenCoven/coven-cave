@@ -31,7 +31,7 @@ test('enabled Research receives the original request and context and starts expl
   const context = { params: Promise.resolve({ id: 'mission' }) };
   let starts = 0;
   const load = async () => ({
-    researchHostContractVersion: 1,
+    researchHostContractVersion: 2,
     startResearchRuntime: async () => { starts++; },
     fetchGithubRepoSnapshot: async () => ({ ok: false as const }),
     dispatchResearchRequest: async (route: string, method: string, received: Request, receivedContext?: unknown) => {
@@ -55,7 +55,7 @@ for (const failure of ['load', 'incompatible'] as const) {
       loads++;
       if (failure === 'load') throw new Error('private-loader-sentinel /private/profile');
       return {
-        researchHostContractVersion: 2,
+        researchHostContractVersion: 1,
         startResearchRuntime: async () => { operations++; },
         fetchGithubRepoSnapshot: async () => { operations++; return { ok: false as const }; },
         dispatchResearchRequest: async () => { operations++; return Response.json({ ok: true }); },
@@ -97,7 +97,7 @@ test('compatible runtime operation errors are not reclassified or replayed', asy
   const failure = new Error('operation outcome must remain visible');
   let mutations = 0;
   const load = async () => ({
-    researchHostContractVersion: 1,
+    researchHostContractVersion: 2,
     startResearchRuntime: async () => { throw failure; },
     fetchGithubRepoSnapshot: async (): Promise<never> => { throw failure; },
     dispatchResearchRequest: async (): Promise<Response> => { mutations++; throw failure; },
@@ -120,7 +120,7 @@ test('compatible runtime response identity and stream pass through unchanged', a
     status: 409, headers: { 'content-type': 'text/event-stream', 'x-runtime-receipt': 'synthetic' },
   });
   const load = async () => ({
-    researchHostContractVersion: 1,
+    researchHostContractVersion: 2,
     startResearchRuntime: async () => {},
     fetchGithubRepoSnapshot: async () => ({ ok: false as const }),
     dispatchResearchRequest: async () => response,
@@ -146,7 +146,7 @@ test('dispatch preserves native media tickets without granting other routes or m
     let loads = 0;
     const load = async () => {
       loads++;
-      return { researchHostContractVersion: 1, startResearchRuntime: async () => {}, fetchGithubRepoSnapshot: async () => ({ ok: false as const }), dispatchResearchRequest: async () => Response.json({ ok: true }) };
+      return { researchHostContractVersion: 2, startResearchRuntime: async () => {}, fetchGithubRepoSnapshot: async () => ({ ok: false as const }), dispatchResearchRequest: async () => Response.json({ ok: true }) };
     };
     const request = () => new Request(url, { headers: { host: url.host } });
     const call = (route: string, method = 'GET', enabled = true) => dispatchResearchRequest(route, method, request(), undefined, resolveResearchCapability(true, enabled ? '1' : '0'), load);
@@ -172,7 +172,7 @@ test('dispatch preserves validated stream credentials only for the run stream GE
     let loads = 0;
     const load = async () => {
       loads++;
-      return { researchHostContractVersion: 1, startResearchRuntime: async () => {}, fetchGithubRepoSnapshot: async () => ({ ok: false as const }), dispatchResearchRequest: async () => Response.json({ ok: true }) };
+      return { researchHostContractVersion: 2, startResearchRuntime: async () => {}, fetchGithubRepoSnapshot: async () => ({ ok: false as const }), dispatchResearchRequest: async () => Response.json({ ok: true }) };
     };
     const request = (extra: Record<string, string> = {}) => new Request('http://localhost/api/research/runs/run_1/stream', {
       headers: { host: 'localhost', [VALIDATED_SIDECAR_QUERY_HEADER]: '1', ...extra },
