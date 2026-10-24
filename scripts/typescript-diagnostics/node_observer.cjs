@@ -25,11 +25,16 @@ if (directory) {
       // Unknown forms must not silently imply default tsconfig discovery.
       const values = new Set(['--project', '-p', '--declarationMap', '--emitDeclarationOnly', '--tsBuildInfoFile', '--incremental']);
       const flags = new Set(['--noEmit', '--showConfig', '--extendedDiagnostics', '--listFiles']);
+      let selectors = 0;
       for (let i = 0; i < details.compiler_args.length; i++) {
         const arg = details.compiler_args[i];
+        if (arg === '--project' || arg === '-p') selectors++;
         if (values.has(arg)) { i++; continue; }
         if (!flags.has(arg)) throw Object.assign(new Error(), { code: 'unsupported-config-selection' });
       }
+      // More than one selector leaves the effective project to tsc's own
+      // precedence rules, so no single hashed config can be claimed.
+      if (selectors > 1) throw Object.assign(new Error(), { code: 'unsupported-config-selection' });
       const projectIndex = process.argv.findIndex(arg => arg === '--project' || arg === '-p');
       let configPath;
       if (projectIndex >= 0) {

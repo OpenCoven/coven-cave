@@ -29,6 +29,10 @@ def validate_observations(directory):
         if any(not isinstance(start[k],str) for k in ('entry','cwd')):raise ValueError('invalid entry/cwd')
         if any(type(e.get('monotonic_ns')) is not int or e['monotonic_ns']<0 for e in events):
             raise ValueError('invalid observation clock')
+        if not isinstance(start.get('node_version'),str) or not re.fullmatch(r'v\d+\.\d+\.\d+',start['node_version']):
+            raise ValueError('invalid Node version')
+        if type(start.get('heap_size_limit_bytes')) is not int or start['heap_size_limit_bytes']<=0:
+            raise ValueError('invalid heap limit')
         identity=(start['pid'],start['thread_id'],start['monotonic_ns'])
         if identity in identities:raise ValueError('duplicate observation')
         identities.add(identity)
