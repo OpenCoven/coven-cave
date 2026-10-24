@@ -20,6 +20,13 @@ const daemonlessE2E = process.env.COVEN_CAVE_E2E === "1";
 // including every packaged release artifact, keeps it.
 const skipBuildTypecheck = process.env.COVEN_CAVE_SKIP_BUILD_TYPECHECK === "1";
 
+// scripts/next-build.mjs runs that same pass before compiling, where it does
+// not compete with Turbopack's retained memory, and sets this only on the
+// `next build` that follows a successful check (#6036). The check still runs
+// once per build; it is not repeated after compiling.
+const typecheckedBeforeCompile =
+  process.env.COVEN_CAVE_TYPECHECKED_BEFORE_COMPILE === "1";
+
 const researchPackage = researchPackageConfig();
 
 const nextConfig: NextConfig = {
@@ -31,7 +38,9 @@ const nextConfig: NextConfig = {
     COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED:
       process.env.COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL === "1" ? "1" : "0",
   },
-  typescript: { ignoreBuildErrors: skipBuildTypecheck },
+  typescript: {
+    ignoreBuildErrors: skipBuildTypecheck || typecheckedBeforeCompile,
+  },
   // The Next.js dev tools launcher renders in a portal at bottom-left by
   // default, which intercepts taps on Cave's mobile bottom tabs in local dev.
   devIndicators: false,
