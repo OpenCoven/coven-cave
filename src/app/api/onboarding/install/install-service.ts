@@ -1016,7 +1016,11 @@ async function runInstallJob(
   }
 }
 
-async function runManagedNodeInstallJob(job: InstallJob, npmLease?: NpmInstallLease) {
+async function runManagedNodeInstallJob(
+  job: InstallJob,
+  npmLease: NpmInstallLease,
+  installManagedNode: typeof installManagedNodeToolchain,
+) {
   const controller = new AbortController();
   job.cancel = () => {
     if (job.status !== "running" || job.cancelRequested) return;
@@ -1027,7 +1031,7 @@ async function runManagedNodeInstallJob(job: InstallJob, npmLease?: NpmInstallLe
   };
   try {
     appendTrace(job, "Managed Node installer: starting verified user-scoped toolchain setup.");
-    const result = await installManagedNodeToolchain({
+    const result = await installManagedNode({
       signal: controller.signal,
       onProgress: (line) => appendOutput(job, `${line}\n`),
     });
@@ -1050,7 +1054,7 @@ async function runManagedNodeInstallJob(job: InstallJob, npmLease?: NpmInstallLe
           ? result.detail
           : "Managed Node installation was cancelled after verification.";
       job.failureCode =
-        result.ok ? "unknown_failure" : result.failure;
+        job.cancelRequested || result.ok ? "unknown_failure" : result.failure;
       if (!result.ok && result.applicationData) {
         job.applicationData = result.applicationData;
       }
@@ -1088,6 +1092,7 @@ async function runManagedNodeInstallJob(job: InstallJob, npmLease?: NpmInstallLe
 
 export async function startOnboardingInstall(
   targetName: OnboardingInstallTarget,
+  installManagedNode = installManagedNodeToolchain,
 ): Promise<OnboardingInstallServiceResult> {
   const target = INSTALL_TARGETS[targetName];
 
@@ -1118,7 +1123,7 @@ export async function startOnboardingInstall(
     };
     appendTrace(job, "Managed toolchain/install lane: reserved for this installer.");
     jobs.set(targetName, job);
-    void runManagedNodeInstallJob(job, reservation.lease);
+    void runManagedNodeInstallJob(job, reservation.lease, installManagedNode);
     return {
       status: 202,
       body: {

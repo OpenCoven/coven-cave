@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "issues": [
+    6061,
+    5766,
+    5767
+  ],
+  "scope": "Native ActivityKit trace-title privacy repair; broader privacy qualification remains open",
+  "verificationBaseOid": "2d623fcf3744ef0ca960cc7ffd22256e2860e9a8",
+  "deliveryBaseOid": "c3353517c7acbbb0934311f3a3dc21d7309170ee",
+  "baseChange": "Delivery base adds #6078 evidence only; verified Swift source hashes are unchanged by the rebase.",
+  "candidateNomination": "none; no release candidate designation",
+  "sourceSha256": {
+    "apps/ios/CovenCave/CovenCave/LiveActivity/ChatActivityAttributes.swift": "363bfe4d6b4c8580a00d7e475263fab940beaf251cb7734dc069b33fa0a15ca9",
+    "apps/ios/CovenCave/CovenCave/LiveActivity/LiveActivityManager.swift": "9aafd387a00744c64b99d2cb1896c789e016a2a9524c06ce041b7534adf73d69",
+    "apps/ios/CovenCave/CovenCaveTests/ChatNotificationsTests.swift": "408c19b839b859cc3cc45bc6b0387ba44ab62b3c026c51de9afbdbb24206632a"
+  },
+  "nativeClient": {
+    "configuration": "Debug simulator, ad-hoc signed",
+    "os": "iOS 26.5 (23F77)",
+    "simulatorId": "3A31EAE7-E679-4B64-BF28-838C1BCC7D68",
+    "xcode": "26.6, 17F113",
+    "version": "0.5.14",
+    "build": "2026101514",
+    "executableSha256": "66e7bb2a4829dd87606a42b1908b5cb61268e6edaaf135c20f6f82076f66478c",
+    "debugDylibSha256": "33b48c942819c6f6772f3a89c0ee39e2b1c0cf237552b328882b63022ea7a533"
+  },
+  "disclosurePathBefore": "ChatThread currentStep.title -> ChatTurnNotifier.turnStatus -> LiveActivityManager.updateChat -> ChatActivityAttributes.ContentState.statusLabel",
+  "repair": "Shared ContentState initializer and decoder retain only the existing generic Working… label; caller and wire shape preserved. In-app activity projection is unchanged.",
+  "attempts": [
+    {
+      "lane": "standalone boundary probe",
+      "attempt": 1,
+      "exitCode": 1,
+      "result": "Scratch probe compilation error: throwing expression inside Boolean operator. Corrected the probe only; no product change yet."
+    },
+    {
+      "lane": "standalone boundary probe",
+      "attempt": 2,
+      "exitCode": 1,
+      "result": "Expected red: three newly serialized trace sentinels and one restored trace sentinel were disclosed by the original source."
+    },
+    {
+      "lane": "standalone boundary probe",
+      "attempt": 3,
+      "exitCode": 0,
+      "result": "Green: updated production type withholds all new/restored trace sentinels."
+    },
+    {
+      "lane": "ChatNotificationsTests",
+      "attempt": 1,
+      "exitCode": 0,
+      "result": "18 tests passed, 0 failed/skipped; app and widget targets compiled."
+    },
+    {
+      "lane": "mobile source contracts",
+      "attempt": 1,
+      "exitCode": 0,
+      "result": "106 test files passed."
+    }
+  ],
+  "xctestSummary": {
+    "devicesAndConfigurations": [
+      {
+        "device": {
+          "architecture": "arm64",
+          "deviceId": "3A31EAE7-E679-4B64-BF28-838C1BCC7D68",
+          "deviceName": "Cave 6069 Native Recovery",
+          "modelName": "iPhone 16 Pro",
+          "osBuildNumber": "23F77",
+          "osVersion": "26.5",
+          "platform": "iOS Simulator"
+        },
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "passedTests": 18,
+        "skippedTests": 0,
+        "testPlanConfiguration": {
+          "configurationId": "1",
+          "configurationName": "Test Scheme Action"
+        }
+      }
+    ],
+    "environmentDescription": "CovenCave · Built with macOS 26.7.1",
+    "expectedFailures": 0,
+    "failedTests": 0,
+    "finishTime": 1792328298.552,
+    "passedTests": 18,
+    "result": "Passed",
+    "skippedTests": 0,
+    "startTime": 1792327880.799,
+    "statistics": [],
+    "testFailures": [],
+    "title": "Test - CovenCave",
+    "topInsights": [],
+    "totalTestCount": 18
+  },
+  "commands": [
+    "pnpm install --offline --frozen-lockfile",
+    "pnpm mobile:ios:xcodegen",
+    "xcrun --sdk iphonesimulator swiftc -target arm64-apple-ios18.0-simulator apps/ios/CovenCave/CovenCave/LiveActivity/ChatActivityAttributes.swift /tmp/cave-6061-privacy-check/main.swift -o /tmp/cave-6061-privacy-check/red",
+    "xcrun simctl spawn 3A31EAE7-E679-4B64-BF28-838C1BCC7D68 /tmp/cave-6061-privacy-check/red",
+    "xcrun --sdk iphonesimulator swiftc -target arm64-apple-ios18.0-simulator apps/ios/CovenCave/CovenCave/LiveActivity/ChatActivityAttributes.swift /tmp/cave-6061-privacy-check/main.swift -o /tmp/cave-6061-privacy-check/green",
+    "xcrun simctl spawn 3A31EAE7-E679-4B64-BF28-838C1BCC7D68 /tmp/cave-6061-privacy-check/green",
+    "COVEN_HOME=/tmp/cave-6061-state/coven COVEN_CAVE_HOME=/tmp/cave-6061-state/coven/cave xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave -destination platform=iOS\\ Simulator,id=3A31EAE7-E679-4B64-BF28-838C1BCC7D68 -derivedDataPath /tmp/cave-6061-derived -resultBundlePath /tmp/cave-6061-notifications.xcresult -only-testing:CovenCaveTests/ChatNotificationsTests -parallel-testing-enabled NO -jobs 2 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=",
+    "COVEN_HOME=/tmp/cave-6061-state/coven COVEN_CAVE_HOME=/tmp/cave-6061-state/coven/cave pnpm test:mobile"
+  ],
+  "standaloneProbeSource": "import Foundation\nvar failures = 0\nfor title in [\"PRIVATE_TOOL_ARGUMENT\", \"PRIVATE_REASONING_SUMMARY\", \"PRIVATE_OPAQUE_SIGNATURE\"] {\n    let state = ChatActivityAttributes.ContentState(statusLabel: title)\n    let encoded = try JSONEncoder().encode(state)\n    if state.statusLabel != \"Working…\" || String(decoding: encoded, as: UTF8.self).contains(title) {\n        print(\"FAIL: newly created lock-screen state contains trace sentinel\")\n        failures += 1\n    }\n}\nlet sentinel = \"PRIVATE_RESTORED_TOOL_TITLE\"\nlet saved = try JSONSerialization.data(withJSONObject: [\"statusLabel\": sentinel])\nlet restored = try JSONDecoder().decode(ChatActivityAttributes.ContentState.self, from: saved)\nlet restoredJSON = try JSONEncoder().encode(restored)\nif restored.statusLabel != \"Working…\" || String(decoding: restoredJSON, as: UTF8.self).contains(sentinel) {\n    print(\"FAIL: restored lock-screen state rediscloses saved trace sentinel\")\n    failures += 1\n}\nif failures == 0 { print(\"PASS: new and restored ActivityKit state withhold trace sentinels\") }\nexit(failures == 0 ? 0 : 1)\n",
+  "rawArtifacts": [
+    {
+      "path": "/tmp/cave-6061-privacy-check/red-build.log",
+      "sha256": "a681eee90bc7dfe3f0c28bf6cd0d129bc9c37456658c9afebb3a76d74ff0a005"
+    },
+    {
+      "path": "/tmp/cave-6061-privacy-check/red-build-retry.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/cave-6061-privacy-check/red-run.log",
+      "sha256": "4a2845fd7a1c3aeb1d28dcdc11ed2ff61be4b336c536f36e30df893360f1a9e3"
+    },
+    {
+      "path": "/tmp/cave-6061-privacy-check/green-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/cave-6061-privacy-check/green-run.log",
+      "sha256": "d875c994cd03eefc150ea166a3bdb435ab8e1e0ab49e53458bec37a44ec736b2"
+    },
+    {
+      "path": "/tmp/cave-6061-privacy-check/xctest.log",
+      "sha256": "13df53e38ff686f80ab97bd111dabe737825549fec6abf424c0508fe02def033"
+    },
+    {
+      "path": "/tmp/cave-6061-privacy-check/xctest-summary.json",
+      "sha256": "20332da36ca1ed17d6602f748a36efd71a223b037b744637a9f167fa6512cfbe"
+    },
+    {
+      "path": "/tmp/cave-6061-privacy-check/mobile.log",
+      "sha256": "53e1dfe4c78a9fe3cab0057af955bb079e606279cae6f6de6d91ec9ac1be72cb"
+    },
+    {
+      "path": "/tmp/cave-6061-privacy-check/install.log",
+      "sha256": "a48e5663a05767c610ed947dd381496eaa2361601b8ef667b78d671c94735f31"
+    },
+    {
+      "path": "/tmp/cave-6061-privacy-check/xcodegen.log",
+      "sha256": "1dd565a3da489664046a30051f36114f459e649503f90a0ed226e6c90cfd7787"
+    }
+  ],
+  "limits": [
+    "Serialization/restore boundary and native notification unit tests; no full new-build E2E or 114-entry release packet rerun.",
+    "No physical-device or human lock-screen/VoiceOver acceptance.",
+    "Broader copy/export/cache/analytics and existing final-reply notification policy are outside this patch.",
+    "Existing familiar/thread metadata is unchanged; trace titles no longer gain lock-screen disclosure rights.",
+    "No real-provider canary or daemon run was required by these tests.",
+    "Original #5767 exact-candidate checkout was found absent/unregistered; branch and merged packet survive, but raw-file disposition is unknown.",
+    "Raw logs and xcresult bundle are locally retained under /tmp, not promised permanent hosting."
+  ],
+  "cleanup": "Owned simulator shut down after verification. No files under ~/.coven modified."
+}

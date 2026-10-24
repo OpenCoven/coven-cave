@@ -842,6 +842,7 @@ export function QuickChatComposer({
         onDismiss={promptEnhance.dismiss}
         onRevert={promptEnhance.revert}
         onCancel={promptEnhance.cancel}
+        onRetry={promptEnhance.retry}
         onFocusComposer={() => composerRef?.current?.focus()}
       />
       <div className="quick-chat-overlay__actions">
@@ -852,6 +853,7 @@ export function QuickChatComposer({
             onEnhance={promptEnhance.enhance}
             onCancel={promptEnhance.cancel}
             disabled={sending || !draft.trim()}
+            unavailableReason={promptEnhance.unavailableReason}
             size="sm"
           />
           <Button

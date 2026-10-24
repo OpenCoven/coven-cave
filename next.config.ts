@@ -60,8 +60,12 @@ const nextConfig: NextConfig = {
   // target trees) into the standalone bundle. These roots are never runtime
   // inputs; packaged assets are copied explicitly by sidecar-bundle.sh.
   outputFileTracingExcludes: {
-    // Instrumentation is a non-route entry (no leading slash). Apply the same
-    // runtime-input exclusions to it as to page and API entries.
+    // Turbopack 16.3 applies these to page and API entries only. Its
+    // instrumentation trace ignores them (no key reaches it), and Next copies
+    // that trace into .next/standalone before scripts/instrumentation-trace.mjs
+    // can drop excluded files. scripts/next-build.mjs therefore fails a build
+    // whose raw instrumentation trace lists any file matched here (#6082): mark
+    // the runtime path that globbed it with /* turbopackIgnore: true */.
     "*": [
       "./.agents/**/*",
       "./.beads/**/*",
@@ -98,28 +102,37 @@ const nextConfig: NextConfig = {
       // runtime inputs. Guard against a dynamic child-process dependency
       // causing NFT to copy the entire checkout into the desktop sidecar.
       "./src/**/*",
-      "./apps/**/*.test.*",
-      // Xcode build output. The glob is `build*` rather than `build` because
-      // Xcode writes a per-configuration directory whenever one is passed a
-      // custom name or derived-data path — a real checkout carries
-      // `apps/ios/CovenCave/build` (806 MB) alongside
-      // `apps/ios/CovenCave/build-cody-cma81` (180 MB), and only the first was
-      // matched. NFT swept 85.6 MB of the second into the standalone, which is
-      // what pushed unpackedBytes to 524,402,366 against the 480 MiB cap and
-      // failed the build. That is exactly the "local build state" this block
-      // exists to keep out, so the fix is the pattern, not a bigger cap.
-      "./apps/ios/**/build*/**/*",
+      // Checkout content the server never reads at runtime (#6086). Runtime
+      // path globs in route graphs matched it anyway: every PNG under these
+      // roots via the familiar avatar route, `docs/` specs via the journal and
+      // chat routes, `canvas.json` and `package.json` fixtures by name. The
+      // sidecar closure already forbids or omits all of it, and
+      // scripts/standalone-budget.mjs forbids each root, so a new glob fails
+      // the build instead of shipping. `apps/` also covers Xcode's `build*`
+      // output: `apps/ios/CovenCave/build-cody-cma81` once put 85.6 MB in the
+      // standalone and pushed unpackedBytes past the 480 MiB cap (#4708).
+      "./apps/**/*",
+      "./assets/**/*",
+      "./config/**/*",
+      "./docs/**/*",
+      "./fixtures/**/*",
+      "./output/**/*",
+      "./screenshots/**/*",
+      "./playwright*.config.ts",
+      "./skills-lock.json",
+      // Route graphs reached it by name through runtime joins such as
+      // `path.join(caveHome(), "config.json")`; the instrumentation graph no
+      // longer does, so the #6082 leak guard holds (#6093).
+      "./tsconfig.json",
     ],
   },
-  // Next's tracer misses runtime-required packages that go through its
-  // own require-hook (e.g. @swc/helpers/_/_interop_require_default).
-  // Force-include the offenders so server.js can boot.
-  outputFileTracingIncludes: {
-    "/*": [
-      "./node_modules/@swc/helpers/**/*",
-      "./node_modules/node-pty/**/*",
-    ],
-  },
+  // No `outputFileTracingIncludes` (#6093). Turbopack 16.3 resolves an include
+  // by reading every directory under its first segment: `./node_modules/...`
+  // walked all of node_modules for each matching route, even for a literal
+  // file path, and one interrupted readdir under load panicked the build.
+  // The sidecar copies @swc/helpers and node-pty from the locked install
+  // (SIDECAR_DYNAMIC_PACKAGES in scripts/sidecar-runtime-closure.mjs), and
+  // Next now traces @swc/helpers itself.
   // React Compiler (cave-n9a8): automatic memoization across the component
   // tree. This codebase concentrates UI in a few very large stateful
   // components (chat-view ~7k lines / ~69 useState; workspace ~47) where

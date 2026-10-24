@@ -111,7 +111,7 @@ pub(super) struct SidecarReadinessRefusal {
 #[cfg(all(desktop, target_os = "windows"))]
 pub(super) const SIDECAR_STARTUP_EVENT: &str = "sidecar-startup-progress";
 
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct SidecarStartupStatus {
@@ -122,7 +122,7 @@ pub(super) struct SidecarStartupStatus {
     pub(super) can_cancel: bool,
 }
 
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 impl SidecarStartupStatus {
     pub(super) fn preparing() -> Self {
         Self {
@@ -185,7 +185,7 @@ impl SidecarStartupStatus {
     }
 }
 
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 pub(super) struct SidecarStartupControl {
     status: Mutex<SidecarStartupStatus>,
     terminal: SidecarStartupTerminalSlot,
@@ -243,11 +243,19 @@ impl SidecarStartupTerminalSlot {
     }
 }
 
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 impl SidecarStartupControl {
     pub(super) fn new() -> Self {
         Self {
-            status: Mutex::new(SidecarStartupStatus::preparing()),
+            // Development can use an external server without ever starting a
+            // packaged worker. Only spawn_sidecar_startup publishes preparing.
+            status: Mutex::new(SidecarStartupStatus {
+                phase: "idle",
+                progress: 0,
+                message: "Local services have not been started by the native host".to_string(),
+                can_retry: false,
+                can_cancel: false,
+            }),
             terminal: SidecarStartupTerminalSlot::default(),
             running: AtomicBool::new(false),
             cancel_requested: AtomicBool::new(false),

@@ -22,10 +22,10 @@ const MIME_TO_EXT: Record<string, string> = {
 const ALL_EXTS = ["png", "jpg", "webp"];
 
 function avatarDir(override?: string): string {
-  return override ?? path.join(homedir(), ".coven");
+  return override ?? path.join(/* turbopackIgnore: true */ homedir(), ".coven");
 }
 function avatarPath(dir: string, ext: string): string {
-  return path.join(dir, `user-avatar.${ext}`);
+  return path.join(/* turbopackIgnore: true */ dir, `user-avatar.${ext}`);
 }
 function extToMime(ext: string): string {
   return ext === "png" ? "image/png" : ext === "jpg" ? "image/jpeg" : "image/webp";

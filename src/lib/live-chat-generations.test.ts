@@ -263,3 +263,65 @@ test("guarded alias cleanup preserves a newer run under the origin key", async (
   assert.equal(registry.read("origin-a")?.runId, "run-new");
   assert.equal(registry.read("replacement-b"), null);
 });
+
+test("revocation drops queued snapshots and refuses late records from the revoked stream", async () => {
+  const registry = makeRegistry();
+  const stream = controller();
+  const seen: unknown[] = [];
+  registry.subscribe("revoked", (snapshot) => seen.push(snapshot));
+  const snapshot = { sessionId: "revoked", turns: [{ id: "a", text: "restricted" }], activeLeafId: "a", controller: stream, updatedAt: 1 };
+  registry.record(snapshot);
+  registry.revoke("revoked");
+  assert.equal(stream.signal.aborted, true);
+  assert.equal(registry.read("revoked"), null);
+  assert.equal(registry.record(snapshot), null);
+  assert.equal(registry.advance("revoked", (turns) => turns, "a"), null);
+  await Promise.resolve();
+  assert.deepEqual(seen, [null]);
+});
+
+test("revoking all streams leaves a new independently authorized stream usable", async () => {
+  const registry = makeRegistry();
+  const old = controller();
+  registry.record({ sessionId: "a", turns: [], activeLeafId: "", controller: old, updatedAt: 1 });
+  registry.record({ sessionId: "b", turns: [], activeLeafId: "", controller: old, updatedAt: 1 });
+  registry.revoke();
+  assert.equal(registry.read("a"), null);
+  assert.equal(registry.read("b"), null);
+  assert.equal(old.signal.aborted, true);
+  assert.ok(registry.record({ sessionId: "a", turns: [], activeLeafId: "", controller: controller(), updatedAt: 2 }));
+  await Promise.resolve();
+  assert.ok(registry.read("a"));
+});
+
+test("session revocation removes every alias sharing that stream but preserves unrelated runs", async () => {
+  const registry = makeRegistry();
+  const shared = controller();
+  for (const sessionId of ["origin", "replacement"]) {
+    registry.record({ sessionId, turns: [], activeLeafId: "", controller: shared, updatedAt: 1 });
+  }
+  registry.record({ sessionId: "other", turns: [], activeLeafId: "", controller: controller(), updatedAt: 1 });
+  registry.revoke("origin");
+  await Promise.resolve();
+  assert.equal(registry.read("origin"), null);
+  assert.equal(registry.read("replacement"), null);
+  assert.ok(registry.read("other"));
+});
+
+test("stream access guard fences delayed callbacks across session aliases without redispatch", async () => {
+  const { createChatStreamAccessGuard, invalidateChatAccess } = await import("./chat-access-invalidation.ts");
+  const stream = controller();
+  const aliases = new Set(["origin"]);
+  const guard = createChatStreamAccessGuard(stream, () => aliases);
+  try {
+    invalidateChatAccess({ sessionId: "unrelated", reason: "denied" });
+    assert.equal(guard.revoked(), false);
+    aliases.add("replacement");
+    invalidateChatAccess({ sessionId: "replacement", reason: "denied" });
+    assert.equal(guard.revoked(), true);
+    assert.equal(stream.signal.aborted, true);
+    let publications = 0;
+    await Promise.resolve().then(() => { if (!guard.revoked()) publications += 1; });
+    assert.equal(publications, 0);
+  } finally { guard.dispose(); }
+});

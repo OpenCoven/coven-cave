@@ -512,7 +512,7 @@ class SqliteDeviceAccessStore implements DeviceAccessStore {
 }
 
 export async function createDeviceAccessStore(
-  { root = join(caveHome(), "device-access"), now = Date.now }: { root?: string; now?: () => number } = {},
+  { root = join(/* turbopackIgnore: true */ caveHome(), "device-access"), now = Date.now }: { root?: string; now?: () => number } = {},
 ): Promise<DeviceAccessStore> {
   const file = await initializeLocation(root);
   const { DatabaseSync } = await import("node:sqlite");

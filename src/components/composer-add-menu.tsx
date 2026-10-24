@@ -142,6 +142,8 @@ export type AddMenuLegacySection = {
     onEnhance: (intent: EnhanceIntent) => void;
     disabled?: boolean;
     loading?: boolean;
+    /** Why Enhance can't run (e.g. no familiar): disables it and shows the reason. */
+    unavailableReason?: string | null;
   };
 };
 
@@ -201,6 +203,10 @@ export function ComposerAddMenu({
 }) {
   const skillData = useComposerSkills(open && Boolean(skills));
   const connectorData = useComposerConnectors(open && Boolean(connectors));
+  const enhanceUnavailable = legacy?.enhance?.loading ? null : legacy?.enhance?.unavailableReason ?? null;
+  const enhanceDisabled = Boolean(
+    legacy?.enhance && !legacy.enhance.loading && (legacy.enhance.disabled || enhanceUnavailable),
+  );
 
   return (
     <>
@@ -465,7 +471,8 @@ export function ComposerAddMenu({
                 icon="ph:sparkle"
                 label={legacy.enhance.loading ? "Enhancing…" : "Enhance prompt"}
                 live={legacy.enhance.loading}
-                disabled={legacy.enhance.disabled && !legacy.enhance.loading}
+                disabled={enhanceDisabled}
+                title={enhanceUnavailable ?? undefined}
                 onSelect={() => {
                   onClose();
                   legacy.enhance!.onEnhance("auto");
@@ -474,7 +481,7 @@ export function ComposerAddMenu({
               <PopoverSubmenu
                 icon="ph:sparkle-bold"
                 label="Enhance options"
-                disabled={legacy.enhance.disabled && !legacy.enhance.loading}
+                disabled={enhanceDisabled}
                 minWidth={200}
               >
                 {ENHANCE_INTENTS.map((intent) => (
@@ -482,7 +489,7 @@ export function ComposerAddMenu({
                     key={intent.id}
                     icon="ph:sparkle"
                     label={intent.label}
-                    disabled={legacy.enhance!.disabled && !legacy.enhance!.loading}
+                    disabled={enhanceDisabled}
                     onSelect={() => {
                       onClose();
                       legacy.enhance!.onEnhance(intent.id);
@@ -490,6 +497,7 @@ export function ComposerAddMenu({
                   />
                 ))}
               </PopoverSubmenu>
+              {enhanceUnavailable ? <MenuNote>{enhanceUnavailable}</MenuNote> : null}
             </>
           ) : null}
         </>

@@ -213,7 +213,34 @@ for (const [name, src] of [["home-composer", home], ["chat-view", chat], ["quick
     /setEnhanceStatus|setEnhanceOriginal|buildPromptEnhancement/,
     `${name} carries no bespoke enhance state — the hook owns the lifecycle`,
   );
+  assert.match(
+    src,
+    /<EnhanceStrip[\s\S]*?onRetry=\{promptEnhance\.retry\}/,
+    `${name} offers Retry on a failed enhancement`,
+  );
+  // #5920: with no familiar, each Enhance entry point is disabled and says why.
+  for (const entry of name === "home-composer"
+    ? [/enhance=\{\{[\s\S]*?unavailableReason: promptEnhance\.unavailableReason,/]
+    : name === "chat-view"
+      ? [
+        /enhance:\s*\{[\s\S]*?unavailableReason: promptEnhance\.unavailableReason,/,
+        /<EnhanceControl[\s\S]*?unavailableReason=\{promptEnhance\.unavailableReason\}/,
+      ]
+      : [/<EnhanceControl[\s\S]*?unavailableReason=\{promptEnhance\.unavailableReason\}/]) {
+    assert.match(src, entry, `${name} passes the no-familiar reason to its Enhance control`);
+  }
 }
+assert.match(
+  source,
+  /const disabled = disabledByComposer \|\| Boolean\(unavailableReason\);/,
+  "an unavailable reason disables both control segments",
+);
+assert.match(
+  source,
+  /\{state\.retryable && onRetry \? \([\s\S]*?aria-label="Retry enhance"/,
+  "Retry appears only when retrying can help",
+);
+assert.doesNotMatch(source, /offline/, "the shared strip never labels a rewrite as offline");
 // Chat options routes enhance through the shared cascade menu's utility group.
 const addMenuShared = await readFile(new URL("./composer-add-menu.tsx", import.meta.url), "utf8");
 assert.match(
@@ -236,6 +263,11 @@ assert.match(
   /ENHANCE_INTENTS\.map\(\(intent\) => \([\s\S]*?legacy\.enhance!\.onEnhance\(intent\.id\)/,
   "Enhance options lists every shared enhance intent",
 );
+assert.match(
+  addMenuShared,
+  /\{enhanceUnavailable \? <MenuNote>\{enhanceUnavailable\}<\/MenuNote> : null\}/,
+  "the menu shows why Enhance is unavailable instead of hiding it",
+);
 
 // Surface-specific mode + context wiring.
 assert.match(
@@ -256,7 +288,7 @@ assert.match(
 assert.match(
   quick,
   /familiarId: familiar\?\.id \?\? null/,
-  "quick-chat enhances through the picked familiar (local fallback when none)",
+  "quick-chat enhances through the picked familiar (disabled with a reason when none)",
 );
 
 console.log("composer-enhance.test.ts: ok");

@@ -42,7 +42,9 @@ type PackageManifest = {
 function readPackageManifest(root: string): PackageManifest | null {
   try {
     const parsed = JSON.parse(readFileSync(
-      /* turbopackIgnore: true */ path.join(root, "package.json"),
+      // The mark must sit inside path.join: Turbopack builds its reference from
+      // the join itself, and `<dynamic>/package.json` matched fixtures (#6086).
+      path.join(/* turbopackIgnore: true */ root, "package.json"),
       "utf8",
     )) as unknown;
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
@@ -78,12 +80,12 @@ function isPnpmOwnedCodexInstall(
   nodeModulesDir: string,
   canonicalPackageRoot: string,
 ): boolean {
-  if (!existsSync(/* turbopackIgnore: true */ path.join(nodeModulesDir, ".modules.yaml"))) {
+  if (!existsSync(/* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ nodeModulesDir, ".modules.yaml"))) {
     return false;
   }
   try {
     return realpathSync(
-      /* turbopackIgnore: true */ path.join(nodeModulesDir, "@openai", "codex"),
+      /* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ nodeModulesDir, "@openai", "codex"),
     ) === canonicalPackageRoot;
   } catch {
     return false;
@@ -96,18 +98,18 @@ function codexPackageManager(
   entrypoint: string,
   env: NodeJS.ProcessEnv,
 ): CodexPackageManager {
-  for (const startDir of new Set([packageRoot, path.dirname(path.resolve(entrypoint))])) {
+  for (const startDir of new Set([packageRoot, path.dirname(path.resolve(/* turbopackIgnore: true */ entrypoint))])) {
     const filesystemRoot = path.parse(startDir).root;
     for (
       let currentDir = startDir;
       currentDir !== filesystemRoot;
       currentDir = path.dirname(currentDir)
     ) {
-      if (isPnpmOwnedCodexInstall(path.join(currentDir, "node_modules"), packageRoot)) {
+      if (isPnpmOwnedCodexInstall(path.join(/* turbopackIgnore: true */ currentDir, "node_modules"), packageRoot)) {
         return "pnpm";
       }
     }
-    if (isPnpmOwnedCodexInstall(path.join(filesystemRoot, "node_modules"), packageRoot)) {
+    if (isPnpmOwnedCodexInstall(path.join(/* turbopackIgnore: true */ filesystemRoot, "node_modules"), packageRoot)) {
       return "pnpm";
     }
   }
@@ -164,7 +166,7 @@ function officialWindowsCodexNativeLaunch(
   let canonicalScript: string;
   try {
     canonicalScript = realpathSync(/* turbopackIgnore: true */ script);
-    packageRoot = realpathSync(/* turbopackIgnore: true */ path.resolve(path.dirname(canonicalScript), ".."));
+    packageRoot = realpathSync(/* turbopackIgnore: true */ path.resolve(/* turbopackIgnore: true */ path.dirname(canonicalScript), ".."));
   } catch {
     return null;
   }
@@ -185,8 +187,8 @@ function officialWindowsCodexNativeLaunch(
   const scopedRoot = path.dirname(packageRoot);
   const packageLeaf = target.packageName.slice("@openai/".length);
   const platformRoots = [
-    path.join(packageRoot, "node_modules", "@openai", packageLeaf),
-    path.join(scopedRoot, packageLeaf),
+    path.join(/* turbopackIgnore: true */ packageRoot, "node_modules", "@openai", packageLeaf),
+    path.join(/* turbopackIgnore: true */ scopedRoot, packageLeaf),
   ];
   for (const candidateRoot of platformRoots) {
     let platformRoot: string;
@@ -209,7 +211,7 @@ function officialWindowsCodexNativeLaunch(
     }
     const executable = canonicalFileWithin(
       platformRoot,
-      path.join(platformRoot, "vendor", target.triple, "bin", "codex.exe"),
+      path.join(/* turbopackIgnore: true */ platformRoot, "vendor", target.triple, "bin", "codex.exe"),
     );
     if (!executable) continue;
     return {
@@ -227,7 +229,7 @@ function officialWindowsCodexNativeLaunch(
   // exact architecture-specific vendor path.
   const bundledExecutable = canonicalFileWithin(
     packageRoot,
-    path.join(packageRoot, "vendor", target.triple, "bin", "codex.exe"),
+    path.join(/* turbopackIgnore: true */ packageRoot, "vendor", target.triple, "bin", "codex.exe"),
   );
   if (!bundledExecutable) return null;
   return {
@@ -248,7 +250,7 @@ function candidateDirs(
     .split(platform === "win32" ? ";" : path.delimiter)
     .map((directory) => directory.trim().replace(/^"|"$/g, ""));
   if (platform === "win32" && env.APPDATA) {
-    configured.push(path.join(env.APPDATA, "npm"));
+    configured.push(path.join(/* turbopackIgnore: true */ env.APPDATA, "npm"));
   }
   return configured
     .filter((directory, index) => !!directory && configured.indexOf(directory) === index)

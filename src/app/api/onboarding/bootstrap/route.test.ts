@@ -51,7 +51,7 @@ assert.match(
 );
 assert.match(
   runner,
-  /path\.join\(covenHome\(\), "defaults"\)/,
+  /path\.join\((?:\/\* turbopackIgnore: true \*\/ )?covenHome\(\), "defaults"\)/,
   "bootstrap creates the approved ~/.coven/defaults location",
 );
 assert.match(

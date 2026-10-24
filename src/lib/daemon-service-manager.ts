@@ -108,14 +108,14 @@ export function serviceDaemonTarget(record: Record<string, unknown>, userHome: s
   const args = Array.isArray(record.ProgramArguments)
     ? (record.ProgramArguments as unknown[]).filter((arg): arg is string => typeof arg === "string")
     : [];
-  const covenHome = typeof env.COVEN_HOME === "string" && env.COVEN_HOME ? env.COVEN_HOME : path.join(userHome, ".coven");
+  const covenHome = typeof env.COVEN_HOME === "string" && env.COVEN_HOME ? env.COVEN_HOME : path.join(/* turbopackIgnore: true */ userHome, ".coven");
   const socket = argValue(args, "--socket")
-    ?? (typeof env.COVEN_SOCKET === "string" && env.COVEN_SOCKET ? env.COVEN_SOCKET : path.join(covenHome, "coven.sock"));
+    ?? (typeof env.COVEN_SOCKET === "string" && env.COVEN_SOCKET ? env.COVEN_SOCKET : path.join(/* turbopackIgnore: true */ covenHome, "coven.sock"));
   return { covenHome, socket };
 }
 
 function sameTarget(a: DaemonServiceTarget, b: DaemonServiceTarget): boolean {
-  return path.resolve(a.covenHome) === path.resolve(b.covenHome) && path.resolve(a.socket) === path.resolve(b.socket);
+  return path.resolve(/* turbopackIgnore: true */ a.covenHome) === path.resolve(/* turbopackIgnore: true */ b.covenHome) && path.resolve(/* turbopackIgnore: true */ a.socket) === path.resolve(/* turbopackIgnore: true */ b.socket);
 }
 
 function resolved(deps: DaemonServiceDependencies) {
@@ -123,7 +123,7 @@ function resolved(deps: DaemonServiceDependencies) {
   return {
     platform: deps.platform ?? process.platform,
     home,
-    agentDirs: deps.agentDirs ?? [path.join(home, "Library", "LaunchAgents"), "/Library/LaunchAgents"],
+    agentDirs: deps.agentDirs ?? [path.join(/* turbopackIgnore: true */ home, "Library", "LaunchAgents"), "/Library/LaunchAgents"],
     uid: deps.uid ?? (typeof process.getuid === "function" ? process.getuid() : -1),
     listAgents: deps.listAgents ?? ((dir: string) => readdir(dir)),
     readAgent: deps.readAgent ?? ((file: string) => readFile(file)),
@@ -150,7 +150,7 @@ export async function findDaemonServiceManager(
       continue;
     }
     for (const name of names) {
-      const file = path.join(dir, name);
+      const file = path.join(/* turbopackIgnore: true */ dir, name);
       // Cheap prefilter before spawning plutil: both XML and binary plists keep
       // these strings as plain ASCII.
       let raw: Buffer;

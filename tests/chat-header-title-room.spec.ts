@@ -1,10 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// #6008: the Chat header's title row holds identity · run status · actions.
-// Between the 52rem wrap query and a wide pane, a long "Last run needs
-// attention" status used to keep its full width while the title fell to
-// "Capabil…". Space is now given up in order: a long title truncates to a
-// protected floor, then the status stacks inside its own box.
+// #6201: title and metadata occupy two rows beside the familiar, with at
+// most one additional activity row. Keep the title room protected by #6008.
 
 const SESSION_ID = "header-title-room";
 const TITLE = "Capability gap · 1 signal";
@@ -80,8 +77,11 @@ function headerGeometry(page: Page) {
       truncated,
       text: title?.textContent?.trim() ?? "",
       actionsVisible: actions.length > 0 && actions.every(Boolean),
-      // Status beside the identity, not wrapped under it.
-      statusOnTitleLine: Boolean(meta && status && status.top < meta.bottom - 4),
+      statusBelowIdentity: Boolean(meta && status && status.top >= meta.bottom),
+      height: rowBox.height,
+      avatarHeight: row.querySelector(".cave-chat-header-avatar")?.getBoundingClientRect().height,
+      avatarRadius: getComputedStyle(row.querySelector(".cave-chat-header-avatar")!).borderRadius,
+      actionsShareRow: Boolean(meta && status && [meta.top, status.top].includes(row.querySelector(":scope > .cave-chat-session-actions")?.getBoundingClientRect().top ?? -1)),
     };
   });
 }
@@ -89,34 +89,33 @@ function headerGeometry(page: Page) {
 test.describe("Chat header title room", () => {
   test.skip(({ isMobile }) => isMobile, "desktop header geometry");
 
-  test.describe("a 1440px window with the nav and Chat list open", () => {
-    test.use({ viewport: { width: 1440, height: 900 } });
+  for (const width of [1024, 1440, 1920]) {
+    test.describe(`${width}px window`, () => {
+      test.use({ viewport: { width, height: 900 } });
 
-    test("keeps the whole title beside a long run status and every action", async ({ page }) => {
-      await openChatWithLongStatus(page);
-      await expect.poll(async () => (await headerGeometry(page)).truncated).toBe(false);
-      const geometry = await headerGeometry(page);
-      expect(geometry.text).toContain(TITLE);
-      expect(geometry.actionsVisible).toBe(true);
-      // Above the 52rem query the status stays on the title row, stacked inside its own box.
-      expect(geometry.pane).toBeGreaterThan(52 * 16);
-      expect(geometry.statusOnTitleLine).toBe(true);
+      test("keeps title, metadata and activity within three rows", async ({ page }) => {
+        await openChatWithLongStatus(page);
+        const geometry = await headerGeometry(page);
+        expect(geometry.text).toContain(TITLE);
+        if (width >= 1440) expect(geometry.truncated).toBe(false);
+        expect(geometry.actionsVisible).toBe(true);
+        expect(geometry.actionsShareRow).toBe(true);
+        expect(geometry.statusBelowIdentity).toBe(true);
+        expect(geometry.height).toBeLessThanOrEqual(72);
+        expect(geometry.avatarHeight).toBe(44);
+        expect(geometry.avatarRadius).toBe("8px");
+        await page.locator(".cave-chat-linear-header").screenshot({ path: test.info().outputPath("header.png") });
+        if (width === 1440) {
+          for (const [theme, mode] of [["coven", "light"], ["tide", "dark"]]) {
+            await page.evaluate(([theme, mode]) => {
+              document.documentElement.dataset.theme = theme;
+              document.documentElement.dataset.mode = mode;
+            }, [theme, mode]);
+            expect((await headerGeometry(page)).height).toBeLessThanOrEqual(72);
+            await page.locator(".cave-chat-linear-header").screenshot({ path: test.info().outputPath(`header-${theme}-${mode}.png`) });
+          }
+        }
+      });
     });
-  });
-
-  test.describe("a 1920px window", () => {
-    test.use({ viewport: { width: 1920, height: 1080 } });
-
-    test("keeps the title, status and actions on one line", async ({ page }) => {
-      await openChatWithLongStatus(page);
-      const geometry = await headerGeometry(page);
-      expect(geometry.truncated).toBe(false);
-      expect(geometry.actionsVisible).toBe(true);
-      expect(geometry.statusOnTitleLine).toBe(true);
-      const statusLines = await page.locator(".cave-chat-header-status").evaluate((status) =>
-        new Set([...status.children].map((child) => Math.round(child.getBoundingClientRect().top / 8))).size,
-      );
-      expect(statusLines).toBe(1);
-    });
-  });
+  }
 });

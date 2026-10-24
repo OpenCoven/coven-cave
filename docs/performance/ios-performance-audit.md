@@ -1,6 +1,6 @@
 # Native iOS Performance Audit
 
-Date: 2026-08-10
+Date: 2026-08-10 (opened); last updated 2026-10-03 (#5755)
 
 Scope: `apps/ios/CovenCave`, covering launch persistence, reconnect/bootstrap
 work, image decoding, surface loading, transcript rendering, and markdown
@@ -175,8 +175,9 @@ loads show a static message; the original image HTML is never a fallback.
 Native behavioral tests cover resource caps, coalescing, cancellation,
 orientation, and the inline entry point. These bounds do **not** establish
 physical-device performance acceptance: #5314 still requires Release-device
-Time Profiler/Allocations evidence, 100 zoom/dismiss cycles, and the #5310
-memory/hitch gates. Simulator tests do not establish VoiceOver acceptance.
+Time Profiler/Allocations evidence, 100 zoom/dismiss cycles, and the
+memory/hitch gates once tracked in #5310 (since deleted; the hitch budget is
+now tracked on #5748). Simulator tests do not establish VoiceOver acceptance.
 
 Use `pnpm mobile:ios:xcodegen` to generate the local Xcode project. Its wrapper
 builds and verifies markdown resources before XcodeGen scans them. Running

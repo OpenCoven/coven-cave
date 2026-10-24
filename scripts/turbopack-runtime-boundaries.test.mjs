@@ -3,11 +3,31 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expectedBoundaries = new Map([
+  ["../src/lib/server/research-automation-import.ts", [
+    ['path.join(/* turbopackIgnore: true */ caveHome(), "research-automation-import-plans")', 1],
+    ['path.join(/* turbopackIgnore: true */ base, ".codex", "automations", id, "automation.toml")', 1],
+    ['path.join(/* turbopackIgnore: true */ planRoot, `${plan.planId}.json`)', 1],
+    ['path.join(/* turbopackIgnore: true */ planRoot, `${planId}.json`)', 1],
+    ['open(/* turbopackIgnore: true */ file,', 1],
+    ['realpath(/* turbopackIgnore: true */ home)', 1],
+    ['realpath(/* turbopackIgnore: true */ file)', 1],
+  ]],
+  // A `caveHome()` join matches by partial name: `"state.json"` traced Xcode's
+  // `workspace-state.json` and failed the #6082 leak guard; `"config.json"`
+  // traced `tsconfig.json` into every entry (#6093).
+  ["../src/lib/cave-config.ts", [
+    ['path.join(/* turbopackIgnore: true */ caveHome(), "config.json")', 1],
+    ['path.join(/* turbopackIgnore: true */ caveHome(), "state.json")', 1],
+  ]],
   ["../src/lib/mobile-handoff.ts", [
     ["spawn(/* turbopackIgnore: true */ bin, args", 1],
   ]],
   ["../src/lib/server/backup-archive.ts", [
     ["path.join(/* turbopackIgnore: true */ researchRoot, relativeDirectory)", 1],
+  ]],
+  // Unmarked, the `.worktrees` join made the build scan 56,826 files (#6099).
+  ["../src/lib/server/issue-worktree-provision.ts", [
+    ['path.join(/* turbopackIgnore: true */ repoRoot, ".worktrees")', 1],
   ]],
   ["../src/lib/server/research-context-pack-store.ts", [
     ["readdir(/* turbopackIgnore: true */ layout.manifestsDir)", 2],
@@ -20,7 +40,7 @@ const expectedBoundaries = new Map([
   ]],
   ["../src/lib/server/research-resource-semantic-index.ts", [
     ["existsSync(/* turbopackIgnore: true */ candidate)", 2],
-    ["readdirSync(/* turbopackIgnore: true */ directory)", 1],
+    ["readdirSync(/* turbopackIgnore: true */ directory)", 2],
     ["path.resolve(/* turbopackIgnore: true */ options.file ?? semanticIndexPath())", 2],
     ["existsSync(/* turbopackIgnore: true */ candidate.file)", 1],
     ["existsSync(/* turbopackIgnore: true */ file)", 5],

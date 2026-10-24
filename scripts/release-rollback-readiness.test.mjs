@@ -87,8 +87,30 @@ function manifest(version, overrides = {}) {
   };
 }
 
-/** A fetch double serving one page of releases plus the baseline manifest. */
-function stubFetch({ releases, manifest: body, manifestStatus = 200, manifestUrl = MANIFEST_URL }) {
+/**
+ * The baseline tag's package.json as patched releases pin it: `next`, `sharp`
+ * and the `sharp` override, each exact and at or above the #5339 floor.
+ */
+function pins({ next = "16.3.8", sharp = "0.35.5", override = sharp } = {}) {
+  return {
+    name: "coven-cave",
+    dependencies: { next, sharp },
+    pnpm: { overrides: { sharp: override } },
+  };
+}
+
+/**
+ * A fetch double serving one page of releases, the baseline manifest, and the
+ * baseline tag's package.json (clean pins unless a test says otherwise).
+ */
+function stubFetch({
+  releases,
+  manifest: body,
+  manifestStatus = 200,
+  manifestUrl = MANIFEST_URL,
+  packageJson = pins(),
+  packageJsonStatus = 200,
+}) {
   const calls = [];
   const requests = [];
   return {
@@ -97,6 +119,13 @@ function stubFetch({ releases, manifest: body, manifestStatus = 200, manifestUrl
     fetchImpl: async (url, init) => {
       calls.push(url);
       requests.push({ url, headers: init?.headers ?? {} });
+      if (url.startsWith(`${API}/repos/`) && new URL(url).pathname.endsWith("/contents/package.json")) {
+        return {
+          ok: packageJsonStatus === 200,
+          status: packageJsonStatus,
+          json: async () => packageJson,
+        };
+      }
       if (url.startsWith(`${API}/repos/`)) {
         const page = Number(new URL(url).searchParams.get("page"));
         return { ok: true, status: 200, json: async () => (page === 1 ? releases : []) };
@@ -844,6 +873,7 @@ test("a missing baseline is fatal unless it is explicitly waived", async () => {
     baselineWaived: true,
     platforms: [],
     missingPlatforms: [],
+    baselineFloor: null,
     ready: true,
   });
 });
@@ -904,6 +934,245 @@ test("partial baseline coverage is reported, never fatal", async () => {
   });
   assert.deepEqual(extra.missingPlatforms, []);
   assert.ok(extra.platforms.includes("linux-aarch64"), "an unlisted target is still recorded");
+});
+
+test("a baseline below the bundled-dependency floor is recorded as unsafe, never fatal", async () => {
+  // #5339's rollback rule: never restore a release that bundles a dependency
+  // the incident replaced. FATAL would be wrong for the same deadlock reason as
+  // partial coverage: after a floor raise, the first release at the new floor
+  // has only an unpatched baseline, and failing this job withholds latest.json
+  // from the very release that carries the fix. So the verdict records it, and
+  // release-rollout.mjs refuses to restore it.
+  const stub = stubFetch({
+    releases: [release("0.3.7")],
+    manifest: manifest("0.3.7"),
+    packageJson: pins({ next: "16.3.1", sharp: "0.35.3" }),
+  });
+  const result = await verify({ fetchImpl: stub.fetchImpl });
+  assert.equal(result.ready, true, "an unpatched baseline does not make the patched release unshippable");
+  assert.equal(result.baseline.tag, "v0.3.7");
+  assert.equal(result.baselineFloor.clear, false);
+  assert.deepEqual(result.baselineFloor.versions, { next: "16.3.1", sharp: "0.35.3" });
+  const problems = result.baselineFloor.problems.join("\n");
+  assert.match(problems, /dependencies\.next 16\.3\.1 is below the patched minimum 16\.3\.3/);
+  assert.match(problems, /dependencies\.sharp 0\.35\.3 is below the patched minimum 0\.35\.4/);
+  assert.match(problems, /pnpm\.overrides\.sharp 0\.35\.3 is below the patched minimum 0\.35\.4/);
+
+  // The pins come from the baseline's own tag, as raw file content, over the
+  // API with the token, never from the checkout running the gate.
+  const reads = stub.requests.filter((request) => new URL(request.url).pathname.endsWith("/contents/package.json"));
+  assert.equal(reads.length, 1);
+  assert.equal(new URL(reads[0].url).pathname, `/repos/${REPOSITORY}/contents/package.json`);
+  assert.equal(new URL(reads[0].url).searchParams.get("ref"), "v0.3.7");
+  assert.equal(reads[0].headers.accept, "application/vnd.github.raw+json");
+  assert.equal(reads[0].headers.authorization, "Bearer token");
+
+  const clean = await verify({
+    fetchImpl: stubFetch({ releases: [release("0.3.7")], manifest: manifest("0.3.7") }).fetchImpl,
+  });
+  assert.deepEqual(clean.baselineFloor, { clear: true, versions: { next: "16.3.8", sharp: "0.35.5" }, problems: [] });
+
+  // An override below the floor is caught even when the dependency pin clears
+  // it: the override is what pnpm installs.
+  const overridden = await verify({
+    fetchImpl: stubFetch({
+      releases: [release("0.3.7")],
+      manifest: manifest("0.3.7"),
+      packageJson: pins({ override: "0.35.3" }),
+    }).fetchImpl,
+  });
+  assert.equal(overridden.baselineFloor.clear, false);
+  assert.deepEqual(overridden.baselineFloor.problems.length, 1);
+  assert.match(overridden.baselineFloor.problems[0], /^pnpm\.overrides\.sharp 0\.35\.3 is below/);
+
+  // A range is not a version the gate can compare, so it fails closed.
+  const ranged = await verify({
+    fetchImpl: stubFetch({
+      releases: [release("0.3.7")],
+      manifest: manifest("0.3.7"),
+      packageJson: pins({ next: "^16.3.3" }),
+    }).fetchImpl,
+  });
+  assert.equal(ranged.baselineFloor.clear, false);
+  assert.match(ranged.baselineFloor.problems[0], /dependencies\.next "\^16\.3\.3" is not a final MAJOR\.MINOR\.PATCH version/);
+
+  // A tag with no package.json is not a release this gate can vouch for. That
+  // is a recorded "not clear", not a refusal, and not a retry.
+  const missing = await verify({
+    fetchImpl: stubFetch({ releases: [release("0.3.7")], manifest: manifest("0.3.7"), packageJsonStatus: 404 }).fetchImpl,
+  });
+  assert.equal(missing.ready, true);
+  assert.deepEqual(missing.baselineFloor, {
+    clear: false,
+    versions: {},
+    problems: ["v0.3.7 has no package.json to read its pins from"],
+  });
+});
+
+test("a GitHub that cannot answer the pins read is still a retry", async () => {
+  // Only a 404 means "this tag has no package.json". Every other failure means
+  // nothing was learned about the baseline, and the gate says so the same way
+  // it does for the listing and the manifest.
+  for (const status of [403, 429, 500, 503]) {
+    await assert.rejects(
+      verify({
+        fetchImpl: stubFetch({
+          releases: [release("0.3.7")],
+          manifest: manifest("0.3.7"),
+          packageJsonStatus: status,
+        }).fetchImpl,
+      }),
+      new RegExp(`v0\\.3\\.7 package\\.json request failed with HTTP ${status}; GitHub could not answer`),
+    );
+  }
+});
+
+test("a baseline's pin cannot forge a job output or a workflow command", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "rollback-readiness-floor-"));
+  const outputPath = path.join(directory, "output");
+  const summaryPath = path.join(directory, "summary");
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = (message) => warnings.push(message);
+  try {
+    await runCli({
+      argv: [],
+      env: {
+        GITHUB_REPOSITORY: REPOSITORY,
+        GITHUB_TOKEN: "token",
+        RELEASE_TAG: "v0.3.8",
+        GITHUB_API_URL: API,
+        GITHUB_OUTPUT: outputPath,
+        GITHUB_STEP_SUMMARY: summaryPath,
+      },
+      fetchImpl: stubFetch({
+        releases: [release("0.3.7")],
+        manifest: manifest("0.3.7"),
+        packageJson: pins({ next: "16.3.1\nready=false\n::error::forged" }),
+      }).fetchImpl,
+    });
+    const lines = readFileSync(outputPath, "utf8").split("\n").filter(Boolean);
+    assert.deepEqual(
+      lines.filter((line) => line.startsWith("ready=")),
+      ["ready=true"],
+      "a pin cannot add a second `ready` output",
+    );
+    assert.ok(!lines.some((line) => line.startsWith("::")), "no output line is a workflow command");
+    const floorLine = lines.find((line) => line.startsWith("baseline-floor-problems="));
+    assert.match(floorLine, /dependencies\.next "16\.3\.1\\nready=false\\n::error::forged" is not a final/);
+    assert.equal(warnings.length, 2, "the coverage warning and the floor warning, nothing smuggled in");
+    assert.ok(warnings.every((warning) => !warning.includes("\n")), "each annotation is one line");
+  } finally {
+    console.warn = realWarn;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the CLI names a baseline below the floor in its outputs, summary and annotation", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "rollback-readiness-floor-"));
+  const outputPath = path.join(directory, "output");
+  const summaryPath = path.join(directory, "summary");
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = (message) => warnings.push(message);
+  try {
+    const full = Object.fromEntries(
+      EXPECTED_ROLLBACK_PLATFORMS.map((platform) => [
+        platform,
+        { url: `${DOWNLOAD_HOST}/v0.3.7/CovenCave_0.3.7_amd64.AppImage`, signature: "dW50cnVzdGVk" },
+      ]),
+    );
+    const result = await runCli({
+      argv: [],
+      env: {
+        GITHUB_REPOSITORY: REPOSITORY,
+        GITHUB_TOKEN: "token",
+        RELEASE_TAG: "v0.3.8",
+        GITHUB_API_URL: API,
+        GITHUB_OUTPUT: outputPath,
+        GITHUB_STEP_SUMMARY: summaryPath,
+      },
+      fetchImpl: stubFetch({
+        releases: [release("0.3.7")],
+        manifest: manifest("0.3.7", { platforms: full }),
+        packageJson: pins({ next: "16.3.1" }),
+      }).fetchImpl,
+    });
+    assert.equal(result.ready, true);
+    const outputs = Object.fromEntries(
+      readFileSync(outputPath, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => line.split(/=(.*)/s).slice(0, 2)),
+    );
+    assert.equal(outputs.ready, "true", "the job still succeeds, so latest.json still publishes");
+    assert.equal(outputs["baseline-tag"], "v0.3.7");
+    assert.equal(outputs["baseline-floor-clear"], "false");
+    assert.match(outputs["baseline-floor-problems"], /^dependencies\.next 16\.3\.1 is below the patched minimum 16\.3\.3 \(/);
+    const summary = readFileSync(summaryPath, "utf8");
+    assert.match(summary, /⛔ \*\*Do not roll back to `v0\.3\.7`\.\*\* Its pins are below the bundled-dependency floor \(#5339\)/);
+    assert.match(summary, /only remedy is a patch forward/);
+    assert.doesNotMatch(summary, /Pinned dependencies clear the bundled-dependency floor/);
+    // Full platform coverage here, so the floor warning is the only annotation.
+    assert.equal(warnings.length, 1);
+    assert.match(
+      warnings[0],
+      /^::warning::Rollback baseline v0\.3\.7 is below the bundled-dependency floor \(dependencies\.next 16\.3\.1 is below the patched minimum 16\.3\.3 .*\); do not roll back to it — patch forward instead\.$/,
+    );
+  } finally {
+    console.warn = realWarn;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the runbook's floor section still describes what the gate emits", async () => {
+  const doc = await readFile(
+    new URL("../docs/workflows/release-rollback-readiness.md", import.meta.url),
+    "utf8",
+  );
+  assert.match(doc, /A baseline below the bundled-dependency floor is recorded, not refused/);
+  assert.match(doc, /`baseline-floor-clear`/);
+  assert.match(doc, /`baseline-floor-problems`/);
+  assert.match(doc, /restore-plan` refuses/);
+
+  // The runbook quotes the annotation for v0.4.1, the last pre-patch release,
+  // with its real pins (next 16.3.1, sharp 0.35.3). Produce it the way the
+  // gate would and require the quote to be exact, so a reworded annotation or
+  // floor reason cannot leave the runbook quoting the old text.
+  const directory = mkdtempSync(path.join(tmpdir(), "rollback-readiness-doc-"));
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = (message) => warnings.push(message);
+  try {
+    const full = Object.fromEntries(
+      EXPECTED_ROLLBACK_PLATFORMS.map((platform) => [
+        platform,
+        { url: `${DOWNLOAD_HOST}/v0.4.1/CovenCave_0.4.1_amd64.AppImage`, signature: "dW50cnVzdGVk" },
+      ]),
+    );
+    await runCli({
+      argv: [],
+      env: {
+        GITHUB_REPOSITORY: REPOSITORY,
+        GITHUB_TOKEN: "token",
+        RELEASE_TAG: "v0.4.2",
+        GITHUB_API_URL: API,
+        GITHUB_OUTPUT: path.join(directory, "output"),
+        GITHUB_STEP_SUMMARY: path.join(directory, "summary"),
+      },
+      fetchImpl: stubFetch({
+        releases: [release("0.4.1")],
+        manifest: manifest("0.4.1", { platforms: full }),
+        manifestUrl: manifestUrlFor("0.4.1"),
+        packageJson: pins({ next: "16.3.1", sharp: "0.35.3" }),
+      }).fetchImpl,
+    });
+  } finally {
+    console.warn = realWarn;
+    rmSync(directory, { recursive: true, force: true });
+  }
+  assert.equal(warnings.length, 1);
+  assert.ok(doc.includes(warnings[0]), `the runbook quotes the floor annotation verbatim:\n${warnings[0]}`);
 });
 
 test("the runbook's coverage section still describes what the gate emits", async () => {
@@ -967,7 +1236,13 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
     assert.equal(outputs["baseline-waived"], "false");
     assert.equal(outputs["rollback-platforms"], "darwin-aarch64,windows-x86_64");
     assert.equal(outputs["rollback-platforms-missing"], "darwin-x86_64,linux-x86_64");
+    assert.equal(outputs["baseline-floor-clear"], "true");
+    assert.equal(outputs["baseline-floor-problems"], "");
     const summaryText = readFileSync(summaryPath, "utf8");
+    assert.match(
+      summaryText,
+      /Pinned dependencies clear the bundled-dependency floor: next 16\.3\.8 >= 16\.3\.3, sharp 0\.35\.5 >= 0\.35\.4/,
+    );
     assert.match(summaryText, /Rollback readiness verified[\s\S]*v0\.3\.7/);
     // The record has to carry the shortfall, not merely the coverage: this
     // fixture is 2-of-4, and a summary listing only what IS covered leaves a
@@ -998,6 +1273,9 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
     assert.match(waived, /^baseline-tag=$/m);
     assert.match(waived, /^rollback-platforms=$/m);
     assert.match(waived, /^rollback-platforms-missing=$/m);
+    // Empty, not "true": no baseline is not a baseline that clears the floor.
+    assert.match(waived, /^baseline-floor-clear=$/m);
+    assert.match(waived, /^baseline-floor-problems=$/m);
     assert.match(readFileSync(waivedSummary, "utf8"), /none — waived as a first release/);
     // A first release has no baseline to be short of, so the coverage warning
     // must NOT fire here. Computing `missingPlatforms` for the waived branch

@@ -547,7 +547,7 @@ async function publishNoReplace(input: {
   await assertStableLayout(input.layout);
   await assertStableDirectory(input.directory, input.label);
   const temporary = path.join(
-    input.directory.path,
+    /* turbopackIgnore: true */ input.directory.path,
     `.tmp-${process.pid}-${randomBytes(12).toString("hex")}`,
   );
   let handle: FileHandle | null = null;
@@ -616,7 +616,7 @@ async function publishReplace(input: {
   await assertStableLayout(input.layout);
   await assertStableDirectory(input.directory, input.label);
   const temporary = path.join(
-    input.directory.path,
+    /* turbopackIgnore: true */ input.directory.path,
     `.tmp-${process.pid}-${randomBytes(12).toString("hex")}`,
   );
   let handle: FileHandle | null = null;
@@ -708,12 +708,12 @@ function parseJson(bytes: Uint8Array, label: string): unknown {
 
 function snapshotFile(layout: StoreLayout, snapshotId: string): string {
   assertSnapshotId(snapshotId);
-  return path.join(layout.snapshots.path, `${snapshotId}.json`);
+  return path.join(/* turbopackIgnore: true */ layout.snapshots.path, `${snapshotId}.json`);
 }
 
 function manifestFile(layout: StoreLayout, resourceId: string): string {
   assertResourceId(resourceId);
-  return path.join(layout.manifests.path, `${resourceId}.json`);
+  return path.join(/* turbopackIgnore: true */ layout.manifests.path, `${resourceId}.json`);
 }
 
 async function assertStableLayout(layout: StoreLayout): Promise<void> {
@@ -739,20 +739,20 @@ async function ensureLayout(root: string): Promise<StoreLayout> {
   await mkdir(root, { recursive: true, mode: DIRECTORY_MODE });
   const rootIdentity = await ensureRealDirectory(root, null, "store root");
   const rootRealPath = await realpath(root);
-  const manifests = await ensureRealDirectory(path.join(root, "manifests"), rootRealPath, "manifests");
-  const snapshots = await ensureRealDirectory(path.join(root, "snapshots"), rootRealPath, "snapshots");
-  const blobs = await ensureRealDirectory(path.join(root, "blobs"), rootRealPath, "blobs");
-  const sha256 = await ensureRealDirectory(path.join(root, "blobs", "sha256"), rootRealPath, "sha256 blobs");
-  const locks = await ensureRealDirectory(path.join(root, "locks"), rootRealPath, "locks");
-  const intents = await ensureRealDirectory(path.join(root, "locks", "intents"), rootRealPath, "lock intents");
-  const jobs = await ensureRealDirectory(path.join(root, "jobs"), rootRealPath, "jobs");
+  const manifests = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "manifests"), rootRealPath, "manifests");
+  const snapshots = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "snapshots"), rootRealPath, "snapshots");
+  const blobs = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "blobs"), rootRealPath, "blobs");
+  const sha256 = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "blobs", "sha256"), rootRealPath, "sha256 blobs");
+  const locks = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "locks"), rootRealPath, "locks");
+  const intents = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "locks", "intents"), rootRealPath, "lock intents");
+  const jobs = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "jobs"), rootRealPath, "jobs");
   const embeddingTasks = await ensureRealDirectory(
-    path.join(root, "embedding-tasks"), rootRealPath, "embedding tasks",
+    path.join(/* turbopackIgnore: true */ root, "embedding-tasks"), rootRealPath, "embedding tasks",
   );
-  const failures = await ensureRealDirectory(path.join(root, "failures"), rootRealPath, "failures");
-  const fences = await ensureRealDirectory(path.join(root, "fences"), rootRealPath, "fences");
-  const deletions = await ensureRealDirectory(path.join(root, "deletions"), rootRealPath, "deletions");
-  const tombstones = await ensureRealDirectory(path.join(root, "tombstones"), rootRealPath, "tombstones");
+  const failures = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "failures"), rootRealPath, "failures");
+  const fences = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "fences"), rootRealPath, "fences");
+  const deletions = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "deletions"), rootRealPath, "deletions");
+  const tombstones = await ensureRealDirectory(path.join(/* turbopackIgnore: true */ root, "tombstones"), rootRealPath, "tombstones");
   return {
     root: rootIdentity,
     rootRealPath,
@@ -777,7 +777,7 @@ async function ensureShard(layout: StoreLayout, digest: string): Promise<PathIde
   }
   await assertStableLayout(layout);
   return ensureRealDirectory(
-    path.join(layout.sha256.path, digest.slice(0, 2)),
+    path.join(/* turbopackIgnore: true */ layout.sha256.path, digest.slice(0, 2)),
     layout.rootRealPath,
     `blob shard ${digest.slice(0, 2)}`,
   );
@@ -788,7 +788,7 @@ async function existingShard(layout: StoreLayout, digest: string): Promise<PathI
     throw new ResearchResourceStoreError("invalid-snapshot", "blob digest is not lowercase SHA-256");
   }
   await assertStableLayout(layout);
-  const shardPath = path.join(layout.sha256.path, digest.slice(0, 2));
+  const shardPath = path.join(/* turbopackIgnore: true */ layout.sha256.path, digest.slice(0, 2));
   const metadata = await pathMetadata(shardPath, `blob shard ${digest.slice(0, 2)} is missing`);
   if (metadata.isSymbolicLink()) {
     throw new ResearchResourceStoreError("symlink", `blob shard ${digest.slice(0, 2)} is a symlink`);
@@ -822,7 +822,7 @@ async function publishBlob(layout: StoreLayout, digest: string, bytes: Uint8Arra
   await publishNoReplace({
     layout,
     directory: shard,
-    target: path.join(shard.path, digest),
+    target: path.join(/* turbopackIgnore: true */ shard.path, digest),
     bytes,
     label: `blob ${digest}`,
     maxBytes: MAX_RESEARCH_RESOURCE_BLOB_BYTES,
@@ -833,7 +833,7 @@ async function publishBlob(layout: StoreLayout, digest: string, bytes: Uint8Arra
 async function readBlob(layout: StoreLayout, digest: string): Promise<Uint8Array> {
   const shard = await existingShard(layout, digest);
   const bytes = await readSafeFile({
-    target: path.join(shard.path, digest),
+    target: path.join(/* turbopackIgnore: true */ shard.path, digest),
     rootRealPath: layout.rootRealPath,
     label: `blob ${digest}`,
     maxBytes: MAX_RESEARCH_RESOURCE_BLOB_BYTES,
@@ -1644,7 +1644,7 @@ async function scanOperationalRecords<T>(input: {
       throw new ResearchResourceStoreError("corrupt", `unsafe ${input.label} entry ${name}`);
     }
     const record = await readSafeFileWithIdentity({
-      target: path.join(input.directory.path, name),
+      target: path.join(/* turbopackIgnore: true */ input.directory.path, name),
       rootRealPath: input.layout.rootRealPath,
       label: `${input.label} ${id}`,
       maxBytes: MAX_OPERATIONAL_RECORD_BYTES,
@@ -1682,14 +1682,14 @@ async function createOperationalRecord<T>(input: {
   const result = await publishNoReplace({
     layout: input.layout,
     directory: input.directory,
-    target: path.join(input.directory.path, `${input.id}.json`),
+    target: path.join(/* turbopackIgnore: true */ input.directory.path, `${input.id}.json`),
     bytes,
     label: `${input.label} ${input.id}`,
     maxBytes: MAX_OPERATIONAL_RECORD_BYTES,
     existingMismatchCode: "immutable-conflict",
   });
   const published = await readSafeFileWithIdentity({
-    target: path.join(input.directory.path, `${input.id}.json`),
+    target: path.join(/* turbopackIgnore: true */ input.directory.path, `${input.id}.json`),
     rootRealPath: input.layout.rootRealPath,
     label: `${input.label} ${input.id}`,
     maxBytes: MAX_OPERATIONAL_RECORD_BYTES,
@@ -1716,7 +1716,7 @@ async function replaceOperationalRecord<T>(input: {
   const published = await publishReplace({
     layout: input.layout,
     directory: input.directory,
-    target: path.join(input.directory.path, `${input.id}.json`),
+    target: path.join(/* turbopackIgnore: true */ input.directory.path, `${input.id}.json`),
     bytes: operationalBytes(input.value, `${input.label} ${input.id}`),
     expectedBytes: operationalBytes(input.expected, `${input.label} ${input.id}`),
     label: `${input.label} ${input.id}`,
@@ -1742,7 +1742,7 @@ async function removeOperationalRecord<T>(input: {
     throw new ResearchResourceStoreError("revision-conflict", `${input.label} ${input.id} changed`);
   }
   const disk = await readSafeFileWithIdentity({
-    target: path.join(input.directory.path, `${input.id}.json`),
+    target: path.join(/* turbopackIgnore: true */ input.directory.path, `${input.id}.json`),
     rootRealPath: input.layout.rootRealPath,
     label: `${input.label} ${input.id}`,
     maxBytes: MAX_OPERATIONAL_RECORD_BYTES,
@@ -1751,7 +1751,7 @@ async function removeOperationalRecord<T>(input: {
       !Buffer.from(disk.bytes).equals(Buffer.from(operationalBytes(current, `${input.label} ${input.id}`)))) {
     throw new ResearchResourceStoreError("revision-conflict", `${input.label} ${input.id} changed before deletion`);
   }
-  await unlink(path.join(input.directory.path, `${input.id}.json`));
+  await unlink(path.join(/* turbopackIgnore: true */ input.directory.path, `${input.id}.json`));
   await syncDirectory(input.directory.path);
   input.collection.records.delete(input.id);
   input.collection.identities.delete(input.id);
@@ -1938,7 +1938,7 @@ async function collectUnreferencedBlobs(
       throw new ResearchResourceStoreError("corrupt", `unexpected blob shard ${shardName}`);
     }
     const shard = await ensureRealDirectory(
-      path.join(layout.sha256.path, shardName),
+      path.join(/* turbopackIgnore: true */ layout.sha256.path, shardName),
       layout.rootRealPath,
       `blob shard ${shardName}`,
     );
@@ -1955,7 +1955,7 @@ async function collectUnreferencedBlobs(
         throw new ResearchResourceStoreError("corrupt", `unexpected blob entry ${digest}`);
       }
       const record = await readSafeFileWithIdentity({
-        target: path.join(shard.path, digest),
+        target: path.join(/* turbopackIgnore: true */ shard.path, digest),
         rootRealPath: layout.rootRealPath,
         label: `blob ${digest}`,
         maxBytes: MAX_RESEARCH_RESOURCE_BLOB_BYTES,
@@ -1969,7 +1969,7 @@ async function collectUnreferencedBlobs(
   const removed: string[] = [];
   for (const candidate of candidates) {
     await assertStableDirectory(candidate.shard, `blob shard ${candidate.digest.slice(0, 2)}`);
-    const target = path.join(candidate.shard.path, candidate.digest);
+    const target = path.join(/* turbopackIgnore: true */ candidate.shard.path, candidate.digest);
     const current = await pathMetadata(target, `blob ${candidate.digest} is missing`);
     if (current.isSymbolicLink() || !current.isFile() || current.nlink !== 1 ||
         !sameIdentity(candidate.identity, current)) {
@@ -2034,7 +2034,7 @@ export async function withResearchResourceMaintenanceLock<T>(
   if (!path.isAbsolute(rootInput)) {
     throw new ResearchResourceStoreError("unsafe-path", "Research Resource store root must be absolute");
   }
-  const root = path.resolve(rootInput);
+  const root = path.resolve(/* turbopackIgnore: true */ rootInput);
   const layout = await ensureLayout(root);
   return withProcessIntentLock({
     intentsDirectory: layout.intents.path,
@@ -2064,7 +2064,7 @@ async function purgeRestoreDisposableDirectory(
   for (const name of names.sort()) {
     await assertStableLayout(layout);
     await assertStableDirectory(directory, label);
-    const target = path.join(directory.path, name);
+    const target = path.join(/* turbopackIgnore: true */ directory.path, name);
     const before = await pathMetadata(target, `${label} restore residue is missing`);
     if (before.isSymbolicLink()) {
       throw new ResearchResourceStoreError("symlink", `${label} restore residue is a symlink`);
@@ -2130,7 +2130,7 @@ export async function purgeResearchResourceRestoreDisposableState(
   if (!path.isAbsolute(rootInput)) {
     throw new ResearchResourceStoreError("unsafe-path", "Research Resource store root must be absolute");
   }
-  const root = path.resolve(rootInput);
+  const root = path.resolve(/* turbopackIgnore: true */ rootInput);
   return withResearchResourceMaintenanceLock(root, async () => {
     const layout = await ensureLayout(root);
     await assertStableLayout(layout);

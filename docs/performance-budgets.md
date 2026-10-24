@@ -21,6 +21,7 @@ entry is treated:
 | --- | --- | --- |
 | `performance-report` | Evaluated by `scripts/cave-performance-report.mjs` against the metrics that run produced. | Yes |
 | `postbuild` | Already enforced by a build-time gate; recorded here for completeness and deliberately not re-evaluated. | No — its own gate fails the build |
+| `browser-performance` | Enforced by the isolated production stream browser run. The file/list report delegates to that run. | No — the browser gate fails its own run |
 | `pending` | Value approved and recorded, but no fixture produces the measurement yet. | No — but it is printed on every run |
 
 `postbuild` entries are not re-checked on purpose. Two gates over one number
@@ -81,13 +82,13 @@ mean guessing which `scripts/*.mjs` constants are budgets, which is a heuristic
 and not a gate. Adding a build-time budget means adding it to the catalogue and
 to the test's gate list.
 
-`pending` entries are the honest half. The warm/offline shell deadlines, the
-10k-event stream ceiling, and the `coven doctor` deadline are approved numbers
+`pending` entries are the honest half. The warm/offline shell deadlines and the
+`coven doctor` deadline are approved numbers
 with no harness behind them yet; they appear in every report so the gap stays
 visible instead of being mistaken for coverage.
 
 **A `pending` source may be prose only when no code in this repository owns the
-number.** The shell and stream deadlines qualify: nothing declares them, so the
+number.** The shell deadlines qualify: nothing declares them, so the
 source names the issue that does. `cli.doctor.p95-ms` did not — it is the exec
 route's own request timeout, and it shipped as the prose "matches
 `EXEC_TIMEOUT_MS` in `src/app/api/coven/exec/route.ts`", a claim about a
@@ -97,6 +98,60 @@ naming a repository file now takes the same resolvable `<file> (<CONSTANT>)`
 form as a `postbuild` entry, the unit suite reads the declaration and asserts
 the limit equals it, and prose that merely *mentions* a `.ts` or `.mjs` path is
 rejected outright so the checkable case cannot be re-opened by wording.
+
+## Production stream gate
+
+Run `pnpm performance:stream` from a worktree with its own installed dependencies
+and no local dotenv files. It builds production code and runs only
+`tests/chat-stream-performance.spec.ts`, with one Chromium worker and no retries.
+The existing performance workflow runs the same command on Ubuntu 24.04.
+
+Each delivery pattern has 100 fresh browser contexts, a 1,000-turn starting
+history, and exactly 10,000 numbered SSE records: a session, 9,998 text chunks
+and completion. The uniquely indexed text is 89,294 bytes; framing is 618,430
+bytes. Burst delivery enqueues all frames together; paced delivery schedules
+100-frame batches 10 ms apart. Actual delivery times are recorded because
+timer scheduling is not an exact clock. Both patterns must render the complete
+ordered response across all 100 paragraphs with word separators intact, reach
+completion, send once and preserve the unsent draft.
+
+The gate measures the longest main-thread Long Task overlapping stream release
+through confirmed rendered completion, including a task already running at
+release. Chromium's observer reports tasks of at least 50 ms: zero means none
+was observed, not zero execution time. Unsupported observers, missing trials,
+invalid timing or incomplete workload/semantic evidence fail closed.
+
+For each pattern separately, the empirical p95 is sorted sample 95 of 100
+(nearest rank), and must be at most the catalogue's existing **200 ms** ceiling.
+The maximum and all raw trials remain visible. This is a browser regression
+gate on a fixed workload, not a population SLO or an INP measurement. It does
+not change the five-sample list benchmark's median rule.
+
+`pnpm performance:stream --control` injects a 260 ms main-thread stall into six
+trials per pattern. It must fail the same p95 gate with complete samples.
+The workflow's `stream_control` input runs this deliberate failure, then
+`scripts/verify-stream-control.mjs` checks the CLI exit, complete raw samples,
+expected clean commit and Playwright results. The workflow passes only when
+both patterns fail solely on the expected latency assertion, with no runner
+errors, retries or missing evidence. The CLI still exits unsuccessfully.
+
+Reports, invocation/build/browser/machine metadata and initial screenshots live
+under `artifacts/stream-performance/<invocation-id>/`, alongside Playwright's
+JSON result and, for a verified workflow control, `control-verification.json`.
+Failed runs retain their
+samples; the workflow uploads evidence even when the gate fails. The launcher
+removes ambient credential and Node injection variables, retains browser-cache
+access, and puts build/server homes, stores, vault and env-file paths under an
+owned temporary directory named in the invocation report. Synthetic state is
+preserved for diagnosis. Playwright owns the server and browser lifetime and
+refuses to attach to an existing server on the selected E2E port.
+
+The real production parser, coalescer and renderer consume a synthetic browser
+ReadableStream. API fixtures and blocked external traffic isolate application
+work from provider, daemon, network and persistence latency. Route interception
+disables HTTP caching; fresh contexts share the built server and browser process,
+so this is not a cold-launch benchmark. Native and real-daemon evidence remain
+separate. See [#6137](https://github.com/OpenCoven/coven-cave/issues/6137).
 
 ## Missing measurements fail closed
 

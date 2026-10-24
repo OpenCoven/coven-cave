@@ -202,7 +202,7 @@ async function ensureRealDirectory(
 
 async function publishNoReplace(target: string, bytes: Uint8Array): Promise<boolean> {
   const directory = path.dirname(target);
-  const temporary = path.join(directory, `.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`);
+  const temporary = path.join(/* turbopackIgnore: true */ directory, `.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`);
   let handle: FileHandle | null = null;
   try {
     handle = await open(temporary, exclusiveWriteFlags(), FILE_MODE);
@@ -331,18 +331,18 @@ type StoreLayout = {
 };
 
 async function openLayout(rootInput: string): Promise<StoreLayout> {
-  const root = path.resolve(rootInput);
+  const root = path.resolve(/* turbopackIgnore: true */ rootInput);
   await mkdir(root, { mode: DIRECTORY_MODE, recursive: true });
   const rootIdentity = await ensureRealDirectory(root, null, "root");
   const rootRealPath = await realpath(root);
   void rootIdentity;
-  const manifestsDir = path.join(root, "manifests");
-  const blobsParentDir = path.join(root, "blobs");
-  const blobsDir = path.join(blobsParentDir, "sha256");
-  const redactionsDir = path.join(root, "redactions");
-  const receiptsDir = path.join(root, "receipts");
-  const locksParentDir = path.join(root, "locks");
-  const locksDir = path.join(locksParentDir, "intents");
+  const manifestsDir = path.join(/* turbopackIgnore: true */ root, "manifests");
+  const blobsParentDir = path.join(/* turbopackIgnore: true */ root, "blobs");
+  const blobsDir = path.join(/* turbopackIgnore: true */ blobsParentDir, "sha256");
+  const redactionsDir = path.join(/* turbopackIgnore: true */ root, "redactions");
+  const receiptsDir = path.join(/* turbopackIgnore: true */ root, "receipts");
+  const locksParentDir = path.join(/* turbopackIgnore: true */ root, "locks");
+  const locksDir = path.join(/* turbopackIgnore: true */ locksParentDir, "intents");
   await ensureRealDirectory(manifestsDir, rootRealPath, "manifests");
   await ensureRealDirectory(blobsParentDir, rootRealPath, "blobs");
   await ensureRealDirectory(blobsDir, rootRealPath, "blobs/sha256");
@@ -354,15 +354,15 @@ async function openLayout(rootInput: string): Promise<StoreLayout> {
 }
 
 function manifestPath(layout: StoreLayout, packId: string): string {
-  return path.join(layout.manifestsDir, `${packId}.json`);
+  return path.join(/* turbopackIgnore: true */ layout.manifestsDir, `${packId}.json`);
 }
 
 function receiptPath(layout: StoreLayout, packId: string): string {
-  return path.join(layout.receiptsDir, `${packId}.json`);
+  return path.join(/* turbopackIgnore: true */ layout.receiptsDir, `${packId}.json`);
 }
 
 function blobPath(layout: StoreLayout, digest: string): string {
-  return path.join(layout.blobsDir, digest.slice(0, 2), digest);
+  return path.join(/* turbopackIgnore: true */ layout.blobsDir, digest.slice(0, 2), digest);
 }
 
 async function parseManifestFile(layout: StoreLayout, packId: string): Promise<ContextPackV1> {
@@ -429,7 +429,7 @@ async function verifyRedactionMap(
   const expected = pack.transforms.redactionMapDigest;
   if (!expected) return undefined;
   const { bytes } = await readSafeFileWithIdentity(
-    path.join(layout.redactionsDir, `${expected}.json`),
+    path.join(/* turbopackIgnore: true */ layout.redactionsDir, `${expected}.json`),
     `redaction map ${expected}`,
     REDACTION_MAP_BYTES,
   );
@@ -445,7 +445,7 @@ async function verifyRedactionMap(
 }
 
 export function createContextPackStore(options: { root?: string } = {}): ContextPackStore {
-  const root = options.root ?? path.join(caveHome(), "research-context-packs");
+  const root = options.root ?? path.join(/* turbopackIgnore: true */ caveHome(), "research-context-packs");
 
   return {
     async publishPack(input) {
@@ -501,7 +501,7 @@ export function createContextPackStore(options: { root?: string } = {}): Context
         }
         if (hasRedactionMap && input.redactionMap) {
           const digest = parsedPack.transforms.redactionMapDigest;
-          await publishNoReplace(path.join(layout.redactionsDir, `${digest}.json`), input.redactionMap);
+          await publishNoReplace(path.join(/* turbopackIgnore: true */ layout.redactionsDir, `${digest}.json`), input.redactionMap);
         }
         await publishNoReplace(receiptPath(layout, parsedPack.id), new TextEncoder().encode(`${JSON.stringify(input.receipt)}\n`));
 
@@ -571,7 +571,7 @@ export function createContextPackStore(options: { root?: string } = {}): Context
         await syncDirectory(layout.manifestsDir);
         await unlink(receiptPath(layout, id)).catch(() => {});
         if (pack.transforms.redactionMapDigest) {
-          await unlink(path.join(layout.redactionsDir, `${pack.transforms.redactionMapDigest}.json`)).catch(() => {});
+          await unlink(path.join(/* turbopackIgnore: true */ layout.redactionsDir, `${pack.transforms.redactionMapDigest}.json`)).catch(() => {});
         }
         await syncDirectory(layout.manifestsDir);
 
@@ -620,7 +620,7 @@ export function createContextPackStore(options: { root?: string } = {}): Context
 export async function reconcileRestoredContextPacks(options: {
   root?: string;
 } = {}): Promise<{ validated: number; invalid: number }> {
-  const layout = await openLayout(options.root ?? path.join(caveHome(), "research-context-packs"));
+  const layout = await openLayout(options.root ?? path.join(/* turbopackIgnore: true */ caveHome(), "research-context-packs"));
   let entries: string[] = [];
   try {
     entries = await readdir(/* turbopackIgnore: true */ layout.manifestsDir);

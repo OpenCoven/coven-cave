@@ -240,7 +240,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /className="cave-chat-meta-line__meta"[^>]*aria-live="polite"/,
+  /className="cave-chat-meta-line__meta(?: [^"]*)?"[^>]*aria-live="polite"/,
   "the live region is the meta text span",
 );
 

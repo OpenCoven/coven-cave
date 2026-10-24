@@ -683,7 +683,7 @@ export function parseOpenClawAgentList(value: unknown): OpenClawAgentSummary[] {
 
 export async function readOpenClawAgentBinding(familiarId: string): Promise<string | null> {
   try {
-    const raw = await readFile(path.join(covenHome(), "familiars.toml"), "utf8");
+    const raw = await readFile(path.join(/* turbopackIgnore: true */ covenHome(), "familiars.toml"), "utf8");
     const blocks = raw.split(/^\s*\[\[familiar\]\]\s*$/m).slice(1);
     for (const block of blocks) {
       if (readTomlString(block, "id") !== familiarId) continue;

@@ -46,6 +46,9 @@ const DEFAULT_VISIBLE = () => true;
 const DEFAULT_NOW = () =>
   typeof performance === "undefined" ? Date.now() : performance.now();
 const FRONTEND_RECONNECT_TIMEOUT_MS = 30_000;
+// The server health probe is bounded to 1.5s (3s hard transport deadline).
+// Leave room for server work while bounding the entire HTTP read, including JSON.
+const STATUS_READ_TIMEOUT_MS = 10_000;
 
 function normalizedRandomSample(random: () => number): number {
   const sample = random();
@@ -55,19 +58,12 @@ function normalizedRandomSample(random: () => number): number {
   return sample;
 }
 
-function isAbortError(error: unknown): boolean {
-  return typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    error.name === "AbortError";
-}
-
-function fallbackUnavailablePoll(): DaemonConnectionPoll {
+function fallbackUnavailablePoll(error = "status request failed"): DaemonConnectionPoll {
   return {
     responseStatus: 0,
     responseOk: false,
     payload: null,
-    error: "status request failed",
+    error,
   };
 }
 
@@ -142,8 +138,7 @@ export function createDaemonConnectionSupervisor<Handle = TimerHandle>(
   function isAuthoritativeRequest(request: ActiveRequest): boolean {
     return canRun() &&
       activeRequest === request &&
-      generation === request.generation &&
-      !request.controller.signal.aborted;
+      generation === request.generation;
   }
 
   function armNextTimer(authoritativeGeneration: number, delayMs: number): boolean {
@@ -233,6 +228,36 @@ export function createDaemonConnectionSupervisor<Handle = TimerHandle>(
     finishEpisode("cancelled", "cancellation");
   }
 
+  function readStatus(request: ActiveRequest, fresh: boolean): Promise<DaemonConnectionPoll | null> {
+    return new Promise((resolve) => {
+      let settled = false;
+      let deadline: Handle | null = null;
+      const signal = request.controller.signal;
+      const cancel = () => finish(null);
+      const finish = (poll: DaemonConnectionPoll | null) => {
+        if (settled) return;
+        settled = true;
+        if (deadline !== null) cancelSchedule(deadline);
+        signal.removeEventListener("abort", cancel);
+        resolve(poll);
+      };
+      signal.addEventListener("abort", cancel, { once: true });
+      deadline = schedule(() => {
+        if (settled) return;
+        // Settle before aborting so a transport's AbortError cannot hide the
+        // timeout. Authority is fenced by activeRequest/generation, not signal.
+        finish(fallbackUnavailablePoll("status request timed out"));
+        request.controller.abort();
+      }, STATUS_READ_TIMEOUT_MS);
+      const failed = () => finish(signal.aborted ? null : fallbackUnavailablePoll());
+      try {
+        dependencies.request({ signal, fresh }).then(finish, failed);
+      } catch {
+        failed();
+      }
+    });
+  }
+
   function beginRequest(fresh: boolean): Promise<void> {
     const requestStartedAt = now();
     const currentEpisodeId = episodeId ?? beginEpisode(requestStartedAt, fresh);
@@ -248,18 +273,8 @@ export function createDaemonConnectionSupervisor<Handle = TimerHandle>(
     activeRequest = request;
 
     const pending = (async () => {
-      let poll: DaemonConnectionPoll;
-      try {
-        poll = await dependencies.request({
-          signal: request.controller.signal,
-          fresh,
-        });
-      } catch (error) {
-        if (request.controller.signal.aborted || isAbortError(error)) return;
-        poll = fallbackUnavailablePoll();
-      }
-
-      if (!isAuthoritativeRequest(request)) return;
+      const poll = await readStatus(request, fresh);
+      if (poll === null || !isAuthoritativeRequest(request)) return;
 
       dependencies.publish(poll, { fresh });
       const status = classifyDaemonStatusPoll(poll);

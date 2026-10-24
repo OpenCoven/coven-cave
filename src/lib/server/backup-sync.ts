@@ -111,7 +111,7 @@ function emptyStatus(): BackupSyncStatus {
 }
 
 function stateFilePath(): string {
-  return path.join(caveHome(), BACKUP_SYNC_STATE_FILE);
+  return path.join(/* turbopackIgnore: true */ caveHome(), BACKUP_SYNC_STATE_FILE);
 }
 
 function sanitizeConfig(raw: unknown): BackupSyncConfig {
@@ -189,9 +189,9 @@ export async function loadBackupSyncStatus(): Promise<BackupSyncStatus> {
  * snapshots never feed back into the next snapshot.
  */
 export function defaultBackupSyncDirectory(): string {
-  const cloudDocs = path.join(homedir(), "Library", "Mobile Documents", "com~apple~CloudDocs");
-  if (existsSync(cloudDocs)) return path.join(cloudDocs, "Coven Cave Backups");
-  return path.join(homedir(), "Documents", "Coven Cave Backups");
+  const cloudDocs = path.join(/* turbopackIgnore: true */ homedir(), "Library", "Mobile Documents", "com~apple~CloudDocs");
+  if (existsSync(cloudDocs)) return path.join(/* turbopackIgnore: true */ cloudDocs, "Coven Cave Backups");
+  return path.join(/* turbopackIgnore: true */ homedir(), "Documents", "Coven Cave Backups");
 }
 
 export function resolveBackupSyncDirectory(config: BackupSyncConfig): string {
@@ -203,9 +203,9 @@ export function resolveBackupSyncDirectory(config: BackupSyncConfig): string {
  * snapshot (archives growing archives). Reject destinations under either home.
  */
 export function validateBackupSyncDirectory(directory: string): string | null {
-  const resolved = path.resolve(directory);
+  const resolved = path.resolve(/* turbopackIgnore: true */ directory);
   for (const home of [covenHome(), caveHome()]) {
-    const rel = path.relative(path.resolve(home), resolved);
+    const rel = path.relative(path.resolve(/* turbopackIgnore: true */ home), resolved);
     if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
       return "Backup destination cannot live inside the Coven home directory.";
     }
@@ -285,7 +285,7 @@ async function pruneSnapshots(directory: string, retainCount: number): Promise<n
     .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
   const excess = snapshots.slice(Math.max(1, retainCount));
   for (const name of excess) {
-    await rm(path.join(directory, name), { force: true }).catch(() => undefined);
+    await rm(path.join(/* turbopackIgnore: true */ directory, name), { force: true }).catch(() => undefined);
   }
   return snapshots.length - excess.length;
 }
@@ -319,7 +319,7 @@ async function runBackupSyncOnce(reason: BackupSyncReason): Promise<BackupSyncSt
     const { archive } = await buildBackupArchive(passphrase);
     await mkdir(directory, { recursive: true });
     const fileName = snapshotFileName(new Date(startedAt));
-    const target = path.join(directory, fileName);
+    const target = path.join(/* turbopackIgnore: true */ directory, fileName);
     await writeFileAtomic(target, archive);
     const written = await stat(target);
     const retainedCount = await pruneSnapshots(directory, state.config.retainCount);

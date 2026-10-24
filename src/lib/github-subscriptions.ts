@@ -79,7 +79,10 @@ export async function loadSubscriptions(): Promise<GithubSubscriptions> {
       cursors:
         parsed.cursors && typeof parsed.cursors === "object" ? { ...parsed.cursors } : {},
     };
-  } catch {
+  } catch (error) {
+    // Only an absent store means default settings. Unreadable or invalid data
+    // must not disable the watcher or become the input to a destructive save.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     return { ...DEFAULTS, events: { ...DEFAULTS.events }, repos: [], cursors: {} };
   }
 }

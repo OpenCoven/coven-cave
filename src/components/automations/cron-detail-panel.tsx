@@ -20,6 +20,8 @@ import { runStatusColor, runStatusIcon } from "@/lib/automations/run-status";
 import { CronDetailSection, CronSummaryTile, FieldLabel } from "@/components/automations/cron-detail-primitives";
 import { CanonicalAutomationHistory } from "@/components/automations/canonical-history";
 import { AutomationSchedulePreview } from "@/components/automations/automation-schedule-preview";
+import { RevisionConflictReview } from "@/components/automations/revision-conflict-review";
+import type { RevisionRebase } from "@/lib/automations/revision-rebase";
 import { AutomationOccurrences } from "@/components/automations/automation-occurrences";
 import { useAutomationFeed, type AutomationFeedChange } from "@/lib/automations/use-automation-feed";
 import { feedStatusText, type AutomationFeedStream } from "@/lib/automations/feed";
@@ -77,6 +79,12 @@ export function CodexDetailPanel({
   onRun,
   runs,
   onCanonicalChange,
+  formResetKey = 0,
+  conflict = null,
+  onConflictSaveMine,
+  onConflictUseTheirs,
+  onConflictKeepEditing,
+  inFlightKey = "",
 }: {
   auto: CodexAutomation;
   /** Coven's canonical lifecycle; the panel's state, badge and controls read only this. */
@@ -94,6 +102,15 @@ export function CodexDetailPanel({
   runs: AutomationRunRecord[];
   /** Coven's changefeed reported a definition change, or lost its position: re-read the lifecycle. */
   onCanonicalChange?: () => void;
+  /** Bumped by the owner to load `auto` into the form even over unsaved edits (after a save, or "Use Coven's version"). */
+  formResetKey?: number;
+  /** A save Coven refused because the definition moved: the review the person resolves. */
+  conflict?: RevisionRebase | null;
+  onConflictSaveMine?: (patch: CodexAutomationPatch, revision: number) => void;
+  onConflictUseTheirs?: () => void;
+  onConflictKeepEditing?: () => void;
+  /** Changes when Coven's scheduler reports this automation in a different state. New occurrences appear on no stream the panel follows. */
+  inFlightKey?: string;
 }) {
   const isActive = lifecycle.state === "active";
   const control = lifecycleControl(lifecycle);
@@ -119,6 +136,14 @@ export function CodexDetailPanel({
       setOccurrenceNonce((value) => value + 1);
     }
   }, []);
+  // The overview's scheduler read notices new occurrences; re-read the ones shown here.
+  const seenInFlightKey = useRef(inFlightKey);
+  useEffect(() => {
+    if (seenInFlightKey.current === inFlightKey) return;
+    seenInFlightKey.current = inFlightKey;
+    setHealthNonce((value) => value + 1);
+    setOccurrenceNonce((value) => value + 1);
+  }, [inFlightKey]);
   const feed = useAutomationFeed(auto.id, watched.automationId === auto.id ? watched.streams : NO_STREAMS, onFeedChange);
   useEffect(() => {
     if (lifecycle.revision === null) return;
@@ -139,8 +164,14 @@ export function CodexDetailPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useFocusTrap(true, panelRef, { onEscape: onClose });
-  const parsedSchedule = useMemo(() => parseCodexRrule(auto.rrule), [auto.rrule]);
-  const promptParts = splitAutomationPrompt(auto.prompt);
+  // The definition the form is editing. A newer copy of `auto` (a reload, or
+  // Coven's definition changing elsewhere) replaces it only while nothing is
+  // being edited, or when the owner says so (`formResetKey`, after a save or
+  // "Use Coven's version"). Unsaved edits are never wiped by a background
+  // reload: Save checks them against Coven's current revision instead.
+  const [formBase, setFormBase] = useState(auto);
+  const parsedSchedule = useMemo(() => parseCodexRrule(formBase.rrule), [formBase.rrule]);
+  const promptParts = splitAutomationPrompt(formBase.prompt);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [runLog, setRunLog] = useState<string>("");
   const [runLogLoading, setRunLogLoading] = useState(false);
@@ -185,9 +216,22 @@ export function CodexDetailPanel({
   const [scheduleDays, setScheduleDays] = useState(parsedSchedule.days);
   const [rawRrule, setRawRrule] = useState(parsedSchedule.raw);
 
+  const dirtyRef = useRef(false);
+  const resetKeyRef = useRef(formResetKey);
+  const [baseMoved, setBaseMoved] = useState(false);
   useEffect(() => {
+    const forced = resetKeyRef.current !== formResetKey;
+    resetKeyRef.current = formResetKey;
+    if (!forced && auto === formBase) return;
+    if (!forced && dirtyRef.current && auto.id === formBase.id) {
+      // Keep the person's edit; Save will review it against Coven first.
+      setBaseMoved(true);
+      return;
+    }
     const nextSchedule = parseCodexRrule(auto.rrule);
     const nextPromptParts = splitAutomationPrompt(auto.prompt);
+    setFormBase(auto);
+    setBaseMoved(false);
     setName(auto.name);
     setGoals(nextPromptParts.goals);
     setDeliverables(nextPromptParts.deliverables);
@@ -201,7 +245,9 @@ export function CodexDetailPanel({
     setScheduleTime(nextSchedule.time);
     setScheduleDays(nextSchedule.days);
     setRawRrule(nextSchedule.raw);
-  }, [auto]);
+    // formBase is read, not tracked: this runs when the incoming copy changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, formResetKey]);
 
   const nextRrule = buildCodexRrule(scheduleMode, scheduleTime, scheduleDays, rawRrule);
   const tags = parseListInput(tagsText);
@@ -209,19 +255,20 @@ export function CodexDetailPanel({
   const promptDirty = goals !== promptParts.goals || deliverables !== promptParts.deliverables;
   const nextPrompt = promptDirty
     ? composeAutomationPrompt(goals, deliverables, promptParts.hasStructuredSections || deliverables.trim().length > 0)
-    : auto.prompt;
+    : formBase.prompt;
   const invalidSchedule =
     !nextRrule.startsWith("RRULE:") || (scheduleMode === "weekly" && scheduleDays.length === 0);
   const dirty =
-    name !== auto.name ||
+    name !== formBase.name ||
     promptDirty ||
-    model !== (auto.model ?? "") ||
-    reasoningEffort !== (auto.reasoningEffort ?? "medium") ||
-    executionEnvironment !== (auto.executionEnvironment ?? "worktree") ||
-    tagsText !== commaInput(auto.tags) ||
-    cwdsText !== listInput(auto.cwds) ||
-    skillPath.trim() !== (auto.skillPath ?? "") ||
-    !sameRoutineRrule(nextRrule, auto.rrule ?? "");
+    model !== (formBase.model ?? "") ||
+    reasoningEffort !== (formBase.reasoningEffort ?? "medium") ||
+    executionEnvironment !== (formBase.executionEnvironment ?? "worktree") ||
+    tagsText !== commaInput(formBase.tags) ||
+    cwdsText !== listInput(formBase.cwds) ||
+    skillPath.trim() !== (formBase.skillPath ?? "") ||
+    !sameRoutineRrule(nextRrule, formBase.rrule ?? "");
+  dirtyRef.current = dirty;
   const canSave = !busy && dirty && name.trim().length > 0 && !invalidSchedule;
 
   // When Save is disabled because the form is invalid (not merely unchanged),
@@ -243,7 +290,8 @@ export function CodexDetailPanel({
 
   const save = () => {
     if (!canSave) return;
-    onSave(auto, {
+    // The base is what the form was loaded from, so the view can tell whether Coven moved since.
+    onSave(formBase, {
       name: name.trim(),
       prompt: nextPrompt,
       rrule: nextRrule,
@@ -577,6 +625,15 @@ export function CodexDetailPanel({
           key off the pane, not the viewport (cave-hivd). */}
       <div className={`@container flex-1 overflow-y-auto py-5 ${expanded ? "px-6 md:px-8" : "px-5"}`}>
         <div className={`space-y-5${expanded ? " mx-auto w-full max-w-6xl" : ""}`}>
+        {conflict ? (
+          <RevisionConflictReview
+            rebase={conflict}
+            busy={busy}
+            onSaveMine={(patch, revision) => onConflictSaveMine?.(patch, revision)}
+            onUseTheirs={() => onConflictUseTheirs?.()}
+            onKeepEditing={() => onConflictKeepEditing?.()}
+          />
+        ) : null}
         <div className={`cron-detail-summary-grid grid grid-cols-2 gap-2${expanded ? " @min-[900px]:grid-cols-4" : ""}`}>
           <CronSummaryTile label="Schedule" value={auto.scheduleHuman || nextRrule || "Not scheduled"} tone={invalidSchedule ? "danger" : "default"} />
           <CronSummaryTile label="Status" value={lifecycle.freshness === "stale" ? `${stateLabel} (stale)` : stateLabel} tone={isActive ? "active" : "paused"} />
@@ -654,6 +711,11 @@ export function CodexDetailPanel({
         {saveBlockedReason ? (
           <p className="text-[length:var(--text-xs)] [color:var(--color-warning)]!" role="alert">
             {saveBlockedReason}
+          </p>
+        ) : null}
+        {baseMoved && dirty && !conflict ? (
+          <p className="text-[length:var(--text-xs)] [color:var(--color-warning)]!" role="status">
+            Coven&apos;s copy of this cron changed while you were editing. Your edits are kept; saving first shows what changed.
           </p>
         ) : null}
         <Button

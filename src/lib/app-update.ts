@@ -14,6 +14,8 @@ export type DownloadUrls = Partial<Record<DownloadTarget, string>>;
 export type UpdateStatus = {
   /** The running app's version (from package.json via APP_VERSION). */
   current: string;
+  /** Optional untrusted release text; render as text, never executable HTML. */
+  notes?: string;
   /** Latest released version (tag without the leading "v"), or null if unknown. */
   latest: string | null;
   /** True when `latest` is strictly newer than `current`. */
@@ -83,6 +85,7 @@ export function classifyFallbackReleaseCheck(
     available,
     url,
     checkedAt,
+    ...(typeof body.notes === "string" && body.notes.trim() ? { notes: body.notes } : {}),
     ...(record(body.downloads) ? { downloads: body.downloads as DownloadUrls } : {}),
   };
   return available ? { kind: "available", status } : { kind: "current", status };
@@ -193,4 +196,46 @@ export function pickDownloadUrl(
     if (other) return other;
   }
   return status.url;
+}
+
+/**
+ * Why the last Windows update install did not complete, recorded by the native
+ * install watcher and read once after it relaunches Cave (#5981). A successful
+ * install never produces one: the MSI relaunches the new version itself.
+ */
+export type UpdateInstallOutcome = {
+  kind: "cancelled" | "failed" | "notStarted";
+  exitCode: number | null;
+  logPath: string | null;
+};
+
+/** Validates the native outcome; anything malformed is treated as no outcome. */
+export function parseUpdateInstallOutcome(value: unknown): UpdateInstallOutcome | null {
+  const outcome = record(value);
+  if (!outcome) return null;
+  const { kind, exitCode, logPath } = outcome;
+  if (kind !== "cancelled" && kind !== "failed" && kind !== "notStarted") return null;
+  if (exitCode !== null && !(typeof exitCode === "number" && Number.isInteger(exitCode) && exitCode >= 0)) {
+    return null;
+  }
+  if (logPath !== null && typeof logPath !== "string") return null;
+  return { kind, exitCode, logPath: logPath && logPath.trim() ? logPath : null };
+}
+
+/** Banner copy for a recorded outcome. The current version is still installed. */
+export function describeUpdateInstallOutcome(outcome: UpdateInstallOutcome): {
+  title: string;
+  detail: string;
+} {
+  const code = outcome.exitCode === null ? "" : ` (installer code ${outcome.exitCode})`;
+  const title =
+    outcome.kind === "cancelled"
+      ? "Update wasn't installed: the Windows permission prompt was declined or cancelled"
+      : outcome.kind === "notStarted"
+        ? "Update wasn't installed: the Windows installer didn't start"
+        : `Update wasn't installed: the Windows installer failed${code}`;
+  const parts = ["CovenCave is still on the current version. Retry the update when you're ready."];
+  if (outcome.kind === "cancelled" && code) parts.push(`Installer code: ${outcome.exitCode}.`);
+  if (outcome.logPath) parts.push(`Installer log: ${outcome.logPath}`);
+  return { title, detail: parts.join(" ") };
 }

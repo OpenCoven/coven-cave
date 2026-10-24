@@ -5,18 +5,47 @@ import { readFile, writeFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 
-export async function applyInstrumentationTraceExclusions(root) {
+async function readInstrumentationTrace(root) {
   const dist = path.join(root, ".next");
   const tracePath = path.join(dist, "server", "instrumentation.js.nft.json");
   let trace;
   try { trace = JSON.parse(await readFile(tracePath, "utf8")); }
-  catch (error) { if (error.code === "ENOENT") return 0; throw error; }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
   const config = JSON.parse(await readFile(path.join(dist, "required-server-files.json"), "utf8")).config;
   const patterns = config.outputFileTracingExcludes?.["*"] ?? [];
-  if (!patterns.length) return 0;
   const require = createRequire(import.meta.url);
   const picomatch = require("next/dist/compiled/picomatch");
-  const excluded = picomatch(patterns.map(pattern => pattern.replace(/^\.\//, "")), { dot: true });
+  const excluded = patterns.length
+    ? picomatch(patterns.map(pattern => pattern.replace(/^\.\//, "")), { dot: true })
+    : () => false;
+  const relativeOf = file => {
+    const relative = path.relative(root, path.resolve(path.dirname(tracePath), file)).split(path.sep).join("/");
+    return relative.startsWith("../") ? null : relative;
+  };
+  return { dist, tracePath, trace, patterns, excluded, relativeOf };
+}
+
+// The checkout files the raw instrumentation trace lists although the global
+// exclusions cover them (#6082). Next copies every traced file into
+// .next/standalone before applyInstrumentationTraceExclusions can drop it, so
+// each one is read from the live checkout during the build: a git repack or an
+// Xcode build that deletes one mid-copy fails the build with ENOENT. A listed
+// file means a runtime-derived path in the instrumentation graph is globbing
+// the checkout. Call this before applyInstrumentationTraceExclusions rewrites
+// the trace.
+export async function instrumentationTraceLeaks(root) {
+  const loaded = await readInstrumentationTrace(root);
+  if (!loaded) return [];
+  return loaded.trace.files
+    .map(loaded.relativeOf)
+    .filter(relative => relative !== null && loaded.excluded(relative))
+    .sort();
+}
+
+export async function applyInstrumentationTraceExclusions(root) {
+  const loaded = await readInstrumentationTrace(root);
+  if (!loaded || !loaded.patterns.length) return 0;
+  const { dist, tracePath, trace, excluded, relativeOf } = loaded;
   const retained = new Set();
   async function readTraces(dir) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -31,10 +60,9 @@ export async function applyInstrumentationTraceExclusions(root) {
   await readTraces(path.join(dist, "server"));
   const removed = [];
   trace.files = trace.files.filter(file => {
-    const absolute = path.resolve(path.dirname(tracePath), file);
-    const relative = path.relative(root, absolute).split(path.sep).join("/");
-    if (relative.startsWith("../") || !excluded(relative)) return true;
-    if (!retained.has(absolute)) removed.push(relative);
+    const relative = relativeOf(file);
+    if (relative === null || !excluded(relative)) return true;
+    if (!retained.has(path.resolve(path.dirname(tracePath), file))) removed.push(relative);
     return false;
   });
   await writeFile(tracePath, JSON.stringify(trace));

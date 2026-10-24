@@ -1,4 +1,4 @@
 // Explicit Research host contract. Keep exports scoped; never export *.
 export {
-  listRoutineRuns,
-} from "@/lib/server/coven-automations-client";
+  listResearchAutomationRuns as listRoutineRuns,
+} from "@/lib/server/research-automations";

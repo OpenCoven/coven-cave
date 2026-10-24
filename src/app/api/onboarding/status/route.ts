@@ -14,10 +14,7 @@ import {
   covenWrapperSpawnEnv,
   pickWindowsLauncher,
 } from "@/lib/coven-bin";
-import {
-  openCovenToolReadinessStatuses,
-  type OpenCovenToolReadinessStatus,
-} from "@/lib/opencoven-tools-status";
+import { openCovenToolReadinessStatuses } from "@/lib/opencoven-tools-status";
 import {
   COMPATIBILITY_ADAPTERS,
   covenHelpSupportsAdapterList,
@@ -29,6 +26,7 @@ import {
 import { listOpenClawAgents } from "@/lib/openclaw-bridge";
 import {
   bindingReadinessStep,
+  covenCliReadinessStep,
   classifyCommandPathFailure,
   environmentDiscoveryState,
   isConfirmedMissingPath,
@@ -43,7 +41,6 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
-const COVEN_CLI_INSTALL_GUIDANCE = "Install Cave-managed Node.js and npm first, then use Cave's reviewed Coven CLI installer.";
 const ONBOARDING_STATUS_DEADLINE_MS = 4_000;
 const ONBOARDING_DISCOVERY_DEADLINE_MS = 2_000;
 const OPENCLAW_ONBOARDING_DEADLINE_MS = 750;
@@ -90,47 +87,6 @@ async function checkGit(
   return {
     ok: false,
     hint: `Git is required to select and use a Queue project. ${gitInstallHint()}`,
-  };
-}
-
-function checkCovenCli(
-  tool: OpenCovenToolReadinessStatus | undefined,
-  pathProbe: ProbeResult<string>,
-): Step {
-  if (!tool || tool.discoveryError) {
-    return {
-      ok: false,
-      state: "unavailable",
-      hint: "Couldn’t verify the local Coven CLI. You can continue and retry later.",
-    };
-  }
-  if (!tool.installed) {
-    if (pathProbe.state !== "absent") {
-      return {
-        ok: false,
-        state: "unavailable",
-        hint: "Couldn’t verify the local Coven CLI. You can continue and retry later.",
-      };
-    }
-    return {
-      ok: false,
-      hint: `${COVEN_CLI_INSTALL_GUIDANCE} Then re-check.`,
-    };
-  }
-  if (!tool.compatible) {
-    const detail = tool.current
-      ? `Update required: ${tool.current} is below ${tool.minimumVersion}`
-      : "Update required";
-    return {
-      ok: false,
-      detail,
-      hint: `${COVEN_CLI_INSTALL_GUIDANCE} Then re-check.`,
-    };
-  }
-  const location = tool.path ?? tool.binary;
-  return {
-    ok: true,
-    detail: tool.current ? `${tool.current} at ${location}` : `${location} (version unknown)`,
   };
 }
 
@@ -301,7 +257,7 @@ async function loadCovenAdapterSummaries(
 }
 
 async function checkCovenHome(): Promise<Step> {
-  const p = path.join(homedir(), ".coven");
+  const p = path.join(/* turbopackIgnore: true */ homedir(), ".coven");
   try {
     const s = await stat(p);
     if (s.isDirectory()) return { ok: true, detail: p };
@@ -321,7 +277,7 @@ async function checkCovenHome(): Promise<Step> {
 async function checkConfigEvidence(): Promise<"ready" | "unavailable"> {
   try {
     const parsed = JSON.parse(
-      await readFile(path.join(caveHome(), "config.json"), "utf8"),
+      await readFile(path.join(/* turbopackIgnore: true */ caveHome(), "config.json"), "utf8"),
     );
     return parsed && typeof parsed === "object" ? "ready" : "unavailable";
   } catch (error) {
@@ -493,7 +449,7 @@ export async function GET() {
     ? openCovenToolsResult.value
     : null;
   const covenCli: Step = openCovenTools
-    ? checkCovenCli(
+    ? covenCliReadinessStep(
         openCovenTools.find((tool) => tool.id === "coven-cli"),
         covenPathResult,
       )

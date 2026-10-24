@@ -130,6 +130,7 @@ const sectionFiles = {
   profile: ["settings-profile.tsx"],
   general: ["settings-shell.tsx"],
   voice: ["voice-provider-settings.tsx", "voice-engine-settings.tsx"],
+  "local-models": ["settings-local-models.tsx"],
   daemon: ["settings-daemon.tsx", "settings-shell.tsx"],
   mobile: ["settings-phone.tsx"],
   "client-access": ["settings-client-access.tsx"],

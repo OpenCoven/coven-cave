@@ -432,6 +432,15 @@ export function OnboardingOverlay({
                   : "No provider credentials or administrator access are requested."}
           </p>
           <div className="flex items-center gap-2">
+            {state.complete ? (
+              <Button
+                variant="secondary"
+                loading={loading}
+                onClick={() => void request("POST", { confirm: true })}
+              >
+                Run setup again
+              </Button>
+            ) : null}
             {!started && !state.complete ? (
               <>
                 <Button variant="ghost" onClick={dismiss}>

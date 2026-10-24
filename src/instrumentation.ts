@@ -64,7 +64,9 @@ export async function register() {
   const scheduledChat = await import("@/lib/server/scheduled-chat-scheduler");
   scheduledChat.startScheduledChatScheduler();
   const watcher = await import("@/lib/github-watcher");
-  watcher.startGithubWatcher();
+  void watcher.startGithubWatcher().catch((error) => {
+    console.warn("[instrumentation] GitHub watcher failed to start:", error);
+  });
   const backupSync = await import("@/lib/server/backup-sync");
   backupSync.startBackupSyncScheduler();
   try {

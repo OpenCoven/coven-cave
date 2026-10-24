@@ -35,6 +35,8 @@ export type RuntimeModelInventoryResult = RuntimeModelInventory & {
 
 const DYNAMIC_INVENTORY_RUNTIMES = new Set([
   "codex",
+  "codex-ollama",
+  "codex-lmstudio",
   "claude",
   "copilot",
   "opencode",
@@ -65,7 +67,7 @@ const AVAILABILITY = new Set<RuntimeModelInventoryAvailability>([
   "degraded",
   "unavailable",
 ]);
-const PROVIDERS = new Set(["openai", "anthropic", "github", "nous", "xai", null]);
+const PROVIDERS = new Set(["openai", "anthropic", "github", "nous", "xai", "ollama", "lmstudio", null]);
 const SCOPE_STATES = new Set(["familiar", "global", "runtime-managed", "unavailable"]);
 
 export function inventoryFailureProvenance(
@@ -131,7 +133,7 @@ function isInventoryResponse(
       typeof option.id === "string" &&
       typeof option.label === "string"
     ) &&
-    (value.discoveryIssue === undefined || ["discovery-failed", "runtime-managed", "remote-runtime", "local-only", "profile-managed"].includes(value.discoveryIssue)) &&
+    (value.discoveryIssue === undefined || ["discovery-failed", "runtime-managed", "remote-runtime", "local-only", "profile-managed", "local-server-unavailable", "local-endpoint-invalid", "local-no-tool-models", "local-models-on-other-computers"].includes(value.discoveryIssue)) &&
     typeof value.provenance === "string" &&
     PROVENANCE.has(value.provenance as RuntimeModelInventoryProvenance) &&
     typeof value.freshness === "string" &&

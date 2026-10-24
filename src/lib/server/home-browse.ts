@@ -17,7 +17,7 @@ const SKIP = new Set([
 ]);
 
 export function homeRoot(): string {
-  return path.resolve(homedir());
+  return path.resolve(/* turbopackIgnore: true */ homedir());
 }
 
 /**

@@ -61,6 +61,32 @@ test.beforeEach(() => {
   clearConversationCache();
 });
 
+for (const invalidate of [
+  { name: "whole cache clear", run: () => clearConversationCache() },
+  { name: "session invalidation", run: () => invalidateConversation("revoked") },
+]) {
+  for (const status of [200, 304]) {
+    test(`${invalidate.name} fences an in-flight ${status} payload from callers as well as the cache`, async () => {
+      const originalFetch = globalThis.fetch;
+      const previous = payload("synthetic revoked content");
+      storeConversation("revoked", previous, Date.now(), '"prior"');
+      let respond;
+      globalThis.fetch = () => new Promise((resolve) => { respond = resolve; });
+      try {
+        const pending = loadConversation("revoked");
+        invalidate.run();
+        respond(status === 304 ? new Response(null, { status: 304 }) : Response.json(previous));
+        const result = await pending.catch(() => null);
+        assert.equal(result, null, "a caller must not paint or persist the invalidated response");
+        assert.equal(readConversationForPaint("revoked"), null);
+      } finally {
+        globalThis.fetch = originalFetch;
+        clearConversationCache();
+      }
+    });
+  }
+}
+
 test("store + read roundtrip; only ok payloads with a conversation are stored", () => {
   storeConversation("s1", payload("hello"));
   assert.equal(readCachedConversation("s1")?.conversation.turns[0].text, "hello");
@@ -364,7 +390,7 @@ test("chat-view paints cached payloads and shares revalidation with prefetch", a
   assert.match(chatView, /invalidateConversation\(sessionId\)/);
   // Confirmed deletion invalidation is centralized so list, project, header,
   // sidebar, and split-pane deletes cannot drift apart.
-  assert.match(workspace, /for \(const sessionId of confirmedIds\) invalidateConversation\(sessionId\)/);
+  assert.match(workspace, /for \(const sessionId of confirmedIds\) \{\s*invalidateConversation\(sessionId\);\s*invalidateChatAccess\(\{ sessionId, reason: "missing" \}\);/);
 });
 
 test("the transcript fetch is bounded and a timed-out load doesn't pin Retry (#5583)", async () => {
@@ -384,3 +410,32 @@ test("the transcript fetch is bounded and a timed-out load doesn't pin Retry (#5
   assert.equal(retried.conversation.turns[0].text, "after retry", "Retry starts a fresh request");
   assert.equal(calls.length, 2);
 });
+
+for (const status of [401, 403]) {
+  test(`HTTP ${status} invalidates the cached transcript before it can be reopened`, async () => {
+    const originalFetch = globalThis.fetch;
+    clearConversationCache();
+    try {
+      storeConversation("denied-reopen", { ok: true, conversation: { turns: [{ text: "restricted" }] } });
+      globalThis.fetch = async () => Response.json({ error: "Denied" }, { status });
+      await assert.rejects(loadConversation("denied-reopen"));
+      assert.equal(readConversationForPaint("denied-reopen"), null);
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearConversationCache();
+    }
+  });
+}
+
+for (const status of [404, 410]) {
+  test(`HTTP ${status} cannot leave a previously cached conversation available for reopen`, async () => {
+    const originalFetch = globalThis.fetch;
+    clearConversationCache();
+    try {
+      storeConversation("removed-reopen", { ok: true, conversation: { turns: [{ text: "removed" }] } });
+      globalThis.fetch = async () => Response.json({ error: "Unavailable" }, { status });
+      await assert.rejects(loadConversation("removed-reopen"));
+      assert.equal(readConversationForPaint("removed-reopen"), null);
+    } finally { globalThis.fetch = originalFetch; clearConversationCache(); }
+  });
+}

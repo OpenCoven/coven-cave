@@ -4,6 +4,16 @@ import test from "node:test";
 
 const WINDOWS_NATIVE_RUST_STEPS = [
   {
+    name: "Test Windows fatal-dialog helper lifecycle",
+    filter: "startup_failure_dialog::native_tests::helper_survives_failed_host_and_does_not_retain_port_claim",
+    exact: true,
+  },
+  {
+    name: "Test Windows per-port relaunch window discovery",
+    filter: "windows_instance_activation::native::tests::native_window_discovery_requires_port_marker_and_owner",
+    exact: true,
+  },
+  {
     name: "Test Windows native Browser lifecycle reducer",
     filter: "browser::lifecycle_tests",
     exact: false,
@@ -1168,4 +1178,67 @@ test("macOS updater tarball ships no AppleDouble entries (v0.0.167 'app is damag
     /codesign --verify --deep --strict "\$probe_dir\/CovenCave\.app"/,
     "the release script must round-trip the tarball and re-verify the extracted app's code seal",
   );
+});
+
+
+test("Windows setup errors are handled inside Tauri's callback before returning", async () => {
+  const setup = await readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8");
+  assert.match(setup, /let setup_result = \(\|\| -> Result<\(\), Box<dyn std::error::Error>>/);
+  assert.match(setup, /if let Err\(error\) = &setup_result[\s\S]*?shutdown_owned_processes\(app.handle\(\)\)[\s\S]*?fatal_exit\(&message\)/);
+  const lifecycle = await readFile(new URL("./src/platform_lifecycle.rs", import.meta.url), "utf8");
+  assert.match(lifecycle, /MessageBoxW/);
+});
+
+
+test("Windows relaunch uses a per-port main-window marker before refusal", async () => {
+  const lifecycle = await readFile(new URL("./src/platform_lifecycle.rs", import.meta.url), "utf8");
+  const mainWindow = await readFile(new URL("./src/main_window.rs", import.meta.url), "utf8");
+  assert.match(lifecycle, /focus_existing_port_owner\(port, pid\)/);
+  assert.match(mainWindow, /mark_main_window_port/);
+});
+
+
+test("Windows fatal dialogs run outside the exiting host", async () => {
+  const lifecycle = await readFile(new URL("./src/platform_lifecycle.rs", import.meta.url), "utf8");
+  const setup = await readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8");
+  assert.match(lifecycle, /spawn_fatal_dialog_helper\(msg\)/);
+  assert.ok(setup.indexOf("run_fatal_dialog_helper_if_requested") < setup.indexOf("tauri::generate_context!"));
+});
+
+test("Windows startup PRs compile native code without release authority", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/windows-startup.yml", import.meta.url), "utf8");
+  assert.match(workflow, /pull_request:\n    branches: \[main\]/);
+  assert.match(workflow, /'src-tauri\/\*\*'/);
+  assert.match(workflow, /permissions:\n  contents: read/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /runs-on: windows-latest/);
+  assert.match(workflow, /timeout-minutes: 20/);
+  assert.match(workflow, /cargo build --manifest-path src-tauri\/Cargo.toml --locked --bin app/);
+  assert.match(workflow, /COVEN_STARTUP_DIALOG_TEST_EXE/);
+  for (const { filter } of WINDOWS_NATIVE_RUST_STEPS.slice(0, 2)) {
+    assert.ok(workflow.includes(`Invoke-NativeTest '${filter}' 1 -Exact`), filter);
+  }
+  assert.match(workflow, /Invoke-NativeTest 'sidecar_diagnostics::tests' 9/);
+  // Runtime generation retention (#5981) must run on Windows for every PR.
+  assert.match(workflow, /Invoke-NativeTest 'sidecar_archive::tests' 24/);
+  assert.match(workflow, /Invoke-NativeTest 'sidecar_runtime_retention::tests' 5/);
+  // Declined or failed msiexec recovery (#5981) must compile and run on Windows for every PR.
+  assert.match(workflow, /Invoke-NativeTest 'windows_update_recovery::tests' 5/);
+  assert.match(workflow, /if \(\$testExitCode -ne 0\) \{ throw/);
+  assert.match(workflow, /if \(\(\$output -join "`n"\) -notmatch \$summary\) \{ throw/);
+  assert.doesNotMatch(workflow, /pull_request_target|secrets:|contents: write|workflow_dispatch|release\.yml|release-candidate\.yml/);
+});
+
+test("Windows window placement covers packaged and development startup with native regression gates", async () => {
+  const setup = await readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8");
+  const policy = await readFile(new URL("./src/window_placement.rs", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/windows-startup.yml", import.meta.url), "utf8");
+  assert.equal(setup.match(/windows_window_state::initialize\(&window\)\?/g)?.length, 2);
+  assert.match(setup, /windows_window_state::on_event\(window, event\)/);
+  assert.match(policy, /pixels\(1320\.0\), pixels\(820\.0\)/);
+  assert.match(policy, /pixels\(960\.0\)\.min\(available\.0\)/);
+  assert.match(policy, /pixels\(600\.0\)\.min\(available\.1\)/);
+  for (const [filter, count] of [["window_placement::tests", 14], ["windows_window_state::tests", 5], ["windows_tray::tests", 2]]) {
+    assert.ok(workflow.includes(`Invoke-NativeTest '${filter}' ${count}`), filter);
+  }
 });

@@ -213,12 +213,12 @@ function assertVectors(vectors: readonly ResearchSemanticVector[], dimensions: n
 }
 
 function semanticIndexPath(): string {
-  return path.join(caveHome(), "research-resources", "index", "research-resources-semantic.sqlite");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "research-resources", "index", "research-resources-semantic.sqlite");
 }
 
 export function researchResourceSemanticIndexPath(root?: string): string {
   return root
-    ? path.join(root, "index", "research-resources-semantic.sqlite")
+    ? path.join(/* turbopackIgnore: true */ root, "index", "research-resources-semantic.sqlite")
     : semanticIndexPath();
 }
 
@@ -293,7 +293,7 @@ function semanticDeletionLayout(
   rootInput?: string,
 ): { root: StableDirectoryIdentity; index: StableDirectoryIdentity } | null {
   const indexPath = path.dirname(file);
-  const rootPath = rootInput === undefined ? indexPath : path.resolve(rootInput);
+  const rootPath = rootInput === undefined ? indexPath : path.resolve(/* turbopackIgnore: true */ rootInput);
   const relativeIndex = path.relative(rootPath, indexPath);
   if (relativeIndex === ".." || relativeIndex.startsWith(`..${path.sep}`) || path.isAbsolute(relativeIndex)) {
     throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic index escapes the Resource root");
@@ -304,7 +304,7 @@ function semanticDeletionLayout(
     ? root
     : inspectPrivateDirectory(indexPath, "semantic index directory");
   if (!index) return null;
-  const expectedIndexRealPath = path.resolve(root.realPath, relativeIndex);
+  const expectedIndexRealPath = path.resolve(/* turbopackIgnore: true */ root.realPath, relativeIndex);
   if (index.realPath !== expectedIndexRealPath) {
     throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic index directory escapes the Resource root");
   }
@@ -319,7 +319,7 @@ function assertStableDeletionLayout(
     assertStableDirectoryIdentity(layout.index, "semantic index directory");
   }
   const relativeIndex = path.relative(layout.root.path, layout.index.path);
-  if (realpathSync(layout.index.path) !== path.resolve(layout.root.realPath, relativeIndex)) {
+  if (realpathSync(layout.index.path) !== path.resolve(/* turbopackIgnore: true */ layout.root.realPath, relativeIndex)) {
     throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic index directory escapes the Resource root");
   }
 }
@@ -344,14 +344,14 @@ function hardenSqliteFiles(file: string, safetyCheck: () => void = () => {}): vo
   for (const candidate of [file, `${file}-wal`, `${file}-shm`]) {
     safetyCheck();
     if (!existsSync(/* turbopackIgnore: true */ candidate)) continue;
-    const metadata = lstatSync(candidate);
+    const metadata = lstatSync(/* turbopackIgnore: true */ candidate);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
       throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic SQLite sidecar is unsafe");
     }
     assertOwner(metadata, "semantic SQLite sidecar");
     if (process.platform !== "win32" && (metadata.mode & 0o777) !== FILE_MODE) {
       safetyCheck();
-      chmodSync(candidate, FILE_MODE);
+      chmodSync(/* turbopackIgnore: true */ candidate, FILE_MODE);
     }
   }
 }
@@ -375,13 +375,13 @@ function hasActiveRebuildMarker(file: string): boolean {
   const prefix = rebuildMarkerPrefix(file);
   let active = false;
   let removed = false;
-  for (const name of readdirSync(directory)) {
+  for (const name of readdirSync(/* turbopackIgnore: true */ directory)) {
     if (!name.startsWith(prefix)) continue;
     const token = name.slice(prefix.length);
     if (!REBUILD_MARKER_TOKEN.test(token)) {
       throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic rebuild marker is invalid");
     }
-    const candidate = path.join(directory, name);
+    const candidate = path.join(/* turbopackIgnore: true */ directory, name);
     const metadata = lstatSync(candidate);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
       throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic rebuild marker is unsafe");
@@ -400,7 +400,7 @@ function hasActiveRebuildMarker(file: string): boolean {
 
 function beginRebuild(file: string): string {
   const marker = path.join(
-    path.dirname(file),
+    /* turbopackIgnore: true */ path.dirname(file),
     `${rebuildMarkerPrefix(file)}${process.pid}-${randomBytes(12).toString("hex")}`,
   );
   closeSync(openSync(marker, "wx", FILE_MODE));
@@ -463,7 +463,7 @@ function purgeResidualFiles(
   for (const name of readdirSync(/* turbopackIgnore: true */ directory).sort()) {
     if (!residual.test(name)) continue;
     safetyCheck();
-    const candidate = path.join(directory, name);
+    const candidate = path.join(/* turbopackIgnore: true */ directory, name);
     const metadata = lstatSync(candidate);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
       throw new ResearchResourceSemanticIndexError("unsafe-path", "semantic residual file is unsafe");
@@ -489,14 +489,14 @@ function purgeOrphanedCanonicalSidecars(
   for (const candidate of [`${file}-wal`, `${file}-shm`]) {
     safetyCheck();
     if (!existsSync(/* turbopackIgnore: true */ candidate)) continue;
-    const metadata = lstatSync(candidate);
+    const metadata = lstatSync(/* turbopackIgnore: true */ candidate);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
       throw new ResearchResourceSemanticIndexError("unsafe-path", "orphaned semantic SQLite sidecar is unsafe");
     }
     assertOwner(metadata, "orphaned semantic SQLite sidecar");
     beforeDelete(candidate);
     safetyCheck();
-    rmSync(candidate);
+    rmSync(/* turbopackIgnore: true */ candidate);
     removed = true;
   }
   if (removed) {
@@ -945,7 +945,7 @@ export async function removeResearchResourceSemanticPublication(input: {
   ) => void;
 }): Promise<void> {
   assertId(input.resourceId, "resource id");
-  const file = path.resolve(input.file ?? researchResourceSemanticIndexPath(input.root));
+  const file = path.resolve(/* turbopackIgnore: true */ input.file ?? researchResourceSemanticIndexPath(input.root));
   const deletionLayout = semanticDeletionLayout(file, input.root);
   if (!deletionLayout) return;
   assertStableDeletionLayout(deletionLayout);
@@ -1007,13 +1007,13 @@ export async function removeResearchResourceSemanticPublication(input: {
       input.beforeCorruptCanonicalSafetyCheck?.(candidate.boundary);
       assertStableDeletionLayout(deletionLayout);
       if (!existsSync(/* turbopackIgnore: true */ candidate.file)) continue;
-      const metadata = lstatSync(candidate.file);
+      const metadata = lstatSync(/* turbopackIgnore: true */ candidate.file);
       if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
         throw new ResearchResourceSemanticIndexError("unsafe-path", "corrupt semantic database path is unsafe");
       }
       assertOwner(metadata, "corrupt semantic database");
       assertStableDeletionLayout(deletionLayout);
-      rmSync(candidate.file);
+      rmSync(/* turbopackIgnore: true */ candidate.file);
       assertStableDeletionLayout(deletionLayout);
     }
     input.beforeCorruptCanonicalSafetyCheck?.("residual-purge");
@@ -1033,7 +1033,7 @@ export async function rebuildResearchResourceSemanticIndex(
   if (existsSync(/* turbopackIgnore: true */ file)) hardenSqliteFiles(file);
   const expectedIdentity = existsSync(/* turbopackIgnore: true */ file) ? lstatSync(file) : null;
   const temporary = path.join(
-    path.dirname(file),
+    /* turbopackIgnore: true */ path.dirname(file),
     `.research-semantic-${process.pid}-${randomBytes(12).toString("hex")}.sqlite`,
   );
   let candidate: ResearchResourceSemanticIndex | null = null;

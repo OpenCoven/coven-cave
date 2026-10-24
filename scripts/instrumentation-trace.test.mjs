@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile, access } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { applyInstrumentationTraceExclusions } from "./instrumentation-trace.mjs";
+import { applyInstrumentationTraceExclusions, instrumentationTraceLeaks } from "./instrumentation-trace.mjs";
 
 test("applies configured exclusions only and preserves other traces' dependencies", async t => {
   const root = await mkdtemp(path.join(tmpdir(), "cave-trace-"));
@@ -31,4 +31,40 @@ test("does nothing when there is no instrumentation trace", async t => {
   const root = await mkdtemp(path.join(tmpdir(), "cave-trace-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   assert.equal(await applyInstrumentationTraceExclusions(root), 0);
+});
+
+test("lists the raw trace's excluded checkout files, a worktree's .git file included (#6082)", async t => {
+  const root = await mkdtemp(path.join(tmpdir(), "cave-trace-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const write = async (name, value) => {
+    const file = path.join(root, name);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify(value));
+  };
+  await write(".next/required-server-files.json", { config: { outputFileTracingExcludes: { "*": ["./.git", "./.git/**/*", "./src/**/*", "./apps/ios/**/build*/**/*"] } } });
+  await write(".next/server/instrumentation.js.nft.json", { version: 1, files: [
+    "../../src/app/api/config/route.ts",
+    "../../.git",
+    "../../.git/objects/pack/pack-1.idx",
+    "../../apps/ios/CovenCave/build/XCBuildData/build.json",
+    "../../marketplace/payloads.json",
+    "../../node_modules/next/package.json",
+    "../../../outside.json",
+  ] });
+  assert.deepEqual(await instrumentationTraceLeaks(root), [
+    ".git",
+    ".git/objects/pack/pack-1.idx",
+    "apps/ios/CovenCave/build/XCBuildData/build.json",
+    "src/app/api/config/route.ts",
+  ]);
+});
+
+test("reports no leaks without an instrumentation trace or without exclusions", async t => {
+  const root = await mkdtemp(path.join(tmpdir(), "cave-trace-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  assert.deepEqual(await instrumentationTraceLeaks(root), []);
+  await mkdir(path.join(root, ".next/server"), { recursive: true });
+  await writeFile(path.join(root, ".next/required-server-files.json"), JSON.stringify({ config: {} }));
+  await writeFile(path.join(root, ".next/server/instrumentation.js.nft.json"), JSON.stringify({ version: 1, files: ["../../src/a.ts"] }));
+  assert.deepEqual(await instrumentationTraceLeaks(root), []);
 });

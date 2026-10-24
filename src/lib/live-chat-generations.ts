@@ -36,7 +36,7 @@ export type LiveGenerationRegistry<
    *  snapshot — the same object listeners receive — so a caller can mirror
    *  it into component state without triggering a second render when its
    *  own notification arrives. */
-  record(snapshot: S): S;
+  record(snapshot: S): S | null;
   /** Replace a stored snapshot without notifying listeners. The next turn
    *  advance publishes the staged fields with its normal coalesced update. */
   stage(sessionId: string, updater: (snapshot: S) => S): S | null;
@@ -59,6 +59,8 @@ export type LiveGenerationRegistry<
   /** Clear only when the current snapshot still belongs to the caller. */
   clearIf(sessionId: string, canClear: (snapshot: S) => boolean): boolean;
   clear(sessionId: string | null | undefined): void;
+  /** Access invalidation aborts streams and rejects their queued/late updates. */
+  revoke(sessionId?: string): string[];
   /** Listen for snapshot updates (record/advance) and settle (clear → null).
    *  Notifications are delivered on a microtask. Returns an unsubscriber. */
   subscribe(sessionId: string, listener: LiveGenerationListener<S>): () => void;
@@ -69,6 +71,7 @@ export function createLiveGenerationRegistry<
   S extends LiveGenerationSnapshot<T> = LiveGenerationSnapshot<T>,
 >(cloneTurn: (turn: T) => T): LiveGenerationRegistry<T, S> {
   const snapshots = new Map<string, S>();
+  const revokedControllers = new WeakSet<AbortController>();
   const listeners = new Map<string, Set<LiveGenerationListener<S>>>();
 
   function notify(sessionId: string, snapshot: S | null) {
@@ -77,13 +80,16 @@ export function createLiveGenerationRegistry<
     for (const listener of set) listener(snapshot);
   }
 
-  function record(snapshot: S): S {
+  function record(snapshot: S): S | null {
+    if (revokedControllers.has(snapshot.controller)) return null;
     const next = {
       ...snapshot,
       turns: snapshot.turns.map(cloneTurn),
     } as S;
     snapshots.set(snapshot.sessionId, next);
-    queueMicrotask(() => notify(snapshot.sessionId, next));
+    queueMicrotask(() => {
+      if (!revokedControllers.has(next.controller)) notify(snapshot.sessionId, next);
+    });
     return next;
   }
 
@@ -135,6 +141,25 @@ export function createLiveGenerationRegistry<
       // from disk, and it must fire exactly once per clear call.
       snapshots.delete(sessionId);
       queueMicrotask(() => notify(sessionId, null));
+    },
+    revoke(sessionId) {
+      const targets = sessionId === undefined
+        ? [...new Set([...snapshots.keys(), ...listeners.keys()])]
+        : [sessionId];
+      // Remove every alias sharing a revoked controller before abort handlers
+      // or subscribers can run. The abort is not a claim about tool outcome.
+      const controllers = new Set(targets.flatMap((id) => {
+        const snapshot = snapshots.get(id);
+        return snapshot ? [snapshot.controller] : [];
+      }));
+      for (const [id, snapshot] of snapshots) {
+        if (controllers.has(snapshot.controller) && !targets.includes(id)) targets.push(id);
+      }
+      for (const controller of controllers) revokedControllers.add(controller);
+      for (const id of targets) snapshots.delete(id);
+      for (const controller of controllers) controller.abort();
+      for (const id of targets) notify(id, null);
+      return targets;
     },
     subscribe(sessionId, listener) {
       const set = listeners.get(sessionId) ?? new Set<LiveGenerationListener<S>>();

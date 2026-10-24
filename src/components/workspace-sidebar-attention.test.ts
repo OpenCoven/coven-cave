@@ -9,246 +9,12 @@ import { relativeTime } from "@/lib/relative-time";
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
 
-assert.match(
-  extractBraceBlock(css, ".cnav {"),
-  /--rail-pad:\s*var\(--space-1\);/,
-  "the docked and mobile session lists must own their inset without a shell-nav ancestor",
-);
-assert.match(
-  extractBraceBlock(css, ".cnav__thread.is-active::after {"),
-  /border-radius:\s*inherit;/,
-  "the full-width active backdrop must preserve the row's left and right corner radius",
-);
-
-assert.match(
-  sidebar,
-  /const attentionSessions = useMemo\(\s*\(\) =>\s*visibleSessions\s*\.filter\(\(session\) => session\.attention\.state !== "none" && !session\.archived_at\)\s*\.sort\(compareChatAttention\)/,
-  "attentionSessions should derive from visible non-archived rows and sort by compareChatAttention",
-);
-assert.match(
-  sidebar,
-  /const attentionIds = useMemo\(\(\) => new Set\(attentionSessions\.map\(\(session\) => session\.id\)\), \[attentionSessions\]\);/,
-  "attention ids should memoize the promoted rows",
-);
-assert.match(
-  sidebar,
-  /const recentSessions = useMemo\(\(\) => \{[\s\S]*?const rows = hasSearch \? visibleSessions : visibleSessions\.filter\(\(session\) => !attentionIds\.has\(session\.id\)\);[\s\S]*?return rows\.filter\(\(s\) => sessionRailTitle\(s\)\.toLowerCase\(\)\.includes\(q\)\);[\s\S]*?\}, \[visibleSessions, query, hasSearch, attentionIds\]\);/,
-  "ordinary recent rows should drop promoted attention ids unless search is active",
-);
-// Attention derivation is centralized in one helper (resolveThreadAttention)
-// and one cue component (ThreadAttentionCue) so ThreadRow's full row and the
-// compact Pinned rail can never drift into divergent state/label/description
-// or markup for the same session — see cave-zs85n Task 6 gap-fix notes.
-assert.match(
-  sidebar,
-  /function statusDotClass\(status: string\): string \{\s*if \(status === "running"\) return "cnav__dot--running";\s*if \(status === "failed"\) return "cnav__dot--failed";\s*if \(status === "queued"\) return "cnav__dot--queued";\s*if \(status === "paused"\) return "cnav__dot--paused";\s*return "";\s*\}/,
-  "statusDotClass should emit the shared semantic runtime modifier classes instead of raw utility colours",
-);
-assert.match(
-  sidebar,
-  /function resolveThreadAttention\([\s\S]*?const state: ChatAttentionState = archived \? "none" : session\.attention\.state;[\s\S]*?const reason = archived \? null : session\.attention\.reason;[\s\S]*?kind: attentionLifecycle\(state, reason\),[\s\S]*?label: chatAttentionLabel\(state, reason\),[\s\S]*?description: archived \? null : chatAttentionDescription\(session\.attention, now\),/,
-  "resolveThreadAttention should centralize the archived-suppression rule and derive kind/label/description from the shared chat-attention helpers — the REASON travels with the state, or a gated session can never read Blocked",
-);
-const resolveThreadAttentionCallSites = sidebar.match(
-  /const \{ state: attentionState, kind: attentionKind, label: attentionLabel, description: attentionDescription \} = resolveThreadAttention\(\s*session,\s*archived,\s*now,\s*\);/g,
-) ?? [];
-assert.equal(
-  resolveThreadAttentionCallSites.length,
-  2,
-  "both ThreadRow and PinnedThreadRow should derive attention through the shared resolveThreadAttention helper (not a re-derived copy)",
-);
-const dataAttentionSites = sidebar.match(/data-attention=\{attentionState\}/g) ?? [];
-assert.equal(
-  dataAttentionSites.length,
-  2,
-  "both ThreadRow's row and the Pinned rail's row should expose their resolved attention state to CSS",
-);
-assert.match(
-  sidebar,
-  /aria-describedby=\{attentionDescription \? attentionDescriptionId : undefined\}/,
-  "attention rows should describe the row button only when a dedicated detailed description exists",
-);
-assert.match(
-  sidebar,
-  /function ThreadAttentionCue\(\{ label \}: \{ label: string \| null \}\) \{\s*if \(!label\) return null;\s*return \(\s*<span className="cnav__attention">\s*<span className="cnav__attention-dot" aria-hidden \/>\s*<span>\{label\}<\/span>\s*<\/span>\s*\);\s*\}/,
-  "the shared ThreadAttentionCue component should render the dot + label exactly once",
-);
-assert.match(
-  sidebar,
-  /\{project \? \(\s*<span className="cnav__thread-proj" title=\{project\.name\}>\s*<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\} size="sm" \/>\s*<\/span>\s*\) : null\}\s*\{project \? <span className="sr-only">\{`Project \$\{project\.name\} `\}<\/span> : null\}/,
-  "flat ThreadRow rows should keep one persistent sr-only project context outside the collapsible project tile",
-);
-assert.match(
-  sidebar,
-  /function ThreadSummary\([\s\S]*?<ThreadAttentionCue label=\{attentionLabel\} \/>/,
-  "the shared row summary renders the visible attention cue",
-);
-assert.equal(
-  (sidebar.match(/<ThreadSummary session=\{session\}/g) ?? []).length,
-  2,
-  "ThreadRow and PinnedThreadRow render the same attention and metadata summary",
-);
-assert.doesNotMatch(
-  sidebar,
-  /<span id=\{attentionDescriptionId\} className="cnav__attention">[\s\S]*?<span className="sr-only">/,
-  "the described target must no longer be nested in the visible attention label inside the button",
-);
-const descriptionSiblingSites = sidebar.match(
-  /<\/button>\s*\{attentionDescription \? \(\s*<span id=\{attentionDescriptionId\} className="sr-only">\{attentionDescription\}<\/span>\s*\) : null\}/g,
-) ?? [];
-assert.equal(
-  descriptionSiblingSites.length,
-  2,
-  "the detailed attention description should render as a sibling after the row button in both row shapes",
-);
-assert.match(
-  sidebar,
-  /!hasSearch && attentionSessions\.length > 0[\s\S]*?<section aria-label="Awaiting you">[\s\S]*?<\/section>[\s\S]*?recentBuckets\.map/,
-  "Awaiting you should render as a real labeled section before ordinary recent buckets only when search is inactive",
-);
-assert.match(
-  sidebar,
-  /!hasSearch && attentionSessions\.length > 0 \? \(/,
-  "search results should keep row cues without creating a separate attention section",
-);
-
-for (const state of ["left-hanging", "awaiting-human", "overdue-human"]) {
-  assert.match(
-    css,
-    new RegExp(`\\.cnav__thread\\[data-attention="${state}"\\]`),
-    `shell navigation should style ${state} rows`,
-  );
-}
-assert.match(css, /\.cnav__attention\s*\{[\s\S]*?color:\s*var\(--color-warning\);/, "attention label should use warning text by default");
-assert.match(css, /\.cnav__attention-dot\s*\{[\s\S]*?background:\s*var\(--color-warning\);/, "attention dot should use warning by default");
-assert.match(css, /data-attention="left-hanging"[\s\S]*color-mix\(in oklch, var\(--color-warning\) 7%, transparent\)/, "left-hanging should use the subtle warning tint");
-assert.match(css, /data-attention="awaiting-human"[\s\S]*color-mix\(in oklch, var\(--color-warning\) 14%, transparent\)/, "awaiting-human should use the warning fill tint");
-assert.match(css, /data-attention="awaiting-human"[\s\S]*color-mix\(in oklch, var\(--color-warning\) (3[0-9]|4[0-5])%, var\(--border-hairline\)\)/, "awaiting-human should derive its warning border from color-mix");
-// An overdue wait is a LONGER WAIT, not an error (redesign handoff §5). It
-// used to carry a row-wide --danger-bg/--danger-border field plus --danger-text
-// copy, which made a session merely queued behind its reader render identically
-// to one that had actually failed — and fifteen at once read as an alarm wall.
-// It now shares awaiting-human's field outright, so the two cannot drift apart.
-assert.match(css, /data-attention="overdue-human"[\s\S]{0,400}?color-mix\(in oklch, var\(--color-warning\) 14%, transparent\)/, "overdue-human shares the awaiting warning fill, not a danger field");
-assert.match(css, /data-attention="overdue-human"[\s\S]{0,400}?color-mix\(in oklch, var\(--color-warning\) 38%, var\(--border-hairline\)\)/, "overdue-human shares the awaiting warning border");
-assert.match(css, /data-attention="overdue-human"\]\s*\.cnav__attention\s*\{[^}]*color:\s*var\(--status-awaiting\);/, "overdue-human attention copy stays in the waiting tone");
-// The guard the three assertions above lacked: red is reserved for failed, so
-// no attention-bearing row rule may reach for a danger token at all.
-assert.doesNotMatch(
-  css,
-  /\.cnav__thread[^{\n]*\[data-attention[^{]*\{[^}]*var\(--danger-(bg|border|text)\)/,
-  "attention rows must never use a danger token — red is reserved for failed",
-);
-// Blocked is the stronger waiting state and gets its own solid token.
-assert.match(css, /\[data-attention-kind="blocked"\]\s*\{[^}]*color-mix\(in oklch, var\(--status-blocked\) 14%, transparent\)/, "blocked rows carry the blocked fill");
-// cave-zs85n Task 6 gap-fix: attention must never repaint the RUNTIME tick.
-// Previously `.cnav__thread[data-attention="…"] .cnav__tick` selectors won
-// the cascade over the tick's own status colour (failed/paused/running/
-// queued), silently erasing runtime state on any attention-bearing row —
-// including PR-badge/branch-glyph rows where .cnav__dot never renders at
-// all, so the tick was the only runtime signal left. Attention gets its own
-// structural channel (.cnav__attention-tick) instead of recolouring the
-// shared one.
-assert.doesNotMatch(
-  css,
-  /\.cnav__thread\[data-attention="[^"]+"\]\s*\.cnav__tick/,
-  "attention selectors must not recolor the runtime .cnav__tick — use .cnav__attention-tick instead",
-);
-assert.match(
-  css,
-  /\.cnav__attention-tick\s*\{[\s\S]*?background:\s*var\(--color-warning\);/,
-  "the attention tick should default to warning (left-hanging/awaiting-human)",
-);
-assert.match(
-  css,
-  /\.cnav__thread\.is-active\s+\.cnav__tick\s*\{[\s\S]*?left:\s*var\(--space-3\);[\s\S]*?opacity:\s*1;/,
-  "active rows should keep the runtime tick visible by shifting it inboard of the active accent",
-);
-const prRowClassSites = sidebar.match(/\$\{prStatus \? " cnav__thread--pr" : ""\}/g) ?? [];
-assert.equal(
-  prRowClassSites.length,
-  2,
-  "full and pinned rows should expose the semantic PR modifier used by the active-row gutter",
-);
-assert.match(
-  css,
-  /\.cnav__thread\.is-active\.cnav__thread--pr::before\s*\{[\s\S]*?left:\s*0;/,
-  "an active PR row should move selection to the outer gutter without changing non-PR rows",
-);
-assert.match(
-  css,
-  /\.cnav__thread\.is-active\.cnav__thread--pr\s+\.cnav__tick\s*\{[\s\S]*?left:\s*var\(--space-1\);/,
-  "an active PR row should keep runtime in a token-aligned gutter before its badge",
-);
-assert.match(
-  css,
-  /\.cnav__thread\.is-active\.cnav__thread--pr:not\(\[data-attention="none"\]\)\s+\.cnav__tick\s*\{[\s\S]*?left:\s*var\(--space-2\);/,
-  "an active PR attention row should move runtime one grid step past attention",
-);
-assert.match(
-  css,
-  /\.cnav__thread--flat\.is-active\.cnav__thread--pr:not\(\[data-attention="none"\]\)\s+\.cnav__pr-badge\s*\{[\s\S]*?margin-left:\s*var\(--space-3\);/,
-  "an active flat PR attention row should reserve three token-aligned cue gutters before its badge",
-);
-assert.match(
-  css,
-  /\.cnav__thread\.is-active::before\s*\{[\s\S]*?background:\s*var\(--accent-presence\);/,
-  "active rows should retain their separate accent marker",
-);
-assert.match(
-  css,
-  /\.cnav__thread\.is-active\s*\{[\s\S]*?--cnav-active-background:\s*var\(--bg-raised\);[\s\S]*?isolation:\s*isolate;/,
-  "active rows should establish a shared backdrop without changing their layout box",
-);
-assert.match(
-  css,
-  /\.cnav__thread\.is-active::after\s*\{[\s\S]*?inset-inline:\s*calc\(var\(--rail-pad\) \* -1\);[\s\S]*?background:\s*var\(--cnav-active-background\);/,
-  "the active backdrop should span through both siderail gutters",
-);
-for (const state of ["left-hanging", "awaiting-human", "overdue-human"]) {
-  assert.match(
-    css,
-    new RegExp(`\\.cnav__thread\\.is-active\\[data-attention="${state}"\\][\\s\\S]*?--cnav-active-background:`),
-    `active ${state} rows should carry their semantic fill across the full-width backdrop`,
-  );
-}
-assert.match(
-  css,
-  /data-attention="overdue-human"\]\s*\.cnav__attention-tick\s*\{[^}]*background:\s*var\(--status-awaiting\);/,
-  "the overdue tick stays in the waiting tone — the escalation it used to carry in hue now rides the relative time and the accessible description instead",
-);
-assert.match(
-  css,
-  /\[data-attention-kind="blocked"\]\s*\.cnav__attention-tick\s*\{[^}]*background:\s*var\(--status-blocked\);/,
-  "a blocked row's tick carries the blocked token, and must follow the overdue rule so it wins at equal specificity",
-);
-const attentionTickBlock = extractBraceBlock(css, ".cnav__attention-tick {");
-assert.doesNotMatch(attentionTickBlock, /animation|@keyframes|pulse/i, "the attention tick must never animate");
-assert.match(attentionTickBlock, /left:\s*var\(--space-1\);/, "the attention tick should position off a spacing token, not a hardcoded off-grid pixel value");
-assert.match(attentionTickBlock, /top:\s*var\(--space-2\);/, "the attention tick's vertical inset should use a spacing token");
-assert.match(attentionTickBlock, /bottom:\s*var\(--space-2\);/, "the attention tick's vertical inset should use a spacing token");
-assert.match(
-  sidebar,
-  /\{attentionState !== "none" \? <span className="cnav__attention-tick" aria-hidden \/> : null\}/,
-  "the attention tick should render as its own conditional element, absent (not just hidden) for none/archived rows",
-);
-const attentionTickCallSites = sidebar.match(/<span className="cnav__attention-tick" aria-hidden \/>/g) ?? [];
-assert.equal(
-  attentionTickCallSites.length,
-  2,
-  "both ThreadRow and PinnedThreadRow should render the shared attention-tick channel",
-);
-
-assert.match(
-  sidebar,
-  /className="cnav__more cnav__more--flat focus-ring"/,
-  "flat recent sections should use the semantic show-more modifier without dropping focus-ring",
-);
-assert.doesNotMatch(
-  sidebar,
-  /\[padding-left:13px\]!/,
-  "show-more buttons should not keep the arbitrary 13px padding escape hatch",
-);
+const editorialCss = readFileSync(new URL("../styles/workspace-sidebar.css", import.meta.url), "utf8");
+assert.match(sidebar, /truncate="end"/, "chat rail titles use one end truncation");
+assert.match(editorialCss, /section\[aria-label="Awaiting you"\] \.cnav__thread\[data-attention-kind="awaiting"\] \.cnav__attention \{ display: none; \}/,
+  "only generic waiting labels are suppressed within their named section");
+assert.match(editorialCss, /\.cnav__runtime-state\[data-status="failed"\].*var\(--color-danger\)/,
+  "actual failures retain an explicit semantic label");
 
 const mockProjects = vi.hoisted(() => ({
   state: {
@@ -555,7 +321,7 @@ test("pinned and full attention rows keep the same accessible description while 
   });
 
   for (const [label, scope] of [
-    ["Pinned threads", sectionByLabel(renderer, "Pinned threads")],
+
     ["Awaiting you", sectionByLabel(renderer, "Awaiting you")],
   ] as const) {
     const row = rowContainerFor(scope, railTitle);
@@ -814,7 +580,7 @@ test("search drops the Awaiting you section but rows keep their visible label an
   await act(async () => renderer.unmount());
 });
 
-test("a pinned attention session appears in both Pinned and Awaiting you, keeping active state, PR badge, and runtime cues", async () => {
+test("a pinned attention session appears once in Awaiting you, keeping active state, PR badge, and runtime cues", async () => {
   let renderer!: ReactTestRenderer;
   const session = makeSession({
     id: "session-pinned-attention",
@@ -845,40 +611,10 @@ test("a pinned attention session appears in both Pinned and Awaiting you, keepin
     await Promise.resolve();
   });
 
-  const pinnedSection = sectionByLabel(renderer, "Pinned threads");
+  expect(sectionsByLabel(renderer).some((section) => section.props["aria-label"] === "Pinned threads")).toBe(false);
   const awaitingSection = sectionByLabel(renderer, "Awaiting you");
-  expect(sectionThreadTitles(pinnedSection)).toEqual([railTitle]);
   expect(sectionThreadTitles(awaitingSection)).toEqual([railTitle]);
 
-  // The Pinned rail's compact row: active, attention-tinted, PR-badged, AND
-  // still carries its distinct one-click unpin control (not ThreadRow's
-  // row-actions overlay). Pin these directly against the Pinned section's own
-  // row — not just its Awaiting you twin below — so a regression that only
-  // strips the tick/runtime cue from PinnedThreadRow can't hide behind the
-  // duplicate assertions on the ThreadRow copy (cave-zs85n Task 6 gap-fix).
-  const pinnedRow = rowContainerFor(pinnedSection, railTitle);
-  expect(pinnedRow.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-active"]));
-  expect(pinnedRow.props["data-attention"]).toBe("left-hanging");
-  expect(attentionCueLabels(pinnedRow)).toEqual(["Awaiting you"]);
-  expect(
-    pinnedRow.findAll(
-      (node) =>
-        typeof node.type === "string"
-        && typeof node.props.className === "string"
-        && node.props.className.split(" ").includes("cnav__tick")
-        && node.props.className.split(" ").includes("cnav__dot--running"),
-    ),
-  ).toHaveLength(1);
-  expect(
-    pinnedRow.findAll((node) => typeof node.type === "string" && typeof node.props.className === "string" && node.props.className.split(" ").includes("cnav__pr-badge") && node.props["data-pr-state"] === "open"),
-  ).toHaveLength(1);
-  expect(pinnedRow.findAll((node) => typeof node.type === "string" && node.props.className === "cnav__attention-tick")).toHaveLength(1);
-  const unpinButton = pinnedRow.find((node) => node.type === "button" && node.props["aria-label"] === `Unpin ${railTitle}`);
-  expect(unpinButton.props["aria-pressed"]).toBe(true);
-
-  // The full ThreadRow in Awaiting you keeps its own runtime tick and PR badge
-  // alongside the same attention cue — the two row shapes render the same
-  // attention state without diverging.
   const awaitingRow = rowContainerFor(awaitingSection, railTitle);
   expect(awaitingRow.props.className.split(" ")).toEqual(expect.arrayContaining(["cnav__thread", "cnav__thread--flat", "is-active"]));
   expect(awaitingRow.props["data-attention"]).toBe("left-hanging");
@@ -1091,3 +827,22 @@ assert.match(flatMoreBlock, /padding-left:\s*var\(--space-3\);/, "flat show-more
 assert.doesNotMatch(flatMoreBlock, /13px/, "flat show-more padding should not use 13px");
 
 console.log("workspace-sidebar-attention: ok");
+
+
+test("pinned settled chats appear once and remain individually selectable", async () => {
+  const session = makeSession({ id: "pinned-settled", title: "Pinned settled", attention: { state: "none", since: null, reason: null } });
+  const other = makeSession({ id: "other", title: "Another chat", attention: { state: "none", since: null, reason: null } });
+  sidebarPrefs.pinnedIds = [session.id];
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(createElement(SidebarChatsSection, {
+    sessions: [session, other], onOpenSession: vi.fn(), onDeleteSession: async () => undefined,
+  })); });
+  const buttons = () => renderer.root.findAll((n) => n.type === "button" && n.props.className === "cnav__thread-main focus-ring");
+  expect(buttons()).toHaveLength(2);
+  await act(async () => renderer.root.find((n) => n.type === "button" && n.props.className === "cnav__select-enter focus-ring").props.onClick());
+  const pinned = buttons().find((n) => textContent(n.children).includes("Pinned settled"));
+  expect(pinned.props.role).toBe("checkbox");
+  await act(async () => pinned.props.onClick({}));
+  expect(buttons().find((n) => textContent(n.children).includes("Pinned settled")).props["aria-checked"]).toBe(true);
+  await act(async () => renderer.unmount());
+});

@@ -58,7 +58,7 @@ assert.ok((workspaceSidebar.match(/<ThreadRow/g) ?? []).length >= 2, "attention 
 assert.match(workspaceSidebar, /const sessionProjectById = useMemo\(\(\) => \{[\s\S]*?for \(const group of groups\)/, "recent-row project lookup derives from override-aware groups");
 assert.match(workspaceSidebar, /indent="flat"\s*\n\s*project=\{sessionProjectById\.get\(session\.id\) \?\? null\}/, "recent rows pass project identity");
 assert.match(workspaceSidebar, /cnav__thread-proj[\s\S]*?<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\} size="sm"/, "renders ProjectAvatar tile in flat rows with the explicit project color");
-assert.match(workspaceSidebar, /<span className="sr-only">\{`Project \$\{project\.name\} `\}<\/span>/, "project name is announced for AT even when the visual tile collapses");
+assert.match(workspaceSidebar, /<span className="cnav__thread-project"[^>]*>\s*\{sessionProjectName\(session, project\)\}/, "visible project metadata remains accessible when the tile collapses");
 assert.doesNotMatch(workspaceSidebar, /cnav__footer|cnav__user-plan/, "should not render user plan footer");
 assert.doesNotMatch(workspaceSidebar, /cnav__group-name|cnav__group-meta|renderProjectGroup/, "the redundant project grouping branch is removed");
 // Quick actions are New chat alone: the Scheduled/Plugins icon chips and the
