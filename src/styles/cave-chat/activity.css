@@ -935,8 +935,7 @@ details[open] > .cave-tool-summary::before {
   display: none;
 }
 
-/* Title and metadata share two rows beside the actions. Activity has at
-   most one additional row, so narrow panes cannot create a fourth band. */
+/* Two rows: title/actions, then metadata/activity beside the familiar. */
 .cave-chat-header-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -974,11 +973,18 @@ details[open] > .cave-tool-summary::before {
   max-width: 100%;
 }
 
-/* Preserve the exact runtime details on one horizontally scrollable line.
-   The focusable status span also supports keyboard scrolling. */
-.cave-chat-header-row .cave-chat-meta-line__meta {
+.cave-chat-meta-line__details {
   grid-column: 2 / -1;
   grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Preserve exact runtime details on one keyboard-scrollable metadata line. */
+.cave-chat-header-row .cave-chat-meta-line__meta {
+  flex: 1 1 0;
   max-width: none;
   white-space: nowrap;
   overflow-x: auto;
@@ -991,8 +997,8 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-chat-header-status {
-  grid-column: 1 / -1;
-  grid-row: 2;
+  flex: 0 1 auto;
+  max-width: 60%;
   display: flex;
   flex-wrap: nowrap;
   justify-content: safe flex-end;
@@ -1027,20 +1033,6 @@ details[open] > .cave-tool-summary::before {
   padding: 0;
   border: 0;
   background: none;
-}
-
-/* In split panes, preserve title room by sharing the activity row with the
-   actions. The two identity rows still span the full width above them. */
-@container chat-header (max-width: 40rem) {
-  .cave-chat-header-row > .cave-chat-meta-line {
-    grid-column: 1 / -1;
-  }
-  .cave-chat-header-row > .cave-chat-session-actions {
-    grid-row: 2;
-  }
-  .cave-chat-header-status {
-    grid-column: 1;
-  }
 }
 
 /* The runtime's unreported identity, as one muted marker; the gaps are named

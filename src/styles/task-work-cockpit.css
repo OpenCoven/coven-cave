@@ -197,6 +197,7 @@
 }
 
 .task-work-cockpit__body {
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -226,18 +227,7 @@
   min-width: 0;
 }
 
-/* The collapsed code pull tab is an in-flow flex child that reserves 28px
- * of layout width beside the conversation (never over it) and runs the full
- * height of the row — the contract .workspace-rail-reopen is written against
- * on the chat surface, whose root is a flex ROW. The cockpit root is a flex
- * COLUMN, so hosting the button there docked it as a stub under the composer
- * at the bottom-left corner. It lives in the body row instead; this pins the
- * geometry so a future column-child regression is visible. */
-.task-work-cockpit__body > .workspace-rail-reopen {
-  flex: 0 0 calc(var(--space-6) + var(--space-1));
-  align-self: stretch;
-}
-
+/* The shared Code tab overlays only its small edge affordance in this body. */
 .task-work-cockpit__state {
   display: flex;
   width: min(420px, calc(100% - 14px));

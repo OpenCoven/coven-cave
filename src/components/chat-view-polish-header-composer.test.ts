@@ -376,11 +376,11 @@ assert.match(
 // the identity and the actions instead of stacking as two bands under it.
 assert.match(
   source,
-  /<div className="cave-chat-header-row">\s*<MetaLine[\s\S]*?\/>\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)?<div className="cave-chat-header-status">[\s\S]*?<ChatSessionContextRow[\s\S]*?<RunActivityStrip[\s\S]*?<\/div>\s*<div className="cave-chat-session-actions">/,
+  /<div className="cave-chat-header-row">\s*<MetaLine[\s\S]*?<div className="cave-chat-header-status">[\s\S]*?<ChatSessionContextRow[\s\S]*?<RunActivityStrip[\s\S]*?<\/div>\s*<\/MetaLine>\s*<div className="cave-chat-session-actions">/,
   "the title row reads identity · run status · actions",
 );
 assert.equal(source.match(/<ChatSessionContextRow\b/g)?.length, 1, "the stats render once, on the title row");
-// #6201: actions stay beside the two-row identity; activity gets one row.
+// #6201 follow-up: metadata and activity share the second identity row.
 assert.match(
   styles,
   /\.cave-chat-header-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns: minmax\(0, 1fr\) auto;/,
@@ -388,8 +388,8 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.cave-chat-header-status \{[^}]*grid-column: 1 \/ -1;[^}]*grid-row: 2;[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto;/,
-  "activity occupies one additional row while every metric remains reachable",
+  /\.cave-chat-header-status \{[^}]*flex: 0 1 auto;[^}]*max-width: 60%;[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto;/,
+  "activity shares the metadata row while every metric remains reachable",
 );
 assert.match(
   styles,

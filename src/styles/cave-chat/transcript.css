@@ -764,6 +764,21 @@
     display: none;
   }
 
+  /* Keep run details reachable when the desktop identity is folded away. */
+  .cave-chat-header-row > .cave-chat-meta-line,
+  .cave-chat-meta-line__details {
+    display: contents;
+  }
+
+  .cave-chat-header-row > .cave-chat-meta-line > :not(.cave-chat-meta-line__details),
+  .cave-chat-header-row .cave-chat-meta-line__meta {
+    display: none;
+  }
+
+  .cave-chat-header-status {
+    max-width: 100%;
+  }
+
   /* No header context strip to re-show here any more (cave-zfmqm): the
      context controls live in the composer footer at every width. */
 
