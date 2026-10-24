@@ -1,6 +1,6 @@
 # Native UI tier for chat (`coven:ui`)
 
-Status: parser and renderer under review for #5947. Familiar prompt changes are a separate follow-up; this change teaches no familiar the syntax.
+Status: the parser and the Main Chat renderer are on `main`, merged in #6073 (2026-10-24). The catalog is growing in #6062. Familiar prompt changes are a separate follow-up (#6063), and no familiar has been taught the syntax yet. Readable fallback on other surfaces is #6060.
 
 Cave chat had two UI tiers. Fixed `coven:` marker cards are native and safe but have no layout or state. Sandboxed HTML/React artifacts are powerful but ignore Cave's tokens and look foreign. The native UI tier sits between them: a familiar composes a small typed catalog of components, and Cave validates the markup and draws it with its own components and design tokens, progressively, while the reply streams.
 
@@ -24,15 +24,21 @@ A familiar writes a fenced block of JSX-like markup:
 - `{/* comments */}` and `<!-- comments -->` are ignored.
 - Whitespace collapses like HTML. A run containing a newline reads as one space, and formatting whitespace between tags disappears.
 
-## Catalog (v0)
+## Catalog
 
 | Component | Props | Children |
 | --- | --- | --- |
 | `Stack` | `gap`, `align` | components |
 | `Row` | `gap`, `align`, `justify`, `wrap` | components |
 | `Card` | `title`, `subtitle`, `tone`, `gap` | components |
+| `Grid` / `Columns` | `columns` (1–4), `gap`, `align` | components |
+| `Callout` | `title`, `tone` (default `info`), `gap` | components |
+| `Divider` | `gap` | none |
 | `Heading` | `level` (1–4) | text |
-| `Text` | `tone`, `size` | text |
+| `Text` | `tone`, `size` | text, `Bold`, `Code` |
+| `Bold` | none | text, `Code` (only inside `Text`) |
+| `Code` | none | text (only inside `Text` or `Bold`) |
+| `List` | `items`* (text or numbers), `ordered`, `gap`, `tone` | none |
 | `Badge` | `tone`, `label` | text |
 | `Stat` | `label`*, `value`*, `format`, `caption`, `tone` | none |
 | `Table` | `columns`*, `rows`*, `caption` | none |
@@ -45,6 +51,8 @@ A familiar writes a fenced block of JSX-like markup:
 | `State` | `name`*, `initial`* | none |
 
 \* required. `BarChart` reuses `src/components/ui/charts/bar-chart.tsx`. `Select` reuses `StandardSelect`. `Button` reuses the shared `Button`.
+
+`Grid` and `Columns` are two spellings of one layout. In a pane narrower than 28rem, three or four columns become two; below 18rem every grid stacks to one column. `Divider` is an `hr`, and `List` is a native `ul` (or `ol` with `ordered`) whose items are plain text. `Callout` is a `role="note"` region: an icon and an assistive label ("Note", "Success", "Warning" or "Important") carry its tone, so colour is never the only signal. `Bold` and `Code` are the whole inline grammar. They render as `strong` and `code`, take no props, and are errors anywhere else. Lower-case tags such as `<b>` stay errors, and text that looks like a tag stays text.
 
 Token props accept names only. The values live in `src/styles/chat-ui-block.css`:
 
@@ -81,7 +89,7 @@ There is no send, link, fetch, file, or submit action in the catalog. This follo
 Each chunk re-parses the whole block so far (`buildUiBlock(source, { streaming: true })`):
 
 - Open tags auto-close.
-- A trailing partial tag, attribute, closing tag or `{expression}` is dropped. The node appears only once its tag is complete, so props never flicker. A half-arrived tag for a known component shows a skeleton placeholder in place.
+- A trailing partial tag, attribute, closing tag or `{expression}` is dropped. The node appears only once its tag is complete, so props never flicker. A half-arrived tag for a known component shows a skeleton placeholder in place, except inside a line of text (`Text`, `Heading`, `Badge`, `Button`, `Bold`, `Code`), where nothing shows until the tag completes.
 - Rules that depend on children (a Button needs a label) wait for the closing tag.
 - Node ids count elements only, so whitespace churn never re-keys a component.
 - State is keyed by block ordinal and `State name` within a mounted turn or timeline text span. User changes survive every re-parse and the streaming-to-settled renderer swap. Separate blocks, spans and turns have independent state; leaving the mounted turn discards its state.
@@ -99,7 +107,7 @@ A failed node renders an inline chip (`role="note"`, "Couldn't render &lt;label&
 - **Total failure:** a body with no markup (JSON or prose) falls back to its source as a code block.
 - **Settled blocks only:** a block that ends early or leaves tags open renders what it has, plus one block-level note.
 
-Caps: 20,000 characters per block, 400 components, 24 levels of nesting, 100 table rows, 12 columns, 40 bars, 50 options.
+Caps: 20,000 characters per block, 400 components, 24 levels of nesting, 100 table rows, 12 columns, 40 bars, 50 options, 100 list items.
 
 ## Where it is wired
 

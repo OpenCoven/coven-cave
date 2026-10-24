@@ -8,6 +8,7 @@ import {
   MALFORMED_DASHBOARD,
   MINI_DASHBOARD,
   PRICING_CALCULATOR,
+  RELEASE_BRIEF,
   STATUS_TABLE,
   uiBlockFence,
 } from "../src/lib/ui-block-fixtures";
@@ -36,6 +37,8 @@ const SHOWCASE_REPLY = [
 ].join("\n\n");
 
 const MALFORMED_REPLY = ["Some of this block is broken on purpose.", uiBlockFence(MALFORMED_DASHBOARD), "Prose after the block."].join("\n\n");
+
+const RELEASE_REPLY = ["Here's the release brief.", uiBlockFence(RELEASE_BRIEF), "Prose after the block."].join("\n\n");
 
 const FAILED_CHILD_REPLY = ["Here is the release check.", uiBlockFence(FAILED_CHILD_TEXT), "Prose after the block."].join("\n\n");
 
@@ -251,6 +254,37 @@ test("a failed component keeps its text readable and its markup inert", async ({
     await setTheme(page, mode);
     await capture(block, testInfo, `failed-child-text-${mode}`);
   }
+});
+
+test("the layout catalog renders with native semantics and stacks in a narrow pane", async ({ page }, testInfo) => {
+  await page.setViewportSize(CAPTURE_VIEWPORT);
+  const { chat } = await setup(page, RELEASE_REPLY);
+  const block = chat.getByRole("group", { name: "Release brief" });
+  await expect(block).toBeVisible();
+  await expect(block.locator("[data-ui-block-error]")).toHaveCount(0);
+  await expect(block.getByRole("note", { name: "Warning: Freeze starts Thursday" })).toBeVisible();
+  await expect(block.getByRole("separator")).toHaveCount(1);
+  const lists = block.getByRole("list");
+  await expect(lists).toHaveCount(2);
+  await expect(lists.nth(0).getByRole("listitem")).toHaveText(["Native UI blocks", "Faster startup", "Quieter inbox"]);
+  await expect(lists.nth(1).getByRole("listitem")).toHaveText(["Tag the release", "Publish the notes", "Watch crash reports"]);
+  // Visible markers: an ordered list has to show its sequence, not just announce it.
+  await expect(lists.nth(0)).toHaveCSS("list-style-type", "disc");
+  await expect(lists.nth(1)).toHaveCSS("list-style-type", "decimal");
+  await expect(block.locator("code")).toHaveText(["pnpm test:app", "pnpm lint"]);
+  await expect(block.locator("strong")).toHaveText(["don't skip pnpm lint"]);
+  const grid = block.locator(".chat-ui-grid");
+  await expect(grid).toHaveCSS("grid-template-columns", /^[\d.]+px [\d.]+px [\d.]+px$/);
+  await expect(chat.getByText("Prose after the block.", { exact: true })).toBeVisible();
+  for (const mode of ["light", "dark"] as const) {
+    await setTheme(page, mode);
+    await capture(block, testInfo, `release-brief-${mode}`);
+  }
+  await setTheme(page, "dark", "tide");
+  await capture(block, testInfo, "release-brief-tide-dark");
+  // A pane narrower than 18rem stacks the grid's cells instead of clipping them.
+  await block.evaluate((element) => { element.style.width = "16rem"; });
+  await expect(grid).toHaveCSS("grid-template-columns", /^[\d.]+px$/);
 });
 
 test("a coven:ui example inside another fence stays literal text", async ({ page }) => {

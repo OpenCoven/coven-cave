@@ -102,12 +102,33 @@ export const FAILED_CHILD_TEXT = `<Card title="Release check">
   <Badge tone="success">Still rendered</Badge>
 </Card>`;
 
+/**
+ * Layout and text catalog (#6062 T3): a Callout with inline Bold and Code, a
+ * three-column Grid, a Divider, and unordered and ordered Lists.
+ */
+export const RELEASE_BRIEF = `<Card title="Release brief" subtitle="Cave 0.6, planned for Friday">
+  <Callout title="Freeze starts Thursday" tone="warning">
+    <Text>Run <Code>pnpm test:app</Code> before you merge, and <Bold>don't skip <Code>pnpm lint</Code></Bold>.</Text>
+  </Callout>
+  <Grid columns={3} gap="sm">
+    <Stat label="Merged" value={42} />
+    <Stat label="Open" value={7} />
+    <Stat label="Blocked" value={2} tone="danger" />
+  </Grid>
+  <Divider />
+  <Heading level={3}>Ships</Heading>
+  <List items={["Native UI blocks", "Faster startup", "Quieter inbox"]} />
+  <Heading level={3}>Then</Heading>
+  <List ordered items={["Tag the release", "Publish the notes", "Watch crash reports"]} />
+</Card>`;
+
 export const UI_BLOCK_FIXTURES = {
   "pricing-calculator": PRICING_CALCULATOR,
   "status-table": STATUS_TABLE,
   "mini-dashboard": MINI_DASHBOARD,
   "malformed-dashboard": MALFORMED_DASHBOARD,
   "failed-child-text": FAILED_CHILD_TEXT,
+  "release-brief": RELEASE_BRIEF,
 } as const;
 
 /** Wrap a body in the fence a familiar emits. */

@@ -35,7 +35,7 @@ import { Button } from "@/components/ui/button";
 import { BarChart } from "@/components/ui/charts/bar-chart";
 import { StandardSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import {
   UI_BLOCK_CATALOG,
   buildUiBlock,
@@ -111,6 +111,25 @@ const TONE_FILL: Record<string, string> = {
   warning: "var(--color-warning)",
   danger: "var(--color-danger)",
   info: "var(--color-info)",
+};
+
+/** A callout's icon carries its tone without relying on colour. */
+const CALLOUT_ICON: Record<string, IconName> = {
+  neutral: "ph:note",
+  muted: "ph:note",
+  accent: "ph:lightbulb",
+  success: "ph:check-circle",
+  warning: "ph:warning",
+  danger: "ph:warning-circle",
+  info: "ph:info",
+};
+
+/** The same tone in words for assistive tech; plain tones need none. */
+const CALLOUT_LABEL: Record<string, string> = {
+  info: "Note",
+  success: "Success",
+  warning: "Warning",
+  danger: "Important",
 };
 
 function text(value: UiValue | undefined): string {
@@ -297,6 +316,61 @@ function UiComponentView({ node, ctx }: { node: UiComponentNode; ctx: RenderCont
           {node.children.length ? inline() : text(props.label)}
         </span>
       );
+    case "Bold":
+      return <strong className="chat-ui-strong">{inline()}</strong>;
+    case "Code":
+      return <code className="chat-ui-code">{inline()}</code>;
+    case "Divider":
+      return <hr className="chat-ui-divider" data-gap={text(props.gap)} />;
+    case "Grid":
+    case "Columns":
+      return (
+        <div
+          className="chat-ui-grid"
+          data-columns={text(props.columns)}
+          data-gap={text(props.gap)}
+          data-align={text(props.align)}
+        >
+          {blocks()}
+        </div>
+      );
+    case "List": {
+      const items = props.items as UiValue[];
+      if (items.length === 0) return null;
+      const Tag = props.ordered === true ? "ol" : "ul";
+      return (
+        <Tag className="chat-ui-list" data-gap={text(props.gap)} data-tone={text(props.tone)}>
+          {items.map((item, index) => <li key={index}>{text(item)}</li>)}
+        </Tag>
+      );
+    }
+    case "Callout": {
+      const tone = text(props.tone);
+      const title = text(props.title);
+      const label = CALLOUT_LABEL[tone];
+      const headed = Boolean(title || label);
+      return (
+        <div
+          className="chat-ui-callout"
+          role="note"
+          data-tone={tone}
+          aria-labelledby={headed ? `${id}-title` : undefined}
+        >
+          <Icon name={CALLOUT_ICON[tone] ?? "ph:note"} width={16} className="chat-ui-callout__icon" aria-hidden />
+          <div className="chat-ui-callout__body">
+            {headed ? (
+              <p id={`${id}-title`} className="chat-ui-callout__title">
+                {label ? <span className="sr-only">{`${label}: `}</span> : null}
+                {title}
+              </p>
+            ) : null}
+            <div className="chat-ui-stack" data-gap={text(props.gap)} data-align="stretch">
+              {blocks()}
+            </div>
+          </div>
+        </div>
+      );
+    }
     case "Stat":
       return (
         <div className="chat-ui-stat" data-tone={text(props.tone)}>

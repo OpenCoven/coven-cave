@@ -45,6 +45,7 @@ export const UI_BLOCK_LIMITS = {
   maxTableColumns: 12,
   maxChartBars: 40,
   maxSelectOptions: 50,
+  maxListItems: 100,
 } as const;
 
 // ── expressions ────────────────────────────────────────────────────────────
@@ -506,7 +507,8 @@ type PropType =
   | "textList"
   | "options"
   | "rows"
-  | "series";
+  | "series"
+  | "items";
 
 export type UiPropSpec = {
   type: PropType;
@@ -521,11 +523,16 @@ type ChildPolicy = "blocks" | "inline" | "none";
 export type UiComponentSpec = {
   children: ChildPolicy;
   props: Record<string, UiPropSpec>;
+  /** Inline components an inline parent admits besides text and expressions. */
+  inlineChildren?: readonly UiComponentType[];
+  /** The only parents this component may sit in; anywhere else it is an error. */
+  onlyInside?: readonly UiComponentType[];
 };
 
 export const UI_COMPONENT_TYPES = [
   "Stack", "Row", "Card", "Heading", "Text", "Badge", "Stat", "Table", "Progress", "BarChart",
   "Slider", "Select", "Toggle", "Button", "State",
+  "Divider", "Grid", "Columns", "List", "Callout", "Bold", "Code",
 ] as const;
 
 export type UiComponentType = (typeof UI_COMPONENT_TYPES)[number];
@@ -533,6 +540,16 @@ export type UiComponentType = (typeof UI_COMPONENT_TYPES)[number];
 const tone = (fallback: string): UiPropSpec => ({ type: "enum", values: UI_TONES, default: fallback });
 const gap = (fallback: string): UiPropSpec => ({ type: "enum", values: UI_GAPS, default: fallback });
 const format: UiPropSpec = { type: "enum", values: UI_FORMATS, default: "number" };
+
+/** Grid and Columns are two spellings of one layout. */
+const grid: UiComponentSpec = {
+  children: "blocks",
+  props: {
+    columns: { type: "enum", values: ["1", "2", "3", "4"], default: "2" },
+    gap: gap("md"),
+    align: { type: "enum", values: ["start", "center", "end", "stretch"], default: "stretch" },
+  },
+};
 
 export const UI_BLOCK_CATALOG: Record<UiComponentType, UiComponentSpec> = {
   Stack: {
@@ -566,6 +583,7 @@ export const UI_BLOCK_CATALOG: Record<UiComponentType, UiComponentSpec> = {
   },
   Text: {
     children: "inline",
+    inlineChildren: ["Bold", "Code"],
     props: {
       tone: tone("neutral"),
       size: { type: "enum", values: ["xs", "sm", "md", "lg"], default: "md" },
@@ -653,6 +671,41 @@ export const UI_BLOCK_CATALOG: Record<UiComponentType, UiComponentSpec> = {
       name: { type: "identifier", required: true },
       initial: { type: "value", required: true },
     },
+  },
+  Divider: {
+    children: "none",
+    props: { gap: gap("md") },
+  },
+  Grid: grid,
+  Columns: grid,
+  List: {
+    children: "none",
+    props: {
+      items: { type: "items", required: true },
+      ordered: { type: "boolean", default: false },
+      gap: gap("xs"),
+      tone: tone("neutral"),
+    },
+  },
+  Callout: {
+    children: "blocks",
+    props: {
+      title: { type: "text" },
+      tone: tone("info"),
+      gap: gap("sm"),
+    },
+  },
+  // The closed inline grammar: Text holds Bold and Code, Bold holds Code.
+  Bold: {
+    children: "inline",
+    inlineChildren: ["Code"],
+    onlyInside: ["Text"],
+    props: {},
+  },
+  Code: {
+    children: "inline",
+    onlyInside: ["Text", "Bold"],
+    props: {},
   },
 };
 
@@ -1061,6 +1114,13 @@ function checkPropValue(type: UiComponentType, name: string, spec: UiPropSpec, v
       }
       return null;
     }
+    case "items": {
+      if (!Array.isArray(value)) return `${name} needs a list like ["A", "B"]`;
+      if (value.length > UI_BLOCK_LIMITS.maxListItems) return `${name} has more than ${UI_BLOCK_LIMITS.maxListItems} entries`;
+      return value.every((item) => typeof item === "string" || (typeof item === "number" && Number.isFinite(item)))
+        ? null
+        : `${name} must list text or numbers`;
+    }
     default:
       return `${type} has an unsupported prop ${name}`;
   }
@@ -1214,6 +1274,15 @@ function componentIssues(
   return issues;
 }
 
+/** What an inline parent's error says it does take. */
+function inlineAllowance(admitted: readonly string[]): string {
+  if (admitted.length === 0) return "it takes text only";
+  const tags = admitted.map((type) => `<${type}>`);
+  return tags.length === 1
+    ? `it takes text and ${tags[0]}`
+    : `it takes text, ${tags.slice(0, -1).join(", ")} and ${tags[tags.length - 1]}`;
+}
+
 function validateChildren(
   raw: RawNode[],
   policy: ChildPolicy,
@@ -1226,9 +1295,11 @@ function validateChildren(
   let elementIndex = 0;
   let inlineIndex = 0;
   const parentLabel = parentType === "" ? "the block" : `<${parentType}>`;
+  const admitted = isUiComponentType(parentType) ? UI_BLOCK_CATALOG[parentType].inlineChildren ?? [] : [];
   for (const child of normalizeText(raw, policy === "inline")) {
     if (child.kind === "pending") {
-      if (isUiComponentType(child.name)) {
+      // Mid-sentence, a half-written tag shows nothing until it completes.
+      if (policy !== "inline" && isUiComponentType(child.name)) {
         out.push({ kind: "pending", id: childId(parentId, String(elementIndex)), type: child.name });
       }
       continue;
@@ -1237,11 +1308,20 @@ function validateChildren(
       if (child.dropped) continue;
       const id = childId(parentId, String(elementIndex));
       elementIndex += 1;
-      if (policy !== "blocks") {
+      if (policy === "inline" && admitted.some((type) => type === child.name)) {
+        out.push(validateElement(child, id, depth, ctx));
+        continue;
+      }
+      const onlyInside = policy === "blocks" && isUiComponentType(child.name)
+        ? UI_BLOCK_CATALOG[child.name].onlyInside
+        : undefined;
+      if (policy !== "blocks" || onlyInside) {
         const node = validateElement(child, id, depth, ctx);
-        const reason = policy === "inline"
-          ? `<${child.name}> can't go inside ${parentLabel}; it takes text only`
-          : `${parentLabel} doesn't take children`;
+        const reason = onlyInside
+          ? `<${child.name}> only works inside ${onlyInside.map((type) => `<${type}>`).join(" or ")}`
+          : policy === "inline"
+            ? `<${child.name}> can't go inside ${parentLabel}; ${inlineAllowance(admitted)}`
+            : `${parentLabel} doesn't take children`;
         out.push({
           kind: "error",
           id,
