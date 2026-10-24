@@ -15,6 +15,28 @@ import {
   validateReadyDaemon,
 } from "./daemon-lifecycle-probe.mjs";
 
+function readFixturePid(file) {
+  if (!existsSync(file)) return null;
+  const text = readFileSync(file, "utf8");
+  if (!/^[1-9][0-9]*$/.test(text)) return null;
+  const pid = Number(text);
+  return Number.isSafeInteger(pid) && pid > 1 ? pid : null;
+}
+
+test("incomplete or invalid fixture PID files never identify a process group", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "cave-fixture-pid-"));
+  const file = path.join(root, "pid");
+  try {
+    assert.equal(readFixturePid(file), null);
+    for (const value of ["", " ", "0", "1", "-1", "2.5", "NaN", "9007199254740992"]) {
+      writeFileSync(file, value);
+      assert.equal(readFixturePid(file), null, `invalid PID record: ${JSON.stringify(value)}`);
+    }
+    writeFileSync(file, "42");
+    assert.equal(readFixturePid(file), 42);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 const home = path.resolve(os.tmpdir(), "synthetic-coven");
 const status = { ok: true, status: "running", pid: 123, socket: path.join(home, "coven.sock"), started_at: "2026-10-20T00:00:00Z" };
 const health = { ok: true, apiVersion: "coven.daemon.v1", covenVersion: "0.4.10",
@@ -337,8 +359,9 @@ test("a descendant holding inherited pipes cannot outlive the command deadline",
     assert.equal(result.timedOut, true);
   } finally {
     clearTimeout(guard);
-    if (existsSync(pidFile)) {
-      try { process.kill(-Number(readFileSync(pidFile, "utf8")), "SIGKILL"); }
+    const fixturePid = readFixturePid(pidFile);
+    if (fixturePid !== null) {
+      try { process.kill(-fixturePid, "SIGKILL"); }
       catch (error) { if (error.code !== "ESRCH") throw error; }
     }
     await cleanupOwnedGroups(groups);
@@ -364,8 +387,9 @@ else {fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterv
   let guard;
   try {
     const deadline = Date.now() + 5000;
-    while (!existsSync(pidFile) && Date.now() < deadline) await delay(10);
-    assert.ok(existsSync(pidFile), "fixture must announce its active command before interruption");
+    while (readFixturePid(pidFile) === null && Date.now() < deadline) await delay(10);
+    const fixturePid = readFixturePid(pidFile);
+    assert.ok(fixturePid !== null, "fixture must announce a valid active command PID before interruption");
     child.kill("SIGTERM");
     const code = await Promise.race([closed,
       new Promise((_, reject) => { guard = setTimeout(() => reject(new Error("interrupted probe did not finish")), 5000); }),
@@ -376,12 +400,13 @@ else {fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterv
     assert.equal(report.error, "cancelled");
     assert.equal(report.samples[0].cleanup, true);
     assert.equal(report.samples[0].operations[0].failure, "cancelled");
-    assert.throws(() => process.kill(-Number(readFileSync(pidFile, "utf8")), 0), { code: "ESRCH" });
+    assert.throws(() => process.kill(-fixturePid, 0), { code: "ESRCH" });
   } finally {
     clearTimeout(guard);
     child.kill("SIGKILL");
-    if (existsSync(pidFile)) {
-      try { process.kill(-Number(readFileSync(pidFile, "utf8")), "SIGKILL"); }
+    const fixturePid = readFixturePid(pidFile);
+    if (fixturePid !== null) {
+      try { process.kill(-fixturePid, "SIGKILL"); }
       catch (error) { if (error.code !== "ESRCH") throw error; }
     }
     await closed;
