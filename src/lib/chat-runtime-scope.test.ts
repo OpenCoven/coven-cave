@@ -10,6 +10,7 @@ import {
   buildPromptWithRuntimeScope,
   buildRuntimeScopePreamble,
   resolveLocalRuntimeCwd,
+  runtimeGrantDirs,
 } from "./chat-runtime-scope.ts";
 
 const tempRoot = await mkdtemp(path.join(tmpdir(), "cave-runtime-scope-"));
@@ -237,5 +238,46 @@ assert.equal(
   `${buildRuntimeScopePreamble({ kind: "local", root: repo })}\n\nCurrent user message:\nhello`,
   "runtime scope should wrap the user prompt as explicit startup context",
 );
+
+// REGRESSION (#6210): the spawn root arrives realpathed, while a granted
+// project keeps its registered spelling. A project registered through an alias
+// of the spawn directory (macOS /tmp -> /private/tmp) must not be forwarded
+// back to the harness as a second --add-dir grant of its own cwd.
+{
+  const aliasBase = realpathSync(await mkdtemp(path.join(tmpdir(), "cave-grant-dirs-")));
+  const realParent = path.join(aliasBase, "real");
+  const spawn = path.join(realParent, "primary");
+  const extra = path.join(realParent, "extra");
+  const workspace = path.join(aliasBase, "workspace");
+  await mkdir(spawn, { recursive: true });
+  await mkdir(extra, { recursive: true });
+  await mkdir(workspace, { recursive: true });
+  const { symlinkSync } = await import("node:fs");
+  symlinkSync(realParent, path.join(aliasBase, "alias"));
+  const aliasSpawn = path.join(aliasBase, "alias", "primary");
+  const aliasExtra = path.join(aliasBase, "alias", "extra");
+  const elsewhereLink = path.join(aliasBase, "link-to-extra");
+  symlinkSync(extra, elsewhereLink);
+
+  assert.deepEqual(
+    runtimeGrantDirs({
+      spawnRoot: spawn,
+      grantedProjectRoots: [aliasSpawn, aliasExtra, ` ${spawn} `, "", aliasExtra],
+      familiarWorkspace: workspace,
+    }),
+    [aliasExtra, workspace],
+    "the spawn root is excluded by canonical identity; other grants keep their registered spelling",
+  );
+  assert.deepEqual(
+    runtimeGrantDirs({ spawnRoot: spawn, grantedProjectRoots: [elsewhereLink] }),
+    [elsewhereLink],
+    "a symlinked grant that names another directory is still forwarded",
+  );
+  assert.deepEqual(
+    runtimeGrantDirs({ spawnRoot: spawn, grantedProjectRoots: [], familiarWorkspace: aliasSpawn }),
+    [],
+    "a familiar workspace that is the spawn directory is not forwarded again",
+  );
+}
 
 console.log("chat-runtime-scope.test.ts: ok");

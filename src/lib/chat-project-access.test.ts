@@ -275,3 +275,183 @@ assert.equal(
 }
 
 console.log("chat-project-access worktree cwd containment tests passed");
+
+// REGRESSION (#6210): a project registered through an alias spelling — a
+// symlinked ancestor, macOS `/tmp -> /private/tmp` being the everyday case —
+// must keep its identity when a chat resumes. The first turn persists the
+// realpathed runtime cwd, and comparing that against the registered spelling
+// failed the resumed turn closed as unregistered. Built under a realpathed
+// temp dir with its own alias symlink, so it holds whatever HOME looks like.
+{
+  const realBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpa-alias-")));
+  const realParent = path.join(realBase, "real");
+  const realProject = path.join(realParent, "cave");
+  fs.mkdirSync(realProject, { recursive: true });
+  const aliasParent = path.join(realBase, "alias");
+  fs.symlinkSync(realParent, aliasParent);
+  const aliasProject = path.join(aliasParent, "cave");
+
+  const project = (id, root) => ({
+    id,
+    name: id,
+    root,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const aliasProjects = [project("proj-alias", aliasProject)];
+
+  assert.equal(
+    chatProjectAccessId({ projects: aliasProjects, resumeCwd: realProject, resolvedCwd: realProject }),
+    "proj-alias",
+    "a resume from the persisted canonical cwd keeps the alias-registered project's identity",
+  );
+  assert.equal(
+    chatProjectAccessId({
+      projects: aliasProjects,
+      requestedProjectRoot: realProject,
+      resolvedCwd: realProject,
+    }),
+    "proj-alias",
+    "an explicit canonical spelling of an alias-registered root is the same project",
+  );
+  assert.equal(
+    chatProjectAccessId({
+      projects: [project("proj-real", realProject)],
+      resumeCwd: aliasProject,
+      resolvedCwd: realProject,
+    }),
+    "proj-real",
+    "the reverse holds: an alias spelling of a canonically registered root is the same project",
+  );
+  assert.equal(
+    chatProjectAccessId({
+      projects: aliasProjects,
+      requestedProjectRoot: aliasProject,
+      resolvedCwd: realProject,
+    }),
+    "proj-alias",
+    "the registered spelling still resolves",
+  );
+
+  // Identity is equality of one existing directory, never containment or a
+  // shared prefix.
+  const sibling = path.join(realParent, "cave-evil");
+  fs.mkdirSync(sibling);
+  assert.equal(
+    chatProjectAccessId({ projects: aliasProjects, resumeCwd: sibling, resolvedCwd: sibling }),
+    `unregistered:${sibling}`,
+    "a sibling sharing the registered root's prefix is not that project",
+  );
+  const subdir = path.join(realProject, "src");
+  fs.mkdirSync(subdir);
+  assert.equal(
+    chatProjectAccessId({ projects: aliasProjects, resumeCwd: subdir, resolvedCwd: subdir }),
+    `unregistered:${subdir}`,
+    "a directory inside the project is not the project itself",
+  );
+  const elsewhere = path.join(realBase, "elsewhere");
+  fs.mkdirSync(elsewhere);
+  assert.equal(
+    chatProjectAccessId({ projects: aliasProjects, resumeCwd: elsewhere, resolvedCwd: elsewhere }),
+    `unregistered:${elsewhere}`,
+    "a different root stays unregistered",
+  );
+
+  // A path that does not exist has no canonical identity to share.
+  const missing = path.join(realParent, "gone");
+  assert.equal(
+    chatProjectAccessId({
+      projects: [project("proj-gone", path.join(aliasParent, "gone"))],
+      resumeCwd: missing,
+      resolvedCwd: missing,
+    }),
+    `unregistered:${missing}`,
+    "a nonexistent registered root and resume path never match canonically",
+  );
+
+  // A registered symlink retargeted after the conversation started: the
+  // persisted cwd names the OLD target, which the registered root no longer
+  // reaches, so the resumed turn fails closed rather than carrying the grant
+  // into a directory the project no longer names.
+  const targetA = path.join(realBase, "target-a");
+  const targetB = path.join(realBase, "target-b");
+  fs.mkdirSync(targetA);
+  fs.mkdirSync(targetB);
+  const linkRoot = path.join(realBase, "link-root");
+  fs.symlinkSync(targetA, linkRoot);
+  const linkProjects = [project("proj-link", linkRoot)];
+  assert.equal(
+    chatProjectAccessId({ projects: linkProjects, resumeCwd: targetA, resolvedCwd: targetA }),
+    "proj-link",
+    "before the retarget, the persisted target is the registered project",
+  );
+  fs.unlinkSync(linkRoot);
+  fs.symlinkSync(targetB, linkRoot);
+  assert.equal(
+    chatProjectAccessId({ projects: linkProjects, resumeCwd: targetA, resolvedCwd: targetA }),
+    `unregistered:${targetA}`,
+    "after the retarget, the old target is no longer that project",
+  );
+
+  // Two records naming one directory through different spellings, neither of
+  // which the request spells: the grant to check is ambiguous, so fail closed.
+  const twinParent = path.join(realBase, "twin");
+  fs.symlinkSync(realParent, twinParent);
+  assert.equal(
+    chatProjectAccessId({
+      projects: [project("proj-alias", aliasProject), project("proj-twin", path.join(twinParent, "cave"))],
+      resumeCwd: realProject,
+      resolvedCwd: realProject,
+    }),
+    `unregistered:${realProject}`,
+    "two records canonicalizing to one directory never pick a grant silently",
+  );
+
+  // Roots that are not local absolute paths never take part in canonical
+  // matching, even when a relative spelling would resolve to the cwd.
+  assert.equal(
+    chatProjectAccessId({
+      projects: [
+        project("proj-remote", `ssh://host${realProject}`),
+        project("proj-relative", path.relative(process.cwd(), realProject)),
+      ],
+      resumeCwd: realProject,
+      resolvedCwd: realProject,
+    }),
+    `unregistered:${realProject}`,
+    "remote-looking or relative registered roots never match a local cwd canonically",
+  );
+
+  // The Board first-turn handoff checks that the realpathed cwd stays inside
+  // the task's registered project. Against an alias-registered root that
+  // containment must run in the same canonical namespace, or every legitimate
+  // reserved Board turn fails closed — and still fail closed when the cwd
+  // really escapes.
+  const boardTask = {
+    projects: aliasProjects,
+    startNewConversation: true,
+    hasExistingConversation: false,
+    taskProjectId: "proj-alias",
+    taskCwd: aliasProject,
+    requestedProjectRoot: aliasProject,
+  };
+  assert.equal(
+    taskWorktreeProjectAccessId({ ...boardTask, resolvedCwd: realProject }),
+    "proj-alias",
+    "a reserved Board turn in an alias-registered project authorizes against it",
+  );
+  assert.equal(
+    taskWorktreeProjectAccessId({ ...boardTask, resolvedCwd: subdir }),
+    "proj-alias",
+    "a Board cwd inside the alias-registered project stays authorized",
+  );
+  assert.equal(
+    taskWorktreeProjectAccessId({ ...boardTask, resolvedCwd: sibling }),
+    `unregistered:${sibling}`,
+    "a Board cwd in a prefix-sharing sibling still fails closed",
+  );
+
+  fs.rmSync(realBase, { recursive: true, force: true });
+}
+
+console.log("chat-project-access alias identity tests passed");

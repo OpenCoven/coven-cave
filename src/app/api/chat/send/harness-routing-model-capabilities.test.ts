@@ -271,9 +271,11 @@ assert.ok(
   localArgvBlock[0].indexOf('a.push("--add-dir"') < localArgvBlock[0].indexOf('a.push("--", prompt)'),
   "--add-dir must be pushed before the -- prompt separator",
 );
+// runtimeGrantDirs excludes the spawn root by canonical identity; its
+// behaviour is asserted in src/lib/chat-runtime-scope.test.ts (#6210).
 assert.match(
   chatRoute,
-  /\.filter\(\(root\) => root && root !== spawnRoot\)/,
+  /runtimeGrantDirs\(\{\s*spawnRoot: cwd,/,
   "The spawn cwd is already trusted and must not be re-forwarded",
 );
 // The grant LIST is computed ungated (local runtimes only); the coven-run
@@ -281,7 +283,7 @@ assert.match(
 // itself — the copilot direct spawn consumes it without the coven probe.
 assert.match(
   chatRoute,
-  /const grantDirs = !sshRuntime\s*\n?\s*\? Array\.from\(/,
+  /const grantDirs = !sshRuntime\s*\n?\s*\? runtimeGrantDirs\(\{/,
   "Granted-root list must be computed independently of the coven run probe",
 );
 assert.match(

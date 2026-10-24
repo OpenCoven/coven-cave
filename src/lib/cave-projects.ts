@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -268,6 +269,44 @@ export function projectForRoot(
   if (!root?.trim()) return null;
   const normalized = normalizeRootExpandingHome(root);
   return projects.find((project) => normalizeRootExpandingHome(project.root) === normalized) ?? null;
+}
+
+function existingRealpath(root: string | null | undefined): string | null {
+  if (!root?.trim()) return null;
+  const normalized = normalizeRootExpandingHome(root);
+  if (!path.isAbsolute(normalized)) return null;
+  try {
+    return realpathSync(/* turbopackIgnore: true */ normalized);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * {@link projectForRoot} in the filesystem's canonical namespace: the one
+ * registered project whose root is the same existing directory as `root`.
+ *
+ * `projectForRoot` compares spellings, so a project registered through an
+ * alias — a symlinked ancestor, macOS `/tmp -> /private/tmp` being the
+ * everyday case — never matched the realpathed cwd a chat persists and resumes
+ * from, and the resumed turn failed closed as unregistered (#6210).
+ *
+ * Identity is the directory each spelling names right now: a path that does
+ * not exist has none, and a registered symlink retargeted elsewhere stops
+ * naming its old target. Equality only, never containment or a shared prefix.
+ * Two records naming one directory are ambiguous, so this returns null rather
+ * than choosing whose grant applies, and a root that is not a local absolute
+ * path never takes part. Matching a project only selects which grant the
+ * caller must hold; it concedes no access.
+ */
+export function projectForCanonicalRoot(
+  root: string | null | undefined,
+  projects: CaveProject[],
+): CaveProject | null {
+  const target = existingRealpath(root);
+  if (!target) return null;
+  const matches = projects.filter((project) => existingRealpath(project.root) === target);
+  return new Set(matches.map((project) => project.id)).size === 1 ? matches[0] : null;
 }
 
 export function projectById(

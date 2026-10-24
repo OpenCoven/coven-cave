@@ -2,6 +2,7 @@ import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
+import { realpathOrResolve } from "./server/canonical-path.ts";
 
 type RuntimeScopeErrorCode =
   | "project_root_required"
@@ -105,6 +106,32 @@ function isInsideRoot(root: string, candidate: string): boolean {
       !path.isAbsolute(rel) &&
       !rel.split(path.sep).includes("..")
     )
+  );
+}
+
+/**
+ * The directories a local harness receives as `--add-dir` grants: the granted
+ * project roots and the familiar workspace, minus the spawn root the harness
+ * already trusts as its cwd. Forwarded roots keep their registered spelling.
+ *
+ * The spawn root arrives realpathed from {@link resolveLocalRuntimeCwd}, while
+ * a granted root keeps the spelling it was registered under, so the spawn root
+ * is excluded by canonical identity: a project registered through an alias of
+ * the spawn directory (macOS `/tmp -> /private/tmp`, #6210) is not handed back
+ * to the harness as a second grant of its own cwd.
+ */
+export function runtimeGrantDirs(input: {
+  spawnRoot: string;
+  grantedProjectRoots: readonly string[];
+  familiarWorkspace?: string;
+}): string[] {
+  const spawnRoot = realpathOrResolve(input.spawnRoot);
+  return Array.from(
+    new Set(
+      [...input.grantedProjectRoots, ...(input.familiarWorkspace ? [input.familiarWorkspace] : [])]
+        .map((root) => root.trim())
+        .filter((root) => root && root !== input.spawnRoot && realpathOrResolve(root) !== spawnRoot),
+    ),
   );
 }
 

@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import type { CaveProject } from "./cave-projects-types.ts";
-import { projectById, projectForRoot } from "./cave-projects.ts";
+import { projectById, projectForCanonicalRoot, projectForRoot } from "./cave-projects.ts";
 import { realpathOrResolve } from "./server/canonical-path.ts";
 
 export type ChatProjectAccessArgs = {
@@ -107,7 +107,11 @@ export function taskWorktreeProjectAccessId(
   // symlink-resolved runtime cwd remains inside the task's registered project.
   // Otherwise the normal unregistered-project chokepoint must deny the turn
   // instead of authorizing one project while spawning the harness elsewhere.
-  if (!isInsideRoot(taskProject.root, args.resolvedCwd)) {
+  // Both sides are canonicalized, as in worktreeParentProject: the cwd is
+  // realpathed, and a project registered through an alias (macOS /tmp ->
+  // /private/tmp, #6210) must be compared in that namespace. A cwd that
+  // escapes the project still resolves outside it.
+  if (!isInsideRoot(realpathOrResolve(taskProject.root), realpathOrResolve(args.resolvedCwd))) {
     return `unregistered:${args.resolvedCwd}`;
   }
 
@@ -138,9 +142,13 @@ export function chatProjectAccessId(args: ChatProjectAccessArgs): string | null 
   const projectRoot = explicitRoot ?? resumedRoot;
   if (!projectRoot) return null;
 
+  // Spellings first; then the directory the turn will actually run in, in the
+  // canonical namespace, so an alias-registered project keeps its identity
+  // when a resumed turn arrives with the realpathed cwd it persisted (#6210).
   const project =
     projectForRoot(projectRoot, args.projects) ??
-    projectForRoot(args.resolvedCwd, args.projects);
+    projectForRoot(args.resolvedCwd, args.projects) ??
+    projectForCanonicalRoot(args.resolvedCwd, args.projects);
   if (project) return project.id;
 
   const worktreeParent = worktreeParentProject(projectRoot, args.resolvedCwd, args.projects);
