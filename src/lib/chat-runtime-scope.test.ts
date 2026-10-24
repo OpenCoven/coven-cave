@@ -278,6 +278,27 @@ assert.equal(
     [],
     "a familiar workspace that is the spawn directory is not forwarded again",
   );
+  assert.deepEqual(
+    runtimeGrantDirs({ spawnRoot: spawn, grantedProjectRoots: [aliasExtra, extra, elsewhereLink] }),
+    [aliasExtra],
+    "one directory is forwarded once, under the first spelling granted",
+  );
+
+  // On a case-insensitive volume the spawn cwd carries the on-disk case, and a
+  // grant typed in another case is the same directory.
+  await mkdir(path.join(aliasBase, "CaseProbe"));
+  const { existsSync } = await import("node:fs");
+  if (existsSync(path.join(aliasBase, "caseprobe"))) {
+    const onDisk = path.join(realParent, "MyProj");
+    await mkdir(onDisk);
+    const spawnOnDisk = realpathSync.native(path.join(realParent, "myproj"));
+    assert.equal(spawnOnDisk, onDisk, "the native realpath reports the on-disk case");
+    assert.deepEqual(
+      runtimeGrantDirs({ spawnRoot: spawnOnDisk, grantedProjectRoots: [path.join(aliasBase, "alias", "myproj"), extra] }),
+      [extra],
+      "a grant of the spawn directory in another letter case is not forwarded again",
+    );
+  }
 }
 
 console.log("chat-runtime-scope.test.ts: ok");

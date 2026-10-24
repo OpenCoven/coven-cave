@@ -275,7 +275,7 @@ assert.ok(
 // behaviour is asserted in src/lib/chat-runtime-scope.test.ts (#6210).
 assert.match(
   chatRoute,
-  /runtimeGrantDirs\(\{\s*spawnRoot: cwd,/,
+  /const grantDirs = !sshRuntime\s*\n?\s*\? runtimeGrantDirs\(\{\s*spawnRoot: cwd,/,
   "The spawn cwd is already trusted and must not be re-forwarded",
 );
 // The grant LIST is computed ungated (local runtimes only); the coven-run

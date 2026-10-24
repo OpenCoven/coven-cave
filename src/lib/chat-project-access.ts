@@ -1,7 +1,12 @@
 import path from "node:path";
 
 import type { CaveProject } from "./cave-projects-types.ts";
-import { projectById, projectForCanonicalRoot, projectForRoot } from "./cave-projects.ts";
+import {
+  projectById,
+  projectForCanonicalRoot,
+  projectForRoot,
+  projectsForCanonicalRoot,
+} from "./cave-projects.ts";
 import { realpathOrResolve } from "./server/canonical-path.ts";
 
 export type ChatProjectAccessArgs = {
@@ -155,4 +160,23 @@ export function chatProjectAccessId(args: ChatProjectAccessArgs): string | null 
   if (worktreeParent) return worktreeParent.id;
 
   return `unregistered:${projectRoot}`;
+}
+
+/**
+ * Whether a resume root names a REGISTERED project, for the hidden-generation
+ * workspace exemption (cave-g8fqc), which applies only to a root that is not.
+ *
+ * Broader than {@link chatProjectAccessId} on purpose. When two records name
+ * one directory, the grant to check is ambiguous and chatProjectAccessId fails
+ * closed as unregistered — but the directory is still a registered project, so
+ * reading that sentinel as "not registered" would hand the exemption to it.
+ */
+export function resumeRootIsRegisteredProject(args: {
+  projects: CaveProject[];
+  resumeCwd: string;
+  resolvedCwd: string;
+}): boolean {
+  const projectId = chatProjectAccessId(args);
+  if (projectId && !projectId.startsWith("unregistered:")) return true;
+  return projectsForCanonicalRoot(args.resolvedCwd, args.projects).length > 0;
 }

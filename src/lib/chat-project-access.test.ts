@@ -4,7 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { chatProjectAccessId, taskWorktreeProjectAccessId } from "./chat-project-access.ts";
+import {
+  chatProjectAccessId,
+  resumeRootIsRegisteredProject,
+  taskWorktreeProjectAccessId,
+} from "./chat-project-access.ts";
 
 const projects = [
   {
@@ -449,6 +453,81 @@ console.log("chat-project-access worktree cwd containment tests passed");
     taskWorktreeProjectAccessId({ ...boardTask, resolvedCwd: sibling }),
     `unregistered:${sibling}`,
     "a Board cwd in a prefix-sharing sibling still fails closed",
+  );
+
+  // A symlink planted inside a familiar's own workspace that points at an
+  // alias-registered project is that project: the caller must hold its grant.
+  const workspace = path.join(realBase, "workspace");
+  fs.mkdirSync(workspace);
+  const planted = path.join(workspace, "planted");
+  fs.symlinkSync(aliasProject, planted);
+  assert.equal(
+    chatProjectAccessId({ projects: aliasProjects, resumeCwd: planted, resolvedCwd: realProject }),
+    "proj-alias",
+    "a planted symlink to an alias-registered project still requires that project's grant",
+  );
+
+  // The canonical step takes a path as spelled. On POSIX a backslash is part
+  // of a name, so `foo\bar` is not the registered `foo/bar` directory.
+  if (process.platform !== "win32") {
+    fs.mkdirSync(path.join(realParent, "foo", "bar"), { recursive: true });
+    const backslashDir = path.join(realParent, "foo\\bar");
+    fs.mkdirSync(backslashDir);
+    assert.equal(
+      chatProjectAccessId({
+        projects: [project("proj-nested", path.join(aliasParent, "foo", "bar"))],
+        resumeCwd: backslashDir,
+        resolvedCwd: backslashDir,
+      }),
+      `unregistered:${backslashDir}`,
+      "a POSIX directory named with a backslash never borrows another project's identity",
+    );
+  }
+
+  // On a case-insensitive volume another letter case names the same directory.
+  // The persisted cwd carries the on-disk case, so a registration typed in
+  // another case must keep its identity on resume too.
+  const caseProbe = path.join(realBase, "CaseProbe");
+  fs.mkdirSync(caseProbe);
+  if (fs.existsSync(path.join(realBase, "caseprobe"))) {
+    const onDisk = path.join(realParent, "MyProj");
+    fs.mkdirSync(onDisk);
+    const persisted = fs.realpathSync.native(path.join(realParent, "myproj"));
+    assert.equal(persisted, onDisk, "the native realpath reports the on-disk case");
+    assert.equal(
+      chatProjectAccessId({
+        projects: [project("proj-case", path.join(aliasParent, "myproj"))],
+        resumeCwd: persisted,
+        resolvedCwd: persisted,
+      }),
+      "proj-case",
+      "a registration typed in another letter case keeps its identity on resume",
+    );
+  }
+
+  // The hidden-generation workspace exemption applies only to roots that are
+  // not registered projects. Twin records make the grant ambiguous, but the
+  // directory is still registered, so it must not read as exempt.
+  const twins = [project("proj-alias", aliasProject), project("proj-twin", path.join(twinParent, "cave"))];
+  assert.equal(
+    resumeRootIsRegisteredProject({ projects: twins, resumeCwd: realProject, resolvedCwd: realProject }),
+    true,
+    "a directory two records name is registered, even though its grant is ambiguous",
+  );
+  assert.equal(
+    resumeRootIsRegisteredProject({ projects: aliasProjects, resumeCwd: planted, resolvedCwd: realProject }),
+    true,
+    "an alias-registered directory reached through a planted link is registered",
+  );
+  assert.equal(
+    resumeRootIsRegisteredProject({ projects: aliasProjects, resumeCwd: elsewhere, resolvedCwd: elsewhere }),
+    false,
+    "an unregistered directory is not registered",
+  );
+  assert.equal(
+    resumeRootIsRegisteredProject({ projects: aliasProjects, resumeCwd: missing, resolvedCwd: missing }),
+    false,
+    "a nonexistent path is not registered",
   );
 
   fs.rmSync(realBase, { recursive: true, force: true });
