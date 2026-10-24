@@ -78,6 +78,9 @@ afterEach(async () => {
   } while (pendingReads.size || globalThis.__backupSyncInFlight);
   delete (globalThis as { __backupSyncSchedulerStarted?: boolean }).__backupSyncSchedulerStarted;
   delete globalThis.__backupSyncInFlight;
+  delete globalThis.__backupSyncQuitHookInstalled;
+  delete (globalThis as { __caveStartupWorkerShutdown?: unknown }).__caveStartupWorkerShutdown;
+  vi.restoreAllMocks();
   delete (globalThis as { __backupSyncScheduler?: unknown }).__backupSyncScheduler;
   readSpy.mockRestore();
   syncBuiltinESMExports();
@@ -282,4 +285,28 @@ test("production compilation starts no backup work", async () => {
   await backup.startBackupSyncScheduler();
   expect(vi.getTimerCount()).toBe(0);
   expect(archive.build).not.toHaveBeenCalled();
+});
+
+
+test("custom coordination suppresses backup's competing production signal hook", async () => {
+  vi.stubEnv("NODE_ENV", "production");
+  const once = vi.spyOn(process, "once").mockReturnValue(process);
+  (await import("./startup-worker-shutdown")).ownStartupWorkerShutdown();
+  await configure(false);
+  await backup.startBackupSyncScheduler();
+  expect(once.mock.calls.filter(([signal]) => signal === "SIGTERM" || signal === "SIGINT")).toHaveLength(0);
+});
+
+test("standalone production retains the bounded quit snapshot fallback", async () => {
+  vi.stubEnv("NODE_ENV", "production");
+  const once = vi.spyOn(process, "once").mockReturnValue(process);
+  const kill = vi.spyOn(process, "kill").mockReturnValue(true);
+  await configure(true, new Date().toISOString());
+  await backup.startBackupSyncScheduler();
+  const signalHandler = once.mock.calls.find(([signal]) => signal === "SIGTERM")?.[1];
+  expect(signalHandler).toBeTypeOf("function");
+  signalHandler!();
+  await vi.waitFor(() => expect(kill).toHaveBeenCalledWith(process.pid, "SIGTERM"));
+  expect(archive.build).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
 });

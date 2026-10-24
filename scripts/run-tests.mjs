@@ -420,6 +420,7 @@ export const SUITES = {
     "src/lib/server/marketplace-registry.test.ts",
     "src/lib/server/backup-archive.test.ts",
     "src/lib/server/backup-sync-scheduler.behavior.test.ts",
+    "src/lib/server/startup-worker-shutdown.behavior.test.ts",
     "src/lib/server/backup-sync.test.ts",
     "src/lib/server/role-crafts.test.ts",
     "src/app/api/marketplace/owned-route.test.ts",
@@ -1877,6 +1878,7 @@ export const SUITES = {
     "src/lib/server/chat-run-sessions-publisher.test.ts",
     "src/instrumentation-event-plane.test.ts",
     "src/instrumentation.behavior.test.ts",
+    "src/server-startup-worker-shutdown.behavior.test.ts",
     "src/lib/server/json-etag.test.ts",
     "src/lib/server/remote-json-compression.test.ts",
     "src/lib/familiar-dashboard.test.ts",
@@ -2638,6 +2640,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
   "src/lib/server/backup-sync-scheduler.behavior.test.ts",
+  "src/lib/server/startup-worker-shutdown.behavior.test.ts",
   "src/lib/server/scheduled-chat-scheduler.behavior.test.ts",
   "src/lib/auto-thread-reflection.test.ts",
   "src/app/api/familiar-self-report-admission.test.ts",
@@ -2668,6 +2671,7 @@ const VITEST_TESTS = new Set([
     "src/components/voice-call-settings.test.tsx",
   "src/lib/use-surface-cache-invalidation.behavior.test.tsx",
   "src/instrumentation.behavior.test.ts",
+  "src/server-startup-worker-shutdown.behavior.test.ts",
   "src/lib/use-pausable-poll.behavior.test.tsx",
   "src/lib/use-cave-event-plane.test.tsx",
   "src/lib/use-reply-recommendation.behavior.test.tsx",

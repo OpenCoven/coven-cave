@@ -27,6 +27,7 @@ import {
   setLocalEncryptedSecret,
 } from "@/lib/local-encrypted-vault";
 import { caveHome, covenHome } from "@/lib/coven-paths";
+import { isStartupWorkerShutdownCoordinated } from "./startup-worker-shutdown";
 
 export const BACKUP_SYNC_STATE_FILE = "backup-sync.json";
 export const BACKUP_SYNC_PASSPHRASE_KEY = "BACKUP_SYNC_PASSPHRASE";
@@ -473,10 +474,11 @@ async function pushOnQuit(): Promise<void> {
 }
 
 function installQuitHook(): void {
-  if (globalThis.__backupSyncQuitHookInstalled) return;
+  if (isStartupWorkerShutdownCoordinated() || globalThis.__backupSyncQuitHookInstalled) return;
   globalThis.__backupSyncQuitHookInstalled = true;
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.once(signal, () => {
+      if (isStartupWorkerShutdownCoordinated()) return;
       void pushOnQuit()
         .catch(() => undefined)
         .finally(() => {

@@ -41,6 +41,7 @@ import {
   createEventBroker,
   summarizeEventPlaneDiagnostics,
 } from "./src/lib/server/cave-event-broker.ts";
+import { ownStartupWorkerShutdown, coordinateStartupWorkerShutdown } from "./src/lib/server/startup-worker-shutdown.ts";
 import type { CaveEventPlanePublisher } from "./src/lib/server/cave-event-plane-publisher.ts";
 import type { ClientV1DiscoveryPublication } from "./src/lib/server/client-v1/status.ts";
 import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts";
@@ -2228,6 +2229,7 @@ const dev = process.env.NODE_ENV !== "production";
 const hostname = loopbackHostname();
 const port = cavePort();
 
+ownStartupWorkerShutdown();
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 // src/instrumentation.ts starts background services explicitly; routes load on demand.
@@ -2334,6 +2336,30 @@ const deviceAccess = createDeviceAccessGateway({
   },
 });
 
+let server: ReturnType<typeof createServer>;
+let httpShutdownStarted = false;
+function shutdownHttpServer(): void {
+  if (httpShutdownStarted) return;
+  httpShutdownStarted = true;
+  cleanupStandaloneClientV1Discovery();
+  terminatePtySessions();
+  eventBroker?.shutdown();
+  void coordinateStartupWorkerShutdown(() => new Promise<void>((resolve, reject) => {
+    if (!server?.listening) { resolve(); return; }
+    server.close(error => { if (error) reject(error); else resolve(); });
+  })).then(result => {
+    const complete = [result.http, ...Object.values(result.workers)].every(outcome => outcome.status === "drained");
+    if (!complete) console.warn("[startup-workers] Incomplete shutdown:", result);
+    process.exit(complete ? 0 : 1);
+  }, error => {
+    console.error("[startup-workers] Shutdown failed:", error);
+    process.exit(1);
+  });
+}
+
+process.on("SIGINT", shutdownHttpServer);
+process.on("SIGTERM", shutdownHttpServer);
+
 await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 
@@ -2341,7 +2367,7 @@ const nextUpgradeHandler = app.getUpgradeHandler();
 // `compress`), which this custom server otherwise bypasses (#5576).
 const remoteJsonCompression = createRemoteJsonCompression(require("next/dist/compiled/compression"));
 
-const server = createServer((req, res) => {
+server = createServer((req, res) => {
   // Both stamps are trustworthy only because any client-supplied copy dies
   // here, before Next (and proxy.ts) ever see the request.
   delete req.headers[LOCAL_PEER_HEADER];
@@ -2545,7 +2571,7 @@ function reportClientV1DiscoveryUnavailable(error: unknown): void {
   console.error("[cave] ────────────────────────────────────────────────────");
 }
 
-server.listen(port, hostname, () => {
+if (!httpShutdownStarted) server.listen(port, hostname, () => {
   try {
     publishStandaloneClientV1DiscoveryRecord(loopbackHttpEndpoint(hostname, port));
   } catch (error) {
@@ -2566,23 +2592,7 @@ server.listen(port, hostname, () => {
   void warmHarnessSpawnPath();
 });
 
-let httpShutdownStarted = false;
-function shutdownHttpServer(): void {
-  if (httpShutdownStarted) return;
-  httpShutdownStarted = true;
-  cleanupStandaloneClientV1Discovery();
-  terminatePtySessions();
-  eventBroker?.shutdown();
-  const timer = setTimeout(() => process.exit(1), 2_000);
-  timer.unref?.();
-  server.close(() => {
-    clearTimeout(timer);
-    process.exit(0);
-  });
-}
 
-process.once("SIGINT", shutdownHttpServer);
-process.once("SIGTERM", shutdownHttpServer);
 
 // Prime the tailnet allowlist immediately, then keep it fresh. unref() so the
 // poll never holds the process open on its own.
