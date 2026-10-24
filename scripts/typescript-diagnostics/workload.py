@@ -98,9 +98,11 @@ def installed_graph(source):
     return {'versions':versions,'research_expected':'@opencoven/research' in manifest.get('optionalDependencies',{})}
 
 
-def validate_graph(graph):
+def validate_graph(graph, research_version='0.1.0'):
+    # The Research version is pinned per source: the frozen 2026-10 anchors
+    # install 0.1.0, and later main installs 0.2.0.
     expected={'next':'16.3.8','typescript':'6.0.3','react':'19.2.8',
-              '@opencoven/research':'0.1.0' if graph['research_expected'] else None}
+              '@opencoven/research':research_version if graph['research_expected'] else None}
     if graph['versions']!=expected:raise ValueError('installed graph differs from the pinned experiment policy')
 
 
@@ -128,6 +130,7 @@ def main():
     parser.add_argument('--output',type=pathlib.Path,required=True)
     parser.add_argument('--commit',required=True)
     parser.add_argument('--kind',choices=['tsc','tsc-incremental','build','build-observed'],required=True)
+    parser.add_argument('--research-version',default='0.1.0',choices=['0.1.0','0.2.0'])
     args=parser.parse_args()
     source=args.source.resolve();out=args.output.resolve()
     # This is an operator-facing protocol guard, not authentication of a host.
@@ -152,7 +155,8 @@ def main():
     if digest(source/'pnpm-lock.yaml')!=provenance['lock_sha256']:raise ValueError('installation changed lockfile')
     provenance['installed_graph']=installed_graph(source)
     (out/'provenance.json').write_text(json.dumps(provenance,indent=2))
-    validate_graph(provenance['installed_graph'])
+    provenance['expected_research_version']=args.research_version
+    validate_graph(provenance['installed_graph'],args.research_version)
     if args.kind in ('tsc','tsc-incremental'):
         if measure.run(['pnpm','exec','next','typegen'],source,out/'typegen',300,1):return 1
         command=compiler_command(args.kind,source)
