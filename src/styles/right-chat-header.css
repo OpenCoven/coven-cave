@@ -23,6 +23,7 @@
  */
 
 .right-chat .cave-chat-header-row {
+  display: flex;
   flex-wrap: nowrap;
   align-items: center;
   column-gap: var(--space-2);

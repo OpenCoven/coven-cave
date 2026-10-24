@@ -1802,10 +1802,9 @@ function MetaLine({
     // text that actually changes keeps the announcements and takes the
     // controls out of them (cave-fh9so).
     <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} data-lifecycle={state}>
-      {/* Chat-revamp 1b: the session's familiar leads the header as a small
-          circular avatar, so the title row reads avatar · title · meta. */}
+      {/* The familiar spans the title and metadata rows. */}
       <span className="cave-chat-header-avatar" aria-hidden="true">
-        <FamiliarIcon familiar={familiar} size="md" />
+        <FamiliarIcon familiar={familiar} size="lg" />
       </span>
       {session ? (
         <ChatTitleEditable
@@ -1830,7 +1829,7 @@ function MetaLine({
           transport={sessionState.transport}
         />
       ) : null}
-      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined} role="status" aria-live="polite">
+      <span className="cave-chat-meta-line__meta focus-ring-inset" title={metaModel ?? undefined} role="status" aria-live="polite" tabIndex={0}>
         {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
             — "<familiar> · <model> · <branch>" — while the heavier provenance
             (cwd · duration · tokens · cost + meters) stays in the adjacent
@@ -8426,10 +8425,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             generateTitle={generateTitleFromTranscript}
             readOnly={offlineReadOnly}
           />
-          {/* #5953: the run's stats and its Last run summary ride the title row
-              between the identity and the actions, instead of stacking as two
-              bands under it. On a narrow header the cluster wraps to its own
-              line; on phones it is the one band under the mobile header. */}
+          {/* Stats and run activity share the optional third header row. */}
           <div className="cave-chat-header-status">
             {sessionId !== null || turns.length > 0 ? (
               <ChatSessionContextRow
