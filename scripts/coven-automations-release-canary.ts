@@ -195,6 +195,7 @@ function canaryDraft(): Record<string, unknown> {
     timezone: "utc",
     timeoutMinutes: 5,
     runtime: "coven-code",
+    familiarId: "canary-familiar",
     prompt: "Report that the Cave canary ran.",
   };
 }
@@ -298,7 +299,8 @@ export async function runCaveAutomationsScenario(
   // builds: it always writes BYMINUTE, which Coven refuses unless Cave drops it.
   const formCreated = await cave.createRoutineViaRoute({
     id: FORM_ROUTINE_ID, name: "Cave release canary (form)", rrule: `RRULE:FREQ=DAILY;BYHOUR=${formHour};BYMINUTE=0`,
-    prompt: "Report that the Cave form canary ran.", tags: [], cwds: [], familiars: [],
+    prompt: "Report that the Cave form canary ran.", tags: [], cwds: [], familiars: ["canary-familiar"],
+    model: "", adoptionKey: "cave-canary-form-create", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
   const formAutomation = formCreated.body.automation as { id?: string; status?: string } | undefined;
   if (formCreated.status !== 200 || formCreated.body.ok !== true || formAutomation?.id !== FORM_ROUTINE_ID || formAutomation.status !== "PAUSED") {
@@ -309,7 +311,7 @@ export async function runCaveAutomationsScenario(
   // zone Coven actually runs each routine in.
   const both = await cave.lifecycle([ROUTINE_ID, FORM_ROUTINE_ID]);
   const { timezone: canaryZone } = expectLifecycle("lifecycle", both, ROUTINE_ID, { state: "paused", revision: 1 });
-  const { timezone: formZone } = expectLifecycle("lifecycle", both, FORM_ROUTINE_ID, { state: "paused", revision: 1 });
+  const { timezone: formZone } = expectLifecycle("lifecycle", both, FORM_ROUTINE_ID, { state: "paused", revision: 2 });
   if (canaryZone !== "utc" || formZone === "local") {
     fail(`lifecycle: expected the explicit utc zone and a resolved zone for local, received ${canaryZone} and ${formZone}.`);
   }
@@ -321,16 +323,16 @@ export async function runCaveAutomationsScenario(
 
   // Resume at the revision just read, as "Resume it now" in the create dialog
   // does, then resend under the same key: Coven reconciles, it does not reapply.
-  const resume = { command: "activate", expectedRevision: 1, adoptionKey: `cave-${randomUUID()}` };
-  expectAnswer("resume at revision 1", await cave.lifecycleCommand(FORM_ROUTINE_ID, resume), 200, { kind: "committed", revision: 2, replayed: false });
-  expectAnswer("resume resent under its adoption key", await cave.lifecycleCommand(FORM_ROUTINE_ID, resume), 200, { kind: "committed", revision: 2, replayed: true });
-  // A control still showing revision 1 must not overwrite revision 2.
+  const resume = { command: "activate", expectedRevision: 2, adoptionKey: `cave-${randomUUID()}` };
+  expectAnswer("resume at revision 2", await cave.lifecycleCommand(FORM_ROUTINE_ID, resume), 200, { kind: "committed", revision: 3, replayed: false });
+  expectAnswer("resume resent under its adoption key", await cave.lifecycleCommand(FORM_ROUTINE_ID, resume), 200, { kind: "committed", revision: 3, replayed: true });
+  // A control still showing revision 2 must not overwrite revision 3.
   expectAnswer("pause at a stale revision", await cave.lifecycleCommand(FORM_ROUTINE_ID,
-    { command: "pause", expectedRevision: 1, adoptionKey: `cave-${randomUUID()}` }), 409, { kind: "conflict", currentRevision: 2 });
-  expectLifecycle("lifecycle after resume", await cave.lifecycle([FORM_ROUTINE_ID]), FORM_ROUTINE_ID, { state: "active", revision: 2 });
-  expectAnswer("pause at revision 2", await cave.lifecycleCommand(FORM_ROUTINE_ID,
-    { command: "pause", expectedRevision: 2, adoptionKey: `cave-${randomUUID()}` }), 200, { kind: "committed", revision: 3, replayed: false });
-  expectLifecycle("lifecycle after pause", await cave.lifecycle([FORM_ROUTINE_ID]), FORM_ROUTINE_ID, { state: "paused", revision: 3 });
+    { command: "pause", expectedRevision: 2, adoptionKey: `cave-${randomUUID()}` }), 409, { kind: "conflict", currentRevision: 3 });
+  expectLifecycle("lifecycle after resume", await cave.lifecycle([FORM_ROUTINE_ID]), FORM_ROUTINE_ID, { state: "active", revision: 3 });
+  expectAnswer("pause at revision 3", await cave.lifecycleCommand(FORM_ROUTINE_ID,
+    { command: "pause", expectedRevision: 3, adoptionKey: `cave-${randomUUID()}` }), 200, { kind: "committed", revision: 4, replayed: false });
+  expectLifecycle("lifecycle after pause", await cave.lifecycle([FORM_ROUTINE_ID]), FORM_ROUTINE_ID, { state: "paused", revision: 4 });
   if ((await cave.deleteRoutine(FORM_ROUTINE_ID)) !== true) fail("deleteRoutine: expected the form routine to be deleted.");
   const removed = await cave.lifecycle([FORM_ROUTINE_ID]);
   const removedRecord = (removed.body.records as Record<string, unknown>[] | undefined)?.[0];
@@ -342,7 +344,7 @@ export async function runCaveAutomationsScenario(
   // daemon's PATH: Coven records a manual occurrence, a run and its failed
   // attempt. Cave must report the failure, never a started run, and then show
   // each fact as Coven recorded it, without the daemon's free text.
-  const runRoutine = await cave.createRoutine({ ...draft, id: RUN_ROUTINE_ID, name: "Cave release canary (run now)", cwd: runCwd });
+  const runRoutine = await cave.createRoutine({ ...draft, id: RUN_ROUTINE_ID, name: "Cave release canary (run now)", cwd: runCwd, familiarId: undefined });
   if (runRoutine.id !== RUN_ROUTINE_ID || runRoutine.status !== "PAUSED") {
     fail(`createRoutine (run now): expected the paused routine back, received ${describe(runRoutine)}.`);
   }
@@ -396,25 +398,28 @@ export async function runCaveAutomationsScenario(
   // A change lands elsewhere while the panel still shows revision 1. Cave's
   // save at revision 1 must be refused, the review must read Coven's body and
   // revision together, and the rebased save must keep the other change.
+  // Keep the historical run-now fixture unchanged; supported editing requires an explicit familiar.
+  await cave.createRoutine({ ...draft, id: "cave-release-canary-edit", name: "Cave release canary (run now)", cwd: runCwd });
+  const prior = await cave.definition("cave-release-canary-edit");
   const elsewhere = "Report that the Cave canary was changed elsewhere.";
-  await cave.updateRoutine({ ...draft, id: RUN_ROUTINE_ID, name: "Cave release canary (run now)", cwd: runCwd, prompt: elsewhere });
-  const stale = await cave.saveViaRoute(RUN_ROUTINE_ID, { name: "Cave release canary (renamed in Cave)", expectedRevision: 1 });
+  await cave.updateRoutine({ ...draft, id: "cave-release-canary-edit", name: "Cave release canary (run now)", cwd: runCwd, prompt: elsewhere });
+  const stale = await cave.saveViaRoute("cave-release-canary-edit", { name: "Cave release canary (renamed in Cave)", expectedRevision: 1, reviewedSource: prior.body.reviewedSource, adoptionKey: "cave-canary-stale-edit" });
   if (stale.status !== 409 || stale.body.conflict !== true || stale.body.currentRevision !== 2) {
     fail(`save at a stale revision: expected 409 with currentRevision 2, received ${stale.status} ${describe(stale.body)}.`);
   }
-  const current = await cave.definition(RUN_ROUTINE_ID);
+  const current = await cave.definition("cave-release-canary-edit");
   const currentAutomation = current.body.automation as { name?: unknown; prompt?: unknown } | undefined;
   if (current.status !== 200 || current.body.ok !== true || current.body.revision !== 2 ||
     currentAutomation?.prompt !== elsewhere || currentAutomation.name !== "Cave release canary (run now)") {
     fail(`definition after the change: expected revision 2 with the other change, received ${current.status} ${describe(current.body)}.`);
   }
-  const rebased = await cave.saveViaRoute(RUN_ROUTINE_ID, { name: "Cave release canary (renamed in Cave)", expectedRevision: 2 });
+  const rebased = await cave.saveViaRoute("cave-release-canary-edit", { name: "Cave release canary (renamed in Cave)", expectedRevision: 2, reviewedSource: current.body.reviewedSource, adoptionKey: "cave-canary-rebased-edit" });
   const rebasedAutomation = rebased.body.automation as { name?: unknown; prompt?: unknown } | undefined;
   if (rebased.status !== 200 || rebased.body.ok !== true || rebasedAutomation?.name !== "Cave release canary (renamed in Cave)" ||
     rebasedAutomation.prompt !== elsewhere) {
     fail(`rebased save: expected the new name with the other change kept, received ${rebased.status} ${describe(rebased.body)}.`);
   }
-  const settled = await cave.definition(RUN_ROUTINE_ID);
+  const settled = await cave.definition("cave-release-canary-edit");
   if (settled.status !== 200 || settled.body.revision !== 3) {
     fail(`definition after the rebased save: expected revision 3, received ${settled.status} ${describe(settled.body)}.`);
   }
@@ -465,7 +470,7 @@ export async function runCaveAutomationsScenario(
     fail(`definition with the daemon stopped: expected 503 degraded, received ${offlineDefinition.status} ${describe(offlineDefinition.body)}.`);
   }
 
-  return { mutations: 10, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 };
+  return { mutations: 11, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 };
 }
 
 function covenCommand(coven: string): [string, string[]] {
@@ -726,6 +731,29 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
     await assert.rejects(research.updateCodexAutomation(researchContext.automationId, { status: "PAUSED" }, { ...researchPause, adoptionKey: "research-stale:canary-mission" }), { code: "REVISION_CONFLICT" });
     const removedResearch = await createAutomationCommandClient().tombstone(researchContext.automationId, pausedResearch.revision, { adoptionKey: "research-remove:canary-mission", intent: "Remove canary fixture", principalId: "cave" });
     assert.notEqual(removedResearch.outcome, "rejected");
+    const consumers = await import("../src/lib/server/automation-consumer-reads.ts");
+    const { createRoutineDraft } = await import("../src/lib/server/automation-consumer-commands.ts");
+    const { readAutomationDefinitionSnapshot } = await import("../src/lib/server/automation-definition-snapshot.ts");
+    const largeIds = ["canary-large-morning", "canary-large-evening"];
+    const largePrompt = "x".repeat(9_000);
+    const largeRevisions = new Map<string, number>();
+    for (const id of largeIds) {
+      largeRevisions.set(id, await createRoutineDraft({ id, name: id, status: "PAUSED", prompt: largePrompt,
+        rrule: "FREQ=DAILY;BYHOUR=9", timezone: "UTC", runtime: "codex", familiarId: "canary-familiar",
+        timeoutMinutes: 10, tags: [] }, { adoptionKey: `large-create:${id}` }));
+    }
+    const largeInventory = await consumers.listRoutines();
+    for (const id of largeIds) {
+      assert.equal(largeInventory.find(routine => routine.id === id)?.prompt, largePrompt);
+      const snapshot = await readAutomationDefinitionSnapshot(id);
+      assert.equal(snapshot.routine?.status, "PAUSED");
+      assert.equal(snapshot.routine?.prompt, largePrompt);
+      assert.equal(snapshot.definition?.action.prompt, largePrompt);
+      const removed = await createAutomationCommandClient().tombstone(id, largeRevisions.get(id)!, {
+        adoptionKey: `large-remove:${id}`, intent: "Remove paused large canary fixture", principalId: "cave",
+      });
+      assert.notEqual(removed.outcome, "rejected");
+    }
     const { GET } = await import("../src/app/api/coven-automations/[id]/events/route.ts");
     const createRoute = await import("../src/app/api/codex-automations/route.ts");
     const overviewRoute = await import("../src/app/api/coven-automation-lifecycle/route.ts");
@@ -748,6 +776,47 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
     const answer = async (response: Response): Promise<CanaryResponse> =>
       ({ status: response.status, body: await response.json() as Record<string, unknown> });
     const reader = createAutomationReadClient();
+    // C7: real journal route, rich reviewed snapshots, stable replay and
+    // typed compatibility consumers against the pinned daemon, not fixtures.
+    const journalRoute = await import("../src/app/api/journal/automation/route.ts");
+    const reads = await import("../src/lib/server/automation-consumer-reads.ts");
+    const journalInput = { familiar: "canary-journal", familiarName: "Canary journal", enabled: true,
+      hour: (new Date().getUTCHours() + 12) % 24, minute: 0,
+      mutation: { adoptionKey: "c7-journal-create", source: null, timezone: "UTC" } };
+    const journalPut = (body: unknown) => journalRoute.PUT(local("http://127.0.0.1:3000/api/journal/automation", body, "PUT"));
+    const journalCreatedResponse = await journalPut(journalInput);
+    assert.equal(journalCreatedResponse.status, 200, await journalCreatedResponse.clone().text());
+    const journalCreated = await journalCreatedResponse.json();
+    assert.equal(journalCreated.routine.status, "PAUSED");
+    assert.equal(journalCreated.routine.revision, 2);
+    assert.ok(journalCreated.routine.reviewedSource.definition, "journal exposes the rich reviewed source");
+    const journalReplayResponse = await journalPut(journalInput);
+    assert.equal(journalReplayResponse.status, 200, await journalReplayResponse.clone().text());
+    assert.deepEqual(await journalReplayResponse.json(), journalCreated, "same journal request replays without another revision");
+    const journalEdit = { ...journalInput, hour: (journalInput.hour + 1) % 24, mutation: {
+      adoptionKey: "c7-journal-edit", source: journalCreated.routine.reviewedSource,
+      expectedRevision: journalCreated.routine.revision, timezone: "UTC",
+    } };
+    const journalEditedResponse = await journalPut(journalEdit);
+    assert.equal(journalEditedResponse.status, 200, await journalEditedResponse.clone().text());
+    const journalEdited = await journalEditedResponse.json();
+    assert.equal(journalEdited.routine.revision, 3);
+    assert.equal(journalEdited.routine.status, "PAUSED");
+    assert.equal(journalEdited.routine.hour, journalEdit.hour);
+    assert.deepEqual(journalEdited.routine.reviewedSource.definition.binding, journalCreated.routine.reviewedSource.definition.binding);
+    const journalConflict = await journalPut({ ...journalEdit, mutation: { ...journalEdit.mutation, adoptionKey: "c7-journal-stale" } });
+    assert.equal(journalConflict.status, 409, await journalConflict.clone().text());
+    const journalId = journalEdited.routine.id as string;
+    assert.ok((await reads.listRoutines()).some(routine => routine.id === journalId));
+    assert.equal((await reads.getRoutine(journalId))?.status, "PAUSED");
+    assert.deepEqual(await reads.listRoutineRuns(journalId), []);
+    const journalDeleteRequest = new Request(`http://127.0.0.1:3000/api/codex-automations/${journalId}?expectedRevision=3`, {
+      method: "DELETE", headers: { host: "127.0.0.1:3000", "Idempotency-Key": "c7-journal-delete", ...(token ? { [TOKEN_HEADER]: token } : {}) },
+    });
+    const journalDeleted = await editRoute.DELETE(journalDeleteRequest, { params: Promise.resolve({ id: journalId }) });
+    assert.equal(journalDeleted.status, 200, await journalDeleted.clone().text());
+    assert.equal(await reads.getRoutine(journalId), null);
+    assert.equal(await fs.readFile(legacyFile, "utf8"), legacyBytes, "ordinary consumers preserve the explicit legacy import source");
     const summary = await guarded(runCaveAutomationsScenario({
       capabilities: async () => {
         const capabilities = await reader.capabilities();
@@ -796,6 +865,9 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
       stopDaemon: stop,
     }, { runCwd: work }));
     await assert.rejects(research.getCodexAutomation(researchContext.automationId), { code: "unavailable" });
+    const journalOffline = await journalRoute.GET(new Request("http://127.0.0.1:3000/api/journal/automation?familiar=canary-journal"));
+    assert.equal(journalOffline.status, 503);
+    assert.equal((await journalOffline.json()).available, false);
     return { ...summary, covenVersion: version, daemonStarts: starts };
   } catch (error) {
     const output = Buffer.concat(log).toString("utf8").trim();
@@ -844,6 +916,8 @@ async function main(signal: AbortSignal): Promise<void> {
     `lifecycleCommands=${result.lifecycleCommands}`,
     "createPaused=passed",
     "researchHostCreateReplayMetadataPauseConflict=passed",
+    "journalTypedCreateReplayEditMetadataConflictDeleteOffline=passed",
+    "typedLargeInventoryAndSnapshot=passed",
     "researchExplicitImportReplayMetadataSourcePreservation=passed",
     "revisionConflict=typed",
     "runNowFailure=reported",

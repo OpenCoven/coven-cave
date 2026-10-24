@@ -1,5 +1,7 @@
 "use client";
 
+import { pendingIntentSession } from "@/lib/automations/pending-intent-store";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
@@ -37,11 +39,12 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } from "@/lib/rituals-overview";
 import { failingCronIds } from "@/lib/automations/cron-health";
-import { lifecycleCommandMessage, lifecycleControl, parseLifecycleDetail } from "@/lib/automations/lifecycle";
+import { lifecycleCommandMessage, lifecycleControl } from "@/lib/automations/lifecycle";
 import { useAutomationLifecycle } from "@/lib/automations/use-automation-lifecycle";
 import { useAutomationInFlight } from "@/lib/automations/use-automation-in-flight";
 import { inFlightNote } from "@/lib/automations/in-flight";
-import { saveWithRevisionCheck, type RevisionRebase } from "@/lib/automations/revision-rebase";
+import { readCurrentDefinition, saveWithRevisionCheck, type RevisionRebase, type RevisionSaveSession } from "@/lib/automations/revision-rebase";
+import { createWithStableIntent, type AutomationCreateSession } from "@/lib/automations/create-intent";
 import { liveRunView, newestRunFor } from "@/lib/automations/live-run";
 import { LiveRunCard } from "@/components/automations/live-run-card";
 import { FamiliarCarousel } from "@/components/automations/familiar-carousel";
@@ -580,11 +583,12 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   }, [conflict, selectedCodex?.id]);
 
   /** Save an edit of `base` only at a revision whose fields the person has seen; otherwise review. */
+  const revisionSaveSession = useRef<RevisionSaveSession>(pendingIntentSession("definition-edit"));
   const saveCodex = useCallback(async (base: CodexAutomation, patch: CodexAutomationPatch) => {
     setBusyId(base.id);
     setConflict(null);
     try {
-      const result = await saveWithRevisionCheck(base, patch);
+      const result = await saveWithRevisionCheck(base, patch, revisionSaveSession.current);
       if (result.kind === "review") {
         setConflict({ id: base.id, rebase: result.rebase });
         announce(`Not saved: Coven has a newer revision of '${base.name}'. Review what changed.`);
@@ -594,10 +598,17 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
         setError(result.message);
         return;
       }
+      if (result.kind === "resolved") {
+        setError("The previous save is confirmed. Your newer edits have not been saved; review them and save again.");
+        await reloadAfterMutation();
+        return;
+      }
       if (result.automation) setSelectedCodex(result.automation);
       setFormResetKey((key) => key + 1);
       announce(`Saved '${patch.name ?? base.name}'.`);
       await reloadAfterMutation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The pending save could not be retained safely.");
     } finally {
       setBusyId(null);
     }
@@ -623,11 +634,18 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     focusHeaderAction(); // panel held focus
     // The revision the person chose to delete; a change since then is a conflict.
     const expectedRevision = lifecycleOf(auto.id).revision;
+    if (expectedRevision === null) {
+      setError("Not deleted: the current revision is unavailable. Refresh the automation and review it before deleting.");
+      return;
+    }
+    // Deleting the same ID at the same reviewed revision is the same intent,
+    // including a retry after a lost response or a browser reload.
+    const adoptionKey = `cave-delete:${auto.id}:${expectedRevision}`;
     scheduleDelete([auto.id], `automation “${auto.name}”`, async () => {
       setCodexAutos((prev) => prev.filter((a) => a.id !== auto.id));
       try {
-        const query = expectedRevision === null ? "" : `?expectedRevision=${expectedRevision}`;
-        const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}${query}`, { method: "DELETE" });
+        const query = `?expectedRevision=${expectedRevision}`;
+        const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}${query}`, { method: "DELETE", headers: { "Idempotency-Key": adoptionKey } });
         const json = await res.json().catch(() => null);
         if (res.status === 409 && json?.conflict) {
           // Deleting is never retried at a revision the person did not choose.
@@ -659,37 +677,51 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     }
   }, [refreshRuns, refreshLastRuns]);
 
+  const createSession = useRef<AutomationCreateSession>(pendingIntentSession("definition-create"));
+  const createInFlight = useRef(false);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const createCodex = useCallback(async (input: AutomationCreateInput) => {
-    const { start, ...body } = input;
+    if (createInFlight.current) return;
+    createInFlight.current = true;
+    setCreateBusy(true);
+    setCreateError(null);
     try {
-      // Every new routine is created paused; activation is a separate,
-      // revision-checked command against the definition Coven just stored.
-      const res = await fetch("/api/codex-automations", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
+      const result = await createWithStableIntent(input, createSession.current);
+      if (result.kind === "failed") { setCreateError(result.message); return; }
+      if (result.kind === "resolved") {
+        setCreateError("The previous creation is confirmed paused. Your changed form has not been created; review it before creating another scheduled job.");
+        await reloadAfterMutation();
+        return;
+      }
       setCreateOpen(false);
-      const createdId: string | undefined = json.automation?.id;
-      if (start === "active" && createdId) {
-        const detail = parseLifecycleDetail(await fetch(`/api/coven-automations/${encodeURIComponent(createdId)}/lifecycle`, { cache: "no-store" })
-          .then((r) => r.json()).catch(() => null));
-        if (detail.kind === "available" && detail.record.kind === "present" && detail.record.state === "paused") {
-          const outcome = lifecycleCommandMessage(await sendLifecycle(createdId, "activate", detail.record.revision), "activate", input.name);
-          if (outcome.ok) announce(`Created cron '${input.name}' and resumed it.`);
-          else setError(`Created '${input.name}' paused. ${outcome.message}`);
+      const createdId = result.automation.id;
+      if (input.start === "active") {
+        const detail = await readCurrentDefinition(`/api/codex-automations/${encodeURIComponent(createdId)}`);
+        if (detail.kind === "available" && detail.automation.status === "PAUSED") {
+          const approved = await confirm({ title: `Activate “${detail.automation.name}”?`,
+            body: `Review revision ${detail.revision}: ${detail.automation.scheduleHuman}, timezone ${detail.reviewedSource.routine.timezone}, familiar ${detail.automation.familiars.join(", ")}, model ${detail.automation.model || "default"}. Instructions: ${detail.automation.prompt}`,
+            confirmLabel: "Activate scheduled job" });
+          if (approved) {
+            const outcome = lifecycleCommandMessage(await sendLifecycle(createdId, "activate", detail.revision), "activate", detail.automation.name);
+            if (outcome.ok) announce(`Created scheduled job '${detail.automation.name}' and activated it.`);
+            else setError(`Created '${detail.automation.name}' paused. ${outcome.message}`);
+          } else announce(`Created scheduled job '${input.name}', paused.`);
         } else {
           setError(`Created '${input.name}' paused. Coven's revision couldn't be read, so it wasn't resumed.`);
         }
       } else {
-        announce(`Created cron '${input.name}', paused.`);
+        announce(`Created scheduled job '${input.name}', paused.`);
       }
       await reloadAfterMutation();
-      if (json.automation) { setSelectedCodex(json.automation); setSelectedItem(null); }
+      setSelectedCodex(result.automation); setSelectedItem(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "codex create failed");
+      setCreateError(err instanceof Error ? err.message : "Creation failed. Review the form and try again.");
+    } finally {
+      createInFlight.current = false;
+      setCreateBusy(false);
     }
-  }, [reloadAfterMutation, sendLifecycle]);
+  }, [reloadAfterMutation, sendLifecycle, confirm]);
 
   // Ids whose delete is pending in the undo window — hidden everywhere until the
   // window lapses (committing the delete) or Undo restores them.
@@ -1448,8 +1480,10 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
       {/* ── Create automation dialog ───────────────────────────────────────── */}
       {createOpen && (
         <AutomationCreateDialog
+          busy={createBusy}
+          error={createError}
           resolvedFamiliars={resolvedFamiliars}
-          onClose={() => setCreateOpen(false)}
+          onClose={() => { setCreateOpen(false); focusHeaderAction(); }}
           onCreate={(i) => void createCodex(i)}
         />
       )}

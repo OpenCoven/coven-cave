@@ -1,4 +1,4 @@
-export type AutomationStatus = "ACTIVE" | "PAUSED";
+export type AutomationStatus = "ACTIVE" | "PAUSED" | "DISABLED";
 
 export type CodexAutomation = {
   id: string;

@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CwdPickerField } from "@/components/cwd-picker-field";
-import { SkillSelect } from "@/components/automation-skill-select";
 import { Button } from "@/components/ui/button";
-import { StandardSelect } from "@/components/ui/select";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { CodexAutomation, CodexAutomationPatch } from "@/lib/codex-automations-types";
 import type { AutomationRunRecord } from "@/lib/automation-runs";
@@ -44,7 +42,6 @@ const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
 };
 const fieldBaseClass = "w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
 const inputClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
-const selectClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
 const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[length:var(--text-sm)] leading-relaxed`;
 const monoTextareaClass = `${textareaClass} font-mono text-[length:var(--text-xs)]`;
 
@@ -206,11 +203,8 @@ export function CodexDetailPanel({
   const [goals, setGoals] = useState(promptParts.goals);
   const [deliverables, setDeliverables] = useState(promptParts.deliverables);
   const [model, setModel] = useState(auto.model ?? "");
-  const [reasoningEffort, setReasoningEffort] = useState(auto.reasoningEffort ?? "medium");
-  const [executionEnvironment, setExecutionEnvironment] = useState(auto.executionEnvironment ?? "worktree");
   const [tagsText, setTagsText] = useState(commaInput(auto.tags));
   const [cwdsText, setCwdsText] = useState(listInput(auto.cwds));
-  const [skillPath, setSkillPath] = useState(auto.skillPath ?? "");
   const [scheduleMode, setScheduleMode] = useState<"daily" | "weekly" | "raw">(parsedSchedule.mode);
   const [scheduleTime, setScheduleTime] = useState(parsedSchedule.time);
   const [scheduleDays, setScheduleDays] = useState(parsedSchedule.days);
@@ -236,11 +230,8 @@ export function CodexDetailPanel({
     setGoals(nextPromptParts.goals);
     setDeliverables(nextPromptParts.deliverables);
     setModel(auto.model ?? "");
-    setReasoningEffort(auto.reasoningEffort ?? "medium");
-    setExecutionEnvironment(auto.executionEnvironment ?? "worktree");
     setTagsText(commaInput(auto.tags));
     setCwdsText(listInput(auto.cwds));
-    setSkillPath(auto.skillPath ?? "");
     setScheduleMode(nextSchedule.mode);
     setScheduleTime(nextSchedule.time);
     setScheduleDays(nextSchedule.days);
@@ -262,11 +253,8 @@ export function CodexDetailPanel({
     name !== formBase.name ||
     promptDirty ||
     model !== (formBase.model ?? "") ||
-    reasoningEffort !== (formBase.reasoningEffort ?? "medium") ||
-    executionEnvironment !== (formBase.executionEnvironment ?? "worktree") ||
     tagsText !== commaInput(formBase.tags) ||
     cwdsText !== listInput(formBase.cwds) ||
-    skillPath.trim() !== (formBase.skillPath ?? "") ||
     !sameRoutineRrule(nextRrule, formBase.rrule ?? "");
   dirtyRef.current = dirty;
   const canSave = !busy && dirty && name.trim().length > 0 && !invalidSchedule;
@@ -296,12 +284,8 @@ export function CodexDetailPanel({
       prompt: nextPrompt,
       rrule: nextRrule,
       model: model.trim(),
-      reasoning_effort: reasoningEffort,
-      execution_environment: executionEnvironment,
       tags,
       cwds,
-      // Send "" (not undefined) so selecting "— none —" actually clears the skill.
-      skill_path: skillPath.trim(),
     });
   };
   const latestRun = runs[0];
@@ -346,10 +330,7 @@ export function CodexDetailPanel({
             className={inputClass}
           />
         </div>
-        <div>
-          <FieldLabel>Skill</FieldLabel>
-          <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={selectClass} />
-        </div>
+
       </div>
     </CronDetailSection>
   );
@@ -472,42 +453,11 @@ export function CodexDetailPanel({
             className={inputClass}
           />
         </div>
-        <div>
-          <FieldLabel>Reasoning</FieldLabel>
-          <StandardSelect
-            label="Reasoning"
-            value={reasoningEffort}
-            onChange={setReasoningEffort}
-            className={selectClass}
-            options={[
-              ...(!["low", "medium", "high"].includes(reasoningEffort)
-                ? [{ value: reasoningEffort, label: reasoningEffort }]
-                : []),
-              { value: "low", label: "low" },
-              { value: "medium", label: "medium" },
-              { value: "high", label: "high" },
-            ]}
-          />
-        </div>
-        <div>
-          <FieldLabel>Environment</FieldLabel>
-          <StandardSelect
-            label="Environment"
-            value={executionEnvironment}
-            onChange={setExecutionEnvironment}
-            className={selectClass}
-            options={[
-              ...(!["worktree", "repo"].includes(executionEnvironment)
-                ? [{ value: executionEnvironment, label: executionEnvironment }]
-                : []),
-              { value: "worktree", label: "worktree" },
-              { value: "repo", label: "repo" },
-            ]}
-          />
-        </div>
+
       </div>
       <div>
-        <FieldLabel>Working directories</FieldLabel>
+        <p className="text-[length:var(--text-xs)] [color:var(--text-secondary)]!">Reasoning, environment and skill overrides are unavailable for these scheduled jobs.</p>
+        <FieldLabel>Working directory</FieldLabel>
         <CwdPickerField
           value={cwdsText}
           onChange={setCwdsText}
