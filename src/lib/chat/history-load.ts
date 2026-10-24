@@ -14,6 +14,8 @@ export type ChatHistorySources = {
   persist: (sessionId: string, payload: ConversationHistoryPayload) => void;
   loadFlowTranscript: (sessionId: string) => Promise<string | null>;
   isMissingError: (error: unknown) => boolean;
+  isAccessDeniedError: (error: unknown) => boolean;
+  subscribeInvalidation: (sessionId: string, invalidate: (missing: boolean) => void) => () => void;
 };
 
 /** The owning view supplies current refs, never captured render snapshots.
@@ -80,6 +82,16 @@ export function startChatHistoryLoad({ sessionId, isThreadSwitch, flowBackedSess
     view.setActiveLeafId("");
   }
   let cancelled = false;
+  const unsubscribeAccess = sources.subscribeInvalidation(sessionId, (missing) => {
+    cancelled = true;
+    view.setFallback(null);
+    view.setContext(null);
+    const emptyTurns: Turn[] = [];
+    view.setTurns(emptyTurns);
+    view.syncTurns(emptyTurns);
+    view.setActiveLeafId("");
+    view.setState(missing ? "missing" : "error");
+  });
   void (async () => {
     if (!cachedConversation) view.setState("loading");
     let durableConversation: ConversationHistoryPayload | null = null;
@@ -158,6 +170,7 @@ export function startChatHistoryLoad({ sessionId, isThreadSwitch, flowBackedSess
         }
         view.setFallback(null);
         view.setTurns([]);
+        view.syncTurns([]);
         view.setActiveLeafId("");
         view.setState("loaded");
       } else {
@@ -167,11 +180,24 @@ export function startChatHistoryLoad({ sessionId, isThreadSwitch, flowBackedSess
         }
         view.setFallback(null);
         view.setTurns([]);
+        view.syncTurns([]);
         view.setActiveLeafId("");
         view.setState("missing");
       }
     } catch (error) {
       if (!cancelled) {
+        // An authoritative refusal outranks cached and live presentation.
+        // It must never become an offline fallback or retain an exportable ref.
+        if (sources.isAccessDeniedError(error)) {
+          view.setFallback(null);
+          view.setContext(null);
+          const emptyTurns: Turn[] = [];
+          view.setTurns(emptyTurns);
+          view.syncTurns(emptyTurns);
+          view.setActiveLeafId("");
+          view.setState("error");
+          return;
+        }
         if (view.keepLiveSession() || hasNewerGeneration()) {
           view.setState("loaded");
           return;
@@ -201,6 +227,7 @@ export function startChatHistoryLoad({ sessionId, isThreadSwitch, flowBackedSess
           const cleanedTranscript = transcript ? stripStepMarkers(transcript) : "";
           if (cleanedTranscript) {
             view.setTurns([]);
+            view.syncTurns([]);
             view.setActiveLeafId("");
             view.setFallback(cleanedTranscript);
             view.setState("loaded");
@@ -216,6 +243,7 @@ export function startChatHistoryLoad({ sessionId, isThreadSwitch, flowBackedSess
         }
         view.setFallback(null);
         view.setTurns([]);
+        view.syncTurns([]);
         view.setActiveLeafId("");
         view.setState(
           sources.isMissingError(error)
@@ -226,6 +254,7 @@ export function startChatHistoryLoad({ sessionId, isThreadSwitch, flowBackedSess
     }
   })();
   return () => {
+    unsubscribeAccess();
     cancelled = true;
   };
 }

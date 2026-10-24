@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -265,10 +265,23 @@ try {
   }
 
   process.env.CLAUDE_TOOL_TEST_MODE = "reasoning";
-  const summaryRun = await readSse(await POST(new Request("http://localhost/api/chat/send", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ runId: "summary-fixture-run", familiarId: "sage", prompt: "summary fixture", projectRoot: familiarWorkspace }),
-  })));
+  // golden-02 (#6057): ordinary logs from this run must not carry thinking text
+  // or opaque signature/redacted bytes either.
+  const summaryLogs: string[] = [];
+  const consoleMethods = ["log", "warn", "error", "info", "debug"] as const;
+  const originalConsole = Object.fromEntries(consoleMethods.map((method) => [method, console[method]]));
+  for (const method of consoleMethods) console[method] = (...values) => {
+    summaryLogs.push(values.map((value) => typeof value === "string" ? value : JSON.stringify(value)).join(" "));
+  };
+  let summaryRun;
+  try {
+    summaryRun = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: "summary-fixture-run", familiarId: "sage", prompt: "summary fixture", projectRoot: familiarWorkspace }),
+    })));
+  } finally {
+    Object.assign(console, originalConsole);
+  }
   const summaryEvents = summaryRun.events.filter((event) => event.kind === "reasoning");
   assert.equal(summaryEvents.length, 2);
   assert.equal(summaryEvents[0].block.representation, "provider-summary");
@@ -290,6 +303,37 @@ try {
   const summaryReplay = subscribeRunStream("summary-fixture-run", 0, () => {}, () => {});
   assert.ok(summaryReplay?.done);
   assert.deepEqual(summaryReplay.replay.map((entry) => JSON.parse(entry.json)).filter((event) => event.kind === "reasoning"), summaryEvents);
+
+  // golden-02 (#6057): the withheld state survives every history surface as an
+  // honest no-text state, and none of them carries thinking or opaque bytes.
+  const summaryConversation = await loadConversation(summaryDone.sessionId);
+  const storedSummaryBytes = await readFile(path.join(home, "cave", "conversations", `${summaryDone.sessionId}.json`), "utf8");
+  assert.deepEqual(JSON.parse(storedSummaryBytes).turns.at(-1).reasoningBlocks, summarySaved.reasoningBlocks,
+    "disk evidence must not rely on a history read redacting unsafe storage");
+  const { GET: getConversation } = await import("../conversation/[id]/route.ts");
+  const historyResponse = await getConversation(new Request(`http://localhost/api/chat/conversation/${summaryDone.sessionId}`),
+    { params: Promise.resolve({ id: summaryDone.sessionId }) });
+  assert.equal(historyResponse.status, 200);
+  const historyBytes = await historyResponse.text();
+  const historyBlocks = JSON.parse(historyBytes).conversation.turns.at(-1).reasoningBlocks;
+  assert.deepEqual(historyBlocks.map((block) => [block.phase, block.disclosure, block.unavailableReason, block.text]),
+    [["unavailable", "withheld", undefined, undefined], ["unavailable", "withheld", "provider-withheld", undefined]]);
+  const { createClientV1Runtime } = await import("@/lib/server/client-v1/runtime.ts");
+  const { createClientV1ConversationMessagesGetHandler } = await import("../../client/v1/conversations/[id]/messages/route.ts");
+  const { LOCAL_PEER_HEADER } = await import("@/proxy-helpers.ts");
+  const clientRuntime = createClientV1Runtime({ credentialRoot: path.join(home, "client-credentials"), loopbackSecret: "fixture-loopback" });
+  const credential = await clientRuntime.credentialStore.issue({ appName: "Withheld fixture", installationId: "fixture", scopes: ["chat:read"] });
+  const clientResponse = await createClientV1ConversationMessagesGetHandler(clientRuntime, { loadConversation })(
+    new Request(`http://localhost/api/client/v1/conversations/${summaryDone.sessionId}/messages`, {
+      headers: { [LOCAL_PEER_HEADER]: "fixture-loopback", authorization: `Bearer ${credential.bearer}` },
+    }), { params: Promise.resolve({ id: summaryDone.sessionId }) });
+  assert.equal(clientResponse.status, 200);
+  const clientBytes = await clientResponse.text();
+  const { conversationToHfrJsonl } = await import("@/lib/hfr-trace-export.ts");
+  const exportBytes = conversationToHfrJsonl(summaryConversation);
+  for (const bytes of [summaryRun.body, JSON.stringify(summaryReplay.replay), storedSummaryBytes, historyBytes, clientBytes, exportBytes, summaryLogs.join("\n")]) {
+    assert.doesNotMatch(bytes, /Compare café results|OPAQUE_|private-summary-secret|a\.person@/);
+  }
   summaryReplay.unsubscribe();
 
   process.env.CLAUDE_TOOL_TEST_MODE = "protocol-drift-hooks";
