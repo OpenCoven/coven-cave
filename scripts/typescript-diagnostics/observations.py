@@ -9,17 +9,25 @@ def validate_observations(directory):
     directory=pathlib.Path(directory)
     files=sorted(directory.glob('*.jsonl'))
     if not files:raise ValueError('missing Node observations')
-    identities=set();checking=0;receipts=[]
+    identities=set();checking=0;unobserved=0;receipts=[]
     for file in files:
         if file.is_symlink():raise ValueError('observation symlink')
         raw=file.read_bytes()
         if not raw.endswith(b'\n'):raise ValueError('truncated observation')
         try:events=[json.loads(line) for line in raw.splitlines()]
         except (ValueError,UnicodeError) as error:raise ValueError('malformed observation') from error
-        if len(events)!=2 or not all(isinstance(e,dict) for e in events):
+        if len(events) not in (1,2) or not all(isinstance(e,dict) for e in events):
             raise ValueError('incomplete observation lifecycle')
-        start,end=events
-        if start.get('event')!='start' or end.get('event')!='exit':raise ValueError('wrong lifecycle order')
+        start=events[0];end=events[1] if len(events)==2 else None
+        if start.get('event')!='start' or (end is not None and end.get('event')!='exit'):raise ValueError('wrong lifecycle order')
+        compiler=bool(re.search(r'[/\\]typescript[/\\](?:bin[/\\]tsc|lib[/\\](?:_?tsc)\.js)$',str(start.get('entry',''))))
+        # Next ends its jest workers by signal and its Turbopack worker thread by
+        # terminate(); neither fires 'exit'. Such a context is counted, not trusted:
+        # a compiler must still show its exit, and its exit status must be 0.
+        if end is None:
+            if compiler:raise ValueError('incomplete observation lifecycle')
+            unobserved+=1
+            end={key:start.get(key) for key in ('pid','ppid','thread_id','is_main_thread','entry','cwd')}|{'monotonic_ns':start.get('monotonic_ns'),'exit_code':0}
         for key in ('pid','ppid','thread_id','is_main_thread','entry','cwd'):
             if key not in start or start[key]!=end.get(key):raise ValueError('inconsistent observation identity')
         if any(type(start[k]) is not int or start[k]<0 for k in ('pid','ppid','thread_id')) or start['pid']==0:
@@ -52,5 +60,5 @@ def validate_observations(directory):
                 checking+=1
         receipts.append({'file':file.name,'sha256':hashlib.sha256(raw).hexdigest()})
     if not checking:raise ValueError('missing completed checking invocation')
-    return {'checking_invocations':checking,'execution_contexts':len(files),'receipts':receipts,
+    return {'checking_invocations':checking,'execution_contexts':len(files),'unobserved_exits':unobserved,'receipts':receipts,
             'coverage':'retained preload receipts only; missing unobserved contexts cannot be excluded'}

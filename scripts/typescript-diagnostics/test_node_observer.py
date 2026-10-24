@@ -95,7 +95,11 @@ class NodeObserverTests(unittest.TestCase):
             receipt=validate_observations(out)
             self.assertEqual(receipt['checking_invocations'],1)
             self.assertEqual(receipt['execution_contexts'],2)
-            file=next(out.glob('*.jsonl'));file.write_bytes(file.read_bytes().splitlines(keepends=True)[0])
+            # A non-compiler context without an exit is a counted, terminated context;
+            # a compiler receipt that lost its exit must invalidate the run.
+            file=next(f for f in out.glob('*.jsonl') if json.loads(f.read_text().splitlines()[0])['is_main_thread'])
+            self.assertIn('compiler_args',file.read_text())
+            file.write_bytes(file.read_bytes().splitlines(keepends=True)[0])
             with self.assertRaises(ValueError):validate_observations(out)
 
     def test_effective_heap_is_recorded_without_environment_contents(self):
@@ -142,6 +146,34 @@ class NodeObserverTests(unittest.TestCase):
             receipt=validate_observations(out)
             self.assertEqual(receipt['checking_invocations'],1,'the probe is not counted as a checking run')
             self.assertEqual(receipt['execution_contexts'],2)
+
+    def test_terminated_noncompiler_contexts_are_counted_not_rejected(self):
+        # Next ends its static-generation jest workers by signal and its Turbopack worker
+        # thread by terminate(); neither fires 'exit' (hosted run 40084812679).
+        from observations import validate_observations
+        with tempfile.TemporaryDirectory(prefix='c6036-terminated-') as tmp:
+            root=pathlib.Path(tmp);out=root/'observations';out.mkdir()
+            entry=root/'typescript/bin/tsc';entry.parent.mkdir(parents=True);entry.write_text('')
+            (root/'tsconfig.json').write_text('{}')
+            killed=root/'killed.cjs';killed.write_text('process.kill(process.pid,"SIGKILL")')
+            thread=root/'thread.cjs'
+            thread.write_text('const {Worker}=require("node:worker_threads");const w=new Worker("setInterval(()=>{},1000)",{eval:true});'
+                              'w.on("online",()=>setTimeout(()=>w.terminate(),200));')
+            env={**os.environ,'COVEN_TS_OBSERVATION_DIR':str(out)}
+            subprocess.run(['node','--require',str(OBSERVER),str(killed)],cwd=root,env=env,capture_output=True,timeout=5)
+            result=subprocess.run(['node','--require',str(OBSERVER),str(thread)],cwd=root,env=env,capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode,0,result.stderr)
+            result=subprocess.run(['node','--require',str(OBSERVER),str(entry),'--noEmit'],cwd=root,env=env,capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode,0,result.stderr)
+            lifecycles=sorted(len(f.read_text().splitlines()) for f in out.glob('*.jsonl'))
+            self.assertEqual(lifecycles,[1,1,2,2],'the killed process and terminated thread record only a start')
+            receipt=validate_observations(out)
+            self.assertEqual(receipt['checking_invocations'],1)
+            self.assertEqual(receipt['unobserved_exits'],2)
+            # A compiler that never recorded its exit still invalidates the run.
+            checker=next(f for f in out.glob('*.jsonl') if 'compiler_args' in f.read_text())
+            checker.write_text(checker.read_text().splitlines(keepends=True)[0])
+            with self.assertRaises(ValueError):validate_observations(out)
 
     def test_duplicate_project_selectors_are_not_mislabeled(self):
         with tempfile.TemporaryDirectory(prefix='c6036-duplicate-') as tmp:
