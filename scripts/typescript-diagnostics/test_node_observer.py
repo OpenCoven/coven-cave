@@ -121,6 +121,28 @@ class NodeObserverTests(unittest.TestCase):
             self.assertEqual(event.get('config_observation_error'),'unsupported-config-selection')
             self.assertIsNone(event.get('tsconfig_sha256'))
 
+    def test_next_show_config_probe_records_its_config(self):
+        # Next 16.3 probes the project with `--showConfig --project <path> --pretty false`
+        # before checking; hosted run 40082426153 rejected that receipt as unsupported.
+        import hashlib
+        from observations import validate_observations
+        with tempfile.TemporaryDirectory(prefix='c6036-showconfig-') as tmp:
+            root=pathlib.Path(tmp);out=root/'observations';out.mkdir()
+            entry=root/'typescript/bin/tsc';entry.parent.mkdir(parents=True);entry.write_text('')
+            config=root/'tsconfig.json';config.write_text('{}')
+            for args in (['--showConfig','--project',str(config),'--pretty','false'],
+                         ['--project',str(config),'--noEmit','--declarationMap','false','--emitDeclarationOnly','false']):
+                result=subprocess.run(['node','--require',str(OBSERVER),str(entry),*args],cwd=root,
+                    env={**os.environ,'COVEN_TS_OBSERVATION_DIR':str(out)},capture_output=True,text=True,timeout=5)
+                self.assertEqual(result.returncode,0,result.stderr)
+            for file in out.glob('*.jsonl'):
+                event=json.loads(file.read_text().splitlines()[0])
+                self.assertIsNone(event.get('config_observation_error'),event['compiler_args'])
+                self.assertEqual(event['tsconfig_sha256'],hashlib.sha256(config.read_bytes()).hexdigest())
+            receipt=validate_observations(out)
+            self.assertEqual(receipt['checking_invocations'],1,'the probe is not counted as a checking run')
+            self.assertEqual(receipt['execution_contexts'],2)
+
     def test_duplicate_project_selectors_are_not_mislabeled(self):
         with tempfile.TemporaryDirectory(prefix='c6036-duplicate-') as tmp:
             root=pathlib.Path(tmp);out=root/'observations';out.mkdir()

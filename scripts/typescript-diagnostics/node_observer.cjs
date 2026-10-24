@@ -23,7 +23,8 @@ if (directory) {
     try {
       // Recognize only the frozen Next invocation and diagnostic controls.
       // Unknown forms must not silently imply default tsconfig discovery.
-      const values = new Set(['--project', '-p', '--declarationMap', '--emitDeclarationOnly', '--tsBuildInfoFile', '--incremental']);
+      // `--pretty` appears in Next's `--showConfig --project <path> --pretty false` probe.
+      const values = new Set(['--project', '-p', '--declarationMap', '--emitDeclarationOnly', '--tsBuildInfoFile', '--incremental', '--pretty']);
       const flags = new Set(['--noEmit', '--showConfig', '--extendedDiagnostics', '--listFiles']);
       let selectors = 0;
       for (let i = 0; i < details.compiler_args.length; i++) {
