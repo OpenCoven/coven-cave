@@ -2336,7 +2336,7 @@ const deviceAccess = createDeviceAccessGateway({
   },
 });
 
-let server: ReturnType<typeof createServer>;
+let closeHttpForShutdown: (() => Promise<void>) | undefined;
 let httpShutdownStarted = false;
 function shutdownHttpServer(): void {
   if (httpShutdownStarted) return;
@@ -2344,10 +2344,7 @@ function shutdownHttpServer(): void {
   cleanupStandaloneClientV1Discovery();
   terminatePtySessions();
   eventBroker?.shutdown();
-  void coordinateStartupWorkerShutdown(() => new Promise<void>((resolve, reject) => {
-    if (!server?.listening) { resolve(); return; }
-    server.close(error => { if (error) reject(error); else resolve(); });
-  })).then(result => {
+  void coordinateStartupWorkerShutdown(closeHttpForShutdown ?? (() => Promise.resolve())).then(result => {
     const complete = [result.http, ...Object.values(result.workers)].every(outcome => outcome.status === "drained");
     if (!complete) console.warn("[startup-workers] Incomplete shutdown:", result);
     process.exit(complete ? 0 : 1);
@@ -2367,7 +2364,7 @@ const nextUpgradeHandler = app.getUpgradeHandler();
 // `compress`), which this custom server otherwise bypasses (#5576).
 const remoteJsonCompression = createRemoteJsonCompression(require("next/dist/compiled/compression"));
 
-server = createServer((req, res) => {
+const server = createServer((req, res) => {
   // Both stamps are trustworthy only because any client-supplied copy dies
   // here, before Next (and proxy.ts) ever see the request.
   delete req.headers[LOCAL_PEER_HEADER];
@@ -2511,6 +2508,11 @@ server.on("upgrade", async (req, socket, head) => {
     }
     handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor);
   });
+});
+
+closeHttpForShutdown = () => new Promise<void>((resolve, reject) => {
+  if (!server.listening) { resolve(); return; }
+  server.close(error => { if (error) reject(error); else resolve(); });
 });
 
 // Keep idle HTTP/1.1 connections open longer than clients hold them for

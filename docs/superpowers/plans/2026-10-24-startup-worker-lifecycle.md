@@ -1,10 +1,10 @@
 # Startup-worker lifecycle implementation plan
 
-> **For agentic workers:** Use superpowers:executing-plans for inline execution, with failing-first tests and one independent whole-branch review. Checkboxes are not completion evidence; use the canonical issue checkpoints and actual results.
+> **For agentic workers:** Use superpowers:executing-plans for inline execution, with failing-first tests and one independent whole-branch review. Checkboxes are not evidence of completion; use the canonical issue checkpoints and actual results.
 
 **Goal:** Stop and drain scheduled-chat and backup-sync workers safely, remove disabled backup tick work, and prove the production lifetime and idle behavior.
 
-**Architecture:** Keep each worker's process-global owner and existing execution/persistence authority. Add explicit stop/drain operations and configuration fencing; the custom server coordinates shutdown through a small global bridge because its module graph is separate from Next's. One shared shutdown deadline preserves the existing three-second quit budget inside the native five-second stop window; deadline expiry reports incomplete drain without cancelling or replaying effects.
+**Architecture:** Keep each worker's process-global owner and existing execution/persistence authority. Add explicit stop/drain operations and configuration fencing; the custom server coordinates shutdown through a small global bridge because its module graph is separate from Next's. One shared signal-shutdown deadline preserves the existing three-second quit budget; deadline expiry reports incomplete drain without cancelling or replaying effects. Review found that the native GUI path uses Unix stdin EOF with a two-second lease and Windows immediate Job termination; the separate background-daemon five-second timeout is not this lease. Reconcile normal packaged quit with the real native boundaries before claiming actual shutdown integration complete.
 
 **Tech stack:** TypeScript, existing Node timers and promises, Vitest fake clocks, real filesystem regression tests, the custom Node server, and isolated production measurements.
 
@@ -65,3 +65,8 @@
 - [ ] Update the two lifetime rows and maintenance/rollback guidance, keeping unverified native/device behavior explicit. Record the all-optional-rooms-absent baseline as the next separate outcome rather than claiming it from room visibility flags.
 - [ ] Run scoped tests, `pnpm typecheck`, `pnpm lint`, `pnpm check:tests-wired`, `pnpm test:app`, `pnpm test:api`, `node scripts/docs-index.test.mjs` and a normal `pnpm build`. Preserve each first failure and distinguish focused corrections from full-suite results.
 - [ ] Commit/push explicit paths with hooks, obtain one read-only whole-branch review, fix substantive findings with failing-first tests, and require complete exact-head hosted checks before the authorized protected squash merge. Record exact merge evidence and intentionally retained unit disposition. Keep #6119 open.
+
+
+## Review checkpoint at 96b01583e
+
+Independent review found late scheduled restarts after coordinated shutdown, backup configuration bypassing a pending restart drain, early parallel-store rejection releasing another admitted send, and normal packaged quit bypassing the coordinator. The first three now have failing-first regressions and local corrections pending complete verification. Task 3 remains incomplete until the native EOF/Windows normal-quit path is reconciled; the earlier inline ledger entry covered only the signal path and must not be used as native or whole-task completion evidence.

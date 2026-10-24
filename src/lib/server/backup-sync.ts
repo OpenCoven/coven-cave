@@ -27,7 +27,7 @@ import {
   setLocalEncryptedSecret,
 } from "@/lib/local-encrypted-vault";
 import { caveHome, covenHome } from "@/lib/coven-paths";
-import { isStartupWorkerShutdownCoordinated } from "./startup-worker-shutdown";
+import { isStartupWorkerShutdownCoordinated, isStartupWorkerShutdownRequested } from "./startup-worker-shutdown";
 
 export const BACKUP_SYNC_STATE_FILE = "backup-sync.json";
 export const BACKUP_SYNC_PASSPHRASE_KEY = "BACKUP_SYNC_PASSPHRASE";
@@ -87,6 +87,7 @@ type BackupSyncScheduler = {
   starting?: Promise<void>;
   pending?: Promise<void>;
   draining?: Promise<void>;
+  restartBarrier?: Promise<void>;
 };
 
 declare global {
@@ -434,7 +435,7 @@ function configureScheduler(owner: BackupSyncScheduler, config: BackupSyncConfig
   const activate = () => { activateScheduler(owner, revision, config); };
   // Retain the previous pass until it settles. A new configuration cannot
   // start another pass alongside an archive admitted under the old one.
-  const starting = owner.pending ? owner.pending.then(activate) : Promise.resolve().then(activate);
+  const starting = Promise.all([owner.pending, owner.restartBarrier]).then(activate);
   return trackStarting(owner, starting);
 }
 
@@ -491,17 +492,22 @@ function installQuitHook(): void {
 }
 
 export function startBackupSyncScheduler(): Promise<void> {
-  if (process.env.NEXT_PHASE === "phase-production-build") return Promise.resolve();
+  if (process.env.NEXT_PHASE === "phase-production-build" || isStartupWorkerShutdownRequested()) return Promise.resolve();
   const owner = schedulerOwner();
   if (owner.wanted) return owner.starting ?? Promise.resolve();
   owner.wanted = true;
   const revision = ++owner.revision;
   const priorDrain = owner.draining;
   owner.draining = undefined;
+  const barrier = priorDrain ? Promise.allSettled([priorDrain]).then(() => undefined) : owner.restartBarrier;
+  owner.restartBarrier = barrier;
+  if (barrier) void barrier.then(() => {
+    if (owner.restartBarrier === barrier) owner.restartBarrier = undefined;
+  });
   const starting = (async () => {
     // A completed failure is still drained; it must not permanently prevent
     // a later explicit restart. Never replay the previous archive itself.
-    if (priorDrain) await Promise.allSettled([priorDrain]);
+    if (barrier) await barrier;
     if (!owner.wanted || owner.revision !== revision) return;
     const state = await loadState();
     activateScheduler(owner, revision, state.config);

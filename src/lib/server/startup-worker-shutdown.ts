@@ -47,6 +47,9 @@ export function ownStartupWorkerShutdown(): void {
 export function isStartupWorkerShutdownCoordinated(): boolean {
   return owner().coordinated;
 }
+export function isStartupWorkerShutdownRequested(): boolean {
+  return owner().closing;
+}
 
 function drain(worker: Slot): void {
   if (!worker.stop || worker.draining) return;

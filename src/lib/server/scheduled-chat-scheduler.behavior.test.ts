@@ -21,6 +21,7 @@ function holdPass() {
 
 beforeEach(async () => {
   vi.useFakeTimers();
+  delete (globalThis as { __caveStartupWorkerShutdown?: unknown }).__caveStartupWorkerShutdown;
   vi.stubEnv("NEXT_PHASE", "phase-production-server");
   vi.resetModules();
   store.tick.mockReset().mockResolvedValue(undefined);
@@ -36,6 +37,7 @@ afterEach(async () => {
   // The old timer exists on the unchanged baseline. Remove only this test's
   // synthetic owner after every case so one failure cannot affect the next.
   delete (globalThis as { __caveScheduledChatTimer?: unknown }).__caveScheduledChatTimer;
+  delete (globalThis as { __caveStartupWorkerShutdown?: unknown }).__caveStartupWorkerShutdown;
   vi.unstubAllEnvs();
   vi.useRealTimers();
 });
@@ -105,4 +107,16 @@ test("production compilation starts no timer or scheduled pass", async () => {
   await scheduler.startScheduledChatScheduler();
   expect(vi.getTimerCount()).toBe(0);
   expect(store.tick).not.toHaveBeenCalled();
+});
+
+test("a request finishing after coordinated shutdown cannot restart scheduled work", async () => {
+  await scheduler.startScheduledChatScheduler();
+  const shutdown = await import("./startup-worker-shutdown");
+  shutdown.registerStartupWorker("scheduled-chat", scheduler.stopScheduledChatScheduler);
+  shutdown.registerStartupWorker("backup-sync", async () => undefined);
+  await shutdown.coordinateStartupWorkerShutdown(async () => undefined);
+  await scheduler.startScheduledChatScheduler();
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(vi.getTimerCount()).toBe(0);
+  expect(store.tick).toHaveBeenCalledTimes(1);
 });

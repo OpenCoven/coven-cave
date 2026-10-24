@@ -18,7 +18,7 @@ function serverShutdown(ready = true) {
   const exit = vi.fn();
   const close = vi.fn((callback: () => void) => { callback(); });
   const sandbox = {
-    coordinateStartupWorkerShutdown, cleanupStandaloneClientV1Discovery: vi.fn(),
+    coordinateStartupWorkerShutdown, closeHttpForShutdown: ready ? () => new Promise<void>(resolve => { close(resolve); }) : undefined, cleanupStandaloneClientV1Discovery: vi.fn(),
     terminatePtySessions: vi.fn(), eventBroker: { shutdown: vi.fn() },
     process: { exit }, server: ready ? { close, listening: true } : undefined, setTimeout, clearTimeout,
     console: { warn: vi.fn(), error: vi.fn() }, shutdown: () => undefined,

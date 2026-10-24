@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { isStartupWorkerShutdownRequested } from './startup-worker-shutdown.ts';
 import { caveHome } from '../coven-paths.ts';
 import { createScheduledChatStore, type ScheduledDispatch } from './scheduled-chat-store.ts';
 import { scheduledChatResult } from './scheduled-chat-dispatch.ts';
@@ -47,7 +48,7 @@ function tick(owner: ScheduledChatScheduler): void {
 }
 
 export function startScheduledChatScheduler(): Promise<void> {
-  if (process.env.NEXT_PHASE === 'phase-production-build') return Promise.resolve();
+  if (process.env.NEXT_PHASE === 'phase-production-build' || isStartupWorkerShutdownRequested()) return Promise.resolve();
   const owner = schedulerOwner();
   if (owner.wanted) return owner.starting ?? Promise.resolve();
   owner.wanted = true;

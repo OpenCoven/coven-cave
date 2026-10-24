@@ -310,3 +310,24 @@ test("standalone production retains the bounded quit snapshot fallback", async (
   expect(archive.build).toHaveBeenCalledOnce();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+test("config updates cannot bypass a pending quit drain during restart", async () => {
+  await configure(true, new Date().toISOString());
+  await backup.startBackupSyncScheduler();
+  const held = gate();
+  archive.build.mockImplementationOnce(async () => { await held.promise; return { archive: Buffer.from("quit archive") }; });
+  const stopping = backup.stopBackupSyncScheduler({ pushOnQuit: true });
+  await vi.waitFor(() => expect(archive.build).toHaveBeenCalledOnce());
+  const restarting = backup.startBackupSyncScheduler();
+  let updated = false;
+  const updating = backup.updateBackupSyncConfig({ retainCount: 3 }).then(() => { updated = true; });
+  // Wait for the actual config write, rather than a timing-only pause.
+  await vi.waitFor(async () => expect(JSON.parse(await readFile(statePath, "utf8")).config.retainCount).toBe(3));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(updated).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+  held.release();
+  await Promise.all([stopping, restarting, updating]);
+  expect(vi.getTimerCount()).toBe(1);
+  expect(archive.build).toHaveBeenCalledOnce();
+});
