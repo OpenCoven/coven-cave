@@ -1174,7 +1174,16 @@ struct ChatView: View {
             // final flush of a completed stream still lands its scroll.
             .onChange(of: thread.messages.last?.text) { _, _ in
                 guard scrollState.isFollowingLatest else { return }
-                streamScroll.request { scrollToLatest(proxy, animation: .easeOut(duration: 0.15)) }
+                // Ease only live tokens. A settled reply arriving with loaded
+                // history jumps: an animated scroll aims at the reply's
+                // placeholder height, and SwiftUI keeps re-asserting that
+                // stale target as the reply measures — on a short viewport
+                // (iPhone Duo's closed outer display) the follow and the
+                // animation then traded the offset forever (#6205).
+                let streaming = thread.messages.last?.streaming == true
+                streamScroll.request {
+                    scrollToLatest(proxy, animation: streaming ? .easeOut(duration: 0.15) : nil)
+                }
             }
             // A new message reveals itself when it's the user's own send (you
             // always watch your message leave) or when already at the bottom —
@@ -1190,7 +1199,10 @@ struct ChatView: View {
                 guard old.count != new.count else { return }
                 let ownSend = ChatOwnSend.isOwnSend(from: old, to: new, messages: thread.messages)
                 guard scrollState.isFollowingLatest || ownSend else { return }
-                requestFollowLatest(proxy, animation: .snappy(duration: 0.25))
+                // A send or a reply eases in; a batch of loaded history jumps,
+                // for the same stale-target reason as above (#6205).
+                let batch = new.count - old.count > 2
+                requestFollowLatest(proxy, animation: batch ? nil : .snappy(duration: 0.25))
             }
             .onAppear {
                 computeUnreadDividerIfNeeded()
