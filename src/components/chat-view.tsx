@@ -5,7 +5,7 @@ import { runAutoReflectionIfMissing } from "@/lib/auto-thread-reflection";
 import { mergeReasoningBlock, normalizeReasoningBlock, normalizeReasoningBlocks } from "@/lib/chat-reasoning-blocks";
 import { ResponseRunDetails } from "@/components/response-run-details";
 import { normalizeToolActivity } from "@/lib/chat-activity";
-import { isToolActive, mergeToolObservation, normalizeToolStatus, settleToolObservations, toolStatusLabel, type ToolStatus } from "@/lib/chat-tool-state";
+import { isToolActive, mergeToolObservation, normalizeToolStatus, settleToolObservations, toolProgressStatus, toolStatusCounts, toolStatusLabel, type ToolStatus } from "@/lib/chat-tool-state";
 import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
@@ -7014,7 +7014,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 id: "tools",
                 label: toolStatusLabel(mergedTool.status),
                 detail: argSummary ? `${incoming.name}(${argSummary})` : incoming.name,
-                status: mergedTool.status === "error" ? "error" : mergedTool.status === "ok" ? "done" : mergedTool.status === "unknown" || mergedTool.status === "rejected" ? "notice" : "running",
+                status: toolProgressStatus(mergedTool.status),
                 durationMs: mergedTool.durationMs,
               }),
             };
@@ -10364,11 +10364,13 @@ function ProgressRow({ event, pending }: { event: ProgressEvent; pending: boolea
  *  readers get, plus the running/error counts that otherwise live only in a
  *  tinted (color-only) chip — so a screen reader hears "3 running" and
  *  "1 error" exactly like the eye sees them. */
-function toolGroupAriaLabel(summary: string, running: number, errors: number, requested = 0, unknown = 0): string {
+function toolGroupAriaLabel(summary: string, running: number, errors: number, requested = 0, unknown = 0, rejected = 0, cancelled = 0): string {
   return [
     summary ? `Tool activity: ${summary}` : "",
     requested ? `${requested} requested` : "",
     unknown ? `${unknown} outcome unknown` : "",
+    rejected ? `${rejected} rejected` : "",
+    cancelled ? `${cancelled} cancelled` : "",
     running ? `${running} running` : "",
     errors ? `${errors} ${errors === 1 ? "error" : "errors"}` : "",
   ]
@@ -10386,11 +10388,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   // The per-tool rows mount on the group's first open (#5572): a collapsed
   // group otherwise builds every tool card of the turn up front.
   const [runsMounted, setRunsMounted] = useState(false);
-  const running = tools.filter((tool) => tool.status === "running").length;
-  const errors = tools.filter((tool) => tool.status === "error").length;
-  const requested = tools.filter((tool) => tool.status === "requested").length;
-  const unknown = tools.filter((tool) => tool.status === "unknown").length;
-  const rejected = tools.filter((tool) => tool.status === "rejected").length;
+  const { running, error: errors, requested, unknown, rejected, cancelled } = toolStatusCounts(tools.map((tool) => tool.status));
   // The turn's own compact activity summary — count + distinct categories,
   // e.g. "6 calls · read, shell". Running/error calls keep their own tinted
   // counters beside it, so trouble never reads as neutral mono.
@@ -10445,7 +10443,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         <summary
           className="cave-tool-summary focus-ring"
           aria-expanded={open}
-          aria-label={toolGroupAriaLabel(summary, running, errors, requested, unknown)}
+          aria-label={toolGroupAriaLabel(summary, running, errors, requested, unknown, rejected, cancelled)}
         >
           <Icon name="ph:wrench" width={12} className="cave-tool-icon shrink-0" aria-hidden />
           <span className="cave-work-line__label">{summary}</span>
@@ -10455,6 +10453,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
             {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+            {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           </span>
         </summary>
         {runsMounted ? (
@@ -10524,18 +10523,14 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
   const repeated = tools.length > 1;
   const visual = toolVisual(name);
   const displayName = name.trim() || "Tool";
-  const running = tools.filter((tool) => tool.status === "running").length;
-  const errors = tools.filter((tool) => tool.status === "error").length;
-  const requested = tools.filter((tool) => tool.status === "requested").length;
-  const unknown = tools.filter((tool) => tool.status === "unknown").length;
-  const rejected = tools.filter((tool) => tool.status === "rejected").length;
+  const { running, error: errors, requested, unknown, rejected, cancelled } = toolStatusCounts(tools.map((tool) => tool.status));
 
   return (
     <ChatToolRunDisclosure
       repeated={repeated}
       statuses={tools.map((tool) => tool.status)}
       category={visual.category}
-      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${requested ? `, ${requested} requested` : ""}${unknown ? `, ${unknown} outcome unknown` : ""}${rejected ? `, ${rejected} rejected` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
+      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${requested ? `, ${requested} requested` : ""}${unknown ? `, ${unknown} outcome unknown` : ""}${rejected ? `, ${rejected} rejected` : ""}${cancelled ? `, ${cancelled} cancelled` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
       summary={
         <>
           <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
@@ -10547,6 +10542,7 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
             {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+            {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           </span>
         </>
       }
@@ -10981,22 +10977,15 @@ function RunActivityStrip({
   const progress = turn.progress ?? [];
   if (tools.length === 0 && progress.length === 0) return null;
 
-  const runningTool = [...tools].reverse().find((t) => t.status === "running");
+  const toolCounts = toolStatusCounts(tools.map((t) => t.status));
+  const runningTool = [...tools].reverse().find((t) => toolStatusCounts([t.status]).running);
   const runningToolDetail = live && runningTool ? toolArgDetail(runningTool.name, runningTool.input) : "";
   const step = currentProgress(progress);
-  const running =
-    tools.filter((t) => t.status === "running").length +
-    progress.filter((p) => p.status === "running").length;
-  const issues =
-    tools.filter((t) => t.status === "error").length +
-    progress.filter((p) => p.status === "error").length;
-  const requested = tools.filter((t) => t.status === "requested").length;
-  const unknown = tools.filter((t) => t.status === "unknown").length;
-  const rejected = tools.filter((t) => t.status === "rejected").length;
+  const running = toolCounts.running + progress.filter((p) => p.status === "running").length;
+  const issues = toolCounts.error + progress.filter((p) => p.status === "error").length;
+  const { requested, unknown, rejected, cancelled } = toolCounts;
   const notices = progress.filter((p) => p.status === "notice").length;
-  const done =
-    tools.filter((t) => t.status === "ok").length +
-    progress.filter((p) => p.status === "done").length;
+  const done = toolCounts.ok + progress.filter((p) => p.status === "done").length;
 
   let headline: string;
   if (live && runningTool) {
@@ -11008,7 +10997,7 @@ function RunActivityStrip({
     headline = issues ? "Last run needs attention" : "Last run";
   }
 
-  const tint = live ? "is-live" : issues ? "is-issue" : notices || unknown || rejected ? "is-notice" : "is-ok";
+  const tint = live ? "is-live" : issues ? "is-issue" : notices || unknown || rejected || cancelled ? "is-notice" : "is-ok";
   return (
     <div className={`cave-run-activity ${tint}`}>
       <button
@@ -11023,7 +11012,7 @@ function RunActivityStrip({
         title={live && runningTool && runningToolDetail ? `${runningTool.name}(${runningToolDetail})` : headline}
       >
         <Icon
-          name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected ? "ph:info" : "ph:check-circle"}
+          name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected || cancelled ? "ph:info" : "ph:check-circle"}
           width={13}
           className={`cave-run-activity__icon${live ? " animate-spin" : ""}`}
           aria-hidden
@@ -11035,6 +11024,7 @@ function RunActivityStrip({
           {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
           {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
           {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
+          {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
           {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
           {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}
