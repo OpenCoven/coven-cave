@@ -9,6 +9,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION};
 
+use crate::sidecar_runtime_retention::{
+    acquire_runtime_lease, retire_complete_generations, RuntimeLease, LEASE_DIR_NAME,
+};
+
 // `sidecar_archive` is itself a file module. Keep the extracted siblings at
 // `src/` so the native-host module layout stays flat on every target.
 #[path = "sidecar_archive_cache.rs"]
@@ -36,10 +40,11 @@ use sidecar_archive_manifest::{
     cache_key, is_sha256, read_manifest, SidecarArchiveManifest, MANIFEST_SCHEMA_VERSION,
     MAX_FILE_COUNT, MAX_UNPACKED_BYTES,
 };
-use sidecar_archive_preparation::prepare_runtime_from_files;
+use sidecar_archive_preparation::prepare_leased_runtime_from_files;
 #[cfg(test)]
 use sidecar_archive_preparation::{
-    activate_extracted_cache_with, prepare_runtime_from_files_with_space, ACTIVATION_RETRY_DELAYS,
+    activate_extracted_cache_with, prepare_runtime_from_files,
+    prepare_runtime_from_files_with_space, ACTIVATION_RETRY_DELAYS,
 };
 
 const MIN_FREE_SPACE_RESERVE_BYTES: u64 = 64 * 1024 * 1024;
@@ -170,6 +175,9 @@ fn cache_is_ready(destination: &Path, manifest: &SidecarArchiveManifest) -> bool
     }
 }
 
+static PROCESS_RUNTIME_LEASES: std::sync::Mutex<Vec<RuntimeLease>> =
+    std::sync::Mutex::new(Vec::new());
+
 pub(crate) fn prepare_sidecar_runtime(
     app: &tauri::AppHandle,
     resource_dir: &Path,
@@ -183,7 +191,15 @@ pub(crate) fn prepare_sidecar_runtime(
         .map_err(|error| format!("could not resolve sidecar cache directory: {error}"))?
         .join("sidecar-runtime");
     let started = Instant::now();
-    let runtime = prepare_runtime_from_files(&archive_path, &manifest_path, &cache_root)?;
+    let (runtime, lease) =
+        prepare_leased_runtime_from_files(&archive_path, &manifest_path, &cache_root)?;
+    // Hold the lease until this process exits so another app's startup
+    // cleanup cannot retire the generation this one serves. Sidecar revival
+    // re-prepares and adds a lease; the extra handles are released at exit.
+    PROCESS_RUNTIME_LEASES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(lease);
     log::info!(
         "[cave] Windows sidecar runtime ready at {} in {:.2?}",
         runtime.display(),

@@ -45,7 +45,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /for \(const sessionId of confirmedIds\) invalidateConversation\(sessionId\);\s*void loadSessions\(\)/,
+  /for \(const sessionId of confirmedIds\) \{\s*invalidateConversation\(sessionId\);\s*invalidateChatAccess\(\{ sessionId, reason: "missing" \}\);\s*\}\s*void loadSessions\(\)/,
   "Workspace should invalidate confirmed ids and then refresh once in the background",
 );
 

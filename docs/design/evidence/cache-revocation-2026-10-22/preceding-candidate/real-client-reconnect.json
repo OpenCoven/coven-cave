@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "mode": "reconnect",
+  "startedAt": "2026-10-22T22:52:48.580Z",
+  "finishedAt": "2026-10-22T22:56:04.277Z",
+  "candidate": {
+    "head": "5c9813795dc98efba7d4fd6fb0becb77645e400e",
+    "buildId": "YIqcBbs1HZTodQzCEDpKF",
+    "serverSha256": "2ebd655f356b25a8a5a1ca10e429e8e9881c2023259a218d59391a23fcf3cb24",
+    "runnerSha256": "13ebb53609361aeceed32774d721abc85f23aa8105d78242a84a69b07ad02aea"
+  },
+  "classification": "Production client/send/replay/history; real scratch daemon; controlled Hermes provider and fsynced child-process counter.",
+  "providerRequests": 1,
+  "hostileCallbacks": 0,
+  "checkpoints": [
+    {
+      "label": "client SSE transport interrupted",
+      "counter": 1,
+      "dropped": 1
+    },
+    {
+      "label": "actual client completed",
+      "counter": 1,
+      "providerRequests": 1,
+      "sessionId": "native-http-response"
+    },
+    {
+      "label": "actual client reopened history",
+      "counter": 1,
+      "providerRequests": 1,
+      "sessionId": "native-http-response"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 55574.883542
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 55730.283167
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/send",
+      "atMs": 79738.771625
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 80155.958625
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 80157.092042
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 81820.942917
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/stream",
+      "atMs": 105498.616417
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 121458.953584
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 182160.590667
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/model-state",
+      "atMs": 182359.917834
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/usage",
+      "atMs": 182360.266625
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversation/native-http-response",
+      "atMs": 182577.7265
+    }
+  ],
+  "timingsMs": {
+    "providerFirstActivity": 0.1254999999946449,
+    "controlledTool": 53.36045799999556,
+    "providerTerminal": 41276.45537499999
+  },
+  "passed": true,
+  "negativeControl": {
+    "counter": 2,
+    "repeatedInvocationDetected": true
+  },
+  "serverStopped": true,
+  "daemonStopped": true,
+  "fixtureRootRemoved": true,
+  "omissions": [
+    "UI observations require a separate receipt.",
+    "No real provider, protected authority, human accessibility or physical-device claim."
+  ],
+  "covenVersion": "coven v0.4.10 (engine coven-code 0.8.0, pinned 0.8.0)",
+  "rawReceiptSha256": "84eeba5c05da13f7a412392f88d9c4473bf375d10fc4739eae0f049ac1c16b56",
+  "sourceState": "Uncommitted source hashes in qualification-progress.json identify this candidate; head is the base commit."
+}

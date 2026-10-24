@@ -9,7 +9,7 @@ vi.mock("@/lib/tauri-platform", () => ({
 vi.mock("@tauri-apps/plugin-os", () => ({ platform: () => "windows", arch: () => "x86_64" }));
 vi.mock("@/lib/icon", () => ({ Icon: () => null }));
 
-import { UpdateBannerTrigger, UpdateSettingsRow } from "./update-available";
+import { UpdateBannerTrigger, UpdateSettingsRow, installPreparedUpdate } from "./update-available";
 import { ShellBannersProvider, useShellBanners } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { nativeUpdateCoordinator } from "@/lib/native-update-coordinator";
@@ -79,7 +79,69 @@ test("native metadata reaches both notes surfaces without installing", async () 
   await mount(<><UpdateSettingsRow /><UpdateBannerTrigger /></>);
   expect(text()).toContain("Native release text");
   expect(banners.find(b => b.id === "update-available").releaseNotes).toBe("Native release text");
-  expect(native.invoke).not.toHaveBeenCalled();
+  // Only the read-only Windows install-outcome lookup; nothing installs.
+  expect(native.invoke.mock.calls.map(([command]) => command)).toEqual(["update_install_outcome"]);
+});
+
+function nativeIpc() {
+  native.desktop = true;
+  window.__TAURI_INTERNALS__ = { invoke: (command, args) => command === "plugin:updater|check" ? native.check() : command === "plugin:resources|close" ? Promise.resolve() : native.invoke(command, args) };
+}
+
+test("a declined Windows install relaunch explains the outcome and retries the update", async () => {
+  nativeIpc();
+  native.check.mockImplementation(async () => ({ rid: 8, currentVersion: "1.0.0", version: "9.9.9", body: "Notes" }));
+  native.invoke.mockImplementation(async (command) =>
+    command === "update_install_outcome"
+      ? { kind: "cancelled", exitCode: 1602, logPath: "C:\\logs\\msi.log" }
+      : undefined);
+  await mount(<UpdateBannerTrigger />);
+  const outcome = banners.find(b => b.id === "update-install-outcome");
+  expect(outcome.severity).toBe("warning");
+  expect(outcome.title).toBe("Update wasn't installed: the Windows permission prompt was declined or cancelled");
+  expect(outcome.detail).toContain("Installer log: C:\\logs\\msi.log");
+  expect(outcome.cta.label).toBe("Retry update");
+  expect(native.invoke).not.toHaveBeenCalledWith("clear_update_install_outcome", expect.anything());
+  const checks = native.check.mock.calls.length;
+  await act(async () => outcome.cta.onClick());
+  expect(banners.find(b => b.id === "update-install-outcome")).toBeUndefined();
+  expect(native.invoke.mock.calls.map(([command]) => command)).toContain("clear_update_install_outcome");
+  expect(native.check.mock.calls.length).toBe(checks + 1);
+  expect(banners.find(b => b.id === "update-available").cta.label).toBe("Download update");
+});
+
+test("dismissing the install outcome clears it; no outcome shows no banner", async () => {
+  nativeIpc();
+  native.check.mockImplementation(async () => null);
+  native.invoke.mockImplementation(async (command) =>
+    command === "update_install_outcome" ? { kind: "failed", exitCode: 1603, logPath: null } : undefined);
+  await mount(<UpdateBannerTrigger />);
+  await act(async () => banners.find(b => b.id === "update-install-outcome").onDismiss());
+  expect(native.invoke.mock.calls.map(([command]) => command)).toContain("clear_update_install_outcome");
+  await act(async () => tree.unmount());
+  native.invoke.mockReset();
+  native.invoke.mockImplementation(async () => null);
+  await mount(<UpdateBannerTrigger />);
+  expect(banners.find(b => b.id === "update-install-outcome")).toBeUndefined();
+});
+
+test("Windows install recovery is armed before install and disarmed when install fails", async () => {
+  nativeIpc();
+  const order = [];
+  native.invoke.mockImplementation(async (command) => { order.push(command); });
+  const failing = { install: vi.fn(async () => { order.push("install"); throw new Error("extract failed"); }) };
+  await expect(installPreparedUpdate(failing)).rejects.toThrow("extract failed");
+  expect(order).toEqual(["arm_update_install_recovery", "install", "disarm_update_install_recovery"]);
+});
+
+test("an unarmable Windows install refuses to start rather than risk a closed app", async () => {
+  nativeIpc();
+  native.invoke.mockImplementation(async (command) => {
+    if (command === "arm_update_install_recovery") throw new Error("disk full");
+  });
+  const update = { install: vi.fn() };
+  await expect(installPreparedUpdate(update)).rejects.toThrow("couldn't prepare install recovery: disk full");
+  expect(update.install).not.toHaveBeenCalled();
 });
 
 test("blocked browser handoff has retry and never opens the embedded Browser", async () => {

@@ -112,3 +112,23 @@ commands.allow = ["retry_sidecar_startup"]
 identifier = "allow-cancel-sidecar-startup"
 description = "Allows the bundled local startup page to cancel sidecar preparation at a safe boundary."
 commands.allow = ["cancel_sidecar_startup"]
+
+[[permission]]
+identifier = "allow-arm-update-install-recovery"
+description = "Allows the trusted desktop UI to arm Windows recovery immediately before an explicit Restart & install."
+commands.allow = ["arm_update_install_recovery"]
+
+[[permission]]
+identifier = "allow-disarm-update-install-recovery"
+description = "Allows the trusted desktop UI to disarm Windows install recovery when install returns an error."
+commands.allow = ["disarm_update_install_recovery"]
+
+[[permission]]
+identifier = "allow-update-install-outcome"
+description = "Allows the trusted desktop UI to read why the last Windows update install did not complete."
+commands.allow = ["update_install_outcome"]
+
+[[permission]]
+identifier = "allow-clear-update-install-outcome"
+description = "Allows the trusted desktop UI to clear a shown Windows update install outcome."
+commands.allow = ["clear_update_install_outcome"]
