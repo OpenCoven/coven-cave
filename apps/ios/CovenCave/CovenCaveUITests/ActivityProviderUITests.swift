@@ -57,7 +57,7 @@ final class ActivityProviderUITests: XCTestCase {
         attachScreenshot("native-provider-live")
         try await checkOutput(app, tool: tool, marker: marker)
 
-        XCUIDevice.shared.press(.home)
+        app.sendToBackground()
         try await control(config, action: "snapshot")
         app.terminate()
         app.launchArguments = ["--ui-native-activity-recovery"]
@@ -69,7 +69,7 @@ final class ActivityProviderUITests: XCTestCase {
         XCTAssertTrue(tool.waitForExistence(timeout: 20))
         attachScreenshot("native-provider-hydrated")
         try await checkOutput(app, tool: tool, marker: marker)
-        XCUIDevice.shared.press(.home)
+        app.sendToBackground()
         try await control(config, action: "complete")
     }
 

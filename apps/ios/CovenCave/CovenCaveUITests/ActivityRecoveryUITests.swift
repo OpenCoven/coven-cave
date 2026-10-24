@@ -53,7 +53,7 @@ final class ActivityRecoveryUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["Inspect the marker file."].exists)
             XCTAssertFalse(app.staticTexts["The marker was read."].exists)
             attachScreenshot("native-live-send-running")
-            XCUIDevice.shared.press(.home)
+            app.sendToBackground()
             var persisted = URLRequest(url: try XCTUnwrap(URL(string: try XCTUnwrap(config["snapshotURL"]))))
             persisted.httpMethod = "POST"
             let (_, snapshotResponse) = try await URLSession.shared.data(for: persisted)
@@ -64,7 +64,7 @@ final class ActivityRecoveryUITests: XCTestCase {
             XCTAssertTrue(queued.exists, "the accepted delivery stays queued during the outage")
             XCTAssertFalse(tool.exists, "saved activity is not injected into the phone fixture")
             attachScreenshot("native-recovery-offline")
-            XCUIDevice.shared.press(.home)
+            app.sendToBackground()
         }
         var restart = URLRequest(url: try XCTUnwrap(URL(string: try XCTUnwrap(config["restartURL"]))))
         restart.httpMethod = "POST"
@@ -102,7 +102,7 @@ final class ActivityRecoveryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts[marker].waitForExistence(timeout: 10), "output is loaded from the saved tool's real endpoint")
         attachScreenshot("native-recovered-output")
         app.buttons["Close tool output"].tap()
-        XCUIDevice.shared.press(.home)
+        app.sendToBackground()
         app.activate()
         XCTAssertTrue(output.waitForExistence(timeout: 10))
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "Reasoning summary")).count, 2)

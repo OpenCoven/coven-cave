@@ -14,6 +14,10 @@ struct ConnectionView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var host: String = ""
+    /// The window's full height, safe areas included. Keeps the centred
+    /// composition on tall phones without fighting small ones — the
+    /// ScrollView still wins when content overflows.
+    @State private var viewportHeight: CGFloat = 0
     @State private var pendingManualInvite: CaveInvite?
     @State private var busy = false
     /// Whether the clipboard holds text — drives the "Paste" affordance. We only
@@ -109,12 +113,20 @@ struct ConnectionView: View {
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 24)
-                .frame(maxWidth: .infinity, minHeight: heroMinHeight)
+                .frame(maxWidth: .infinity, minHeight: max(0, viewportHeight - 120))
                 .readableWidth(520)
                 .animation(reduceMotion ? nil : .spring(duration: 0.32), value: liveCheck)
                 .animation(reduceMotion ? nil : .spring(duration: 0.32), value: manualEntry)
                 .animation(reduceMotion ? nil : .spring(duration: 0.32), value: app.connectionState)
             }
+            // Size the centred composition from this window, never the
+            // main screen: iPhone Duo has two, and the window moves between
+            // them as the device opens and closes.
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
+            } action: { viewportHeight = $0 }
+            // The pairing form moves as one unit off a folded hinge.
+            .foldAvoiding()
             .background(connectBackground.ignoresSafeArea())
             .toolbarVisibility(.hidden, for: .navigationBar)
             .onAppear {
@@ -193,12 +205,6 @@ struct ConnectionView: View {
     }
 
     private var scannerAvailable: Bool { QRScannerSheet.isSupported }
-
-    /// Keep the centered composition on tall phones without fighting small
-    /// ones — the ScrollView still wins when content overflows.
-    private var heroMinHeight: CGFloat {
-        UIScreen.main.bounds.height - 120
-    }
 
     /// A quiet violet wash behind the hero so the glyph's glow reads as part
     /// of the page, not a sticker.

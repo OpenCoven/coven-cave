@@ -71,7 +71,8 @@ struct CovenCaveApp: App {
             // NavigationSplitView collapses and the lists stretch into one
             // sparse full-width column. Any window wide enough for two real
             // columns behaves as regular — the same call Apple makes for Max
-            // phones — which engages the existing balanced splits everywhere.
+            // phones — which engages the existing balanced splits everywhere;
+            // narrower ones stack, like iPhone Duo's inner display upright.
             WideSplitEnabler {
                 // Full replacement, never a translucent overlay: while locked,
                 // RootView (and everything under it) simply isn't mounted, so
@@ -92,6 +93,9 @@ struct CovenCaveApp: App {
                 }
                 .animation(nil, value: appLock.isPrivacyShielded)
             }
+                // iPhone Duo's hinge, for the split boundary and the fixed
+                // lock/connect compositions to keep clear of (DisplayFold.swift).
+                .readsDisplayFold()
                 .environment(app)
                 .environment(appLock)
                 .defaultAppStorage(appDefaults)
@@ -287,11 +291,15 @@ struct CovenCaveApp: App {
     }
 }
 
-/// Promote the horizontal size class to `.regular` in any window wide enough
-/// for two real columns (cave-bgmg). Non-Max iPhones report `.compact` in
-/// landscape, collapsing every NavigationSplitView into one sparse full-width
-/// column; ≥700pt of width is the same bar Apple's Max phones clear. Narrow
-/// windows keep the inherited class untouched.
+/// Size the horizontal size class by whether the window fits two real columns
+/// (cave-bgmg), ≥700pt — the bar Apple's Max phones clear in landscape.
+/// Non-Max iPhones report `.compact` in landscape, collapsing every
+/// NavigationSplitView into one sparse full-width column, so wide windows are
+/// promoted. Narrower windows the system calls `.regular` are demoted:
+/// iPhone Duo's inner display rotated upright is 669pt, where a split can only
+/// float its list over the conversation and opens on an empty detail; a
+/// phone-style stack serves it better. The class follows the window live as
+/// the Duo opens, closes and rotates.
 private struct WideSplitEnabler<Content: View>: View {
     @Environment(\.horizontalSizeClass) private var inherited
     @ViewBuilder var content: Content
@@ -300,8 +308,19 @@ private struct WideSplitEnabler<Content: View>: View {
         GeometryReader { geo in
             content.environment(
                 \.horizontalSizeClass,
-                geo.size.width >= 700 ? .regular : inherited
+                SplitWidth.sizeClass(forWidth: geo.size.width, inherited: inherited)
             )
         }
+    }
+}
+
+/// The width rule `WideSplitEnabler` applies, kept testable.
+enum SplitWidth {
+    /// The narrowest window that fits two real columns.
+    static let minimum: CGFloat = 700
+
+    static func sizeClass(forWidth width: CGFloat, inherited: UserInterfaceSizeClass?) -> UserInterfaceSizeClass? {
+        if width >= minimum { return .regular }
+        return inherited == .regular ? .compact : inherited
     }
 }
