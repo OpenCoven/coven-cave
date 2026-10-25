@@ -745,5 +745,10 @@ assert.match(
   /<div className="flex min-h-0 flex-1 flex-col md:flex-row">[\s\S]{0,7000}<main[\s\S]{0,240}className="settings-shell__content min-h-0 flex-1 overflow-y-auto/,
   "Settings bounds its body and gives vertical scrolling only to the content main",
 );
+assert.match(
+  shellSource,
+  /\{showPicker \? null : \(\s*<p className="mb-1 px-4[^"]*uppercase tracking-widest[^"]*">\s*Settings\s*<\/p>\s*\)\}/,
+  "the Settings eyebrow labels the desktop rail only; the mobile picker is titled by the top bar (#6243)",
+);
 
 console.log("settings-shell-polish.test.ts OK");

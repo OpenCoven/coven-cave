@@ -260,9 +260,14 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
           // scroll, instead of overflowing under the footer hint (#6241).
           style={showPicker ? { flex: "1 1 auto", width: "100%", minHeight: 0, overflowY: "auto" } : undefined}
         >
-          <p className="mb-1 px-4 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-            Settings
-          </p>
+          {/* The eyebrow labels the desktop rail. The full-screen mobile
+              picker is already titled by the top bar, so it would be a third
+              "Settings" (#6243). */}
+          {showPicker ? null : (
+            <p className="mb-1 px-4 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+              Settings
+            </p>
+          )}
           <div className={`mb-2 ${showPicker ? "px-3" : "px-2"}`}>
             <SearchInput
               value={query}
