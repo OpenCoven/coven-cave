@@ -31,6 +31,9 @@ struct ChatView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
+    /// Files picked from the `@` menu for this draft (#6104). Only these are
+    /// sent, and only while their `@path` is still in the text.
+    @State private var pickedFileMentions: [String] = []
     /// The suggestion row a hardware keyboard has highlighted (#5879).
     @State private var suggestionIndex = 0
     /// The draft Escape dismissed the suggestion menu for; editing reopens it.
@@ -303,7 +306,8 @@ struct ChatView: View {
     }
 
     private func writeDraftPersistence(_ value: String, threadId: String) {
-        app.persistThreadDraft(threadId, text: value)
+        app.persistThreadDraft(threadId, text: value,
+                               mentionedFiles: FileMention.picked(pickedFileMentions, in: value))
     }
 
     private func scheduleDraftPersistence(_ value: String) {
@@ -584,6 +588,7 @@ struct ChatView: View {
         .onAppear {
             if draft.isEmpty, let saved = app.persistedThreadDraft(thread.id) {
                 draft = saved
+                pickedFileMentions = app.persistedThreadDraftMentions(thread.id)
             }
             // Place the "New messages" divider from the seen boundary BEFORE
             // marking viewed moves it.
@@ -1525,7 +1530,7 @@ struct ChatView: View {
                 canSchedule: { requireChatAccess() && app.connectionDispatchLeaseIsCurrent(launch.lease) },
                 onScheduled: {
                     if draft == launch.draft && pendingImages.map(\.id) == launch.imageIds && replyingTo?.id == launch.replyId {
-                        draft = ""; pendingImages = []; replyingTo = nil
+                        draft = ""; pickedFileMentions = []; pendingImages = []; replyingTo = nil
                     }
                     app.showToast("Reply scheduled", systemImage: "clock")
                 })
@@ -1610,7 +1615,8 @@ struct ChatView: View {
         var message = thread.makeSendBody(familiarId: familiarId,
             prompt: replyingTo.map { replyQuote($0) + text } ?? text,
             attachments: attachments, runId: UUID().uuidString,
-            modelControls: modelControlValues, modelOverride: binding.modelOverride, modelOverrideScope: binding.scope)
+            modelControls: modelControlValues, modelOverride: binding.modelOverride, modelOverrideScope: binding.scope,
+            mentionedFiles: FileMention.picked(pickedFileMentions, in: text))
         message?.runId = nil
         scheduledReplyLaunch = ScheduledReplyLaunch(client: client, sessionId: sessionId,
             message: text.isEmpty && attachments.isEmpty ? nil : message,
@@ -1832,9 +1838,11 @@ struct ChatView: View {
                 }
             }
             draft = ""
+            pickedFileMentions = []
             dispatch(command, args: args)
         case .unknown(let token):
             draft = ""
+            pickedFileMentions = []
             thread.appendSystem("Unknown command \(token). Tap ⌘ or type /help for the full list.",
                                 isError: true)
             app.touch(thread)
@@ -1852,7 +1860,9 @@ struct ChatView: View {
             // Prepend the quoted message when replying, so the familiar sees
             // exactly what's being answered.
             let outgoing = replyingTo.map { replyQuote($0) + text } ?? text
+            let mentionedFiles = FileMention.picked(pickedFileMentions, in: text)
             draft = ""
+            pickedFileMentions = []
             pendingImages = []
             replyingTo = nil
             Haptics.tap()
@@ -1864,7 +1874,8 @@ struct ChatView: View {
                 thread.enqueue(outgoing, attachments: attachments,
                                modelControls: modelControlValues,
                                modelOverride: modelBinding.modelOverride,
-                               modelOverrideScope: modelBinding.scope)
+                               modelOverrideScope: modelBinding.scope,
+                               mentionedFiles: mentionedFiles)
                 app.touch(thread)
                 app.showToast("Queued — sends when reconnected", systemImage: "clock")
                 return
@@ -1875,6 +1886,7 @@ struct ChatView: View {
                         modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
+                        mentionedFiles: mentionedFiles,
                         onConnectionFailure: { app.noteConnectionFailure($0) },
                         liveDispatchLeaseIsCurrent: {
                             dispatchIsCurrent(dispatchBinding, in: thread, lease: dispatchLease)
@@ -1984,6 +1996,7 @@ struct ChatView: View {
             draft = MentionInput.insert(name: familiar.displayName, into: draft)
             composerFocused = true
         case .file(let path):
+            if !pickedFileMentions.contains(path) { pickedFileMentions.append(path) }
             draft = MentionInput.insert(name: path, into: draft)
             composerFocused = true
         }

@@ -6488,13 +6488,29 @@ final class AppModel {
         projectContextDefaults.string(forKey: Self.draftKey(threadId))
     }
 
-    func persistThreadDraft(_ threadId: String, text: String?) {
+    /// Per-thread key for the files picked from the `@` menu in that draft
+    /// (#6104). They live beside the text so a restored draft still sends the
+    /// files its `@path` tokens were picked for, and nothing else.
+    static func draftMentionsKey(_ threadId: String) -> String { "cave.chat.draftMentions.\(threadId)" }
+
+    func persistedThreadDraftMentions(_ threadId: String) -> [String] {
+        projectContextDefaults.stringArray(forKey: Self.draftMentionsKey(threadId)) ?? []
+    }
+
+    func persistThreadDraft(_ threadId: String, text: String?, mentionedFiles: [String] = []) {
         let key = Self.draftKey(threadId)
+        let mentionsKey = Self.draftMentionsKey(threadId)
         if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             projectContextDefaults.set(text, forKey: key)
+            if mentionedFiles.isEmpty {
+                projectContextDefaults.removeObject(forKey: mentionsKey)
+            } else {
+                projectContextDefaults.set(mentionedFiles, forKey: mentionsKey)
+            }
             setThreadDraft(threadId, text: text)
         } else {
             projectContextDefaults.removeObject(forKey: key)
+            projectContextDefaults.removeObject(forKey: mentionsKey)
             setThreadDraft(threadId, text: nil)
         }
     }

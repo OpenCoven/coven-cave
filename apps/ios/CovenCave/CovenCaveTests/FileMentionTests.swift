@@ -62,36 +62,50 @@ final class FileMentionTests: XCTestCase {
         XCTAssertEqual(MentionInput.insert(name: "src/a.ts", into: "Look at @sr"), "Look at @src/a.ts ")
     }
 
-    // MARK: Paths a sent prompt mentions
+    // MARK: The files a send carries (Val's T2 rule: only picked paths)
 
-    func testPathsComeFromTheTextInOrderWithoutRepeats() {
+    func testOnlyPickedPathsStillInTheTextGo() {
         XCTAssertEqual(
-            FileMention.paths(in: "See @src/a.ts and @README.md, then @src/a.ts again."),
+            FileMention.picked(["src/a.ts", "README.md"], in: "See @src/a.ts and @README.md, then @src/a.ts again."),
             ["src/a.ts", "README.md"])
-        XCTAssertEqual(FileMention.paths(in: "first line\n@docs/x.md"), ["docs/x.md"])
+        XCTAssertEqual(
+            FileMention.picked(["src/a.ts"], in: "Compare @src/a.ts with @src/typed.ts"),
+            ["src/a.ts"], "a path typed into prose stays text")
+        XCTAssertEqual(
+            FileMention.picked(["src/a.ts", "docs/x.md"], in: "Only @docs/x.md now"),
+            ["docs/x.md"], "a pick whose token was deleted does not ride along")
+        XCTAssertEqual(FileMention.picked([], in: "@src/a.ts"), [], "nothing picked, nothing sent")
     }
 
-    func testOnlyBoundedRelativeTokensCount() {
-        XCTAssertEqual(FileMention.paths(in: "mail val@example.com"), [])
-        XCTAssertEqual(FileMention.paths(in: "@a@b"), [])
-        XCTAssertEqual(FileMention.paths(in: "@/etc/hosts"), [], "absolute paths never go")
-        XCTAssertEqual(FileMention.paths(in: "just @ and @."), [])
-        XCTAssertEqual(FileMention.paths(in: "(@src/a.ts)"), [], "the @ must start the word, like the picker's boundary")
-        XCTAssertEqual(FileMention.paths(in: "open @src/a.ts?"), ["src/a.ts"], "sentence punctuation is not part of the path")
+    func testPicksKeepTheirOrderWithoutRepeats() {
+        XCTAssertEqual(
+            FileMention.picked(["b.ts", "a.ts", "b.ts"], in: "@a.ts then @b.ts"),
+            ["b.ts", "a.ts"])
+    }
+
+    func testAPickCountsOnlyAsABoundedToken() {
+        XCTAssertEqual(FileMention.picked(["example.com"], in: "mail val@example.com"), [])
+        XCTAssertEqual(FileMention.picked(["src/a.ts"], in: "(@src/a.ts)"), [], "the @ must start the word, like the picker's boundary")
+        XCTAssertEqual(FileMention.picked(["src/a.ts"], in: "open @src/a.ts?"), ["src/a.ts"], "sentence punctuation is not part of the path")
+        XCTAssertEqual(FileMention.picked(["src/a.ts"], in: "see @src/a.tsx"), [], "a longer path is a different token")
+        XCTAssertEqual(FileMention.picked(["src/a.ts"], in: "first line\n@src/a.ts"), ["src/a.ts"])
     }
 
     func testAtMostTenPathsGo() {
-        let prompt = (0..<12).map { "@f\($0).ts" }.joined(separator: " ")
-        XCTAssertEqual(FileMention.paths(in: prompt), (0..<10).map { "f\($0).ts" })
+        let picks = (0..<12).map { "f\($0).ts" }
+        let prompt = picks.map { "@\($0)" }.joined(separator: " ")
+        XCTAssertEqual(FileMention.picked(picks, in: prompt), (0..<10).map { "f\($0).ts" })
     }
 
     // MARK: The send body
 
     @MainActor
-    func testAOneToOneProjectChatSendsItsMentionsWithTheRoot() throws {
+    func testAOneToOneProjectChatSendsItsPickedMentionsWithTheRoot() throws {
         let thread = ChatThread(title: "Nyx", familiarIds: ["nyx"], projectRoot: "/repos/cave")
-        let body = try XCTUnwrap(thread.makeSendBody(familiarId: "nyx", prompt: "Read @src/a.ts please", runId: "r"))
-        XCTAssertEqual(body.mentionedFiles, ["src/a.ts"])
+        let body = try XCTUnwrap(thread.makeSendBody(
+            familiarId: "nyx", prompt: "Read @src/a.ts and @src/typed.ts please", runId: "r",
+            mentionedFiles: ["src/a.ts"]))
+        XCTAssertEqual(body.mentionedFiles, ["src/a.ts"], "the body sends what it is given, never paths read from the prompt")
         XCTAssertEqual(body.mentionedFilesRoot, "/repos/cave")
         let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any])
         XCTAssertEqual(encoded["mentionedFiles"] as? [String], ["src/a.ts"])
@@ -101,22 +115,58 @@ final class FileMentionTests: XCTestCase {
     @MainActor
     func testGroupAndProjectlessChatsSendNoFileMentions() throws {
         let group = ChatThread(title: "Nyx and Sage", familiarIds: ["nyx", "sage"], projectRoot: "/repos/cave")
-        let groupBody = try XCTUnwrap(group.makeSendBody(familiarId: "nyx", prompt: "@Sage look at @src/a.ts", runId: "r"))
+        let groupBody = try XCTUnwrap(group.makeSendBody(
+            familiarId: "nyx", prompt: "@Sage look at @src/a.ts", runId: "r", mentionedFiles: ["src/a.ts"]))
         XCTAssertNil(groupBody.mentionedFiles, "a group chat's @ names familiars")
         XCTAssertNil(groupBody.mentionedFilesRoot)
 
         let resumed = ChatThread(title: "Nyx", familiarIds: ["nyx"], sessionIds: ["nyx": "session-1"])
-        let resumedBody = try XCTUnwrap(resumed.makeSendBody(familiarId: "nyx", prompt: "@src/a.ts", runId: "r"))
+        let resumedBody = try XCTUnwrap(resumed.makeSendBody(
+            familiarId: "nyx", prompt: "@src/a.ts", runId: "r", mentionedFiles: ["src/a.ts"]))
         XCTAssertNil(resumedBody.mentionedFiles, "without a project there is no root to be relative to")
     }
 
     @MainActor
-    func testAPromptWithoutMentionsOmitsBothFields() throws {
+    func testATypedPathWithoutAPickOmitsBothFields() throws {
         let thread = ChatThread(title: "Nyx", familiarIds: ["nyx"], projectRoot: "/repos/cave")
-        let body = try XCTUnwrap(thread.makeSendBody(familiarId: "nyx", prompt: "hello", runId: "r"))
+        let body = try XCTUnwrap(thread.makeSendBody(familiarId: "nyx", prompt: "hello @src/a.ts", runId: "r"))
         let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any])
         XCTAssertNil(encoded["mentionedFiles"])
         XCTAssertNil(encoded["mentionedFilesRoot"])
+    }
+
+    @MainActor
+    func testTheBodyCapsMentionsAtTen() throws {
+        let thread = ChatThread(title: "Nyx", familiarIds: ["nyx"], projectRoot: "/repos/cave")
+        let body = try XCTUnwrap(thread.makeSendBody(
+            familiarId: "nyx", prompt: "x", runId: "r", mentionedFiles: (0..<12).map { "f\($0).ts" }))
+        XCTAssertEqual(body.mentionedFiles?.count, FileMention.maxPerSend)
+    }
+
+    // MARK: Picks stored on the user message
+
+    func testAMessageStoresItsPicksAndOlderSnapshotsStillDecode() throws {
+        var message = DisplayMessage(role: .user, text: "Read @src/a.ts")
+        message.mentionedFiles = ["src/a.ts"]
+        let decoded = try JSONDecoder().decode(DisplayMessage.self, from: JSONEncoder().encode(message))
+        XCTAssertEqual(decoded.mentionedFiles, ["src/a.ts"])
+
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(message)) as? [String: Any])
+        legacy.removeValue(forKey: "mentionedFiles")
+        let old = try JSONDecoder().decode(DisplayMessage.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(old.mentionedFiles, "a snapshot from before #6104 decodes with no picks")
+    }
+
+    @MainActor
+    func testAnOfflineQueuedMessageKeepsItsPicks() throws {
+        let thread = ChatThread(title: "Nyx", familiarIds: ["nyx"], projectRoot: "/repos/cave")
+        thread.enqueue("Read @src/a.ts", mentionedFiles: ["src/a.ts"])
+        let queued = try XCTUnwrap(thread.messages.last)
+        XCTAssertTrue(queued.isQueued)
+        XCTAssertEqual(queued.mentionedFiles, ["src/a.ts"])
+
+        thread.enqueue("Read @src/typed.ts")
+        XCTAssertNil(thread.messages.last?.mentionedFiles, "no picks are stored as nil, not an empty list")
     }
 
     // MARK: The file index request

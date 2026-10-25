@@ -48,26 +48,37 @@ enum FileMention {
         return scored.prefix(limit).map(\.file)
     }
 
-    /// The repo-relative paths a prompt mentions, in order, without repeats,
-    /// at most `maxPerSend`.
+    /// The files a send carries: the paths picked from the `@` menu whose
+    /// `@path` token is still in the text, in pick order, without repeats, at
+    /// most `maxPerSend`.
     ///
-    /// The desktop sends only the paths picked in this draft. The phone reads
-    /// them back from the text that is actually sent instead, so a retry, a
-    /// queued replay and a draft restored after relaunch all carry the same
-    /// files. A token counts when it starts the text or follows whitespace,
-    /// like the picker's own boundary, so `val@example.com` never does.
-    /// Trailing sentence punctuation is dropped. The server remains the
-    /// authority: it keeps only relative paths to real files inside the
-    /// chat's validated root and ignores everything else.
-    static func paths(in prompt: String) -> [String] {
+    /// Only picks count, as on the desktop: a path typed into prose stays text,
+    /// and a pick whose token was deleted does not silently ride along. The
+    /// caller stores the result on the user message so a retry or queued
+    /// replay sends the same files.
+    static func picked(_ picked: [String], in text: String) -> [String] {
+        let present = Set(tokens(in: text))
         var found: [String] = []
-        for word in prompt.split(whereSeparator: { $0.isWhitespace }) {
+        for path in picked where present.contains(path) && !found.contains(path) {
+            found.append(path)
+            if found.count == maxPerSend { break }
+        }
+        return found
+    }
+
+    /// The `@path` tokens in a text. A token counts when it starts the text or
+    /// follows whitespace, like the picker's own boundary, so
+    /// `val@example.com` never does, and trailing sentence punctuation is
+    /// dropped. The server remains the authority: it keeps only relative
+    /// paths to real files inside the chat's validated root.
+    private static func tokens(in text: String) -> [String] {
+        var found: [String] = []
+        for word in text.split(whereSeparator: { $0.isWhitespace }) {
             guard word.hasPrefix("@") else { continue }
             var path = String(word.dropFirst())
             while let last = path.last, trailingPunctuation.contains(last) { path.removeLast() }
             guard !path.isEmpty, !path.contains("@"), !path.hasPrefix("/") else { continue }
-            if !found.contains(path) { found.append(path) }
-            if found.count == maxPerSend { break }
+            found.append(path)
         }
         return found
     }

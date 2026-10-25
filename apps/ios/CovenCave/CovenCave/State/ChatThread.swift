@@ -97,6 +97,11 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// Wire scope retained only while a queued message waits to send. Optional
     /// for snapshots written before turn-scoped model binding shipped.
     var modelOverrideScope: ChatModelOverrideScope?
+    /// Project files picked from the `@` menu whose `@path` was still in the
+    /// sent text (#6104), at most `FileMention.maxPerSend`. Persisted so a
+    /// retry or queued replay sends exactly these files, never paths re-read
+    /// from the prompt. Optional so earlier snapshots decode.
+    var mentionedFiles: [String]?
     /// Agent working steps (tool calls / progress lines) surfaced while this
     /// assistant reply streamed. Optional so older persisted messages decode.
     var activity: [ActivityStep]?
@@ -395,6 +400,7 @@ final class ChatThread: Identifiable, Hashable {
               modelControls: [String: String] = [:],
               modelOverride: String? = nil,
               modelOverrideScope: ChatModelOverrideScope? = nil,
+              mentionedFiles: [String] = [],
               onStreamResult: ((ChatSendResult) -> Void)? = nil,
               onConnectionFailure: ((Error) -> Void)? = nil,
               liveDispatchLeaseIsCurrent: @escaping () -> Bool,
@@ -426,7 +432,8 @@ final class ChatThread: Identifiable, Hashable {
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
             modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
-            modelOverrideScope: modelOverrideScope)
+            modelOverrideScope: modelOverrideScope,
+            mentionedFiles: mentionedFiles.isEmpty ? nil : mentionedFiles)
         messages.append(userMessage)
         updatedAt = Date()
         onChange()
@@ -497,6 +504,7 @@ final class ChatThread: Identifiable, Hashable {
                         modelControls: modelControls,
                         modelOverride: modelOverride,
                         modelOverrideScope: modelOverrideScope ?? (modelOverride == nil ? nil : .session),
+                        mentionedFiles: mentionedFiles,
                         runId: delivery.runId,
                         activeDeliveryClaimed: true,
                         liveDispatchLeaseIsCurrent: liveDispatchLeaseIsCurrent,
@@ -521,7 +529,8 @@ final class ChatThread: Identifiable, Hashable {
                  responseSpeed: ChatResponseSpeed? = nil,
                  modelControls: [String: String] = [:],
                  modelOverride: String? = nil,
-                 modelOverrideScope: ChatModelOverrideScope? = nil) {
+                 modelOverrideScope: ChatModelOverrideScope? = nil,
+                 mentionedFiles: [String] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else { return }
         guard requireSendProvenance(to: familiarIds) else { return }
@@ -533,7 +542,8 @@ final class ChatThread: Identifiable, Hashable {
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
             modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
-            modelOverrideScope: modelOverrideScope)
+            modelOverrideScope: modelOverrideScope,
+            mentionedFiles: mentionedFiles.isEmpty ? nil : mentionedFiles)
         message.queued = true
         messages.append(message)
         updatedAt = Date()
@@ -808,6 +818,7 @@ final class ChatThread: Identifiable, Hashable {
                     modelControls: modelControls,
                     modelOverride: queuedMessage.modelOverride,
                     modelOverrideScope: queuedMessage.modelOverrideScope ?? (queuedMessage.modelOverride == nil ? nil : .session),
+                    mentionedFiles: queuedMessage.mentionedFiles ?? [],
                     runId: runId,
                     liveDispatchLeaseIsCurrent: mayDispatchTarget,
                     persistAfterProvablyUnsentRollback: persistAfterRollback,
@@ -1519,6 +1530,7 @@ final class ChatThread: Identifiable, Hashable {
                     modelControls: source?.modelControls ?? [:],
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
+                    mentionedFiles: source?.mentionedFiles ?? [],
                     liveDispatchLeaseIsCurrent: mayDispatch,
                     client: client,
                     onChange: onChange,
@@ -1933,7 +1945,8 @@ final class ChatThread: Identifiable, Hashable {
         responseSpeed: ChatResponseSpeed? = nil,
         modelControls: [String: String] = [:],
         modelOverride: String? = nil,
-        modelOverrideScope: ChatModelOverrideScope? = nil
+        modelOverrideScope: ChatModelOverrideScope? = nil,
+        mentionedFiles: [String] = []
     ) -> CaveClient.SendBody? {
         guard !isFlowRun else { return nil }
         let rawSessionID = sessionIds[familiarId]?
@@ -1955,16 +1968,13 @@ final class ChatThread: Identifiable, Hashable {
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope
         )
-        // `@path` mentions (#6104) are read from the prompt itself, so first
-        // sends, retries and queued replays all carry the same files. A group
-        // chat's `@` names familiars, and a chat without a project has no root
-        // the paths could be relative to.
-        if !isGroup, let projectRoot {
-            let mentioned = FileMention.paths(in: prompt)
-            if !mentioned.isEmpty {
-                body.mentionedFiles = mentioned
-                body.mentionedFilesRoot = projectRoot
-            }
+        // `@path` mentions (#6104) are the files picked from the `@` menu, as
+        // stored on the user message, so first sends, retries and queued
+        // replays all carry the same ones. A group chat's `@` names familiars,
+        // and a chat without a project has no root the paths are relative to.
+        if !isGroup, let projectRoot, !mentionedFiles.isEmpty {
+            body.mentionedFiles = Array(mentionedFiles.prefix(FileMention.maxPerSend))
+            body.mentionedFilesRoot = projectRoot
         }
         #if DEBUG
         if NativeActivityRecoveryPreview.configuration?.providerCanary == true {
@@ -2004,6 +2014,7 @@ final class ChatThread: Identifiable, Hashable {
                         modelControls: [String: String] = [:],
                         modelOverride: String? = nil,
                         modelOverrideScope: ChatModelOverrideScope? = nil,
+                        mentionedFiles: [String] = [],
                         runId suppliedRunId: String? = nil,
                         activeDeliveryClaimed: Bool = false,
                         liveDispatchLeaseIsCurrent: (() -> Bool)? = nil,
@@ -2077,7 +2088,8 @@ final class ChatThread: Identifiable, Hashable {
             responseSpeed: responseSpeed,
             modelControls: modelControls,
             modelOverride: modelOverride,
-            modelOverrideScope: modelOverrideScope
+            modelOverrideScope: modelOverrideScope,
+            mentionedFiles: mentionedFiles
         ) else {
             mutate(messageId) {
                 $0.text = "Cave couldn’t start this delivery. It will retry when its chat context is available."
