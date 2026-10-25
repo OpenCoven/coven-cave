@@ -805,13 +805,13 @@ struct ChatView: View {
 
     private var sessionModelLabel: String {
         if let pendingModelOverride = thread.pendingModelOverride {
-            if pendingModelOverride.isEmpty { return "Runtime default (unresolved)" }
+            if pendingModelOverride.isEmpty { return "Runtime default (not reported yet)" }
             return pendingModelOverride
         }
         guard let state = presentedSessionModelState else {
             return thread.isGroup ? "Per familiar" : "Loading…"
         }
-        if state.effectiveModel.isEmpty { return "Runtime default (unresolved)" }
+        if state.effectiveModel.isEmpty { return "Runtime default (not reported yet)" }
         return state.effectiveModel
     }
 
