@@ -88,8 +88,8 @@ assert.match(
 );
 assert.match(
   contextPill,
-  /runtimeModelLabel\(config\.modelValue, config\.modelOptions\) \?\? "Runtime default \(unresolved\)"/,
-  "runtime default remains explicitly unresolved until the runtime reports a model",
+  /runtimeModelLabel\(config\.modelValue, config\.modelOptions\) \?\? "Runtime default \(not reported yet\)"/,
+  "runtime default says the model is not reported yet until the runtime reports one (#6243)",
 );
 assert.match(
   contextPill,

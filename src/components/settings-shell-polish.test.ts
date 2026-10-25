@@ -750,5 +750,10 @@ assert.match(
   /\{showPicker \? null : \(\s*<p className="mb-1 px-4[^"]*uppercase tracking-widest[^"]*">\s*Settings\s*<\/p>\s*\)\}/,
   "the Settings eyebrow labels the desktop rail only; the mobile picker is titled by the top bar (#6243)",
 );
+assert.match(
+  shellSource,
+  /\{showPicker \? null : \(\s*<div className="min-w-0">\s*<span className="surface-compact-title block truncate">/,
+  "the header band drops its title on the mobile picker and keeps Back (#6243)",
+);
 
 console.log("settings-shell-polish.test.ts OK");
