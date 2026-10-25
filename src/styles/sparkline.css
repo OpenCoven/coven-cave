@@ -14,3 +14,17 @@
   border: 1px solid var(--border-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   font-variant-numeric: tabular-nums; }
 .spark-tip b { font-weight: 700; }
+
+/* The tooltip's frosted glass keeps its opaque fallbacks beside it. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .spark-tip {
+    background: var(--bg-elevated);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .spark-tip {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+  }
+}

@@ -48,19 +48,12 @@
     background:
       linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
   }
-  .spark-tip {
-    background: var(--bg-elevated);
-  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .settings-shell__header {
     background:
       linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
-    backdrop-filter: none;
-  }
-  .spark-tip {
-    background: var(--bg-elevated);
     backdrop-filter: none;
   }
 }
