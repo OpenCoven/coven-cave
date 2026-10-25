@@ -51,7 +51,9 @@ marked active.
 - Use [branch-curator](.agents/skills/branch-curator/SKILL.md) for deletion.
   Require exact OIDs, retained heads, clean state, no live owner, and explicit
   scope. A merged squash PR is not retention; a pushed archive tag can be.
-  A local status label is not deletion authority; remote deletion remains proposal-only.
+  A local status label is not deletion authority; remote deletion by an agent
+  remains proposal-only. GitHub itself deletes a merged PR's head branch
+  (`delete_branch_on_merge`) and keeps the head at `refs/pull/<#>/head`.
 - Preserve uncertain or dirty units, foreign locks, and inaccessible paths.
   A chat approval does not expand filesystem access. De-registration is not
   directory deletion, and neither is justified by missing ownership evidence.

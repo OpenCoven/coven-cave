@@ -83,8 +83,8 @@ passed five initial macOS arm64 samples on an Apple M5 Max, 18 logical CPUs,
 start 294 ms (249–308), restart 218 ms (199–253), and shutdown 75 ms (72–88).
 All five process-group cleanups passed. This was a development run based on
 `2e24b794d2fabe8d5749c73bbb048ae10d482250`, with an uncommitted probe; it is
-diagnostic evidence, not final-head qualification. Final delivery evidence
-belongs on #6120.
+diagnostic evidence, not final-head qualification. Final-head delivery evidence
+is recorded on #6120 (closed 2026-10-20, PR #6121).
 
 The existing user profile had previously produced a readiness timeout, whereas
 a later foreground launch was healthy. These empty-profile results do not

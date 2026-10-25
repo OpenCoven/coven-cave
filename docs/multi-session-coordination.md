@@ -224,6 +224,17 @@ between "recovery impossible" and a targeted `lost-found` search — and for
 UNSTAGED edits (which never enter the object store) it is the only record that
 the work existed at all.
 
+### 6. At-risk work hooks — `worktree-autolock.mjs` and `worktree-retention-push.mjs` ✅ IMPLEMENTED
+
+`.claude/settings.json` wires two more advisory hooks next to the surface-claim
+and destructive-op guards. `scripts/worktree-autolock.mjs` (PreToolUse) locks
+worktrees that hold work a removal would destroy, so an actor outside Claude
+Code, such as GitHub Desktop, can't remove them with a single `--force`.
+`scripts/worktree-retention-push.mjs` (PostToolUse) pushes commits that exist on
+no remote: as the branch itself, or as a `retention/<slug>-<sha>` tag when the
+branch's upstream was deleted. Both exit 0. Neither merges, opens a PR, deletes
+a branch, or grants ownership.
+
 ## The PR layer: duplicate publication of the same work
 
 Every guard above assumes the collision happens locally — worktree-guard
@@ -281,7 +292,7 @@ habits above have so far been sufficient.
 
 ## Practical recommendations for sessions
 
-Until any of the above is built, sessions should:
+Signals 1, 5 and 6 are built. Alongside them, sessions should:
 
 1. **Check live sessions before non-trivial work.** `ps -ef | grep ' claude --'`
    plus `lsof -p <pid> | awk '$4=="cwd"'` shows who's where. Five sessions in
@@ -317,8 +328,8 @@ Until any of the above is built, sessions should:
 
 ## Open questions
 
-- Is `.claude/claims.json` worth prototyping, or does worktree-as-default
-  cover enough of the gap?
+- Does the advisory claim hook (§1) catch enough, or is the unbuilt
+  branch-claim mechanism still needed?
 - Does any of this generalise beyond Claude Code? The same failure mode
   could exist for human pair-programming sessions sharing one checkout, but
   humans usually have a Slack channel.

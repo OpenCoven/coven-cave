@@ -115,11 +115,9 @@ Choose the asset that matches your platform:
 | Linux | amd64/x86_64 only | `.AppImage` |
 
 Check the selected release's asset list before downloading: partial releases may
-not include every platform or `SHA256SUMS`. As of 2026-10-13, the latest
-published Windows installer is the
-[v0.5.7 x64 MSI](https://github.com/OpenCoven/coven-cave/releases/download/v0.5.7/CovenCave_0.5.7_x64_en-US.msi);
-the release currently marked latest (v0.5.8) has no MSI. Verify the Windows
-download with [v0.5.7 `SHA256SUMS`](https://github.com/OpenCoven/coven-cave/releases/download/v0.5.7/SHA256SUMS).
+not include every platform or `SHA256SUMS`. If the release marked latest has no
+MSI, use the newest earlier release that lists one, and verify the download
+against that release's `SHA256SUMS`.
 Windows on ARM and Linux on ARM do not currently have published desktop
 artifacts.
 
@@ -188,7 +186,6 @@ integration.
 | `src/`          | Next.js app, API routes, React components, shared libraries, sandbox    |
 | `src-tauri/`    | Tauri desktop shell + sidecar (Rust: pty, browser, speech, archive)     |
 | `apps/ios/`     | Native SwiftUI iOS client and widget targets                            |
-| `apps/`         | Additional companion apps (markdown, terminal helpers)                  |
 | `docs/`         | Design notes, audits, mobile checklists, workflows, and feature specs   |
 | `scripts/`      | Build, mobile, test, packaging, and maintenance helpers                 |
 | `marketplace/`  | Seeded OpenCoven marketplace catalog data                               |
@@ -339,11 +336,6 @@ pnpm mobile:tailscale          # browser-based mobile dogfooding over Tailscale
 pnpm mobile:tailscale:app      # pair the native iOS app to a daemon over Tailscale
 pnpm mobile:ios:sim            # build & run the native iOS app in the simulator
 ```
-
-The standalone Coven Memory iOS client uses the same **Open on phone**
-bearer/Tailscale boundary and Cave's read-only canonical-memory routes. See
-[`docs/mobile-memory.md`](docs/mobile-memory.md) for enablement, pairing,
-global credential rotation, recovery, and privacy constraints.
 
 The native SwiftUI app has its own notes in
 [`apps/ios/CovenCave/README.md`](apps/ios/CovenCave/README.md).

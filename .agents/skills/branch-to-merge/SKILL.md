@@ -296,9 +296,11 @@ co-author trailers from the PR body and commit messages before constructing the
 explicit squash message. It preserves each valid human numeric GitHub no-reply
 trailer once and fails closed on ambiguous non-GitHub co-author identities.
 
-Do not pass `--delete-branch`. That flag asks `gh` to delete both local and
-remote branches immediately after merging. Local retirement belongs to the
-Phase 7 evidence-backed process, and remote deletion remains proposal-only.
+Do not pass `--delete-branch`; that flag also deletes the local branch.
+GitHub deletes the remote head branch on merge regardless, because the
+repository's `delete_branch_on_merge` setting is on, and `refs/pull/<#>/head`
+retains the merged head. Local retirement belongs to the Phase 7
+evidence-backed process; any other remote deletion remains proposal-only.
 
 The squash message summarizes the whole branch, not the last commit, and
 carries any human `Co-authored-by:` trailers.
