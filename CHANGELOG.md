@@ -31,9 +31,9 @@ separate from Windows code signing.
   shell shows the recovery banner with a native Retry.
 
 ### Changed
-- **Chat layout** (#6204, #6109, #6053). Chat headers stay within three rows,
-  the sidechat header is just the title and overflow menu, and the chat sidebar
-  reads more clearly while its rows keep their interactions.
+- **Chat layout** (#6204, #6109, #6227, #6053). Chat headers stay within three
+  rows, the sidechat header is just the title and overflow menu, and the chat
+  sidebar lists sessions as compact outlined rows that keep their interactions.
 - **Run details** (#6041, #6043, #6046). One Model row and plain-language
   activity labels. iOS matches the web's rows and folds Run details into a
   collapsed disclosure.
@@ -42,9 +42,9 @@ separate from Windows code signing.
   cancelled calls no longer read as running or as a clean run. Withheld
   reasoning shows without an invented summary length, and a local refusal no
   longer gains a "detail withheld" line.
-- **Native chat UI** (#6073, #6175). Token-bound `coven:ui` blocks render
+- **Native chat UI** (#6073, #6175, #6229). Token-bound `coven:ui` blocks render
   natively with their state kept through settlement, with readable fallback
-  text.
+  text, and the catalog gains layout and text entries.
 - **Windows windows** (#6167). The main window opens centred and clamped to the
   usable monitor, the title bar follows the app theme, Quick Chat opens near the
   tray, and the tray icon stays legible.
@@ -70,8 +70,9 @@ separate from Windows code signing.
   (#6203). Revoked chat caches are invalidated and delayed updates are fenced
   (#6190), and cached chats stay quiet during refresh failures (#6028).
 - **Projects:** a project registered through an alias keeps its identity when a
-  chat resumes (#6219), and file mentions resolve against the authorized
-  runtime directory (#6133).
+  chat resumes, and the remaining project-root comparisons use the on-disk path
+  (#6219, #6233). File mentions resolve against the authorized runtime directory
+  (#6133).
 - **Data preservation:** unreadable or newer backup settings are preserved, with
   recovery guidance in Settings (#6174). Inbox data survives invalid or
   unreadable storage, and reminder work stays bounded during storage stalls
