@@ -7,6 +7,32 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.17] - 2026-10-25
+
+> Pick project files with @ on iOS, and tell Needs you from notifications at a glance.
+
+Patch release on top of v0.5.16. As in v0.5.16, **the Windows MSI is not
+Authenticode-signed in this cut**. Its checksum and updater signature are
+separate from Windows code signing.
+
+### Added
+- **@ file mentions on iOS** (#6105). In a one-to-one chat with a project,
+  typing `@` lists the project's files and picking one inserts its path, as on
+  the desktop. Only picked files are sent, and a retry or queued reply sends
+  the same files. A path typed into prose stays text.
+
+### Changed
+- **Needs you** uses a raised hand, so it no longer looks like the
+  notification bell beside it (#6250).
+- **Model label:** until the runtime reports its model, the composer reads
+  "Runtime default (not reported yet)", on web and iOS (#6250).
+- **Mobile Settings** is titled once: the section picker no longer repeats
+  "CovenCave control room" under the top bar (#6250).
+
+### Under the hood
+- **Docs:** iOS priorities, run worktrees and push guidance follow the
+  documentation audit (#6249).
+
 ## [0.5.16] - 2026-10-25
 
 > Settings fits the phone, and chat UI blocks gain tabs and text input.
