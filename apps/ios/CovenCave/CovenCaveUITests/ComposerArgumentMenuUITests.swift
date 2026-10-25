@@ -108,6 +108,35 @@ final class ComposerArgumentMenuUITests: XCTestCase {
         expectation(for: filled, evaluatedWith: composer)
         waitForExpectations(timeout: 5)
     }
+
+    // MARK: File mentions (#6104)
+
+    @MainActor
+    func testAtListsProjectFilesInAOneToOneChatAndInsertsThePath() {
+        let app = launchEmptyChat()
+        let composer = app.descendants(matching: .any)["Message"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        composer.tap()
+
+        // The preview chat is with Nyx alone, in the Coven Cave project.
+        composer.typeText("Look at @")
+        let readme = app.buttons["README.md"].firstMatch
+        XCTAssertTrue(readme.waitForExistence(timeout: 5), "a bare @ lists the project's files")
+        XCTAssertTrue(app.staticTexts["Tap to add the file · type to filter"].exists,
+                      "the footer says a tap adds the file")
+
+        // Typing ranks by file name first, as the desktop does.
+        composer.typeText("file-m")
+        let mention = app.buttons["file-mention.ts, src/lib"].firstMatch
+        XCTAssertTrue(mention.waitForExistence(timeout: 3), "the matching file stays, with its folder")
+        XCTAssertTrue(readme.waitForNonExistence(timeout: 3), "files that don't match drop out")
+
+        mention.tap()
+        let inserted = NSPredicate(format: "value == %@", "Look at @src/lib/file-mention.ts ")
+        expectation(for: inserted, evaluatedWith: composer)
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(mention.waitForNonExistence(timeout: 3), "the picker closes after the pick")
+    }
 }
 
 private extension XCUIElement {
