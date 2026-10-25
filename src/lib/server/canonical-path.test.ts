@@ -7,10 +7,10 @@
 // explicitly so the behavior is deterministic on every platform ("junction"
 // works unprivileged on Windows and is ignored on POSIX).
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { realpathOrResolve } from "./canonical-path.ts";
+import { realpathNativeOrResolve, realpathOrResolve } from "./canonical-path.ts";
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), "canonical-path-"));
 
@@ -68,6 +68,30 @@ try {
     path.join(canonicalReal, "plain-missing"),
     "already-canonical prefixes are stable",
   );
+
+  // realpathNativeOrResolve (#6216) walks the same way through the native
+  // realpath, which reports on-disk letter case like the runtime cwd does.
+  const nativeReal = realpathSync.native(real);
+  assert.equal(realpathNativeOrResolve(link), nativeReal, "native: an existing symlink resolves to its target");
+  assert.equal(
+    realpathNativeOrResolve(path.join(link, "sub", "missing", "deeper")),
+    path.join(nativeReal, "sub", "missing", "deeper"),
+    "native: a missing tail under a symlinked ancestor keeps the ancestor's canonical prefix",
+  );
+  mkdirSync(path.join(tmp, "CaseProbe"));
+  if (existsSync(path.join(tmp, "caseprobe"))) {
+    mkdirSync(path.join(real, "OnDisk"));
+    assert.equal(
+      realpathNativeOrResolve(path.join(link, "ondisk", "missing")),
+      path.join(nativeReal, "OnDisk", "missing"),
+      "native: on a case-insensitive volume the existing part takes its on-disk case",
+    );
+    assert.equal(
+      realpathOrResolve(path.join(link, "ondisk")),
+      path.join(canonicalReal, "ondisk"),
+      "the JS realpath keeps the spelled case, which is why runtime-cwd comparisons need the native form",
+    );
+  }
 } finally {
   rmSync(tmp, { recursive: true, force: true });
 }
