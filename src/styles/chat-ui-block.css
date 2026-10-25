@@ -280,6 +280,16 @@ ol.chat-ui-list { list-style-type: decimal; }
 
 .chat-ui-stat:not([data-tone="neutral"]) .chat-ui-stat__value { color: var(--chat-ui-tone); }
 
+/* A trend's own tone colours only the trend: up is not assumed to be good. */
+.chat-ui-stat__trend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--chat-ui-tone);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
 .chat-ui-stat__caption {
   color: var(--text-muted);
   font-size: var(--text-xs);
@@ -384,6 +394,61 @@ ol.chat-ui-list { list-style-type: decimal; }
 .chat-ui-chart__label {
   color: var(--text-secondary);
   font-size: var(--text-sm);
+}
+
+.chat-ui-chart__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The donut sits beside its legend, and the legend wraps below in a narrow
+   pane. Slice colours come from the tone map in the renderer, never the model. */
+.chat-ui-donut__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.chat-ui-donut__chart { flex: none; inline-size: 10rem; }
+.chat-ui-donut__chart[data-size="sm"] { inline-size: 7.5rem; }
+.chat-ui-donut__chart[data-size="lg"] { inline-size: 12.5rem; }
+
+.chat-ui-donut__legend {
+  display: grid;
+  flex: 1 1 10rem;
+  max-inline-size: 18rem;
+  gap: var(--space-1);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.chat-ui-donut__legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.chat-ui-donut__swatch {
+  flex: none;
+  inline-size: var(--space-2);
+  block-size: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--chat-ui-tone);
+}
+
+.chat-ui-donut__name { min-width: 0; color: var(--text-primary); overflow-wrap: anywhere; }
+
+.chat-ui-donut__value {
+  margin-inline-start: auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── inputs ─────────────────────────────────────────────────────────────── */

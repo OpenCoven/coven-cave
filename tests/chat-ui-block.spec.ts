@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
 
 import {
+  DELIVERY_PULSE,
   FAILED_CHILD_TEXT,
   MALFORMED_DASHBOARD,
   MINI_DASHBOARD,
@@ -37,6 +38,8 @@ const SHOWCASE_REPLY = [
 ].join("\n\n");
 
 const MALFORMED_REPLY = ["Some of this block is broken on purpose.", uiBlockFence(MALFORMED_DASHBOARD), "Prose after the block."].join("\n\n");
+
+const PULSE_REPLY = ["This week's pulse.", uiBlockFence(DELIVERY_PULSE), "Prose after the block."].join("\n\n");
 
 const RELEASE_REPLY = ["Here's the release brief.", uiBlockFence(RELEASE_BRIEF), "Prose after the block."].join("\n\n");
 
@@ -210,7 +213,7 @@ test("a malformed block shows per-node error chips and renders the rest", async 
   const block = chat.getByRole("group", { name: "Partly broken" });
   await expect(block).toBeVisible();
   await expect(block.locator("[data-ui-block-error]")).toHaveCount(6);
-  await expect(block.locator('[data-ui-block-error="Sparkline"]')).toContainText("Unknown component <Sparkline>");
+  await expect(block.locator('[data-ui-block-error="Marquee"]')).toContainText("Unknown component <Marquee>");
   await expect(block.locator('[data-ui-block-error="Badge"]')).toContainText('Unknown prop "colour"');
   await expect(stat(block, "Valid stat")).toHaveText("6");
   await expect(block.getByText("Still rendered after the failures.")).toBeVisible();
@@ -238,7 +241,7 @@ test("a failed component keeps its text readable and its markup inert", async ({
     "Score: 3 of 5 checks pass",
     "Couldn't render <Text>: tone must be one of",
     "Mood is glow today",
-    "Couldn't render <Sparkline>",
+    "Couldn't render <Marquee>",
     "Trend is up",
     "Still rendered",
   ].map((part) => text.indexOf(part));
@@ -285,6 +288,32 @@ test("the layout catalog renders with native semantics and stacks in a narrow pa
   // A pane narrower than 18rem stacks the grid's cells instead of clipping them.
   await block.evaluate((element) => { element.style.width = "16rem"; });
   await expect(grid).toHaveCSS("grid-template-columns", /^[\d.]+px$/);
+});
+
+test("the data catalog renders trends, a sparkline, a donut and badge cells", async ({ page }, testInfo) => {
+  await page.setViewportSize(CAPTURE_VIEWPORT);
+  const { chat } = await setup(page, PULSE_REPLY);
+  const block = chat.getByRole("group", { name: "Delivery pulse" });
+  await expect(block).toBeVisible();
+  await expect(block.locator("[data-ui-block-error]")).toHaveCount(0);
+  await expect(block.locator(".chat-ui-stat__trend")).toHaveText(["+12% increase", "\u22120.8 decrease", "0 unchanged"]);
+  const spark = block.locator("figure.chat-ui-sparkline");
+  await expect(spark.locator("figcaption")).toHaveText("Merges per day");
+  await expect(spark.locator(".spark svg path")).toHaveCount(2);
+  // The sparkline's own sheet loads in chat without the dashboard stylesheet.
+  await expect(spark.locator(".spark")).toHaveCSS("position", "relative");
+  const donut = block.locator("figure.chat-ui-donut");
+  await expect(donut.getByRole("img", { name: "Review load: Cody 9 (50%), Nova 6 (33%), Val 3 (17%)" })).toBeVisible();
+  await expect(donut.locator("svg path")).toHaveCount(3);
+  await expect(donut.getByRole("listitem")).toHaveText(["Cody9 (50%)", "Nova6 (33%)", "Val3 (17%)"]);
+  await expect(block.getByRole("table", { name: "Service health" }).locator("td .chat-ui-badge")).toHaveText(["healthy", "down"]);
+  await expect(chat.getByText("Prose after the block.", { exact: true })).toBeVisible();
+  for (const mode of ["light", "dark"] as const) {
+    await setTheme(page, mode);
+    await capture(block, testInfo, `delivery-pulse-${mode}`);
+  }
+  await setTheme(page, "dark", "tide");
+  await capture(block, testInfo, "delivery-pulse-tide-dark");
 });
 
 test("a coven:ui example inside another fence stays literal text", async ({ page }) => {

@@ -40,19 +40,21 @@ A familiar writes a fenced block of JSX-like markup:
 | `Code` | none | text (only inside `Text` or `Bold`) |
 | `List` | `items`* (text or numbers), `ordered`, `gap`, `tone` | none |
 | `Badge` | `tone`, `label` | text |
-| `Stat` | `label`*, `value`*, `format`, `caption`, `tone` | none |
-| `Table` | `columns`*, `rows`*, `caption` | none |
+| `Stat` | `label`*, `value`*, `format`, `caption`, `tone`, `trend`, `trendFormat`, `trendTone` | none |
+| `Table` | `columns`*, `rows`* (cells: text, numbers, or `{ kind: "badge", label, tone }`), `caption` | none |
 | `Progress` | `label`*, `value`*, `max`, `tone` | none |
 | `BarChart` | `label`*, `data`* (`[{ label, value }]`), `tone`, `height` | none |
+| `Sparkline` | `label`*, `data`* (`[{ label, value }]`), `tone`, `height` | none |
+| `Donut` | `label`*, `data`* (`[{ label, value, tone }]`), `size` | none |
 | `Slider` | `bind`*, `label`*, `min`, `max`, `step`, `format` | none |
 | `Select` | `bind`*, `label`*, `options`* | none |
 | `Toggle` | `bind`*, `label`* | none |
 | `Button` | `set` + `to`, or `prefill`; `label`, `variant` | text |
 | `State` | `name`*, `initial`* | none |
 
-\* required. `BarChart` reuses `src/components/ui/charts/bar-chart.tsx`. `Select` reuses `StandardSelect`. `Button` reuses the shared `Button`.
+\* required. `BarChart` reuses `src/components/ui/charts/bar-chart.tsx`, `Sparkline` reuses `src/components/ui/sparkline.tsx` (its sheet, `src/styles/sparkline.css`, is imported by that component) and `Donut` reuses `src/components/ui/charts/donut-chart.tsx`. `Select` reuses `StandardSelect`. `Button` reuses the shared `Button`.
 
-`Grid` and `Columns` are two spellings of one layout. In a pane narrower than 28rem, three or four columns become two; below 18rem every grid stacks to one column. `Divider` is an `hr`, and `List` is a native `ul` (or `ol` with `ordered`) whose items are plain text. `Callout` is a `role="note"` region: an icon and an assistive label ("Note", "Success", "Warning" or "Important") carry its tone, so colour is never the only signal. `Bold` and `Code` are the whole inline grammar. They render as `strong` and `code`, take no props, and are errors anywhere else. Lower-case tags such as `<b>` stay errors, and text that looks like a tag stays text.
+`Grid` and `Columns` are two spellings of one layout. In a pane narrower than 28rem, three or four columns become two; below 18rem every grid stacks to one column. `Divider` is an `hr`, and `List` is a native `ul` (or `ol` with `ordered`) whose items are plain text. `Callout` is a `role="note"` region: an icon and an assistive label ("Note", "Success", "Warning" or "Important") carry its tone, so colour is never the only signal. A `Stat` trend reads as text ("+12% increase", "−0.8 decrease", "0 unchanged") with a decorative arrow, and `trendTone` defaults to `neutral`: rising is never assumed to be good. Table badge cells take exactly `kind`, `label` and an optional `tone`. `Sparkline` points and `Donut` slices take exactly the listed keys, with unique labels and finite values; donut values can't be negative. Both charts keep a caption and the values in text: a screen-reader list for the sparkline, and a visible legend with shares for the donut. A slice without a tone takes the next default tone that no other slice is using (accent, success, warning, danger, muted, then info, which shares accent's hue in some palettes), and an empty donut says "No data yet". `Bold` and `Code` are the whole inline grammar. They render as `strong` and `code`, take no props, and are errors anywhere else. Lower-case tags such as `<b>` stay errors, and text that looks like a tag stays text.
 
 Token props accept names only. The values live in `src/styles/chat-ui-block.css`:
 
@@ -107,7 +109,7 @@ A failed node renders an inline chip (`role="note"`, "Couldn't render &lt;label&
 - **Total failure:** a body with no markup (JSON or prose) falls back to its source as a code block.
 - **Settled blocks only:** a block that ends early or leaves tags open renders what it has, plus one block-level note.
 
-Caps: 20,000 characters per block, 400 components, 24 levels of nesting, 100 table rows, 12 columns, 40 bars, 50 options, 100 list items.
+Caps: 20,000 characters per block, 400 components, 24 levels of nesting, 100 table rows, 12 columns, 40 bars, 50 options, 100 list items, 40 sparkline points, 12 donut slices.
 
 ## Where it is wired
 

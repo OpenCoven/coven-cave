@@ -75,7 +75,7 @@ export const MINI_DASHBOARD = `<Stack gap="md">
 export const MALFORMED_DASHBOARD = `<Card title="Partly broken">
   <State name="count" initial={3} />
   <Stat label="Valid stat" value={count * 2} />
-  <Sparkline values={[1, 2, 3]} />
+  <Marquee values={[1, 2, 3]} />
   <Badge colour="red">Unknown prop</Badge>
   <Text style="color: red">Raw style</Text>
   <Stat label="Calls a function" value={alert(1)} />
@@ -96,7 +96,7 @@ export const FAILED_CHILD_TEXT = `<Card title="Release check">
   <State name="mood" initial="glow" />
   <Text colour="red">Score: {score} of 5 checks pass</Text>
   <Text tone={mood}>Mood is {mood} today</Text>
-  <Sparkline><script>window.__covenUiInjected = true</script>Trend is up</Sparkline>
+  <Marquee><script>window.__covenUiInjected = true</script>Trend is up</Marquee>
   <img src="x" onerror="window.__covenUiInjected = true" />
   <Text size="huge">Shown as {"<b onclick='window.__covenUiInjected = true'>text</b>"}</Text>
   <Badge tone="success">Still rendered</Badge>
@@ -122,6 +122,39 @@ export const RELEASE_BRIEF = `<Card title="Release brief" subtitle="Cave 0.6, pl
   <List ordered items={["Tag the release", "Publish the notes", "Watch crash reports"]} />
 </Card>`;
 
+/**
+ * Data catalog (#6062 T4): Stat trends, a Sparkline, a Donut, and badge cells
+ * in a Table. Trend tones are explicit: a falling review time is good news.
+ */
+export const DELIVERY_PULSE = `<Card title="Delivery pulse" subtitle="Last 7 days">
+  <Row gap="md">
+    <Stat label="Merged PRs" value={23} trend={12} trendFormat="percent" trendTone="success" />
+    <Stat label="Median review" value={3.4} caption="hours" trend={-0.8} trendTone="success" />
+    <Stat label="Failed builds" value={2} trend={0} />
+  </Row>
+  <Sparkline label="Merges per day" tone="accent" data={[
+    { label: "Mon", value: 4 },
+    { label: "Tue", value: 6 },
+    { label: "Wed", value: 3 },
+    { label: "Thu", value: 7 },
+    { label: "Fri", value: 3 }
+  ]} />
+  <Donut label="Review load" data={[
+    { label: "Cody", value: 9, tone: "accent" },
+    { label: "Nova", value: 6, tone: "warning" },
+    { label: "Val", value: 3 }
+  ]} />
+  <Table
+    columns={["Service", "Status"]}
+    rows={[
+      ["api", { kind: "badge", label: "healthy", tone: "success" }],
+      ["exports", { kind: "badge", label: "down", tone: "danger" }],
+      ["search", "n/a"]
+    ]}
+    caption="Service health"
+  />
+</Card>`;
+
 export const UI_BLOCK_FIXTURES = {
   "pricing-calculator": PRICING_CALCULATOR,
   "status-table": STATUS_TABLE,
@@ -129,6 +162,7 @@ export const UI_BLOCK_FIXTURES = {
   "malformed-dashboard": MALFORMED_DASHBOARD,
   "failed-child-text": FAILED_CHILD_TEXT,
   "release-brief": RELEASE_BRIEF,
+  "delivery-pulse": DELIVERY_PULSE,
 } as const;
 
 /** Wrap a body in the fence a familiar emits. */
