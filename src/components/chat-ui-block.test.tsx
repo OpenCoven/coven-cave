@@ -14,6 +14,7 @@ import {
   MALFORMED_DASHBOARD,
   MINI_DASHBOARD,
   PRICING_CALCULATOR,
+  RELEASE_BRIEF,
   uiBlockFence,
 } from "@/lib/ui-block-fixtures";
 import { ChatUiBlock, UiBlockHostContext, UiBlockStateScope, splitSegmentsForUiBlocks } from "./chat-ui-block";
@@ -349,6 +350,74 @@ describe("ChatUiBlock", () => {
       "Shown as <b onclick='window.__covenUiInjected = true'>text</b>",
       "Still rendered",
     ].join(""));
+  });
+
+  it("renders the layout catalog with native semantics (#6062)", () => {
+    const renderer = render(<ChatUiBlock source={RELEASE_BRIEF} />);
+    expect(errorChips(renderer)).toHaveLength(0);
+    expect(renderer.root.find((node) => node.props.role === "group").props["aria-label"]).toBe("Release brief");
+
+    const callout = renderer.root.find((node) => typeof node.type === "string" && node.props.className === "chat-ui-callout");
+    expect([callout.props.role, callout.props["data-tone"]]).toEqual(["note", "warning"]);
+    const title = callout.find((node) => node.props.className === "chat-ui-callout__title");
+    expect(callout.props["aria-labelledby"]).toBe(title.props.id);
+    expect(textOf(title)).toBe("Warning: Freeze starts Thursday");
+    expect(textOf(callout)).toBe("Warning: Freeze starts ThursdayRun pnpm test:app before you merge, and don't skip pnpm lint.");
+
+    expect(renderer.root.findAll((node) => node.type === "code").map(textOf)).toEqual(["pnpm test:app", "pnpm lint"]);
+    const strong = renderer.root.findAll((node) => node.type === "strong");
+    expect(strong.map(textOf)).toEqual(["don't skip pnpm lint"]);
+    expect(strong[0].findAll((node) => node.type === "code").map(textOf)).toEqual(["pnpm lint"]);
+
+    const grid = renderer.root.find((node) => node.type === "div" && node.props.className === "chat-ui-grid");
+    expect([grid.props["data-columns"], grid.props["data-gap"], grid.props["data-align"]]).toEqual(["3", "sm", "stretch"]);
+    expect(grid.findAll((node) => node.props.className === "chat-ui-stat")).toHaveLength(3);
+    expect(stats(renderer)).toEqual({ Merged: "42", Open: "7", Blocked: "2" });
+
+    const dividers = renderer.root.findAll((node) => node.type === "hr");
+    expect(dividers.map((node) => [node.props.className, node.props["data-gap"]])).toEqual([["chat-ui-divider", "md"]]);
+
+    const lists = renderer.root.findAll((node) => (node.type === "ul" || node.type === "ol") && node.props.className === "chat-ui-list");
+    expect(lists.map((list) => [list.type, list.findAll((node) => node.type === "li").map(textOf)])).toEqual([
+      ["ul", ["Native UI blocks", "Faster startup", "Quieter inbox"]],
+      ["ol", ["Tag the release", "Publish the notes", "Watch crash reports"]],
+    ]);
+  });
+
+  it("labels a callout's tone for assistive tech and skips the label for plain tones", () => {
+    const renderer = render(<ChatUiBlock source={'<Stack><Callout tone="danger"><Text>Stop</Text></Callout><Callout tone="neutral" title="Aside"><Text>Plain</Text></Callout><Callout tone="muted"><Text>Quiet</Text></Callout></Stack>'} />);
+    const callouts = renderer.root.findAll((node) => typeof node.type === "string" && node.props.className === "chat-ui-callout");
+    expect(callouts.map(textOf)).toEqual(["Important: Stop", "AsidePlain", "Quiet"]);
+    expect(callouts.map((callout) => callout.props.role)).toEqual(["note", "note", "note"]);
+    expect(callouts[2].props["aria-labelledby"]).toBeUndefined();
+    expect(callouts.every((callout) => callout.findAll((node) => node.type === "svg" || node.props["aria-hidden"]).length > 0)).toBe(true);
+  });
+
+  it("keeps a failed layout node's children readable and its siblings rendered", () => {
+    const source = '<Stack><State name="n" initial={6} /><Grid columns={n}><Text>Inside the grid</Text></Grid><List items={n} /><Badge>Sibling</Badge></Stack>';
+    const renderer = render(<ChatUiBlock source={source} />);
+    const chips = chipsInOrder(renderer);
+    expect(chips.map((chip) => [chip.label, chip.role])).toEqual([["Grid", "note"], ["List", "note"]]);
+    expectParagraph(chips[0].next, "Inside the grid");
+    expect(textOf(renderer.root)).toBe(
+      `Couldn't render <Grid>: columns must be one of 1, 2, 3, 4Inside the grid${"Couldn't render <List>: items needs a list like "}["A", "B"]Sibling`,
+    );
+  });
+
+  it("renders an empty list as nothing and list items as plain text", () => {
+    const renderer = render(<ChatUiBlock source={'<Stack><List items={[]} /><List items={["<b>bold?</b>", 3]} /></Stack>'} />);
+    const lists = renderer.root.findAll((node) => node.props.className === "chat-ui-list" && typeof node.type === "string");
+    expect(lists.map((list) => list.findAll((node) => node.type === "li").map(textOf))).toEqual([["<b>bold?</b>", "3"]]);
+    expect(renderer.root.findAll((node) => node.type === "b")).toHaveLength(0);
+  });
+
+  it("keeps Bold and Code to their closed grammar and their words readable when misplaced", () => {
+    const renderer = render(<ChatUiBlock source={"<Stack><Bold>Loud words</Bold><Heading>Title <Code>x</Code></Heading><Text>After</Text></Stack>"} />);
+    const chips = chipsInOrder(renderer);
+    expect(chips.map((chip) => chip.label)).toEqual(["Bold", "Code"]);
+    expectParagraph(chips[0].next, "Loud words");
+    expect(renderer.root.findAll((node) => node.type === "strong" || node.type === "code")).toHaveLength(0);
+    expect(textOf(renderer.root)).toContain("After");
   });
 
   it("falls back to the source as a code block when the body is not markup", () => {

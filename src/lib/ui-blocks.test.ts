@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   UI_BLOCK_CATALOG,
   UI_BLOCK_LIMITS,
+  UI_TONES,
   buildUiBlock,
   evaluateUiExpression,
   formatUiValue,
@@ -22,6 +23,7 @@ import {
   MALFORMED_DASHBOARD,
   MINI_DASHBOARD,
   PRICING_CALCULATOR,
+  RELEASE_BRIEF,
   STATUS_TABLE,
   UI_BLOCK_FIXTURES,
   uiBlockFence,
@@ -242,8 +244,8 @@ test("stableUiBlockKey survives a growing streaming fence (state keyed across ch
 
 // ── building documents ─────────────────────────────────────────────────────
 
-test("the three showcase fixtures build with no errors and no diagnostics", () => {
-  for (const [name, body] of Object.entries({ PRICING_CALCULATOR, STATUS_TABLE, MINI_DASHBOARD })) {
+test("the showcase fixtures build with no errors and no diagnostics", () => {
+  for (const [name, body] of Object.entries({ PRICING_CALCULATOR, STATUS_TABLE, MINI_DASHBOARD, RELEASE_BRIEF })) {
     const doc = buildUiBlock(body);
     assert.equal(doc.status, "ok", name);
     assert.deepEqual(errors(doc).map((node) => node.issues), [], name);
@@ -314,6 +316,148 @@ test("a failed node keeps its validated children, and markup inside it never bec
   assert.equal(resolved.ok, false);
   assert.match(resolved.ok ? "" : resolved.issues.join(" "), /tone must be one of/);
   assert.equal(components(doc, "Badge").length, 1);
+});
+
+// ── layout and text catalog (#6062) ───────────────────────────────────────
+
+function issuesOf(source: string): string {
+  return errors(buildUiBlock(source)).map((node) => node.issues.join("; ")).join(" | ");
+}
+
+test("the release brief composes Divider, Grid, List, Callout, Bold and Code", () => {
+  const doc = buildUiBlock(RELEASE_BRIEF);
+  assert.equal(doc.status, "ok");
+  assert.deepEqual(errors(doc), []);
+  const types = new Set(components(doc).map((node) => node.type));
+  for (const type of ["Divider", "Grid", "List", "Callout", "Bold", "Code"]) assert.ok(types.has(type as never), type);
+  const [grid] = components(doc, "Grid");
+  assert.deepEqual(grid.props.columns, { kind: "static", value: 3 });
+  assert.equal(grid.children.filter((child) => child.kind === "component").length, 3);
+  const lists = components(doc, "List");
+  assert.deepEqual(lists.map((list) => list.props.ordered?.kind === "static" ? list.props.ordered.value : false), [false, true]);
+});
+
+test("grid and columns share one closed column, gap and align contract", () => {
+  assert.deepEqual(UI_BLOCK_CATALOG.Columns, UI_BLOCK_CATALOG.Grid);
+  assert.equal(UI_BLOCK_CATALOG.Grid.children, "blocks");
+  for (const columns of ["{1}", "{2}", "{3}", "{4}", '"2"']) {
+    assert.equal(issuesOf(`<Grid columns=${columns}><Text>a</Text></Grid>`), "", columns);
+    assert.equal(issuesOf(`<Columns columns=${columns}><Text>a</Text></Columns>`), "", columns);
+  }
+  for (const columns of ["{0}", "{5}", "{1.5}", '"3fr"', "{-1}"]) {
+    assert.match(issuesOf(`<Grid columns=${columns}><Text>a</Text></Grid>`), /columns must be one of 1, 2, 3, 4/, columns);
+  }
+  assert.match(issuesOf('<Grid gap="huge"><Text>a</Text></Grid>'), /gap must be one of/);
+  assert.match(issuesOf('<Grid align="baseline"><Text>a</Text></Grid>'), /align must be one of start, center, end, stretch/);
+  // Children keep their order and stable ids in both spellings.
+  const doc = buildUiBlock('<Columns columns={2}><Stat label="A" value={1} /><Stat label="B" value={2} /></Columns>');
+  assert.deepEqual(components(doc, "Stat").map((stat) => stat.id), ["0.0", "0.1"]);
+  // A dynamic column count is checked against State when it resolves.
+  const dynamic = buildUiBlock('<Stack><State name="n" initial={2} /><Grid columns={n}><Text>a</Text></Grid></Stack>');
+  const [grid] = components(dynamic, "Grid");
+  assert.equal(resolveUiProps(grid, { n: 2 }).ok, true);
+  assert.equal(resolveUiProps(grid, { n: 6 }).ok, false);
+});
+
+test("divider accepts only a gap token and no children", () => {
+  assert.equal(issuesOf("<Divider />"), "");
+  assert.equal(issuesOf('<Divider gap="lg" />'), "");
+  assert.match(issuesOf('<Divider orientation="vertical" />'), /Unknown prop "orientation" on <Divider>/);
+  assert.match(issuesOf('<Divider gap="wide" />'), /gap must be one of/);
+  const withText = buildUiBlock("<Stack><Divider>section</Divider></Stack>");
+  assert.equal(components(withText, "Divider").length, 1);
+  assert.match(errors(withText)[0]?.issues.join(" ") ?? "", /<Divider> doesn't take children/);
+});
+
+test("list validates a bounded list of text or number items", () => {
+  const items = (count: number) => JSON.stringify(Array.from({ length: count }, (_, index) => `Item ${index + 1}`));
+  assert.equal(UI_BLOCK_LIMITS.maxListItems, 100);
+  assert.equal(issuesOf(`<List items={${items(100)}} />`), "");
+  assert.equal(issuesOf("<List items={[1, 2.5, \"three\"]} ordered />"), "");
+  assert.equal(issuesOf("<List items={[]} />"), "");
+  assert.match(issuesOf(`<List items={${items(101)}} />`), /items has more than 100 entries/);
+  for (const bad of ['{[["a"]]}', '{[{ label: "a" }]}', "{[true]}", "{[null]}"]) {
+    assert.match(issuesOf(`<List items=${bad} />`), /items must list text or numbers/, bad);
+  }
+  assert.match(issuesOf('<List items="a, b" />'), /items needs a list like \["A", "B"\]/);
+  assert.match(issuesOf("<List />"), /<List> needs items/);
+  assert.match(issuesOf('<List items={["a"]}>extra</List>'), /<List> doesn't take children/);
+  const dynamic = buildUiBlock('<Stack><State name="n" initial={2} /><List items={n > 1 ? ["a", "b"] : "none"} /></Stack>');
+  const [list] = components(dynamic, "List");
+  assert.equal(resolveUiProps(list, { n: 2 }).ok, true);
+  const bad = resolveUiProps(list, { n: 0 });
+  assert.match(bad.ok ? "" : bad.issues.join(" "), /items needs a list/);
+});
+
+test("callout validates its tone and holds block children", () => {
+  assert.equal(UI_BLOCK_CATALOG.Callout.children, "blocks");
+  for (const tone of UI_TONES) assert.equal(issuesOf(`<Callout tone="${tone}"><Text>a</Text></Callout>`), "", tone);
+  assert.match(issuesOf('<Callout tone="loud"><Text>a</Text></Callout>'), /tone must be one of/);
+  const doc = buildUiBlock('<Callout title="Heads up"><Text>One</Text><Badge>Two</Badge></Callout>');
+  assert.deepEqual(errors(doc), []);
+  assert.equal(components(doc, "Callout")[0].children.length, 2);
+  const dynamic = buildUiBlock('<Stack><State name="t" initial="info" /><Callout tone={t}><Text>a</Text></Callout></Stack>');
+  const [callout] = components(dynamic, "Callout");
+  assert.equal(resolveUiProps(callout, { t: "info" }).ok, true);
+  assert.equal(resolveUiProps(callout, { t: "glow" }).ok, false);
+});
+
+test("the new entries reject raw style, class names and handlers", () => {
+  const bodies: Record<string, string> = {
+    Divider: "<Divider ATTR />",
+    Grid: "<Grid ATTR><Text>a</Text></Grid>",
+    Columns: "<Columns ATTR><Text>a</Text></Columns>",
+    List: '<List items={["a"]} ATTR />',
+    Callout: "<Callout ATTR><Text>a</Text></Callout>",
+    Bold: "<Text><Bold ATTR>a</Bold></Text>",
+    Code: "<Text><Code ATTR>a</Code></Text>",
+  };
+  for (const [type, body] of Object.entries(bodies)) {
+    for (const attr of ['style="color: red"', 'className="x"', 'class="x"', "onClick={1}", 'onclick="alert(1)"', 'href="https://example.com"']) {
+      const doc = buildUiBlock(body.replace("ATTR", attr));
+      const failed = errors(doc).find((node) => node.label === type);
+      assert.ok(failed, `${type} ${attr} must fail`);
+      assert.equal(all(doc).some((node) => node.kind === "component" && node.type === type), false, `${type} ${attr}`);
+    }
+  }
+});
+
+test("text admits only a closed inline grammar of Bold and Code", () => {
+  const doc = buildUiBlock('<Text>Run <Code>pnpm test</Code> and <Bold>ship <Code>it</Code></Bold>.</Text>');
+  assert.deepEqual(errors(doc), []);
+  const [text] = components(doc, "Text");
+  assert.deepEqual(text.children.map((child) => child.kind === "component" ? child.type : child.kind), [
+    "text", "Code", "text", "Bold", "text",
+  ]);
+  assert.equal(text.children[0].kind === "text" ? text.children[0].text : "", "Run ");
+  assert.deepEqual(UI_BLOCK_CATALOG.Bold.props, {});
+  assert.deepEqual(UI_BLOCK_CATALOG.Code.props, {});
+
+  assert.match(issuesOf("<Bold>loud</Bold>"), /<Bold> only works inside <Text>/);
+  assert.match(issuesOf("<Stack><Code>x</Code></Stack>"), /<Code> only works inside <Text>/);
+  assert.match(issuesOf("<Heading>A <Bold>b</Bold></Heading>"), /<Bold> can't go inside <Heading>/);
+  assert.match(issuesOf("<Text><Bold>a <Bold>b</Bold></Bold></Text>"), /<Bold> can't go inside <Bold>/);
+  assert.match(issuesOf("<Text><Code>a <Bold>b</Bold></Code></Text>"), /<Bold> can't go inside <Code>/);
+  assert.match(issuesOf("<Text>A <Badge>b</Badge></Text>"), /<Badge> can't go inside <Text>; it takes text, <Bold> and <Code>/);
+  const lower = buildUiBlock("<Text><b>x</b> <strong>y</strong> <code>z</code></Text>");
+  assert.deepEqual(errors(lower).map((node) => node.label), ["b", "strong", "code"]);
+  // A failed inline node keeps its text (#6067), and tag-shaped strings stay text.
+  const stray = buildUiBlock("<Bold>still readable</Bold>");
+  assert.equal(stray.nodes[0].kind === "error" && stray.nodes[0].children[0]?.kind === "text" ? stray.nodes[0].children[0].text : "", "still readable");
+  const literal = buildUiBlock('<Text>{"<b>not bold</b>"}</Text>');
+  assert.deepEqual(errors(literal), []);
+  assert.equal(components(literal, "Bold").length, 0);
+});
+
+test("a half-written inline tag inside Text shows no placeholder while streaming", () => {
+  for (const source of ["<Text>Run <Code ", "<Text>Run <Bold ", '<Text>Hi <Badge tone="succ']) {
+    const doc = buildUiBlock(source, { streaming: true });
+    const [text] = components(doc, "Text");
+    assert.deepEqual(text.children.map((child) => child.kind), ["text"], source);
+  }
+  // Block-level placeholders are unchanged.
+  const card = buildUiBlock('<Card title="x">\n  <Table columns={["a"]} rows={[', { streaming: true });
+  assert.equal(components(card, "Card")[0].children.at(-1)?.kind, "pending");
 });
 
 test("event handlers, raw markup and unknown lower-case tags are rejected per node", () => {
