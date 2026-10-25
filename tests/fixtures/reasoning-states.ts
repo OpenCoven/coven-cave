@@ -7,7 +7,11 @@ import { readFileSync } from "node:fs";
 // The values live in the cross-language corpus so TypeScript, Swift and the
 // server integration tests share one set.
 const corpus = JSON.parse(readFileSync(new URL("../../apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-v1.json", import.meta.url), "utf8")) as {
-  reasoningPrivacySentinels: { private: { withheldSummary: string; opaqueState: string; legacyThought: string }; continuationToken: string };
+  reasoningPrivacySentinels: {
+    private: { withheldSummary: string; opaqueState: string; legacyThought: string };
+    tool: { argument: string; result: string; payloadSignature: string };
+    continuationToken: string;
+  };
 };
 
 export const REASONING_STATE_SENTINELS = corpus.reasoningPrivacySentinels.private;
@@ -27,6 +31,14 @@ export function splitAcross(value: string, parts = 3): string[] {
 
 export function privateSentinelsIn(text: string): string[] {
   return PRIVATE_REASONING_SENTINELS.filter((sentinel) => text.includes(sentinel));
+}
+
+/** golden-13 (#6061) tool payload sentinels. The argument and result may be
+ * shown inside an authorized tool card only; the signature never. */
+export const TOOL_PAYLOAD_SENTINELS = corpus.reasoningPrivacySentinels.tool;
+
+export function toolSentinelsIn(text: string): string[] {
+  return Object.values(TOOL_PAYLOAD_SENTINELS).filter((sentinel) => text.includes(sentinel));
 }
 
 type Producer = { harness: string; version: string | null; protocol: string | null };

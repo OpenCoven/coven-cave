@@ -3252,7 +3252,10 @@ final class AppModel {
         let first = "Inspecting 🧙 café.\n"
         let producer = ToolActivity.Producer(harness: "hermes", version: nil, protocol: "responses")
         let failed = ProcessInfo.processInfo.arguments.contains("--ui-preview-timeline-failed")
-        let status: ActivityStep.Status = completed ? (failed ? .error : .ok) : .running
+        let statusArgument = ProcessInfo.processInfo.arguments.firstIndex(of: "--ui-preview-tool-status")
+            .flatMap { ProcessInfo.processInfo.arguments.dropFirst($0 + 1).first }
+            .flatMap { ActivityStep.Status(rawValue: $0) }
+        let status: ActivityStep.Status = statusArgument ?? (completed ? (failed ? .error : .ok) : .running)
         message.text = first + (completed ? "Ready to review.\n" : "")
         message.streaming = !completed
         message.activity = [ActivityStep(
@@ -3262,8 +3265,8 @@ final class AppModel {
             activity: ToolActivity(
                 schemaVersion: 1, runId: run, attemptId: attempt, callId: "a", phase: status.rawValue,
                 source: "runtime-report", producer: producer, firstObservedAt: 100, sequence: 1,
-                updatedAt: completed ? 200 : 100, executionObservedAt: 100,
-                terminalObservedAt: completed ? 200 : nil,
+                updatedAt: completed ? 200 : 100, executionObservedAt: status.isRequested || status.isRejected ? nil : 100,
+                terminalObservedAt: status.isKnownOutcome ? 200 : nil,
                 authority: ["binding": "unavailable", "approval": "unavailable", "effect": "unavailable"]
             ), textOffset: first.utf16.count
         )]

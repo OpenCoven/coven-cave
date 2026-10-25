@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createOnboardingBootstrapState, ONBOARDING_BOOTSTRAP_BOUNDARIES } from "../src/lib/onboarding-bootstrap";
-import { privateSentinelsIn, reasoningStateBlocks } from "./fixtures/reasoning-states";
+import { privateSentinelsIn, reasoningStateBlocks, TOOL_PAYLOAD_SENTINELS, toolSentinelsIn } from "./fixtures/reasoning-states";
 
 const ISO = "2026-10-18T12:00:00.000Z";
 const RUN = "11111111-1111-4111-8111-111111111111";
@@ -32,7 +32,7 @@ function activity(id: string, status: string, sequence: number) {
     authority: { binding: "unavailable", approval: "unavailable", effect: "unavailable" } };
 }
 
-async function setup(page: Page, summaries: boolean, large = false, hostile = false, toolsOverride?: object[], blocks?: object[], reasoningCapability?: string, lazy = false) {
+async function setup(page: Page, summaries: boolean, large = false, hostile = false, toolsOverride?: object[], blocks?: object[], reasoningCapability?: string, lazy = false, transcript: "typed" | "legacy" = "typed") {
   let completed = large || lazy;
   let deniedOutputs = false;
   const answer = hostile ? HOSTILE : ANSWER;
@@ -91,7 +91,7 @@ async function setup(page: Page, summaries: boolean, large = false, hostile = fa
     else if (path === "/api/sessions/list") payload = { ok: true, sessions: [{ id: "activity-5765", title: "Activity acceptance", status: "completed", origin: "chat", project_root: project.root, harness: "hermes", familiarId: "nova", exit_code: 0, archived_at: null, created_at: ISO, updated_at: ISO }] };
     else if (path.startsWith("/api/chat/conversation/")) payload = { ok: true, context: { task: null, github: [] }, conversation: { familiarId: "nova", activeLeafId: "answer", turns: [
       { id: "request", parentId: null, role: "user", text: "Compare the files", createdAt: ISO },
-      { id: "answer", parentId: "request", role: "assistant", text: completed ? answer : "Ready for the comparison.", createdAt: ISO, lifecycle: "complete", ...(completed ? { responseMetadata: metadata, tools, reasoningBlocks: summaries ? blocks ?? [summaryBlock] : [] } : {}) },
+      { id: "answer", parentId: "request", role: "assistant", text: completed ? (transcript === "legacy" ? `<thinking>${SUMMARY}</thinking>\n${answer}` : answer) : "Ready for the comparison.", createdAt: ISO, lifecycle: "complete", ...(completed ? { responseMetadata: metadata, tools, reasoningBlocks: summaries && transcript === "typed" ? blocks ?? [summaryBlock] : [] } : {}) },
     ] } };
     await route.fulfill({ json: payload });
   });
@@ -155,8 +155,16 @@ for (const summaries of [true, false]) {
 // Report raw samples rather than asserting a machine-specific timing budget.
 test("large trace production measurements", async ({ page }, info) => {
   test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    const longTasks: number[] = [];
+    Object.assign(window, { activityLongTasks: longTasks });
+    if (PerformanceObserver.supportedEntryTypes.includes("longtask")) {
+      new PerformanceObserver((list) => longTasks.push(...list.getEntries().map((entry) => entry.duration)))
+        .observe({ type: "longtask", buffered: true });
+    }
+  });
   const { main } = await setup(page, true, true);
-  const samples: Array<{ reloadMs: number; openMs: number; nodes: number }> = [];
+  const samples: Array<{ reloadMs: number; openMs: number; nodes: number; scroll: { elapsedMs: number; frameIntervalsMs: number[]; longTasksMs: number[]; travelledPx: number; maxScrollPx: number } }> = [];
   for (let sample = 0; sample < 5; sample++) {
     const started = performance.now();
     await page.reload();
@@ -167,10 +175,95 @@ test("large trace production measurements", async ({ page }, info) => {
     const opened = performance.now();
     await cards.first().locator(":scope > summary").click();
     await expect(cards.first().locator(".cave-tool-io").first()).toBeVisible();
-    samples.push({ reloadMs, openMs: performance.now() - opened, nodes: await main.locator("*").count() });
+    const openMs = performance.now() - opened;
+    const scroll = await main.locator(".cave-chat-transcript").evaluate(async (element) => {
+      const start = performance.now();
+      const frames: number[] = [];
+      const before = element.scrollTop;
+      let previous = start;
+      let travelledPx = 0;
+      let lastPosition = before;
+      const maxScrollPx = element.scrollHeight - element.clientHeight;
+      const target = window as unknown as { activityLongTasks: number[] };
+      target.activityLongTasks.length = 0;
+      // Observe actual frame delivery while traversing both ends, with no
+      // sleeps or machine-specific thresholds. Keep the raw intervals.
+      for (const position of [0, maxScrollPx, 0, maxScrollPx, before]) {
+        element.scrollTop = position;
+        element.dispatchEvent(new Event("scroll"));
+        await new Promise<void>((resolve) => requestAnimationFrame((now) => {
+          frames.push(now - previous);
+          previous = now;
+          travelledPx += Math.abs(element.scrollTop - lastPosition);
+          lastPosition = element.scrollTop;
+          resolve();
+        }));
+      }
+      return { elapsedMs: performance.now() - start, frameIntervalsMs: frames,
+        longTasksMs: [...target.activityLongTasks], travelledPx, maxScrollPx };
+    });
+    expect(scroll.maxScrollPx).toBeGreaterThan(0);
+    expect(scroll.travelledPx).toBeGreaterThan(0);
+    samples.push({ reloadMs, openMs, nodes: await main.locator("*").count(), scroll });
   }
   await info.attach("large-trace-measurements", { body: JSON.stringify({ calls: 500, samples }, null, 2), contentType: "application/json" });
 });
+
+for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
+  test(`lazy output ${refusal} withholds bodies and rechecks or revokes access`, async ({ page }, info) => {
+    const privateMarker = `PRIVATE_LAZY_BODY_${refusal}`;
+    const authorizedMarker = `AUTHORIZED_LAZY_BODY_${refusal}`;
+    let deepInput: object = { file_path: "/tmp/deep-input" };
+    for (let depth = 0; depth < 80; depth++) deepInput = { nested: deepInput };
+    const tool = { id: "lazy-bounded", name: "Read", status: "ok", input: JSON.stringify(deepInput), outputChars: 300_000,
+      textOffset: 0, activity: activity("lazy-bounded", "ok", 1) };
+    const { main, complete } = await setup(page, true, false, false, [tool]);
+    const requests: Array<{ status: number; allowed: boolean }> = [];
+    let allowed = false;
+    await page.route("**/api/chat/conversation/*/tool-output?*", async (route) => {
+      const status = allowed || refusal === "oversized" ? 200 : refusal;
+      requests.push({ status, allowed });
+      // Only the oversized case needs a body past the client's limit; a refusal
+      // status alone must withhold the private marker.
+      const body = refusal === "oversized" ? privateMarker + "x".repeat(256 * 1024 + 1) : privateMarker;
+      await route.fulfill({ status, json: { ok: true, output: allowed ? authorizedMarker : body } });
+    });
+    complete();
+    await page.reload();
+    const card = main.locator(".cave-tool-block").first();
+    const toggle = card.locator(":scope > summary");
+    await expect(card).toBeVisible();
+    expect(requests).toEqual([]);
+    await toggle.click();
+    if (refusal === 401 || refusal === 403) {
+      // Authorization refusal is request-time revocation (#5764): the whole
+      // transcript is withdrawn rather than offering a per-card retry.
+      await expect(main.getByText("Chat access changed. Reload history to check current access.", { exact: true })).toBeVisible();
+      await expect(main.getByText(ANSWER, { exact: true })).toHaveCount(0);
+      await expect(main).not.toContainText(privateMarker);
+      expect(requests).toHaveLength(1);
+    } else {
+      await expect(card.getByRole("alert")).toContainText("Couldn't load this output.");
+      await expect(main).not.toContainText(privateMarker);
+      expect(requests).toHaveLength(1);
+      allowed = true;
+      await card.getByRole("button", { name: "Retry", exact: true }).click();
+      await expect(card).toContainText(authorizedMarker);
+      expect(requests).toHaveLength(2);
+      await toggle.click();
+      allowed = false;
+      await toggle.click();
+      await expect(card.getByRole("alert")).toContainText("Couldn't load this output.");
+      await expect(card).not.toContainText(authorizedMarker);
+      await expect(main).not.toContainText(privateMarker);
+      expect(requests).toHaveLength(3);
+    }
+    const composer = main.getByRole("textbox", { name: "Message", exact: true });
+    await composer.fill("Keep this draft after refused output");
+    await expect(composer).toHaveValue("Keep this draft after refused output");
+    await info.attach("lazy-output-refusal", { body: JSON.stringify({ refusal, inputDepth: 80, requests }), contentType: "application/json" });
+  });
+}
 
 
 test("hostile prose, reasoning and tool results never become execution authority", async ({ page }) => {
@@ -273,8 +366,9 @@ test("live region announces each parallel tool milestone without token chatter",
 });
 
 
-for (const saved of [null, "0", "1"] as const) {
-  test(`reasoning preference ${saved ?? "default"} survives hydration without hiding failed tools`, async ({ page }) => {
+for (const transcript of ["typed", "legacy"] as const) {
+for (const saved of [null, "0", "1", "unrecognized"] as const) {
+  test(`${transcript} reasoning preference ${saved ?? "default"} survives hydration without hiding failed tools`, async ({ page }) => {
     await page.addInitScript((saved) => {
       if (saved === null) localStorage.removeItem("cave:chat:show-thinking");
       else localStorage.setItem("cave:chat:show-thinking", saved);
@@ -287,15 +381,62 @@ for (const saved of [null, "0", "1"] as const) {
       };
       requestAnimationFrame(sample);
     }, saved);
-    const { main, complete } = await setup(page, true);
+    const { main, complete } = await setup(page, true, false, false, undefined, undefined, undefined, false, transcript);
     complete();
     await page.reload();
     await expect(main.locator(".cave-reasoning-block")).toBeVisible();
     await expect.poll(() => page.evaluate(() => (window as unknown as { reasoningFrames: boolean[] }).reasoningFrames.length)).toBeGreaterThan(0);
     const frames = await page.evaluate(() => (window as unknown as { reasoningFrames: boolean[] }).reasoningFrames);
     expect(frames.every((open) => open === (saved !== "0"))).toBe(true);
+    await expect(main.getByText(ANSWER, { exact: true })).toBeVisible();
+    await expect(main.locator(".cave-reasoning-body")).toContainText(SUMMARY);
     await expect(main.locator(".cave-tool-block").first()).toContainText("Failed");
     await expect(main.locator(".cave-tool-block").first()).toBeVisible();
+  });
+}
+}
+
+for (const transcript of ["typed", "legacy"] as const) {
+  test(`${transcript} reasoning toggle during streaming persists through history hydration`, async ({ page }) => {
+    await page.addInitScript(() => {
+      // Seed only the first navigation: subsequent reloads must read the
+      // preference written by the actual menu action, not a test reset.
+      if (!sessionStorage.getItem("activity-preference-seeded")) {
+        localStorage.setItem("cave:chat:show-thinking", "1");
+        sessionStorage.setItem("activity-preference-seeded", "1");
+      }
+      const frames: boolean[] = [];
+      Object.assign(window, { reasoningFrames: frames });
+      const sample = () => {
+        const block = document.querySelector<HTMLDetailsElement>('[data-testid="chat-main"] .cave-reasoning-block');
+        if (block && frames.length < 300) frames.push(block.open);
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    const { main, tools, metadata, complete } = await setup(page, true, false, false, undefined, undefined, undefined, false, transcript);
+    await main.getByRole("textbox", { name: "Message", exact: true }).fill("Exercise the saved reasoning preference");
+    await main.getByRole("button", { name: "Send message", exact: true }).click();
+    await emit(page, { kind: "response_metadata", responseMetadata: metadata });
+    if (transcript === "typed") await emit(page, { kind: "reasoning", block: summary });
+    else await emit(page, { kind: "assistant_chunk", text: `<thinking>${SUMMARY}</thinking>\n` });
+    const disclosure = main.locator(".cave-reasoning-block").last();
+    await expect(disclosure).toHaveAttribute("open", "");
+    await main.getByRole("button", { name: "Session options", exact: true }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Hide thinking", exact: true }).click();
+    await expect(disclosure).not.toHaveAttribute("open");
+    expect(await page.evaluate(() => localStorage.getItem("cave:chat:show-thinking"))).toBe("0");
+    await emit(page, { kind: "tool_use", ...tools[0] });
+    await emit(page, { kind: "assistant_chunk", text: ANSWER });
+    complete();
+    await emit(page, { kind: "done", sessionId: "activity-5765", responseMetadata: metadata });
+    await page.reload();
+    await expect(main.locator(".cave-reasoning-block")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { reasoningFrames: boolean[] }).reasoningFrames.length)).toBeGreaterThan(0);
+    expect(await page.evaluate(() => (window as unknown as { reasoningFrames: boolean[] }).reasoningFrames.every((open) => !open))).toBe(true);
+    expect(await page.evaluate(() => localStorage.getItem("cave:chat:show-thinking"))).toBe("0");
+    await expect(main.getByText(ANSWER, { exact: true })).toBeVisible();
+    await expect(main.locator(".cave-tool-block").first()).toContainText("Failed");
   });
 }
 
@@ -323,6 +464,59 @@ test("output access revocation clears history and a live owner without replaying
   await expect(main.getByText("Late restricted output", { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { activitySendCount: number }).activitySendCount)).toBe(1);
 });
+// golden-13 (#6061): an authorized tool card may show its argument and lazy
+// result, but neither reaches copy, export or web storage, its opaque payload
+// signature is never displayed, and revocation removes both at request time.
+// Route fixtures prove client behavior only, not server authorization.
+test("tool payload sentinels stay inside the authorized card and leave on revocation", async ({ page }) => {
+  await page.addInitScript(() => {
+    const copied: string[] = [];
+    Object.assign(window, { golden13Copied: copied });
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text: string) => { copied.push(text); } } });
+  });
+  const tool = { id: "golden13-read", name: "Read", status: "ok", input: JSON.stringify({ file_path: "/tmp/a", note: TOOL_PAYLOAD_SENTINELS.argument }),
+    outputChars: 64, textOffset: 0, signature: TOOL_PAYLOAD_SENTINELS.payloadSignature, encrypted_content: TOOL_PAYLOAD_SENTINELS.payloadSignature,
+    activity: activity("golden13-read", "ok", 1) };
+  const { main, denyOutputs } = await setup(page, false, false, false, [tool], undefined, undefined, true);
+  let revoked = false;
+  await page.route("**/api/chat/conversation/*/tool-output?*", async (route) => {
+    await route.fulfill({ status: revoked ? 403 : 200, json: revoked ? { ok: false, error: "Denied" } : { ok: true, output: TOOL_PAYLOAD_SENTINELS.result } });
+  });
+  const surfaces = () => page.evaluate(() => [document.documentElement.outerHTML, JSON.stringify({ ...localStorage }), JSON.stringify({ ...sessionStorage })].join("\n"));
+  const card = main.locator(".cave-tool-block").first();
+  await card.locator(":scope > summary").click();
+  await expect(card).toContainText(TOOL_PAYLOAD_SENTINELS.result);
+  await expect(card).toContainText(TOOL_PAYLOAD_SENTINELS.argument);
+  expect(await surfaces()).not.toContain(TOOL_PAYLOAD_SENTINELS.payloadSignature);
+
+  const answer = main.locator(".cave-bubble-assistant").last();
+  await answer.hover();
+  await main.getByRole("button", { name: "Copy completed response", exact: true }).last().click();
+  const copied = await page.evaluate(() => (window as unknown as { golden13Copied: string[] }).golden13Copied.at(-1));
+  expect(copied).toBe(ANSWER);
+  await main.getByRole("button", { name: "More response actions", exact: true }).last().click();
+  await page.getByRole("menuitem", { name: "Open reader" }).click();
+  await page.getByRole("button", { name: "Export answer", exact: true }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: /Markdown/ }).click();
+  const exported = await (await download).createReadStream().then(async (stream) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks).toString("utf8");
+  });
+  expect(exported.trim()).toBe(ANSWER);
+  await page.keyboard.press("Escape");
+  const storage = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
+  expect(toolSentinelsIn([copied, exported, storage].join("\n"))).toEqual([]);
+
+  revoked = true;
+  denyOutputs();
+  await card.locator(":scope > summary").click();
+  await card.locator(":scope > summary").click();
+  await expect(main.getByText("Chat access changed. Reload history to check current access.", { exact: true })).toBeVisible();
+  expect(toolSentinelsIn(await surfaces())).toEqual([]);
+});
+
 // golden-02 (#6057): a no-text reasoning state is shown honestly. Its placeholder
 // is not a summary, so no length is reported for it, and opaque fields a
 // leaking server might attach never reach display, copy, export or web storage.
