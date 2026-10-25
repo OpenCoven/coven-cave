@@ -34,12 +34,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { BarChart } from "@/components/ui/charts/bar-chart";
 import { DonutChart } from "@/components/ui/charts/donut-chart";
+import { Field } from "@/components/ui/field";
 import { StandardSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkline } from "@/components/ui/sparkline";
+import { Tabs } from "@/components/ui/tabs";
+import { TextInput } from "@/components/ui/text-input";
 import { Icon, type IconName } from "@/lib/icon";
 import {
   UI_BLOCK_CATALOG,
+  UI_BLOCK_LIMITS,
   buildUiBlock,
   isUiComponentType,
   sliceUiBlocks,
@@ -420,6 +424,88 @@ function UiComponentView({ node, ctx }: { node: UiComponentNode; ctx: RenderCont
             </span>
           ) : null}
         </div>
+      );
+    }
+    case "Tabs": {
+      const bind = String(props.bind);
+      const tabs = node.children.filter((child): child is UiComponentNode => child.kind === "component" && child.type === "Tab");
+      const values = tabs.map((tab) => (tab.props.value?.kind === "static" ? String(tab.props.value.value) : ""));
+      const current = String(ctx.values[bind] ?? "");
+      const selected = values.indexOf(current);
+      if (selected < 0) {
+        return (
+          <>
+            <UiBlockErrorChip label="Tabs" issues={[`"${current}" isn't one of the tabs`]} />
+            {renderFailedChildren("Tabs", node.children, ctx, false)}
+          </>
+        );
+      }
+      // Positional ids keep model-written values (which may hold spaces) out of id references.
+      const items = tabs.map((tab, index) => {
+        const resolvedTab = resolveUiProps(tab, ctx.values);
+        return {
+          id: `t${index}`,
+          label: resolvedTab.ok ? text(resolvedTab.props.label) : values[index],
+          controlsId: `${id}-panel`,
+        };
+      });
+      return (
+        <div className="chat-ui-tabs" data-orientation={text(props.orientation)}>
+          <Tabs
+            items={items}
+            value={`t${selected}`}
+            onChange={(next) => {
+              const value = values[Number(next.slice(1))];
+              if (value !== undefined) ctx.setValue(bind, value);
+            }}
+            orientation={props.orientation === "vertical" ? "vertical" : "horizontal"}
+            size={props.size === "sm" ? "sm" : "md"}
+            ariaLabel={text(props.label)}
+            idPrefix={id}
+          />
+          <div
+            role="tabpanel"
+            id={`${id}-panel`}
+            aria-labelledby={`${id}-tab-t${selected}`}
+            tabIndex={0}
+            className="chat-ui-tabs__panel chat-ui-stack focus-ring"
+            data-gap="sm"
+            data-align="stretch"
+          >
+            {renderNodes(tabs[selected].children, ctx, false)}
+          </div>
+        </div>
+      );
+    }
+    case "Tab":
+      // Only a failed Tabs renders its tabs directly: each reads as a labelled section.
+      return (
+        <section className="chat-ui-tab-fallback" aria-label={text(props.label)}>
+          <p className="chat-ui-text chat-ui-strong">{text(props.label)}</p>
+          <div className="chat-ui-stack" data-gap="sm" data-align="stretch">
+            {blocks()}
+          </div>
+        </section>
+      );
+    case "TextInput": {
+      const bind = String(props.bind);
+      const max = typeof props.maxLength === "number" ? props.maxLength : UI_BLOCK_LIMITS.maxTextInputLength;
+      const current = ctx.values[bind];
+      // Explicit props only: model text never spreads onto the native input.
+      return (
+        <Field
+          label={text(props.label)}
+          description={props.description !== undefined ? text(props.description) : undefined}
+          className="chat-ui-input"
+        >
+          <TextInput
+            value={typeof current === "string" ? current : ""}
+            placeholder={props.placeholder !== undefined ? text(props.placeholder) : undefined}
+            maxLength={max}
+            disabled={props.disabled === true}
+            onChange={(event) => ctx.setValue(bind, event.currentTarget.value.slice(0, max))}
+          />
+        </Field>
       );
     }
     case "Sparkline": {

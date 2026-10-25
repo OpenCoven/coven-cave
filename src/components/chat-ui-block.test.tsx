@@ -16,6 +16,7 @@ import {
   MINI_DASHBOARD,
   PRICING_CALCULATOR,
   RELEASE_BRIEF,
+  RELEASE_DRAFT,
   uiBlockFence,
 } from "@/lib/ui-block-fixtures";
 import { ChatUiBlock, UiBlockHostContext, UiBlockStateScope, splitSegmentsForUiBlocks } from "./chat-ui-block";
@@ -492,6 +493,55 @@ describe("ChatUiBlock", () => {
     const renderer = render(<ChatUiBlock source={source} />);
     expect(chipsInOrder(renderer).map((chip) => chip.label)).toEqual(["Donut", "Stat"]);
     expect(textOf(renderer.root)).toContain("Sibling");
+  });
+
+  it("binds Tabs and a TextInput to local State, and only prefills (#6062)", () => {
+    const prefill = vi.fn();
+    const renderer = render(
+      <UiBlockHostContext.Provider value={{ prefill }}>
+        <ChatUiBlock source={RELEASE_DRAFT} />
+      </UiBlockHostContext.Provider>,
+    );
+    expect(errorChips(renderer)).toHaveLength(0);
+    const tablist = () => renderer.root.find((node) => node.props.role === "tablist");
+    const tabs = () => renderer.root.findAll((node) => node.type === "button" && node.props.role === "tab");
+    const panel = () => renderer.root.find((node) => typeof node.type === "string" && node.props.role === "tabpanel");
+    expect(tablist().props["aria-label"]).toBe("Draft sections");
+    expect(tabs().map((tab) => [textOf(tab), tab.props["aria-selected"]])).toEqual([["Summary", true], ["Details", false]]);
+    expect(tabs().every((tab) => tab.props["aria-controls"] === panel().props.id)).toBe(true);
+    expect(panel().props["aria-labelledby"]).toBe(tabs()[0].props.id);
+    expect(tabs().map((tab) => tab.props.id).every((id) => /^[^\s]+$/.test(id))).toBe(true);
+
+    const input = () => renderer.root.find((node) => node.type === "input" && node.props.type === "text");
+    const label = renderer.root.find((node) => node.type === "label" && textOf(node) === "Headline");
+    expect(label.props.htmlFor).toBe(input().props.id);
+    expect([input().props.value, input().props.placeholder, input().props.maxLength]).toEqual(["Faster startup", "One line for the release page", 80]);
+    for (const forbidden of ["name", "form", "formAction", "onSubmit"]) expect(input().props[forbidden]).toBeUndefined();
+
+    act(() => input().props.onChange({ currentTarget: { value: "Quicker boot" } }));
+    expect(input().props.value).toBe("Quicker boot");
+    expect(textOf(panel())).toContain("Headline: Quicker boot");
+    act(() => button(renderer, "Draft the announcement").props.onClick());
+    expect(prefill).toHaveBeenCalledWith("Release headline: Quicker boot");
+
+    act(() => input().props.onChange({ currentTarget: { value: "x".repeat(120) } }));
+    expect(input().props.value).toHaveLength(80);
+
+    act(() => tabs()[1].props.onClick());
+    expect(tabs().map((tab) => tab.props["aria-selected"])).toEqual([false, true]);
+    expect(panel().props["aria-labelledby"]).toBe(tabs()[1].props.id);
+    expect(panel().findAll((node) => node.type === "li").map(textOf)).toEqual(["Startup is 40% faster", "The inbox is quieter"]);
+    expect(renderer.root.findAll((node) => node.type === "input" && node.props.type === "text")).toHaveLength(0);
+  });
+
+  it("shows a Tabs chip, with every tab still readable, when State leaves the tab values", () => {
+    const source = '<Stack><State name="v" initial="a" /><Tabs bind="v" label="Sections"><Tab value="a" label="First"><Text>One</Text></Tab><Tab value="b" label="Second"><Text>Two</Text></Tab></Tabs><Button set="v" to="z">Break</Button></Stack>';
+    const renderer = render(<ChatUiBlock source={source} />);
+    act(() => button(renderer, "Break").props.onClick());
+    const chips = chipsInOrder(renderer);
+    expect(chips.map((chip) => [chip.label, chip.text])).toEqual([["Tabs", `Couldn't render <Tabs>: "z" isn't one of the tabs`]]);
+    expect(renderer.root.findAll((node) => node.props.role === "tablist")).toHaveLength(0);
+    expect(textOf(renderer.root)).toContain("FirstOneSecondTwo");
   });
 
   it("falls back to the source as a code block when the body is not markup", () => {
