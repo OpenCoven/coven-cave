@@ -36,6 +36,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 ### Platform and runtime
 
+- [`audits/home-route-js-budget.md`](audits/home-route-js-budget.md) — the home route's first-load JavaScript budget: 2,800 KiB, enforced after every production build by `scripts/bundle-budget.mjs`, with how to reproduce and attribute a regression
 - [`client-v1-release.md`](client-v1-release.md) — the compatibility metadata a release advertises on `/api/client/v1/health`, and the fixture-check and release-smoke gates that protect it
 - [`client-v1-settings.md`](client-v1-settings.md) — approving, denying, auditing, and revoking native client access in Cave Settings
 - [`event-plane-operations.md`](event-plane-operations.md) — the invalidation WebSocket: switches, rollout modes, what each platform pauses, security, recovery and diagnostics
@@ -179,7 +180,7 @@ Point-in-time records. Read for intent, not for current behavior.
 - [`api/`](api) — reference documentation for versioned public HTTP surfaces, listed individually under **Living** above
 - [`superpowers/`](superpowers) — the approved spec and plan store that issues and PRs cite
 - [`specs/`](specs) — **frozen** (55 files at the freeze, plus three added after it; `docs-index.test.mjs` pins the count). The earlier flat convention, which overlapped `superpowers/` from 2026-06-30 to 2026-08-06. Closed to new files, and deliberately not migrated: issues, PRs, and older plans cite these by path. See [`specs/README.md`](specs/README.md) for the reasoning and for the three undated standing contracts it holds
-- [`plans/`](plans), [`audits/`](audits), [`contracts/`](contracts) — small point-in-time sets predating the `superpowers/` store; their documents are listed under **Historical** above
+- [`plans/`](plans), [`audits/`](audits), [`contracts/`](contracts) — small point-in-time sets predating the `superpowers/` store; their documents are listed under **Historical** above, except `audits/home-route-js-budget.md`, a living budget under **Platform and runtime**
 - [`roadmaps/`](roadmaps), [`performance/`](performance) — program records kept current; listed under **Program** above
 - [`design/`](design) — runtime-activity design notes and their [`evidence/`](design/evidence) for the chat-observability work (#5761, #5767)
 - [`client-v1-conformance-results/`](client-v1-conformance-results), [`release-acceptance-results/`](release-acceptance-results) — machine-written run records; see [client-v1 conformance](workflows/client-v1-conformance.md) and [release acceptance](workflows/release-acceptance.md)
