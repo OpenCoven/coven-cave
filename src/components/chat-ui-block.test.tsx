@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { partitionStreamingMarkdown } from "@/lib/streaming-markdown-blocks";
 import {
+  DELIVERY_PULSE,
   FAILED_CHILD_TEXT,
   MALFORMED_DASHBOARD,
   MINI_DASHBOARD,
@@ -43,6 +44,16 @@ vi.mock("@/components/ui/button", async (importOriginal) => {
     },
   };
 });
+
+// ParentSize measures zero width under jsdom, so the donut's props stand in
+// for its pixels; the browser spec covers the real chart.
+vi.mock("@/components/ui/charts/donut-chart", () => ({
+  DonutChart: ({ data, size, ariaLabel }: { data: Array<{ label: string; value: number; color: string }>; size: number; ariaLabel?: string }) => (
+    <svg data-donut-size={size} role="img" aria-label={ariaLabel}>
+      {data.map((datum) => <path key={datum.label} data-label={datum.label} fill={datum.color} />)}
+    </svg>
+  ),
+}));
 
 vi.mock("@/components/ui/select", () => ({
   StandardSelect: ({ label, value, options, onChange }) => (
@@ -269,7 +280,7 @@ describe("ChatUiBlock", () => {
   it("isolates each malformed node to its own error chip", () => {
     const renderer = render(<ChatUiBlock source={MALFORMED_DASHBOARD} />);
     expect(errorChips(renderer).map((chip) => chip.props["data-ui-block-error"])).toEqual([
-      "Sparkline", "Badge", "Text", "Stat", "Stat", "Stat",
+      "Marquee", "Badge", "Text", "Stat", "Stat", "Stat",
     ]);
     expect(stats(renderer)).toEqual({ "Valid stat": "6" });
     expect(textOf(renderer.root)).toContain("Still rendered after the failures.");
@@ -325,7 +336,7 @@ describe("ChatUiBlock", () => {
     expect(hosts.filter((node) => Object.keys(node.props).some((key) => /^on[a-z]/.test(key)))).toHaveLength(0);
 
     const chips = chipsInOrder(renderer);
-    expect(chips.map((chip) => chip.label)).toEqual(["Text", "Text", "Sparkline", "script", "img", "Text"]);
+    expect(chips.map((chip) => chip.label)).toEqual(["Text", "Text", "Marquee", "script", "img", "Text"]);
     // The only innerHTML is each chip's bundled icon; no block text reaches it.
     const inner = hosts.filter((node) => node.props.dangerouslySetInnerHTML !== undefined);
     expect(inner.map((node) => node.type)).toEqual(chips.map(() => "svg"));
@@ -341,7 +352,7 @@ describe("ChatUiBlock", () => {
       "Score: 3 of 5 checks pass",
       "Couldn't render <Text>: tone must be one of neutral, muted, accent, success, warning, danger, info",
       "Mood is glow today",
-      "Couldn't render <Sparkline>: Unknown component <Sparkline>",
+      "Couldn't render <Marquee>: Unknown component <Marquee>",
       "Couldn't render <script>: Unknown component <script>",
       "window.__covenUiInjected = true",
       "Trend is up",
@@ -418,6 +429,69 @@ describe("ChatUiBlock", () => {
     expectParagraph(chips[0].next, "Loud words");
     expect(renderer.root.findAll((node) => node.type === "strong" || node.type === "code")).toHaveLength(0);
     expect(textOf(renderer.root)).toContain("After");
+  });
+
+  it("renders the data catalog: trends, sparkline, donut and badge cells (#6062)", () => {
+    const renderer = render(<ChatUiBlock source={DELIVERY_PULSE} />);
+    expect(errorChips(renderer)).toHaveLength(0);
+    expect(stats(renderer)).toEqual({ "Merged PRs": "23", "Median review": "3.4", "Failed builds": "2" });
+
+    const trends = renderer.root.findAll((node) => typeof node.type === "string" && node.props.className === "chat-ui-stat__trend");
+    expect(trends.map((trend) => [textOf(trend), trend.props["data-tone"], trend.props["data-direction"]])).toEqual([
+      ["+12% increase", "success", "up"],
+      ["\u22120.8 decrease", "success", "down"],
+      ["0 unchanged", "neutral", "flat"],
+    ]);
+
+    const spark = renderer.root.find((node) => typeof node.type === "string" && node.props.className === "chat-ui-chart chat-ui-sparkline");
+    expect(spark.props["data-tone"]).toBe("accent");
+    expect(textOf(spark.find((node) => node.type === "figcaption"))).toBe("Merges per day");
+    expect(spark.find((node) => node.type === "ul").findAll((node) => node.type === "li").map(textOf)).toEqual([
+      "Mon: 4", "Tue: 6", "Wed: 3", "Thu: 7", "Fri: 3",
+    ]);
+    expect(spark.findAll((node) => node.type === "svg")).toHaveLength(1);
+
+    const donut = renderer.root.find((node) => typeof node.type === "string" && node.props.className === "chat-ui-chart chat-ui-donut");
+    const chart = donut.find((node) => node.type === "svg");
+    expect(chart.props["aria-label"]).toBe("Review load: Cody 9 (50%), Nova 6 (33%), Val 3 (17%)");
+    expect(chart.props["data-donut-size"]).toBe(160);
+    expect(chart.findAll((node) => node.type === "path").map((path) => path.props.fill)).toEqual([
+      "var(--accent-presence)", "var(--color-warning)", "var(--color-success)",
+    ]);
+    const legend = donut.findAll((node) => node.type === "li");
+    expect(legend.map(textOf)).toEqual(["Cody9 (50%)", "Nova6 (33%)", "Val3 (17%)"]);
+    expect(legend.map((item) => item.find((node) => node.props.className === "chat-ui-donut__swatch").props["data-tone"])).toEqual([
+      "accent", "warning", "success",
+    ]);
+
+    const cells = renderer.root.findAll((node) => node.type === "td");
+    expect(cells.map(textOf)).toEqual(["api", "healthy", "exports", "down", "search", "n/a"]);
+    const badges = renderer.root.findAll((node) => node.type === "td").flatMap((cell) =>
+      cell.findAll((node) => typeof node.type === "string" && node.props.className === "chat-ui-badge"));
+    expect(badges.map((badge) => [textOf(badge), badge.props["data-tone"]])).toEqual([["healthy", "success"], ["down", "danger"]]);
+  });
+
+  it("gives untoned slices the next tone no other slice is using", () => {
+    const source = '<Donut label="Mix" data={[{ label: "a", value: 1, tone: "accent" }, { label: "b", value: 1 }, { label: "c", value: 1, tone: "success" }, { label: "d", value: 1 }]} />';
+    const renderer = render(<ChatUiBlock source={source} />);
+    const swatches = renderer.root.findAll((node) => node.props.className === "chat-ui-donut__swatch" && typeof node.type === "string");
+    expect(swatches.map((swatch) => swatch.props["data-tone"])).toEqual(["accent", "warning", "success", "danger"]);
+  });
+
+  it("shows an empty donut as no data and an all-zero donut without invented shares", () => {
+    const renderer = render(<ChatUiBlock source={'<Stack><Donut label="Empty" data={[]} /><Donut label="Idle" data={[{ label: "a", value: 0 }, { label: "b", value: 0 }]} /></Stack>'} />);
+    const [empty, idle] = renderer.root.findAll((node) => typeof node.type === "string" && node.props.className === "chat-ui-chart chat-ui-donut");
+    expect(textOf(empty)).toBe("EmptyNo data yet");
+    expect(empty.findAll((node) => node.type === "svg")).toHaveLength(0);
+    expect(idle.findAll((node) => node.type === "li").map(textOf)).toEqual(["a0", "b0"]);
+    expect(idle.find((node) => node.type === "svg").props["aria-label"]).toBe("Idle: a 0, b 0");
+  });
+
+  it("isolates an invalid chart or trend and keeps its siblings", () => {
+    const source = '<Stack><State name="n" initial={1} /><Donut label="Load" data={n} /><Stat label="S" value={1} trend={n > 0 ? "up" : 1} /><Badge>Sibling</Badge></Stack>';
+    const renderer = render(<ChatUiBlock source={source} />);
+    expect(chipsInOrder(renderer).map((chip) => chip.label)).toEqual(["Donut", "Stat"]);
+    expect(textOf(renderer.root)).toContain("Sibling");
   });
 
   it("falls back to the source as a code block when the body is not markup", () => {

@@ -19,6 +19,7 @@ import {
   type UiNode,
 } from "./ui-blocks.ts";
 import {
+  DELIVERY_PULSE,
   FAILED_CHILD_TEXT,
   MALFORMED_DASHBOARD,
   MINI_DASHBOARD,
@@ -245,7 +246,7 @@ test("stableUiBlockKey survives a growing streaming fence (state keyed across ch
 // ── building documents ─────────────────────────────────────────────────────
 
 test("the showcase fixtures build with no errors and no diagnostics", () => {
-  for (const [name, body] of Object.entries({ PRICING_CALCULATOR, STATUS_TABLE, MINI_DASHBOARD, RELEASE_BRIEF })) {
+  for (const [name, body] of Object.entries({ PRICING_CALCULATOR, STATUS_TABLE, MINI_DASHBOARD, RELEASE_BRIEF, DELIVERY_PULSE })) {
     const doc = buildUiBlock(body);
     assert.equal(doc.status, "ok", name);
     assert.deepEqual(errors(doc).map((node) => node.issues), [], name);
@@ -273,7 +274,7 @@ test("a malformed block isolates each failure to its own error node", () => {
   const doc = buildUiBlock(MALFORMED_DASHBOARD);
   assert.equal(doc.status, "ok");
   const failed = errors(doc);
-  assert.deepEqual(failed.map((node) => node.label), ["Sparkline", "Badge", "Text", "Stat", "Stat", "Stat"]);
+  assert.deepEqual(failed.map((node) => node.label), ["Marquee", "Badge", "Text", "Stat", "Stat", "Stat"]);
   assert.match(failed[0].issues.join(" "), /unknown component/i);
   assert.match(failed[1].issues.join(" "), /colour/);
   assert.match(failed[2].issues.join(" "), /style/);
@@ -294,7 +295,7 @@ test("a failed node keeps its validated children, and markup inside it never bec
   const doc = buildUiBlock(FAILED_CHILD_TEXT);
   assert.equal(doc.status, "ok");
   const failed = errors(doc);
-  assert.deepEqual(failed.map((node) => node.label), ["Text", "Sparkline", "script", "img", "Text"]);
+  assert.deepEqual(failed.map((node) => node.label), ["Text", "Marquee", "script", "img", "Text"]);
   // An inline component keeps its spacing, so its text can still read as one line.
   assert.deepEqual(failed[0].children.map((child) => child.kind), ["text", "expr", "text"]);
   assert.equal(failed[0].children[0].kind === "text" ? failed[0].children[0].text : "", "Score: ");
@@ -411,6 +412,8 @@ test("the new entries reject raw style, class names and handlers", () => {
     Callout: "<Callout ATTR><Text>a</Text></Callout>",
     Bold: "<Text><Bold ATTR>a</Bold></Text>",
     Code: "<Text><Code ATTR>a</Code></Text>",
+    Sparkline: '<Sparkline label="a" data={[]} ATTR />',
+    Donut: '<Donut label="a" data={[]} ATTR />',
   };
   for (const [type, body] of Object.entries(bodies)) {
     for (const attr of ['style="color: red"', 'className="x"', 'class="x"', "onClick={1}", 'onclick="alert(1)"', 'href="https://example.com"']) {
@@ -420,6 +423,75 @@ test("the new entries reject raw style, class names and handlers", () => {
       assert.equal(all(doc).some((node) => node.kind === "component" && node.type === type), false, `${type} ${attr}`);
     }
   }
+});
+
+test("the delivery pulse composes Stat trends, Sparkline, Donut and badge cells", () => {
+  const doc = buildUiBlock(DELIVERY_PULSE);
+  assert.equal(doc.status, "ok");
+  assert.deepEqual(errors(doc), []);
+  assert.equal(components(doc, "Sparkline").length, 1);
+  assert.equal(components(doc, "Donut").length, 1);
+  const stats = components(doc, "Stat");
+  assert.deepEqual(stats.map((stat) => stat.props.trend?.kind === "static" ? stat.props.trend.value : null), [12, -0.8, 0]);
+});
+
+test("stat trend is a finite number with a format and an explicit tone", () => {
+  assert.equal(issuesOf('<Stat label="a" value={1} trend={-3} trendFormat="percent" trendTone="danger" />'), "");
+  assert.match(issuesOf('<Stat label="a" value={1} trend="up" />'), /trend needs a number/);
+  assert.match(issuesOf('<Stat label="a" value={1} trend={1 / 0} />'), /trend/);
+  assert.match(issuesOf('<Stat label="a" value={1} trend={1} trendFormat="arrows" />'), /trendFormat must be one of/);
+  assert.match(issuesOf('<Stat label="a" value={1} trend={1} trendTone="good" />'), /trendTone must be one of/);
+  // No default assumes that up is good: an unset trend tone is neutral.
+  assert.equal(UI_BLOCK_CATALOG.Stat.props.trendTone.default, "neutral");
+  const dynamic = buildUiBlock('<Stack><State name="d" initial={2} /><Stat label="a" value={1} trend={d > 1 ? d : "flat"} /></Stack>');
+  const [stat] = components(dynamic, "Stat");
+  assert.equal(resolveUiProps(stat, { d: 2 }).ok, true);
+  assert.equal(resolveUiProps(stat, { d: 0 }).ok, false);
+});
+
+test("table cells may be exact badge records and nothing richer", () => {
+  assert.equal(issuesOf('<Table columns={["a", "b"]} rows={[["x", { kind: "badge", label: "ok", tone: "success" }], ["y", { kind: "badge", label: "plain" }]]} />'), "");
+  for (const cell of [
+    '{ kind: "badge", label: "x", href: "https://example.com" }',
+    '{ kind: "link", label: "x" }',
+    '{ kind: "badge", label: "x", tone: "loud" }',
+    '{ kind: "badge", label: 3 }',
+    '{ kind: "badge" }',
+    '{ label: "x" }',
+    '[1, 2]',
+  ]) {
+    assert.match(issuesOf(`<Table columns={["a"]} rows={[[${cell}]]} />`), /cells must be numbers, text, or \{ kind: "badge", label, tone \}/, cell);
+  }
+});
+
+test("sparkline validates at most 40 exact finite points with unique labels", () => {
+  const points = (count: number) => `[${Array.from({ length: count }, (_, index) => `{ label: "d${index}", value: ${index} }`).join(", ")}]`;
+  assert.equal(UI_BLOCK_LIMITS.maxSparklinePoints, 40);
+  assert.equal(issuesOf(`<Sparkline label="Trend" data={${points(40)}} />`), "");
+  assert.equal(issuesOf('<Sparkline label="Trend" data={[]} />'), "");
+  assert.equal(issuesOf('<Sparkline label="Trend" data={[{ label: "a", value: 1 }]} tone="success" height="lg" />'), "");
+  assert.match(issuesOf(`<Sparkline label="Trend" data={${points(41)}} />`), /data has more than 40 points/);
+  assert.match(issuesOf('<Sparkline label="Trend" data={[{ label: "a", value: 1 }, { label: "a", value: 2 }]} />'), /labels must be unique/);
+  assert.match(issuesOf('<Sparkline label="Trend" data={[{ label: "a", value: 1, color: "red" }]} />'), /data entries take only label and value/);
+  assert.match(issuesOf('<Sparkline label="Trend" data={[{ label: "a", value: "1" }]} />'), /data entries need a text label and a number value/);
+  assert.match(issuesOf('<Sparkline data={[]} />'), /<Sparkline> needs label/);
+  assert.match(issuesOf('<Sparkline label="Trend" data={[]} height="huge" />'), /height must be one of sm, md, lg/);
+  assert.match(issuesOf('<Sparkline label="Trend" data={[]}>text</Sparkline>'), /<Sparkline> doesn't take children/);
+});
+
+test("donut validates at most 12 exact slices with finite non-negative values", () => {
+  const slices = (count: number) => `[${Array.from({ length: count }, (_, index) => `{ label: "s${index}", value: 1 }`).join(", ")}]`;
+  assert.equal(UI_BLOCK_LIMITS.maxDonutSlices, 12);
+  assert.equal(issuesOf(`<Donut label="Load" data={${slices(12)}} />`), "");
+  assert.equal(issuesOf('<Donut label="Load" data={[]} />'), "");
+  assert.equal(issuesOf('<Donut label="Load" data={[{ label: "a", value: 0 }, { label: "b", value: 0 }]} size="sm" />'), "");
+  assert.equal(issuesOf('<Donut label="Load" data={[{ label: "a", value: 2, tone: "warning" }]} />'), "");
+  assert.match(issuesOf(`<Donut label="Load" data={${slices(13)}} />`), /data has more than 12 slices/);
+  assert.match(issuesOf('<Donut label="Load" data={[{ label: "a", value: -1 }]} />'), /slice values must be zero or more/);
+  assert.match(issuesOf('<Donut label="Load" data={[{ label: "a", value: 1, tone: "loud" }]} />'), /slice tone must be one of/);
+  assert.match(issuesOf('<Donut label="Load" data={[{ label: "a", value: 1, color: "red" }]} />'), /data entries take only label, value and tone/);
+  assert.match(issuesOf('<Donut label="Load" data={[{ label: "a", value: 1 }, { label: "a", value: 1 }]} />'), /labels must be unique/);
+  assert.match(issuesOf('<Donut label="Load" data={[]} size="xl" />'), /size must be one of sm, md, lg/);
 });
 
 test("text admits only a closed inline grammar of Bold and Code", () => {

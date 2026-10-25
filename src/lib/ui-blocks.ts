@@ -46,6 +46,8 @@ export const UI_BLOCK_LIMITS = {
   maxChartBars: 40,
   maxSelectOptions: 50,
   maxListItems: 100,
+  maxSparklinePoints: 40,
+  maxDonutSlices: 12,
 } as const;
 
 // ── expressions ────────────────────────────────────────────────────────────
@@ -508,7 +510,9 @@ type PropType =
   | "options"
   | "rows"
   | "series"
-  | "items";
+  | "items"
+  | "points"
+  | "slices";
 
 export type UiPropSpec = {
   type: PropType;
@@ -533,6 +537,7 @@ export const UI_COMPONENT_TYPES = [
   "Stack", "Row", "Card", "Heading", "Text", "Badge", "Stat", "Table", "Progress", "BarChart",
   "Slider", "Select", "Toggle", "Button", "State",
   "Divider", "Grid", "Columns", "List", "Callout", "Bold", "Code",
+  "Sparkline", "Donut",
 ] as const;
 
 export type UiComponentType = (typeof UI_COMPONENT_TYPES)[number];
@@ -601,6 +606,10 @@ export const UI_BLOCK_CATALOG: Record<UiComponentType, UiComponentSpec> = {
       format,
       caption: { type: "text" },
       tone: tone("neutral"),
+      // A trend never assumes that up is good: its tone is the author's call.
+      trend: { type: "number" },
+      trendFormat: format,
+      trendTone: tone("neutral"),
     },
   },
   Table: {
@@ -706,6 +715,23 @@ export const UI_BLOCK_CATALOG: Record<UiComponentType, UiComponentSpec> = {
     children: "inline",
     onlyInside: ["Text", "Bold"],
     props: {},
+  },
+  Sparkline: {
+    children: "none",
+    props: {
+      label: { type: "text", required: true },
+      data: { type: "points", required: true },
+      tone: tone("accent"),
+      height: { type: "enum", values: ["sm", "md", "lg"], default: "md" },
+    },
+  },
+  Donut: {
+    children: "none",
+    props: {
+      label: { type: "text", required: true },
+      data: { type: "slices", required: true },
+      size: { type: "enum", values: ["sm", "md", "lg"], default: "md" },
+    },
   },
 };
 
@@ -1054,6 +1080,49 @@ function primitiveKind(value: UiPrimitive): string {
 }
 
 /** Type-check a resolved value against its spec. Returns an issue or null. */
+function isRecord(value: UiValue): value is { [key: string]: UiValue } {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function onlyKeys(record: { [key: string]: UiValue }, allowed: readonly string[]): boolean {
+  return Object.keys(record).every((key) => allowed.includes(key));
+}
+
+/** A Table cell may be a primitive or exactly `{ kind: "badge", label, tone? }`. */
+function isBadgeCell(cell: UiValue): boolean {
+  return isRecord(cell)
+    && onlyKeys(cell, ["kind", "label", "tone"])
+    && cell.kind === "badge"
+    && typeof cell.label === "string"
+    && (cell.tone === undefined || (typeof cell.tone === "string" && (UI_TONES as readonly string[]).includes(cell.tone)));
+}
+
+/** Labelled numeric entries shared by Sparkline points and Donut slices. */
+function checkLabelledEntries(
+  name: string,
+  value: UiValue,
+  limit: number,
+  noun: string,
+  keys: readonly string[],
+  extra?: (entry: { [key: string]: UiValue }) => string | null,
+): string | null {
+  if (!Array.isArray(value)) return `${name} needs a list like [{ label: "Mon", value: 3 }]`;
+  if (value.length > limit) return `${name} has more than ${limit} ${noun}`;
+  const labels = new Set<string>();
+  for (const entry of value) {
+    if (!isRecord(entry)) return `${name} entries need a label and a value`;
+    if (!onlyKeys(entry, keys)) return `${name} entries take only ${keys.slice(0, -1).join(", ")} and ${keys[keys.length - 1]}`;
+    if (typeof entry.label !== "string" || typeof entry.value !== "number" || !Number.isFinite(entry.value)) {
+      return `${name} entries need a text label and a number value`;
+    }
+    const issue = extra?.(entry);
+    if (issue) return issue;
+    if (labels.has(entry.label)) return `${name} labels must be unique ("${entry.label}" repeats)`;
+    labels.add(entry.label);
+  }
+  return null;
+}
+
 function checkPropValue(type: UiComponentType, name: string, spec: UiPropSpec, value: UiValue, declared?: ReadonlyMap<string, UiPrimitive>): string | null {
   switch (spec.type) {
     case "text":
@@ -1095,10 +1164,11 @@ function checkPropValue(type: UiComponentType, name: string, spec: UiPropSpec, v
     case "rows": {
       if (!Array.isArray(value)) return `${name} needs a list of rows like [["a", 1]]`;
       if (value.length > UI_BLOCK_LIMITS.maxTableRows) return `${name} has more than ${UI_BLOCK_LIMITS.maxTableRows} rows`;
-      const ok = value.every((row) => Array.isArray(row)
-        && row.length <= UI_BLOCK_LIMITS.maxTableColumns
-        && row.every((cell) => isPrimitive(cell)));
-      return ok ? null : `${name} rows must be lists of numbers or text`;
+      const shaped = value.every((row) => Array.isArray(row) && row.length <= UI_BLOCK_LIMITS.maxTableColumns);
+      if (!shaped) return `${name} rows must be lists of numbers or text`;
+      return value.every((row) => (row as UiValue[]).every((cell) => isPrimitive(cell) || isBadgeCell(cell)))
+        ? null
+        : `${name} cells must be numbers, text, or { kind: "badge", label, tone }`;
     }
     case "series": {
       if (!Array.isArray(value)) return `${name} needs a list like [{ label: "Mon", value: 3 }]`;
@@ -1114,6 +1184,16 @@ function checkPropValue(type: UiComponentType, name: string, spec: UiPropSpec, v
       }
       return null;
     }
+    case "points":
+      return checkLabelledEntries(name, value, UI_BLOCK_LIMITS.maxSparklinePoints, "points", ["label", "value"]);
+    case "slices":
+      return checkLabelledEntries(name, value, UI_BLOCK_LIMITS.maxDonutSlices, "slices", ["label", "value", "tone"], (entry) => {
+        if ((entry.value as number) < 0) return `${name} slice values must be zero or more`;
+        if (entry.tone !== undefined && !(typeof entry.tone === "string" && (UI_TONES as readonly string[]).includes(entry.tone))) {
+          return `${name} slice tone must be one of ${UI_TONES.join(", ")}`;
+        }
+        return null;
+      });
     case "items": {
       if (!Array.isArray(value)) return `${name} needs a list like ["A", "B"]`;
       if (value.length > UI_BLOCK_LIMITS.maxListItems) return `${name} has more than ${UI_BLOCK_LIMITS.maxListItems} entries`;
