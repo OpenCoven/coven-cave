@@ -1,6 +1,6 @@
 # Research host contract
 
-Research extraction is tracked in [#5997](https://github.com/OpenCoven/coven-cave/issues/5997).
+Research extraction was delivered in [#5997](https://github.com/OpenCoven/coven-cave/issues/5997) (PR #6025).
 The dedicated package consumes named adapters under `src/lib/research-host/`
 through `@opencoven/research-host/*`. Each adapter exports an explicit set of
 values and types from a core-owned module; wildcard exports are intentionally
@@ -13,8 +13,11 @@ requires verifying the consuming package against the proposed host revision;
 removing an export requires a coordinated package release and Cave pin update.
 The optional runtime entrypoint is guarded by
 [`research-package.ts`](../src/lib/server/research-package.ts): request
-authorization precedes loading, and host contract version 1 is required before
+authorization precedes loading, and host contract version 2 is required before
 dispatching requests, starting workers or fetching optional repository snapshots.
+Version 2 routes Research scheduling through typed Coven adapters with reviewed
+revisions and stable adoption keys (#6196); an older package is refused as
+`research-incompatible`.
 
 Saved links belong to core. Chat uses `/api/links`, while the existing Research
 endpoint delegates to the same handler and persisted store. Both endpoints

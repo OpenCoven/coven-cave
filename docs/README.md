@@ -51,14 +51,14 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`windows-sidecar-recovery.md`](windows-sidecar-recovery.md) — loaded-shell recovery, native Retry and Windows qualification limits
 - [`windows-update-preparation.md`](windows-update-preparation.md) — download, verify, and install as three distinct phases
 - [`windows-upgrade-benchmark.md`](windows-upgrade-benchmark.md) — what `scripts/windows-upgrade-diagnostics.ps1` captures
+- [`performance/daemon-lifecycle.md`](performance/daemon-lifecycle.md) — the opt-in real-daemon lifecycle probe and its 2026-10-20 diagnostic observation (#6120)
 - [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the daemon connectivity launch flow, readiness checks, fault coverage, and measurement contract; the `cave-58eoq` program's tracked work all merged (#4485–#4528), and its residual risks have no issue yet
 
 ### Mobile and handoff
 
 - [`mobile-tailscale.md`](mobile-tailscale.md) — exposing the browser surface to a phone over Tailscale Serve, including tokenless tailnet-device access
-- [`mobile-memory.md`](mobile-memory.md) — the read-only iOS client of the canonical-memory API
 - [`ios-current-direction.md`](ios-current-direction.md) — the canonical native iOS product shape, active priorities, and historical-plan boundary
-- [`workflows/ios-testflight-rollout.md`](workflows/ios-testflight-rollout.md): iOS rollout preparation, exact-artifact/device receipts, cohort HOLD decisions, and non-destructive recovery; execution acceptance remains open in #5319
+- [`workflows/ios-testflight-rollout.md`](workflows/ios-testflight-rollout.md): iOS rollout preparation, exact-artifact/device receipts, cohort HOLD decisions, and non-destructive recovery. #5319 closed as not planned on 2026-10-18 (an obsolete v0.4-era gate); release tags already upload iOS builds to TestFlight, and a future external-tester cohort needs a new issue
 - [`ios-webrtc-dsym-symbolication.md`](ios-webrtc-dsym-symbolication.md) — why TestFlight uploads warn that the vendored WebRTC.framework has no dSYM, and how the release pipeline audits and restores symbolication coverage
 
 ### Chat, familiars, and tasks
@@ -118,7 +118,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 ### Integrity and integrations
 
 - [`dependency-advisories.md`](dependency-advisories.md) — open Dependabot alerts whose patched version is unreachable from this dependency graph: the resolver refusal, the exposure assessment, and the upstream change that would lift each
-- [`stuck-action-runs.md`](stuck-action-runs.md) — the four Actions runs wedged in `queued` since 2026-07-25 (issue #4905): the HTTP-500 history, the 2026-08-30 HTTP-403 retry record, the do-not-delete-workflow-history rule, and the retry tooling
+- [`stuck-action-runs.md`](stuck-action-runs.md) — the four Actions runs wedged in `queued` since 2026-07-25 (issue #4905, closed as not planned 2026-09-16; the runs remain queued): the HTTP-500 history, the 2026-08-30 HTTP-403 retry record, the do-not-delete-workflow-history rule, and the retry tooling
 - [`project-permission-integrity.md`](project-permission-integrity.md) — reconciling stale grants against the project registry
 - [`discord-rich-presence.md`](discord-rich-presence.md) — privacy-safe local activity publishing
 
@@ -130,7 +130,7 @@ Active initiatives. Parts have shipped; parts have not. Each states which.
 
 - [`core-contract-and-room-boundaries.md`](core-contract-and-room-boundaries.md) — the minimal product contract and source inventory for #6119: all workspace modes, role rooms, auxiliary subsystems and startup workers, with current boundaries separated from unverified extraction and recovery acceptance
 - [`desktop-onboarding.md`](desktop-onboarding.md) — the evidence baseline and product contract for download → first successful familiar response, separating confirmed behavior from proposals still needing usability and packaged-app testing
-- [`chat-native-ui-tier.md`](chat-native-ui-tier.md) — `coven:ui` blocks (spike): the component catalog, expression whitelist, and streaming and failure contracts; the renderer is wired into Chat, and the agent directive stays off until rollout is decided
+- [`chat-native-ui-tier.md`](chat-native-ui-tier.md) — `coven:ui` blocks: the component catalog, expression whitelist, and streaming and failure contracts; the parser and renderer merged in #6073 and are wired into Main Chat, and no familiar prompt teaches the syntax until the rollout decision (#6063)
 - [`ci-implementation-plan.md`](ci-implementation-plan.md) — the release-candidate CI rollout: signed promotion, full validation, the parallel `PR checks` context, and promotion at real release cuts have shipped; the protection switch, retiring routine PR fanout, and verifying the lean gate remain, with no tracking issue yet (#6111)
 - [`roadmaps/coven-automations-v1.md`](roadmaps/coven-automations-v1.md) — the cross-repository Coven Automations v1 program (`OpenCoven/coven#854`) and its [machine-readable mapping](roadmaps/coven-automations-v1.mapping.json): foundation, protocol, scheduler reliability, embodiment, and authority have closed; dispatch-time trust (`coven#857`), certification (`coven#858`), the SDK, Cave oversight (#5217), Psyche, Docs, and organization canaries remain, and the 2026-10-18 release checkpoint is no-go
 - [`performance/ios-performance-audit.md`](performance/ios-performance-audit.md) — the native iOS performance record (opened 2026-08-10, updated through 2026-10-03): instrumentation, the Release capture driver, and the budgets ratified on 2026-10-02 (#5292), none CI-enforced; the main-thread hitch budget (#5748), inline-zoom device evidence (#5314), and the physical-device gates remain
@@ -160,13 +160,17 @@ Point-in-time records. Read for intent, not for current behavior.
 - [`plans/2026-07-29-ios-new-chat-project-contract.md`](plans/2026-07-29-ios-new-chat-project-contract.md) — binding native iOS first turns to a familiar-authorized project; shipped in #4067 and reworked by the chat-only shell (#5379); the current contract is [`specs/ios-new-chat-project-contract.md`](specs/ios-new-chat-project-contract.md)
 - [`contracts/mobile-recovery-contract.md`](contracts/mobile-recovery-contract.md) — the transport-recovery contract proposed after the 2026-08-26 Serve-drift incident (#5051); #5056 and #5270 implemented its core rules differently, and `mobile-tailscale.md` (Living, above) describes current behavior
 - [`coven-autoloop-cli-wrapper-spec.md`](coven-autoloop-cli-wrapper-spec.md) — scoping handoff for the unbuilt `bin/coven-autoloop` write path; the read path in `src/lib/research-autoloop.ts` already ships and is not what this describes
+- [`2026-06-11 space hoggers`](audits/2026-06-11-space-hoggers.md) — the largest tracked files under `src`, `docs`, `README.md` and `package.json` on 2026-06-11
+- [`2026-06 chat UX audit`](audits/2026-06-chat-ux-audit.md) — Cave's chat measured against Claude Code, Cursor and ChatGPT at `af3fa0e` (2026-06-11)
+- [`2026-08-28 Cave conformance recount`](audits/2026-08-28-cave-conformance-recount.md) (`cave-ui5z`) — the conformance counts re-run after the P1.5 chrome and contrast fix (#3152)
 - [`2026-08-28 Coven Grimoire frame conformance`](audits/2026-08-28-coven-grimoire-frame-conformance.md) (`cave-wc0j7`) — frame-vs-surface conformance audit for `Coven Grimoire.dc.html`: the frame is a familiar-authored *publication* (issue contents, bylines, Share) while the repo's grimoire is the *memory* knowledge store; the collision is documented and the frame stays unbuilt pending a product decision
 
 ---
 
 ## Tombstone
 
-- [`codeql.md`](codeql.md) — CodeQL retired 2026-07-31, in three ordered steps; nothing scans in its place
+- [`codeql.md`](codeql.md) — the CodeQL Advanced workflow and required context, retired 2026-07-31 in three ordered steps; GitHub's default setup now scans, advisory only
+- [`mobile-memory.md`](mobile-memory.md) — Coven Memory's mobile routes, removed with the canonical memory vault in #5418 (2026-09-16)
 
 ---
 

@@ -196,8 +196,9 @@ diagnostics, accessibility, safety checks or meaningful tests to improve a
 size metric.
 
 The next implementation decisions should follow reproduced user failures and
-measured costs. The status-read deadline and real lifecycle probe are tracked
-separately in #6122 and #6120; the unresolved background startup failure still
-needs owning-component diagnosis. For modularization, establish a current
+measured costs. The status-read deadline (#6122) and the real lifecycle probe
+(#6120, [daemon lifecycle](performance/daemon-lifecycle.md)) merged on
+2026-10-20; the unresolved background startup failure still needs
+owning-component diagnosis. For modularization, establish a current
 all-optional-rooms-absent baseline and resource-lifetime evidence before selecting
 the next extraction. This inventory does not complete those obligations.
