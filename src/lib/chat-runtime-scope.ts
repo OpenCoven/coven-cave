@@ -232,7 +232,9 @@ export function buildRuntimeScopePreamble(scope: RuntimeScope): string {
               ...allowedProjectRoots.map(({ root, spellings }) => {
                 const level = mergedAccessLevel(spellings, access);
                 const suffix = level === "read" ? " (read-only)" : level === "write" ? " (read + write)" : "";
-                return `  - ${root}${suffix}`;
+                // Name the directory by a spelling that holds the level shown.
+                const shown = (level && spellings.find((spelling) => access?.[spelling] === level)) || root;
+                return `  - ${shown}${suffix}`;
               }),
             ]
           : []),
@@ -298,8 +300,9 @@ function uniqueAllowedProjectRoots(
   return [...byIdentity.values()];
 }
 
-// Spellings of one directory merge to the most permissive level, matching how
-// effective access combines a familiar's grants.
+// Spellings of one directory merge to the most permissive level: every granted
+// root is forwarded to the harness, read grants included, so a directory that
+// any grant makes writable is writable for this session.
 function mergedAccessLevel(
   spellings: string[],
   access: Record<string, ProjectAccessLevel> | undefined,

@@ -295,11 +295,12 @@ function existingRealpath(root: string | null | undefined): string | null {
  * A registered root in the canonical on-disk namespace: `existing` is its
  * realpath when the directory exists (null otherwise), and `resolved` its
  * nearest-existing-ancestor form, which also places a root that does not
- * exist yet in that namespace for containment checks.
+ * exist yet in that namespace for containment checks. Both are null for a
+ * root that is not a local absolute path, so it never contains anything.
  */
 export type CanonicalProjectRoot = (project: CaveProject) => {
   existing: string | null;
-  resolved: string;
+  resolved: string | null;
 };
 
 /**
@@ -308,12 +309,14 @@ export type CanonicalProjectRoot = (project: CaveProject) => {
  * registry answer so no root is canonicalized twice (#6216).
  */
 export function canonicalProjectRootCache(): CanonicalProjectRoot {
-  const cache = new Map<string, { existing: string | null; resolved: string }>();
+  const cache = new Map<string, { existing: string | null; resolved: string | null }>();
   return (project) => {
     let entry = cache.get(project.root);
     if (!entry) {
+      const expanded = expandHomeShortcut(project.root);
       const existing = existingRealpath(project.root);
-      entry = { existing, resolved: existing ?? realpathNativeOrResolve(expandHomeShortcut(project.root)) };
+      const resolved = existing ?? (path.isAbsolute(expanded) ? realpathNativeOrResolve(expanded) : null);
+      entry = { existing, resolved };
       cache.set(project.root, entry);
     }
     return entry;

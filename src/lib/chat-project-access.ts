@@ -61,7 +61,9 @@ function worktreeParentProject(
   const requested = realpathNativeOrResolve(root);
   const realCwd = realpathNativeOrResolve(resolvedCwd);
   for (const project of projects) {
-    const prefix = canonicalRoot(project).resolved + path.sep + ".worktrees" + path.sep;
+    const projectRoot = canonicalRoot(project).resolved;
+    if (!projectRoot) continue;
+    const prefix = projectRoot + path.sep + ".worktrees" + path.sep;
     if (
       requested.startsWith(prefix) &&
       requested.length > prefix.length &&
@@ -123,7 +125,8 @@ export function taskWorktreeProjectAccessId(
   // through an alias (macOS /tmp -> /private/tmp, #6210) or in another letter
   // case (#6216) must be compared in that namespace. A cwd that escapes the
   // project still resolves outside it.
-  if (!isInsideRoot(realpathNativeOrResolve(taskProject.root), realpathNativeOrResolve(args.resolvedCwd))) {
+  const taskRoot = canonicalProjectRootCache()(taskProject).resolved;
+  if (!taskRoot || !isInsideRoot(taskRoot, realpathNativeOrResolve(args.resolvedCwd))) {
     return `unregistered:${args.resolvedCwd}`;
   }
 

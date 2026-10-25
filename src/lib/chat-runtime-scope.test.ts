@@ -301,9 +301,9 @@ assert.equal(
   }
 
   // REGRESSION (#6216): the runtime-scope preamble lists each granted
-  // directory once, under its first registered spelling, and never repeats the
-  // primary root. Spellings of one directory merge to the most permissive
-  // level, matching how effective access combines grants.
+  // directory once and never repeats the primary root. Spellings of one
+  // directory merge to the most permissive level, shown under a spelling that
+  // holds it.
   const preamble = buildRuntimeScopePreamble({
     kind: "local",
     root: spawn,
@@ -314,7 +314,7 @@ assert.equal(
   const rootLines = preamble.split("\n").filter((line) => line.startsWith("  - "));
   assert.deepEqual(
     rootLines,
-    [`  - ${extra} (read + write)`, `  - ${workspace} (read-only)`],
+    [`  - ${aliasExtra} (read + write)`, `  - ${workspace} (read-only)`],
     "an alias of the primary root and a second spelling of a grant are not listed again",
   );
   assert.doesNotMatch(
@@ -326,11 +326,35 @@ assert.equal(
   // Decision recorded on #6216: the persisted runtime access fingerprint keeps
   // comparing spellings, so existing native sessions are not forced to
   // refresh. Only the preamble above dedupes by directory.
-  assert.deepEqual(
-    JSON.parse(buildRuntimeAccessFingerprint({ primaryRoot: spawn, grantedProjectRoots: [aliasSpawn] })).roots,
-    [{ root: aliasSpawn, access: "write" }],
+  assert.equal(
+    buildRuntimeAccessFingerprint({ primaryRoot: spawn, grantedProjectRoots: [aliasSpawn] }),
+    JSON.stringify({ version: 1, primaryRoot: spawn, roots: [{ root: aliasSpawn, access: "write" }] }),
     "the persisted fingerprint format is unchanged",
   );
+
+  // CI runs on case-sensitive Linux, where the case-variant check above is
+  // skipped. Simulate a case-insensitive volume by folding one directory's
+  // case in the native realpath, so the spawn-root exclusion is guarded on
+  // every platform.
+  const folded = path.join(realParent, "Folded");
+  await mkdir(folded);
+  const typedFolded = path.join(realParent, "folded");
+  const nativeBefore = realpathSync.native;
+  const fold = (value) => {
+    const text = String(value);
+    return text === typedFolded || text.startsWith(typedFolded + path.sep) ? folded + text.slice(typedFolded.length) : text;
+  };
+  const { mock } = await import("node:test");
+  mock.method(realpathSync, "native", (value, ...rest) => nativeBefore(fold(value), ...rest));
+  try {
+    assert.deepEqual(
+      runtimeGrantDirs({ spawnRoot: folded, grantedProjectRoots: [typedFolded, extra] }),
+      [extra],
+      "(simulated case-insensitive volume) a grant of the spawn directory in another case is not forwarded again",
+    );
+  } finally {
+    mock.restoreAll();
+  }
 }
 
 console.log("chat-runtime-scope.test.ts: ok");

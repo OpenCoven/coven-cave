@@ -22,7 +22,7 @@ import path from "node:path";
  * when no ancestor exists at all.
  */
 export function realpathOrResolve(value: string): string {
-  return canonicalize(value, (target) => fs.realpathSync(target));
+  return canonicalize(value, (target) => fs.realpathSync(/* turbopackIgnore: true */ target));
 }
 
 /**
@@ -34,13 +34,13 @@ export function realpathOrResolve(value: string): string {
  * same directory (#6216).
  */
 export function realpathNativeOrResolve(value: string): string {
-  return canonicalize(value, (target) => fs.realpathSync.native(target));
+  return canonicalize(value, (target) => fs.realpathSync.native(/* turbopackIgnore: true */ target));
 }
 
 function canonicalize(value: string, realpath: (target: string) => string): string {
   const resolved = path.resolve(/* turbopackIgnore: true */ value);
   try {
-    return realpath(/* turbopackIgnore: true */ resolved);
+    return realpath(resolved);
   } catch {
     /* nonexistent (or unreadable) — canonicalize via the nearest ancestor */
   }
@@ -52,7 +52,7 @@ function canonicalize(value: string, realpath: (target: string) => string): stri
     tail.unshift(path.basename(ancestor));
     ancestor = parent;
     try {
-      return path.join(realpath(/* turbopackIgnore: true */ ancestor), ...tail);
+      return path.join(realpath(ancestor), ...tail);
     } catch {
       /* keep walking up */
     }
