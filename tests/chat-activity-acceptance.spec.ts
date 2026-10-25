@@ -210,7 +210,7 @@ test("large trace production measurements", async ({ page }, info) => {
 });
 
 for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
-  (refusal === 401 || refusal === 403 ? test.skip : test)(`lazy output ${refusal} withholds bodies and rechecks or revokes access`, async ({ page }, info) => {
+  test(`lazy output ${refusal} withholds bodies and rechecks or revokes access`, async ({ page }, info) => {
     const privateMarker = `PRIVATE_LAZY_BODY_${refusal}`;
     const authorizedMarker = `AUTHORIZED_LAZY_BODY_${refusal}`;
     let deepInput: object = { file_path: "/tmp/deep-input" };
@@ -223,7 +223,10 @@ for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
     await page.route("**/api/chat/conversation/*/tool-output?*", async (route) => {
       const status = allowed || refusal === "oversized" ? 200 : refusal;
       requests.push({ status, allowed });
-      await route.fulfill({ status, json: { ok: true, output: allowed ? authorizedMarker : privateMarker + "x".repeat(256 * 1024 + 1) } });
+      // Only the oversized case needs a body past the client's limit; a refusal
+      // status alone must withhold the private marker.
+      const body = refusal === "oversized" ? privateMarker + "x".repeat(256 * 1024 + 1) : privateMarker;
+      await route.fulfill({ status, json: { ok: true, output: allowed ? authorizedMarker : body } });
     });
     complete();
     await page.reload();
@@ -465,7 +468,7 @@ test("output access revocation clears history and a live owner without replaying
 // result, but neither reaches copy, export or web storage, its opaque payload
 // signature is never displayed, and revocation removes both at request time.
 // Route fixtures prove client behavior only, not server authorization.
-test.skip("tool payload sentinels stay inside the authorized card and leave on revocation", async ({ page }) => {
+test("tool payload sentinels stay inside the authorized card and leave on revocation", async ({ page }) => {
   await page.addInitScript(() => {
     const copied: string[] = [];
     Object.assign(window, { golden13Copied: copied });
