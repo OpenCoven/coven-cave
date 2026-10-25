@@ -7,6 +7,34 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.16] - 2026-10-25
+
+> Settings fits the phone, and chat UI blocks gain tabs and text input.
+
+Patch release on top of v0.5.15. As in v0.5.15, **the Windows MSI is not
+Authenticode-signed in this cut**. Its checksum and updater signature are
+separate from Windows code signing.
+
+### Added
+- **Tabs and text input in chat UI blocks** (#6238). A `coven:ui` block can
+  show tabs and a labelled text field. Typed text stays in the block's own
+  state or a prefill, and nothing is sent on its own.
+
+### Changed
+- **Tool outcomes on iOS** (#6228). iOS keeps approval-requested,
+  cancel-requested, rejected and cancelled tool states instead of showing
+  "Outcome unknown", matching the web.
+
+### Fixed
+- **Mobile Settings** (#6242, #6245). The section picker scrolls its last row
+  clear of the footer hint, and it is no longer titled three times.
+- **Settings › General** (#6244). The header shows the workspace path compactly,
+  with `~` for home, and keeps the full path on hover.
+
+### Under the hood
+- **macOS validation:** the runtime-validation ceilings are back to 60 minutes
+  now that the build-time TypeScript pass is fast (#6223).
+
 ## [0.5.15] - 2026-10-24
 
 > Codex runs on local models, and Windows setup and startup recover on their own.
