@@ -10,6 +10,7 @@ import {
   MINI_DASHBOARD,
   PRICING_CALCULATOR,
   RELEASE_BRIEF,
+  RELEASE_DRAFT,
   STATUS_TABLE,
   uiBlockFence,
 } from "../src/lib/ui-block-fixtures";
@@ -38,6 +39,8 @@ const SHOWCASE_REPLY = [
 ].join("\n\n");
 
 const MALFORMED_REPLY = ["Some of this block is broken on purpose.", uiBlockFence(MALFORMED_DASHBOARD), "Prose after the block."].join("\n\n");
+
+const DRAFT_REPLY = ["Here's the draft.", uiBlockFence(RELEASE_DRAFT), "Prose after the block."].join("\n\n");
 
 const PULSE_REPLY = ["This week's pulse.", uiBlockFence(DELIVERY_PULSE), "Prose after the block."].join("\n\n");
 
@@ -314,6 +317,40 @@ test("the data catalog renders trends, a sparkline, a donut and badge cells", as
   }
   await setTheme(page, "dark", "tide");
   await capture(block, testInfo, "delivery-pulse-tide-dark");
+});
+
+test("tabs and a text input drive local State, and the draft only prefills", async ({ page }, testInfo) => {
+  await page.setViewportSize(CAPTURE_VIEWPORT);
+  const { chat, sends } = await setup(page, DRAFT_REPLY);
+  const block = chat.getByRole("group", { name: "Release notes draft" });
+  await expect(block).toBeVisible();
+  await expect(block.locator("[data-ui-block-error]")).toHaveCount(0);
+  const tablist = block.getByRole("tablist", { name: "Draft sections" });
+  await expect(tablist.getByRole("tab")).toHaveText(["Summary", "Details"]);
+  await expect(tablist.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
+  const headline = block.getByRole("textbox", { name: "Headline" });
+  await expect(headline).toHaveValue("Faster startup");
+  await expect(headline).toHaveAttribute("maxlength", "80");
+  await headline.fill("Quicker boot");
+  await expect(block.getByText("Headline: Quicker boot", { exact: true })).toBeVisible();
+  for (const mode of ["light", "dark"] as const) {
+    await setTheme(page, mode);
+    await capture(block, testInfo, `release-draft-${mode}`);
+  }
+  await setTheme(page, "dark", "tide");
+  await capture(block, testInfo, "release-draft-tide-dark");
+
+  // Arrow keys move between tabs, and Enter selects one.
+  await tablist.getByRole("tab", { name: "Summary" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(tablist.getByRole("tab", { name: "Details" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(tablist.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
+  await expect(block.getByRole("tabpanel").getByRole("listitem")).toHaveText(["Startup is 40% faster", "The inbox is quieter"]);
+
+  await block.getByRole("button", { name: "Draft the announcement" }).click();
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Release headline: Quicker boot");
+  expect(sends).toEqual([]);
 });
 
 test("a coven:ui example inside another fence stays literal text", async ({ page }) => {

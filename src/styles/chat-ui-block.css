@@ -453,6 +453,26 @@ ol.chat-ui-list { list-style-type: decimal; }
 
 /* ── inputs ─────────────────────────────────────────────────────────────── */
 
+.chat-ui-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.chat-ui-tabs[data-orientation="vertical"] { flex-direction: row; align-items: flex-start; }
+.chat-ui-tabs__panel { flex: 1 1 auto; min-width: 0; border-radius: var(--radius-control); }
+
+/* A failed Tabs shows every tab as a labelled section. */
+.chat-ui-tab-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.chat-ui-input { min-width: 0; }
+
 .chat-ui-field {
   display: flex;
   flex-direction: column;

@@ -155,6 +155,25 @@ export const DELIVERY_PULSE = `<Card title="Delivery pulse" subtitle="Last 7 day
   />
 </Card>`;
 
+/**
+ * Input catalog (#6062 T5): Tabs bound to State, and a TextInput whose value
+ * feeds a Text line and a prefill Button. Nothing here sends or submits.
+ */
+export const RELEASE_DRAFT = `<Card title="Release notes draft">
+  <State name="view" initial="Summary" />
+  <State name="headline" initial="Faster startup" />
+  <Tabs bind="view" label="Draft sections">
+    <Tab value="Summary" label="Summary">
+      <TextInput bind="headline" label="Headline" placeholder="One line for the release page" maxLength={80} />
+      <Text>Headline: {headline}</Text>
+    </Tab>
+    <Tab value="Details" label="Details">
+      <List items={["Startup is 40% faster", "The inbox is quieter"]} />
+    </Tab>
+  </Tabs>
+  <Button prefill={"Release headline: " + headline}>Draft the announcement</Button>
+</Card>`;
+
 export const UI_BLOCK_FIXTURES = {
   "pricing-calculator": PRICING_CALCULATOR,
   "status-table": STATUS_TABLE,
@@ -163,6 +182,7 @@ export const UI_BLOCK_FIXTURES = {
   "failed-child-text": FAILED_CHILD_TEXT,
   "release-brief": RELEASE_BRIEF,
   "delivery-pulse": DELIVERY_PULSE,
+  "release-draft": RELEASE_DRAFT,
 } as const;
 
 /** Wrap a body in the fence a familiar emits. */

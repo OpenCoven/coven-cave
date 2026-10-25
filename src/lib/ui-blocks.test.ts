@@ -25,6 +25,7 @@ import {
   MINI_DASHBOARD,
   PRICING_CALCULATOR,
   RELEASE_BRIEF,
+  RELEASE_DRAFT,
   STATUS_TABLE,
   UI_BLOCK_FIXTURES,
   uiBlockFence,
@@ -246,7 +247,7 @@ test("stableUiBlockKey survives a growing streaming fence (state keyed across ch
 // ── building documents ─────────────────────────────────────────────────────
 
 test("the showcase fixtures build with no errors and no diagnostics", () => {
-  for (const [name, body] of Object.entries({ PRICING_CALCULATOR, STATUS_TABLE, MINI_DASHBOARD, RELEASE_BRIEF, DELIVERY_PULSE })) {
+  for (const [name, body] of Object.entries({ PRICING_CALCULATOR, STATUS_TABLE, MINI_DASHBOARD, RELEASE_BRIEF, DELIVERY_PULSE, RELEASE_DRAFT })) {
     const doc = buildUiBlock(body);
     assert.equal(doc.status, "ok", name);
     assert.deepEqual(errors(doc).map((node) => node.issues), [], name);
@@ -414,6 +415,9 @@ test("the new entries reject raw style, class names and handlers", () => {
     Code: "<Text><Code ATTR>a</Code></Text>",
     Sparkline: '<Sparkline label="a" data={[]} ATTR />',
     Donut: '<Donut label="a" data={[]} ATTR />',
+    Tabs: '<Stack><State name="v" initial="a" /><Tabs bind="v" label="t" ATTR><Tab value="a" label="A"><Text>x</Text></Tab></Tabs></Stack>',
+    Tab: '<Stack><State name="v" initial="a" /><Tabs bind="v" label="t"><Tab value="a" label="A" ATTR><Text>x</Text></Tab></Tabs></Stack>',
+    TextInput: '<Stack><State name="s" initial="" /><TextInput bind="s" label="Name" ATTR /></Stack>',
   };
   for (const [type, body] of Object.entries(bodies)) {
     for (const attr of ['style="color: red"', 'className="x"', 'class="x"', "onClick={1}", 'onclick="alert(1)"', 'href="https://example.com"']) {
@@ -492,6 +496,63 @@ test("donut validates at most 12 exact slices with finite non-negative values", 
   assert.match(issuesOf('<Donut label="Load" data={[{ label: "a", value: 1, color: "red" }]} />'), /data entries take only label, value and tone/);
   assert.match(issuesOf('<Donut label="Load" data={[{ label: "a", value: 1 }, { label: "a", value: 1 }]} />'), /labels must be unique/);
   assert.match(issuesOf('<Donut label="Load" data={[]} size="xl" />'), /size must be one of sm, md, lg/);
+});
+
+const TABS = (inner: string, initial = "a", extra = "") =>
+  `<Stack><State name="v" initial="${initial}" /><Tabs bind="v" label="Sections"${extra}>${inner}</Tabs></Stack>`;
+
+test("the release draft composes Tabs, Tab and TextInput", () => {
+  const doc = buildUiBlock(RELEASE_DRAFT);
+  assert.deepEqual(errors(doc), []);
+  assert.deepEqual(components(doc, "Tab").map((tab) => tab.props.value), [
+    { kind: "static", value: "Summary" },
+    { kind: "static", value: "Details" },
+  ]);
+  assert.equal(components(doc, "TextInput").length, 1);
+});
+
+test("tabs bind a text State and hold only fixed, unique Tab children", () => {
+  assert.equal(issuesOf(TABS('<Tab value="a" label="A"><Text>x</Text></Tab><Tab value="b" label="B"><Badge>y</Badge></Tab>', "a", ' orientation="vertical" size="sm"')), "");
+  assert.match(issuesOf(TABS('<Tab value="a" label="A" />', "a", ' orientation="diagonal"')), /orientation must be one of horizontal, vertical/);
+  assert.match(issuesOf('<Stack><State name="v" initial={1} /><Tabs bind="v" label="t"><Tab value="a" label="A" /></Tabs></Stack>'), /Tabs needs a text State, but "v" starts as number/);
+  assert.match(issuesOf('<Stack><State name="v" initial="a" /><Tabs bind="v"><Tab value="a" label="A" /></Tabs></Stack>'), /<Tabs> needs label/);
+  assert.match(issuesOf(TABS('<Text>loose</Text><Tab value="a" label="A" />')), /<Text> can't go inside <Tabs>; it takes <Tab> only/);
+  assert.match(issuesOf(TABS('stray words<Tab value="a" label="A" />')), /text can't go inside <Tabs>; it takes <Tab> only/);
+  assert.match(issuesOf('<Stack><Tab value="a" label="A"><Text>x</Text></Tab></Stack>'), /<Tab> only works inside <Tabs>/);
+  assert.match(issuesOf(TABS("")), /Tabs needs at least one <Tab>/);
+  const many = (count: number) => Array.from({ length: count }, (_, index) => `<Tab value="t${index}" label="T${index}" />`).join("");
+  assert.equal(UI_BLOCK_LIMITS.maxTabs, 12);
+  assert.equal(issuesOf(TABS(many(12), "t0")), "");
+  assert.match(issuesOf(TABS(many(13), "t0")), /Tabs holds at most 12 tabs/);
+  assert.match(issuesOf(TABS('<Tab value="a" label="A" /><Tab value="a" label="Again" />')), /tab values must be unique \("a" repeats\)/);
+  assert.match(issuesOf(TABS('<Tab value="a" label="A" />', "z")), /bind="v" starts as "z", which isn't one of the tab values/);
+  assert.match(issuesOf('<Stack><State name="v" initial="a" /><State name="w" initial="a" /><Tabs bind="v" label="t"><Tab value={w} label="A" /></Tabs></Stack>'), /value must be fixed text in quotes/);
+  assert.match(issuesOf(TABS('<Tab value="a" />')), /<Tab> needs label/);
+});
+
+test("tabs judge their children only once the tag closes while streaming", () => {
+  const open = buildUiBlock('<Stack><State name="v" initial="b" /><Tabs bind="v" label="t"><Tab value="a" label="A"><Text>x</Text></Tab>', { streaming: true });
+  assert.deepEqual(errors(open), []);
+  const closed = buildUiBlock('<Stack><State name="v" initial="b" /><Tabs bind="v" label="t"><Tab value="a" label="A"><Text>x</Text></Tab></Tabs></Stack>', { streaming: true });
+  assert.match(errors(closed)[0]?.issues.join(" ") ?? "", /starts as "b"/);
+});
+
+test("text input binds a text State with a bounded length and no form authority", () => {
+  const input = (attrs: string, initial = "hi") => `<Stack><State name="s" initial="${initial}" /><TextInput bind="s" label="Name"${attrs} /></Stack>`;
+  assert.equal(UI_BLOCK_LIMITS.maxTextInputLength, 2048);
+  assert.equal(issuesOf(input(' placeholder="Your name" description="Shown on the card" maxLength={40} disabled')), "");
+  assert.match(issuesOf('<Stack><State name="s" initial={2} /><TextInput bind="s" label="Name" /></Stack>'), /TextInput needs a text State, but "s" starts as number/);
+  assert.match(issuesOf('<Stack><State name="s" initial="" /><TextInput bind="s" /></Stack>'), /<TextInput> needs label/);
+  for (const max of ["{0}", "{2049}", "{1.5}"]) {
+    assert.match(issuesOf(input(` maxLength=${max}`)), /maxLength must be a whole number from 1 to 2048/, max);
+  }
+  assert.match(issuesOf('<Stack><State name="n" initial={4} /><State name="s" initial="" /><TextInput bind="s" label="Name" maxLength={n} /></Stack>'), /maxLength must be a fixed number/);
+  assert.match(issuesOf(input(" maxLength={3}", "toolong")), /bind="s" starts longer than 3 characters/);
+  assert.match(issuesOf(input("", "x".repeat(2049))), /bind="s" starts longer than 2048 characters/);
+  for (const attr of ['form="f"', 'name="n"', 'action="/send"', 'type="password"', 'prefill="x"', 'submit="yes"', "onInput={1}", "onChange={1}"]) {
+    assert.ok(issuesOf(input(` ${attr}`)), attr);
+  }
+  assert.match(issuesOf('<Stack><State name="s" initial="" /><TextInput bind="s" label="Name">text</TextInput></Stack>'), /<TextInput> doesn't take children/);
 });
 
 test("text admits only a closed inline grammar of Bold and Code", () => {
