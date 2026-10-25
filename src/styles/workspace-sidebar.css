@@ -54,7 +54,7 @@
   margin: 0 var(--space-2) var(--space-1);
   padding: 0;
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: var(--bg-subtle);
   color: var(--text-primary);
   transition: background var(--duration-fast) var(--ease-standard),
@@ -127,7 +127,9 @@
   line-height: 1.35;
   color: var(--text-primary);
 }
-.workspace-sidebar.cnav .cnav__thread-context { justify-content: flex-start; color: var(--text-muted); }
+/* The context line is tall enough for the 32px row actions revealed over its
+   trailing edge, so they never cover the title. */
+.workspace-sidebar.cnav .cnav__thread-context { justify-content: flex-start; min-height: var(--space-6); color: var(--text-muted); }
 .workspace-sidebar.cnav .cnav__thread-branch { flex: 0 1 auto; }
 .workspace-sidebar.cnav .cnav__thread-pr-number { flex: none; font-weight: 500; }
 .workspace-sidebar.cnav .cnav__thread-context-end { margin-left: auto; gap: var(--space-2); }
@@ -146,21 +148,18 @@
 .workspace-sidebar.cnav .cnav__runtime-state { color: var(--text-muted); }
 .workspace-sidebar.cnav .cnav__runtime-state[data-status="failed"] { color: var(--color-danger); }
 .workspace-sidebar.cnav .cnav__thread.is-archived .cnav__thread-title { color: var(--text-muted); }
-/* Actions take the head line's trailing edge (where the time sits) on hover,
-   so the title and context never reflow. They keep an opaque backing and stay
-   reachable by keyboard and touch. */
+/* Actions take the context line's trailing edge on hover, below the title,
+   so nothing reflows and the time stays readable. They keep an opaque backing
+   and stay reachable by keyboard and touch. */
 .workspace-sidebar.cnav .cnav__thread:hover .cnav__thread-main,
 .workspace-sidebar.cnav .cnav__thread:has(.cnav__row-actions:focus-within) .cnav__thread-main { padding-right: var(--space-3); }
+.workspace-sidebar.cnav .cnav__thread:hover .cnav__time { display: inline; }
 .workspace-sidebar.cnav .cnav__row-actions {
-  top: var(--space-1);
-  bottom: auto;
+  top: auto;
+  bottom: 0;
   right: var(--space-1);
   border-radius: var(--radius-control);
   background: var(--bg-hover);
-}
-.workspace-sidebar.cnav .cnav__thread .cnav__icon-btn {
-  width: var(--space-6);
-  height: var(--space-6);
 }
 @container cnav (max-width: 212px) {
   .workspace-sidebar.cnav .cnav__thread-avatar { display: none; }
