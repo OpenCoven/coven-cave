@@ -154,11 +154,15 @@ export function NeedsYouPopover({
     <>
       {/* ONE trigger in every state, never a branch.
        *
-       * The bell stays mounted at zero — it is how you reach the empty state
+       * The trigger stays mounted at zero — it is how you reach the empty state
        * and the ⇧⌘A binding, and unlike the retired running-activity control
-       * there is nothing here to hide: a quiet bell IS the zero reading. What
-       * is absent at zero is the BADGE, which is the part that only means
+       * there is nothing here to hide: a quiet trigger IS the zero reading.
+       * What is absent at zero is the BADGE, which is the part that only means
        * something when it is rare.
+       *
+       * Its glyph is the raised hand the app already uses for "waiting on
+       * you", not a bell: the notification bell sits beside it, and two
+       * identical bells could not be told apart (#6243).
        *
        * Rendering two different buttons for the two cases would remount this
        * element on open, and `anchorRef` is what the popover positions
@@ -179,7 +183,7 @@ export function NeedsYouPopover({
         }
         title={platformizeHint(count > 0 ? `Needs you, ${count} · ⇧⌘A` : "Needs you · ⇧⌘A", keys)}
       >
-        <Icon name="ph:bell" width={22} height={22} aria-hidden />
+        <Icon name="ph:hand-palm" width={22} height={22} aria-hidden />
         {count > 0 ? (
           <span className="menu-bar__badge needs-you-trigger__badge" aria-hidden>
             {badgeText(count)}

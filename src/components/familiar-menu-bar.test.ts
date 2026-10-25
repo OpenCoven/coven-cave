@@ -202,6 +202,18 @@ assert.match(
   /count > 0 \? \(\s*<span[^>]*className="menu-bar__badge needs-you-trigger__badge"/,
   "the badge renders only when something actually needs you",
 );
+// The notification bell sits beside this trigger, so the trigger must not be a
+// second bell (#6243). The raised hand is the app's "waiting on you" glyph.
+assert.match(
+  needsYouPopover,
+  /<Icon name="ph:hand-palm" width=\{22\} height=\{22\} aria-hidden \/>/,
+  "the Needs-you trigger uses the raised hand",
+);
+assert.doesNotMatch(
+  needsYouPopover,
+  /name="ph:bell/,
+  "the Needs-you trigger never renders a bell, which belongs to notifications",
+);
 assert.doesNotMatch(
   needsYouPopover,
   /glass-overlay/,
