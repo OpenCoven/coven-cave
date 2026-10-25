@@ -129,6 +129,13 @@ The managed worktree creator and lifecycle patrol were removed with Beads
 (#5566). Do not manufacture `metadata.coven.worktree` records. An `uncertain`
 classification in older patrol output is not permission to delete a worktree.
 
+**Throwaway run worktrees** need no issue record. That covers a detached
+worktree created from `origin/main` only to build, run or capture the app,
+such as the `run-cave-app` skill's `.worktrees/run-<unique>`. It must never be
+committed to, it must hold no work anyone needs, and the same run must remove
+it. It still counts toward the budget while it exists, and it grants no
+authority over any other unit.
+
 `pnpm wt:status` is local evidence, not an ownership or deletion receipt.
 A paused merge/rebase can look like ordinary dirtiness. Preserve every dirty
 path, other owners' work, foreign locks, and uncertain units.

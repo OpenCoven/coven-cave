@@ -191,10 +191,12 @@ guard in `.claude/settings.json`) and — unlike the claim guard — it **blocks
   open offline.
 
 Deliberate destruction: prefix the command with `WT_GUARD_BYPASS=1 ` — the
-guard only ensures it can't happen *by accident*. The corollary discipline for
-sessions: **push your branch to origin after every commit.** The remote is the
-only store a local actor can't destroy, and an unpushed commit is both bait
-for premature merges and the only recoverable artifact afterward.
+guard only ensures it can't happen *by accident*. The remote is the only store
+a local actor can't destroy, so unpushed commits are the work most at risk.
+`scripts/worktree-retention-push.mjs` (§6) now pushes them automatically, as
+the branch itself or as a `retention/<slug>-<sha>` tag. That hook doesn't grant
+push authority: whether a session may push otherwise is set by `AGENTS.md` and
+the current request.
 
 Known hole: the guard only covers actors that run through Claude Code hooks.
 The 2026-07-03 actor left no session transcript (likely a familiar/automation
