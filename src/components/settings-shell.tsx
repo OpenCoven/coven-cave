@@ -241,11 +241,15 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
         >
           {isMobile && !pickerView ? "Settings" : "Back"}
         </Button>
-        <div className="min-w-0">
-          <span className="surface-compact-title block truncate">
-            {isMobile && !pickerView ? (activeSection?.label ?? "CovenCave control room") : "CovenCave control room"}
-          </span>
-        </div>
+        {/* The mobile picker is already titled "Settings" by the app top bar,
+            so the band keeps only Back there (#6243). */}
+        {showPicker ? null : (
+          <div className="min-w-0">
+            <span className="surface-compact-title block truncate">
+              {isMobile && !pickerView ? (activeSection?.label ?? "CovenCave control room") : "CovenCave control room"}
+            </span>
+          </div>
+        )}
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
