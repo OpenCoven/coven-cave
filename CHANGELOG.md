@@ -7,6 +7,101 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.15] - 2026-10-24
+
+> Codex runs on local models, and Windows setup and startup recover on their own.
+
+Patch release on top of v0.5.14. Headline: a Codex chat can run on a local
+Ollama or LM Studio model (#6049). As in v0.5.14, **the Windows MSI is not
+Authenticode-signed in this cut**. Its checksum and updater signature are
+separate from Windows code signing.
+
+### Added
+- **Local models for Codex** (#6088, #6092, #6106, #6143). Run a Codex chat on
+  a local Ollama or LM Studio model, and configure local model servers in
+  Settings. LM Studio's LM Link models no longer pass as local, and the docs
+  explain how Full access follows Codex's `sandbox_mode`.
+- **Automations oversight** (#6048, #6055, #6077, #6081). Automations show a
+  canonical lifecycle, a schedule preview, and occurrence, run and attempt
+  views, with each cron's current occurrence on the overview rows. An edit that
+  meets a newer revision shows the conflict for review before it re-applies.
+- **Update release notes** (#6155). The updater shows what changed, and its
+  recovery links open in the system browser.
+- **Windows sidecar recovery** (#6158). When the local runtime can't start, the
+  shell shows the recovery banner with a native Retry.
+
+### Changed
+- **Chat layout** (#6204, #6109, #6053). Chat headers stay within three rows,
+  the sidechat header is just the title and overflow menu, and the chat sidebar
+  reads more clearly while its rows keep their interactions.
+- **Run details** (#6041, #6043, #6046). One Model row and plain-language
+  activity labels. iOS matches the web's rows and folds Run details into a
+  collapsed disclosure.
+- **Tool activity and reasoning** (#6050, #6056, #6176, #6185, #6141). Tool
+  lifecycle states are preserved and milestones are announced. Rejected and
+  cancelled calls no longer read as running or as a clean run. Withheld
+  reasoning shows without an invented summary length, and a local refusal no
+  longer gains a "detail withheld" line.
+- **Native chat UI** (#6073, #6175). Token-bound `coven:ui` blocks render
+  natively with their state kept through settlement, with readable fallback
+  text.
+- **Windows windows** (#6167). The main window opens centred and clamped to the
+  usable monitor, the title bar follows the app theme, Quick Chat opens near the
+  tray, and the tray icon stays legible.
+- **Windows startup and updates** (#6159, #6183, #6181). Startup failures show a
+  dialog and keep their diagnostics, Cave relaunches after a declined or failed
+  update install, and the current and previous runtime generations are kept
+  with process leases.
+- **Local setup** (#6165, #6157, #6171, #6168, #6117). Setup uses the
+  lightweight reviewed Coven CLI, tells an unverified install from an old one,
+  recovers from a transient Node verification failure, reconciles daemon health
+  when it finishes, and guides daemon failures into repeatable recovery.
+- **Research** (#6145, #6151, #6202, #6212). Research styles load only with the
+  enabled room, optional runtime failures are actionable, and automation
+  consumers use typed Coven commands (Research host contract v2).
+- **Settings** opens with the left siderail collapsed (#6084).
+
+### Fixed
+- **Shell:** widening past the mobile breakpoint with the right Chat panel open no
+  longer crashes the shell (#6222).
+- **iOS:** the transcript lands on the latest reply instead of scrolling back
+  up (#6214), and trace titles stay off Live Activities (#6080).
+- **Drafts and caches:** prompt enhancement keeps your draft when it fails
+  (#6203). Revoked chat caches are invalidated and delayed updates are fenced
+  (#6190), and cached chats stay quiet during refresh failures (#6028).
+- **Projects:** a project registered through an alias keeps its identity when a
+  chat resumes (#6219), and file mentions resolve against the authorized
+  runtime directory (#6133).
+- **Data preservation:** unreadable or newer backup settings are preserved, with
+  recovery guidance in Settings (#6174). Inbox data survives invalid or
+  unreadable storage, and reminder work stays bounded during storage stalls
+  (#6154, #6162). Memories keeps drafts, its graph controls stay reachable,
+  and traversal recovers (#6146, #6134).
+- **Errors:** access-group load failures show an error instead of empty data
+  (#6161).
+- **GitHub:** the Board inspector no longer shows duplicate attachments (#6131).
+  The watcher stops polling after stalled reads and when subscriptions change
+  (#6132, #6136), and daemon status polling resumes after stalled reads
+  (#6123).
+- **Branding:** Coven skills use OpenCoven branding in the Marketplace (#6030).
+
+### Security
+- npm and Rust dependency alerts are resolved (#6140). A release bundle whose
+  Next is below the #5339 floor is refused, and rollback never names a target
+  below it (#6051, #6079).
+
+### Under the hood
+- **macOS builds:** Next's TypeScript pass now runs before compiling (#6217).
+  On the macos-15 runner it fell from 19.3 min to about 1.2 min.
+- **Build traces:** traces no longer walk `node_modules`, the checkout or
+  `.worktrees`, and CI gates that (#6085, #6091, #6097, #6100, #6102).
+  Deterministic build-gate failures are no longer retried (#6089).
+- **E2E:** tests run inside the Playwright image (#6192) against production
+  fixtures (#6115).
+- **Runtime tests:** forged decisions and stale or replayed approvals are pinned
+  as never runtime authority (#6180, #6184), and the 10,000-event stream budget
+  is enforced (#6138).
+
 ## [0.5.14] - 2026-10-15
 
 > Discord presence recovers on its own, and Chat fits narrow windows.
