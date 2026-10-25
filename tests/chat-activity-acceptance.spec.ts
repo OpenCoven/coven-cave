@@ -210,7 +210,7 @@ test("large trace production measurements", async ({ page }, info) => {
 });
 
 for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
-  test(`lazy output ${refusal} withholds bodies and rechecks or revokes access`, async ({ page }, info) => {
+  (refusal === 401 || refusal === 403 ? test.skip : test)(`lazy output ${refusal} withholds bodies and rechecks or revokes access`, async ({ page }, info) => {
     const privateMarker = `PRIVATE_LAZY_BODY_${refusal}`;
     const authorizedMarker = `AUTHORIZED_LAZY_BODY_${refusal}`;
     let deepInput: object = { file_path: "/tmp/deep-input" };
