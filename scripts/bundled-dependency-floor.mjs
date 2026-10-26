@@ -21,14 +21,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * The patched minimums recorded on #5339. Raising a floor is a reviewed
- * security decision; lowering one reopens the incident.
+ * The patched minimums recorded on #5339 and raised since (#6264). Raising a
+ * floor is a reviewed security decision; lowering one reopens its incident.
  */
 export const BUNDLED_DEPENDENCY_FLOORS = Object.freeze([
   Object.freeze({
     name: "next",
-    minimum: "16.3.3",
-    reason: "GHSA-p293-qw3h-jr36 and GHSA-2xp9-vwfh-vxw4, #5339",
+    minimum: "16.4.1",
+    reason: "GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr and GHSA-p3m5-59mp-jv5r, #6264",
   }),
   Object.freeze({
     name: "sharp",

@@ -26,6 +26,19 @@ const expectedBoundaries = new Map([
     ['path.join(/* turbopackIgnore: true */ caveHome(), "config.json")', 1],
     ['path.join(/* turbopackIgnore: true */ caveHome(), "state.json")', 1],
   ]],
+  // Next 16.4 carried these three whole-project globs into the instrumentation
+  // trace, failing the #6082 leak guard with 6,226 checkout files (#6264).
+  ["../src/lib/server/adapter-manifest-scaffold.ts", [
+    ["path.join(/* turbopackIgnore: true */ adaptersDir, scaffold.filename)", 1],
+    ["readFile(/* turbopackIgnore: true */ manifestPath, \"utf8\")", 1],
+  ]],
+  ["../src/lib/chat-runtime-scope.ts", [
+    ["path.resolve(/* turbopackIgnore: true */ normalizePath(options.homeDir ?? homedir()))", 1],
+    ["realpath(/* turbopackIgnore: true */ homePath)", 1],
+  ]],
+  ["../src/lib/server/research-resource-store.ts", [
+    ["/* turbopackIgnore: true */ options.root ?? path.join(/* turbopackIgnore: true */ caveHome(), \"research-resources\")", 1],
+  ]],
   ["../src/lib/mobile-handoff.ts", [
     ["spawn(/* turbopackIgnore: true */ bin, args", 1],
   ]],

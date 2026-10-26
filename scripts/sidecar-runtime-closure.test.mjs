@@ -333,7 +333,7 @@ try {
   await writeFile(bundledNextManifest, `${JSON.stringify({ name: "next", version: "16.3.1" })}\n`, "utf8");
   await assert.rejects(
     verifySidecarRuntime(destination),
-    /bundled next 16\.3\.1 is below the patched minimum 16\.3\.3/,
+    /bundled next 16\.3\.1 is below the patched minimum 16\.4\.1/,
     "a release bundle with pre-patch Next must fail verification",
   );
   await writeFile(bundledNextManifest, patchedNextManifest, "utf8");
