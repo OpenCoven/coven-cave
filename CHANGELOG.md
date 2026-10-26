@@ -7,6 +7,43 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.18] - 2026-10-26
+
+> Security updates for Next.js and DOMPurify, and local models checked on every launch.
+
+Patch release on top of v0.5.17. As in v0.5.17, **the Windows MSI is not
+Authenticode-signed in this cut**. Its checksum and updater signature are
+separate from Windows code signing.
+
+### Security
+- **Next.js 16.4.3 and DOMPurify 3.4.17** (#6267). v0.5.17 bundled Next.js
+  16.3.8 and DOMPurify 3.4.16, which have critical advisories. Cave does not
+  enable image optimization, `use cache` or Server Actions, the features the
+  Next.js advisories target, but this release removes the affected versions.
+  A release bundle below Next.js 16.4.1 is now refused, and v0.5.17 is no
+  longer offered as a rollback target (#6264).
+
+### Changed
+- **Local models are checked on every launch** (#6263). Board, workflow, flow,
+  rewrite, Research topic discovery and offline replay now run the same local
+  server, model and tool checks as Chat, with the familiar's saved model and
+  address. Ollama cloud models are marked Cloud in Settings and are never
+  offered or launched as local models.
+- **Coven history** can export the page you are reading as a bounded,
+  redacted metadata file for diagnostics (#6255).
+
+### Fixed
+- **VoiceOver** names an enlarged chat image by its alt text, or "Enlarged
+  image" when it has none (#6262).
+
+### Under the hood
+- **Releases:** one job creates the GitHub release before the build legs
+  upload, so a tag can no longer get two releases (#6254).
+- **Tests:** a picked @ file is proven to reach the turn through a real Cave
+  (#6253), and session-list fixtures stay outside the Git checkout (#6256).
+- **Docs:** plan documents point at the issues and outcomes from the plans
+  audit (#6260).
+
 ## [0.5.17] - 2026-10-25
 
 > Pick project files with @ on iOS, and tell Needs you from notifications at a glance.
