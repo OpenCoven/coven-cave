@@ -44,6 +44,8 @@ import { Icon, type IconName } from "@/lib/icon";
 import {
   UI_BLOCK_CATALOG,
   UI_BLOCK_LIMITS,
+  UI_CALLOUT_LABELS,
+  UI_TREND_WORDS,
   buildUiBlock,
   isUiComponentType,
   sliceUiBlocks,
@@ -51,10 +53,12 @@ import {
   formatUiValue,
   resolveUiProps,
   uiBlockStateValues,
+  uiTrendDirection,
   type UiBlockDocument,
   type UiComponentNode,
   type UiNode,
   type UiPrimitive,
+  type UiTrendDirection,
   type UiValue,
 } from "@/lib/ui-blocks";
 import { ProgressiveMarkdownBlock, type MessageBubbleSegment } from "./message-bubble";
@@ -135,10 +139,8 @@ function donutTones(slices: ReadonlyArray<{ tone?: string }>): string[] {
   });
 }
 
-type TrendDirection = "up" | "down" | "flat";
-const TREND_ICON: Record<TrendDirection, IconName> = { up: "ph:trend-up", down: "ph:trend-down", flat: "ph:minus" };
-const TREND_SIGN: Record<TrendDirection, string> = { up: "+", down: "\u2212", flat: "" };
-const TREND_WORD: Record<TrendDirection, string> = { up: "increase", down: "decrease", flat: "unchanged" };
+const TREND_ICON: Record<UiTrendDirection, IconName> = { up: "ph:trend-up", down: "ph:trend-down", flat: "ph:minus" };
+const TREND_SIGN: Record<UiTrendDirection, string> = { up: "+", down: "\u2212", flat: "" };
 
 const TONE_FILL: Record<string, string> = {
   neutral: "var(--text-muted)",
@@ -159,14 +161,6 @@ const CALLOUT_ICON: Record<string, IconName> = {
   warning: "ph:warning",
   danger: "ph:warning-circle",
   info: "ph:info",
-};
-
-/** The same tone in words for assistive tech; plain tones need none. */
-const CALLOUT_LABEL: Record<string, string> = {
-  info: "Note",
-  success: "Success",
-  warning: "Warning",
-  danger: "Important",
 };
 
 function text(value: UiValue | undefined): string {
@@ -384,7 +378,7 @@ function UiComponentView({ node, ctx }: { node: UiComponentNode; ctx: RenderCont
     case "Callout": {
       const tone = text(props.tone);
       const title = text(props.title);
-      const label = CALLOUT_LABEL[tone];
+      const label = UI_CALLOUT_LABELS[tone];
       const headed = Boolean(title || label);
       return (
         <div
@@ -410,7 +404,7 @@ function UiComponentView({ node, ctx }: { node: UiComponentNode; ctx: RenderCont
     }
     case "Stat": {
       const trend = typeof props.trend === "number" ? props.trend : null;
-      const direction: TrendDirection | null = trend === null ? null : trend > 0 ? "up" : trend < 0 ? "down" : "flat";
+      const direction = trend === null ? null : uiTrendDirection(trend);
       return (
         <div className="chat-ui-stat" data-tone={text(props.tone)}>
           <span className="chat-ui-stat__label">{text(props.label)}</span>
@@ -420,7 +414,7 @@ function UiComponentView({ node, ctx }: { node: UiComponentNode; ctx: RenderCont
             <span className="chat-ui-stat__trend" data-tone={text(props.trendTone)} data-direction={direction}>
               <Icon name={TREND_ICON[direction]} width={12} aria-hidden />
               {`${TREND_SIGN[direction]}${formatUiValue(Math.abs(trend), text(props.trendFormat))}`}
-              <span className="sr-only">{` ${TREND_WORD[direction]}`}</span>
+              <span className="sr-only">{` ${UI_TREND_WORDS[direction]}`}</span>
             </span>
           ) : null}
         </div>

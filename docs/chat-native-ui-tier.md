@@ -1,6 +1,6 @@
 # Native UI tier for chat (`coven:ui`)
 
-Status: the parser and the Main Chat renderer are on `main`, merged in #6073 (2026-10-24). The catalog is growing in #6062. Familiar prompt changes are a separate follow-up (#6063), and no familiar has been taught the syntax yet. Readable fallback on other surfaces is #6060.
+Status: the parser and the Main Chat renderer are on `main`, merged in #6073 (2026-10-24). The catalog is growing in #6062. Familiar prompt changes are a separate follow-up (#6063), and no familiar has been taught the syntax yet. Readable fallback on other surfaces is #6060: Quick Chat has it; the expanded reader, Main Chat copy and iOS are still in progress there.
 
 Cave chat had two UI tiers. Fixed `coven:` marker cards are native and safe but have no layout or state. Sandboxed HTML/React artifacts are powerful but ignore Cave's tokens and look foreign. The native UI tier sits between them: a familiar composes a small typed catalog of components, and Cave validates the markup and draws it with its own components and design tokens, progressively, while the reply streams.
 
@@ -116,8 +116,9 @@ Caps: 20,000 characters per block, 400 components, 24 levels of nesting, 100 tab
 
 ## Where it is wired
 
-- **Settled turns:** `splitSegmentsForUiBlocks` in `src/components/chat-ui-block.tsx` runs innermost in the `richProseSegments` chain, so no other splitter sees the markup. `sliceUiBlocks` honours an opener only at the start of a fenced range (`fencedRanges`), so a `coven:ui` example inside another fence, a list item, a quote, or indented code stays literal.
-- **Streaming turns:** `StreamingMarkdownBlocks` (`src/components/streaming-markdown-blocks.tsx`) renders a fence block through `ChatUiBlock`, but only inside a `UiBlockHostContext` provider. ChatView is the only provider, so Quick Chat, which reuses the same streaming component, is unchanged. Streaming block ids end in the block's growing end offset, so the renderer is keyed by the block's start (`stableUiBlockKey`) and stays mounted, with its State, from the opener to the closing fence.
+- **Settled turns:** `splitSegmentsForUiBlocks` in `src/components/chat-ui-block.tsx` runs innermost in the `richProseSegments` chain, so no other splitter sees the markup. `sliceUiBlocks` honours an opener only at the start of a fenced range (`fencedRanges`), and never indented under an open list item (CommonMark continuation, Val's decision on #6060), so a `coven:ui` example inside another fence, a list item, a quote, or indented code stays literal.
+- **Streaming turns:** `StreamingMarkdownBlocks` (`src/components/streaming-markdown-blocks.tsx`) renders a fence block through `ChatUiBlock`, but only inside a `UiBlockHostContext` provider, and only when `isLiveUiFenceAfter` agrees with the settled rule for the text before the block. ChatView is the only provider, so Quick Chat, which reuses the same streaming component, gets no native blocks. Streaming block ids end in the block's growing end offset, so the renderer is keyed by the block's start (`stableUiBlockKey`) and stays mounted, with its State, from the opener to the closing fence.
+- **Readable fallback (#6060):** surfaces without the native tier show `src/lib/ui-block-readable.ts`'s projection instead of raw markup: one plain line per item, evaluated at each State's initial value, with buttons as `[label]` and nothing that runs, sends, prefills or links. It reads only the parser's output, so it never disagrees with Main Chat about which fences are live. `src/lib/ui-block-fallback-fixtures.ts` holds the rules and the shared cases every surface tests. Quick Chat renders settled blocks through `UiBlockReadable` as plain text (never markdown) and copies the same lines; while a reply streams, its blocks are held back, like GitHub cards.
 - **Durability:** blocks render from the saved chat text, like HTML artifacts. Nothing extra is persisted.
 
 ## Familiar prompt rollout
@@ -127,4 +128,4 @@ require Val's decision on #5947 and a separate change.
 
 ## Not in v0
 
-Worker runtime, server-side compile, JSON-Patch transport, an AppBlock equivalent, iOS rendering, Quick Chat rendering, and any change to canvas artifacts. On those surfaces a `coven:ui` fence renders as an ordinary code block.
+Worker runtime, server-side compile, JSON-Patch transport, an AppBlock equivalent, interactive iOS or Quick Chat rendering, and any change to canvas artifacts. Quick Chat shows the readable fallback; until #6060's remaining surfaces land, the expanded reader and iOS still show a `coven:ui` fence as an ordinary code block.

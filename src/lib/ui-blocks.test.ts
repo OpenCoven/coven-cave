@@ -8,6 +8,7 @@ import {
   buildUiBlock,
   evaluateUiExpression,
   formatUiValue,
+  isLiveUiFenceAfter,
   isPartialUiFenceOpener,
   parseUiExpression,
   resolveUiProps,
@@ -188,6 +189,44 @@ test("sliceUiBlocks leaves a coven:ui example inside another fence as literal te
   ]) {
     assert.deepEqual(sliceUiBlocks(text), [{ kind: "text", text }], text);
   }
+});
+
+test("sliceUiBlocks leaves an example indented under a list item as literal text (#6060)", () => {
+  const under = (indent: string) =>
+    ["```coven:ui", "<Badge>Example</Badge>", "```"].map((line) => indent + line).join("\n");
+  for (const text of [
+    `- Use this:\n\n${under("  ")}`,
+    `- Use this:\n${under("  ")}`,
+    `1. Use this:\n\n${under("   ")}`,
+    `- Outer\n  - Inner\n\n${under("  ")}`,
+    `- Item\n\n  More about it.\n\n${under("  ")}`,
+    `- Item\nlazy continuation\n${under("  ")}`,
+  ]) {
+    assert.deepEqual(sliceUiBlocks(text), [{ kind: "text", text }], text);
+  }
+});
+
+test("sliceUiBlocks lifts a fence once the list has ended", () => {
+  const indented = (indent: string) => uiBlockFence("<Badge>Live</Badge>").split("\n").map((line) => indent + line).join("\n");
+  for (const text of [
+    `- Item\n\n${indented("")}`,
+    `- Item\n${indented("")}`,
+    `1. Item\n\n${indented("  ")}`,
+    `- Item\n\nParagraph\n\n${indented("  ")}`,
+    `- - -\n\n${indented("  ")}`,
+  ]) {
+    assert.equal(sliceUiBlocks(text).at(-1)?.kind, "ui", text);
+  }
+});
+
+test("isLiveUiFenceAfter applies the sliceUiBlocks rule to a streaming fence block", () => {
+  assert.equal(isLiveUiFenceAfter("", "```coven:ui"), true);
+  assert.equal(isLiveUiFenceAfter("Intro\n\n", "~~~coven:ui"), true);
+  assert.equal(isLiveUiFenceAfter("- Use this:\n\n", "```coven:ui"), true);
+  assert.equal(isLiveUiFenceAfter("- Use this:\n\n", "  ```coven:ui"), false);
+  assert.equal(isLiveUiFenceAfter("- Use this:\n\n", "  ```coven:u"), false);
+  assert.equal(isLiveUiFenceAfter("````markdown\n", "```coven:ui"), false);
+  assert.equal(isLiveUiFenceAfter(`${uiBlockFence("<Badge>A</Badge>")}\n\n`, "```coven:ui"), true);
 });
 
 test("sliceUiBlocks needs the exact info string", () => {

@@ -229,6 +229,20 @@ describe("ChatUiBlock", () => {
     expect(ranges(renderer).map((range) => range.props.value)).toEqual([8, 8]);
   });
 
+  it("keeps an example indented under a list item literal while it streams (#6060)", () => {
+    const turn = "- Use this:\n\n  ```coven:ui\n  <Badge>Example</Badge>\n  ```\n\nDone.";
+    for (const length of [turn.indexOf("<Badge"), turn.indexOf("</Badge>"), turn.length]) {
+      const partition = partitionStreamingMarkdown(turn.slice(0, length), { turnId: "t", settled: false });
+      const renderer = render(
+        <UiBlockHostContext.Provider value={HOST}>
+          <StreamingMarkdownBlocks {...partition} live />
+        </UiBlockHostContext.Provider>,
+      );
+      expect(renderer.root.findAll((node) => node.props["data-ui-block"] !== undefined)).toHaveLength(0);
+      expect(textOf(renderer.root)).toContain("```coven:ui");
+    }
+  });
+
   it("hides a half-written fence opener instead of flashing it", () => {
     const partition = partitionStreamingMarkdown("Intro.\n\n```coven:u", { turnId: "t", settled: false });
     const renderer = render(

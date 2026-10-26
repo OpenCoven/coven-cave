@@ -1449,6 +1449,7 @@ export const SUITES = {
     "src/components/quick-chat-controls.test.ts",
     "src/lib/quick-chat-message-format.test.ts",
     "src/lib/ui-block-fallback-fixtures.test.ts",
+    "src/lib/ui-block-readable.test.ts",
     "src/lib/quick-chat-thread-state.test.ts",
     "src/components/familiar-quick-switch.test.ts",
     "src/lib/salem/happy-paths.test.ts",
