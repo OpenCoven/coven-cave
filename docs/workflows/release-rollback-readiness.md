@@ -31,7 +31,7 @@ population, but not the only one:
 
 | Still happens when the gate fails | Blocked when the gate fails |
 | --- | --- |
-| Successful `build` legs create the GitHub Release and upload their installers | `updater-manifest` publishes `latest.json` |
+| `release-object` creates the GitHub Release, and successful `build` legs upload their installers | `updater-manifest` publishes `latest.json` |
 | `checksums` publishes `SHA256SUMS` when every required desktop build succeeds | in-app auto-update to the new version — and, until you act, in-app auto-update at all (see below) |
 | `homebrew` bumps the tap after `checksums` succeeds | |
 | `release-ios-build` archives and uploads to App Store Connect, so the build reaches TestFlight | |
@@ -43,9 +43,9 @@ on its own — if the new release must not reach anyone, delete its assets or
 unpublish it by hand as well, and note that the iOS build has already left for
 App Store Connect and is withdrawn there, not here.
 
-⚠️ **It also means auto-update is DOWN, not held.** `build` creates the release
-published and not a prerelease, so GitHub makes it `latest` the moment it
-exists — and the updater endpoint is the alias
+⚠️ **It also means auto-update is DOWN, not held.** `release-object` creates
+the release published but not latest, and the first `build` leg to upload makes
+it `latest` (#6248) — and the updater endpoint is the alias
 `releases/latest/download/latest.json` (`src-tauri/tauri.conf.json`). With
 `updater-manifest` withheld there is no `latest.json` on that release, so every
 install's update check 404s rather than quietly staying where it is. That is
@@ -279,4 +279,5 @@ so neither step below is a remedy. Ship a patch-forward version instead.
    rather than waiting for an auto-update that is not coming.
 
 3. **Leave the bad release published**, just no longer latest, so its assets
-   stay available for post-mortem.
+   stay available for post-mortem. Rerunning its build legs does not make it
+   latest again: a leg promotes the release only while it has no assets.

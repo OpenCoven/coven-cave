@@ -259,6 +259,7 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
   );
   for (const publishingJob of [
     "release-ios-build",
+    "release-object",
     "build",
     "checksums",
     "updater-manifest",

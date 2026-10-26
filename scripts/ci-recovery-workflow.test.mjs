@@ -404,6 +404,7 @@ assert.deepEqual(
     "release-web-validation",
     "release-platform-validation",
     "release-windows-native",
+    "release-object",
   ],
   "artifact builds wait for release validation without depending on TestFlight publication",
 );
