@@ -12,7 +12,9 @@ import Foundation
 /// - Once whitespace follows a recognised native command that declares an
 ///   `argCompletion`, the draft is an *argument* lookup; the partial is the text
 ///   after the first whitespace, filtered live by the picker.
-/// - Otherwise the trailing `@token` (group chats only) is a *mention* lookup.
+/// - Otherwise the trailing `@token` is a *mention* lookup where the chat
+///   offers one: familiars in a group chat, project files in a one-to-one chat
+///   with a project (#6104).
 ///
 /// SwiftUI's `TextField` exposes no caret, so detection is trailing-token
 /// based, not caret-scoped like the web hook. That is the documented v1 limit.
@@ -21,7 +23,7 @@ enum ComposerIntent: Equatable {
     case commands(prefix: String)
     /// A native command with an argument picker, plus the partial argument.
     case argument(SlashCommand, partial: String)
-    /// Trailing `@partial` — show the familiar mention picker.
+    /// Trailing `@partial` — show the mention picker (familiars or files).
     case mention(partial: String)
     case none
 

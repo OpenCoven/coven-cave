@@ -462,8 +462,10 @@ assert.deepEqual(skipSites, ["ios: Prepare the native TCP fixture"],
 const nextConfig = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
 assert.match(nextConfig, /const skipBuildTypecheck = process\.env\.COVEN_CAVE_SKIP_BUILD_TYPECHECK === "1";/,
   "the skip is opt-in by an exact env value");
-assert.match(nextConfig, /typescript: \{ ignoreBuildErrors: skipBuildTypecheck \}/,
-  "next.config ties ignoreBuildErrors to that opt-in only");
+assert.match(nextConfig, /const typecheckedBeforeCompile =\s+process\.env\.COVEN_CAVE_TYPECHECKED_BEFORE_COMPILE === "1";/,
+  "the wrapper's already-checked marker is an exact env value (#6036)");
+assert.match(nextConfig, /ignoreBuildErrors: skipBuildTypecheck \|\| typecheckedBeforeCompile,/,
+  "next.config skips Next's pass only for that opt-in or a build whose pass already ran before compiling (#6036)");
 assert.match(nativeRunner, /await run\('native-transport', 'xcodebuild', \['test-without-building'/,
   "the fixture actually runs XCTest instead of only compiling it");
 

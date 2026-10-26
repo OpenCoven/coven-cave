@@ -52,11 +52,9 @@ assert.match(
   /const textareaClass = `\$\{fieldBaseClass\} resize-y px-2 py-2 text-\[length:var\(--text-sm\)\] leading-relaxed`/,
   "Automation detail should use one standard textarea primitive",
 );
-assert.match(
-  cronPanel,
-  /const selectClass = `\$\{fieldBaseClass\} h-8 px-2 text-\[length:var\(--text-sm\)\]`/,
-  "Automation detail should use one standard select primitive",
-);
+assert.doesNotMatch(cronPanel, /<select\b/, "Automation detail must not add a bespoke native select");
+assert.doesNotMatch(cronPanel, /<FieldLabel[^>]*>(?:Reasoning|Environment|Skill)<\/FieldLabel>/, "unsupported runtime overrides are not offered as editable controls");
+assert.match(cronPanel, /Reasoning, environment and skill overrides are unavailable/, "the detail explains why unsupported override controls are absent");
 assert.doesNotMatch(
   cronPanel,
   /className="h-8 w-full rounded-md border px-2 text-\[12px\] outline-none focus:border-white\/30"/,

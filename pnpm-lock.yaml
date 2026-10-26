@@ -1205,7 +1205,7 @@ packages:
     engines: {node: '>=22.19.0'}
 
   '@opencoven/coven-client@file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz':
-    resolution: {integrity: sha512-3d6oXmPwTI2bEaPvximmjBjvcumtnY9PTVqbfPd1pIxtCVrsjfNxMxXWTc1CyvFP/Zu9QDTfy/huJeYflwixtQ==, tarball: file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz}
+    resolution: {integrity: sha512-Ltw0+bicsuDhzk2NZUKq9lATp+fbBxt4Chkyd50RtI6QM4KBSLl1NIpIlEm/6Xz3+cX09lgsC92SYmBFD36HKg==, tarball: file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz}
     version: 0.0.1
     engines: {node: '>=24.18.0 <25'}
 

@@ -26,7 +26,9 @@ Expected lifecycle:
 3. Make the diff PR-shaped: focused scope, relevant tests, and no unrelated churn.
 4. Open a PR with the verification performed and any known follow-up work.
 5. Merge through the protected PR path after checks pass.
-6. Delete the remote branch and remove the local worktree/branch.
+6. GitHub deletes the merged head branch (`delete_branch_on_merge`). Record the
+   worktree disposition on the issue, and retire it only through
+   [branch-curator](../../.agents/skills/branch-curator/SKILL.md).
 
 Branches should not remain open as:
 
@@ -40,10 +42,11 @@ Branches should not remain open as:
 
 Before removing a stale branch or worktree, inspect it.
 
-- If the work is merged or patch-equivalent to `main`, delete the branch.
-- If it has useful unmerged commits, archive them with `git format-patch` before deleting.
-- If it has uncommitted work, preserve it with a named stash or archive patch before cleanup.
-- Prefer moving generated leftover directories to Trash over permanent deletion.
+Follow [Preserve before retirement](github-work-tracking.md#preserve-before-retirement) and
+branch-curator: exact OIDs, a head retained on a verified remote ref (a merged
+PR's `refs/pull/<#>/head`, or a pushed `archive/` or `retention/` tag; never a
+local patch or tag), clean state, and no live owner. Preserve dirty or
+uncertain units rather than archiving them locally.
 
 ## Release And TestFlight
 

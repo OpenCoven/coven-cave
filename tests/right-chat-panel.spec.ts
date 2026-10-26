@@ -226,6 +226,40 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   await expect(page.locator(".right-chat").first()).toHaveAttribute("aria-hidden", "true");
 });
 
+test("widening past the mobile breakpoint restores an open panel without a layout error", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const panelErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" && /not found for Panel right-chat/.test(message.text())) {
+      panelErrors.push(message.text());
+    }
+  });
+  page.on("pageerror", (error) => {
+    if (/not found for Panel right-chat/.test(error.message)) panelErrors.push(error.message);
+  });
+  // Registered before boot()'s seed script so the panel is remembered open.
+  await page.addInitScript(() => {
+    localStorage.setItem("cave:shell:right-chat-open", "1");
+    localStorage.setItem("cave:shell:right-chat-width", "360");
+    sessionStorage.setItem("cave:e2e:right-chat-pref-seeded", "1");
+  });
+  await page.setViewportSize({ width: 900, height: 800 });
+  await boot(page);
+  await expect(page.getByRole("dialog", { name: "Chat panel" })).toBeVisible();
+  await expect(page.locator('[data-panel="true"]#right-chat')).toHaveCount(0);
+
+  // Crossing the breakpoint mounts the desktop Panel in the same commit that
+  // restores its remembered open state, before the Group has registered it.
+  await page.setViewportSize({ width: 1400, height: 900 });
+  const outerPanel = page.locator('[data-panel="true"]#right-chat');
+  await expect(outerPanel).toBeVisible();
+  await expect(page.locator(".right-chat").first()).toHaveAttribute("aria-hidden", "false");
+  await expect
+    .poll(async () => Math.abs(((await outerPanel.boundingBox())?.width ?? 0) - 360))
+    .toBeLessThan(4);
+  expect(panelErrors).toEqual([]);
+});
+
 test("mobile uses one focus-trapped right drawer and returns focus", async ({ page }, testInfo) => {
   test.skip(!["pixel-5", "iphone-13"].includes(testInfo.project.name));
   await boot(page);

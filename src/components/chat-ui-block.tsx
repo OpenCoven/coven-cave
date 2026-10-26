@@ -33,11 +33,17 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { BarChart } from "@/components/ui/charts/bar-chart";
+import { DonutChart } from "@/components/ui/charts/donut-chart";
+import { Field } from "@/components/ui/field";
 import { StandardSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Icon } from "@/lib/icon";
+import { Sparkline } from "@/components/ui/sparkline";
+import { Tabs } from "@/components/ui/tabs";
+import { TextInput } from "@/components/ui/text-input";
+import { Icon, type IconName } from "@/lib/icon";
 import {
   UI_BLOCK_CATALOG,
+  UI_BLOCK_LIMITS,
   buildUiBlock,
   isUiComponentType,
   sliceUiBlocks,
@@ -102,6 +108,37 @@ type RenderContext = {
 };
 
 const CHART_HEIGHT = { sm: 120, md: 160, lg: 220 } as const;
+const SPARK_HEIGHT = { sm: 24, md: 32, lg: 48 } as const;
+const DONUT_SIZE = { sm: 120, md: 160, lg: 200 } as const;
+
+/** Default slice tones, distinct hue families first (info shares accent's hue in some palettes). */
+const DONUT_TONES = ["accent", "success", "warning", "danger", "muted", "info"] as const;
+
+/** Give each untoned slice the next default tone that no other slice uses yet. */
+function donutTones(slices: ReadonlyArray<{ tone?: string }>): string[] {
+  const used = new Set(slices.flatMap((slice) => (slice.tone ? [slice.tone] : [])));
+  let cursor = 0;
+  return slices.map((slice) => {
+    if (slice.tone) return slice.tone;
+    // Once every default is taken, the order simply repeats.
+    let tone: string = DONUT_TONES[cursor];
+    for (let offset = 0; offset < DONUT_TONES.length; offset += 1) {
+      const candidate = DONUT_TONES[(cursor + offset) % DONUT_TONES.length];
+      if (!used.has(candidate)) {
+        tone = candidate;
+        break;
+      }
+    }
+    used.add(tone);
+    cursor = (DONUT_TONES.indexOf(tone as (typeof DONUT_TONES)[number]) + 1) % DONUT_TONES.length;
+    return tone;
+  });
+}
+
+type TrendDirection = "up" | "down" | "flat";
+const TREND_ICON: Record<TrendDirection, IconName> = { up: "ph:trend-up", down: "ph:trend-down", flat: "ph:minus" };
+const TREND_SIGN: Record<TrendDirection, string> = { up: "+", down: "\u2212", flat: "" };
+const TREND_WORD: Record<TrendDirection, string> = { up: "increase", down: "decrease", flat: "unchanged" };
 
 const TONE_FILL: Record<string, string> = {
   neutral: "var(--text-muted)",
@@ -111,6 +148,25 @@ const TONE_FILL: Record<string, string> = {
   warning: "var(--color-warning)",
   danger: "var(--color-danger)",
   info: "var(--color-info)",
+};
+
+/** A callout's icon carries its tone without relying on colour. */
+const CALLOUT_ICON: Record<string, IconName> = {
+  neutral: "ph:note",
+  muted: "ph:note",
+  accent: "ph:lightbulb",
+  success: "ph:check-circle",
+  warning: "ph:warning",
+  danger: "ph:warning-circle",
+  info: "ph:info",
+};
+
+/** The same tone in words for assistive tech; plain tones need none. */
+const CALLOUT_LABEL: Record<string, string> = {
+  info: "Note",
+  success: "Success",
+  warning: "Warning",
+  danger: "Important",
 };
 
 function text(value: UiValue | undefined): string {
@@ -297,14 +353,215 @@ function UiComponentView({ node, ctx }: { node: UiComponentNode; ctx: RenderCont
           {node.children.length ? inline() : text(props.label)}
         </span>
       );
-    case "Stat":
+    case "Bold":
+      return <strong className="chat-ui-strong">{inline()}</strong>;
+    case "Code":
+      return <code className="chat-ui-code">{inline()}</code>;
+    case "Divider":
+      return <hr className="chat-ui-divider" data-gap={text(props.gap)} />;
+    case "Grid":
+    case "Columns":
+      return (
+        <div
+          className="chat-ui-grid"
+          data-columns={text(props.columns)}
+          data-gap={text(props.gap)}
+          data-align={text(props.align)}
+        >
+          {blocks()}
+        </div>
+      );
+    case "List": {
+      const items = props.items as UiValue[];
+      if (items.length === 0) return null;
+      const Tag = props.ordered === true ? "ol" : "ul";
+      return (
+        <Tag className="chat-ui-list" data-gap={text(props.gap)} data-tone={text(props.tone)}>
+          {items.map((item, index) => <li key={index}>{text(item)}</li>)}
+        </Tag>
+      );
+    }
+    case "Callout": {
+      const tone = text(props.tone);
+      const title = text(props.title);
+      const label = CALLOUT_LABEL[tone];
+      const headed = Boolean(title || label);
+      return (
+        <div
+          className="chat-ui-callout"
+          role="note"
+          data-tone={tone}
+          aria-labelledby={headed ? `${id}-title` : undefined}
+        >
+          <Icon name={CALLOUT_ICON[tone] ?? "ph:note"} width={16} className="chat-ui-callout__icon" aria-hidden />
+          <div className="chat-ui-callout__body">
+            {headed ? (
+              <p id={`${id}-title`} className="chat-ui-callout__title">
+                {label ? <span className="sr-only">{`${label}: `}</span> : null}
+                {title}
+              </p>
+            ) : null}
+            <div className="chat-ui-stack" data-gap={text(props.gap)} data-align="stretch">
+              {blocks()}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    case "Stat": {
+      const trend = typeof props.trend === "number" ? props.trend : null;
+      const direction: TrendDirection | null = trend === null ? null : trend > 0 ? "up" : trend < 0 ? "down" : "flat";
       return (
         <div className="chat-ui-stat" data-tone={text(props.tone)}>
           <span className="chat-ui-stat__label">{text(props.label)}</span>
           <span className="chat-ui-stat__value">{formatUiValue(props.value ?? null, text(props.format))}</span>
           {props.caption !== undefined ? <span className="chat-ui-stat__caption">{text(props.caption)}</span> : null}
+          {direction && trend !== null ? (
+            <span className="chat-ui-stat__trend" data-tone={text(props.trendTone)} data-direction={direction}>
+              <Icon name={TREND_ICON[direction]} width={12} aria-hidden />
+              {`${TREND_SIGN[direction]}${formatUiValue(Math.abs(trend), text(props.trendFormat))}`}
+              <span className="sr-only">{` ${TREND_WORD[direction]}`}</span>
+            </span>
+          ) : null}
         </div>
       );
+    }
+    case "Tabs": {
+      const bind = String(props.bind);
+      const tabs = node.children.filter((child): child is UiComponentNode => child.kind === "component" && child.type === "Tab");
+      const values = tabs.map((tab) => (tab.props.value?.kind === "static" ? String(tab.props.value.value) : ""));
+      const current = String(ctx.values[bind] ?? "");
+      const selected = values.indexOf(current);
+      if (selected < 0) {
+        return (
+          <>
+            <UiBlockErrorChip label="Tabs" issues={[`"${current}" isn't one of the tabs`]} />
+            {renderFailedChildren("Tabs", node.children, ctx, false)}
+          </>
+        );
+      }
+      // Positional ids keep model-written values (which may hold spaces) out of id references.
+      const items = tabs.map((tab, index) => {
+        const resolvedTab = resolveUiProps(tab, ctx.values);
+        return {
+          id: `t${index}`,
+          label: resolvedTab.ok ? text(resolvedTab.props.label) : values[index],
+          controlsId: `${id}-panel`,
+        };
+      });
+      return (
+        <div className="chat-ui-tabs" data-orientation={text(props.orientation)}>
+          <Tabs
+            items={items}
+            value={`t${selected}`}
+            onChange={(next) => {
+              const value = values[Number(next.slice(1))];
+              if (value !== undefined) ctx.setValue(bind, value);
+            }}
+            orientation={props.orientation === "vertical" ? "vertical" : "horizontal"}
+            size={props.size === "sm" ? "sm" : "md"}
+            ariaLabel={text(props.label)}
+            idPrefix={id}
+          />
+          <div
+            role="tabpanel"
+            id={`${id}-panel`}
+            aria-labelledby={`${id}-tab-t${selected}`}
+            tabIndex={0}
+            className="chat-ui-tabs__panel chat-ui-stack focus-ring"
+            data-gap="sm"
+            data-align="stretch"
+          >
+            {renderNodes(tabs[selected].children, ctx, false)}
+          </div>
+        </div>
+      );
+    }
+    case "Tab":
+      // Only a failed Tabs renders its tabs directly: each reads as a labelled section.
+      return (
+        <section className="chat-ui-tab-fallback" aria-label={text(props.label)}>
+          <p className="chat-ui-text chat-ui-strong">{text(props.label)}</p>
+          <div className="chat-ui-stack" data-gap="sm" data-align="stretch">
+            {blocks()}
+          </div>
+        </section>
+      );
+    case "TextInput": {
+      const bind = String(props.bind);
+      const max = typeof props.maxLength === "number" ? props.maxLength : UI_BLOCK_LIMITS.maxTextInputLength;
+      const current = ctx.values[bind];
+      // Explicit props only: model text never spreads onto the native input.
+      return (
+        <Field
+          label={text(props.label)}
+          description={props.description !== undefined ? text(props.description) : undefined}
+          className="chat-ui-input"
+        >
+          <TextInput
+            value={typeof current === "string" ? current : ""}
+            placeholder={props.placeholder !== undefined ? text(props.placeholder) : undefined}
+            maxLength={max}
+            disabled={props.disabled === true}
+            onChange={(event) => ctx.setValue(bind, event.currentTarget.value.slice(0, max))}
+          />
+        </Field>
+      );
+    }
+    case "Sparkline": {
+      const data = props.data as Array<{ label: string; value: number }>;
+      const tone = text(props.tone);
+      return (
+        <figure className="chat-ui-chart chat-ui-sparkline" data-tone={tone}>
+          <figcaption className="chat-ui-chart__label">{text(props.label)}</figcaption>
+          <Sparkline
+            points={data.map((point) => ({ label: point.label, value: point.value }))}
+            color={TONE_FILL[tone] ?? TONE_FILL.accent}
+            height={SPARK_HEIGHT[text(props.height) as keyof typeof SPARK_HEIGHT] ?? SPARK_HEIGHT.md}
+          />
+          <ul className="sr-only">
+            {data.map((point) => <li key={point.label}>{`${point.label}: ${formatUiValue(point.value)}`}</li>)}
+          </ul>
+        </figure>
+      );
+    }
+    case "Donut": {
+      const label = text(props.label);
+      const data = props.data as Array<{ label: string; value: number; tone?: string }>;
+      const tones = donutTones(data);
+      const slices = data.map((slice, index) => ({ label: slice.label, value: slice.value, tone: tones[index] }));
+      const total = slices.reduce((sum, slice) => sum + slice.value, 0);
+      const amount = (value: number) =>
+        `${formatUiValue(value)}${total > 0 ? ` (${Math.round((value / total) * 100)}%)` : ""}`;
+      const size = text(props.size) as keyof typeof DONUT_SIZE;
+      return (
+        <figure className="chat-ui-chart chat-ui-donut">
+          <figcaption className="chat-ui-chart__label">{label}</figcaption>
+          {slices.length === 0 ? (
+            <p className="chat-ui-chart__empty">No data yet</p>
+          ) : (
+            <div className="chat-ui-donut__body">
+              <div className="chat-ui-donut__chart" data-size={size}>
+                <DonutChart
+                  data={slices.map((slice) => ({ label: slice.label, value: slice.value, color: TONE_FILL[slice.tone] ?? TONE_FILL.accent }))}
+                  size={DONUT_SIZE[size] ?? DONUT_SIZE.md}
+                  ariaLabel={`${label}: ${slices.map((slice) => `${slice.label} ${amount(slice.value)}`).join(", ")}`}
+                />
+              </div>
+              <ul className="chat-ui-donut__legend" role="list">
+                {slices.map((slice) => (
+                  <li key={slice.label}>
+                    <span className="chat-ui-donut__swatch" data-tone={slice.tone} aria-hidden />
+                    <span className="chat-ui-donut__name">{slice.label}</span>
+                    <span className="chat-ui-donut__value">{amount(slice.value)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </figure>
+      );
+    }
     case "Table":
       return <UiTable columns={props.columns as UiValue[]} rows={props.rows as UiValue[][]} caption={text(props.caption)} />;
     case "Progress": {
@@ -447,6 +704,18 @@ function UiComponentView({ node, ctx }: { node: UiComponentNode; ctx: RenderCont
   }
 }
 
+/** A validated cell: a primitive, or exactly `{ kind: "badge", label, tone? }`. */
+function UiTableCell({ cell }: { cell: UiValue }) {
+  if (cell !== null && typeof cell === "object" && !Array.isArray(cell) && cell.kind === "badge") {
+    return (
+      <span className="chat-ui-badge" data-tone={typeof cell.tone === "string" ? cell.tone : "neutral"}>
+        {String(cell.label)}
+      </span>
+    );
+  }
+  return <>{text(cell)}</>;
+}
+
 function UiTable({ columns, rows, caption }: { columns: UiValue[]; rows: UiValue[][]; caption: string }) {
   return (
     <div
@@ -469,7 +738,7 @@ function UiTable({ columns, rows, caption }: { columns: UiValue[]; rows: UiValue
                 const cell = row[cellIndex] ?? null;
                 return (
                   <td key={cellIndex} data-numeric={typeof cell === "number" ? "true" : undefined}>
-                    {text(cell)}
+                    <UiTableCell cell={cell} />
                   </td>
                 );
               })}

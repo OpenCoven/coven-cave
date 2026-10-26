@@ -33,3 +33,11 @@ test("a rule Coven cannot run is refused with a reason before the daemon", async
   assert.equal(response.status, 422);
   assert.match((await response.json()).error, /on the hour/);
 });
+
+test("delete requires both the reviewed revision and caller adoption key before reaching the daemon", async () => {
+  const missingRevision = await DELETE(local("DELETE", "http://127.0.0.1:3000/api/codex-automations/nightly"), params);
+  assert.equal(missingRevision.status, 422);
+  const missingKey = await DELETE(local("DELETE", "http://127.0.0.1:3000/api/codex-automations/nightly?expectedRevision=4"), params);
+  assert.equal(missingKey.status, 422);
+  assert.match((await missingKey.json()).error, /adoption key/);
+});

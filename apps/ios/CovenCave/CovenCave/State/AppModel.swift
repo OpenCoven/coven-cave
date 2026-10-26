@@ -2716,6 +2716,17 @@ final class AppModel {
                              tags: ["daily"], body: "Yesterday:\nToday:\nBlockers:"),
             ]
         )
+        // Files for the one-to-one chat's `@` picker (#6104).
+        composerSuggestions.seedProjectFiles(
+            [
+                "README.md",
+                "package.json",
+                "src/components/chat-view.tsx",
+                "src/lib/file-mention.ts",
+                "apps/ios/CovenCave/CovenCave/Views/ChatView.swift",
+            ],
+            root: previewProject.root
+        )
 
         connectionState = .connected
     }
@@ -3252,7 +3263,10 @@ final class AppModel {
         let first = "Inspecting 🧙 café.\n"
         let producer = ToolActivity.Producer(harness: "hermes", version: nil, protocol: "responses")
         let failed = ProcessInfo.processInfo.arguments.contains("--ui-preview-timeline-failed")
-        let status: ActivityStep.Status = completed ? (failed ? .error : .ok) : .running
+        let statusArgument = ProcessInfo.processInfo.arguments.firstIndex(of: "--ui-preview-tool-status")
+            .flatMap { ProcessInfo.processInfo.arguments.dropFirst($0 + 1).first }
+            .flatMap { ActivityStep.Status(rawValue: $0) }
+        let status: ActivityStep.Status = statusArgument ?? (completed ? (failed ? .error : .ok) : .running)
         message.text = first + (completed ? "Ready to review.\n" : "")
         message.streaming = !completed
         message.activity = [ActivityStep(
@@ -3262,8 +3276,8 @@ final class AppModel {
             activity: ToolActivity(
                 schemaVersion: 1, runId: run, attemptId: attempt, callId: "a", phase: status.rawValue,
                 source: "runtime-report", producer: producer, firstObservedAt: 100, sequence: 1,
-                updatedAt: completed ? 200 : 100, executionObservedAt: 100,
-                terminalObservedAt: completed ? 200 : nil,
+                updatedAt: completed ? 200 : 100, executionObservedAt: status.isRequested || status.isRejected ? nil : 100,
+                terminalObservedAt: status.isKnownOutcome ? 200 : nil,
                 authority: ["binding": "unavailable", "approval": "unavailable", "effect": "unavailable"]
             ), textOffset: first.utf16.count
         )]
@@ -6477,13 +6491,29 @@ final class AppModel {
         projectContextDefaults.string(forKey: Self.draftKey(threadId))
     }
 
-    func persistThreadDraft(_ threadId: String, text: String?) {
+    /// Per-thread key for the files picked from the `@` menu in that draft
+    /// (#6104). They live beside the text so a restored draft still sends the
+    /// files its `@path` tokens were picked for, and nothing else.
+    static func draftMentionsKey(_ threadId: String) -> String { "cave.chat.draftMentions.\(threadId)" }
+
+    func persistedThreadDraftMentions(_ threadId: String) -> [String] {
+        projectContextDefaults.stringArray(forKey: Self.draftMentionsKey(threadId)) ?? []
+    }
+
+    func persistThreadDraft(_ threadId: String, text: String?, mentionedFiles: [String] = []) {
         let key = Self.draftKey(threadId)
+        let mentionsKey = Self.draftMentionsKey(threadId)
         if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             projectContextDefaults.set(text, forKey: key)
+            if mentionedFiles.isEmpty {
+                projectContextDefaults.removeObject(forKey: mentionsKey)
+            } else {
+                projectContextDefaults.set(mentionedFiles, forKey: mentionsKey)
+            }
             setThreadDraft(threadId, text: text)
         } else {
             projectContextDefaults.removeObject(forKey: key)
+            projectContextDefaults.removeObject(forKey: mentionsKey)
             setThreadDraft(threadId, text: nil)
         }
     }

@@ -10,6 +10,36 @@ import UIKit
 final class AgentActivityUITests: XCTestCase {
 
     @MainActor
+    func testLifecycleStatesKeepExactLabelsAndProvenanceInDetail() throws {
+        let cases = [
+            ("approval-requested", "Approval requested"),
+            ("cancel-requested", "Cancellation requested"),
+            ("policy-rejected", "Rejected by policy"),
+            ("user-rejected", "Rejected by user"),
+            ("cancelled", "Cancelled"),
+        ]
+        for (status, label) in cases {
+            let app = launchTimeline(extraArguments: ["--ui-preview-tool-status", status, "--ui-preview-tool-output", "--ui-preview-reasoning-off"])
+            defer { app.terminate() }
+            let tool = timelineTool(in: app)
+            XCTAssertTrue(tool.waitForExistence(timeout: 10))
+            XCTAssertTrue(tool.label.contains(label), "\(status): \(tool.label)")
+            XCTAssertFalse(tool.label.contains("Succeeded"))
+            tool.tap()
+            XCTAssertTrue(app.staticTexts[label].firstMatch.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["Runtime report · hermes · version unavailable"].firstMatch.exists)
+            XCTAssertTrue(app.staticTexts["Approval and change confirmation unavailable."].firstMatch.exists)
+            app.buttons["Show output for Read"].tap()
+            XCTAssertTrue(app.buttons["Close tool output"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts[label].firstMatch.exists)
+            XCTAssertTrue(app.staticTexts["Runtime report · hermes · version unavailable"].firstMatch.exists)
+            try attachScreenshot(named: "timeline-native-\(status)")
+            app.buttons["Close tool output"].tap()
+            XCTAssertTrue(tool.waitForExistence(timeout: 5))
+        }
+    }
+
+    @MainActor
     func testTimelinePreservesSummaryProseToolOrder() throws {
         let app = launchTimeline()
         let before = summary("before", in: app)

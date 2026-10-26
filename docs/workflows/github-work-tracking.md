@@ -14,8 +14,8 @@ gh project view 9 --owner OpenCoven
 entrypoints. A bounded list is a starting point, not proof that no work matches.
 
 Issue #5399 moved development tracking to GitHub on 2026-09-14. Issue #5566
-removes Beads from the repository in stages: its data, tooling, and guidance
-first, then the worktree lifecycle tooling and the product surfaces.
+removed Beads from the repository (closed 2026-09-26): its data, tooling, and
+guidance first, then the worktree lifecycle tooling and the product surfaces.
 
 ## Find and own the work
 
@@ -129,6 +129,13 @@ The managed worktree creator and lifecycle patrol were removed with Beads
 (#5566). Do not manufacture `metadata.coven.worktree` records. An `uncertain`
 classification in older patrol output is not permission to delete a worktree.
 
+**Throwaway run worktrees** need no issue record. That covers a detached
+worktree created from `origin/main` only to build, run or capture the app,
+such as the `run-cave-app` skill's `.worktrees/run-<unique>`. It must never be
+committed to, it must hold no work anyone needs, and the same run must remove
+it. It still counts toward the budget while it exists, and it grants no
+authority over any other unit.
+
 `pnpm wt:status` is local evidence, not an ownership or deletion receipt.
 A paused merge/rebase can look like ordinary dirtiness. Preserve every dirty
 path, other owners' work, foreign locks, and uncertain units.
@@ -168,8 +175,10 @@ unit. A merged squash PR does not retain the branch's own commits.
 When needed, preserve the exact head with a pushed `archive/` or `retention/`
 tag before authorized local retirement. A local-only tag does not count.
 Never remove a dirty tree, override another owner's lock, or infer that a
-remote branch is retained from a stale tracking ref. Remote deletion remains
-proposal-only.
+remote branch is retained from a stale tracking ref. Remote deletion by an
+agent remains proposal-only. GitHub deletes a merged PR's same-repository head
+branch automatically (`delete_branch_on_merge`); `refs/pull/<#>/head` keeps
+that head.
 
 The missing legacy maintenance planes are not made safe by changing trackers.
 No GitHub issue comment replaces a runtime exclusion lock. Preserve a unit

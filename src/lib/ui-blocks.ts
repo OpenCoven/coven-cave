@@ -45,6 +45,11 @@ export const UI_BLOCK_LIMITS = {
   maxTableColumns: 12,
   maxChartBars: 40,
   maxSelectOptions: 50,
+  maxListItems: 100,
+  maxSparklinePoints: 40,
+  maxDonutSlices: 12,
+  maxTabs: 12,
+  maxTextInputLength: 2_048,
 } as const;
 
 // ── expressions ────────────────────────────────────────────────────────────
@@ -506,7 +511,10 @@ type PropType =
   | "textList"
   | "options"
   | "rows"
-  | "series";
+  | "series"
+  | "items"
+  | "points"
+  | "slices";
 
 export type UiPropSpec = {
   type: PropType;
@@ -521,11 +529,19 @@ type ChildPolicy = "blocks" | "inline" | "none";
 export type UiComponentSpec = {
   children: ChildPolicy;
   props: Record<string, UiPropSpec>;
+  /** Inline components an inline parent admits besides text and expressions. */
+  inlineChildren?: readonly UiComponentType[];
+  /** The only parents this component may sit in; anywhere else it is an error. */
+  onlyInside?: readonly UiComponentType[];
+  /** The only components a block parent admits; anything else is an error. */
+  blockChildren?: readonly UiComponentType[];
 };
 
 export const UI_COMPONENT_TYPES = [
   "Stack", "Row", "Card", "Heading", "Text", "Badge", "Stat", "Table", "Progress", "BarChart",
   "Slider", "Select", "Toggle", "Button", "State",
+  "Divider", "Grid", "Columns", "List", "Callout", "Bold", "Code",
+  "Sparkline", "Donut", "Tabs", "Tab", "TextInput",
 ] as const;
 
 export type UiComponentType = (typeof UI_COMPONENT_TYPES)[number];
@@ -533,6 +549,16 @@ export type UiComponentType = (typeof UI_COMPONENT_TYPES)[number];
 const tone = (fallback: string): UiPropSpec => ({ type: "enum", values: UI_TONES, default: fallback });
 const gap = (fallback: string): UiPropSpec => ({ type: "enum", values: UI_GAPS, default: fallback });
 const format: UiPropSpec = { type: "enum", values: UI_FORMATS, default: "number" };
+
+/** Grid and Columns are two spellings of one layout. */
+const grid: UiComponentSpec = {
+  children: "blocks",
+  props: {
+    columns: { type: "enum", values: ["1", "2", "3", "4"], default: "2" },
+    gap: gap("md"),
+    align: { type: "enum", values: ["start", "center", "end", "stretch"], default: "stretch" },
+  },
+};
 
 export const UI_BLOCK_CATALOG: Record<UiComponentType, UiComponentSpec> = {
   Stack: {
@@ -566,6 +592,7 @@ export const UI_BLOCK_CATALOG: Record<UiComponentType, UiComponentSpec> = {
   },
   Text: {
     children: "inline",
+    inlineChildren: ["Bold", "Code"],
     props: {
       tone: tone("neutral"),
       size: { type: "enum", values: ["xs", "sm", "md", "lg"], default: "md" },
@@ -583,6 +610,10 @@ export const UI_BLOCK_CATALOG: Record<UiComponentType, UiComponentSpec> = {
       format,
       caption: { type: "text" },
       tone: tone("neutral"),
+      // A trend never assumes that up is good: its tone is the author's call.
+      trend: { type: "number" },
+      trendFormat: format,
+      trendTone: tone("neutral"),
     },
   },
   Table: {
@@ -652,6 +683,88 @@ export const UI_BLOCK_CATALOG: Record<UiComponentType, UiComponentSpec> = {
     props: {
       name: { type: "identifier", required: true },
       initial: { type: "value", required: true },
+    },
+  },
+  Divider: {
+    children: "none",
+    props: { gap: gap("md") },
+  },
+  Grid: grid,
+  Columns: grid,
+  List: {
+    children: "none",
+    props: {
+      items: { type: "items", required: true },
+      ordered: { type: "boolean", default: false },
+      gap: gap("xs"),
+      tone: tone("neutral"),
+    },
+  },
+  Callout: {
+    children: "blocks",
+    props: {
+      title: { type: "text" },
+      tone: tone("info"),
+      gap: gap("sm"),
+    },
+  },
+  // The closed inline grammar: Text holds Bold and Code, Bold holds Code.
+  Bold: {
+    children: "inline",
+    inlineChildren: ["Code"],
+    onlyInside: ["Text"],
+    props: {},
+  },
+  Code: {
+    children: "inline",
+    onlyInside: ["Text", "Bold"],
+    props: {},
+  },
+  Sparkline: {
+    children: "none",
+    props: {
+      label: { type: "text", required: true },
+      data: { type: "points", required: true },
+      tone: tone("accent"),
+      height: { type: "enum", values: ["sm", "md", "lg"], default: "md" },
+    },
+  },
+  Donut: {
+    children: "none",
+    props: {
+      label: { type: "text", required: true },
+      data: { type: "slices", required: true },
+      size: { type: "enum", values: ["sm", "md", "lg"], default: "md" },
+    },
+  },
+  Tabs: {
+    children: "blocks",
+    blockChildren: ["Tab"],
+    props: {
+      bind: { type: "state", required: true },
+      label: { type: "text", required: true },
+      orientation: { type: "enum", values: ["horizontal", "vertical"], default: "horizontal" },
+      size: { type: "enum", values: ["sm", "md"], default: "md" },
+    },
+  },
+  Tab: {
+    children: "blocks",
+    onlyInside: ["Tabs"],
+    props: {
+      value: { type: "text", required: true },
+      label: { type: "text", required: true },
+    },
+  },
+  // Local State only: there is no form, name, type, action or submit.
+  TextInput: {
+    children: "none",
+    props: {
+      bind: { type: "state", required: true },
+      label: { type: "text", required: true },
+      placeholder: { type: "text" },
+      description: { type: "text" },
+      disabled: { type: "boolean", default: false },
+      maxLength: { type: "number" },
     },
   },
 };
@@ -1001,6 +1114,49 @@ function primitiveKind(value: UiPrimitive): string {
 }
 
 /** Type-check a resolved value against its spec. Returns an issue or null. */
+function isRecord(value: UiValue): value is { [key: string]: UiValue } {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function onlyKeys(record: { [key: string]: UiValue }, allowed: readonly string[]): boolean {
+  return Object.keys(record).every((key) => allowed.includes(key));
+}
+
+/** A Table cell may be a primitive or exactly `{ kind: "badge", label, tone? }`. */
+function isBadgeCell(cell: UiValue): boolean {
+  return isRecord(cell)
+    && onlyKeys(cell, ["kind", "label", "tone"])
+    && cell.kind === "badge"
+    && typeof cell.label === "string"
+    && (cell.tone === undefined || (typeof cell.tone === "string" && (UI_TONES as readonly string[]).includes(cell.tone)));
+}
+
+/** Labelled numeric entries shared by Sparkline points and Donut slices. */
+function checkLabelledEntries(
+  name: string,
+  value: UiValue,
+  limit: number,
+  noun: string,
+  keys: readonly string[],
+  extra?: (entry: { [key: string]: UiValue }) => string | null,
+): string | null {
+  if (!Array.isArray(value)) return `${name} needs a list like [{ label: "Mon", value: 3 }]`;
+  if (value.length > limit) return `${name} has more than ${limit} ${noun}`;
+  const labels = new Set<string>();
+  for (const entry of value) {
+    if (!isRecord(entry)) return `${name} entries need a label and a value`;
+    if (!onlyKeys(entry, keys)) return `${name} entries take only ${keys.slice(0, -1).join(", ")} and ${keys[keys.length - 1]}`;
+    if (typeof entry.label !== "string" || typeof entry.value !== "number" || !Number.isFinite(entry.value)) {
+      return `${name} entries need a text label and a number value`;
+    }
+    const issue = extra?.(entry);
+    if (issue) return issue;
+    if (labels.has(entry.label)) return `${name} labels must be unique ("${entry.label}" repeats)`;
+    labels.add(entry.label);
+  }
+  return null;
+}
+
 function checkPropValue(type: UiComponentType, name: string, spec: UiPropSpec, value: UiValue, declared?: ReadonlyMap<string, UiPrimitive>): string | null {
   switch (spec.type) {
     case "text":
@@ -1042,10 +1198,11 @@ function checkPropValue(type: UiComponentType, name: string, spec: UiPropSpec, v
     case "rows": {
       if (!Array.isArray(value)) return `${name} needs a list of rows like [["a", 1]]`;
       if (value.length > UI_BLOCK_LIMITS.maxTableRows) return `${name} has more than ${UI_BLOCK_LIMITS.maxTableRows} rows`;
-      const ok = value.every((row) => Array.isArray(row)
-        && row.length <= UI_BLOCK_LIMITS.maxTableColumns
-        && row.every((cell) => isPrimitive(cell)));
-      return ok ? null : `${name} rows must be lists of numbers or text`;
+      const shaped = value.every((row) => Array.isArray(row) && row.length <= UI_BLOCK_LIMITS.maxTableColumns);
+      if (!shaped) return `${name} rows must be lists of numbers or text`;
+      return value.every((row) => (row as UiValue[]).every((cell) => isPrimitive(cell) || isBadgeCell(cell)))
+        ? null
+        : `${name} cells must be numbers, text, or { kind: "badge", label, tone }`;
     }
     case "series": {
       if (!Array.isArray(value)) return `${name} needs a list like [{ label: "Mon", value: 3 }]`;
@@ -1060,6 +1217,23 @@ function checkPropValue(type: UiComponentType, name: string, spec: UiPropSpec, v
         labels.add(item.label);
       }
       return null;
+    }
+    case "points":
+      return checkLabelledEntries(name, value, UI_BLOCK_LIMITS.maxSparklinePoints, "points", ["label", "value"]);
+    case "slices":
+      return checkLabelledEntries(name, value, UI_BLOCK_LIMITS.maxDonutSlices, "slices", ["label", "value", "tone"], (entry) => {
+        if ((entry.value as number) < 0) return `${name} slice values must be zero or more`;
+        if (entry.tone !== undefined && !(typeof entry.tone === "string" && (UI_TONES as readonly string[]).includes(entry.tone))) {
+          return `${name} slice tone must be one of ${UI_TONES.join(", ")}`;
+        }
+        return null;
+      });
+    case "items": {
+      if (!Array.isArray(value)) return `${name} needs a list like ["A", "B"]`;
+      if (value.length > UI_BLOCK_LIMITS.maxListItems) return `${name} has more than ${UI_BLOCK_LIMITS.maxListItems} entries`;
+      return value.every((item) => typeof item === "string" || (typeof item === "number" && Number.isFinite(item)))
+        ? null
+        : `${name} must list text or numbers`;
     }
     default:
       return `${type} has an unsupported prop ${name}`;
@@ -1201,7 +1375,49 @@ function componentIssues(
       child.kind === "expr" || (child.kind === "text" && child.text.trim()));
     if (!hasLabel && (raw.closed || !ctx.streaming)) issues.push("Button needs a label");
   }
-  if (type === "Slider" || type === "Toggle" || type === "Select") {
+  if (type === "Tabs" && (raw.closed || !ctx.streaming)) {
+    const tabs = raw.children.filter((child): child is RawElement =>
+      child.kind === "element" && !child.dropped && child.name === "Tab");
+    if (tabs.length === 0) issues.push("Tabs needs at least one <Tab>");
+    if (tabs.length > UI_BLOCK_LIMITS.maxTabs) issues.push(`Tabs holds at most ${UI_BLOCK_LIMITS.maxTabs} tabs`);
+    const values: string[] = [];
+    for (const tab of tabs) {
+      const attr = tab.attrs.find((candidate) => candidate.name === "value");
+      if (attr?.value.kind !== "string") continue;
+      if (values.includes(attr.value.value)) {
+        issues.push(`tab values must be unique ("${attr.value.value}" repeats)`);
+        break;
+      }
+      values.push(attr.value.value);
+    }
+    const bind = staticValue("bind");
+    const initial = typeof bind === "string" ? ctx.declared.get(bind) : undefined;
+    if (typeof initial === "string" && values.length > 0 && !values.includes(initial)) {
+      issues.push(`bind="${bind}" starts as "${initial}", which isn't one of the tab values`);
+    }
+  }
+  if (type === "Tab" && props.value?.kind === "expr") {
+    issues.push('value must be fixed text in quotes, like value="Summary"');
+  }
+  if (type === "TextInput") {
+    let limit: number = UI_BLOCK_LIMITS.maxTextInputLength;
+    if (props.maxLength?.kind === "expr") {
+      issues.push("maxLength must be a fixed number, like maxLength={80}");
+    } else if (props.maxLength) {
+      const max = props.maxLength.value;
+      if (typeof max !== "number" || !Number.isInteger(max) || max < 1 || max > UI_BLOCK_LIMITS.maxTextInputLength) {
+        issues.push(`maxLength must be a whole number from 1 to ${UI_BLOCK_LIMITS.maxTextInputLength}`);
+      } else {
+        limit = max;
+      }
+    }
+    const bind = staticValue("bind");
+    const initial = typeof bind === "string" ? ctx.declared.get(bind) : undefined;
+    if (typeof initial === "string" && initial.length > limit) {
+      issues.push(`bind="${bind}" starts longer than ${limit} characters`);
+    }
+  }
+  if (type === "Slider" || type === "Toggle" || type === "Select" || type === "Tabs" || type === "TextInput") {
     const bind = staticValue("bind");
     if (typeof bind === "string" && ctx.declared.has(bind)) {
       const initial = ctx.declared.get(bind) as UiPrimitive;
@@ -1212,6 +1428,15 @@ function componentIssues(
     }
   }
   return issues;
+}
+
+/** What an inline parent's error says it does take. */
+function inlineAllowance(admitted: readonly string[]): string {
+  if (admitted.length === 0) return "it takes text only";
+  const tags = admitted.map((type) => `<${type}>`);
+  return tags.length === 1
+    ? `it takes text and ${tags[0]}`
+    : `it takes text, ${tags.slice(0, -1).join(", ")} and ${tags[tags.length - 1]}`;
 }
 
 function validateChildren(
@@ -1226,9 +1451,13 @@ function validateChildren(
   let elementIndex = 0;
   let inlineIndex = 0;
   const parentLabel = parentType === "" ? "the block" : `<${parentType}>`;
+  const parentSpec = isUiComponentType(parentType) ? UI_BLOCK_CATALOG[parentType] : undefined;
+  const admitted = parentSpec?.inlineChildren ?? [];
+  const blockOnly = parentSpec?.blockChildren;
   for (const child of normalizeText(raw, policy === "inline")) {
     if (child.kind === "pending") {
-      if (isUiComponentType(child.name)) {
+      // Mid-sentence, a half-written tag shows nothing until it completes.
+      if (policy !== "inline" && isUiComponentType(child.name)) {
         out.push({ kind: "pending", id: childId(parentId, String(elementIndex)), type: child.name });
       }
       continue;
@@ -1237,11 +1466,24 @@ function validateChildren(
       if (child.dropped) continue;
       const id = childId(parentId, String(elementIndex));
       elementIndex += 1;
-      if (policy !== "blocks") {
+      if (policy === "inline" && admitted.some((type) => type === child.name)) {
+        out.push(validateElement(child, id, depth, ctx));
+        continue;
+      }
+      const onlyInside = policy === "blocks" && isUiComponentType(child.name)
+        ? UI_BLOCK_CATALOG[child.name].onlyInside
+        : undefined;
+      const misplaced = onlyInside !== undefined && !onlyInside.some((type) => type === parentType);
+      const excluded = policy === "blocks" && blockOnly !== undefined && !blockOnly.some((type) => type === child.name);
+      if (policy !== "blocks" || misplaced || excluded) {
         const node = validateElement(child, id, depth, ctx);
-        const reason = policy === "inline"
-          ? `<${child.name}> can't go inside ${parentLabel}; it takes text only`
-          : `${parentLabel} doesn't take children`;
+        const reason = excluded
+          ? `<${child.name}> can't go inside ${parentLabel}; it takes ${blockOnly!.map((type) => `<${type}>`).join(" and ")} only`
+          : misplaced
+            ? `<${child.name}> only works inside ${onlyInside!.map((type) => `<${type}>`).join(" or ")}`
+            : policy === "inline"
+              ? `<${child.name}> can't go inside ${parentLabel}; ${inlineAllowance(admitted)}`
+              : `${parentLabel} doesn't take children`;
         out.push({
           kind: "error",
           id,
@@ -1258,6 +1500,17 @@ function validateChildren(
     inlineIndex += 1;
     if (policy === "none") {
       out.push({ kind: "error", id, label: "text", issues: [`${parentLabel} doesn't take children`], children: [] });
+      continue;
+    }
+    if (blockOnly) {
+      const what = child.kind === "text" ? "text" : "an expression";
+      out.push({
+        kind: "error",
+        id,
+        label: child.kind === "text" ? "text" : "expression",
+        issues: [`${what} can't go inside ${parentLabel}; it takes ${blockOnly.map((type) => `<${type}>`).join(" and ")} only`],
+        children: [],
+      });
       continue;
     }
     if (child.kind === "text") {
