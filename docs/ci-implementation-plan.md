@@ -1,6 +1,6 @@
 # CI Implementation Plan — fastest Coven Cave CI workflow
 
-**Tracker:** none. The retired Bead `cave-7kix8.8` (checklist child of `cave-7kix8`) has no GitHub issue; open one in Cave Project 9 before resuming Phase 2.
+**Tracker:** #6257, opened 2026-10-26 on Val's decision (#6111) to own Phases 2–4. It replaces the retired Bead `cave-7kix8.8`. `Frontend build` stays the required check until Val changes branch protection; agents don't.
 **Parent design:** [`docs/superpowers/specs/2026-08-05-release-candidate-ci-design.md`](superpowers/specs/2026-08-05-release-candidate-ci-design.md) (approved; spec commit `11ee417d9`)
 **Task-level breakdown:** [`docs/superpowers/plans/2026-08-17-release-candidate-ci.md`](superpowers/plans/2026-08-17-release-candidate-ci.md)
 **Status:** Program — Phase 1 (signed promotion, full validation, parallel `PR checks` context) is shipped on `main`, and Phase 5 promotion has run on real cuts (v0.5.13-rc.1 → v0.5.13, v0.5.14-rc.4 → v0.5.14 at `cd4965abc`). Phase 2 (the branch-protection switch), Phase 3 (retire routine fanout) and Phase 4 (verify the lean gate) remain. Last checked against `main` on 2026-10-20 (#6111).

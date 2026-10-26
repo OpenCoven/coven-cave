@@ -222,8 +222,8 @@ simulator build succeeded.
 
 ## Physical-device gates
 
-These remain intentionally unclaimed until a maintainer runs them on a real
-supported iPhone:
+#6259 (opened 2026-10-26, Val's decision on #6111) owns these gates. They
+still need a maintainer to run them on a real supported iPhone:
 
 1. Cold-launch p50/p95 and first-interaction latency from a clean install.
 2. Instruments Energy Log during a long streamed response and repeated image
