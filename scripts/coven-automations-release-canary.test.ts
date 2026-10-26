@@ -28,6 +28,7 @@ class CovenAutomationsUnavailableError extends Error {
 }
 
 interface Flaws {
+  historyWithoutReadAt?: boolean;
   missingAction?: string;
   createsActive?: boolean;
   refusalLooksOffline?: boolean;
@@ -68,10 +69,11 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
   let previous: CanaryRoutine | null = null;
   let revision = 0;
   let offline = false;
-  const events: { sequence: number; label: string; detail: string }[] = [];
+  const events: { id: string; sequence: number; recordedAt: string; label: string; detail: string }[] = [];
   const record = (kind: string) => {
     revision += 1;
-    events.push({ sequence: events.length, label: labels[kind] ?? kind, detail: `Revision ${revision}` });
+    events.push({ id: `evt${String(events.length).padStart(32, "0")}`, sequence: events.length,
+      recordedAt: `2026-10-18T00:00:0${events.length}.000Z`, label: labels[kind] ?? kind, detail: `Revision ${revision}` });
   };
   // The second routine, created through Cave's create route and driven by the lifecycle routes.
   let form: { state: "paused" | "active"; revision: number } | null = null;
@@ -148,7 +150,8 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
       const last = entries.at(-1)?.sequence ?? after;
       return Promise.resolve({
         status: 200,
-        body: { kind: "available", entries, hasEntries: entries.length > 0, checkpoint: `cp:${last}` },
+        body: { kind: "available", entries, withheld: 0, hasEntries: entries.length > 0, checkpoint: `cp:${last}`,
+          ...flaws.historyWithoutReadAt === true ? {} : { readAt: "2026-10-18T00:00:10.000Z" } },
       });
     },
     createRoutineViaRoute: (body): Promise<CanaryResponse> => {
@@ -313,6 +316,7 @@ for (const [label, flaws, message] of [
   ["a revision lost across the restart", { forgetsUpdateOnRestart: true }, /getRoutine after restart: expected the revised routine/u],
   ["a second delete that claims success", { deleteNotIdempotent: true }, /deleteRoutine again: expected false/u],
   ["a checkpoint that rewinds to the start", { checkpointRewinds: true }, /history from the pre-restart checkpoint: expected available history \[2:Definition removed:Revision 3\]/u],
+  ["a history page without its read time", { historyWithoutReadAt: true }, /history export: expected the available page to serialize/u],
   ["a read that falls back when the daemon is gone", { fallsBackWhenStopped: true }, /getRoutine with the daemon stopped: expected CovenAutomationsUnavailableError with degraded=true, but the call succeeded/u],
   ["history that looks available when the daemon is gone", { offlineHistoryLooksAvailable: true }, /history with the daemon stopped: expected 503 unavailable/u],
   ["a create from the form that does not stay paused", { formCreatedActive: true }, /create route: expected the form routine created paused/u],

@@ -40,6 +40,7 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readF
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { AUTOMATION_HISTORY_METADATA_MAX_BYTES, serializeAutomationHistoryMetadata } from "../src/lib/automations/history-export.ts";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const RELEASE_FIXTURE = path.join(repositoryRoot, "fixtures", "coven-automations-release");
@@ -87,9 +88,11 @@ export interface CanaryHistory {
   status: number;
   body: {
     kind?: string;
-    entries?: { sequence: number; label: string; detail: string }[];
+    entries?: { id?: string; sequence: number; recordedAt?: string; label: string; detail: string }[];
+    withheld?: number;
     hasEntries?: boolean;
     checkpoint?: string;
+    readAt?: string;
   };
 }
 
@@ -209,6 +212,23 @@ function expectHistory(label: string, history: CanaryHistory, expected: readonly
     fail(`${label}: expected available history [${expected.join(", ")}], received ${history.status} ${describe(history.body)}.`);
   }
   return history;
+}
+
+/** The downloaded packet carries only closed metadata from the page Cave read. */
+function expectHistoryExport(history: CanaryHistory, types: readonly string[], privateText: readonly string[]): void {
+  let text: string;
+  try {
+    text = serializeAutomationHistoryMetadata(history.body, "read");
+  } catch {
+    fail(`history export: expected the available page to serialize, received ${describe(history.body)}.`);
+  }
+  const packet = JSON.parse(text) as Record<string, unknown> & { entries: { type: string }[] };
+  const leaked = [history.body.checkpoint ?? "", ...privateText].filter((value) => value.length > 0 && text.includes(value));
+  if (new TextEncoder().encode(text).length > AUTOMATION_HISTORY_METADATA_MAX_BYTES || packet.scope !== "single-page" ||
+    packet.completeHistory !== false || "checkpoint" in packet ||
+    packet.entries.map((entry) => entry.type).join("|") !== types.join("|") || leaked.length > 0) {
+    fail(`history export: expected closed metadata [${types.join(", ")}] without private text, received ${text.slice(0, 400)}.`);
+  }
 }
 
 function expectLifecycle(
@@ -436,6 +456,9 @@ export async function runCaveAutomationsScenario(
     "1:Definition revised:Revision 2",
   ]);
 
+  expectHistoryExport(beforeRestart, ["definition.created", "definition.revised"],
+    [draft.prompt as string, updated.prompt, "Revision 1", "Revision 2"]);
+
   await cave.restartDaemon();
 
   const durable = await cave.getRoutine(ROUTINE_ID);
@@ -459,6 +482,13 @@ export async function runCaveAutomationsScenario(
   if (offline.status !== 503 || offline.body.kind !== "unavailable") {
     fail(`history with the daemon stopped: expected 503 unavailable, received ${offline.status} ${describe(offline.body)}.`);
   }
+  let offlineExport: string | undefined;
+  try {
+    offlineExport = serializeAutomationHistoryMetadata(offline.body, "read");
+  } catch {
+    // An unavailable read has no packet to download.
+  }
+  if (offlineExport !== undefined) fail(`history export with the daemon stopped: expected a refusal, received ${offlineExport.slice(0, 400)}.`);
   expectAnswer("lifecycle with the daemon stopped", await cave.lifecycle([ROUTINE_ID]), 503, { kind: "unavailable" });
   expectAnswer("a command with the daemon stopped", await cave.lifecycleCommand(ROUTINE_ID,
     { command: "activate", expectedRevision: 1, adoptionKey: `cave-${randomUUID()}` }), 503, { kind: "unavailable" });
@@ -913,6 +943,7 @@ async function main(signal: AbortSignal): Promise<void> {
     `historyPages=${result.historyPages}`,
     "refusal=typed",
     "historyResumeAcrossRestart=passed",
+    "historyMetadataExport=closed",
     `lifecycleCommands=${result.lifecycleCommands}`,
     "createPaused=passed",
     "researchHostCreateReplayMetadataPauseConflict=passed",
