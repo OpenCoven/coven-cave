@@ -21,6 +21,7 @@ import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
+import { prepareLocalCodexLaunch } from "@/lib/server/local-codex-launch";
 import { realpath, stat } from "node:fs/promises";
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
@@ -283,6 +284,14 @@ async function runViaSession(body: RunBody) {
     );
   }
 
+  // Codex local mode (#6049): check the server and model before the daemon
+  // starts anything, and send the model name the server knows.
+  const localLaunch = await prepareLocalCodexLaunch(binding.harness, binding.model, "daemon");
+  if (localLaunch.local && !localLaunch.ok) {
+    return NextResponse.json({ ok: false, code: localLaunch.code, error: localLaunch.message }, { status: 409 });
+  }
+  const launchModel = localLaunch.local ? localLaunch.nativeModel : binding.model;
+
   const prompt = buildWorkflowRunPrompt(workflow, body.inputs);
 
   // Persist the started session onto a running workflow-run record and return —
@@ -374,7 +383,7 @@ async function runViaSession(body: RunBody) {
     body: {
       projectRoot,
       harness: binding.harness,
-      ...(binding.model ? { model: binding.model } : {}),
+      ...(launchModel ? { model: launchModel } : {}),
       prompt,
       ...(familiarId ? { familiarId } : {}),
       // Non-interactive launch: the daemon streams the orchestration prompt's

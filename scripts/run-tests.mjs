@@ -1583,6 +1583,7 @@ export const SUITES = {
     "src/lib/server/hermes-models.test.ts",
     "src/lib/server/runtime-model-options.test.ts",
     "src/lib/server/local-codex-backends.test.ts",
+    "src/lib/server/local-codex-launch.test.ts",
     "src/lib/server/lmstudio-devices.test.ts",
     "src/lib/server/local-models-settings.test.ts",
     "src/app/api/local-models/route.test.ts",
