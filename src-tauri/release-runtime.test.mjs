@@ -708,8 +708,8 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   }
   assert.match(
     workflow,
-    /if ! gh release create "\$RELEASE_TAG"[\s\S]*for attempt in 1 2 3; do[\s\S]*if gh release view "\$RELEASE_TAG"/,
-    "macOS release creation must tolerate the other matrix leg winning the race",
+    /- name: Claim the release for the macOS upload[\s\S]*- name: Upload macOS DMG to GitHub Release/,
+    "the macOS legs upload to the release release-object made instead of racing to create one (#6248)",
   );
   assert.match(workflow, /windows_diagnostics_only:/);
   assert.match(workflow, /Validate Windows diagnostics mode/);
@@ -751,6 +751,13 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
     /tagName:|releaseName:|releaseId:/,
     "the pre-budget Windows build must not give tauri-action release upload inputs",
   );
+  const linuxBuildStart = workflow.indexOf("- name: Build Linux AppImage without publishing");
+  assert.ok(linuxBuildStart >= 0 && linuxBuildStart < buildOnlyStart);
+  assert.doesNotMatch(
+    workflow.slice(linuxBuildStart, buildOnlyStart),
+    /tagName:|releaseName:|releaseId:/,
+    "the Linux build must not give tauri-action inputs that create a release (#6248)",
+  );
 });
 
 test("release builds require the configured OpenCoven X app before platform builds", async () => {
@@ -766,7 +773,7 @@ test("release builds require the configured OpenCoven X app before platform buil
   assert.match(xAppConfiguration, /^\s+run: node scripts\/check-x-app-release\.mjs$/m);
   const guardIndex = buildJob.indexOf("- name: Require OpenCoven X app configuration");
   for (const platformBuildStep of [
-    "Build with tauri-action",
+    "Build Linux AppImage without publishing",
     "Build Windows MSI without publishing",
     "Build macOS DMG with custom release script",
   ]) {

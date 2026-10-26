@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { parse } from "yaml";
 
 const releaseScript = readFileSync(
   fileURLToPath(new URL("./release.sh", import.meta.url)),
@@ -319,28 +320,199 @@ test("release packages and checksum manifest receive GitHub artifact attestation
   );
 });
 
-test("Windows release publication treats an absent release as a recoverable probe result", () => {
+const parsedReleaseWorkflow = parse(releaseWorkflow);
+
+function workflowStepRun(jobName, stepName) {
+  const step = parsedReleaseWorkflow.jobs[jobName].steps.find((candidate) => candidate.name === stepName);
+  assert.ok(step, `${jobName} must define "${stepName}"`);
+  return step.run;
+}
+
+// Runs a workflow step's bash with a stub `gh` first on PATH. Each answer
+// replies to calls whose arguments contain `match`; `outputs` are returned in
+// order, the last one repeating. Returns the exit status, stdout, every gh
+// call, and what the step wrote to GITHUB_OUTPUT.
+function runStepWithStubGh(script, env, answers) {
+  const dir = mkdtempSync(join(tmpdir(), "release-object-"));
+  try {
+    writeFileSync(join(dir, "answers.json"), JSON.stringify(answers));
+    writeFileSync(join(dir, "github-output"), "");
+    writeFileSync(
+      join(dir, "gh"),
+      `#!/usr/bin/env node
+const { appendFileSync, existsSync, readFileSync, writeFileSync } = require("node:fs");
+const dir = ${JSON.stringify(dir)};
+const args = process.argv.slice(2);
+appendFileSync(dir + "/calls.jsonl", JSON.stringify(args) + "\\n");
+const answers = JSON.parse(readFileSync(dir + "/answers.json", "utf8"));
+const statePath = dir + "/state.json";
+const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : {};
+const index = answers.findIndex((answer) => args.join(" ").includes(answer.match));
+if (index === -1) process.exit(0);
+const seen = state[index] ?? 0;
+state[index] = seen + 1;
+writeFileSync(statePath, JSON.stringify(state));
+const { outputs = [""], status = 0 } = answers[index];
+const output = outputs[Math.min(seen, outputs.length - 1)];
+if (output) process.stdout.write(output + "\\n");
+process.exit(status);
+`,
+      { mode: 0o755 },
+    );
+    const result = spawnSync("bash", ["-c", script], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${dir}:${process.env.PATH}`,
+        GITHUB_OUTPUT: join(dir, "github-output"),
+        GITHUB_REPOSITORY: "OpenCoven/coven-cave",
+        RELEASE_TAG: "v9.9.9",
+        ...env,
+      },
+    });
+    const callsPath = join(dir, "calls.jsonl");
+    const calls = existsSync(callsPath)
+      ? readFileSync(callsPath, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+      : [];
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      calls,
+      output: readFileSync(join(dir, "github-output"), "utf8"),
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("only the release-object job creates a release, and never as latest (#6248)", () => {
+  assert.equal(
+    releaseWorkflow.match(/gh release create/g)?.length,
+    1,
+    "a second creator brings back the race that published two releases for v0.5.16",
+  );
+  const releaseObject = getWorkflowJob("release-object");
+  assert.match(releaseObject, /gh release create "\$RELEASE_TAG"[\s\S]*--verify-tag[\s\S]*--latest=false/);
+  assert.match(releaseObject, /timeout-minutes: 10/);
+  assert.deepEqual(
+    parsedReleaseWorkflow.jobs["release-object"].needs,
+    parsedReleaseWorkflow.jobs.build.needs.filter((need) => need !== "release-object"),
+    "the release is created behind exactly the gates the builds wait for",
+  );
+  assert.ok(parsedReleaseWorkflow.jobs.build.needs.includes("release-object"));
+
   const buildJob = getWorkflowJob("build");
-  const publishStep = buildJob.slice(
-    buildJob.indexOf("name: Publish validated Windows MSI"),
-    buildJob.indexOf("name: Sign Linux/Windows updater artifact"),
+  assert.doesNotMatch(
+    buildJob,
+    /tagName:|releaseName:|releaseId:|releaseDraft:/,
+    "tauri-action creates a missing release whenever it is given release inputs",
+  );
+});
+
+test("release-object adopts one final release, creates a missing one, and refuses duplicates", () => {
+  const script = workflowStepRun("release-object", "Find or create the release for this tag");
+  const list = "releases?per_page=100";
+  const env = { DESKTOP_UPLOADS: "true" };
+  const creates = (calls) => calls.filter((args) => args[0] === "release" && args[1] === "create");
+
+  const created = runStepWithStubGh(script, env, [{ match: list, outputs: ["", "111 false false 0"] }]);
+  assert.equal(created.status, 0, created.stdout);
+  assert.equal(creates(created.calls).length, 1);
+  assert.ok(creates(created.calls)[0].includes("--latest=false"));
+  assert.ok(creates(created.calls)[0].includes("--verify-tag"));
+  assert.equal(created.output, "id=111\n");
+
+  const adopted = runStepWithStubGh(script, env, [{ match: list, outputs: ["111 false false 12"] }]);
+  assert.equal(adopted.status, 0, adopted.stdout);
+  assert.equal(creates(adopted.calls).length, 0);
+  assert.equal(adopted.output, "id=111\n");
+
+  const duplicate = runStepWithStubGh(script, env, [
+    { match: list, outputs: ["111 false false 12\n112 false false 0"] },
+  ]);
+  assert.notEqual(duplicate.status, 0);
+  assert.equal(creates(duplicate.calls).length, 0);
+  assert.match(duplicate.stdout, /found 2[\s\S]*111 false false 12[\s\S]*112 false false 0/);
+  assert.equal(duplicate.output, "");
+
+  for (const unfinished of ["111 true false 0", "111 false true 0"]) {
+    const refused = runStepWithStubGh(script, env, [{ match: list, outputs: [unfinished] }]);
+    assert.notEqual(refused.status, 0, `${unfinished} must not receive final assets`);
+    assert.equal(refused.output, "");
+  }
+
+  const iosOnly = runStepWithStubGh(script, { DESKTOP_UPLOADS: "false" }, []);
+  assert.equal(iosOnly.status, 0);
+  assert.deepEqual(iosOnly.calls, [], "a run without desktop uploads leaves releases alone");
+  assert.equal(iosOnly.output, "");
+});
+
+test("each build leg claims the release right before its first upload", () => {
+  const linuxWindows = workflowStepRun("build", "Claim the release for the Linux/Windows upload");
+  const macos = workflowStepRun("build", "Claim the release for the macOS upload");
+  assert.equal(linuxWindows, macos, "both claims must apply one rule");
+
+  const buildJob = getWorkflowJob("build");
+  const position = (name) => {
+    const index = buildJob.indexOf(`- name: ${name}\n`);
+    assert.notEqual(index, -1, `build must define "${name}"`);
+    return index;
+  };
+  const ordered = (names) => {
+    const positions = names.map(position);
+    assert.deepEqual(positions, [...positions].sort((a, b) => a - b), names.join(" < "));
+  };
+  ordered([
+    "Build Linux AppImage without publishing",
+    "Measure and enforce Windows MSI budget",
+    "Claim the release for the Linux/Windows upload",
+    "Publish validated Windows MSI",
+    "Sign Linux/Windows updater artifact",
+    "Upload and re-sign stripped AppImage",
+  ]);
+  ordered([
+    "Verify macOS DMG is notarized",
+    "Claim the release for the macOS upload",
+    "Upload macOS DMG to GitHub Release",
+  ]);
+  assert.doesNotMatch(
+    buildJob.slice(0, position("Claim the release for the Linux/Windows upload")),
+    /gh release upload/,
+    "nothing uploads before a leg has claimed the release",
+  );
+  const claimStep = buildJob.slice(
+    position("Claim the release for the Linux/Windows upload"),
+    position("Publish validated Windows MSI"),
+  );
+  assert.match(claimStep, /!inputs\.windows_diagnostics_only/, "a diagnostics run claims nothing");
+});
+
+test("a claim promotes only an empty release and stops on a release it did not expect", () => {
+  const script = workflowStepRun("build", "Claim the release for the macOS upload");
+  const byTag = "releases/tags/v9.9.9";
+  const promotions = (calls) =>
+    calls.filter((args) => args.includes("PATCH") && args.includes("make_latest=true"));
+
+  const first = runStepWithStubGh(script, { RELEASE_ID: "111" }, [{ match: byTag, outputs: ["111 0"] }]);
+  assert.equal(first.status, 0, first.stdout);
+  assert.equal(promotions(first.calls).length, 1, "the first upload makes the release latest");
+  assert.ok(promotions(first.calls)[0].includes("repos/OpenCoven/coven-cave/releases/111"));
+
+  const later = runStepWithStubGh(script, { RELEASE_ID: "111" }, [{ match: byTag, outputs: ["111 7"] }]);
+  assert.equal(later.status, 0, later.stdout);
+  assert.deepEqual(
+    promotions(later.calls),
+    [],
+    "a release with assets is never promoted again, so a rerun cannot undo a rollback",
   );
 
-  assert.match(
-    publishStep,
-    /function Test-GitHubRelease[\s\S]*ErrorActionPreference = "SilentlyContinue"[\s\S]*gh release view \$env:RELEASE_TAG \*> \$null[\s\S]*return \$LASTEXITCODE -eq 0/,
-    "the expected not-found probe must not terminate the PowerShell step",
-  );
-  assert.match(
-    publishStep,
-    /ErrorActionPreference = "Continue"[\s\S]*gh release create \$env:RELEASE_TAG[\s\S]*\$createExitCode = \$LASTEXITCODE/,
-    "a concurrent create race must be handled by exit code and a follow-up probe",
-  );
-  assert.match(
-    publishStep,
-    /if \(-not \(Test-GitHubRelease\)\)[\s\S]*if \(\$createExitCode -ne 0\)[\s\S]*if \(-not \(Test-GitHubRelease\)\)/,
-    "both initial absence and a losing create race must use the non-terminating probe",
-  );
+  const other = runStepWithStubGh(script, { RELEASE_ID: "111" }, [{ match: byTag, outputs: ["222 0"] }]);
+  assert.notEqual(other.status, 0, "uploads by tag would land on another release");
+  assert.deepEqual(promotions(other.calls), []);
+
+  const missing = runStepWithStubGh(script, { RELEASE_ID: "" }, [{ match: byTag, outputs: ["111 0"] }]);
+  assert.notEqual(missing.status, 0);
+  assert.deepEqual(promotions(missing.calls), []);
 });
 
 test("Windows publishes the budget-approved MSI before updater signing and attestation", () => {
