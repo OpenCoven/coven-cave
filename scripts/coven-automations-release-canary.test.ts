@@ -28,6 +28,10 @@ class CovenAutomationsUnavailableError extends Error {
 }
 
 interface Flaws {
+  offlineFacadeListLooksAvailable?: boolean;
+  lastRunsInventsMissing?: boolean;
+  runLogInvented?: boolean;
+  facadeGetFindsMissing?: boolean;
   historyWithoutReadAt?: boolean;
   missingAction?: string;
   createsActive?: boolean;
@@ -93,6 +97,7 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
     [`occurrence:${occurrenceId}`]: ["Occurrence changed:none → claimed"],
     "automation:cave-release-canary-run": ["Definition created:Revision 1"],
   };
+  const degradedAnswer: CanaryResponse = { status: 503, body: { ok: false, error: "daemon request failed: connect ENOENT", degraded: true } };
   const online = () => {
     if (offline && flaws.fallsBackWhenStopped !== true) {
       throw new CovenAutomationsUnavailableError("daemon request failed: connect ENOENT", true);
@@ -254,6 +259,34 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
         byAutomation: ran && flaws.inFlightMisses !== true ? { "cave-release-canary-run": entry } : {},
       } });
     },
+    listViaRoute: (): Promise<CanaryResponse> => {
+      if (offline && flaws.offlineFacadeListLooksAvailable !== true) return Promise.resolve(degradedAnswer);
+      return Promise.resolve({ status: 200, body: { ok: true, automations: ran ? [{ id: "cave-release-canary-run", status: "PAUSED" }] : [] } });
+    },
+    getViaRoute: (id): Promise<CanaryResponse> => {
+      if (offline) return Promise.resolve(degradedAnswer);
+      return Promise.resolve(id === "cave-release-canary-run" || flaws.facadeGetFindsMissing === true
+        ? { status: 200, body: { ok: true, automation: { id, status: "PAUSED" } } }
+        : { status: 404, body: { ok: false, error: "not found" } });
+    },
+    runsViaRoute: (id): Promise<CanaryResponse> => {
+      if (offline) return Promise.resolve(degradedAnswer);
+      return Promise.resolve({ status: 200, body: { ok: true, runs: ran ? [{ id: runId, automationId: id, status: "running" }] : [] } });
+    },
+    runLogViaRoute: (): Promise<CanaryResponse> => {
+      if (offline) return Promise.resolve(degradedAnswer);
+      return Promise.resolve(flaws.runLogInvented === true
+        ? { status: 200, body: { ok: true, text: "" } }
+        : { status: 404, body: { ok: false, error: "no log for this run" } });
+    },
+    lastRunsViaRoute: (ids): Promise<CanaryResponse> => {
+      if (offline) return Promise.resolve(degradedAnswer);
+      return Promise.resolve({ status: 200, body: { ok: true, runs: Object.fromEntries(ids.map((id) =>
+        [id, id === "cave-release-canary-run" || flaws.lastRunsInventsMissing === true ? { id: runId } : null])) } });
+    },
+    importViaRoute: (): Promise<CanaryResponse> => Promise.resolve(offline
+      ? degradedAnswer
+      : { status: 200, body: { ok: true, imported: 0, skipped: 0 } }),
     restartDaemon: () => {
       if (flaws.forgetsUpdateOnRestart === true) routine = previous;
       return Promise.resolve();
@@ -339,6 +372,10 @@ for (const [label, flaws, message] of [
   ["a definition that looks available when the daemon is gone", { offlineDefinitionLooksAvailable: true }, /definition with the daemon stopped: expected 503 degraded/u],
   ["an overview that misses the claimed occurrence", { inFlightMisses: true }, /in-flight overview: expected 200/u],
   ["a claimed occurrence reported as running", { inFlightCollapses: true }, /in-flight overview: expected 200/u],
+  ["a facade list that looks available when the daemon is gone", { offlineFacadeListLooksAvailable: true }, /facade list with the daemon stopped: expected 503 degraded/u],
+  ["a facade get that finds an unknown routine", { facadeGetFindsMissing: true }, /facade get of an unknown routine: expected 404/u],
+  ["a last-runs answer that invents a run", { lastRunsInventsMissing: true }, /facade last runs: expected the run routine's newest run and none for the unknown routine/u],
+  ["a run log for a runtime that never started", { runLogInvented: true }, /facade run log: expected no log/u],
   ["an overview that looks available when the daemon is gone", { offlineInFlightLooksAvailable: true }, /the in-flight overview with the daemon stopped: expected 503/u],
 ] as const) {
   test(`fails closed on ${label}`, async () => {

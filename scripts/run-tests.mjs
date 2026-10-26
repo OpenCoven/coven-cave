@@ -1620,6 +1620,7 @@ export const SUITES = {
     "src/lib/server/automation-history.test.ts",
     "src/app/api/coven-automations/[id]/events/route.test.ts",
     "src/lib/automations/history-export.test.ts",
+    "src/lib/automations/facade-inventory.test.ts",
     "src/components/automations/canonical-history.test.ts",
     "src/lib/server/automation-lifecycle.test.ts",
     "src/app/api/coven-automation-lifecycle/route.test.ts",

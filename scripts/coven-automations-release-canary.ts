@@ -48,6 +48,7 @@ const USAGE = "usage: coven-automations-release-canary.ts [--coven <path to cove
 const ROUTINE_ID = "cave-release-canary";
 const FORM_ROUTINE_ID = "cave-release-canary-form";
 const RUN_ROUTINE_ID = "cave-release-canary-run";
+const MISSING_ROUTINE_ID = "cave-release-canary-missing";
 const READINESS_TIMEOUT_MS = 30_000;
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 // sockaddr_un.sun_path is 104 bytes on macOS and 108 on Linux, including NUL.
@@ -134,6 +135,18 @@ export interface CanaryDependencies {
   definition(id: string): Promise<CanaryResponse>;
   /** `GET /api/coven-automation-occurrences` */
   inFlight(): Promise<CanaryResponse>;
+  /** `GET /api/codex-automations`, the shared Schedules/Calendar list. */
+  listViaRoute(): Promise<CanaryResponse>;
+  /** `GET /api/codex-automations/[id]`, as a saved definition is re-read. */
+  getViaRoute(id: string): Promise<CanaryResponse>;
+  /** `GET /api/codex-automations/[id]/runs` */
+  runsViaRoute(id: string): Promise<CanaryResponse>;
+  /** `GET /api/codex-automations/[id]/runs/[runId]/log` */
+  runLogViaRoute(id: string, runId: string): Promise<CanaryResponse>;
+  /** `GET /api/codex-automation-last-runs?id=…` */
+  lastRunsViaRoute(ids: readonly string[]): Promise<CanaryResponse>;
+  /** `POST /api/codex-automations/import`, the explicit legacy import. */
+  importViaRoute(): Promise<CanaryResponse>;
   restartDaemon(): Promise<void>;
   stopDaemon(): Promise<void>;
 }
@@ -399,6 +412,39 @@ export async function runCaveAutomationsScenario(
     truncated: [],
   });
 
+  // Every compatibility-facade read the browser still sends is served from Coven.
+  const facadeList = await cave.listViaRoute();
+  const facadeRows = Array.isArray(facadeList.body.automations) ? facadeList.body.automations as Record<string, unknown>[] : [];
+  if (facadeList.status !== 200 || facadeList.body.ok !== true ||
+    facadeRows.find((row) => row.id === RUN_ROUTINE_ID)?.status !== "PAUSED") {
+    fail(`facade list: expected the paused run routine, received ${facadeList.status} ${describe(facadeList.body)}.`);
+  }
+  const facadeOne = await cave.getViaRoute(RUN_ROUTINE_ID);
+  if (facadeOne.status !== 200 || (facadeOne.body.automation as { id?: unknown } | undefined)?.id !== RUN_ROUTINE_ID) {
+    fail(`facade get: expected the run routine, received ${facadeOne.status} ${describe(facadeOne.body)}.`);
+  }
+  expectAnswer("facade get of an unknown routine", await cave.getViaRoute(MISSING_ROUTINE_ID), 404, { ok: false, error: "not found" });
+  const facadeRuns = await cave.runsViaRoute(RUN_ROUTINE_ID);
+  const facadeRunRows = Array.isArray(facadeRuns.body.runs) ? facadeRuns.body.runs as Record<string, unknown>[] : [];
+  if (facadeRuns.status !== 200 || facadeRuns.body.ok !== true || facadeRunRows.length !== 1 ||
+    facadeRunRows[0].id !== run.id || facadeRunRows[0].automationId !== RUN_ROUTINE_ID) {
+    fail(`facade runs: expected the one recorded run ${String(run.id)}, received ${facadeRuns.status} ${describe(facadeRuns.body)}.`);
+  }
+  const facadeLastRuns = await cave.lastRunsViaRoute([RUN_ROUTINE_ID, MISSING_ROUTINE_ID]);
+  const lastRuns = facadeLastRuns.body.runs as Record<string, { id?: unknown } | null> | undefined;
+  if (facadeLastRuns.status !== 200 || facadeLastRuns.body.ok !== true || lastRuns?.[RUN_ROUTINE_ID]?.id !== run.id ||
+    lastRuns?.[MISSING_ROUTINE_ID] !== null) {
+    fail(`facade last runs: expected the run routine's newest run and none for the unknown routine, received ${facadeLastRuns.status} ${describe(facadeLastRuns.body)}.`);
+  }
+  const facadeLog = await cave.runLogViaRoute(RUN_ROUTINE_ID, String(run.id));
+  if (facadeLog.status !== 404 || facadeLog.body.ok !== false) {
+    fail(`facade run log: expected no log for a run whose runtime never started, received ${facadeLog.status} ${describe(facadeLog.body)}.`);
+  }
+  const facadeImport = await cave.importViaRoute();
+  if (facadeImport.status !== 200 || facadeImport.body.ok !== true) {
+    fail(`facade legacy import: expected Coven's import report, received ${facadeImport.status} ${describe(facadeImport.body)}.`);
+  }
+
   // The changefeed: each stream from the beginning, then from its checkpoint.
   const runStream = { stream: "run", streamId: String(run.id) };
   const runCheckpoint = expectFeed("run stream", await cave.feed(RUN_ROUTINE_ID, runStream), [
@@ -498,6 +544,18 @@ export async function runCaveAutomationsScenario(
   const offlineDefinition = await cave.definition(RUN_ROUTINE_ID);
   if (offlineDefinition.status !== 503 || offlineDefinition.body.degraded !== true) {
     fail(`definition with the daemon stopped: expected 503 degraded, received ${offlineDefinition.status} ${describe(offlineDefinition.body)}.`);
+  }
+  for (const [label, response] of [
+    ["facade list", await cave.listViaRoute()],
+    ["facade get", await cave.getViaRoute(RUN_ROUTINE_ID)],
+    ["facade runs", await cave.runsViaRoute(RUN_ROUTINE_ID)],
+    ["facade run log", await cave.runLogViaRoute(RUN_ROUTINE_ID, "run-0ce1422cb4c24b87b33dfd1834a3edf7")],
+    ["facade last runs", await cave.lastRunsViaRoute([RUN_ROUTINE_ID])],
+    ["facade legacy import", await cave.importViaRoute()],
+  ] as const) {
+    if (response.status !== 503 || response.body.ok !== false || response.body.degraded !== true) {
+      fail(`${label} with the daemon stopped: expected 503 degraded, received ${response.status} ${describe(response.body)}.`);
+    }
   }
 
   return { mutations: 11, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 };
@@ -795,6 +853,10 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
     const editRoute = await import("../src/app/api/codex-automations/[id]/route.ts");
     const definitionRoute = await import("../src/app/api/codex-automations/[id]/definition/route.ts");
     const inFlightRoute = await import("../src/app/api/coven-automation-occurrences/route.ts");
+    const runsRoute = await import("../src/app/api/codex-automations/[id]/runs/route.ts");
+    const runLogRoute = await import("../src/app/api/codex-automations/[id]/runs/[runId]/log/route.ts");
+    const lastRunsRoute = await import("../src/app/api/codex-automation-last-runs/route.ts");
+    const legacyImportRoute = await import("../src/app/api/codex-automations/import/route.ts");
     const { TOKEN_HEADER } = await import("../src/proxy-helpers.ts");
     // Mutating routes accept only a local origin, as the desktop app sends them.
     const token = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
@@ -886,6 +948,17 @@ export async function verifyCaveAutomationsRelease(options: CanaryArguments & { 
       saveViaRoute: async (id, body) => answer(await editRoute.PATCH(
         local(`http://127.0.0.1:3000/api/codex-automations/${encodeURIComponent(id)}`, body, "PATCH"), { params: Promise.resolve({ id }) })),
       inFlight: async () => answer(await inFlightRoute.GET(new Request("http://127.0.0.1:3000/api/coven-automation-occurrences"))),
+      listViaRoute: async () => answer(await createRoute.GET()),
+      getViaRoute: async (id) => answer(await editRoute.GET(
+        new Request(`http://127.0.0.1:3000/api/codex-automations/${encodeURIComponent(id)}`), { params: Promise.resolve({ id }) })),
+      runsViaRoute: async (id) => answer(await runsRoute.GET(
+        new Request(`http://127.0.0.1:3000/api/codex-automations/${encodeURIComponent(id)}/runs`), { params: Promise.resolve({ id }) })),
+      runLogViaRoute: async (id, runId) => answer(await runLogRoute.GET(
+        new Request(`http://127.0.0.1:3000/api/codex-automations/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/log`),
+        { params: Promise.resolve({ id, runId }) })),
+      lastRunsViaRoute: async (ids) => answer(await lastRunsRoute.GET(new Request(
+        `http://127.0.0.1:3000/api/codex-automation-last-runs?${new URLSearchParams(ids.map((id) => ["id", id]))}`))),
+      importViaRoute: async () => answer(await legacyImportRoute.POST(local("http://127.0.0.1:3000/api/codex-automations/import", {}))),
       definition: async (id) => answer(await definitionRoute.GET(
         new Request(`http://127.0.0.1:3000/api/codex-automations/${encodeURIComponent(id)}/definition`), { params: Promise.resolve({ id }) })),
       restartDaemon: async () => {
@@ -960,7 +1033,9 @@ async function main(signal: AbortSignal): Promise<void> {
     "staleSave=refused",
     "conflictRebase=kept-both",
     "inFlight=claimed",
+    "facadeReadsListGetRunsLastRunsLogImport=served",
     "offline=reported-unavailable",
+    "facadeOffline=degraded",
   ].join(" ") + "\n");
 }
 
