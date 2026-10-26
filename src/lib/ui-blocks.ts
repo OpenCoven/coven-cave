@@ -769,6 +769,27 @@ export const UI_BLOCK_CATALOG: Record<UiComponentType, UiComponentSpec> = {
   },
 };
 
+/** The word a reader hears for a Callout's tone; colour and icon are never the only signal. Plain tones need none. */
+export const UI_CALLOUT_LABELS: Readonly<Record<string, string>> = {
+  info: "Note",
+  success: "Success",
+  warning: "Warning",
+  danger: "Important",
+};
+
+export type UiTrendDirection = "up" | "down" | "flat";
+
+/** The word a reader hears for a Stat trend, whatever its tone. */
+export const UI_TREND_WORDS: Readonly<Record<UiTrendDirection, string>> = {
+  up: "increase",
+  down: "decrease",
+  flat: "unchanged",
+};
+
+export function uiTrendDirection(trend: number): UiTrendDirection {
+  return trend > 0 ? "up" : trend < 0 ? "down" : "flat";
+}
+
 export function isUiComponentType(name: string): name is UiComponentType {
   return (UI_COMPONENT_TYPES as readonly string[]).includes(name);
 }
@@ -803,6 +824,10 @@ export type UiBlockDocument = {
   states: UiStateDeclaration[];
   /** Block-level notes (truncation, mismatched tags, caps). One chip, below the block. */
   diagnostics: string[];
+  /** Settled only: the source stopped mid-tag or left tags open. */
+  endedEarly: boolean;
+  /** Components past the node cap were hidden. */
+  capped: boolean;
 };
 
 // ── markup parser ──────────────────────────────────────────────────────────
@@ -839,6 +864,7 @@ type ParsedMarkup = {
   truncated: boolean;
   unclosed: string[];
   elementCount: number;
+  capped: boolean;
 };
 
 /** Index of the `}` matching the `{` at `start`, aware of strings and comments; -1 if it never closes. */
@@ -1049,6 +1075,7 @@ function parseMarkup(source: string, streaming: boolean): ParsedMarkup {
     truncated,
     unclosed: stack.filter((element) => !element.dropped).map((element) => element.name),
     elementCount,
+    capped,
   };
 }
 
@@ -1546,6 +1573,8 @@ export function buildUiBlock(source: string, options: { streaming?: boolean } = 
       nodes: [],
       states: [],
       diagnostics: [`This block is too large to render (over ${UI_BLOCK_LIMITS.maxSourceLength.toLocaleString("en-US")} characters).`],
+      endedEarly: false,
+      capped: false,
     };
   }
   try {
@@ -1553,6 +1582,7 @@ export function buildUiBlock(source: string, options: { streaming?: boolean } = 
     const ctx: ValidationContext = { declared: new Map(), states: [], streaming };
     const nodes = validateChildren(parsed.roots, ROOT_POLICY, "", "", 0, ctx);
     const diagnostics = [...parsed.diagnostics];
+    const endedEarly = !streaming && (parsed.truncated || parsed.unclosed.length > 0);
     if (!streaming) {
       if (parsed.truncated) diagnostics.push("This block ended early; its last tag was incomplete.");
       for (const name of parsed.unclosed) diagnostics.push(`<${name}> was not closed.`);
@@ -1560,11 +1590,18 @@ export function buildUiBlock(source: string, options: { streaming?: boolean } = 
     const hasElements = parsed.elementCount > 0 || nodes.some((node) => node.kind === "pending");
     if (!hasElements) {
       const meaningful = streaming ? nodes.length > 0 : source.trim().length > 0;
-      return { status: meaningful ? "fallback" : "empty", nodes: [], states: [], diagnostics: streaming ? [] : diagnostics };
+      return {
+        status: meaningful ? "fallback" : "empty",
+        nodes: [],
+        states: [],
+        diagnostics: streaming ? [] : diagnostics,
+        endedEarly,
+        capped: false,
+      };
     }
-    return { status: "ok", nodes, states: ctx.states, diagnostics };
+    return { status: "ok", nodes, states: ctx.states, diagnostics, endedEarly, capped: parsed.capped };
   } catch {
-    return { status: "fallback", nodes: [], states: [], diagnostics: ["This block couldn't be read."] };
+    return { status: "fallback", nodes: [], states: [], diagnostics: ["This block couldn't be read."], endedEarly: false, capped: false };
   }
 }
 
@@ -1649,7 +1686,8 @@ const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 
 export type UiTextPiece =
   | { kind: "text"; text: string }
-  | { kind: "ui"; source: string; complete: boolean };
+  /** `raw` is the fence exactly as written, opener through closing fence (or the text end). */
+  | { kind: "ui"; source: string; complete: boolean; raw: string };
 
 type SourceLine = { start: number; contentEnd: number; end: number; content: string };
 
@@ -1667,6 +1705,52 @@ function sourceLines(text: string): SourceLine[] {
   return lines;
 }
 
+const LIST_ITEM_RE = /^([ \t]*)([-+*]|\d{1,9}[.)])([ \t]+|$)/;
+const THEMATIC_BREAK_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+const BLOCK_START_RE = /^ {0,3}(?:`{3,}|~{3,}|#{1,6}(?:[ \t]|$)|>)/;
+
+/** Content columns of the open list items, outermost first, and whether the last line was blank. */
+type ListScan = { columns: number[]; blank: boolean };
+
+function indentWidth(line: string): number {
+  let width = 0;
+  for (const character of line) {
+    if (character === " ") width += 1;
+    else if (character === "\t") width += 4 - (width % 4);
+    else break;
+  }
+  return width;
+}
+
+/**
+ * Follow CommonMark list continuation: a line indented to an open item's
+ * content column stays inside it, a blank line keeps items open, and so does
+ * a lazy paragraph line. Anything else at a lower indent closes the item.
+ */
+function advanceListScan(scan: ListScan, line: string): void {
+  if (!line.trim()) {
+    scan.blank = true;
+    return;
+  }
+  const indent = indentWidth(line);
+  const thematicBreak = THEMATIC_BREAK_RE.test(line);
+  const item = thematicBreak ? null : LIST_ITEM_RE.exec(line);
+  if (item || thematicBreak || scan.blank || BLOCK_START_RE.test(line)) {
+    while (scan.columns.length && indent < scan.columns[scan.columns.length - 1]) scan.columns.pop();
+  }
+  const parent = scan.columns[scan.columns.length - 1] ?? 0;
+  if (item && indent - parent <= 3) {
+    const spaces = item[3].length;
+    scan.columns.push(indent + item[2].length + (spaces === 0 || spaces > 4 ? 1 : spaces));
+  }
+  scan.blank = false;
+}
+
+function insideListItem(scan: ListScan, line: string): boolean {
+  const indent = indentWidth(line);
+  return scan.columns.some((column) => indent >= column);
+}
+
 function findClose(lines: SourceLine[], from: number, fence: string): number {
   for (let index = from; index < lines.length; index += 1) {
     const match = FENCE_CLOSE_RE.exec(lines[index].content);
@@ -1677,35 +1761,45 @@ function findClose(lines: SourceLine[], from: number, fence: string): number {
 
 /**
  * Split settled prose on top-level ```coven:ui fences. A coven:ui example
- * inside another fence, a list, a quote or an indented code block stays
+ * inside another fence, a list item, a quote or an indented code block stays
  * literal text: openers are only honoured at the start of a fenced range,
- * never inside one (`fencedRanges`, the same guard every marker uses). An
- * unterminated final block still renders from the saved text.
+ * never inside one (`fencedRanges`, the same guard every marker uses), and
+ * never indented under an open list item. An unterminated final block still
+ * renders from the saved text.
  */
 export function sliceUiBlocks(text: string): UiTextPiece[] {
   if (!text || !text.includes(UI_BLOCK_FENCE_INFO)) return [{ kind: "text", text }];
   const lines = sourceLines(text);
   const ranges = fencedRanges(text);
   const insideEarlierFence = (offset: number) => ranges.some(([start, end]) => start < offset && offset < end);
+  const lists: ListScan = { columns: [], blank: false };
   const pieces: UiTextPiece[] = [];
   let cursor = 0;
   let index = 0;
   while (index < lines.length) {
     const line = lines[index];
+    const nested = insideEarlierFence(line.start);
     const open = UI_FENCE_OPEN_RE.exec(line.content);
-    if (open && line.end > line.contentEnd && !insideEarlierFence(line.start)) {
+    if (open && line.end > line.contentEnd && !nested && !insideListItem(lists, line.content)) {
+      advanceListScan(lists, line.content);
       const close = findClose(lines, index + 1, open[2]);
       if (line.start > cursor) pieces.push({ kind: "text", text: text.slice(cursor, line.start) });
       if (close === -1) {
-        pieces.push({ kind: "ui", source: text.slice(line.end).replace(/\s+$/, ""), complete: false });
+        pieces.push({ kind: "ui", source: text.slice(line.end).replace(/\s+$/, ""), complete: false, raw: text.slice(line.start) });
         cursor = text.length;
         break;
       }
-      pieces.push({ kind: "ui", source: text.slice(line.end, lines[close].start).replace(/\r?\n$/, ""), complete: true });
+      pieces.push({
+        kind: "ui",
+        source: text.slice(line.end, lines[close].start).replace(/\r?\n$/, ""),
+        complete: true,
+        raw: text.slice(line.start, lines[close].contentEnd),
+      });
       cursor = lines[close].contentEnd;
       index = close + 1;
       continue;
     }
+    if (!nested) advanceListScan(lists, line.content);
     const ordinary = FENCE_OPEN_RE.exec(line.content);
     if (ordinary && !(ordinary[1][0] === "`" && ordinary[2].includes("`"))) {
       const close = findClose(lines, index + 1, ordinary[1]);
@@ -1718,6 +1812,19 @@ export function sliceUiBlocks(text: string): UiTextPiece[] {
   if (pieces.length === 0) return [{ kind: "text", text }];
   if (cursor < text.length) pieces.push({ kind: "text", text: text.slice(cursor) });
   return pieces;
+}
+
+/**
+ * Whether a ```coven:ui opener line (or a half-written one) that follows
+ * `before` is live, by the sliceUiBlocks rule. The streaming renderer asks
+ * this with the text of the blocks before a fence block, so an example that
+ * stays literal once settled is never live while it streams.
+ */
+export function isLiveUiFenceAfter(before: string, openerLine: string): boolean {
+  const indent = /^[ \t]*/.exec(openerLine)?.[0] ?? "";
+  const pieces = sliceUiBlocks(`${before}${indent}\`\`\`${UI_BLOCK_FENCE_INFO}\n`);
+  const last = pieces[pieces.length - 1];
+  return last.kind === "ui" && !last.complete && last.source === "";
 }
 
 /**
