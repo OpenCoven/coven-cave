@@ -525,21 +525,29 @@
 /* Codex inline file-edit card: a mutation tool call rendered visibly in the
    chat transcript. The summary stays compact; expanding shows the diff body
    using the same details pattern as other tool calls. */
+/* The inline edit card shares .cave-tool-block's framing (cave-chat/activity.css):
+   a hairline card standing alone, a flat row inside the work line. This sheet
+   owns only its summary grid and actions. */
 .cave-edit-card {
   display: block;
-  padding: 0.4rem 0.6rem;
-  border-radius: 0.625rem;
-  background: var(--bg-raised);
   font-size: var(--text-sm);
 }
 .cave-edit-card__summary {
   display: grid !important;
   grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
+  min-height: calc(var(--space-6) + var(--space-1));
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
   cursor: pointer;
   list-style: none;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.cave-edit-card__summary:hover {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 .cave-edit-card__summary::-webkit-details-marker {
   display: none;
@@ -551,7 +559,7 @@
   height: 10px;
   flex: none;
   background-color: var(--text-muted);
-  opacity: 0.65;
+  opacity: 0.55;
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 4l4 4-4 4' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   mask-size: contain;
   mask-repeat: no-repeat;
@@ -574,12 +582,12 @@ details[open] > .cave-edit-card__summary::before {
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 .cave-edit-card > .cave-tool-io {
-  margin-top: 0.55rem;
+  margin-top: var(--space-2);
   border-top: 1px solid var(--border-hairline);
-  padding-top: 0.55rem;
+  padding-top: var(--space-2);
 }
 .cave-edit-card__title {
   min-width: 0;
@@ -602,9 +610,10 @@ details[open] > .cave-edit-card__summary::before {
 }
 .cave-edit-card__review {
   flex: none;
-  padding: 0.2rem 0.6rem;
+  min-height: var(--space-5);
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-hairline);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-secondary, var(--text-primary));
   font-size: var(--text-xs);
@@ -618,13 +627,14 @@ details[open] > .cave-edit-card__summary::before {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-1);
 }
 .cave-edit-card__undo {
   flex: none;
-  padding: 0.2rem 0.6rem;
+  min-height: var(--space-5);
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-hairline);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-secondary, var(--text-primary));
   font-size: var(--text-xs);
