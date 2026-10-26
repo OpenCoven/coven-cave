@@ -14,8 +14,11 @@
  * that `/api/sessions/list`'s 4-second poll is the only thing driving.
  */
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const previousEnv = {
@@ -24,7 +27,17 @@ const previousEnv = {
   CAVE_PROJECTS_PATH_OVERRIDE: process.env.CAVE_PROJECTS_PATH_OVERRIDE,
   CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE,
 };
-const scratchRoot = path.join(process.cwd(), `.slct-${process.pid}`);
+// Outside any Git checkout (#6231). The default compute enriches rows with git
+// context, so fixtures inside a linked worktree are attributed its branch, and
+// the branch-PR cache's detached refresh runs the login shell and `gh`. The
+// shell probe then persists its answer under COVEN_HOME after a later reset
+// has started removing it.
+const scratchRoot = realpathSync(mkdtempSync(path.join(tmpdir(), "slct-")));
+assert.throws(
+  () => execFileSync("git", ["-C", scratchRoot, "rev-parse", "--git-dir"], { stdio: "pipe" }),
+  (error) => error.code === "ENOENT" || /not a git repository/.test(String(error.stderr)),
+  "the fixture root must not sit inside a Git checkout",
+);
 const covenHome = path.join(scratchRoot, "h");
 const projectsPath = path.join(scratchRoot, "projects.json");
 const permissionsPath = path.join(scratchRoot, "project-permissions.json");
