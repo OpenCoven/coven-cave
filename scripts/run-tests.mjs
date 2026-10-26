@@ -1699,6 +1699,7 @@ export const SUITES = {
     "src/app/api/projects/icon/route.test.ts",
     "src/app/api/images/generate/route.test.ts",
     "src/app/api/chat/model-state/route.test.ts",
+    "src/app/api/chat/model-state/route-handoff.integration.test.ts",
     "src/app/api/runtime-models/[runtime]/route.test.ts",
     "src/app/api/runtime-models/[runtime]/route-behavior.test.ts",
     "src/app/api/runtime-models/opencode/route.test.ts",
@@ -2217,6 +2218,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // Real PATCH /api/chat/model-state requests against a scratch home (#6098).
+  "src/app/api/chat/model-state/route-handoff.integration.test.ts",
   "src/lib/server/automation-consumer-routes.test.ts",
   // Real inbox store and route regressions reach @/lib runtime imports.
   "src/lib/cave-inbox-preservation.test.ts",
