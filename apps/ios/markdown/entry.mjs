@@ -277,13 +277,16 @@ document.addEventListener("click", (e) => {
   const tag = target.tagName?.toLowerCase();
   const kind = tag === "table" ? "table" : tag === "img" ? "image" : "diagram";
   // For an <img>, also pass its src so native can decode it into a UIImage and
-  // present the smooth native zoom (pinch/pan/double-tap) instead of a WebView.
+  // present the smooth native zoom (pinch/pan/double-tap) instead of a WebView,
+  // and its alt text so VoiceOver can name the enlarged image.
   const src = kind === "image" ? (target.getAttribute("src") || "") : "";
+  const alt = kind === "image" ? (target.getAttribute("alt") || "") : "";
   window.webkit?.messageHandlers?.cave?.postMessage({
     type: "enlarge",
     kind,
     html: target.outerHTML,
     src,
+    alt,
   });
 });
 

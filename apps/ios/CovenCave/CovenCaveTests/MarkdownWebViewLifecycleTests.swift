@@ -27,7 +27,7 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
         defer { coordinator.invalidate() }
         let presented = expectation(description: "Inline zoom presents a bounded native image")
         let token = NotificationCenter.default.addObserver(forName: .caveZoomContent, object: nil, queue: .main) { note in
-            guard let target = note.object as? ZoomTarget, case .image(let image) = target.content else {
+            guard let target = note.object as? ZoomTarget, case .image(let image, _) = target.content else {
                 XCTFail("Expected a native image")
                 presented.fulfill()
                 return
@@ -37,6 +37,34 @@ final class MarkdownWebViewLifecycleTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(token) }
         coordinator.presentImage(src: prefix + data.base64EncodedString(), fallbackHTML: "")
+        await fulfillment(of: [presented], timeout: 5)
+    }
+
+    @MainActor
+    func testInlineImageZoomKeepsItsAltTextForVoiceOver() async throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8), format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        let source = "data:image/png;base64," + (try XCTUnwrap(image.pngData())).base64EncodedString()
+        let coordinator = MarkdownWebView.Coordinator()
+        defer { coordinator.invalidate() }
+        let presented = expectation(description: "Inline zoom carries the image's alt text")
+        let token = NotificationCenter.default.addObserver(forName: .caveZoomContent, object: nil, queue: .main) { note in
+            guard let target = note.object as? ZoomTarget, case .image(_, let description) = target.content else {
+                XCTFail("Expected a native image")
+                presented.fulfill()
+                return
+            }
+            XCTAssertEqual(description, "Quarterly revenue chart")
+            presented.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        coordinator.enqueueScriptBody([
+            "type": "enlarge", "kind": "image", "src": source, "alt": "Quarterly revenue chart",
+        ])
         await fulfillment(of: [presented], timeout: 5)
     }
 
