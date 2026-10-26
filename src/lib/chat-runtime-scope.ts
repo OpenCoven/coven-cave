@@ -148,8 +148,8 @@ export async function resolveLocalRuntimeCwd(
   options: ResolveLocalRuntimeOptions = {},
 ): Promise<string> {
   const authorizedProjectRoot = options.rootAuthority === "authorized-project";
-  const homePath = path.resolve(normalizePath(options.homeDir ?? homedir()));
-  const homeRoot = await realpath(homePath);
+  const homePath = path.resolve(/* turbopackIgnore: true */ normalizePath(options.homeDir ?? homedir()));
+  const homeRoot = await realpath(/* turbopackIgnore: true */ homePath);
   const trimmed = requested?.trim();
   if (!trimmed) {
     throw new RuntimeScopeError(

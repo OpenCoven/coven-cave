@@ -165,11 +165,13 @@ for (const [name, versions] of nativeVersions) {
   );
 }
 
-// Security floors for the dependency families used by Cave (#6139). Check every
-// resolved copy, not just direct dependencies or override declarations.
+// Security floors for the dependency families used by Cave (#6139, #6264). Check
+// every resolved copy, not just direct dependencies or override declarations.
 const securityFloors = {
   "vite": "8.1.6", // GHSA-698v-4r3x-3vcv
-  "dompurify": "3.4.16", // GHSA-6688-9rhm-gjv2, GHSA-p98j-92pf-mc4p
+  "dompurify": "3.4.17", // GHSA-6688-9rhm-gjv2, GHSA-p98j-92pf-mc4p, GHSA-c6gr-qvv4-5v3f, GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr
+  "next": "16.4.1", // GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r
+  "@vitest/mocker": "4.1.12", // GHSA-qxg6-89mg-rqv8, GHSA-xp26-3454-mjgp
   "katex": "0.18.2", // GHSA-238p-pmpm-9mq7
   "source-map-js": "1.2.2", // GHSA-68fv-2mgg-jv7q
   "@vue/server-renderer": "3.5.42", // GHSA-g2v6-rqmx-r4w6
@@ -193,7 +195,7 @@ for (const entry of cargoLock.split("[[package]]")) {
   const version = /^version = "([^"]+)"$/m.exec(entry)?.[1];
   if (!atLeastStable(version ?? "", "0.23.45")) vulnerable.push({ name: "rustls", version });
 }
-assert.deepEqual(vulnerable, [], "Resolved dependency graph must exclude the vulnerable versions from #6139");
+assert.deepEqual(vulnerable, [], "Resolved dependency graph must exclude the vulnerable versions from #6139 and #6264");
 
 // KaTeX's security release crosses the consumers' 0.x ranges. Exercise the
 // actual copies loaded by both consumers, including the advisory's trust gadget.

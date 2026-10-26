@@ -171,8 +171,9 @@ The gate also reads the baseline tag's `package.json` and checks three pins
 against `BUNDLED_DEPENDENCY_FLOORS` in `scripts/bundled-dependency-floor.mjs`:
 `dependencies.next`, `dependencies.sharp` and `pnpm.overrides.sharp`. Those are
 the patched minimums recorded on
-[#5339](https://github.com/OpenCoven/coven-cave/issues/5339), currently Next
-16.3.3 and sharp 0.35.4. Patched releases pin all three exactly, and every
+[#5339](https://github.com/OpenCoven/coven-cave/issues/5339) and raised since,
+currently Next 16.4.1 ([#6264](https://github.com/OpenCoven/coven-cave/issues/6264))
+and sharp 0.35.4. Patched releases pin all three exactly, and every
 published tag's pins match its lockfile, so the pin names what the release
 bundles. A range, a prerelease or a missing pin is not clear, and neither is a
 tag with no `package.json`.
@@ -189,7 +190,7 @@ problem in four places:
 - an annotation:
 
   ```text
-  ::warning::Rollback baseline v0.4.1 is below the bundled-dependency floor (dependencies.next 16.3.1 is below the patched minimum 16.3.3 (GHSA-p293-qw3h-jr36 and GHSA-2xp9-vwfh-vxw4, #5339); dependencies.sharp 0.35.3 is below the patched minimum 0.35.4 (libheif 1.23.2 for GHSA-g89c-p67h-r497 via sharp-libvips 1.3.3, #5339); pnpm.overrides.sharp 0.35.3 is below the patched minimum 0.35.4 (libheif 1.23.2 for GHSA-g89c-p67h-r497 via sharp-libvips 1.3.3, #5339)); do not roll back to it — patch forward instead.
+  ::warning::Rollback baseline v0.5.17 is below the bundled-dependency floor (dependencies.next 16.3.8 is below the patched minimum 16.4.1 (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr and GHSA-p3m5-59mp-jv5r, #6264)); do not roll back to it — patch forward instead.
   ```
 
 - the verdict's `baselineFloor`, which `scripts/release-rollout.mjs` reads.
