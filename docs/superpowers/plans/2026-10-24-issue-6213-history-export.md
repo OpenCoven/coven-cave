@@ -1,6 +1,6 @@
 # Automation history metadata export implementation plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 
 **Goal:** Download a bounded diagnostic packet from the canonical history page already read by Cave.
 
@@ -44,7 +44,7 @@
 
 - [x] Add failing component tests for initial/loading disablement, current-page download without another fetch/mutation, stale metadata, fixed filename, generic failure, anchor/object URL cleanup, focus and abort/correlation on selection changes.
 - [x] Implement Export metadata with the shared Button/announcer and existing browser download pattern. Announce preparation truthfully and retain clear diagnostic-only scope copy.
-- [ ] Extend the real released-daemon canary through readAutomationHistory plus the serializer; retain existing Research/privacy checks and assert closed bounded output.
+- [x] Extend the real released-daemon canary through readAutomationHistory plus the serializer; retain existing Research/privacy checks and assert closed bounded output.
 - [ ] Run focused tests, typecheck, lint, wiring, required app/API verification, guarded production build and released-daemon canary. Inspect dark/light/default-browser keyboard behavior and record evidence limits.
 - [ ] Request fresh whole-branch review, repair actionable findings, commit/push a scoped PR, then verify exact-head hosted checks/review threads before authorized protected merge. Intentionally preserve the owned branch/worktree and keep #5217 open.
 
