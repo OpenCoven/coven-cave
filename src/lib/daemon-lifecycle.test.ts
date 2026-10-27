@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   DAEMON_LIFECYCLE_STATES,
   describeDaemonLifecycle,
+  isTransitionalDaemonLifecycleState,
   mergeDaemonLifecycle,
   projectDaemonLifecycle,
   type DaemonLifecycleEvidence,
@@ -55,6 +56,25 @@ test("every documented state is projected from evidence, never from a bare flag"
     ["offline with unknown runtime", { availability: "offline", runtime: "unknown" }, "stopped"],
     ["unreachable endpoint", { availability: "unreachable" }, "unreachable"],
     ["hub unreachable", { targetMode: "hub", availability: "unreachable" }, "unreachable"],
+    [
+      "restart in flight after a ready instance",
+      { operation: { kind: "restart", startedAt: "2026-10-27T00:00:00.000Z" }, previouslyReady: true },
+      "recovering",
+    ],
+    [
+      "restart stopping the displaced daemon, which still answers",
+      {
+        availability: "online",
+        operation: { kind: "restart", startedAt: "2026-10-27T00:00:00.000Z", phase: "stopping" },
+        previouslyReady: true,
+      },
+      "stopping",
+    ],
+    [
+      "stop phase over an endpoint that already went away",
+      { operation: { kind: "restart", startedAt: "2026-10-27T00:00:00.000Z", phase: "stopping" } },
+      "stopping",
+    ],
   ];
   for (const [name, input, expected] of cases) {
     const projected = projectDaemonLifecycle(evidence(input));
@@ -118,4 +138,12 @@ test("every state has a user-facing label and tone", () => {
     { label: "Running outside the service", tone: "warning" },
   );
   assert.deepEqual(describeDaemonLifecycle({ state: "unknown" }), { label: "Status unavailable", tone: "warning" });
+  assert.deepEqual(describeDaemonLifecycle({ state: "stopping" }), { label: "Stopping…", tone: "warning" });
+});
+
+test("only starting, recovering and stopping are transitional", () => {
+  const transitional = DAEMON_LIFECYCLE_STATES.filter((state) => isTransitionalDaemonLifecycleState(state));
+  assert.deepEqual(transitional, ["starting", "recovering", "stopping"]);
+  assert.equal(isTransitionalDaemonLifecycleState("ready"), false);
+  assert.equal(isTransitionalDaemonLifecycleState("nope"), false);
 });

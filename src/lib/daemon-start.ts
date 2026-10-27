@@ -17,7 +17,15 @@ import {
   type DaemonStartupHealth,
 } from "./daemon-startup-contract.ts";
 import { RuntimeStartupCoordinator } from "./runtime-startup-throttle.ts";
-import { beginDaemonLifecycleOperation } from "./server/daemon-lifecycle-owner.ts";
+import {
+  beginDaemonLifecycleOperation,
+  type DaemonLifecycleOperationHandle,
+} from "./server/daemon-lifecycle-owner.ts";
+import {
+  runDaemonMutation,
+  type DaemonMutationKind,
+  type DaemonMutationRefusal,
+} from "./server/daemon-mutation-owner.ts";
 import {
   inspectDaemonAddress,
   reportsDaemonAddressInUse,
@@ -78,7 +86,9 @@ export type DaemonStartResult =
       | "runtime_incompatible"
       | "restart_throttled"
       | "owner_unreachable"
-      | "address_in_use";
+      | "address_in_use"
+      | "mutation_in_flight"
+      | "duplicate_after_timeout";
     error: string;
     stdout: string;
     stderr: string;
@@ -263,6 +273,8 @@ type StartLocalDaemonOptions = {
   stopDaemon?: () => Promise<void>;
   platform?: NodeJS.Platform;
   diagnostics?: DaemonDiagnosticContext;
+  /** Set by `runLocalDaemonStart`: the lifecycle record this start owns. */
+  lifecycle?: DaemonLifecycleOperationHandle;
 };
 
 const WINDOWS_SHIM_LAUNCH_DIAGNOSTIC =
@@ -386,7 +398,6 @@ export type DaemonStartOperation = {
   diagnostics: DaemonDiagnosticContext;
   result: Promise<DaemonStartResult>;
 };
-let activeDaemonStart: DaemonStartOperation | null = null;
 
 function hasTestSeam(options: StartLocalDaemonOptions): boolean {
   return Boolean(
@@ -428,10 +439,75 @@ export function startLocalDaemonOperation(
       }),
     };
   }
-  if (activeDaemonStart) return activeDaemonStart;
+  const kind: DaemonMutationKind = options.automatic ? "recovery" : options.restart ? "restart" : "start";
+  const refusedResult = (refusal: DaemonMutationRefusal): DaemonStartResult => {
+    const result: DaemonStartResult = {
+      ok: false,
+      code: refusal.code,
+      error: refusal.code === "mutation_in_flight"
+        ? `Cave is already ${MUTATION_PROGRESS_COPY[refusal.inFlight]} the daemon. Wait for that to finish, then try again.`
+        : `Cave's last attempt to ${refusal.previous === "restart" ? "restart" : "start"} the daemon timed out and may still be finishing. Try again in ${Math.ceil(refusal.retryAfterMs / 1_000)} seconds.`,
+      stdout: "",
+      stderr: "",
+      status: 409,
+      readinessAttempts: 0,
+      elapsedMs: 0,
+      launchMode: "none",
+    };
+    recordDaemonDiagnosticEvent(diagnostics, {
+      component: "next",
+      operation: options.automatic ? "daemon-recovery" : "daemon-start",
+      phase: "admission",
+      outcome: "deferred",
+      process: { pid: process.pid },
+      endpoint: { kind: "local-socket", classification: refusal.code },
+      error: diagnosticError(result.error, result.code),
+    });
+    return result;
+  };
+  const result = runDaemonMutation<DaemonStartResult>({
+    kind,
+    run: () => runAdmittedLocalDaemonStart({ ...options, diagnostics }),
+    outcome: (started) => (started.ok ? "ok" : started.code),
+    probeReady: () => localDaemonReadyNow(diagnostics),
+    reconciled: () => ({
+      ok: true,
+      alreadyRunning: true,
+      readinessAttempts: 1,
+      elapsedMs: 0,
+      launchMode: "none",
+    }),
+    refused: refusedResult,
+  });
+  return { diagnostics, result };
+}
 
-  const result = daemonStartCoordinator.run(
-    () => runLocalDaemonStart({ ...options, diagnostics }),
+const MUTATION_PROGRESS_COPY: Record<DaemonMutationKind, string> = {
+  start: "starting",
+  recovery: "recovering",
+  restart: "restarting",
+};
+
+/**
+ * Health proof for the mutation owner's reconcile step: a daemon that became
+ * ready after its start timed out settles that start instead of replaying it.
+ */
+async function localDaemonReadyNow(diagnostics: DaemonDiagnosticContext): Promise<boolean> {
+  const response = await callDaemonTarget<DaemonStartupHealth>(localDaemonTarget(), {
+    path: "/api/v1/health",
+    timeoutMs: 1_500,
+    retryTransportFailure: false,
+    diagnostics,
+    diagnosticOperation: "daemon-mutation-reconcile",
+  });
+  return Boolean(response.ok && response.data && assessDaemonStartupCompatibility(response.data).ok);
+}
+
+/** The bounded restart lane: crash-loop protection around one admitted start. */
+function runAdmittedLocalDaemonStart(options: StartLocalDaemonOptions & { diagnostics: DaemonDiagnosticContext }) {
+  const { diagnostics } = options;
+  return daemonStartCoordinator.run(
+    () => runLocalDaemonStart(options),
     (retryAfterMs) => {
       const throttledResult: DaemonStartResult = {
         ok: false,
@@ -457,16 +533,6 @@ export function startLocalDaemonOperation(
     },
     (operationResult) => operationResult.ok,
   );
-  const operation: DaemonStartOperation = {
-    diagnostics,
-    result,
-  };
-  activeDaemonStart = operation;
-  const releaseOperation = () => {
-    if (activeDaemonStart === operation) activeDaemonStart = null;
-  };
-  void result.then(releaseOperation, releaseOperation);
-  return operation;
 }
 
 export function startLocalDaemon(
@@ -484,7 +550,9 @@ async function runLocalDaemonStart(
   // The lifecycle owner projects `starting`/`recovering` from this record
   // while the start runs, so a status poll never reads a daemon that is
   // booting as `stopped` (#6298).
-  const lifecycleOperation = beginDaemonLifecycleOperation(options.automatic ? "recovery" : "start");
+  const lifecycleOperation = beginDaemonLifecycleOperation(
+    options.automatic ? "recovery" : options.restart ? "restart" : "start",
+  );
   recordDaemonDiagnosticEvent(diagnostics, {
     component: "next",
     operation,
@@ -494,7 +562,7 @@ async function runLocalDaemonStart(
     endpoint: { kind: "local-socket", classification: "local-daemon" },
   });
   try {
-    const result = await runLocalDaemonStartCore({ ...options, diagnostics });
+    const result = await runLocalDaemonStartCore({ ...options, diagnostics, lifecycle: lifecycleOperation });
     recordDaemonDiagnosticEvent(diagnostics, {
       component: "next",
       operation,
@@ -553,6 +621,7 @@ async function runLocalDaemonStartCore({
   stopDaemon = stopLocalDaemon,
   platform = process.platform,
   diagnostics = createDaemonDiagnosticContext(),
+  lifecycle,
 }: StartLocalDaemonOptions = {}): Promise<DaemonStartResult> {
   // The lifecycle preflight below is the whole point of the automatic path, and
   // `restart` skips it. Both flags arrive from a request body, so an automatic
@@ -604,7 +673,12 @@ async function runLocalDaemonStartCore({
     // exits on the lock again. This is how Restart hands a displaced daemon
     // back to its service.
     if (restart && (await serviceRunning(owner).catch(() => null)) === false) {
-      await stopDaemon().catch(() => undefined);
+      lifecycle?.phase("stopping");
+      try {
+        await stopDaemon().catch(() => undefined);
+      } finally {
+        lifecycle?.phase(null);
+      }
     }
     // Whatever happens next, the cached "who owns the daemon" reading is stale.
     clearDaemonServiceConflictCache();

@@ -73,6 +73,10 @@ export function familiarHealthVerdictFromPoll(
     case "auth-expired":
       // Reachable, and refusing us. Restarting cannot fix a credential.
       return "degraded";
+    case "transitioning":
+      // The server already owns a start, recovery or stop (#6298). Reviving
+      // would only ask for the mutation that is running.
+      return "degraded";
     default: {
       // We could not get an answer. A timeout means something is there and not
       // responding; anything else (connection refused, DNS, a broken status

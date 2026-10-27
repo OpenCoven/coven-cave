@@ -1604,6 +1604,7 @@ export const SUITES = {
     "src/lib/server/chat-project-launch.test.ts",
     "src/lib/server/daemon-connection-snapshot.test.ts",
     "src/lib/server/daemon-lifecycle-owner.behavior.test.ts",
+    "src/lib/server/daemon-mutation-owner.behavior.test.ts",
     "src/lib/server/daemon-travel-reconcile.test.ts",
     "src/app/api/chat/conversation/route.test.ts",
     "src/app/api/chat/conversation/[id]/route.test.ts",

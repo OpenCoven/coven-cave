@@ -1457,6 +1457,15 @@ export function Workspace() {
       return;
     }
 
+    if (result.kind === "transitioning") {
+      // The server owns a start, recovery or stop right now (#6298). That is
+      // neither offline nor healthy evidence: keep the current banners, clear
+      // any status-unavailable notice, and let the next poll decide.
+      daemonHealthyStreakRef.current = 0;
+      setDaemonStatusUnavailable(null);
+      return;
+    }
+
     setDaemonStatusUnavailable(null);
     if (result.kind === "offline") {
       setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "offline" }));

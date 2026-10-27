@@ -43,9 +43,13 @@ function owner(): DaemonLifecycleOwner {
   };
 }
 
-export type DaemonLifecycleOperationHandle = { end(): void };
+export type DaemonLifecycleOperationHandle = {
+  end(): void;
+  /** Mark or clear the stopping phase; a stale handle touches nothing. */
+  phase(phase: DaemonLifecycleOperation["phase"] | null): void;
+};
 
-/** Record the start or recovery mutation now in flight. Ending is idempotent. */
+/** Record the start, recovery or restart now in flight. Ending is idempotent. */
 export function beginDaemonLifecycleOperation(
   kind: DaemonLifecycleOperation["kind"],
   now: () => number = Date.now,
@@ -57,12 +61,23 @@ export function beginDaemonLifecycleOperation(
     end() {
       if (state.operation?.token === token) state.operation = null;
     },
+    phase(phase) {
+      const current = state.operation;
+      if (current?.token !== token) return;
+      if (phase) current.phase = phase;
+      else delete current.phase;
+    },
   };
 }
 
 export function daemonLifecycleOperation(): DaemonLifecycleOperation | null {
   const current = owner().operation;
-  return current ? { kind: current.kind, startedAt: current.startedAt } : null;
+  if (!current) return null;
+  return {
+    kind: current.kind,
+    startedAt: current.startedAt,
+    ...(current.phase ? { phase: current.phase } : {}),
+  };
 }
 
 type RuntimeEvidenceOptions = {

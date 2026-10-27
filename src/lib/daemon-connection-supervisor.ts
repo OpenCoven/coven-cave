@@ -278,7 +278,9 @@ export function createDaemonConnectionSupervisor<Handle = TimerHandle>(
 
       dependencies.publish(poll, { fresh });
       const status = classifyDaemonStatusPoll(poll);
-      failures = status.kind === "running" ? 0 : failures + 1;
+      // A mutation in flight is polled at the healthy cadence so readiness is
+      // noticed promptly; it is not a connection failure to back off from.
+      failures = status.kind === "running" || status.kind === "transitioning" ? 0 : failures + 1;
       const delayMs = daemonConnectionPollDelay(failures, random);
       const ownsEpisode = episodeId === request.episodeId;
       if (status.kind !== "running" && ownsEpisode) {
