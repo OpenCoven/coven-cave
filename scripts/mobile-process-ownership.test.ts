@@ -180,6 +180,55 @@ test("Linux identity reads treat a process lost after procfs open as absent", ()
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
+test("Linux identity reads treat a task the kernel is reaping as absent (#6232)", () => {
+  // fs/proc/array.c do_task_stat starts with `pgid = -1, sid = -1` and fills
+  // them only while it can lock the task's signal handlers. A task being
+  // reaped has released them, so its stat reads `X 0 -1 -1`; the same -1
+  // pair can appear before the state letter changes. Both are disappearance,
+  // not malformed identity, and a scan or direct read mid-exit must say so.
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", `
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    const pid = 424243;
+    const tail = '0 -1 4194572 0 0 0 0 0 0 0 0 20 0 1 0 987654 0 0';
+    const stats = {
+      reaped: pid + ' (node) X 0 -1 -1 ' + tail,
+      released: pid + ' (node) S 0 -1 -1 ' + tail,
+    };
+    let current = 'reaped';
+    const read = fs.readFileSync;
+    fs.readFileSync = (path, ...args) => {
+      if (path === '/proc/sys/kernel/random/boot_id') return 'fixture-boot';
+      if (path === '/proc/' + pid + '/stat') return stats[current];
+      return read(path, ...args);
+    };
+    const readdir = fs.readdirSync;
+    fs.readdirSync = (path, ...args) => path === '/proc' ? [String(pid)] : readdir(path, ...args);
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    syncBuiltinESMExports();
+    const { kernelProcessIdentity, scanProcessTable } = await import(${JSON.stringify(new URL("./mobile-process-ownership.ts", import.meta.url).href)});
+    for (const kind of Object.keys(stats)) {
+      current = kind;
+      assert.equal(await kernelProcessIdentity(pid), null, kind);
+      assert.deepEqual(await scanProcessTable(), [], kind);
+    }
+  `], { encoding: "utf8", timeout: 10_000 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("strict Linux identity parsing still rejects the -1 group and session of a reaped task", () => {
+  const fields = [
+    "X", "0", "-1", "-1", "0", "-1", "4194572", "0", "0", "0",
+    "0", "0", "0", "0", "0", "20", "0", "1", "0", "987654",
+  ];
+  assert.throws(
+    () => parseLinuxProcessInfo(`4242 (node) ${fields.join(" ")}`, "boot-uuid"),
+    /missing identity fields/,
+    "only the readers decide a reaped task is gone; the parser never invents an identity",
+  );
+});
+
 test("launch persists independent supervisor and backend-root anchors atomically", async () => {
   const fixture = mkdtempSync(join(scriptsDir, ".mobile-process-launch-"));
   const ownerPath = join(fixture, "next.owner.json");
