@@ -493,6 +493,65 @@ jobs:
       - name: Validate Windows startup controls
         run: node --experimental-strip-types --test --test-concurrency=1 scripts/client-v1-conformance.test.mjs
 
+  # TEMPORARY (#6276): inventory the standalone and sidecar trees per platform.
+  # Removed before this pull request merges.
+  sidecar-inventory-diagnostic:
+    name: Sidecar inventory diagnostic (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build packaged sidecar bundle (budget failure tolerated)
+        run: bash scripts/sidecar-bundle.sh || echo "sidecar-bundle exited $?"
+      - name: Inventory standalone and sidecar trees
+        run: |
+          mkdir -p inventory
+          cat > inventory/walk.mjs <<'EOF'
+          import { lstat, readdir, readlink } from "node:fs/promises";
+          import path from "node:path";
+          const [root, out] = process.argv.slice(2);
+          const lines = [];
+          async function walk(dir) {
+            for (const name of (await readdir(dir)).sort()) {
+              const full = path.join(dir, name);
+              const rel = path.relative(root, full).split(path.sep).join("/");
+              const m = await lstat(full);
+              if (m.isSymbolicLink()) lines.push(`l\t${rel}\t${(await readlink(full)).split(path.sep).join("/")}`);
+              else if (m.isDirectory()) { lines.push(`d\t${rel}`); await walk(full); }
+              else lines.push(`f\t${rel}\t${m.size}`);
+            }
+          }
+          await walk(root);
+          (await import("node:fs")).writeFileSync(out, lines.join("\n") + "\n");
+          console.log(`${root}: ${lines.filter(l => l[0] === "f").length} files, ${lines.filter(l => l[0] === "d").length} dirs, ${lines.filter(l => l[0] === "l").length} links`);
+          EOF
+          node inventory/walk.mjs .next/standalone inventory/standalone.tsv
+          node inventory/walk.mjs src-tauri/resources/server inventory/sidecar.tsv
+          find .next -name '*.nft.json' -not -path '.next/standalone/*' | sort > inventory/traces.txt
+          tar -czf inventory/traces.tgz -T inventory/traces.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sidecar-inventory-${{ matrix.os }}
+          path: inventory/
+          retention-days: 3
+
   frontend-bundle:
     name: Frontend bundle
     needs: paths
