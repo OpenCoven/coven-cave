@@ -57,6 +57,30 @@ final class ChatHeaderBackNavigationUITests: XCTestCase {
                        "a detail root beside the list has nothing to go back to")
     }
 
+    /// Opened from the list, the way people open a chat. A window the system
+    /// calls regular but too narrow to split (iPhone Duo's inner display
+    /// upright) stacks Chats in a plain NavigationStack so this still works
+    /// there (#6207); on a phone the split view collapses as before.
+    @MainActor
+    func testEdgeSwipeReturnsToChatListAfterOpeningFromTheList() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-empty-chat", "--ui-preview-chats-home"]
+        app.launch()
+        let row = app.descendants(matching: .any)["Chat row local:ui-preview-empty-chat"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "the chat list is showing")
+        row.tap()
+        XCTAssertTrue(app.navigationBars[threadTitle].waitForExistence(timeout: 10), "the chat opens")
+        try XCTSkipIf(row.isHittable, "a wide window shows the list beside the conversation; there is no Back")
+
+        let window = app.windows.firstMatch
+        let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+        let middle = window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        edge.press(forDuration: 0.05, thenDragTo: middle)
+
+        XCTAssertTrue(row.waitForExistence(timeout: 10) && row.isHittable,
+                      "the edge-swipe back gesture returns to the chat list")
+    }
+
     @MainActor
     func testEdgeSwipeReturnsToChatList() throws {
         let app = launchIntoConversation()

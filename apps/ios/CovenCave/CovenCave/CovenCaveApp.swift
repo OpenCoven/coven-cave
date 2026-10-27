@@ -306,10 +306,15 @@ private struct WideSplitEnabler<Content: View>: View {
 
     var body: some View {
         GeometryReader { geo in
-            content.environment(
-                \.horizontalSizeClass,
-                SplitWidth.sizeClass(forWidth: geo.size.width, inherited: inherited)
-            )
+            content
+                .environment(
+                    \.horizontalSizeClass,
+                    SplitWidth.sizeClass(forWidth: geo.size.width, inherited: inherited)
+                )
+                .environment(
+                    \.stacksNarrowRegularWindow,
+                    SplitWidth.isNarrowRegular(width: geo.size.width, inherited: inherited)
+                )
         }
     }
 }
@@ -322,5 +327,25 @@ enum SplitWidth {
     static func sizeClass(forWidth width: CGFloat, inherited: UserInterfaceSizeClass?) -> UserInterfaceSizeClass? {
         if width >= minimum { return .regular }
         return inherited == .regular ? .compact : inherited
+    }
+
+    /// A window the system calls regular that is still too narrow to split.
+    /// SwiftUI is told compact there, but UIKit still treats the window as
+    /// regular, so stacked screens use a plain NavigationStack (#6207).
+    static func isNarrowRegular(width: CGFloat, inherited: UserInterfaceSizeClass?) -> Bool {
+        width < minimum && inherited == .regular
+    }
+}
+
+private struct StacksNarrowRegularWindowKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Whether this window is regular to the system but narrower than
+    /// `SplitWidth.minimum`, where split views stack (iPhone Duo upright).
+    var stacksNarrowRegularWindow: Bool {
+        get { self[StacksNarrowRegularWindowKey.self] }
+        set { self[StacksNarrowRegularWindowKey.self] = newValue }
     }
 }

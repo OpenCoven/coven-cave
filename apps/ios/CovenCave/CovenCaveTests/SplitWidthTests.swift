@@ -22,6 +22,13 @@ final class SplitWidthTests: XCTestCase {
         XCTAssertNil(SplitWidth.sizeClass(forWidth: 381, inherited: nil))
     }
 
+    func testOnlyNarrowRegularWindowsUseThePlainStack() {
+        XCTAssertTrue(SplitWidth.isNarrowRegular(width: 669, inherited: .regular), "iPhone Duo's inner display upright")
+        XCTAssertFalse(SplitWidth.isNarrowRegular(width: 867, inherited: .regular), "wide enough to split")
+        XCTAssertFalse(SplitWidth.isNarrowRegular(width: 381, inherited: .compact), "a phone keeps its collapsed split")
+        XCTAssertFalse(SplitWidth.isNarrowRegular(width: 381, inherited: nil))
+    }
+
     func testTheBoundaryIsInclusive() {
         XCTAssertEqual(SplitWidth.sizeClass(forWidth: 700, inherited: .compact), .regular)
         XCTAssertEqual(SplitWidth.sizeClass(forWidth: 699.5, inherited: .regular), .compact)

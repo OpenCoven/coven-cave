@@ -32,6 +32,7 @@ struct ChatsHomeView: View {
     @Environment(\.chrome) private var chrome
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.stacksNarrowRegularWindow) private var stacksNarrowRegularWindow
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @State private var showNewChat = false
@@ -176,99 +177,144 @@ struct ChatsHomeView: View {
                 statusFilter: statusFilter
             )
         }
-        return NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
-            Group {
-                if snapshot.entries.isEmpty && query.isEmpty && familiarFilter == nil
-                    && snapshot.archivedCount == 0 && projectFilter == nil && statusFilter == nil
-                    && snapshot.reflections.isEmpty {
-                    if let error = app.familiarsError ?? app.sessionsError {
-                        loadFailure(error)
-                    } else {
-                        emptyState
-                    }
-                } else if snapshot.entries.isEmpty && !query.isEmpty && snapshot.reflections.isEmpty {
-                    ContentUnavailableView.search(text: query)
-                } else if snapshot.entries.isEmpty && snapshot.reflections.isEmpty,
-                          familiarFilter != nil || projectFilter != nil {
-                    filterEmptyState(snapshot)
-                } else {
-                    homeList(snapshot)
+        return Group {
+            if stacksNarrowRegularWindow {
+                // A window the system calls regular but too narrow to split
+                // (iPhone Duo's inner display upright). A collapsed split there
+                // lost the edge-swipe Back to the system's edge gesture; a plain
+                // stack keeps it for chats opened from the list. Same routes,
+                // one path (#6207).
+                NavigationStack(path: stackPath) {
+                    sidebar(snapshot)
+                        .navigationDestination(for: ChatRoute.self) { route in
+                            routeDestination(route)
+                        }
                 }
-            }
-            .background {
-                if app.performanceRecorder.isEnabled {
-                    let revision = searchMeasurementRevision
-                    let measurement = searchMeasurement
-                    CavePerformanceStableFrame(token: "chat-search-\(revision)") {
-                        guard revision == searchMeasurementRevision else { return }
-                        app.performanceRecorder.end(measurement)
-                    }
-                    .frame(width: 0, height: 0)
-                    .accessibilityHidden(true)
+            } else {
+                NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
+                    sidebar(snapshot)
+                        .sidebarColumn()
+                } detail: {
+                    detailColumn
+                        .splitDetailColumn()
                 }
+                // Keep the list visible beside the conversation on iPad; on iPhone the
+                // split view still collapses to a single navigation stack.
+                .navigationSplitViewStyle(.balanced)
             }
-            .toolbar(.hidden, for: .navigationBar)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                HiddenUnderSettings { header(snapshot) }
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HiddenUnderSettings { homeSearchBar }
-            }
-            .sheet(
-                isPresented: $showNewChat,
-                onDismiss: {
-                    fixedNewChatFamiliarId = nil
-                }
-            ) {
-                NewChatView(
-                    fixedFamiliarId: fixedNewChatFamiliarId
-                ) { thread in
-                    showNewChat = false
-                    open(.thread(thread))
-                }
-            }
-            .refreshable {
-                await app.refreshChats()
-            }
-            // Sessions load once; reconnects and pull-to-refresh handle
-            // subsequent reloads, so re-appearing destinations don't refetch the list.
-            .task { if !app.sessionsLoaded { await app.loadSessions() } }
-            .onAppear {
-                _ = app.resolvePendingProjectNavigationIntent()
-                consumeGlobalRequests()
-                selectMostRecentThreadIfNeeded()
-            }
-            .onChange(of: app.threads.map(\.id)) { _, _ in
-                _ = app.resolvePendingProjectNavigationIntent()
-                selectMostRecentThreadIfNeeded()
-            }
-            // A slash command (`/new`, `/familiar <name>`) or a chat link asked to
-            // open a specific thread — surface it in the detail column.
-            .onChange(of: app.threadToOpen) { _, thread in
-                consumeThreadRequest(thread)
-            }
-            .onChange(of: app.newChatRequested) { _, requested in
-                guard requested else { return }
-                presentContextualNewChat()
-                app.newChatRequested = false
-            }
-            .onChange(of: app.chatSearchRequested) { _, requested in
-                guard requested else { return }
-                revealChatSearch()
-            }
-            .sidebarColumn()
-        } detail: {
-            detailColumn
-                .splitDetailColumn()
         }
-        // Keep the list visible beside the conversation on iPad; on iPhone the
-        // split view still collapses to a single navigation stack.
-        .navigationSplitViewStyle(.balanced)
         // A new sidebar selection starts a fresh detail navigation (so a familiar
         // opens at its thread list, not a stale pushed conversation).
         .onChange(of: selection) { _, selected in
             detailPath = []
             preferredCompactColumn = selected == nil ? .sidebar : .detail
+        }
+    }
+
+    /// The chat list and its chrome, shared by the split view's sidebar and the
+    /// narrow-window stack's root.
+    private func sidebar(_ snapshot: ChatListSnapshot) -> some View {
+        Group {
+            if snapshot.entries.isEmpty && query.isEmpty && familiarFilter == nil
+                && snapshot.archivedCount == 0 && projectFilter == nil && statusFilter == nil
+                && snapshot.reflections.isEmpty {
+                if let error = app.familiarsError ?? app.sessionsError {
+                    loadFailure(error)
+                } else {
+                    emptyState
+                }
+            } else if snapshot.entries.isEmpty && !query.isEmpty && snapshot.reflections.isEmpty {
+                ContentUnavailableView.search(text: query)
+            } else if snapshot.entries.isEmpty && snapshot.reflections.isEmpty,
+                      familiarFilter != nil || projectFilter != nil {
+                filterEmptyState(snapshot)
+            } else {
+                homeList(snapshot)
+            }
+        }
+        .background {
+            if app.performanceRecorder.isEnabled {
+                let revision = searchMeasurementRevision
+                let measurement = searchMeasurement
+                CavePerformanceStableFrame(token: "chat-search-\(revision)") {
+                    guard revision == searchMeasurementRevision else { return }
+                    app.performanceRecorder.end(measurement)
+                }
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+            }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HiddenUnderSettings { header(snapshot) }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HiddenUnderSettings { homeSearchBar }
+        }
+        .sheet(
+            isPresented: $showNewChat,
+            onDismiss: {
+                fixedNewChatFamiliarId = nil
+            }
+        ) {
+            NewChatView(
+                fixedFamiliarId: fixedNewChatFamiliarId
+            ) { thread in
+                showNewChat = false
+                open(.thread(thread))
+            }
+        }
+        .refreshable {
+            await app.refreshChats()
+        }
+        // Sessions load once; reconnects and pull-to-refresh handle
+        // subsequent reloads, so re-appearing destinations don't refetch the list.
+        .task { if !app.sessionsLoaded { await app.loadSessions() } }
+        .onAppear {
+            _ = app.resolvePendingProjectNavigationIntent()
+            consumeGlobalRequests()
+            selectMostRecentThreadIfNeeded()
+        }
+        .onChange(of: app.threads.map(\.id)) { _, _ in
+            _ = app.resolvePendingProjectNavigationIntent()
+            selectMostRecentThreadIfNeeded()
+        }
+        // A slash command (`/new`, `/familiar <name>`) or a chat link asked to
+        // open a specific thread — surface it in the detail column.
+        .onChange(of: app.threadToOpen) { _, thread in
+            consumeThreadRequest(thread)
+        }
+        .onChange(of: app.newChatRequested) { _, requested in
+            guard requested else { return }
+            presentContextualNewChat()
+            app.newChatRequested = false
+        }
+        .onChange(of: app.chatSearchRequested) { _, requested in
+            guard requested else { return }
+            revealChatSearch()
+        }
+    }
+
+    /// The narrow-window stack's path: the sidebar selection, then whatever the
+    /// detail pushed after it — the split view's two pieces of navigation state
+    /// laid end to end, so either container can take over on a resize.
+    private var stackPath: Binding<[ChatRoute]> {
+        Binding(
+            get: { (selection.map { [$0] } ?? []) + detailPath },
+            set: { path in
+                if path.first != selection { selection = path.first }
+                detailPath = Array(path.dropFirst())
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func routeDestination(_ route: ChatRoute) -> some View {
+        switch route {
+        case .familiar(let familiar):
+            familiarChat(familiar)
+        case .thread(let thread):
+            chatDestination(thread)
         }
     }
 
@@ -292,12 +338,7 @@ struct ChatsHomeView: View {
                 }
             }
             .navigationDestination(for: ChatRoute.self) { route in
-                switch route {
-                case .familiar(let familiar):
-                    familiarChat(familiar)
-                case .thread(let thread):
-                    chatDestination(thread)
-                }
+                routeDestination(route)
             }
         }
     }
