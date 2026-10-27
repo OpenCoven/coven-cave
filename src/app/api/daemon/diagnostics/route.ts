@@ -5,6 +5,8 @@ import {
   listDaemonDiagnosticEvents,
 } from "@/lib/server/daemon-diagnostics";
 import { readEventPlaneDiagnostics } from "@/lib/server/cave-event-plane-publisher";
+import { daemonLifecycleOperation } from "@/lib/server/daemon-lifecycle-owner";
+import { daemonMutationOwnerSnapshot } from "@/lib/server/daemon-mutation-owner";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,6 +19,12 @@ export async function GET() {
       architecture: process.arch,
       nodeVersion: process.version,
       caveVersion: await installedCovenVersion(),
+    },
+    // Owner bookkeeping only (#6298): no probe runs, so exporting never
+    // changes the lifecycle it describes.
+    lifecycle: {
+      operation: daemonLifecycleOperation(),
+      mutation: daemonMutationOwnerSnapshot(),
     },
   });
   // Aggregate event-plane counters only (#5862): no credentials, entity ids,
