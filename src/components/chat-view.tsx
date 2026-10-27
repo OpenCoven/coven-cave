@@ -3781,7 +3781,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Toggling Match case / Whole word re-runs the search, so it must re-jump
   // too — the key includes them, otherwise flipping a toggle leaves you parked
   // on a hit that the new options no longer produce.
-  useEffect(() => {
+  // Layout phase, not passive (#6173): the jump must commit its selected
+  // window before the browser delivers a scroll event queued against the old
+  // tail. A passive effect let that event land first and page the transcript
+  // back to the tail, so the first hit's turn was never mounted.
+  useLayoutEffect(() => {
     if (!findOpen) return;
     const key = [findMatchCase ? "c" : "", findWholeWord ? "w" : "", findDebouncedQuery].join("|");
     if (key === lastJumpedQueryRef.current) return;
