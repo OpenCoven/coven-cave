@@ -29,6 +29,7 @@ export type DaemonMutationOutcome = { kind: DaemonMutationKind; code: string; se
 type DaemonMutationOwner = {
   inFlight: { kind: DaemonMutationKind; startedAt: number; promise: Promise<unknown> } | null;
   lastOutcome: DaemonMutationOutcome | null;
+  reconciliation?: { outcome: DaemonMutationOutcome; promise: Promise<unknown> } | null;
 };
 
 declare global {
@@ -80,21 +81,33 @@ export async function runDaemonMutation<T>(input: RunDaemonMutationInput<T>): Pr
     if (current < last.settledAt) last.settledAt = current;
     const elapsed = current - last.settledAt;
     if (elapsed < windowMs) {
-      if (await input.probeReady()) {
-        state.lastOutcome = { kind: input.kind, code: "ok", settledAt: now() };
-        return input.reconciled();
+      if (state.reconciliation?.outcome === last) {
+        return state.reconciliation.promise as Promise<T>;
       }
-      // The probe took time; another request may have been admitted meanwhile.
-      if (state.inFlight) {
-        const current = state.inFlight as { kind: DaemonMutationKind; promise: Promise<unknown> };
-        if (canJoin(input.kind, current.kind)) return current.promise as Promise<T>;
-        return input.refused({ code: "mutation_in_flight", inFlight: current.kind });
-      }
-      return input.refused({
-        code: "duplicate_after_timeout",
-        retryAfterMs: Math.max(1, windowMs - elapsed),
-        previous: last.kind,
+      const reconciliation = { outcome: last, promise: Promise.resolve() as Promise<unknown> };
+      const promise = Promise.resolve().then(async () => {
+        const ready = await input.probeReady();
+        // Both positive and negative health results belong to the timeout we
+        // probed. Re-enter admission if another mutation ran while we waited;
+        // never settle or refuse using evidence from its predecessor.
+        if (state.inFlight || state.lastOutcome !== last) {
+          return runDaemonMutation(input);
+        }
+        if (ready) {
+          state.lastOutcome = { kind: input.kind, code: "ok", settledAt: now() };
+          return input.reconciled();
+        }
+        return input.refused({
+          code: "duplicate_after_timeout",
+          retryAfterMs: Math.max(1, windowMs - elapsed),
+          previous: last.kind,
+        });
+      }).finally(() => {
+        if (state.reconciliation === reconciliation) state.reconciliation = null;
       });
+      reconciliation.promise = promise;
+      state.reconciliation = reconciliation;
+      return promise;
     }
   }
 
@@ -103,7 +116,8 @@ export async function runDaemonMutation<T>(input: RunDaemonMutationInput<T>): Pr
     startedAt: now(),
     promise: Promise.resolve(),
   };
-  const promise = (async () => {
+  // Publish the lane before invoking user code, including synchronous throws.
+  const promise = Promise.resolve().then(async () => {
     try {
       const result = await input.run();
       state.lastOutcome = { kind: input.kind, code: input.outcome(result), settledAt: now() };
@@ -114,7 +128,7 @@ export async function runDaemonMutation<T>(input: RunDaemonMutationInput<T>): Pr
     } finally {
       if (state.inFlight === entry) state.inFlight = null;
     }
-  })();
+  });
   entry.promise = promise;
   state.inFlight = entry;
   return promise;

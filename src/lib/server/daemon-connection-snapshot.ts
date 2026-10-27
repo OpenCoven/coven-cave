@@ -13,7 +13,7 @@ import {
   type DaemonAvailability,
 } from "../daemon-status-classification.ts";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "./daemon-health-request.ts";
-import { observeDaemonLifecycle, type DaemonLifecycleProbeInput } from "./daemon-lifecycle-owner.ts";
+import { beginDaemonLifecycleObservation, type DaemonLifecycleProbeInput } from "./daemon-lifecycle-owner.ts";
 import { classifyHubFailure } from "./daemon-probe.ts";
 
 const CACHE_TTL_MS = 1_000;
@@ -128,7 +128,6 @@ export function createDaemonConnectionSnapshotBroker(
 ): DaemonConnectionSnapshotBroker {
   const entries = new Map<string, CacheEntry>();
   const now = dependencies.now ?? Date.now;
-  const observeLifecycle = dependencies.observeLifecycle ?? observeDaemonLifecycle;
 
   function entryFor(key: string): CacheEntry {
     const existing = entries.get(key);
@@ -144,6 +143,7 @@ export function createDaemonConnectionSnapshotBroker(
   }
 
   async function probe(target: DaemonTarget): Promise<ProbedSnapshot> {
+    const observeLifecycle = dependencies.observeLifecycle ?? beginDaemonLifecycleObservation();
     if (target.mode === "unconfigured-hub") {
       const completedAt = now();
       return {
@@ -233,7 +233,6 @@ export function createDaemonConnectionSnapshotBroker(
 const daemonConnectionSnapshotBroker = createDaemonConnectionSnapshotBroker({
   loadConfig,
   callTarget: callDaemonTarget,
-  observeLifecycle: observeDaemonLifecycle,
 });
 
 export function loadDaemonConnectionSnapshot(

@@ -5,7 +5,7 @@ import type { CaveConfig } from "../cave-config.ts";
 import { daemonTargetForConfig, type DaemonResponse, type DaemonTarget } from "../coven-daemon.ts";
 import { projectDaemonLifecycle, type DaemonLifecycle } from "../daemon-lifecycle.ts";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "./daemon-health-request.ts";
-import type { DaemonLifecycleProbeInput } from "./daemon-lifecycle-owner.ts";
+import { resetDaemonLifecycleOwnerForTests, type DaemonLifecycleProbeInput } from "./daemon-lifecycle-owner.ts";
 import {
   createDaemonConnectionSnapshotBroker,
   daemonConnectionTargetKey,
@@ -566,10 +566,10 @@ console.log("daemon-connection-snapshot.test.ts: ok");
 test("the snapshot publishes the owner's lifecycle, which can say more than availability alone", async () => {
   assert.match(
     source,
-    /import \{[^}]*observeDaemonLifecycle[^}]*\} from "\.\/daemon-lifecycle-owner\.ts"/,
+    /import \{[^}]*beginDaemonLifecycleObservation[^}]*\} from "\.\/daemon-lifecycle-owner\.ts"/,
     "the production broker observes through the process-global lifecycle owner",
   );
-  assert.match(source, /observeLifecycle: observeDaemonLifecycle/, "the owner is the default observer");
+  assert.match(source, /dependencies.observeLifecycle \?\? beginDaemonLifecycleObservation\(\)/, "the owner reserves an observation for each probe");
   const seen: DaemonLifecycleProbeInput[] = [];
   const broker = createDaemonConnectionSnapshotBroker({
     observeLifecycle: (input) => {
@@ -592,4 +592,29 @@ test("the snapshot publishes the owner's lifecycle, which can say more than avai
   assert.deepEqual(seen, [
     { targetMode: "local", availability: "offline", serviceConflict: null, reason: "daemon offline" },
   ]);
+});
+
+test("real lifecycle generations follow probe admission, not completion", async () => {
+  resetDaemonLifecycleOwnerForTests();
+  try {
+    const older = deferred<DaemonResponse<unknown>>();
+    const newer = deferred<DaemonResponse<unknown>>();
+    let calls = 0;
+    const broker = createDaemonConnectionSnapshotBroker({
+      loadConfig: async () => localConfig(),
+      callTarget: () => ++calls === 1 ? older.promise : newer.promise,
+    });
+    const oldRead = broker.read();
+    await flushMicrotasks();
+    const newRead = broker.read({ fresh: true });
+    await flushMicrotasks();
+    newer.resolve(offlineResponse());
+    const current = await newRead;
+    older.resolve(onlineResponse());
+    const stale = await oldRead;
+    assert.ok(stale.lifecycle.generation < current.lifecycle.generation);
+    assert.deepEqual(await broker.read(), current);
+  } finally {
+    resetDaemonLifecycleOwnerForTests();
+  }
 });

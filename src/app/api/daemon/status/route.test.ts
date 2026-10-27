@@ -24,7 +24,7 @@ assert.match(
 
 assert.match(
   source,
-  /snapshot = await loadDaemonStatusSnapshot\(\)[\s\S]*?return respond\(caveHomeStatusUnavailable\(error\)\)/,
+  /snapshot = await loadDaemonStatusSnapshot\(\)[\s\S]*?return respond\(caveHomeStatusUnavailable\(observeDaemonLifecycle, error\)\)/,
   "Cave home lock failures should return a correlated structured status response instead of HTTP 500",
 );
 
@@ -170,7 +170,7 @@ assert.match(
 // owner, so a start in flight reads as starting/recovering, not stopped (#6298).
 assert.match(
   source,
-  /import \{ localRuntimeEvidence, observeDaemonLifecycle \} from "@\/lib\/server\/daemon-lifecycle-owner"/,
+  /import \{ localRuntimeEvidence, beginDaemonLifecycleObservation \} from "@\/lib\/server\/daemon-lifecycle-owner"/,
   "status projects lifecycle through the shared owner",
 );
 assert.equal(
