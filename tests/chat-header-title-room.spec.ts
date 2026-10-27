@@ -163,3 +163,21 @@ test("mobile retains activity and detail access after the desktop header compact
   await page.keyboard.press("Escape");
   await expect(summary).toBeFocused();
 });
+
+test("settle celebrations retain a painted box and respect reduced motion", async ({ page, isMobile }) => {
+  test.skip(isMobile, "desktop header effect");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openChatWithLongStatus(page);
+  await page.locator(".cave-chat-header-row > .cave-chat-meta-line").evaluate(node => node.classList.add("cave-chat-meta-line--reward"));
+  const header = page.locator(".cave-chat-header-row");
+  const effect = await header.evaluate(node => ({
+    animation: getComputedStyle(node).animationName,
+    width: node.getBoundingClientRect().width,
+    height: node.getBoundingClientRect().height,
+  }));
+  expect(effect.animation).toBe("cave-chat-settle-flare");
+  expect(effect.width).toBeGreaterThan(0);
+  expect(effect.height).toBeGreaterThan(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect.poll(() => header.evaluate(node => getComputedStyle(node).animationName)).toBe("none");
+});

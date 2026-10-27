@@ -764,6 +764,14 @@
     display: none;
   }
 
+  /* Desktop's two fixed rows must not reserve blank phone chrome. Only the
+     surviving activity strip contributes a mobile row. */
+  .cave-chat-header-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    row-gap: 0;
+  }
+
   /* Keep run details reachable when the desktop identity is folded away. */
   .cave-chat-header-row > .cave-chat-meta-line,
   .cave-chat-meta-line__details {
