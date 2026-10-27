@@ -517,7 +517,12 @@ private struct MessageAttachmentImage: View {
     private func presentZoom(fallback thumbnail: UIImage) {
         zoomTask?.cancel()
         let source = CaveImageSource.dataURL(dataURL)
-        let screenSize = UIScreen.main.bounds.size
+        // The screen this scene is showing on, never `UIScreen.main`: iPhone
+        // Duo has two displays and the scene moves as the device opens.
+        let screenSize = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }?
+            .screen.bounds.size ?? CGSize(width: 1024, height: 1024)
         let longestScreenPixels = max(screenSize.width, screenSize.height) * displayScale
         let targetPixelSize = CGSize(width: longestScreenPixels, height: longestScreenPixels)
 

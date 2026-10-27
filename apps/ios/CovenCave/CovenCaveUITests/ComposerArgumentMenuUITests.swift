@@ -84,11 +84,17 @@ final class ComposerArgumentMenuUITests: XCTestCase {
     // MARK: Hardware keyboard (#5879)
 
     @MainActor
-    func testArrowKeysMoveTheHighlightAndTabPicksIt() {
+    func testArrowKeysMoveTheHighlightAndTabPicksIt() throws {
         let app = launchEmptyChat()
         let composer = app.descendants(matching: .any)["Message"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
         composer.tap()
+        // The iPhone Duo simulator drops XCTest's hardware key events (a typed
+        // letter never lands either), so there is no keyboard to test there.
+        composer.typeKey("k", modifierFlags: [])
+        let delivered = ((composer.value as? String) ?? "").lowercased().contains("k")
+        try XCTSkipUnless(delivered, "this simulator does not deliver hardware key events")
+        composer.typeText(XCUIKeyboardKey.delete.rawValue)
         composer.typeText("/skill ")
         let review = app.buttons["code-review, Review a change for bugs"].firstMatch
         let notes = app.buttons["release-notes, Draft release notes"].firstMatch

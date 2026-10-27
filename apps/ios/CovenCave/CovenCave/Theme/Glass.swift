@@ -89,14 +89,17 @@ extension View {
 
     /// A top or bottom chrome bar (large-title header, floating bottom bar) whose
     /// frost extends under the safe-area inset so it reads as a single sheet of glass.
+    /// The frost also runs to both side edges, so the band doesn't stop short of
+    /// a landscape notch or iPhone Duo's status-bar column; content stays inside.
     func glassChrome(_ edge: Edge.Set) -> some View {
         modifier(GlassChrome(edge: edge))
     }
 
     /// A contained, full-width frosted bar — the faithful, theme-aware replacement
-    /// for `.background(.bar)`: fills its own frame (no safe-area bleed), no boxed
-    /// border, just an accent-infused frost with a single hairline divider on the
-    /// given `divider` edge (default top, for a bar that sits below content).
+    /// for `.background(.bar)`: fills its own frame (no top/bottom safe-area bleed),
+    /// no boxed border, just an accent-infused frost with a single hairline divider
+    /// on the given `divider` edge (default top, for a bar that sits below content).
+    /// Like `glassChrome`, the frost runs to both side edges past any side inset.
     func glassBar(divider: Edge.Set = .top) -> some View {
         modifier(GlassBar(divider: divider))
     }
@@ -148,7 +151,7 @@ private struct GlassChrome: ViewModifier {
                         reduceTransparency: reduceTransparency,
                         increasedContrast: contrast == .increased,
                         reduceMotion: reduceMotion)
-                .ignoresSafeArea(edges: edge)
+                .ignoresSafeArea(edges: edge.union(.horizontal))
         }
     }
 }
@@ -176,6 +179,7 @@ private struct GlassBar: ViewModifier {
                         .fill(chrome.border.opacity(increasedContrast ? 1.0 : 0.4))
                         .frame(height: increasedContrast ? 1.0 : 0.5)
                 }
+                .ignoresSafeArea(edges: .horizontal)
         }
     }
 }
