@@ -134,6 +134,8 @@ test("candidate validation requires signed tag provenance and calls every deferr
       `${job.name} pulls before it runs`,
     );
     assert.ok(!runs.some((run) => /playwright install/.test(run)), `${job.name} never installs browsers with apt`);
+    const setupNode = job.steps.find((step) => String(step.uses ?? "").startsWith("actions/setup-node@"));
+    assert.equal(setupNode?.with?.cache, undefined, `${job.name} keeps no pnpm cache, so the ref it executes cannot poison main's cache`);
   }
   for (const file of ["full-validation.yml", "release.yml"]) {
     const text = await readFile(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8");
