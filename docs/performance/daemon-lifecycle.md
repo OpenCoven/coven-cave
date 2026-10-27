@@ -32,6 +32,12 @@ Each sample verifies:
 - Three simultaneous starts from stopped: all callers report one ready PID.
 - Restart: a new ready instance replaces the old one, with a synthetic marker
   intact. This is not a database or durable-execution preservation test.
+- Revive after kill (#6298): the ready instance is killed with `SIGKILL`, so
+  its socket file stays behind as a stale endpoint and nothing cleans up. The
+  probe waits until status stops reporting `running`, records whether the
+  stale socket is present, then starts again and requires a new ready pid
+  with the synthetic marker intact. This exercises the CLI start path against
+  a stale endpoint; it is not Cave's automatic recovery.
 - Shutdown: the status is stopped, health cannot be read, and every process
   group launched by this sample disappears.
 
@@ -73,6 +79,40 @@ Record the JSON alongside the exact Cave commit and probe digest. Dirty runs
 are labelled as such. The native binary digest/version and machine facts are
 also included. Durations include CLI invocation and postcondition verification;
 they are not isolated server boot times or OS-cache-cold measurements.
+
+## Fault-matrix receipts (#6298, slice 3)
+
+Both runs: native Coven 0.4.10, binary sha256
+`de56712e39914b5243b8a3d0a213384bd6520cad229f946f1cca85d0b0e1ca0b`, macOS
+27.0.0 arm64, Apple M5 Max, 18 logical CPUs, five samples each, every sample
+and every process-group cleanup passed. Medians in milliseconds with the
+observed range; durations include CLI invocation and postcondition checks.
+
+| Operation | Before: Cave `3107d938f` (clean), probe without revive | After: Cave `a58f48e20`, probe with revive |
+| --- | --- | --- |
+| fresh-start | 300 (184–486) | 210 (205–236) |
+| already-running | 270 (128–553) | 138 (128–156) |
+| stop-before-concurrency | 105 (68–185) | 75 (69–78) |
+| concurrent-start | 623 (366–812) | 377 (357–386) |
+| restart | 336 (247–372) | 252 (248–257) |
+| revive-after-kill | not measured | 270 (265–284) |
+| shutdown | 90 (76–118) | 77 (73–81) |
+
+The after run's tree carried uncommitted edits to this file and to
+`docs/daemon-connectivity-reliability.md` only; the probe and every source
+file matched `a58f48e20`. The before run's wider ranges were observed while
+two test suites and a production build ran on the same host; the runs are
+smoke receipts for the fault-matrix rows, not a performance comparison, and
+no budget is inferred from them.
+
+Revive evidence, identical in all five after samples: the socket file was
+present immediately after `SIGKILL` (`staleSocket: true`), the next `daemon
+status --json` reported `stopped` and the socket was gone afterwards
+(`socketAfterStatus: false`, so the CLI's status path reclaims a dead owner's
+endpoint), and `daemon start` returned a new ready pid with the marker intact.
+The earlier after run on `bdf59005d` sampled the socket only after status had
+run and therefore recorded `staleSocket: false`; the probe now samples before
+any CLI command, and that run is superseded.
 
 ## Initial diagnostic observation
 

@@ -73,7 +73,12 @@ export async function runDaemonMutation<T>(input: RunDaemonMutationInput<T>): Pr
 
   const last = state.lastOutcome;
   if (last && last.code === TIMEOUT_CODE && last.kind === input.kind) {
-    const elapsed = now() - last.settledAt;
+    // A wall clock corrected backwards (sleep/wake) must not stretch the
+    // refusal: a timestamp from the future is re-stamped to now, so one
+    // window after the jump is the ceiling.
+    const current = now();
+    if (current < last.settledAt) last.settledAt = current;
+    const elapsed = current - last.settledAt;
     if (elapsed < windowMs) {
       if (await input.probeReady()) {
         state.lastOutcome = { kind: input.kind, code: "ok", settledAt: now() };

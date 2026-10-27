@@ -124,3 +124,15 @@ test("an operation can enter and leave its stopping phase, and only the current 
   newer.end();
   restart.end();
 });
+
+test("a backwards clock jump makes runtime evidence stale rather than cached indefinitely", async () => {
+  let probes = 0;
+  const probe = async () => {
+    probes += 1;
+    return "0.5.18";
+  };
+  assert.equal(await localRuntimeEvidence({ probe, now: () => 100_000 }), "present");
+  assert.equal(await localRuntimeEvidence({ probe, now: () => 40_000 }), "present");
+  assert.equal(probes, 2, "an answer stamped in the future is not trusted");
+  assert.equal(observeDaemonLifecycle(probeInput(), { now: () => 40_000 }).evidence.runtime, "present");
+});

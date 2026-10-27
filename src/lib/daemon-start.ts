@@ -892,6 +892,9 @@ async function runLocalDaemonStartCore({
     // startup deadline.
     runnerExitGraceMs: startTimeoutMs,
     runnerExited: () => spawnError !== null || exitCode !== undefined,
+    // A missing or non-executable binary never handed anything to the OS;
+    // waiting out the deadline would only delay the named failure.
+    runnerFailed: () => spawnError !== null,
   });
   if (readiness.ready) {
     return {
