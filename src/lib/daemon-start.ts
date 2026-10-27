@@ -17,6 +17,7 @@ import {
   type DaemonStartupHealth,
 } from "./daemon-startup-contract.ts";
 import { RuntimeStartupCoordinator } from "./runtime-startup-throttle.ts";
+import { beginDaemonLifecycleOperation } from "./server/daemon-lifecycle-owner.ts";
 import {
   inspectDaemonAddress,
   reportsDaemonAddressInUse,
@@ -480,6 +481,10 @@ async function runLocalDaemonStart(
   const diagnostics = options.diagnostics ?? createDaemonDiagnosticContext();
   const operation = options.automatic ? "daemon-recovery" : "daemon-start";
   const startedAt = Date.now();
+  // The lifecycle owner projects `starting`/`recovering` from this record
+  // while the start runs, so a status poll never reads a daemon that is
+  // booting as `stopped` (#6298).
+  const lifecycleOperation = beginDaemonLifecycleOperation(options.automatic ? "recovery" : "start");
   recordDaemonDiagnosticEvent(diagnostics, {
     component: "next",
     operation,
@@ -523,6 +528,8 @@ async function runLocalDaemonStart(
       error: diagnosticError(error, "unexpected-error"),
     });
     throw error;
+  } finally {
+    lifecycleOperation.end();
   }
 }
 

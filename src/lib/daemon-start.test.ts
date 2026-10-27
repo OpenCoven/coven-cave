@@ -19,6 +19,10 @@ import {
   createDaemonDiagnosticContext,
   listDaemonDiagnosticEvents,
 } from "./server/daemon-diagnostics.ts";
+import {
+  daemonLifecycleOperation,
+  resetDaemonLifecycleOwnerForTests,
+} from "./server/daemon-lifecycle-owner.ts";
 
 const daemonStart = await readFile(new URL("./daemon-start.ts", import.meta.url), "utf8");
 const readinessSource = await readFile(new URL("./daemon-readiness.ts", import.meta.url), "utf8");
@@ -41,6 +45,12 @@ assert.match(daemonStart, /RuntimeStartupCoordinator/, "duplicate launches and r
 assert.match(daemonStart, /code: "address_in_use"/, "an address someone else holds has its own actionable outcome");
 assert.match(daemonStart, /inspectDaemonAddress/, "occupancy is proven by connecting, not inferred from a failed health probe");
 assert.match(daemonStart, /daemonStartCoordinator\.run/, "production starts enter the shared coordinator");
+assert.match(
+  daemonStart,
+  /beginDaemonLifecycleOperation\(options\.automatic \? "recovery" : "start"\)/,
+  "every start records itself as the one lifecycle mutation in flight (#6298)",
+);
+assert.match(daemonStart, /lifecycleOperation\.end\(\)/, "the in-flight record is released when the start settles");
 assert.match(
   daemonStart,
   /findService: async \(\) => null,\s*\n\s*\.\.\.options,/,
@@ -251,6 +261,32 @@ test("an automatic request cannot use restart to skip the lifecycle preflight", 
   assert.equal(spawnCalls, 0, "restart must not let an automatic request bypass the fail-closed preflight");
   assert.equal(result.ok, false);
   assert.equal(result.code, "owner_unreachable");
+});
+
+test("a start is visible as the in-flight lifecycle operation until it settles", async () => {
+  resetDaemonLifecycleOwnerForTests();
+  const seen = [];
+  try {
+    for (const [automatic, kind] of [[false, "start"], [true, "recovery"]]) {
+      let probes = 0;
+      const result = await startLocalDaemon({
+        automatic,
+        probe: async () => {
+          seen.push(daemonLifecycleOperation()?.kind ?? null);
+          return { ok: ++probes >= 2 };
+        },
+        inspectLifecycle: async () => ({ status: "stopped" }),
+        inspectAddress: async () => "free",
+        spawnImpl: () => fakeChild(),
+      });
+      assert.equal(result.ok, true);
+      assert.ok(seen.includes(kind), `${kind} was recorded while its probe ran`);
+      assert.equal(daemonLifecycleOperation(), null, `${kind} released its record when it settled`);
+      seen.length = 0;
+    }
+  } finally {
+    resetDaemonLifecycleOwnerForTests();
+  }
 });
 
 test("automatic recovery still starts after lifecycle proves stopped", async () => {

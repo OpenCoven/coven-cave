@@ -26,6 +26,7 @@ import {
   type DaemonAutomationKey,
 } from "@/lib/daemon-automation-pref";
 import { createDaemonStatusRequestGate } from "@/lib/daemon-desktop-auto-start";
+import { describeDaemonLifecycle, isDaemonLifecycleState } from "@/lib/daemon-lifecycle";
 import {
   describeDaemonAvailability,
   type DaemonAvailability,
@@ -43,6 +44,8 @@ type DaemonStatus = {
   daemon?: { pid: number; startedAt: string; socket: string };
   /** launchd's daemon job is not the one serving (#5730). */
   serviceConflict?: { label: string };
+  /** The server's projected lifecycle state (#6298); older routes omit it. */
+  lifecycle?: { state: string; reason?: string };
   executors?: Array<{
     url: string;
     healthUrl: string;
@@ -615,12 +618,18 @@ export function DaemonSection({
     running: status?.running === true,
     availability: status?.availability,
   });
+  // The lifecycle projection can say more than availability (starting,
+  // reconnecting, runtime missing, running outside the service). Online-ness
+  // still comes from the fail-closed availability proof alone.
+  const lifecyclePresentation = isDaemonLifecycleState(status?.lifecycle?.state)
+    ? describeDaemonLifecycle({ state: status.lifecycle.state })
+    : availabilityPresentation;
   const daemonOnline = !manualOffline && availabilityPresentation.tone === "success";
   const statusTone: StatusTone = loading
     ? "neutral"
     : restarting || starting || manualOffline
       ? "warning"
-      : availabilityPresentation.tone;
+      : lifecyclePresentation.tone;
   const stateLabel = loading
     ? "Checking…"
     : restarting
@@ -629,7 +638,7 @@ export function DaemonSection({
         ? "Starting…"
         : manualOffline
           ? "Offline (manual)"
-          : availabilityPresentation.label;
+          : lifecyclePresentation.label;
   const statusFailureLead =
     status?.target?.mode === "hub" && status.availability === "unreachable"
       ? "Configured but unreachable"
