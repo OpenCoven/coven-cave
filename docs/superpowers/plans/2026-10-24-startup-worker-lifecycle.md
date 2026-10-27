@@ -67,6 +67,20 @@
 - [ ] Commit/push explicit paths with hooks, obtain one read-only whole-branch review, fix substantive findings with failing-first tests, and require complete exact-head hosted checks before the authorized protected squash merge. Record exact merge evidence and intentionally retained unit disposition. Keep #6119 open.
 
 
+## Native reconciliation (Task 3 continuation)
+
+Normal packaged quit now reaches the coordinator on both platforms through the
+existing private stdin pipe, with no HTTP shutdown endpoint and no new
+credential. `server.ts` installs the EOF watchdog whenever
+`COVEN_CAVE_PARENT_WATCHDOG=stdin-eof` and drains startup workers beside
+direct-run teardown inside one platform budget (1,200 ms on Unix beneath the
+two-second native lease; 400 ms on Windows beneath the 600 ms drain window that
+`stop_sidecar_child` now offers before the unchanged Job fallback, itself
+inside the authoritative 1,200 ms close deadline). Startup failure keeps
+immediate Job termination; abrupt parent death keeps the kernel cleanup.
+Windows native tests re-execute the test binary as the stand-in child; they
+run only on hosted Windows lanes and were not executed on this Unix host.
+
 ## Review checkpoint at 96b01583e
 
 Independent review found late scheduled restarts after coordinated shutdown, backup configuration bypassing a pending restart drain, early parallel-store rejection releasing another admitted send, and normal packaged quit bypassing the coordinator. The first three now have failing-first regressions and local corrections pending complete verification. Task 3 remains incomplete until the native EOF/Windows normal-quit path is reconciled; the earlier inline ledger entry covered only the signal path and must not be used as native or whole-task completion evidence.

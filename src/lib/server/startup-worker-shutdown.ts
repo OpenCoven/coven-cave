@@ -78,12 +78,21 @@ export function registerStartupWorker(name: Worker, stop: () => Promise<void>): 
   return !state.closing;
 }
 
-/** One three-second observer, within the desktop shell's five-second stop limit. */
+/** Signal shutdown observes for three seconds, within the background daemon's five-second stop limit. */
+export const SIGNAL_SHUTDOWN_OBSERVATION_MS = 3_000;
+
+/**
+ * One observer; the first caller's deadline is the deadline. A packaged
+ * parent lease passes its own shorter budget. Expiry is a report, not a
+ * cancellation: every stop promise is retained and finishes on its own.
+ */
 export function coordinateStartupWorkerShutdown(
   closeHttp: () => Promise<void>,
+  options: { deadlineMs?: number } = {},
 ): Promise<StartupWorkerShutdownResult> {
   const state = owner();
   if (state.shutdown) return state.shutdown;
+  const deadlineMs = options.deadlineMs ?? SIGNAL_SHUTDOWN_OBSERVATION_MS;
   state.closing = true;
   for (const name of WORKERS) drain(state.workers[name]);
   const http = slot();
@@ -94,7 +103,7 @@ export function coordinateStartupWorkerShutdown(
     try {
       await Promise.race([
         Promise.all([http.settled, ...WORKERS.map(name => state.workers[name].settled)]),
-        new Promise<void>(resolve => { timer = setTimeout(resolve, 3_000); }),
+        new Promise<void>(resolve => { timer = setTimeout(resolve, deadlineMs); }),
       ]);
       return {
         http: { ...http.outcome },

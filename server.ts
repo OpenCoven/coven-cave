@@ -1214,17 +1214,35 @@ function terminatePtySessions(): void {
   sessions.clear();
 }
 
-// Packaged Unix sidecars receive stdin as a private pipe whose write end is
-// owned only by the Tauri GUI. EOF therefore identifies the exact parent
-// lifetime without polling a reusable PID. The sidecar is also launched as
-// its own process-group leader, so one signal removes the root and ordinary
-// descendants; node-pty sessions are asked to stop explicitly because a PTY
-// may create a separate session/process group.
-async function terminatePackagedUnixSidecarTree(): Promise<void> {
+// Packaged sidecars receive stdin as a private pipe whose write end is owned
+// only by the Tauri GUI (a Unix pipe plus process group, or the handle the
+// Windows gated launcher inherits into Node). EOF therefore identifies the
+// exact parent lifetime without polling a reusable PID, and a deliberate quit
+// closes the same pipe so normal and abrupt teardown share one path. Startup
+// workers drain beside direct-run teardown inside that one lease: the deadline
+// reports unfinished work and never cancels or replays it. The native parent
+// keeps its kernel fallback (Unix kill after two seconds, Windows Job
+// termination after a shorter drain window), so this budget stays beneath it.
+const PACKAGED_WINDOWS_CHILD_SHUTDOWN_BUDGET_MS = 400;
+async function terminatePackagedSidecarTree(): Promise<void> {
+  const budgetMs = process.platform === "win32"
+    ? PACKAGED_WINDOWS_CHILD_SHUTDOWN_BUDGET_MS
+    : PACKAGED_CHILD_SHUTDOWN_BUDGET_MS;
   // PTYs may own sessions/groups outside the server group. Stop them before
   // awaiting any JavaScript cleanup, and repeat in finally so an exception or
   // hung persistence path can never skip this OS boundary.
   terminatePtySessions();
+  let exitCode = 0;
+  // The HTTP listener dies with the process on this path; only the workers
+  // need an observed drain here.
+  const workerDrain = coordinateStartupWorkerShutdown(() => Promise.resolve(), { deadlineMs: budgetMs })
+    .then(result => {
+      const unfinished = Object.values(result.workers).some(outcome => outcome.status === "pending" || outcome.status === "failed");
+      if (unfinished) {
+        exitCode = 1;
+        console.warn("[startup-workers] Worker drain did not finish inside the native parent lease:", result);
+      }
+    });
   try {
     const terminateDirectRuns = globalThis.__covenCaveTerminateCopilotFlowRuns;
     if (terminateDirectRuns) {
@@ -1233,7 +1251,7 @@ async function terminatePackagedUnixSidecarTree(): Promise<void> {
         new Promise<never>((_resolve, reject) => {
           const timer = setTimeout(
             () => reject(new Error("direct Copilot shutdown exceeded its native parent lease")),
-            PACKAGED_CHILD_SHUTDOWN_BUDGET_MS,
+            budgetMs,
           );
           timer.unref?.();
         }),
@@ -1243,10 +1261,18 @@ async function terminatePackagedUnixSidecarTree(): Promise<void> {
     // Direct runs are each owned by a native supervisor whose stdin closes when
     // this server dies. Report the failed graceful proof, then let that exact
     // EOF/Job boundary finish cleanup instead of waiting past Tauri's lease.
+    exitCode = 1;
     console.error("[cave] direct Copilot process-tree shutdown could not be proved", error);
   } finally {
+    await workerDrain;
     cleanupStandaloneClientV1Discovery();
     terminatePtySessions();
+    if (process.platform === "win32") {
+      // The Job Object owns descendants; a plain exit lets the native parent
+      // observe the drained child before its own fallback fires.
+      process.exit(exitCode);
+      return;
+    }
     try {
       process.kill(-process.pid, "SIGKILL");
     } catch {
@@ -1255,15 +1281,12 @@ async function terminatePackagedUnixSidecarTree(): Promise<void> {
   }
 }
 
-if (
-  process.platform !== "win32" &&
-  process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof"
-) {
+if (process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof") {
   let parentShutdownStarted = false;
   const onParentShutdown = () => {
     if (parentShutdownStarted) return;
     parentShutdownStarted = true;
-    void terminatePackagedUnixSidecarTree();
+    void terminatePackagedSidecarTree();
   };
   process.stdin.once("end", onParentShutdown);
   process.stdin.once("error", onParentShutdown);

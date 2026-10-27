@@ -101,3 +101,18 @@ test("a slow HTTP close is reported honestly after workers drain", async () => {
   expect((await pending).http.status).toBe("pending");
   held.release();
 });
+
+test("a packaged parent lease observes with its own shorter deadline, and the first deadline wins", async () => {
+  const held = gate();
+  shutdown.registerStartupWorker("scheduled-chat", async () => undefined);
+  shutdown.registerStartupWorker("backup-sync", () => held.promise);
+  const pending = shutdown.coordinateStartupWorkerShutdown(async () => undefined, { deadlineMs: 400 });
+  expect(shutdown.coordinateStartupWorkerShutdown(async () => undefined, { deadlineMs: 3_000 })).toBe(pending);
+  let finished = false;
+  void pending.then(() => { finished = true; });
+  await vi.advanceTimersByTimeAsync(399);
+  expect(finished).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+  expect((await pending).workers["backup-sync"].status).toBe("pending");
+  held.release();
+});
