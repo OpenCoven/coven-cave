@@ -59,6 +59,10 @@ test("dependency edits write canonical card fields while the legacy overlay is i
   assert.match(surface, /overlay: ChartOverlay/);
   assert.match(surface, /normalizeOverlay\(state\.overlay, liveIds\)/);
   assert.match(surface, /overlayImportPlan\(cards, overlay\)/);
+  // The import merges server-side under the board lock (#6258): a stale
+  // snapshot can neither drop another writer's edge nor duplicate an import.
+  assert.match(surface, /body: JSON\.stringify\(\{ ops: \{ dependencyOps: additions \} \}\)/);
+  assert.doesNotMatch(surface, /dependencies: \[\.\.\.existing, \.\.\.additions\]/);
   assert.match(surface, /\{ dependencies: \[\.\.\.existing, addition\] \}/);
   assert.match(surface, /const body: Record<string, unknown> = \{ dependencies: kept \}/);
   assert.match(surface, /setDependency\(overlay, stepId, null\)/);
