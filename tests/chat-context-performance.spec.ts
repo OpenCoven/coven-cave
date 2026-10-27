@@ -158,6 +158,50 @@ test("slash completion uses the current draft after navigating between threads",
   await expect(composer).toHaveValue(/^\/help\s*$/);
 });
 
+test("Find navigation survives a queued tail scroll before the selected window commits", async ({ page }) => {
+  await page.addInitScript(() => {
+    const measure = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      const rect = measure.call(this);
+      const main = this.closest('[data-testid="chat-main"]');
+      if (this instanceof HTMLElement && this.classList.contains("cave-chat-transcript")
+        && main?.querySelectorAll(".cave-find-hit").length === 40
+        && main.querySelector('[data-turn-id="context-a-999"]')) {
+        Element.prototype.getBoundingClientRect = measure;
+        // Deliver the old tail's queued scroll after anchor capture releases
+        // follow, but before a deferred React render can replace that window.
+        // Real geometry and all application listeners remain in use.
+        this.scrollTop = this.scrollHeight;
+        queueMicrotask(() => {
+          document.documentElement.dataset.findQueuedScroll = "delivered";
+          this.dispatchEvent(new Event("scroll"));
+        });
+      }
+      return rect;
+    };
+  });
+  await setup(page);
+  await openThread(page, "A");
+  const main = page.getByTestId("chat-main");
+  const composer = main.getByRole("textbox", { name: "Message", exact: true });
+  const search = main.getByRole("search", { name: "Find in conversation" });
+  await composer.fill("Keep this reply while searching");
+  await composer.press("ControlOrMeta+f");
+  await search.getByRole("textbox", { name: "Find in conversation" }).fill("context-a message");
+  await expect(page.locator("html")).toHaveAttribute("data-find-queued-scroll", "delivered");
+  await expect(main.locator('[data-turn-id="context-a-0"]')).toBeAttached();
+  await expect(main.locator("[data-turn-id]")).toHaveCount(60);
+  await expect(main.locator('[data-turn-id="context-a-999"]')).toHaveCount(0);
+  await search.getByRole("button", { name: "Match case", exact: true }).press("Escape");
+  await expect(search).toHaveCount(0);
+  await expect(composer).toBeFocused();
+  await expect(composer).toHaveValue("Keep this reply while searching");
+  await expect(main.locator('[data-turn-id="context-a-0"]')).toBeAttached();
+  await main.getByRole("button", { name: "Latest", exact: true }).click();
+  await expect(main.locator('[data-turn-id="context-a-999"]')).toBeAttached();
+  await expect(main.locator('[data-turn-id="context-a-0"]')).toHaveCount(0);
+});
+
 test("Escape closes find from its controls, results and paging without losing composer focus", async ({ page }) => {
   await setup(page);
   await openThread(page, "A");
