@@ -20,7 +20,11 @@ const probeSource = readFileSync(fileURLToPath(new URL("./daemon-lifecycle-probe
 test("each sample proves revive after a post-ready kill against the stale endpoint (#6298)", () => {
   assert.match(probeSource, /operation\("revive-after-kill", async \(\) => \{/, "the operation exists by name");
   assert.match(probeSource, /process\.kill\(before\.pid, "SIGKILL"\)/, "the ready daemon is killed, not stopped");
-  assert.match(probeSource, /staleSocket: existsSync\(env\.COVEN_SOCKET\)/, "the stale endpoint is recorded as evidence");
+  assert.match(
+    probeSource,
+    /process\.kill\(before\.pid, "SIGKILL"\);[\s\S]{0,400}const staleSocket = existsSync\(env\.COVEN_SOCKET\);[\s\S]{0,200}await waitForDaemonGone\(/,
+    "the stale endpoint is sampled right after the kill, before any CLI command can reclaim it",
+  );
   assert.match(probeSource, /assert\.notEqual\(revived\.pid, before\.pid\)/, "a new instance replaces the killed one");
   assert.match(probeSource, /await waitForDaemonGone\(/, "the kill is observed before the start, so the start is a revive");
 });

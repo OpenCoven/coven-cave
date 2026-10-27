@@ -279,8 +279,17 @@ async function runSample(binary, index, signal) {
       // the endpoint, and come back with a new instance, data intact.
       const before = await ready();
       process.kill(before.pid, "SIGKILL");
+      // Sample the endpoint before any CLI command runs: `daemon status` may
+      // itself reclaim a dead owner's socket, which is evidence of a different
+      // kind (recorded as socketAfterStatus).
+      const staleSocket = existsSync(env.COVEN_SOCKET);
       const gone = await waitForDaemonGone(status);
-      sample.revive = { killedPid: before.pid, observedAfterKill: gone.status, staleSocket: existsSync(env.COVEN_SOCKET) };
+      sample.revive = {
+        killedPid: before.pid,
+        staleSocket,
+        observedAfterKill: gone.status,
+        socketAfterStatus: existsSync(env.COVEN_SOCKET),
+      };
       requireCommand(await command(["daemon", "start"]));
       const revived = await ready();
       assert.notEqual(revived.pid, before.pid);
