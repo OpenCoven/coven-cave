@@ -36,6 +36,7 @@ assert.doesNotMatch(daemonStart, /shell: launch\.unresolvedWindowsShim/, "unreso
 assert.match(daemonStart, /taskkill/, "Windows timeout cleanup owns the shell process tree");
 assert.match(daemonStart, /const cleanup = await terminateLaunchTree\(child\)/, "timeout cleanup is executed, not merely declared");
 assert.match(readinessSource, /A final probe closes the race/);
+assert.match(daemonStart, /runnerFailed: \(\) => spawnError !== null/, "a spawn error ends readiness; nothing was handed off to wait for");
 assert.match(daemonStart, /sanitizeAboutDiagnosticText/, "daemon-start responses reuse the value-safe diagnostics sanitizer");
 assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stdout\)/, "launcher stdout is redacted before it reaches a client");
 assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stderr\)/, "launcher stderr is redacted before it reaches a client");
@@ -129,6 +130,50 @@ function fakeChild(pid = 4321) {
   );
   assert.doesNotMatch(safe, /Example Person|npmrc|ghp_/, "daemon start diagnostics redact local paths and credentials");
   assert.match(safe, /\[local path omitted\]|\[redacted\]/, "redaction remains apparent to the user");
+}
+
+test("a launcher that failed to spawn ends readiness after one final probe, not after the deadline", async () => {
+  let probes = 0;
+  const result = await waitForDaemonReadiness({
+    probe: async () => { probes += 1; return { ok: false }; },
+    timeoutMs: 8_000,
+    pollMs: 250,
+    runnerExitGraceMs: 8_000,
+    runnerExited: () => true,
+    runnerFailed: () => true,
+    now: () => 0,
+    sleep: async () => assert.fail("nothing was handed off; there is nothing to wait for"),
+  });
+  assert.deepEqual(result, { ready: false, attempts: 2, elapsedMs: 0, runnerExited: true });
+  assert.equal(probes, 2);
+});
+
+for (const [name, code, expectedMessage] of [
+  ["missing", "ENOENT", /Coven CLI|coven/i],
+  ["corrupt or non-executable", "EACCES", /EACCES|permission/i],
+]) {
+  test(`a ${name} binary is a named spawn failure that does not wait out the readiness deadline`, async () => {
+    const child = fakeChild();
+    const startedAt = Date.now();
+    const result = await startLocalDaemon({
+      startTimeoutMs: 5_000,
+      probe: async () => ({ ok: false }),
+      inspectLifecycle: async () => ({ status: "stopped" }),
+      inspectAddress: async () => "free",
+      spawnImpl: () => {
+        queueMicrotask(() => {
+          child.emit("error", Object.assign(new Error(`spawn coven ${code}`), { code }));
+          child.emit("close", null);
+        });
+        return child;
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "spawn_failed");
+    assert.match(result.error, expectedMessage);
+    assert.equal(result.readinessAttempts, 2, "one probe, then the final probe");
+    assert.ok(Date.now() - startedAt < 2_000, "the 5 s readiness deadline was not waited out");
+  });
 }
 
 test("a foreground launcher is successful as soon as health becomes ready", async () => {

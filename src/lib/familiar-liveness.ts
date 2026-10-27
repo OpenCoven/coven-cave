@@ -223,6 +223,12 @@ export function createFamiliarLivenessPolicy(
       }
 
       const at = options.now();
+      // A wall clock corrected backwards (sleep/wake) would otherwise hold a
+      // wait or a cooldown until the clock caught up with a timestamp from
+      // the future. Restart the window from now; it is never longer than one
+      // window either way.
+      if (lastAttemptAt !== null && at < lastAttemptAt) lastAttemptAt = at;
+      if (cooldownStartedAt !== null && at < cooldownStartedAt) cooldownStartedAt = at;
 
       if (state === "cooling") {
         if (cooldownStartedAt !== null && at - cooldownStartedAt < cooldownMs) {

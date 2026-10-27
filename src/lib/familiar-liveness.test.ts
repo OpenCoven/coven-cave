@@ -171,3 +171,29 @@ assert.ok(
 );
 
 console.log("familiar-liveness.test.ts: ok");
+
+// --- a backwards clock jump (sleep/wake stand-in) cannot block a revive for longer than its own wait
+{
+  let now = 100_000;
+  const policy = createFamiliarLivenessPolicy({
+    now: () => now,
+    random: () => 0.5,
+    burstAttempts: 3,
+    baseDelayMs: 1_000,
+    maxDelayMs: 4_000,
+    cooldownMs: 60_000,
+  });
+  assert.equal(policy.observe("absent").action, "revive");
+  now = 40_000; // the wall clock was corrected backwards by a minute
+  assert.equal(policy.observe("absent").action, "none", "the wait restarts from the new clock");
+  now = 40_000 + 1_000;
+  assert.equal(policy.observe("absent").action, "revive", "one base delay later the second attempt is issued");
+  now += 2_000;
+  assert.equal(policy.observe("absent").action, "revive");
+  now += 4_000;
+  assert.equal(policy.observe("absent").state, "cooling", "the burst is spent");
+  now = 10_000; // another backwards jump while cooling
+  assert.equal(policy.observe("absent").state, "cooling");
+  now = 10_000 + 60_000;
+  assert.equal(policy.observe("absent").action, "revive", "the cooldown restarted from the jump, not from the future");
+}

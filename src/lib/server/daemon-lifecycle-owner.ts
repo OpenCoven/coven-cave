@@ -95,7 +95,7 @@ export async function localRuntimeEvidence(options: RuntimeEvidenceOptions): Pro
   const state = owner();
   const now = options.now ?? Date.now;
   const current = now();
-  if (state.runtime && current - state.runtime.checkedAt < RUNTIME_EVIDENCE_TTL_MS) {
+  if (state.runtime && isFreshRuntimeEvidence(state.runtime.checkedAt, current)) {
     return state.runtime.evidence;
   }
   if (state.runtimePending) return state.runtimePending;
@@ -116,9 +116,15 @@ export async function localRuntimeEvidence(options: RuntimeEvidenceOptions): Pro
   return pending;
 }
 
+/** An answer stamped in the future (clock corrected backwards) is not fresh. */
+function isFreshRuntimeEvidence(checkedAt: number, now: number): boolean {
+  const age = now - checkedAt;
+  return age >= 0 && age < RUNTIME_EVIDENCE_TTL_MS;
+}
+
 function rememberedRuntimeEvidence(state: DaemonLifecycleOwner, now: number): DaemonRuntimeEvidence {
   if (!state.runtime) return "unknown";
-  return now - state.runtime.checkedAt < RUNTIME_EVIDENCE_TTL_MS ? state.runtime.evidence : "unknown";
+  return isFreshRuntimeEvidence(state.runtime.checkedAt, now) ? state.runtime.evidence : "unknown";
 }
 
 export type DaemonLifecycleProbeInput = Pick<

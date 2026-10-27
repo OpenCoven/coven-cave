@@ -172,3 +172,28 @@ test("other failures are recorded but never refuse the next request", async () =
   }));
   assert.equal(runs, 1);
 });
+
+test("a backwards clock jump after a timeout refuses for at most one window, never longer", async () => {
+  let now = 100_000;
+  const clock = () => now;
+  await runDaemonMutation(mutation("start", {
+    run: async () => ({ ok: false, code: "readiness_timeout" }),
+    now: clock,
+  }));
+  now = 40_000; // sleep/wake stand-in: wall clock corrected backwards by a minute
+  const refused = await runDaemonMutation(mutation("start", { timeoutWindowMs: 30_000, now: clock }));
+  assert.equal(refused.code, "duplicate_after_timeout");
+  assert.equal(refused.retryAfterMs, 30_000, "the refusal is bounded by the window, not by the size of the jump");
+  now = 40_000 + 30_000;
+  let runs = 0;
+  const admitted = await runDaemonMutation(mutation("start", {
+    run: async () => {
+      runs += 1;
+      return { ok: true, code: "ok" };
+    },
+    timeoutWindowMs: 30_000,
+    now: clock,
+  }));
+  assert.equal(admitted.code, "ok");
+  assert.equal(runs, 1, "one window after the jump, the mutation is admitted again");
+});
