@@ -11,7 +11,7 @@ process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 await fs.mkdir(process.env.COVEN_CAVE_HOME);
 const inboxPath = path.join(process.env.COVEN_CAVE_HOME, "inbox.json");
 const { createItem, withInboxLock } = await import("./cave-inbox.ts");
-const { startScheduler, subscribe } = await import("./inbox-scheduler.ts");
+const { startScheduler, stopScheduler, subscribe } = await import("./inbox-scheduler.ts");
 const readFile = fs.readFile;
 const callbacks: Array<() => void> = [];
 let reads = 0;
@@ -20,7 +20,8 @@ let reads = 0;
 // time is controlled; the read wrapper measures redundant disk work.
 beforeEach(async () => {
   await fs.writeFile(inboxPath, JSON.stringify({ version: 1, items: [] }));
-  globalThis.__inboxSchedulerStarted = false;
+  delete process.env.COVEN_CAVE_AUTOMATIONS_ENABLED;
+  delete (globalThis as { __caveInboxScheduler?: unknown }).__caveInboxScheduler;
   callbacks.length = 0;
   reads = 0;
   mock.method(fs, "readFile", (...args: Parameters<typeof fs.readFile>) => {
@@ -42,6 +43,7 @@ async function settle() {
 }
 
 afterEach(async () => {
+  await stopScheduler();
   await settle();
   mock.restoreAll();
   syncBuiltinESMExports();
@@ -150,4 +152,47 @@ test("failed reads preserve bytes and release admission for explicit restoration
   callbacks[0]();
   await settle();
   assert.equal((await readInbox()).items.find((entry: { id: string }) => entry.id === item.id).status, "fired");
+});
+
+test("a disabled automations domain pauses a due reminder with its intent retained; re-enabling fires it once and never replays", async () => {
+  process.env.COVEN_CAVE_AUTOMATIONS_ENABLED = "0";
+  const due = await createItem({ kind: "reminder", title: "due while disabled", fireAt: "2000-01-01T00:00:00.000Z" });
+  const events: Array<{ type: string; items: Array<{ id: string }> }> = [];
+  let unsubscribe: () => void = () => undefined;
+  let streamController: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) { streamController = controller; unsubscribe = subscribe(controller); },
+  });
+  const reader = stream.getReader();
+  const readsBeforeStart = reads;
+  try {
+    startScheduler();
+    await settle();
+    assert.equal(callbacks.length, 0, "a disabled domain owns no timer");
+    assert.equal(reads, readsBeforeStart, "a disabled domain admits no pass");
+    assert.equal((await readInbox()).items.find((entry: { id: string }) => entry.id === due.id).status, "pending");
+
+    delete process.env.COVEN_CAVE_AUTOMATIONS_ENABLED;
+    startScheduler();
+    await settle();
+    assert.equal(callbacks.length, 1);
+    const fired = (await readInbox()).items.find((entry: { id: string }) => entry.id === due.id);
+    assert.equal(fired.status, "fired");
+    // Later passes see the fired record and do not deliver it again.
+    callbacks[0]();
+    await settle();
+    const again = (await readInbox()).items.find((entry: { id: string }) => entry.id === due.id);
+    assert.equal(again.firedAt, fired.firedAt);
+    unsubscribe();
+    streamController!.close();
+    for (;;) {
+      const event = await reader.read();
+      if (event.done) break;
+      events.push(JSON.parse(new TextDecoder().decode(event.value).slice(6)));
+    }
+    assert.deepEqual(events.map((entry) => [entry.type, entry.items.map((value) => value.id)]), [["fired", [due.id]]]);
+  } finally {
+    unsubscribe();
+    await reader.cancel();
+  }
 });

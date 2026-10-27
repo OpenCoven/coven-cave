@@ -4,6 +4,8 @@ import {
   withInboxLock,
   type InboxItem,
 } from "@/lib/cave-inbox";
+import { automationsDomain } from "@/lib/server/automations-domain";
+import { isStartupWorkerShutdownRequested } from "@/lib/server/startup-worker-shutdown";
 
 const TICK_MS = 15_000;
 
@@ -19,9 +21,17 @@ type Subscriber = {
   encoder: TextEncoder;
 };
 
+type InboxScheduler = {
+  wanted: boolean;
+  revision: number;
+  timer?: ReturnType<typeof setInterval>;
+  pending?: Promise<void>;
+  starting?: Promise<void>;
+};
+
 declare global {
   // eslint-disable-next-line no-var
-  var __inboxSchedulerStarted: boolean | undefined;
+  var __caveInboxScheduler: InboxScheduler | undefined;
   // eslint-disable-next-line no-var
   var __inboxSubscribers: Set<Subscriber> | undefined;
 }
@@ -121,20 +131,65 @@ async function tick(): Promise<void> {
   if (fired.length) broadcast({ type: "fired", items: fired });
 }
 
-export function startScheduler(): void {
-  if (globalThis.__inboxSchedulerStarted) return;
-  globalThis.__inboxSchedulerStarted = true;
-  // A slow store must not accumulate one queued transaction per interval.
-  // Each pass reads current due items, so skipped timer events need no replay.
-  let running = false;
-  const run = () => {
-    if (running) return;
-    running = true;
-    void tick().catch(() => undefined).finally(() => { running = false; });
+function schedulerOwner(): InboxScheduler {
+  return globalThis.__caveInboxScheduler ??= { wanted: false, revision: 0 };
+}
+
+function pass(owner: InboxScheduler): void {
+  // A slow store must not accumulate one queued transaction per interval:
+  // one pass is in flight at a time, and each pass reads the current due
+  // items, so skipped timer events need no replay. Admission belongs to this
+  // pass; stopping clears future passes while the admitted transaction keeps
+  // its authority over the delivery it already began.
+  if (!owner.wanted || owner.pending) return;
+  const pending = tick()
+    .catch(() => undefined)
+    .finally(() => {
+      if (owner.pending === pending) owner.pending = undefined;
+    });
+  owner.pending = pending;
+}
+
+/**
+ * Start the reminder worker (#6295): one process-local owner, one 15-second
+ * timer and a boot catch-up pass for reminders that fired while Cave was quit.
+ * A disabled automations domain or a coordinated shutdown owns no timer and
+ * admits no pass. Routes call this at module load, so a request finishing
+ * after shutdown cannot restart the worker.
+ */
+export function startScheduler(): Promise<void> {
+  if (!automationsDomain().enabled || isStartupWorkerShutdownRequested()) return Promise.resolve();
+  const owner = schedulerOwner();
+  if (owner.wanted) return owner.starting ?? Promise.resolve();
+  owner.wanted = true;
+  const revision = ++owner.revision;
+  const activate = () => {
+    if (!owner.wanted || owner.revision !== revision) return;
+    owner.timer = setInterval(() => { pass(owner); }, TICK_MS);
+    pass(owner);
   };
-  // Boot tick (catch up reminders that fired while Cave was quit).
-  run();
-  setInterval(run, TICK_MS);
+  if (!owner.pending) {
+    activate();
+    return Promise.resolve();
+  }
+  // A restart cannot create another owner while an old admitted pass drains.
+  const starting = owner.pending.then(activate);
+  owner.starting = starting;
+  const settled = () => {
+    if (owner.starting === starting) owner.starting = undefined;
+  };
+  void starting.then(settled, settled);
+  return starting;
+}
+
+/** Stop admission now; the caller may observe a deadline without cancelling work. */
+export function stopScheduler(): Promise<void> {
+  const owner = schedulerOwner();
+  owner.wanted = false;
+  owner.revision += 1;
+  if (owner.timer !== undefined) clearInterval(owner.timer);
+  owner.timer = undefined;
+  return owner.pending ?? Promise.resolve();
 }
 
 /**

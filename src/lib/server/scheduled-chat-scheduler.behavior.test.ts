@@ -112,11 +112,25 @@ test("production compilation starts no timer or scheduled pass", async () => {
 test("a request finishing after coordinated shutdown cannot restart scheduled work", async () => {
   await scheduler.startScheduledChatScheduler();
   const shutdown = await import("./startup-worker-shutdown");
+  shutdown.registerStartupWorker("inbox-reminders", async () => undefined);
   shutdown.registerStartupWorker("scheduled-chat", scheduler.stopScheduledChatScheduler);
   shutdown.registerStartupWorker("backup-sync", async () => undefined);
   await shutdown.coordinateStartupWorkerShutdown(async () => undefined);
   await scheduler.startScheduledChatScheduler();
   await vi.advanceTimersByTimeAsync(30_000);
   expect(vi.getTimerCount()).toBe(0);
+  expect(store.tick).toHaveBeenCalledTimes(1);
+});
+
+test("a disabled automations domain owns no timer and admits no scheduled pass", async () => {
+  vi.stubEnv("COVEN_CAVE_AUTOMATIONS_ENABLED", "off");
+  await scheduler.startScheduledChatScheduler();
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(vi.getTimerCount()).toBe(0);
+  expect(store.tick).not.toHaveBeenCalled();
+  // Re-enabling starts one owner; the store's own claims decide what is due.
+  vi.stubEnv("COVEN_CAVE_AUTOMATIONS_ENABLED", "");
+  await scheduler.startScheduledChatScheduler();
+  expect(vi.getTimerCount()).toBe(1);
   expect(store.tick).toHaveBeenCalledTimes(1);
 });

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { automationsDomain } from './automations-domain.ts';
 import { isStartupWorkerShutdownRequested } from './startup-worker-shutdown.ts';
 import { caveHome } from '../coven-paths.ts';
 import { createScheduledChatStore, type ScheduledDispatch } from './scheduled-chat-store.ts';
@@ -48,7 +49,9 @@ function tick(owner: ScheduledChatScheduler): void {
 }
 
 export function startScheduledChatScheduler(): Promise<void> {
-  if (process.env.NEXT_PHASE === 'phase-production-build' || isStartupWorkerShutdownRequested()) return Promise.resolve();
+  // A disabled automations domain (#6295) owns no timer and admits no pass;
+  // admitted claims stay in the store with their intent retained.
+  if (process.env.NEXT_PHASE === 'phase-production-build' || !automationsDomain().enabled || isStartupWorkerShutdownRequested()) return Promise.resolve();
   const owner = schedulerOwner();
   if (owner.wanted) return owner.starting ?? Promise.resolve();
   owner.wanted = true;

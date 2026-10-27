@@ -292,6 +292,7 @@ export const SUITES = {
     "src/lib/cave-home-project-store-reconciliation.test.ts",
     "src/lib/cave-inbox-create.test.ts",
     "src/lib/inbox-scheduler.test.ts",
+    "src/lib/inbox-scheduler.behavior.test.ts",
     "src/lib/cave-inbox-preservation.test.ts",
     "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/cave-inbox-bulk.test.ts",
@@ -424,6 +425,7 @@ export const SUITES = {
     "src/lib/server/backup-archive.test.ts",
     "src/lib/server/backup-sync-scheduler.behavior.test.ts",
     "src/lib/server/startup-worker-shutdown.behavior.test.ts",
+    "src/lib/server/automations-domain.test.ts",
     "src/lib/server/backup-sync.test.ts",
     "src/lib/server/role-crafts.test.ts",
     "src/app/api/marketplace/owned-route.test.ts",
@@ -2660,6 +2662,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/lib/inbox-scheduler.behavior.test.ts",
   "src/lib/server/scheduled-chat-store-drain.behavior.test.ts",
   "src/lib/server/backup-sync-scheduler.behavior.test.ts",
   "src/lib/server/startup-worker-shutdown.behavior.test.ts",

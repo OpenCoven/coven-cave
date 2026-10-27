@@ -60,6 +60,7 @@ test("parent EOF drains workers beside direct-run teardown and kills the Unix gr
   const worker = gate();
   const terminateDirectRuns = vi.fn(() => direct.promise);
   const stop = vi.fn(() => worker.promise);
+  registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("backup-sync", stop);
   const lease = packagedLease("darwin", terminateDirectRuns);
@@ -88,6 +89,7 @@ test("parent EOF drains workers beside direct-run teardown and kills the Unix gr
 test("a worker that outlives the parent lease is reported, never replayed, and the group still dies on time", async () => {
   const held = gate();
   const stop = vi.fn(() => held.promise);
+  registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("backup-sync", stop);
   const lease = packagedLease("darwin", vi.fn(async () => undefined));
@@ -107,6 +109,7 @@ test("a worker that outlives the parent lease is reported, never replayed, and t
 });
 
 test("an unproved direct-run tree keeps its fail-closed report while workers drained", async () => {
+  registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const lease = packagedLease("darwin", vi.fn(() => new Promise<void>(() => undefined)));
@@ -126,6 +129,7 @@ test("on Windows the same lease drains workers and ends with a normal exit for t
   const worker = gate();
   const stop = vi.fn(() => worker.promise);
   const terminateDirectRuns = vi.fn(async () => undefined);
+  registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("backup-sync", stop);
   const lease = packagedLease("win32", terminateDirectRuns);
@@ -148,6 +152,7 @@ test("on Windows an unfinished drain exits unsuccessfully at the lease without c
   const held = gate();
   let completed = false;
   const stop = vi.fn(async () => { await held.promise; completed = true; });
+  registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("backup-sync", stop);
   const lease = packagedLease("win32");
@@ -177,4 +182,47 @@ test("the watchdog is not installed without the packaged lease environment", () 
   });
   expect(stdin.resume).not.toHaveBeenCalled();
   expect(stdin.listenerCount("end")).toBe(0);
+});
+
+test("a reminder delivery that outlives the parent lease is reported, never replayed, and the group still dies on time", async () => {
+  const held = gate();
+  let completed = false;
+  const stop = vi.fn(async () => { await held.promise; completed = true; });
+  registerStartupWorker("inbox-reminders", stop);
+  registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("backup-sync", async () => undefined);
+  const lease = packagedLease("darwin", vi.fn(async () => undefined));
+
+  lease.stdin.emit("end");
+  await vi.advanceTimersByTimeAsync(1_199);
+  expect(lease.process.kill).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(lease.process.kill).toHaveBeenCalledExactlyOnceWith(-4242, "SIGKILL");
+  expect(stop).toHaveBeenCalledOnce();
+  expect(completed).toBe(false);
+  expect(lease.console.warn).toHaveBeenCalledWith(
+    "[startup-workers] Worker drain did not finish inside the native parent lease:",
+    expect.objectContaining({ workers: expect.objectContaining({ "inbox-reminders": { status: "pending" } }) }),
+  );
+  held.release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(completed).toBe(true);
+  expect(stop).toHaveBeenCalledOnce();
+});
+
+test("on Windows the reminder worker drains inside the same 400 ms lease window", async () => {
+  const worker = gate();
+  const stop = vi.fn(() => worker.promise);
+  registerStartupWorker("inbox-reminders", stop);
+  registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("backup-sync", async () => undefined);
+  const lease = packagedLease("win32", vi.fn(async () => undefined));
+
+  lease.stdin.emit("end");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(stop).toHaveBeenCalledOnce();
+  expect(lease.process.exit).not.toHaveBeenCalled();
+  worker.release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(lease.process.exit).toHaveBeenCalledExactlyOnceWith(0);
 });
