@@ -794,7 +794,15 @@ function fmtDuration(ms?: number): string | null {
 
 function DurationText({ durationMs }: { durationMs?: number }) {
   const duration = fmtDuration(durationMs);
-  return duration ? <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{duration}</span> : null;
+  return duration ? <span className="font-mono text-[length:var(--text-2xs)] tabular-nums text-[var(--text-muted)]">{duration}</span> : null;
+}
+
+/** The tone of a call's outcome chip (.cave-tool-status). Live states and
+ *  failures carry a tint; a finished, successful call reads as muted text;
+ *  rejected, cancelled and unknown outcomes take a neutral fill. The label
+ *  beside it is always the exact state word, so colour never stands alone. */
+function toolStatusTone(status: ToolStatus): "active" | "error" | "ok" | "neutral" {
+  return status === "error" ? "error" : isToolActive(status) ? "active" : status === "ok" ? "ok" : "neutral";
 }
 
 type ErrorStripTool = { id: string; name: string; input?: string; output?: string; status: ToolStatus; durationMs?: number };
@@ -10285,7 +10293,7 @@ function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning sum
           {label}
         </span>
         {(typeof durationMs === "number" && durationMs > 0) || countWords ? (
-          <span className="ml-auto font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
+          <span className="cave-tool-summary__meta">
             {typeof durationMs === "number" && durationMs > 0
               ? `Worked for ${fmtDuration(durationMs)}`
               : `${wordCount} ${wordCount === 1 ? "word" : "words"}`}
@@ -10472,7 +10480,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         >
           <Icon name="ph:wrench" width={12} className="cave-tool-icon shrink-0" aria-hidden />
           <span className="cave-work-line__label">{summary}</span>
-          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-work-line__status">
+          <span className="cave-tool-summary__meta cave-work-line__status">
             {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
             {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
             {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
@@ -10561,7 +10569,7 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
           <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
           <span className="cave-tool-run__name">{displayName}</span>
           <span className="cave-tool-count">×{tools.length}</span>
-          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-tool-run__status">
+          <span className="cave-tool-summary__meta cave-tool-run__status">
             {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
             {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
             {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
@@ -10790,14 +10798,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
               <span className="cave-edit-card__del">−{stat.deletions}</span>
             </span>
           </span>
-          <span className={[
-            "rounded px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]",
-            tool.status === "error"
-              ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
-              : isToolActive(tool.status)
-                ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
-                : tool.status === "ok" ? "bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] text-[var(--color-success)]" : "bg-[var(--bg-elevated)] text-[var(--text-muted)]",
-          ].join(" ")}>
+          <span className="cave-tool-status" data-status={toolStatusTone(tool.status)}>
             {toolStatusLabel(tool.status)}
           </span>
           <DurationText durationMs={tool.durationMs} />
@@ -10823,7 +10824,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   }
   return (
     <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category} onToggle={mountBodyOnOpen}>
-      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)] focus-ring">
+      <summary className="cave-tool-summary cave-tool-block__summary focus-ring">
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
         {argSummary ? (
@@ -10841,17 +10842,12 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             <span className="min-w-0 max-w-[18rem] truncate font-mono text-[var(--text-muted)]">· {argSummary}</span>
           )
         ) : null}
-        <span className={[
-          "rounded px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]",
-          tool.status === "error"
-            ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
-            : isToolActive(tool.status)
-              ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
-              : tool.status === "ok" ? "bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] text-[var(--color-success)]" : "bg-[var(--bg-elevated)] text-[var(--text-muted)]",
-        ].join(" ")}>
-          {toolStatusLabel(tool.status)}
+        <span className="cave-tool-summary__meta">
+          <span className="cave-tool-status" data-status={toolStatusTone(tool.status)}>
+            {toolStatusLabel(tool.status)}
+          </span>
+          <DurationText durationMs={tool.durationMs} />
         </span>
-        <DurationText durationMs={tool.durationMs} />
       </summary>
       {bodyMounted ? provenance : null}
       {bodyMounted && tool.input ? (
