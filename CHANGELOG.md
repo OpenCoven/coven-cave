@@ -31,14 +31,24 @@ separate from Windows code signing.
   offered or launched as local models.
 - **Coven history** can export the page you are reading as a bounded,
   redacted metadata file for diagnostics (#6255).
+- **`coven:ui` blocks read as plain text outside the chat transcript**
+  (#6274, #6278, #6279). Quick Chat, the expanded reader and the iOS app show
+  a block as readable lines instead of raw markup, and every Copy hands back
+  those lines. A fence indented under a list item stays a literal example. The
+  chat transcript still renders blocks natively.
 
 ### Fixed
 - **VoiceOver** names an enlarged chat image by its alt text, or "Enlarged
   image" when it has none (#6262).
+- **Switching runtime in the composer** no longer fails with "invalid model",
+  including in a chat with no saved conversation yet (#6271).
 
 ### Under the hood
 - **Releases:** one job creates the GitHub release before the build legs
   upload, so a tag can no longer get two releases (#6254).
+- **Automations:** every Codex-automations facade route is now checked against
+  a released Coven daemon, with a staged deprecation plan. No route changes
+  at runtime (#6266).
 - **Windows:** the bundled server no longer carries 244 unused Next.js build
   files that only the Windows trace kept after the Next.js update (#6276).
 - **Tests:** a picked @ file is proven to reach the turn through a real Cave
