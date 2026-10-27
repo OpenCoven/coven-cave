@@ -1733,7 +1733,7 @@ function MetaLine({
   /** Derives a title from the live transcript for the title row's sparkle. */
   generateTitle?: () => string | null;
   readOnly?: boolean;
-  /** Session action verbs, rendered after the conversation title. */
+  /** Supplemental activity shares the metadata row outside its live region. */
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1817,6 +1817,8 @@ function MetaLine({
           readOnly={readOnly}
         />
       ) : null}
+      <div className="cave-chat-meta-line__details">
+        <span className="cave-chat-meta-line__meta focus-ring-inset" title={metaModel ?? undefined} role="status" aria-live="polite" tabIndex={0}>
       {/* One status, stated once (cave-dkdev). The same <SessionStatusPill>
           the Sessions list renders, so a chat reads identically whether you
           are looking at it or looking for it. Transport ("connecting",
@@ -1831,62 +1833,56 @@ function MetaLine({
           transport={sessionState.transport}
         />
       ) : null}
-      <span className="cave-chat-meta-line__meta focus-ring-inset" title={metaModel ?? undefined} role="status" aria-live="polite" tabIndex={0}>
-        {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
-            — "<familiar> · <model> · <branch>" — while the heavier provenance
-            (cwd · duration · tokens · cost + meters) stays in the adjacent
-            reveal-on-hover cluster, so nothing is deleted, just demoted.
-            Streaming/failed/offline states keep their live meta. */}
-        {state === "complete" ? (
-          <span className="cave-chat-meta-line__identity">
-            {familiar.display_name}
-            {hasResponse && metaHarness ? ` · ${metaHarness}` : ""}
-            {hasResponse && metaModel ? ` · ${responseModelLabel(metaModel)}` : ""}
-            {hasResponse && identityGaps.length ? (
-              <>
-                {" · "}
-                <span className="cave-chat-meta-line__unverified" title={identityGaps.join(" · ")}>unverified</span>
-              </>
-            ) : null}
+          {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
+              — "<familiar> · <model> · <branch>" — while the heavier provenance
+              (cwd · duration · tokens · cost + meters) stays in the adjacent
+              reveal-on-hover cluster, so nothing is deleted, just demoted.
+              Streaming/failed/offline states keep their live meta. */}
+          {state === "complete" ? (
+            <span className="cave-chat-meta-line__identity">
+              {familiar.display_name}
+              {hasResponse && metaHarness ? ` · ${metaHarness}` : ""}
+              {hasResponse && metaModel ? ` · ${responseModelLabel(metaModel)}` : ""}
+              {hasResponse && identityGaps.length ? (
+                <>
+                  {" · "}
+                  <span className="cave-chat-meta-line__unverified" title={identityGaps.join(" · ")}>unverified</span>
+                </>
+              ) : null}
+            </span>
+          ) : null}
+          {/* Slim header (cave-xsq.3): when the turn has settled, the static
+              provenance (model · runtime · dir · duration · usage · meters) is a
+              quiet reveal-on-hover cluster so the settled header reads as just the
+              conversation title — like ChatGPT. Live streaming state (elapsed,
+              "esc to cancel") stays visible; provenance shows inline while
+              streaming (no reveal class) so nothing is hidden mid-response. */}
+          <span
+            className={`cave-chat-meta-line__provenance${state === "complete" ? " reveal-on-hover" : ""}`}
+          >
+            {provenanceSegments.map((seg, i) => (
+              <Fragment key={i}>
+                {i > 0 || state === "complete" ? " · " : null}
+                {typeof seg === "string" ? (
+                  seg
+                ) : "unverified" in seg ? (
+                  <span className="cave-chat-meta-line__unverified" title={seg.unverified}>unverified</span>
+                ) : (
+                  <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
+                    <Icon name="ph:folder" width={11} aria-hidden />
+                    {seg.dir.label}
+                  </span>
+                )}
+              </Fragment>
+            ))}
+            {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
           </span>
-        ) : null}
-        {/* Slim header (cave-xsq.3): when the turn has settled, the static
-            provenance (model · runtime · dir · duration · usage · meters) is a
-            quiet reveal-on-hover cluster so the settled header reads as just the
-            conversation title — like ChatGPT. Live streaming state (elapsed,
-            "esc to cancel") stays visible; provenance shows inline while
-            streaming (no reveal class) so nothing is hidden mid-response. */}
-        <span
-          className={`cave-chat-meta-line__provenance${state === "complete" ? " reveal-on-hover" : ""}`}
-        >
-          {provenanceSegments.map((seg, i) => (
-            <Fragment key={i}>
-              {i > 0 || state === "complete" ? " · " : null}
-              {typeof seg === "string" ? (
-                seg
-              ) : "unverified" in seg ? (
-                <span className="cave-chat-meta-line__unverified" title={seg.unverified}>unverified</span>
-              ) : (
-                <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
-                  <Icon name="ph:folder" width={11} aria-hidden />
-                  {seg.dir.label}
-                </span>
-              )}
-            </Fragment>
-          ))}
-          {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
+          {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
+          {state === "streaming" ? " · esc to cancel" : null}
+          {state === "offline" ? <MetaLineStartDaemon /> : null}
         </span>
-        {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
-        {state === "streaming" ? " · esc to cancel" : null}
-        {state === "offline" ? <MetaLineStartDaemon /> : null}
-      </span>
-      {/* No pickers on this row (cave-zfmqm). cave-fh9so pulled the
-          project/model/context chips inline here to collapse three stacked
-          header rows into one; one row of five controls is still a toolbar.
-          Choosing a project or a model belongs to the composer, which is where
-          you are when the choice matters and which still carries them. The
-          header is a title and the verbs that act on this conversation. */}
-      {children}
+        {children}
+      </div>
     </div>
   );
 }
@@ -8449,23 +8445,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onSessionsChanged={onSessionsChanged}
             generateTitle={generateTitleFromTranscript}
             readOnly={offlineReadOnly}
-          />
-          {/* Stats and run activity share the optional third header row. */}
-          <div className="cave-chat-header-status">
-            {sessionId !== null || turns.length > 0 ? (
-              <ChatSessionContextRow
-                turns={turns}
-                usage={lastSettledAssistantTurn?.usage}
-                costUsd={lastSettledAssistantTurn?.costUsd}
-                durationMs={lastSettledAssistantTurn?.durationMs}
+          >
+            <div className="cave-chat-header-status">
+              {sessionId !== null || turns.length > 0 ? (
+                <ChatSessionContextRow
+                  turns={turns}
+                  usage={lastSettledAssistantTurn?.usage}
+                  costUsd={lastSettledAssistantTurn?.costUsd}
+                  durationMs={lastSettledAssistantTurn?.durationMs}
+                />
+              ) : null}
+              <RunActivityStrip
+                activeTurn={activePendingTurn}
+                lastTurn={lastSettledAssistantTurn}
+                identityGaps={lastSettledAssistantTurn ? runtimeIdentityGaps(responseMetadataIdentity(displayResponseMetadata)) : []}
               />
-            ) : null}
-            <RunActivityStrip
-              activeTurn={activePendingTurn}
-              lastTurn={lastSettledAssistantTurn}
-              identityGaps={lastSettledAssistantTurn ? runtimeIdentityGaps(responseMetadataIdentity(displayResponseMetadata)) : []}
-            />
-          </div>
+            </div>
+          </MetaLine>
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
                 no longer hides them). Voice joins the hover-reveal quick set;

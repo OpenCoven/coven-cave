@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// #6201: title and metadata occupy two rows beside the familiar, with at
-// most one additional activity row. Keep the title room protected by #6008.
+// #6201: title/actions occupy the first row, with metadata and activity
+// sharing the second row beside the familiar. Keep the title room protected by #6008.
 
 const SESSION_ID = "header-title-room";
 const TITLE = "Capability gap · 1 signal";
@@ -54,7 +54,9 @@ async function openChatWithLongStatus(page: Page) {
     },
   }));
   await page.goto(`/?mode=chat#chat-${SESSION_ID}`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".cave-chat-header-row")).toBeVisible({ timeout: 45_000 });
+  const header = (page.viewportSize()?.width ?? 1280) < 768
+    ? page.locator(".cave-mobile-header-identity") : page.locator(".cave-chat-header-row");
+  await expect(header).toBeVisible({ timeout: 45_000 });
   await expect(page.locator(".cave-run-activity")).toContainText("Last run needs attention");
   await expect(page.locator(".shell-frame")).toHaveAttribute("data-settled", "");
 }
@@ -70,18 +72,20 @@ function headerGeometry(page: Page) {
       const box = el.getBoundingClientRect();
       return box.width > 0 && box.left >= rowBox.left - 1 && box.right <= rowBox.right + 1;
     });
-    const meta = row.querySelector(":scope > .cave-chat-meta-line")?.getBoundingClientRect();
-    const status = row.querySelector(":scope > .cave-chat-header-status")?.getBoundingClientRect();
+    const meta = row.querySelector(".cave-chat-meta-line__meta")?.getBoundingClientRect();
+    const status = row.querySelector(".cave-chat-header-status")?.getBoundingClientRect();
     return {
       pane: Math.round(rowBox.width),
       truncated,
       text: title?.textContent?.trim() ?? "",
+      titleWidth: title?.getBoundingClientRect().width ?? 0,
+      metadataWidth: meta?.width ?? 0,
       actionsVisible: actions.length > 0 && actions.every(Boolean),
-      statusBelowIdentity: Boolean(meta && status && status.top >= meta.bottom),
+      statusBesideMetadata: Boolean(meta && status && Math.abs((status.top + status.bottom) / 2 - (meta.top + meta.bottom) / 2) <= 2),
       height: rowBox.height,
       avatarHeight: row.querySelector(".cave-chat-header-avatar")?.getBoundingClientRect().height,
       avatarRadius: getComputedStyle(row.querySelector(".cave-chat-header-avatar")!).borderRadius,
-      actionsShareRow: Boolean(meta && status && [meta.top, status.top].includes(row.querySelector(":scope > .cave-chat-session-actions")?.getBoundingClientRect().top ?? -1)),
+      actionsShareRow: Boolean(title && Math.abs(title.getBoundingClientRect().top - (row.querySelector(":scope > .cave-chat-session-actions")?.getBoundingClientRect().top ?? -100)) <= 4),
     };
   });
 }
@@ -93,15 +97,15 @@ test.describe("Chat header title room", () => {
     test.describe(`${width}px window`, () => {
       test.use({ viewport: { width, height: 900 } });
 
-      test("keeps title, metadata and activity within three rows", async ({ page }) => {
+      test("keeps title, metadata and activity within two rows", async ({ page }) => {
         await openChatWithLongStatus(page);
         const geometry = await headerGeometry(page);
         expect(geometry.text).toContain(TITLE);
         if (width >= 1440) expect(geometry.truncated).toBe(false);
         expect(geometry.actionsVisible).toBe(true);
         expect(geometry.actionsShareRow).toBe(true);
-        expect(geometry.statusBelowIdentity).toBe(true);
-        expect(geometry.height).toBeLessThanOrEqual(72);
+        expect(geometry.statusBesideMetadata).toBe(true);
+        expect(geometry.height).toBeLessThanOrEqual(48);
         expect(geometry.avatarHeight).toBe(44);
         expect(geometry.avatarRadius).toBe("8px");
         await page.locator(".cave-chat-linear-header").screenshot({ path: test.info().outputPath("header.png") });
@@ -111,11 +115,69 @@ test.describe("Chat header title room", () => {
               document.documentElement.dataset.theme = theme;
               document.documentElement.dataset.mode = mode;
             }, [theme, mode]);
-            expect((await headerGeometry(page)).height).toBeLessThanOrEqual(72);
+            expect((await headerGeometry(page)).height).toBeLessThanOrEqual(48);
             await page.locator(".cave-chat-linear-header").screenshot({ path: test.info().outputPath(`header-${theme}-${mode}.png`) });
           }
         }
       });
     });
   }
+});
+
+
+test("two-row header retains actions and keyboard details in narrow split panes", async ({ page, isMobile }) => {
+  test.skip(isMobile, "desktop split panes");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openChatWithLongStatus(page);
+  for (const width of [320, 440, 600]) {
+    await page.locator(".cave-chat-linear").evaluate((el, width) => {
+      el.style.maxWidth = `${width}px`;
+    }, width);
+    const geometry = await headerGeometry(page);
+    expect(geometry.height).toBeLessThanOrEqual(48);
+    expect(geometry.statusBesideMetadata).toBe(true);
+    expect(geometry.actionsVisible).toBe(true);
+    expect(geometry.titleWidth).toBeGreaterThanOrEqual(96);
+    expect(geometry.metadataWidth).toBeGreaterThanOrEqual(160);
+    const metadata = page.locator(".cave-chat-meta-line__meta");
+    await metadata.focus();
+    await expect(metadata).toBeFocused();
+    await metadata.press("End");
+    const summary = page.getByRole("button", { name: "Last run summary", exact: true });
+    await summary.focus();
+    await summary.press("Enter");
+    await expect(page.getByRole("dialog", { name: "Last run details" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(summary).toBeFocused();
+  }
+});
+
+
+test("mobile retains activity and detail access after the desktop header compacts", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openChatWithLongStatus(page);
+  const summary = page.getByRole("button", { name: "Last run summary", exact: true });
+  await expect(summary).toBeVisible();
+  await summary.click();
+  await expect(page.getByRole("dialog", { name: "Last run details" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(summary).toBeFocused();
+});
+
+test("settle celebrations retain a painted box and respect reduced motion", async ({ page, isMobile }) => {
+  test.skip(isMobile, "desktop header effect");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openChatWithLongStatus(page);
+  await page.locator(".cave-chat-header-row > .cave-chat-meta-line").evaluate(node => node.classList.add("cave-chat-meta-line--reward"));
+  const header = page.locator(".cave-chat-header-row");
+  const effect = await header.evaluate(node => ({
+    animation: getComputedStyle(node).animationName,
+    width: node.getBoundingClientRect().width,
+    height: node.getBoundingClientRect().height,
+  }));
+  expect(effect.animation).toBe("cave-chat-settle-flare");
+  expect(effect.width).toBeGreaterThan(0);
+  expect(effect.height).toBeGreaterThan(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect.poll(() => header.evaluate(node => getComputedStyle(node).animationName)).toBe("none");
 });

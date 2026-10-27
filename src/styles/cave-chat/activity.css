@@ -865,11 +865,13 @@ details[open] > .cave-tool-summary::before {
    and recorded runtime/model neutral during streaming, failure and outages. */
 /* One-shot session-settle flare (cave-q06w) — the summoning bloom (700ms,
    decelerate, radiate + fade) in success green as a LONG run settles.
-   Shadow-only: the meta line is borderless and nothing may shift layout.
+   Shadow-only: nothing may shift layout. The meta line is `display: contents`
+   inside the two-row header grid, so the flare paints on the header row that
+   wraps it (#6201); a boxless element has no shadow to animate.
    Gated in MetaLine by a 60s significance floor + a global per-kind
    cooldown (src/lib/flare-cooldown.ts) + the celebrations pref; the row's
    role=status announcement carries the information either way. */
-.cave-chat-meta-line--reward {
+.cave-chat-header-row:has(> .cave-chat-meta-line--reward) {
   border-radius: var(--radius-md);
   animation: cave-chat-settle-flare 700ms var(--ease-decelerate) forwards;
 }
@@ -883,7 +885,7 @@ details[open] > .cave-tool-summary::before {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cave-chat-meta-line--reward { animation: none; }
+  .cave-chat-header-row:has(> .cave-chat-meta-line--reward) { animation: none; }
 }
 
 /* Inline remedy inside the offline meta line — a real button (keyboard
@@ -935,50 +937,53 @@ details[open] > .cave-tool-summary::before {
   display: none;
 }
 
-/* Title and metadata share two rows beside the actions. Activity has at
-   most one additional row, so narrow panes cannot create a fourth band. */
+/* Two rows: title/actions, then metadata/activity beside the familiar. */
 .cave-chat-header-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  column-gap: var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: var(--space-6) var(--space-5);
+  align-items: center;
+  column-gap: var(--space-2);
   row-gap: var(--space-1);
   min-width: 0;
 }
 
 .cave-chat-header-row > .cave-chat-meta-line {
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
-  width: auto;
-  display: grid;
-  grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr);
-  grid-template-rows: minmax(var(--space-6), auto) var(--space-5);
-  align-items: center;
-  row-gap: 0;
+  display: contents;
 }
 
 .cave-chat-header-row > .cave-chat-session-actions {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1;
   flex: none;
 }
 
 .cave-chat-header-row > .cave-chat-meta-line > .cave-chat-header-avatar {
+  grid-column: 1;
   grid-row: 1 / span 2;
 }
 
 .cave-chat-header-row .cave-chat-title,
 .cave-chat-header-row .cave-chat-title-input {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   max-width: 100%;
 }
 
-/* Preserve the exact runtime details on one horizontally scrollable line.
-   The focusable status span also supports keyboard scrolling. */
-.cave-chat-header-row .cave-chat-meta-line__meta {
+.cave-chat-meta-line__details {
   grid-column: 2 / -1;
   grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Preserve exact runtime details on one keyboard-scrollable metadata line. */
+.cave-chat-header-row .cave-chat-meta-line__meta {
+  flex: 1 1 0;
+  min-width: min(100%, calc(var(--space-8) * 5));
   max-width: none;
   white-space: nowrap;
   overflow-x: auto;
@@ -986,13 +991,18 @@ details[open] > .cave-tool-summary::before {
   scrollbar-width: none;
 }
 
+.cave-chat-header-row .cave-chat-meta-line__meta > .ui-session-pill {
+  margin-inline-end: var(--space-2);
+  vertical-align: middle;
+}
+
 .cave-chat-header-row .cave-chat-meta-line__meta::-webkit-scrollbar {
   display: none;
 }
 
 .cave-chat-header-status {
-  grid-column: 1 / -1;
-  grid-row: 2;
+  flex: 0 1 auto;
+  max-width: 60%;
   display: flex;
   flex-wrap: nowrap;
   justify-content: safe flex-end;
@@ -1027,20 +1037,6 @@ details[open] > .cave-tool-summary::before {
   padding: 0;
   border: 0;
   background: none;
-}
-
-/* In split panes, preserve title room by sharing the activity row with the
-   actions. The two identity rows still span the full width above them. */
-@container chat-header (max-width: 40rem) {
-  .cave-chat-header-row > .cave-chat-meta-line {
-    grid-column: 1 / -1;
-  }
-  .cave-chat-header-row > .cave-chat-session-actions {
-    grid-row: 2;
-  }
-  .cave-chat-header-status {
-    grid-column: 1;
-  }
 }
 
 /* The runtime's unreported identity, as one muted marker; the gaps are named

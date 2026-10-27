@@ -45,6 +45,10 @@
   display: none;
 }
 
+.right-chat .cave-chat-meta-line__details {
+  display: contents;
+}
+
 /* The one badge that owns the session state keeps its live states; a settled
    run has nothing to report in a column this narrow. */
 .right-chat .cave-chat-header-row .ui-session-pill[data-state="completed"] {
@@ -56,6 +60,10 @@
    their live meta (elapsed, "esc to cancel", Start daemon). */
 .right-chat .cave-chat-meta-line--complete .cave-chat-meta-line__meta {
   display: none;
+}
+
+.right-chat .cave-chat-meta-line__meta {
+  min-width: 0;
 }
 
 /* Steps/active stats and the Last run strip. */

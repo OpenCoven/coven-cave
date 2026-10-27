@@ -53,28 +53,26 @@ assert.match(
 );
 
 // ── Collapsed code rail — the reflection of the left nav's collapsed rail ──
-// A closed rail leaves an in-flow reopen rail at the right edge (desktop,
-// wide panes) — content flows beside it, never underneath.
+// A closed rail leaves a small reopen tab at the right edge of wide panes.
 assert.match(
   chatSurface,
   /rail\.available && !rail\.open && !isMobile && !paneNarrow && \([\s\S]{0,600}?<CodeRailReopen[\s\S]{0,300}?onOpen=\{railController\.openChanges\}/,
   "collapsing the code rail must leave a reopen rail (wide desktop panes) that restores it",
 );
 
-// The rail participates in layout (content beside it, never underneath):
-// it must NOT be absolutely positioned, and it reserves only a pull-tab width.
+// A closed rail reserves no column; only the small transparent edge tab overlays.
 assert.match(
   caveChatAux,
-  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 calc\(var\(--space-6\) \+ var\(--space-1\)\);[\s\S]{0,300}?background:\s*var\(--bg-panel\);/,
-  "the reopen rail reserves an opaque 28px in-flow pull-tab width",
+  /\.workspace-rail-reopen \{[^}]*position: absolute;[^}]*background: transparent;/,
+  "the collapsed rail has no full-height opaque gutter",
 );
 assert.doesNotMatch(
-  caveChatAux,
-  /\.workspace-rail-reopen \{[\s\S]{0,900}?position: absolute;/,
-  "the reopen rail must not overlay content (no absolute positioning)",
+  caveChatAux.match(/\.workspace-rail-reopen \{[^}]*\}/)?.[0] ?? "",
+  /height: 100%|flex: 0 0/,
+  "the Code control owns only the pull-tab bounds",
 );
 
-assert.match(reopen, /workspace-rail-reopen__label">Code</, "the pull tab is labeled without hover");
+assert.match(reopen, /workspace-rail-reopen__label">Code</, "the Code label remains available for reveal");
 assert.match(reopen, /ph:caret-left/, "the pull tab points inward");
 assert.match(controller, /autoRevealChanges: false/, "new changes must not force open the conversation's code rail");
 assert.match(reopen, /previousNonce\.current === changeNonce/, "unchanged polls cannot replay the cue");
@@ -84,8 +82,8 @@ assert.match(caveChatAux, /animation: code-rail-change-nudge[^;]+ 2;/, "new chan
 // The rail carries the left panel's glass (with honest fallbacks).
 assert.match(
   caveChatAux,
-  /\.workspace-rail-reopen__tab \{[\s\S]{0,500}?background: var\(--bg-raised\);/,
-  "the pull tab stays visible at rest",
+  /\.workspace-rail-reopen__tab \{[\s\S]{0,500}?background: color-mix\(in oklch, var\(--bg-raised\) 65%, transparent\);/,
+  "the pull tab is discreet at rest",
 );
 assert.match(
   caveChatAux,
