@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "issue": 5767,
+  "frozenAt": "2026-10-24T09:16:23.232647+00:00",
+  "sourceOid": "8f26d0cf6c5aaa3a8fda7de50dccd3fd82e2f70d",
+  "sourceDigest": "0301795e72460005a4bcaa90fb832848c357b426c205d0e5e025c9639afc4a7e",
+  "buildId": "IysbiDI_XsQkUSYgNGIGg",
+  "packagedIdentifier": "ai.opencoven.cave.qualification5767.20261024",
+  "packaging": "Unsigned alternate-ID local macOS Release app; not signed, notarized or released.",
+  "files": [
+    {
+      "path": ".next/BUILD_ID",
+      "sha256": "24dd442cd2ae1ec1d95a604273b0bda4e7d78aae647e067c4ed25626edce2cb1",
+      "bytes": 21
+    },
+    {
+      "path": "server.mjs",
+      "sha256": "2ebd655f356b25a8a5a1ca10e429e8e9881c2023259a218d59391a23fcf3cb24",
+      "bytes": 460845
+    },
+    {
+      "path": "src-tauri/resources/server/server.mjs",
+      "sha256": "2ebd655f356b25a8a5a1ca10e429e8e9881c2023259a218d59391a23fcf3cb24",
+      "bytes": 460845
+    },
+    {
+      "path": "src-tauri/target/release/bundle/macos/CaveQualification5767.app/Contents/Resources/resources/server/server.mjs",
+      "sha256": "2ebd655f356b25a8a5a1ca10e429e8e9881c2023259a218d59391a23fcf3cb24",
+      "bytes": 460845
+    },
+    {
+      "path": "src-tauri/target/release/bundle/macos/CaveQualification5767.app/Contents/MacOS/app",
+      "sha256": "4b425592a3cef0893a437d6940789b19b8b461261f6ec34758de3fbe11c1febb",
+      "bytes": 19780464
+    },
+    {
+      "path": "src-tauri/target/release/bundle/macos/CaveQualification5767.app/Contents/Info.plist",
+      "sha256": "13231efa1023148a305cca3c19566b9400465c69a39c45a6473e0efd3f0f9e03",
+      "bytes": 1654
+    },
+    {
+      "path": "src-tauri/target/release/bundle/macos/CaveQualification5767.app/Contents/Resources/resources/node/bin/node",
+      "sha256": "b468fb9c67427c9d3aec07ee1105e63020923a631a9a2a00beb71a7ba3768bfd",
+      "bytes": 122503472
+    }
+  ],
+  "trees": [
+    {
+      "path": ".next/static",
+      "sha256": "5cb2460a8a02e45db4b65408206258e19df9bf55b6d165ccff458d4e3eba9ede",
+      "files": 1250
+    },
+    {
+      "path": ".next/server",
+      "sha256": "7fde8094069828af252872f5ff039b03f82b4d1a6003a10e0ea74b932df3f467",
+      "files": 9894
+    },
+    {
+      "path": "src-tauri/target/release/bundle/macos/CaveQualification5767.app/Contents/Resources/resources/server/.next/static",
+      "sha256": "5cb2460a8a02e45db4b65408206258e19df9bf55b6d165ccff458d4e3eba9ede",
+      "files": 1250
+    },
+    {
+      "path": "src-tauri/target/release/bundle/macos/CaveQualification5767.app/Contents/Resources/resources/server/.next/server",
+      "sha256": "792945d465cfd1863ab86cc41bfbf906cb0f4df139719c8269e233f8a1bcd894",
+      "files": 5532
+    }
+  ],
+  "host": {
+    "node": "v24.22.0",
+    "macOS": "27.0.1",
+    "macOSBuild": "26A434",
+    "xcode": "Xcode 27.1\nBuild version 27A9275"
+  },
+  "runtimeExecutable": {
+    "wrapper": "coven --print-native-binary-path",
+    "sha256": "de56712e39914b5243b8a3d0a213384bd6520cad229f946f1cca85d0b0e1ca0b",
+    "version": "coven v0.4.10 (engine not installed, pinned 0.8.0)",
+    "classification": "Installed CLI executable identity; no daemon, provider turn or trust publication."
+  },
+  "policy": "No product rebuilds after freeze. Verify these exact file and tree hashes before and after every production-path lane. Each lane keeps its runtime/client scope and all failures."
+}

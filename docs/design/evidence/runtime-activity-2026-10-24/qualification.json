@@ -1,0 +1,3133 @@
+{
+  "schemaVersion": 1,
+  "issue": 5767,
+  "parentIssue": 5761,
+  "recordedAt": "2026-10-24T07:02:45.500112+00:00",
+  "status": "in-progress; not accepted",
+  "candidate": {
+    "sourceOid": "8f26d0cf6c5aaa3a8fda7de50dccd3fd82e2f70d",
+    "buildId": "IysbiDI_XsQkUSYgNGIGg",
+    "serverSha256": "2ebd655f356b25a8a5a1ca10e429e8e9881c2023259a218d59391a23fcf3cb24",
+    "packagedExecutableSha256": "4b425592a3cef0893a437d6940789b19b8b461261f6ec34758de3fbe11c1febb",
+    "sourceManifestDigest": "0301795e72460005a4bcaa90fb832848c357b426c205d0e5e025c9639afc4a7e",
+    "qualificationStarted": false,
+    "frozenIdentity": "build-identity.json"
+  },
+  "authorization": {
+    "continuation": "https://github.com/OpenCoven/coven-cave/issues/5767#issuecomment-6381095706",
+    "scope": "Maintainer-directed continuation of the proposed baseline and one scoped worktree. Merge, release, provider canaries and human/device acceptance remain separate."
+  },
+  "inventory": {
+    "originalEntries": 114,
+    "goldens": 17,
+    "historicalScopedQualified": 66,
+    "historicalDeferred": 48,
+    "candidateQualified": 0,
+    "candidateNotYetQualified": 114,
+    "policy": "Historical evidence, source/unit checks and other candidate receipts cannot qualify this product build. Every decision needs matching production-path evidence or a named disposition; no issue closure from this in-progress record."
+  },
+  "verification": [
+    {
+      "name": "targeted",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "node",
+          "scripts/runtime-activity-effect-counter.test.mjs"
+        ],
+        [
+          "node",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "src/lib/chat-activity-corpus.test.ts"
+        ]
+      ],
+      "logSha256": "0c051e01c2b4dfbe7e9aa7c2e826bace855f245c2da5e71a19a958ae518498e8"
+    },
+    {
+      "name": "wiring",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "pnpm",
+          "check:tests-wired"
+        ]
+      ],
+      "logSha256": "1d7bc1cf435550fcbc9eae1479a948c63aa62ad98848844fe4b803c01618798d"
+    },
+    {
+      "name": "typecheck",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "pnpm",
+          "typecheck"
+        ]
+      ],
+      "logSha256": "653b009d47230e7aaa89265fe4bc8e1a00755e6804a62082bf83c3fc26cd56ef"
+    },
+    {
+      "name": "app",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "pnpm",
+          "test:app"
+        ]
+      ],
+      "logSha256": "edabae241839f92ce84fdca427aa067e266637cc78a42e03b9131b3332fdb6c9",
+      "omissions": [
+        "Two opt-in real native supervisor cases were skipped because COVEN_PROCESS_SUPERVISOR_NATIVE was not supplied: EOF cancellation/descendant quiescence and owner lease after server crash. The 1,480-file suite completed successfully; this does not qualify those native cases."
+      ]
+    },
+    {
+      "name": "ios-generation",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "pnpm",
+          "mobile:ios:xcodegen"
+        ]
+      ],
+      "logSha256": "24ea74151120c6391d237baa0cd5470b179cd683273952390a769af5df14d887"
+    },
+    {
+      "name": "native-supervisor",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "node",
+          "--require",
+          "./scripts/css-source-contract-hook.cjs",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "src/lib/server/flow-copilot-session.test.ts"
+        ]
+      ],
+      "logSha256": "54d5c49e64670e0f1e000858bfb84b3269e6890c6803c83e5b25d798ff38fb7e",
+      "scope": "Readiness or focused evidence only; not a full API or production-client pass."
+    },
+    {
+      "name": "api-direct",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "node",
+          "--require",
+          "./scripts/css-source-contract-hook.cjs",
+          "--experimental-strip-types",
+          "--import",
+          "./scripts/test-alias-register.mjs",
+          "src/app/api/chat/send/harness-routing-codex-direct.test.ts"
+        ]
+      ],
+      "logSha256": "2b87bb0936406cf0c8449b6ebeebabc66167fcd7f13033142fec92301720061d",
+      "scope": "Readiness or focused evidence only; not a full API or production-client pass."
+    },
+    {
+      "name": "browser-install",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "pnpm",
+          "exec",
+          "playwright",
+          "install",
+          "chromium"
+        ]
+      ],
+      "logSha256": "e58351af63d551b48e3aec0077481d7ebcb80901e6aa1e1c2f710402711ee8fb",
+      "scope": "Readiness or focused evidence only; not a full API or production-client pass."
+    },
+    {
+      "name": "browser-list",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "pnpm",
+          "exec",
+          "playwright",
+          "test",
+          "--config",
+          ".verification/5767/playwright.production.config.mjs",
+          "tests/chat-activity-acceptance.spec.ts",
+          "tests/chat-activity-updates.spec.ts",
+          "tests/chat-tool-cards.spec.ts",
+          "tests/chat-run-details.spec.ts",
+          "tests/chat-response-output.spec.ts",
+          "tests/chat-proposal-review-card.spec.ts",
+          "--project",
+          "desktop",
+          "--list"
+        ]
+      ],
+      "logSha256": "333f8397348b87d73663cb8292edbfea02cba1db8021fd92a28a0b32504ee5e1",
+      "scope": "Readiness or focused evidence only; not a full API or production-client pass."
+    },
+    {
+      "name": "api",
+      "status": "passed",
+      "attempt": 3,
+      "commands": [
+        [
+          "pnpm",
+          "test:api"
+        ]
+      ],
+      "logSha256": "040e26d7fce3b4a4c83169d26556c6267f1eb696ce9d5b180b6d644827836c27",
+      "files": 538,
+      "note": "Complete suite passed after two retained scratch-environment failures. No fixture/product validation or assertion changed."
+    },
+    {
+      "name": "mobile",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "pnpm",
+          "test:mobile"
+        ]
+      ],
+      "logSha256": "4a8a1f72902ec88079c5a44b0ea343387312b93bba0188acc52b9932c1bb7fd4",
+      "scope": "Repository check; no production-client or human acceptance implied."
+    },
+    {
+      "name": "conformance",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "pnpm",
+          "test:conformance"
+        ]
+      ],
+      "logSha256": "a7f34baf9f956975422ed1c6904aa545c9b5aaa014a2131aad65070c9f74ae34",
+      "scope": "Repository verification only; final production package built separately.",
+      "omissions": [
+        "Windows Coven .cmd-shim host resolution requires Windows.",
+        "OpenCode Windows shim resolution requires Windows.",
+        "Tailscale/MagicDNS discovery skipped because tailscale executable is unavailable in this environment."
+      ]
+    },
+    {
+      "name": "lint",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "pnpm",
+          "lint"
+        ]
+      ],
+      "logSha256": "883e8c7b9c051b81cb7461266592960aa35e24dfab38e19f17ac92b38fbc705f",
+      "scope": "Repository verification only; final production package built separately."
+    },
+    {
+      "name": "package",
+      "status": "passed",
+      "attempt": 1,
+      "commands": [
+        [
+          "pnpm",
+          "exec",
+          "tauri",
+          "build",
+          "--ci",
+          "--no-sign",
+          "--bundles",
+          "app",
+          "--config",
+          "{\"identifier\": \"ai.opencoven.cave.qualification5767.20261024\", \"productName\": \"CaveQualification5767\", \"bundle\": {\"createUpdaterArtifacts\": false}}"
+        ]
+      ],
+      "logSha256": "647ce0cbcf6a71b9ddc457853c697f2931fd1b5bbd67f303a23a4605855b8124",
+      "scope": "Unsigned alternate-ID local macOS Release app; not signed, notarized or released."
+    }
+  ],
+  "attempts": [
+    {
+      "phase": "verification wrapper startup",
+      "status": "invalid-launch-before-tests",
+      "reason": "Scratch launcher initially resolved the worktree parent instead of the owned worktree; Node could not find the test module. Fixed launcher path and assertion; original failed log retained. No application test or provider request ran in that launch.",
+      "receipt": "Local .verification/5767/invalid-launch-targeted-1.json"
+    },
+    {
+      "phase": "API repository gate",
+      "attempt": 1,
+      "status": "failed-before-fixture-route-assertions",
+      "passedFilesBeforeFailure": 263,
+      "failedFile": "src/app/api/chat/send/harness-routing-codex-direct.test.ts",
+      "reason": "The long scratch HOME produced a 161-byte AF_UNIX socket path. Node listen returned EINVAL. An independent socket probe refused a 160-byte path and bound a 37-byte path.",
+      "correction": "Shorten only the scratch verification HOME; preserve every test and assertion. Rerun the complete API command, retaining this failed attempt.",
+      "logSha256": "54e0000008b4fece2a7fd5e45bc4a51bed0128c52cc440eadcc497ac87c0cc52",
+      "diagnosis": "Local .verification/5767/socket-path-diagnosis.json"
+    },
+    {
+      "phase": "API repository gate",
+      "attempt": 2,
+      "status": "failed-on-resumed-fixture-project-binding",
+      "passedFilesBeforeFailure": 263,
+      "failedFile": "src/app/api/chat/send/harness-routing-codex-direct.test.ts",
+      "reason": "The short HOME used /tmp, which is a macOS alias of /private/tmp. Initial route assertions passed but resumed project binding returned project_not_registered. The canonical HOME spelling aligns registered and persisted fixture roots.",
+      "correction": "Resolve the scratch HOME before invocation. The unchanged complete Codex-direct route test passed as api-direct-1; API full command restarted as attempt 3. No source, grant, validation or assertion was weakened.",
+      "logSha256": "eed4ab8552e5c8688c5e7763957e73bfc477a1a0a8099742578b0b690e663510"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "5761-boundary-01",
+      "issue": 5761,
+      "requirement": "Render only provider-designated user-visible reasoning/summary content. Never request, reconstruct, or fabricate hidden chain-of-thought. Keep provider summaries, model narration, and application progress distinguishable.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5761 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5761
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5761-boundary-02",
+      "issue": 5761,
+      "requirement": "Model text, tags, tool output, and local hook output cannot manufacture verified execution, approval, or commit receipts.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5761 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5761
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5761-boundary-03",
+      "issue": 5761,
+      "requirement": "A requested tool is not an executed tool; an approval request is not permission; a successful process result is not proof of a protected commit.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5761 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5761
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5761-boundary-04",
+      "issue": 5761,
+      "requirement": "Bind activity to the actual conversation/run/turn and authorized familiar revision from the authoritative session. Missing historical binding/provenance is explicit, never inferred from a display name, and cannot qualify protected execution.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "delegated-access",
+        "scope": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5764 and #5765 owners",
+      "gap": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+      "nextStep": "Define the supported delegated-principal/project boundary and run adversarial real-client cases for each claimed scope; keep that broader support claim withheld.",
+      "followups": [
+        6072
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5761-boundary-05",
+      "issue": 5761,
+      "requirement": "Redact and bound display projections before SSE, replay retention, transcript storage, logs, and exports. Never expose opaque reasoning/signature payloads or credentials as thinking text. Preserve required provider continuation state separately and unchanged.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "privacy-export",
+        "scope": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5762, #5765 and #5766 owners",
+      "gap": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+      "nextStep": "Exercise each copy/export/notification/cache surface with split sentinels and request-time revocation before qualifying the complete disclosure claim.",
+      "followups": [
+        6061
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5761-boundary-06",
+      "issue": 5761,
+      "requirement": "Reconnect is read/replay, never permission to rerun a tool. Missing events, expired buffers, cancellation, rejected actions, persistence failure, and unavailable receipts remain honest states.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5761 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5761
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5761-boundary-07",
+      "issue": 5761,
+      "requirement": "Use current authenticated access checks for detail/receipt/export reads. Developer/moderator presentation modes do not grant additional access by themselves.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "delegated-access",
+        "scope": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5764 and #5765 owners",
+      "gap": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+      "nextStep": "Define the supported delegated-principal/project boundary and run adversarial real-client cases for each claimed scope; keep that broader support claim withheld.",
+      "followups": [
+        6072
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-01",
+      "issue": 5761,
+      "requirement": "#5762 \u2014 Typed reasoning/tool projection and server disclosure boundary.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-02",
+      "issue": 5761,
+      "requirement": "#5763 \u2014 Runtime adapter propagation and tested capability matrix.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-03",
+      "issue": 5761,
+      "requirement": "#5764 \u2014 Persistence, replay, reconnect, and history consistency.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-04",
+      "issue": 5761,
+      "requirement": "#5765 \u2014 Accessible web/desktop Activity, reasoning, tools, and detail inspection.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-05",
+      "issue": 5761,
+      "requirement": "#5766 \u2014 Native iOS parity, recovery, and VoiceOver evidence.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-06",
+      "issue": 5761,
+      "requirement": "#5767 \u2014 Real-daemon, packaged-client, security, and native E2E qualification.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-07",
+      "issue": 5761,
+      "requirement": "Every claimed supported runtime/launch path has a documented, tested exposure capability, including explicit unsupported/unverified states.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5761 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5761-acceptance-08",
+      "issue": 5761,
+      "requirement": "Thinking and tools preserve identity, order, correlation, and terminal state from runtime output through live UI, replay, and history.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-09",
+      "issue": 5761,
+      "requirement": "Parallel same-name calls, retries, approval states, errors, cancellation, reconnect gaps, persistence failures, and session/familiar switching pass the shared scenario corpus.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-10",
+      "issue": 5761,
+      "requirement": "Default visibility, disclosure controls, keyboard/VoiceOver behavior, reduced motion, and mobile layout are verified without hiding failures or pending approvals.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "human-accessibility",
+        "scope": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val for human/device acceptance; #5765/#5766 owners for remaining automated coverage",
+      "gap": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+      "nextStep": "Record human VoiceOver/keyboard observations on the supported devices and finish remaining large-text/RTL/approval coverage.",
+      "followups": [
+        6070,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6108
+      ]
+    },
+    {
+      "id": "5761-acceptance-11",
+      "issue": 5761,
+      "requirement": "Secret/PII sentinels, malicious markers/tool output, and cross-session requests cannot leak data or acquire authority.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "privacy-export",
+        "scope": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5762, #5765 and #5766 owners",
+      "gap": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+      "nextStep": "Exercise each copy/export/notification/cache surface with split sentinels and request-time revocation before qualifying the complete disclosure claim.",
+      "followups": [
+        6061
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-12",
+      "issue": 5761,
+      "requirement": "Real-daemon and packaged/native evidence accompanies deterministic fixtures; unavailable providers/devices remain unverified, not passed.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-13",
+      "issue": 5761,
+      "requirement": "Required checks pass on exact PR heads; retain commands, first-attempt results, retries, runtime/schema versions, sanitized artifacts, and remaining gaps before closeout.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5761-acceptance-14",
+      "issue": 5761,
+      "requirement": "Supported-path documentation, retention/disclosure behavior, content-minimized diagnostics, and safe rollback are recorded. Remaining native/security/producer gaps cannot be hidden by a blanket completed label.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "rollout-docs",
+        "scope": "Existing reviewed runtime/schema capability gates and presentation preference preserved; unsupported approval authority stays unavailable. Documented rollback cannot relax disclosure/authentication. #4892 obsolete clause recorded in an issue comment, body unchanged.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5761 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5761
+      ],
+      "newerPRsToReconcile": [
+        6182,
+        6186
+      ]
+    },
+    {
+      "id": "5762-scope-01",
+      "issue": 5762,
+      "requirement": "Add a versioned, backward-compatible typed reasoning-block representation to the existing union and transcript model. Carry stable block identity, run/turn association, start/update/end semantics, and explicit representation: provider summary, provider progress, application activity description, or unverified legacy content. Keep an old-transcript decoder; do not pretend a legacy string has verified provenance.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5762-scope-02",
+      "issue": 5762,
+      "requirement": "Extend tool projection metadata with logical call identity, attempt identity, source, available timestamps, and separate requested/executing/terminal/effect-confirmation states. Approval, policy rejection, cancellation request, confirmed cancellation, and unknown outcome must not collapse into `ok` or `error`. Adopt existing canonical names where available rather than creating competing lifecycle semantics.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5762-scope-03",
+      "issue": 5762,
+      "requirement": "Attach identity/revision and receipt references only from authenticated authoritative session/producer objects. Explicitly represent unavailable binding/evidence; never infer it from a familiar display name, assistant text, hook payload, or client-provided `actor`, `audience`, `approved`, or `verified` field.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5762-scope-04",
+      "issue": 5762,
+      "requirement": "Implement a single server disclosure/projection boundary for this event family. Schema-aware safe-field selection precedes SSE, replay-buffer retention, persisted presentation payloads, and telemetry. Apply secret redaction to summaries, titles, arguments, outputs, URLs, and diagnostics; unclassified payloads default to metadata-only. Never rely on browser masking or truncation as redaction.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "server-disclosure",
+        "scope": "Server-side projection and split-secret controlled fixtures through send, retained replay, history and ordinary server logs; opaque continuation preservation is covered by shared fixtures.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5762-scope-05",
+      "issue": 5762,
+      "requirement": "Treat streamed preview fragments as a leakage boundary: buffer/classify complete safe units or use a tested stateful redactor so secrets split across chunks never reach the client. Keep opaque provider reasoning/signatures outside the display union and preserve required provider continuation state unchanged in its existing execution boundary.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "server-disclosure",
+        "scope": "Server-side projection and split-secret controlled fixtures through send, retained replay, history and ordinary server logs; opaque continuation preservation is covered by shared fixtures.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5762-scope-06",
+      "issue": 5762,
+      "requirement": "Document the producer-to-Cave mapping and trust level for every exposed state. Coven/Threads remain authoritative for execution and protected changes; Psyche owns orchestration; Runtimes owns capability descriptors; SDK mirrors accepted public contracts. Any producer gap is an explicit upstream dependency, not a new Cave ledger or browser-controlled approval system.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5762-acceptance-01",
+      "issue": 5762,
+      "requirement": "Runtime validators reject malformed or contradictory new events before projection; unknown optional event versions leave plain chat usable and show a safe unavailable-detail state.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5762-acceptance-02",
+      "issue": 5762,
+      "requirement": "Golden serialization/decoding fixtures pin new/legacy behavior, multiple reasoning blocks, missing provenance, and all tool lifecycle distinctions.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5762-acceptance-03",
+      "issue": 5762,
+      "requirement": "Adversarial fixtures using forged receipts, `<thinking>`/`<coven:...>` text, malicious tool output, and caller-supplied disclosure fields cannot generate trusted UI authority.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5762-acceptance-04",
+      "issue": 5762,
+      "requirement": "Secret/PII sentinels, including split UTF-8 chunks and signed URLs, are absent from display-event bytes, buffer contents, persisted projections, and ordinary logs. Unknown disclosure policy withholds content rather than failing open.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "server-disclosure",
+        "scope": "Server-side projection and split-secret controlled fixtures through send, retained replay, history and ordinary server logs; opaque continuation preservation is covered by shared fixtures.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5762-acceptance-05",
+      "issue": 5762,
+      "requirement": "Existing tool payload byte limits, parallel-call identity, deduplication, and historical rendering remain covered; migration does not discard old answers or synthesize execution evidence.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5762-acceptance-06",
+      "issue": 5762,
+      "requirement": "Add the contract/disclosure fixtures to the existing test registry and document exact producer schema versions and ownership decisions in a scoped design document.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "contract",
+        "scope": "Typed projection, provenance-unavailable states, shared corpus and default-safe producer mapping on the frozen source. Runtime reports never become approval or committed-effect authority.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5762 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5762
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6186,
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5763-scope-01",
+      "issue": 5763,
+      "requirement": "Inventory supported launch paths at the current main revision: direct local, Coven-backed, SSH, and configured API/bridge paths. Record runtime version, selected model where known, adapter/schema revision, reasoning representation, tool-event coverage, approval interception, and provenance level. Provider API documentation alone does not establish that its CLI exposes the same events.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5763-scope-02",
+      "issue": 5763,
+      "requirement": "Route provider-designated displayable summaries and progress through the new typed event seam, preserving block IDs and native delta-versus-snapshot semantics. Support multiple reasoning blocks interleaved with prose/tools. Keep commentary, reasoning summary, and final answer distinct. Never request hidden chain-of-thought or treat encrypted/signature fields as text.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5763-scope-03",
+      "issue": 5763,
+      "requirement": "Map tool argument construction, complete request, execution start, result, error, retry, and cancellation only to states supported by actual runtime evidence. Streaming arguments are not execution. Preserve native call IDs within the correct run; correlate attempts separately. Keep hook/envelope deduplication and parallel same-name calls intact; ambiguous correlation remains visibly uncertain rather than merging unrelated calls.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5763-scope-04",
+      "issue": 5763,
+      "requirement": "Pass every projection through #5762 before retaining/emitting it. Do not create a raw payload diagnostic fallback. Preserve required opaque provider continuation state unchanged within existing execution storage; sanitized presentation objects must not replace provider replay objects.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "server-disclosure",
+        "scope": "Server-side projection and split-secret controlled fixtures through send, retained replay, history and ordinary server logs; opaque continuation preservation is covered by shared fixtures.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5763-scope-05",
+      "issue": 5763,
+      "requirement": "Use accepted Runtimes descriptors and negotiated capabilities, not model-name heuristics. Unsupported, unknown, disabled, and provider-withheld reasoning are distinguishable. An unsupported detail path preserves plain chat with a safe diagnostic; a missing protected authorization capability must not silently enable an unsafe write.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5763-scope-06",
+      "issue": 5763,
+      "requirement": "Map authoritative decision/receipt references only where the producer provides them. Any protected-action producer gap must be tracked with Coven/Threads/SDK ownership before enabling corresponding controls. A hook, assistant statement, or CLI exit code cannot be promoted into an authorization or commit receipt.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5763-acceptance-01",
+      "issue": 5763,
+      "requirement": "At least one supported runtime yields summary \u2192 tool request/start \u2192 result \u2192 second summary \u2192 final answer through the real route using deterministic synthetic upstream traffic.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5763-acceptance-02",
+      "issue": 5763,
+      "requirement": "Every claimed supported runtime/path has fixture-backed coverage; unavailable installed runtimes or credentials remain explicitly unverified in the matrix.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5763-acceptance-03",
+      "issue": 5763,
+      "requirement": "Parallel same-name calls with different arguments, duplicate hook/envelope reports, result-before-start, late results, and retries retain correct IDs and terminal states.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5763-acceptance-04",
+      "issue": 5763,
+      "requirement": "Chunk boundaries through UTF-8, malformed/truncated JSON, complete snapshots after deltas, and unknown event variants neither duplicate prose nor leak protocol data into answers.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5763-acceptance-05",
+      "issue": 5763,
+      "requirement": "Reasoning unavailable/withheld/disabled produces an honest state, not an endless spinner or manufactured explanation.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5763-acceptance-06",
+      "issue": 5763,
+      "requirement": "Opaque reasoning/signature fixtures survive a simulated provider continuation unchanged while their bytes remain absent from SSE, transcript previews, and ordinary logs.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "server-disclosure",
+        "scope": "Server-side projection and split-secret controlled fixtures through send, retained replay, history and ordinary server logs; opaque continuation preservation is covered by shared fixtures.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5763-acceptance-07",
+      "issue": 5763,
+      "requirement": "Direct, Coven-backed, and SSH paths preserve their current authorization and environment boundaries; no provider path bypass is added to achieve UI parity.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5763 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5764-scope-01",
+      "issue": 5764,
+      "requirement": "Carry #5762's safe block/call/attempt IDs, source and disclosure metadata, terminal state, and ordering through the existing transcript store and read projections. Update cloning, history decoding, reload, and live-to-persisted reconciliation together. Legacy `reasoning`/tool records must remain readable with explicitly unknown provenance; never backfill invented IDs as provider evidence.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5764 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5764
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-scope-02",
+      "issue": 5764,
+      "requirement": "Make per-run sequence/cursor handling idempotent for duplicate chunks, duplicate terminal frames, and overlap between replay and live tail. Define ordering in one authoritative scope, not by client wall-clock timestamps. Preserve interleaving under `assistant_replace`, tool offset correction, Unicode text, and multiple reasoning blocks.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5764 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5764
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-scope-03",
+      "issue": 5764,
+      "requirement": "On an evicted cursor, expired buffer, server restart, or missing run, expose the existing gap/reconciling state and recover from an authorized canonical transcript/snapshot where available. An incomplete snapshot remains incomplete. Do not claim durable event replay from the process-local ring or silently present missing history as a complete trace.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5764 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5764
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-scope-04",
+      "issue": 5764,
+      "requirement": "Distinguish transport completion, generation completion, persisted projection success, and external-effect confirmation. A persistence failure must be visible. A disconnected client does not establish tool failure, and a process exit does not settle every open tool as successful. Unknown external outcomes require reconciliation before any retry capable of another side effect.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5764 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5764
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-scope-05",
+      "issue": 5764,
+      "requirement": "Partition live/history/output caches and subscriptions by authenticated access scope and exact run/conversation/authorized familiar binding. Session aliases and follow-up runs cannot adopt another run's events. Recheck authorization for history, reconnect, lazy detail and export; invalidate/restrict cached content after access revocation or policy changes.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "delegated-access",
+        "scope": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5764 and #5765 owners",
+      "gap": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+      "nextStep": "Define the supported delegated-principal/project boundary and run adversarial real-client cases for each claimed scope; keep that broader support claim withheld.",
+      "followups": [
+        6072
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-scope-06",
+      "issue": 5764,
+      "requirement": "Apply #5762 before buffering and storage. Preserve finite retention and existing caps; represent truncation/eviction/withholding explicitly. Operational metrics contain IDs/status/timing, not duplicated text. Keep provider-opaque continuation state separate. Do not add another database or audit authority.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "server-disclosure",
+        "scope": "Server-side projection and split-secret controlled fixtures through send, retained replay, history and ordinary server logs; opaque continuation preservation is covered by shared fixtures.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5764 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5764
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5764-acceptance-01",
+      "issue": 5764,
+      "requirement": "The same synthetic run produces equivalent ordered safe blocks/tool outcomes live, after replay, and after reopening history, with no duplicated tool cards or reasoning text.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5764 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5764
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-acceptance-02",
+      "issue": 5764,
+      "requirement": "Duplicate and out-of-order frames, result-before-start, retries, cancellation, lost final frame, and concurrent same-name calls preserve call/attempt identity and honest state.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5764 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5764
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-acceptance-03",
+      "issue": 5764,
+      "requirement": "Reconnect and history reads invoke no tool dispatch. A side-effect counter stays unchanged across repeated reconnects, expired-cursor recovery, and reloads.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5764 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5764
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-acceptance-04",
+      "issue": 5764,
+      "requirement": "Buffer eviction and server restart visibly report gaps until verified recovery; no unsupported promise of exactly-once execution or complete historical trace.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5764 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5764
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-acceptance-05",
+      "issue": 5764,
+      "requirement": "A final answer followed by persistence failure remains distinguishable from a durably saved turn. Recovered terminal state does not regress to running on late duplicates.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5764 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5764
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-acceptance-06",
+      "issue": 5764,
+      "requirement": "Session/familiar switching, concurrent runs, revoked access, guessed IDs, stale caches, and delayed old responses cannot disclose or merge another scope's activity.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "delegated-access",
+        "scope": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5764 and #5765 owners",
+      "gap": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+      "nextStep": "Define the supported delegated-principal/project boundary and run adversarial real-client cases for each claimed scope; keep that broader support claim withheld.",
+      "followups": [
+        6072
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5764-acceptance-07",
+      "issue": 5764,
+      "requirement": "Old transcripts retain their content and visibility preferences; large outputs remain lazy-loaded with request-time authorization. Deleted/expired payloads cannot be resurrected by stale cache or exports.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "privacy-export",
+        "scope": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5762, #5765 and #5766 owners",
+      "gap": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+      "nextStep": "Exercise each copy/export/notification/cache surface with split sentinels and request-time revocation before qualifying the complete disclosure claim.",
+      "followups": [
+        6061
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5765-scope-01",
+      "issue": 5765,
+      "requirement": "Add a compact Activity summary and chronological disclosure over #5762 events. Render provider reasoning summaries/progress separately from observed tool calls/results and separately from Cave-generated activity descriptions. Missing/withheld reasoning is explicit when relevant, not an empty block or perpetual Thinking indicator. A summary is not a faithful private thought transcript.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "rendered",
+        "scope": "Packaged desktop and real-browser observed summary/tool ordering, untrusted content, unavailable authority and saved history; source/rendered fixture suites cover component contracts.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5765 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5765
+      ],
+      "newerPRsToReconcile": [
+        6056,
+        6108,
+        6185
+      ]
+    },
+    {
+      "id": "5765-scope-02",
+      "issue": 5765,
+      "requirement": "**Preserve #5454:** reasoning is on when the saved preference is absent, off for the explicit opt-out, and on for the explicit opt-in. Do not silently adopt the research report's collapsed-reasoning default. The compact Activity container and safe tool-output disclosure can be collapsed without overriding this existing reasoning preference. Any default change needs a separate owner-approved decision.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "preference-hydration",
+        "scope": "Default-on reasoning is observed and preference contracts pass. A complete real-client absent/on/off/legacy hydration matrix with flash detection is not in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5765 and #5766 owners",
+      "gap": "Default-on reasoning is observed and preference contracts pass. A complete real-client absent/on/off/legacy hydration matrix with flash detection is not in this packet.",
+      "nextStep": "Exercise absent, explicit-on and explicit-off preferences against legacy and new transcripts in real-client hydration.",
+      "followups": [
+        6066
+      ],
+      "newerPRsToReconcile": []
+    },
+    {
+      "id": "5765-scope-03",
+      "issue": 5765,
+      "requirement": "Show multiple reasoning blocks interleaved with prose and tools, not a single detached field. Keep stable block/call/attempt identity through live updates, snapshots, replay, and history. Distinguish parallel same-name tools and preserve retry history rather than overwriting earlier failures.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5765-scope-04",
+      "issue": 5765,
+      "requirement": "Tool cards show action/target, requested versus executing state, safe argument/result previews, duration when measured, and error/cancellation/unknown outcome. Withheld, truncated, expired, unsupported, and inaccessible are distinct from empty. Never infer read/write semantics solely from a tool's display name; consume validated metadata.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "rendered",
+        "scope": "Packaged desktop and real-browser observed summary/tool ordering, untrusted content, unavailable authority and saved history; source/rendered fixture suites cover component contracts.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5765 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5765
+      ],
+      "newerPRsToReconcile": [
+        6056,
+        6108,
+        6185
+      ]
+    },
+    {
+      "id": "5765-scope-05",
+      "issue": 5765,
+      "requirement": "Pending approval and consequential actions stay discoverable even when reasoning/details are hidden. Show exact action, target, scope, and relevant safe preview; resolve decisions only through the existing authenticated authority endpoint. A click remains pending until server confirmation. Stale/revoked/double-submitted approval and changed action payload must be rejected or re-proposed by the authority. No new browser-owned authorization or optimistic committed state.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "approval-producer",
+        "scope": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Coven/Threads producer owners with Val acceptance; existing #5762, #5763, #5765, #5766",
+      "gap": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+      "nextStep": "Obtain the authoritative producer contract and run Permit/Degrade/Reject plus stale/revoked/revised/replayed approval goldens before enabling those controls.",
+      "followups": [
+        6058,
+        6059
+      ],
+      "newerPRsToReconcile": [
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5765-scope-06",
+      "issue": 5765,
+      "requirement": "Preserve #5520's model-marker proposal-review cards as evidence-only; do not add approve/deny authority to that marker path. Model prose/HTML/tool output cannot impersonate trusted receipt/status chrome. Expose authoritative receipt links only when verified through the existing backend; explain unavailable evidence.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "rendered",
+        "scope": "Packaged desktop and real-browser observed summary/tool ordering, untrusted content, unavailable authority and saved history; source/rendered fixture suites cover component contracts.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5765 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5765
+      ],
+      "newerPRsToReconcile": [
+        6056,
+        6108,
+        6185
+      ]
+    },
+    {
+      "id": "5765-scope-07",
+      "issue": 5765,
+      "requirement": "Reuse existing inspection surfaces before adding a new panel. Provide a lazily loaded detailed view with safe inputs/results, source/receipt references, call/attempt IDs, timings, and filtering. Desktop side panel and narrow-screen sheet must render the same authorized projection. Copy/export must recheck current disclosure policy server-side; a developer-mode toggle is not authorization. Never add a raw-thinking/raw-payload bypass.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "privacy-export",
+        "scope": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5762, #5765 and #5766 owners",
+      "gap": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+      "nextStep": "Exercise each copy/export/notification/cache surface with split sentinels and request-time revocation before qualifying the complete disclosure claim.",
+      "followups": [
+        6061
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5765-scope-08",
+      "issue": 5765,
+      "requirement": "Preserve focus, scroll anchoring, and user-expanded state. Do not auto-collapse an actively read block on completion. Announce semantic milestones using `useAnnouncer()`; no per-token live-region chatter. Use native disclosure buttons/accessible names, focus return, semantic status text, reduced motion, localized full messages, and direction-safe layout.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "human-accessibility",
+        "scope": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val for human/device acceptance; #5765/#5766 owners for remaining automated coverage",
+      "gap": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+      "nextStep": "Record human VoiceOver/keyboard observations on the supported devices and finish remaining large-text/RTL/approval coverage.",
+      "followups": [
+        6070,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6108
+      ]
+    },
+    {
+      "id": "5765-acceptance-01",
+      "issue": 5765,
+      "requirement": "Fixture-backed browser tests prove reasoning \u2192 parallel tools \u2192 retry/error \u2192 final answer live and after history reload, including explicit no-summary capability.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "composite",
+        "scope": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val and the existing child-issue owners",
+      "gap": "This aggregate criterion contains one or more explicitly deferred native, producer, accessibility, privacy/export or delegated-access requirements below. Narrow fixture passes do not complete the epic or child issue.",
+      "nextStep": "Complete or separately accept the linked scoped deferrals before asserting full epic/child completion.",
+      "followups": [
+        5762,
+        5763,
+        5764,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6185,
+        6108,
+        6190
+      ]
+    },
+    {
+      "id": "5765-acceptance-02",
+      "issue": 5765,
+      "requirement": "Fresh/default/opt-out preferences and hydration do not flash or silently invert. Hidden reasoning never hides an approval or failed consequential action.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "preference-hydration",
+        "scope": "Default-on reasoning is observed and preference contracts pass. A complete real-client absent/on/off/legacy hydration matrix with flash detection is not in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5765 and #5766 owners",
+      "gap": "Default-on reasoning is observed and preference contracts pass. A complete real-client absent/on/off/legacy hydration matrix with flash detection is not in this packet.",
+      "nextStep": "Exercise absent, explicit-on and explicit-off preferences against legacy and new transcripts in real-client hydration.",
+      "followups": [
+        6066
+      ],
+      "newerPRsToReconcile": []
+    },
+    {
+      "id": "5765-acceptance-03",
+      "issue": 5765,
+      "requirement": "Forged model markers, script/HTML payloads, hostile links, guessed receipt IDs, and client-set privileges cannot create trusted events, unsafe rendering, or unauthorized detail access.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "delegated-access",
+        "scope": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5764 and #5765 owners",
+      "gap": "Managed-device revocation is proven; full cross-principal/project/familiar-revision delegated authorization, cache invalidation and physical remote ingress are not qualified.",
+      "nextStep": "Define the supported delegated-principal/project boundary and run adversarial real-client cases for each claimed scope; keep that broader support claim withheld.",
+      "followups": [
+        6072
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5765-acceptance-04",
+      "issue": 5765,
+      "requirement": "Denied, stale, expired, revoked, and already-resolved approvals remain distinct from successful execution; no action is shown committed without the required evidence.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "approval-producer",
+        "scope": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Coven/Threads producer owners with Val acceptance; existing #5762, #5763, #5765, #5766",
+      "gap": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+      "nextStep": "Obtain the authoritative producer contract and run Permit/Degrade/Reject plus stale/revoked/revised/replayed approval goldens before enabling those controls.",
+      "followups": [
+        6058,
+        6059
+      ],
+      "newerPRsToReconcile": [
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5765-acceptance-05",
+      "issue": 5765,
+      "requirement": "Keyboard, focus return, screen-reader status milestones, reduced motion, phone layout, long URLs/JSON, large traces, and expand/collapse scroll behavior are exercised. Use current design tokens and the section 9 shipping checklist.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "human-accessibility",
+        "scope": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val for human/device acceptance; #5765/#5766 owners for remaining automated coverage",
+      "gap": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+      "nextStep": "Record human VoiceOver/keyboard observations on the supported devices and finish remaining large-text/RTL/approval coverage.",
+      "followups": [
+        6070,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6108
+      ]
+    },
+    {
+      "id": "5765-acceptance-06",
+      "issue": 5765,
+      "requirement": "Large results remain lazy and bounded; trace updates do not remount the full transcript. Measure baseline versus candidate on the same production fixture and prevent regressions to existing performance gates.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "large-trace",
+        "scope": "Payload/reducer limits and lazy-output component tests pass, but the performance fixture contains one tool and two summaries. Full large/deep/long-trace production-client responsiveness is unqualified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5765 and #5766 owners",
+      "gap": "Payload/reducer limits and lazy-output component tests pass, but the performance fixture contains one tool and two summaries. Full large/deep/long-trace production-client responsiveness is unqualified.",
+      "nextStep": "Run the bounded large-output/long-trace production fixture and measure render/scroll costs on each claimed client.",
+      "followups": [
+        6064
+      ],
+      "newerPRsToReconcile": [
+        6056
+      ]
+    },
+    {
+      "id": "5766-scope-01",
+      "issue": 5766,
+      "requirement": "Trace the existing native network decoder \u2192 chat model/reducer \u2192 transcript/disclosure \u2192 persisted history path. Record exact touched Swift files before implementation. Decode #5762's additive event fields and backward-compatible legacy forms; consume the same golden corpus as TypeScript rather than maintaining an independent vocabulary.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "native-contract",
+        "scope": "Shared native decoder/reducer and preference contracts, actual native TCP and scene-supervisor recovery, generated markdown assets. Full native acceptance is separately deferred.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5766 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6078,
+        6080
+      ]
+    },
+    {
+      "id": "5766-scope-02",
+      "issue": 5766,
+      "requirement": "Keep stable run/turn/reasoning-block/tool-call/attempt identity and ordering. Account explicitly for Swift string indexing versus JavaScript UTF-16 offsets so emoji, combining characters, and non-Latin text cannot move tool cards into the wrong prose segment. If wire order supersedes offsets, implement the same mapping on both clients.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "native-contract",
+        "scope": "Shared native decoder/reducer and preference contracts, actual native TCP and scene-supervisor recovery, generated markdown assets. Full native acceptance is separately deferred.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5766 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6078,
+        6080
+      ]
+    },
+    {
+      "id": "5766-scope-03",
+      "issue": 5766,
+      "requirement": "Render separate provider-summary/progress and observed tool cards. Show safe input/result previews, retries, errors, cancellation requested versus confirmed, source/receipt provenance, truncation, and unsupported/withheld detail. Offer a native full-height detail sheet with lazy authorized loading, predictable dismissal/focus return, and no raw payload bypass.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "native-live-layout",
+        "scope": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5766 owner",
+      "gap": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+      "nextStep": "Resolve the native live-send tool visibility/scroll assertion, then rerun the entire live UI lane including background and shrinking-content checks.",
+      "followups": [
+        6069,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6078,
+        6107,
+        6197,
+        6198
+      ]
+    },
+    {
+      "id": "5766-scope-04",
+      "issue": 5766,
+      "requirement": "Follow the visibility semantics preserved by #5454 and #5765: do not silently disable reasoning on new installs or overwrite an explicit existing preference. Document any native preference migration separately from the web storage key. Pending approvals and consequential failures remain visible even when reasoning/details are hidden.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "preference-hydration",
+        "scope": "Default-on reasoning is observed and preference contracts pass. A complete real-client absent/on/off/legacy hydration matrix with flash detection is not in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5765 and #5766 owners",
+      "gap": "Default-on reasoning is observed and preference contracts pass. A complete real-client absent/on/off/legacy hydration matrix with flash detection is not in this packet.",
+      "nextStep": "Exercise absent, explicit-on and explicit-off preferences against legacy and new transcripts in real-client hydration.",
+      "followups": [
+        6066
+      ],
+      "newerPRsToReconcile": []
+    },
+    {
+      "id": "5766-scope-05",
+      "issue": 5766,
+      "requirement": "Bind approval actions only to existing authenticated server decision endpoints and exact displayed action/revision. Denied, stale, revoked, expired, or already-resolved decisions cannot look executed. Keep marker-based proposal reviews evidence-only. Unsupported authority paths remain unavailable rather than being implemented locally in Swift.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "approval-producer",
+        "scope": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Coven/Threads producer owners with Val acceptance; existing #5762, #5763, #5765, #5766",
+      "gap": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+      "nextStep": "Obtain the authoritative producer contract and run Permit/Degrade/Reject plus stale/revoked/revised/replayed approval goldens before enabling those controls.",
+      "followups": [
+        6058,
+        6059
+      ],
+      "newerPRsToReconcile": [
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5766-scope-06",
+      "issue": 5766,
+      "requirement": "Exercise app backgrounding, network switch, reconnect gap, server restart, opening another conversation/familiar, and navigation away during streaming. Reconcile with #5764 without replaying tools or adopting stale cross-scope responses. Show disconnected/reconciling/unknown states and keep current authorization checks on detail reads.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "native-live-layout",
+        "scope": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5766 owner",
+      "gap": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+      "nextStep": "Resolve the native live-send tool visibility/scroll assertion, then rerun the entire live UI lane including background and shrinking-content checks.",
+      "followups": [
+        6069,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6078,
+        6107,
+        6197,
+        6198
+      ]
+    },
+    {
+      "id": "5766-scope-07",
+      "issue": 5766,
+      "requirement": "Announce meaningful state transitions with VoiceOver, not every streamed token. Support Dynamic Type, reduced motion, non-color status labels, comfortable touch targets, localized messages, and bidirectional text. Preserve user scroll position on expand/collapse and sharply shrinking content; no blank transcript or lost focus.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "human-accessibility",
+        "scope": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val for human/device acceptance; #5765/#5766 owners for remaining automated coverage",
+      "gap": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+      "nextStep": "Record human VoiceOver/keyboard observations on the supported devices and finish remaining large-text/RTL/approval coverage.",
+      "followups": [
+        6070,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6108
+      ]
+    },
+    {
+      "id": "5766-scope-08",
+      "issue": 5766,
+      "requirement": "Keep safe trace contents out of lock-screen notifications, Live Activities, diagnostic logs, and analytics unless independently authorized by the existing privacy policy. Activity details do not gain disclosure rights merely by entering a native shared container.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "privacy-export",
+        "scope": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5762, #5765 and #5766 owners",
+      "gap": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+      "nextStep": "Exercise each copy/export/notification/cache surface with split sentinels and request-time revocation before qualifying the complete disclosure claim.",
+      "followups": [
+        6061
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5766-acceptance-01",
+      "issue": 5766,
+      "requirement": "Shared corpus yields semantically equivalent native/web block order, statuses, provenance, and redaction, including legacy transcripts and unsupported-summary runtimes.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "native-contract",
+        "scope": "Shared native decoder/reducer and preference contracts, actual native TCP and scene-supervisor recovery, generated markdown assets. Full native acceptance is separately deferred.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5766 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6078,
+        6080
+      ]
+    },
+    {
+      "id": "5766-acceptance-02",
+      "issue": 5766,
+      "requirement": "Native unit/UI tests cover live \u2192 background \u2192 reconnect \u2192 completion \u2192 history reload, repeated reconnect without repeat side effects, and session/familiar changes with delayed old events.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "native-live-layout",
+        "scope": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5766 owner",
+      "gap": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+      "nextStep": "Resolve the native live-send tool visibility/scroll assertion, then rerun the entire live UI lane including background and shrinking-content checks.",
+      "followups": [
+        6069,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6078,
+        6107,
+        6197,
+        6198
+      ]
+    },
+    {
+      "id": "5766-acceptance-03",
+      "issue": 5766,
+      "requirement": "Unicode interleaving, large outputs, long-running parallel calls, retry, and collapse/height-shrink cases preserve readable layout and stable scroll/focus.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "native-live-layout",
+        "scope": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5766 owner",
+      "gap": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+      "nextStep": "Resolve the native live-send tool visibility/scroll assertion, then rerun the entire live UI lane including background and shrinking-content checks.",
+      "followups": [
+        6069,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6078,
+        6107,
+        6197,
+        6198
+      ]
+    },
+    {
+      "id": "5766-acceptance-04",
+      "issue": 5766,
+      "requirement": "Secret and opaque provider-state sentinels are absent from native payload projections, previews, logs, notifications, and unauthorized caches.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "privacy-export",
+        "scope": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5762, #5765 and #5766 owners",
+      "gap": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+      "nextStep": "Exercise each copy/export/notification/cache surface with split sentinels and request-time revocation before qualifying the complete disclosure claim.",
+      "followups": [
+        6061
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5766-acceptance-05",
+      "issue": 5766,
+      "requirement": "Human VoiceOver pass records observations for reasoning disclosure, tool details, approval/rejection, error/retry, reconnect, and history. Simulator accessibility-tree checks do not replace this evidence.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "human-accessibility",
+        "scope": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val for human/device acceptance; #5765/#5766 owners for remaining automated coverage",
+      "gap": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+      "nextStep": "Record human VoiceOver/keyboard observations on the supported devices and finish remaining large-text/RTL/approval coverage.",
+      "followups": [
+        6070,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6108
+      ]
+    },
+    {
+      "id": "5766-acceptance-06",
+      "issue": 5766,
+      "requirement": "Build-generated markdown assets are present in the tested app. Native Release smoke/performance evidence is retained; unavailable physical-device/VoiceOver checks remain explicit blockers for a native-complete claim.",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "native-live-layout",
+        "scope": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5766 owner",
+      "gap": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+      "nextStep": "Resolve the native live-send tool visibility/scroll assertion, then rerun the entire live UI lane including background and shrinking-content checks.",
+      "followups": [
+        6069,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6078,
+        6107,
+        6197,
+        6198
+      ]
+    },
+    {
+      "id": "5767-harness-01",
+      "issue": 5767,
+      "requirement": "Extend the existing test runner, Playwright configuration, real-daemon harnesses, and native `CovenCaveTests`/`CovenCaveUITests`. Use isolated temporary HOME/project/state and controlled non-production tools with a durable invocation counter.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "harness",
+        "scope": "External provider/tool boundary only; real production routes, scratch daemon, durable child-process counter and independent duplicate-effect control. UI receipts are separate from backend assertions.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5767-harness-02",
+      "issue": 5767,
+      "requirement": "Create one shared versioned scenario corpus for producer normalization, TypeScript reducers, native decoders, and end-to-end assertions. Reuse relevant existing compatibility cases instead of copying provider parsers into test mocks.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "harness",
+        "scope": "External provider/tool boundary only; real production routes, scratch daemon, durable child-process counter and independent duplicate-effect control. UI receipts are separate from backend assertions.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5767-harness-03",
+      "issue": 5767,
+      "requirement": "Intercept only the external provider/tool boundary for deterministic tests; do not mock away server authorization, persistence, replay, or the browser's actual send/history paths in the production-path gate.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "harness",
+        "scope": "External provider/tool boundary only; real production routes, scratch daemon, durable child-process counter and independent duplicate-effect control. UI receipts are separate from backend assertions.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5767-harness-04",
+      "issue": 5767,
+      "requirement": "Record a capability matrix by runtime, version, model where known, schema revision, launch path, and client. Distinguish fixture-conformant, real-daemon-verified, real-provider-verified, unsupported, and unverified. An API vendor name is not evidence that every CLI/path works.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "runtime-matrix",
+        "scope": "Fresh-scratch installed-runtime admission inventory and fixture contracts; Hermes alone has real-daemon/rendered-client receipts. All real providers, SSH and untested bridge paths remain explicitly unverified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        6071,
+        5763
+      ],
+      "newerPRsToReconcile": [
+        6088,
+        6182
+      ]
+    },
+    {
+      "id": "5767-golden-01",
+      "issue": 5767,
+      "requirement": "Summary \u2192 tool \u2192 second summary \u2192 final answer \u2192 Ordered blocks and correct states live and after reopening history",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "rendered",
+        "scope": "Packaged desktop and real-browser observed summary/tool ordering, untrusted content, unavailable authority and saved history; source/rendered fixture suites cover component contracts.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6056,
+        6108,
+        6185
+      ]
+    },
+    {
+      "id": "5767-golden-02",
+      "issue": 5767,
+      "requirement": "No/disabled/withheld reasoning; opaque continuation state \u2192 Honest capability state; no invented thinking or opaque bytes in any display/log/export",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "privacy-export",
+        "scope": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5762, #5765 and #5766 owners",
+      "gap": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+      "nextStep": "Exercise each copy/export/notification/cache surface with split sentinels and request-time revocation before qualifying the complete disclosure claim.",
+      "followups": [
+        6057,
+        6061
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5767-golden-03",
+      "issue": 5767,
+      "requirement": "Parallel same-name calls; result before start; duplicate hooks/envelopes \u2192 Separate call/attempt identity, one correlated card, no result loss or false success",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5767-golden-04",
+      "issue": 5767,
+      "requirement": "Delta/snapshot replacement and Unicode chunk boundaries \u2192 No duplicated text or misplaced tool/summary blocks, including Swift/JS indexing differences",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5767-golden-05",
+      "issue": 5767,
+      "requirement": "Tool error, retry, cancellation request/acknowledgment \u2192 Earlier failures retained; requested cancellation never presented as confirmed effect rollback",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "golden-05",
+        "scope": "Cancellation after an actual durable effect passes HTTP and packaged-client live/history checks. The tool remains succeeded, the response remains stopped, and the counter stays one. Retry/error distinction additionally has shared fixture coverage; no automatic side-effect retry is authorized.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6185
+      ]
+    },
+    {
+      "id": "5767-golden-06",
+      "issue": 5767,
+      "requirement": "Transport drop before/after tool completion and lost final frame \u2192 Replay/history recovery with unchanged side-effect counter",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "golden-06",
+        "scope": "Real browser disconnects before and after the tool result, requests real replay, loses the held final frame while switched away, then recovers from saved history and ten reloads without redispatch. Native scene recovery independently passes.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190,
+        6078
+      ]
+    },
+    {
+      "id": "5767-golden-07",
+      "issue": 5767,
+      "requirement": "Ring eviction, expired cursor, server restart, incomplete snapshot \u2192 Explicit gap/reconciling/unavailable state until evidence supports completeness",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5767-golden-08",
+      "issue": 5767,
+      "requirement": "Final answer followed by persistence failure \u2192 Visible unsaved/recovery condition, not a durable-success claim",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "recovery",
+        "scope": "Real-daemon send/replay/history, duplicate/reordered parallel calls, cancellation, expiry, ring eviction, process restart and unsaved-state checks. No exactly-once external-effect guarantee.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5767-golden-09",
+      "issue": 5767,
+      "requirement": "Permit / Degrade to Proposal / Reject \u2192 UI reflects authoritative decision; proposed or rejected work never appears committed",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "approval-producer",
+        "scope": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Coven/Threads producer owners with Val acceptance; existing #5762, #5763, #5765, #5766",
+      "gap": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+      "nextStep": "Obtain the authoritative producer contract and run Permit/Degrade/Reject plus stale/revoked/revised/replayed approval goldens before enabling those controls.",
+      "followups": [
+        6058,
+        6059
+      ],
+      "newerPRsToReconcile": [
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5767-golden-10",
+      "issue": 5767,
+      "requirement": "Approval denied/expired/revoked; action/revision changes; double submission \u2192 Authoritative gate rejects stale/replayed authorization; at most one admitted controlled action",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "approval-producer",
+        "scope": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Coven/Threads producer owners with Val acceptance; existing #5762, #5763, #5765, #5766",
+      "gap": "Val explicitly approved deferring golden 09/10 for this runtime-report path. No authoritative approval/commit producer and no protected-action support claim.",
+      "nextStep": "Obtain the authoritative producer contract and run Permit/Degrade/Reject plus stale/revoked/revised/replayed approval goldens before enabling those controls.",
+      "followups": [
+        6058,
+        6059
+      ],
+      "newerPRsToReconcile": [
+        6180,
+        6184
+      ]
+    },
+    {
+      "id": "5767-golden-11",
+      "issue": 5767,
+      "requirement": "Guessed run/detail IDs; access revocation; delayed previous-session frames \u2192 No cross-principal/project/session/familiar data leakage or cache adoption",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "golden-11",
+        "scope": "Known and guessed IDs at the managed-device boundary: pending/refused, allowed live stream, active revocation, denied replay/history/detail; delayed old-session completion is not adopted by a new browser draft. Physical ingress, multiple principals, projects and familiar revisions are not claimed.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5767-golden-12",
+      "issue": 5767,
+      "requirement": "Hostile tool output, fake receipt/approval markers, unsafe HTML/URLs \u2192 Text stays untrusted; no script execution, authority spoofing, or automatic follow-on action",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "golden-12",
+        "scope": "Packaged Release renders script/HTML/JavaScript URL/forged receipt literally as quoted tool output live and after history reopen; no callback or follow-on execution and no trusted approval/effect chrome.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6184
+      ]
+    },
+    {
+      "id": "5767-golden-13",
+      "issue": 5767,
+      "requirement": "Secrets split across chunks; private tool results; opaque signatures \u2192 Sentinel absence from network display payloads, retained projections, ordinary logs, caches, copy/export, and native notifications",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "privacy-export",
+        "scope": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5762, #5765 and #5766 owners",
+      "gap": "Split-secret network/replay/history checks pass. The complete copy/export, device notification, analytics and unauthorized native-cache inventory is not exercised end to end in this packet.",
+      "nextStep": "Exercise each copy/export/notification/cache surface with split sentinels and request-time revocation before qualifying the complete disclosure claim.",
+      "followups": [
+        6061
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6080,
+        6190
+      ]
+    },
+    {
+      "id": "5767-golden-14",
+      "issue": 5767,
+      "requirement": "Oversized/deep payloads, long traces, lazy-output access denial \u2192 Existing bounds hold; truncation/withholding explicit; UI remains responsive",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "large-trace",
+        "scope": "Payload/reducer limits and lazy-output component tests pass, but the performance fixture contains one tool and two summaries. Full large/deep/long-trace production-client responsiveness is unqualified.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5765 and #5766 owners",
+      "gap": "Payload/reducer limits and lazy-output component tests pass, but the performance fixture contains one tool and two summaries. Full large/deep/long-trace production-client responsiveness is unqualified.",
+      "nextStep": "Run the bounded large-output/long-trace production fixture and measure render/scroll costs on each claimed client.",
+      "followups": [
+        6064
+      ],
+      "newerPRsToReconcile": [
+        6056
+      ]
+    },
+    {
+      "id": "5767-golden-15",
+      "issue": 5767,
+      "requirement": "Legacy transcript, default-on/explicit-off preference, hydration \u2192 Existing content and #5454 behavior preserved without a flash or implicit policy change",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "preference-hydration",
+        "scope": "Default-on reasoning is observed and preference contracts pass. A complete real-client absent/on/off/legacy hydration matrix with flash detection is not in this packet.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5765 and #5766 owners",
+      "gap": "Default-on reasoning is observed and preference contracts pass. A complete real-client absent/on/off/legacy hydration matrix with flash detection is not in this packet.",
+      "nextStep": "Exercise absent, explicit-on and explicit-off preferences against legacy and new transcripts in real-client hydration.",
+      "followups": [
+        6066
+      ],
+      "newerPRsToReconcile": []
+    },
+    {
+      "id": "5767-golden-16",
+      "issue": 5767,
+      "requirement": "Desktop/native navigation, iOS background/foreground and shrinking content \u2192 No blank transcript, stuck generation, repeat tool dispatch, or lost reading position",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "native-live-layout",
+        "scope": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "#5766 owner",
+      "gap": "Accepted-delivery native recovery passes. Actual native composer send/termination/restart/hydration retains one effect and stable message IDs, but the live UI lane fails tool.isHittable after tool-output dismissal. It remains failed, not passed by its completion callback.",
+      "nextStep": "Resolve the native live-send tool visibility/scroll assertion, then rerun the entire live UI lane including background and shrinking-content checks.",
+      "followups": [
+        6069,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6078,
+        6107,
+        6197,
+        6198
+      ]
+    },
+    {
+      "id": "5767-golden-17",
+      "issue": 5767,
+      "requirement": "Keyboard, VoiceOver, reduced motion, large text, narrow/RTL layout \u2192 Usable disclosure and approval, stable focus, milestone-only announcements",
+      "historical": {
+        "status": "deferred",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "human-accessibility",
+        "scope": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Val for human/device acceptance; #5765/#5766 owners for remaining automated coverage",
+      "gap": "Automated AX, keyboard/disclosure, reduced-motion and layout tests are supporting evidence only. No human keyboard-only/VoiceOver, physical-device large-text/RTL or approval accessibility acceptance is claimed.",
+      "nextStep": "Record human VoiceOver/keyboard observations on the supported devices and finish remaining large-text/RTL/approval coverage.",
+      "followups": [
+        6070,
+        5765,
+        5766
+      ],
+      "newerPRsToReconcile": [
+        6108
+      ]
+    },
+    {
+      "id": "5767-scope-01",
+      "issue": 5767,
+      "requirement": "Keep a sanitized E2E evidence packet per exact candidate: commit/build IDs, daemon/runtime/adapter versions, OS/device/browser, exact commands, scenario results, first-attempt failures and retry counts, screenshots/video, event/receipt references, and explicit omissions. Do not include credentials or private conversations.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "packet",
+        "scope": "One frozen main-source product build with separate harness digests, first-attempt/retry ledger, runtime versions, commands and bounded qualification. No signed/notarized distribution-release claim.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6176,
+        6190
+      ]
+    },
+    {
+      "id": "5767-scope-02",
+      "issue": 5767,
+      "requirement": "Run at least one real-daemon supported-runtime vertical slice and packaged desktop smoke in addition to deterministic fixtures. Native claims require actual native tests and the human VoiceOver observations from #5766. Missing providers/devices/credentials are unverified, never silent passes.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "harness",
+        "scope": "External provider/tool boundary only; real production routes, scratch daemon, durable child-process counter and independent duplicate-effect control. UI receipts are separate from backend assertions.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5767-scope-03",
+      "issue": 5767,
+      "requirement": "Record content-minimized timing/correlation diagnostics for first activity, tool latency, replay gaps, projection failures, and rendering cost. Use existing observability/OTel facilities where present; no new telemetry service or full-payload export by default. Displayed source references or model-input inclusion do not prove that a tool causally influenced an answer; do not assert such influence without evidence.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "diagnostics",
+        "scope": "Content-minimized first-activity/tool/terminal timings, replay-gap and projection-save statuses, and browser task/script/layout measurements. Artificial provider gates are identified; causal influence is not inferred.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6190
+      ]
+    },
+    {
+      "id": "5767-scope-04",
+      "issue": 5767,
+      "requirement": "Measure baseline/candidate performance on identical production fixtures, preserve existing performance/bundle gates, and document optional batching/virtualization changes. Approvals and critical failures cannot be hidden behind non-critical batching.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "performance",
+        "scope": "Identical controlled production fixture, four alternating measured baseline/candidate samples plus two warmups. This PR changes harness/docs only, so both cohorts use identical main application bytes. Existing build budgets pass; no speedup or large-trace claim.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6056
+      ]
+    },
+    {
+      "id": "5767-scope-05",
+      "issue": 5767,
+      "requirement": "Roll out with the repository's existing capability/feature-gating mechanism. Rollback can disable the new presentation/unsupported capability, never bypass disclosure or protected authorization. Do not add legacy OpenClaw support as a prerequisite for proving unrelated supported paths; preserve its separate #4892 release gate.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "rollout-docs",
+        "scope": "Existing reviewed runtime/schema capability gates and presentation preference preserved; unsupported approval authority stays unavailable. Documented rollback cannot relax disclosure/authentication. #4892 obsolete clause recorded in an issue comment, body unchanged.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6182,
+        6186
+      ]
+    },
+    {
+      "id": "5767-scope-06",
+      "issue": 5767,
+      "requirement": "Publish supported-path documentation and known limitations with the feature. Close the epic only when its supported scope is explicitly satisfied; unresolved native/security/producer gaps must be resolved or the corresponding support claim must remain disabled and explicitly deferred.",
+      "historical": {
+        "status": "qualified",
+        "buildId": "ZhCtRUET5IWsZpj-I_ycz",
+        "decision": "rollout-docs",
+        "scope": "Existing reviewed runtime/schema capability gates and presentation preference preserved; unsupported approval authority stays unavailable. Documented rollback cannot relax disclosure/authentication. #4892 obsolete clause recorded in an issue comment, body unchanged.",
+        "packetCommit": "36679dba6918618385b1ec1782b374e70af365bf"
+      },
+      "candidateStatus": "not-yet-qualified",
+      "candidateEvidence": [],
+      "owner": "Existing #5767 owner; no ownership transfer",
+      "gap": "No matching production-path execution on this pinned candidate yet; the historical scoped pass does not qualify newer product bytes.",
+      "nextStep": "Rerun the decision-specific production paths and supporting suites on the nominated candidate, retaining all first attempts and omissions.",
+      "followups": [
+        5767
+      ],
+      "newerPRsToReconcile": [
+        6182,
+        6186
+      ]
+    }
+  ],
+  "localEvidenceRelocation": {
+    "from": ".verification/5767",
+    "to": ".verification.tmp/5767",
+    "note": "Original local receipts retain their as-run paths and unchanged contents."
+  }
+}
