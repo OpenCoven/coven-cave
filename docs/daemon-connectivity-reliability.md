@@ -1,6 +1,6 @@
 # Daemon connectivity reliability
 
-Status: the `cave-58eoq` program's tracked work has merged (#4485, #4495, #4497, #4498, #4489/#4496/#4500/#4506, #4509, #4528); the residual risks below have no GitHub issue yet.
+Status: the `cave-58eoq` program's tracked work has merged (#4485, #4495, #4497, #4498, #4489/#4496/#4500/#4506, #4509, #4528); the residual risks below are owned by #6119, #6298 and #6303 where an owner is named.
 
 Last updated: 2026-10-20 (status lines reconciled with `main`, #6111)
 
@@ -110,10 +110,10 @@ evidence. Cross-layer correlation shipped in PR #4498 (`cave-58eoq.3`).
 | 5 | High | Shipped in PR #4485: `cave-58eoq.1` | A packaged Windows sidecar that dies after startup previously remained dead until a later UI/manual recovery path acted | Windows had startup ownership but no post-ready observer | Windows now launches the shared bounded supervisor beside `SidecarStartupControl`; automatic/manual startup share atomic ownership, budget resets only after a finished startup with an observed live child, shutdown stops supervision first, and failed/cancelled/navigation-failed workers synchronously release the owned process job |
 | 6 | High | Shipped in PR #4495: `cave-58eoq.2` | The window previously could open onto a sidecar that was listening but incompatible or only partially initialized | Rust readiness proved child log + TCP only | Native GUI and background-daemon startup now require the same bounded sidecar-token-authenticated identity/protocol/version/bundle/dependency handshake before navigation, publication, or retained daemon state |
 | 7 | Medium | Shipped in PR #4497 | Incompatible, unauthorized, unhealthy, unreachable, misconfigured, and status-unavailable responses appeared as generic “Offline” | Settings ignored the route's machine-readable `availability`; the shared type omitted the route's `incompatible` value | Complete the shared taxonomy, fail closed on contradictory fields, render distinct labels/tones, and expose sanitized reason text |
-| 8 | Medium | Shipped in PR #4498: `cave-58eoq.3` | Support cannot follow one startup/recovery across Rust, sidecar, daemon requests, and CLI children | Logs were component-local and no shared correlation/diagnostic-bundle contract was found | Correlation IDs, bounded structured lifecycle events, and a redacted bundle at `GET /api/daemon/diagnostics`; no in-app control exports it yet |
+| 8 | Medium | Shipped in PR #4498: `cave-58eoq.3` | Support cannot follow one startup/recovery across Rust, sidecar, daemon requests, and CLI children | Logs were component-local and no shared correlation/diagnostic-bundle contract was found | Correlation IDs, bounded structured lifecycle events, and a redacted bundle at `GET /api/daemon/diagnostics`; Settings → Daemon exports it (#6298, slice 4) |
 | 9 | Medium | Shipped in PR #4496: `cave-58eoq.4` | Green happy-path tests can miss races, stale endpoints, hangs, resets, and orphaned children | The bounded harness covers delayed readiness, crashes, hangs, stale ownership, permission ambiguity, version skew, duplicate starts, cancellation, sleep/wake, stale completions, unusual paths, and repeated lifecycle cleanup | Routine PR conformance runs these assertions on Ubuntu when path selection enables the conformance lane; full-validation and release platform validation run the same harness on Ubuntu, Windows, and macOS |
 | 10 | Medium | Shipped in PR #4509: `cave-58eoq.5` | Startup/recovery improvements could not be compared rigorously | No shared definitions or retained distributions for authenticated time-to-ready and recovery success | Local privacy-safe metrics and reproducible baseline/fault runs establish the measurement contract and budgets |
-| 11 | Medium | Shipped in PR #4528: `cave-58eoq.6`; exhaustiveness unproven, no open issue | An unreviewed CLI/socket path could inherit secrets, hang, overrun output, or mis-handle unusual paths | The high-impact PTY, remote tokenless-development, and bearer-transport bypasses are closed, but the remaining spawn and endpoint touch-set has not been proven exhaustive | Audit every remaining spawn/socket boundary and pin environment, quoting, timeout, size, cancellation, permission, and compatibility contracts |
+| 11 | Medium | Shipped in PR #4528: `cave-58eoq.6`; exhaustiveness unproven, owned by #6303 | An unreviewed CLI/socket path could inherit secrets, hang, overrun output, or mis-handle unusual paths | The high-impact PTY, remote tokenless-development, and bearer-transport bypasses are closed, but the remaining spawn and endpoint touch-set has not been proven exhaustive | Audit every remaining spawn/socket boundary and pin environment, quoting, timeout, size, cancellation, permission, and compatibility contracts |
 
 ## Lifecycle and connection state machine
 
@@ -315,6 +315,42 @@ repair results. It must exclude credentials, query tokens, private keys,
 personal paths, conversation content, and unrelated environment variables.
 Local diagnostics and opt-in telemetry remain separate systems.
 
+### In-app export (#6298, slice 4)
+
+The daemon status card in Settings → Daemon has **Export diagnostics** and a
+copy action. Both read `GET /api/daemon/diagnostics` with `cache: no-store`
+and hand the person the same serialized bundle: the export saves it as
+`coven-cave-daemon-diagnostics-<generatedAt>.json`, named by the bundle's own
+generation instant; the copy places it on the clipboard for webviews that
+have no download sink. The shared contract lives in
+`src/lib/daemon-diagnostics-export.ts`.
+
+- **Only the redacted bundle is accepted.** `parseDaemonDiagnosticsBundle`
+  refuses anything whose manifest is not
+  `coven-cave-daemon-diagnostics` schema 1 with a readable `generatedAt` and
+  an `events` array. An error page or a future schema is reported inline and
+  never saved under the diagnostics name.
+- **Exporting runs no probe.** The bundle carries a `lifecycle` block with the
+  lifecycle operation in progress and the mutation owner's in-flight and
+  last-settled records (kinds, codes and instants from slices 1 and 2,
+  sanitized like every other token; an unreadable instant exports as `null`,
+  never as the export time). It is read from the owners' own bookkeeping, so
+  the export cannot change the state it describes.
+- **Retention is the route's.** The bundle holds at most
+  `DAEMON_DIAGNOSTIC_MAX_EVENTS` (256) events from the current sidecar
+  process (`manifest.retention.scope`), plus aggregate event-plane counters.
+  The native recorder's `daemon-reliability-v1.json` is a separate store and
+  is not included.
+- **Privacy is unchanged.** The control states the rule where the person
+  decides to send the file: no credentials, paths, command output, or
+  conversation content. The manifest's `excluded` list is authoritative, and
+  `daemon-diagnostics.test.ts` pins that secrets and personal paths do not
+  survive export.
+
+Tests: `daemon-diagnostics-export.test.ts` (contract),
+`daemon-diagnostics.test.ts` (lifecycle block and route pins),
+`settings-daemon-diagnostics-export.test.ts` (control pins).
+
 ## User recovery matrix
 
 | Verified condition | Automatic action | Primary user action | Fallback |
@@ -394,10 +430,10 @@ shipped measurement contract.
 | Risk | Owner |
 | --- | --- |
 | Windows post-ready supervision and cross-platform fault injection are shipped; release-host validation remains a release gate | Release platform validation |
-| No in-app control exports the `GET /api/daemon/diagnostics` bundle that #4498 shipped | Unowned; open a GitHub issue |
+| The in-app diagnostics export (#6298, slice 4) covers the sidecar's bounded event ring and owner state; the native recorder's `daemon-reliability-v1.json` is not in the bundle | Accepted boundary; the bundle names its scope in `manifest.retention.scope` |
 | Routine pull-request fault coverage is path-gated; documentation-only changes do not run the bounded harness | Accepted coverage boundary (#4896, closed; recorded in #5199) |
 | Migrated/large-profile readiness has no fixture and no automated detection; the maintainer's own profile produced a readiness timeout the empty-profile probe does not explain | #6119 retains it; a fixture needs a consented copy of a real profile |
-| Exhaustive CLI spawn and socket/pipe security proof is incomplete; #4528 pinned the harness, Terminal, SSH-probe and installer boundaries | Unowned; open a GitHub issue |
+| Exhaustive CLI spawn and socket/pipe security proof is incomplete; #4528 pinned the harness, Terminal, SSH-probe and installer boundaries | #6303 (decided under #6298 slice 5: a cross-cutting boundary audit, not a lifecycle slice) |
 | Direct loopback is intentionally sufficient for prompt-free browser REST and PTY access; this does not distinguish OS users on shared machines | Accepted product tradeoff in `cave-99eon` |
 | One-click repairs are not yet implemented for every classified failure | Follow from the issue whose evidence identifies the repair boundary |
 | Hardware-only Windows installer/Defender and macOS signing/quarantine behavior still require release-host validation | Release validation checklist |
