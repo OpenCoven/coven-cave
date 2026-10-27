@@ -28,6 +28,38 @@ final class MarkdownBundleLoadingTests: XCTestCase {
         }
     }
 
+    /// The packaged page renders a coven:ui block as its readable lines (#6060):
+    /// never the markup, and a literal example stays literal.
+    @MainActor
+    func testCovenUiBlocksRenderAsReadableLines() async throws {
+        let cases = try UiBlockReadableTextTests.corpus()
+        let coordinator = MarkdownWebView.Coordinator()
+        let mountedWebView = try mount(coordinator.webView)
+        defer { unmount(mountedWebView, coordinator: coordinator) }
+        try await waitUntilReady(coordinator.webView)
+        for item in cases {
+            let result = try await coordinator.webView.callAsyncJavaScript("""
+                await window.caveRender(source);
+                const root = document.getElementById('root');
+                return {blocks: [...root.querySelectorAll('[data-ui-block-readable]')]
+                            .map(block => [...block.querySelectorAll('p')].map(p => p.textContent).join('\\n')),
+                        controls: root.querySelectorAll('[data-ui-block-readable] :is(a, button, input, select, textarea)').length,
+                        text: root.textContent};
+                """, arguments: ["source": item.input], contentWorld: .page)
+            let report = try XCTUnwrap(result as? [String: Any])
+            let blocks = try XCTUnwrap(report["blocks"] as? [String])
+            let text = try XCTUnwrap(report["text"] as? String)
+            XCTAssertEqual(report["controls"] as? Int, 0, item.id)
+            if item.readable == item.input {
+                XCTAssertTrue(blocks.isEmpty, "\(item.id): a literal example must not become a block")
+                continue
+            }
+            XCTAssertFalse(blocks.isEmpty, item.id)
+            for block in blocks { XCTAssertTrue(item.readable.contains(block), "\(item.id): \(block)") }
+            XCTAssertFalse(text.contains("coven:ui"), item.id)
+        }
+    }
+
     @MainActor
     func testTimelinePreservesPackagedMarkdownSemantics() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "runtime-timeline-v1", withExtension: "json"))

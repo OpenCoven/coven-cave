@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { UI_BLOCK_FALLBACK_CASES } from "./ui-block-fallback-fixtures.ts";
 
@@ -22,4 +23,16 @@ test("projected cases never keep the raw markup", () => {
     assert.ok(!c.readable.includes("```coven:ui"), c.id);
     assert.doesNotMatch(c.readable, /<\/?[A-Z][A-Za-z]*[\s/>]/, c.id);
   }
+});
+
+test("the iOS fixture mirrors the corpus case for case", () => {
+  const ios = JSON.parse(readFileSync(
+    new URL("../../apps/ios/CovenCave/CovenCaveTests/Fixtures/ui-block-fallback-v1.json", import.meta.url),
+    "utf8",
+  ));
+  assert.deepEqual(
+    ios,
+    UI_BLOCK_FALLBACK_CASES.map(({ id, kind, input, readable }) => ({ id, kind, input, readable })),
+    "regenerate with: node --experimental-strip-types scripts/write-ui-block-fallback-fixture.mjs",
+  );
 });
