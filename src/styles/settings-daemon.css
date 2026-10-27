@@ -913,6 +913,15 @@
 }
 
 @container settings-daemon (max-width: 480px) {
+  .settings-daemon-diagnostics {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-daemon-diagnostics-actions {
+    justify-content: flex-end;
+  }
+
   .settings-daemon-status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
