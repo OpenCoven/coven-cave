@@ -226,3 +226,27 @@ test("on Windows the reminder worker drains inside the same 400 ms lease window"
   await vi.advanceTimersByTimeAsync(0);
   expect(lease.process.exit).toHaveBeenCalledExactlyOnceWith(0);
 });
+
+for (const [platform, deadline] of [["darwin", 1_200], ["win32", 400]] as const) {
+  test(`${platform} reports an unavailable worker when the parent lease expires during startup`, async () => {
+    registerStartupWorker("inbox-reminders", async () => undefined);
+    registerStartupWorker("scheduled-chat", async () => undefined);
+    const lease = packagedLease(platform);
+    lease.stdin.emit("end");
+    await vi.advanceTimersByTimeAsync(deadline);
+    expect(lease.console.warn).toHaveBeenCalledWith(
+      "[startup-workers] Worker drain did not finish inside the native parent lease:",
+      expect.objectContaining({ workers: {
+        "inbox-reminders": { status: "drained" },
+        "scheduled-chat": { status: "drained" },
+        "backup-sync": { status: "unavailable" },
+      } }),
+    );
+    if (platform === "win32") expect(lease.process.exit).toHaveBeenCalledExactlyOnceWith(1);
+    else expect(lease.process.kill).toHaveBeenCalledExactlyOnceWith(-4242, "SIGKILL");
+    const lateStop = vi.fn(async () => undefined);
+    expect(registerStartupWorker("backup-sync", lateStop)).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lateStop).toHaveBeenCalledOnce();
+  });
+}

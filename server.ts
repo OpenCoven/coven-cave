@@ -1237,7 +1237,7 @@ async function terminatePackagedSidecarTree(): Promise<void> {
   // need an observed drain here.
   const workerDrain = coordinateStartupWorkerShutdown(() => Promise.resolve(), { deadlineMs: budgetMs })
     .then(result => {
-      const unfinished = Object.values(result.workers).some(outcome => outcome.status === "pending" || outcome.status === "failed");
+      const unfinished = Object.values(result.workers).some(outcome => outcome.status !== "drained");
       if (unfinished) {
         exitCode = 1;
         console.warn("[startup-workers] Worker drain did not finish inside the native parent lease:", result);
