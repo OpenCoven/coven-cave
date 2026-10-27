@@ -9,7 +9,7 @@ runtime. Ollama or LM Studio runs the model. Cave offers two runtimes:
 | Codex · Ollama | `codex-ollama` | Ollama, default `http://127.0.0.1:11434` |
 | Codex · LM Studio | `codex-lmstudio` | LM Studio's server, default `http://127.0.0.1:1234` |
 
-Tracking issue: #6049.
+Shipped in #6049 (local servers in Settings, #6092). #6261 extended the same launch preflight to every launch path (#6263).
 
 ## What you need
 

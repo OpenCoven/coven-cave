@@ -1,6 +1,6 @@
 # Native UI tier for chat (`coven:ui`)
 
-Status: the parser and the Main Chat renderer are on `main`, merged in #6073 (2026-10-24). The catalog is growing in #6062. Familiar prompt changes are a separate follow-up (#6063), and no familiar has been taught the syntax yet. Readable fallback on other surfaces is #6060: Quick Chat, the expanded reader, iOS and every Copy have it.
+Status: the parser and the Main Chat renderer are on `main`, merged in #6073 (2026-10-24). The catalog is complete (#6062, through #6229, #6234 and #6238). Every surface without the native tier shows readable text instead: Quick Chat, the expanded reader, iOS and every Copy (#6060, completed 2026-10-26). Whether any of them should become interactive is #6280. Familiar prompt changes are a separate follow-up (#6063), and no familiar has been taught the syntax yet.
 
 Cave chat had two UI tiers. Fixed `coven:` marker cards are native and safe but have no layout or state. Sandboxed HTML/React artifacts are powerful but ignore Cave's tokens and look foreign. The native UI tier sits between them: a familiar composes a small typed catalog of components, and Cave validates the markup and draws it with its own components and design tokens, progressively, while the reply streams.
 
