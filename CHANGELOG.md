@@ -39,6 +39,8 @@ separate from Windows code signing.
 ### Under the hood
 - **Releases:** one job creates the GitHub release before the build legs
   upload, so a tag can no longer get two releases (#6254).
+- **Windows:** the bundled server no longer carries 244 unused Next.js build
+  files that only the Windows trace kept after the Next.js update (#6276).
 - **Tests:** a picked @ file is proven to reach the turn through a real Cave
   (#6253), and session-list fixtures stay outside the Git checkout (#6256).
 - **Docs:** plan documents point at the issues and outcomes from the plans
