@@ -10,7 +10,7 @@
 // the write lock, and board-view applies the same function client-side for the
 // optimistic render — one implementation, no drift.
 
-import type { Card, CardStep } from "@/lib/cave-board-types";
+import type { Card, CardStep, TaskDependency } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 
 export type StepOp =
@@ -29,11 +29,27 @@ export type AttachmentOp =
   /** Removes the first attachment with this name. */
   | { op: "remove"; name: string };
 
+/**
+ * Add a system-authored `kind: task` edge unless the card already depends on
+ * that task. The Chart Room's legacy overlay import (#6258) uses it: every
+ * browser imports its own overlay against the shared board, so the edge must
+ * merge into the current card rather than replace a stale snapshot.
+ */
+export type DependencyOp = {
+  op: "addTask";
+  taskId: string;
+  label: string;
+  /** Optional so the client can pre-generate it, as step adds do. */
+  id?: string;
+  evidence?: string;
+};
+
 export type CardOps = {
   stepOps?: StepOp[];
   labelOps?: ListOp[];
   linkOps?: ListOp[];
   attachmentOps?: AttachmentOp[];
+  dependencyOps?: DependencyOp[];
 };
 
 /** A board PATCH: plain field replacement plus optional intent ops. */
@@ -52,7 +68,8 @@ export function hasCardOps(ops: CardOps | undefined): ops is CardOps {
       (nonEmptyArray(ops.stepOps) ||
         nonEmptyArray(ops.labelOps) ||
         nonEmptyArray(ops.linkOps) ||
-        nonEmptyArray(ops.attachmentOps)),
+        nonEmptyArray(ops.attachmentOps) ||
+        nonEmptyArray(ops.dependencyOps)),
   );
 }
 
@@ -118,6 +135,34 @@ function applyListOps(values: string[], ops: ListOp[]): string[] {
   return next;
 }
 
+function applyDependencyOps(
+  cardId: string,
+  dependencies: TaskDependency[],
+  ops: DependencyOp[],
+  now: string,
+): TaskDependency[] {
+  let next = dependencies;
+  for (const raw of ops) {
+    if (!raw || typeof raw !== "object" || raw.op !== "addTask") continue;
+    const taskId = cleanId(raw.taskId);
+    const label = typeof raw.label === "string" ? raw.label.trim().slice(0, MAX_LIST_VALUE) : "";
+    if (!taskId || !label || taskId === cardId) continue;
+    if (next.some((dep) => dep.kind === "task" && dep.taskId === taskId)) continue;
+    const evidence = typeof raw.evidence === "string" ? raw.evidence.trim().slice(0, MAX_LIST_VALUE) : "";
+    next = [...next, {
+      id: cleanId(raw.id) ?? crypto.randomUUID(),
+      kind: "task",
+      label,
+      taskId,
+      state: "unresolved",
+      origin: "system",
+      createdAt: now,
+      ...(evidence ? { evidence } : {}),
+    }];
+  }
+  return next;
+}
+
 function applyAttachmentOps(
   attachments: ChatAttachment[],
   ops: AttachmentOp[],
@@ -143,11 +188,11 @@ function applyAttachmentOps(
  * touching untargeted arrays. `now` is injected for testability.
  */
 export function applyCardOps(
-  card: Pick<Card, "steps" | "labels" | "links" | "attachments">,
+  card: Pick<Card, "id" | "steps" | "labels" | "links" | "attachments" | "dependencies">,
   ops: CardOps,
   now: string,
-): Pick<CardPatch, "steps" | "labels" | "links" | "attachments"> {
-  const out: Pick<CardPatch, "steps" | "labels" | "links" | "attachments"> = {};
+): Pick<CardPatch, "steps" | "labels" | "links" | "attachments" | "dependencies"> {
+  const out: Pick<CardPatch, "steps" | "labels" | "links" | "attachments" | "dependencies"> = {};
   const stepOps = nonEmptyArray(ops.stepOps);
   if (stepOps) out.steps = applyStepOps(card.steps ?? [], stepOps, now);
   const labelOps = nonEmptyArray(ops.labelOps);
@@ -156,5 +201,7 @@ export function applyCardOps(
   if (linkOps) out.links = applyListOps(card.links ?? [], linkOps);
   const attachmentOps = nonEmptyArray(ops.attachmentOps);
   if (attachmentOps) out.attachments = applyAttachmentOps(card.attachments ?? [], attachmentOps);
+  const dependencyOps = nonEmptyArray(ops.dependencyOps);
+  if (dependencyOps) out.dependencies = applyDependencyOps(card.id, card.dependencies ?? [], dependencyOps, now);
   return out;
 }

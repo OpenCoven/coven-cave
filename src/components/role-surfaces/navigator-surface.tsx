@@ -30,6 +30,7 @@ import {
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon, type IconName } from "@/lib/icon";
 import type { Card, CardStatus, TaskDependency } from "@/lib/cave-board-types";
+import type { DependencyOp } from "@/lib/board-card-ops";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
@@ -583,16 +584,17 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         const card = cards.find((entry) => entry.id === cardId);
         if (!card) continue;
         const existing = card.dependencies ?? [];
-        const additions: TaskDependency[] = parents
+        // Ops, not the whole array: the server adds each edge to the CURRENT
+        // card under the board lock, so an edge another device or writer added
+        // since this snapshot survives, and an edge already imported elsewhere
+        // is never duplicated (#6258).
+        const additions: DependencyOp[] = parents
           .filter((parentId) => !existing.some((dep) => dep.kind === "task" && dep.taskId === parentId))
           .map((parentId) => ({
+            op: "addTask",
             id: crypto.randomUUID(),
-            kind: "task",
             label: titles.get(parentId) ?? parentId,
             taskId: parentId,
-            state: "unresolved",
-            origin: "system",
-            createdAt: new Date().toISOString(),
             evidence: "Imported from the Chart Room dependency overlay",
           }));
         if (additions.length === 0) continue;
@@ -600,9 +602,13 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
           const res = await fetch(`/api/board/${encodeURIComponent(cardId)}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dependencies: [...existing, ...additions] }),
+            body: JSON.stringify({ ops: { dependencyOps: additions } }),
           });
-          if (res.ok) imported += additions.length;
+          if (res.ok) {
+            const body = (await res.json().catch(() => null)) as { card?: Card } | null;
+            const stored = new Set((body?.card?.dependencies ?? []).map((dep) => dep.id));
+            imported += additions.filter((entry) => entry.id && stored.has(entry.id)).length;
+          }
         } catch {
           /* the edge survives in the overlay union; a later session retries */
         }

@@ -145,4 +145,31 @@ assert.deepEqual(
   "valid collections still apply when sibling collections are malformed",
 );
 
+// Dependency ops merge an imported task edge into the current card (#6258).
+const withDeps = {
+  ...base,
+  id: "card-1",
+  dependencies: [{
+    id: "d1", kind: "task", label: "Upstream", taskId: "card-2",
+    state: "unresolved", origin: "human", createdAt: NOW,
+  }],
+};
+out = applyCardOps(withDeps, {
+  dependencyOps: [
+    { op: "addTask", taskId: "card-2", label: "Upstream again" },
+    { op: "addTask", taskId: "card-3", label: "  New upstream  ", id: "d2", evidence: "Imported" },
+    { op: "addTask", taskId: "card-3", label: "Duplicate in the same batch" },
+    { op: "addTask", taskId: "card-1", label: "Itself" },
+    { op: "addTask", taskId: "", label: "No target" },
+    { op: "remove", taskId: "card-2" },
+  ],
+}, NOW);
+assert.deepEqual(out.dependencies, [
+  withDeps.dependencies[0],
+  {
+    id: "d2", kind: "task", label: "New upstream", taskId: "card-3",
+    state: "unresolved", origin: "system", createdAt: NOW, evidence: "Imported",
+  },
+], "an edge to an existing upstream, a self-edge, a target-less add and unknown ops change nothing");
+
 console.log("board-card-ops: ok");
