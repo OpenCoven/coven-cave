@@ -134,17 +134,20 @@ const nextConfig: NextConfig = {
       // longer does, so the #6082 leak guard holds (#6093).
       "./tsconfig.json",
     ],
-    // Next's own server trace reaches its dev bundler: the hot reloaders and
-    // on-demand entry handler import `next build`, webpack and Babel modules.
-    // Next 16.4 prunes that subtree in an order-dependent pass, so Linux and
-    // macOS drop it while Windows kept 244 of its files and overflowed the
-    // sidecar budget (#6276). Only the dev bundler setup and webpack build
-    // plugins load these four, so excluding them prunes the subtree everywhere.
+    // Next's own server trace reaches its dev bundler, whose hot reloaders
+    // import `next build`, webpack and Babel modules. Next 16.4 prunes them in
+    // an order-dependent pass: Linux and macOS drop all of them, but Windows
+    // kept 244 files and overflowed the sidecar budget (#6276). Exclude the
+    // dev-only entry points and the build-tooling directories outright. None
+    // of these holds a file the Linux or macOS server ships.
     "next-server": [
       "**/next/dist/server/dev/hot-reloader-rspack.js",
       "**/next/dist/server/dev/hot-reloader-turbopack.js",
       "**/next/dist/server/dev/hot-reloader-webpack.js",
       "**/next/dist/server/dev/on-demand-entry-handler.js",
+      "**/next/dist/build/{analysis,analyze,babel,jest,manifests,polyfills,templates}/**/*",
+      "**/next/dist/build/{turbopack-analyze,turbopack-build,turborepo-access-trace}/**/*",
+      "**/next/dist/build/{webpack,webpack-build,webpack-config-rules}/**/*",
     ],
   },
   // No `outputFileTracingIncludes` (#6093). Turbopack 16.3 resolves an include
