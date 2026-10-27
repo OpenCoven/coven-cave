@@ -447,6 +447,28 @@ test("release-object adopts one final release, creates a missing one, and refuse
   assert.equal(iosOnly.output, "");
 });
 
+// The stub gh above ignores repository context, which is how release-object
+// shipped a `gh release create` that real gh could not run (#6288).
+test("every repository-scoped gh command knows its repository", () => {
+  const scoped = /\bgh (?:release|pr|issue|run|workflow|repo|cache|secret|variable|attestation)\b[^\n]*/g;
+  const missing = [];
+  for (const [jobName, job] of Object.entries(parsedReleaseWorkflow.jobs)) {
+    let checkedOut = false;
+    for (const step of job.steps ?? []) {
+      if (step.uses?.startsWith("actions/checkout@")) checkedOut = true;
+      const env = { ...parsedReleaseWorkflow.env, ...job.env, ...step.env };
+      for (const [command] of (step.run ?? "").matchAll(scoped)) {
+        if (!checkedOut && !env.GH_REPO && !/--repo |-R /.test(command)) {
+          missing.push(`${jobName} / ${step.name}: ${command.trim()}`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(missing, [], "without a checkout, set GH_REPO or pass --repo");
+  const step = parsedReleaseWorkflow.jobs["release-object"].steps.find((candidate) => candidate.id === "release");
+  assert.equal(step.env.GH_REPO, "${{ github.repository }}");
+});
+
 test("each build leg claims the release right before its first upload", () => {
   const linuxWindows = workflowStepRun("build", "Claim the release for the Linux/Windows upload");
   const macos = workflowStepRun("build", "Claim the release for the macOS upload");
