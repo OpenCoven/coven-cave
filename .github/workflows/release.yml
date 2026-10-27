@@ -457,8 +457,12 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
+      # Inside the official Playwright image for the installed version, as PR
+      # CI does (#6191): it carries both engines and their system packages, so
+      # a stalled apt mirror can no longer cancel a release shard (#6290). The
+      # pull is bounded and retried.
+      - run: bash scripts/playwright-ci-image.sh pull
+      - run: bash scripts/playwright-ci-image.sh run pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
 
   release-e2e-agentic:
     name: Validate release E2E (agentic)
@@ -483,8 +487,12 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+      # Inside the official Playwright image for the installed version, as PR
+      # CI does (#6191): it carries both engines and their system packages, so
+      # a stalled apt mirror can no longer cancel a release shard (#6290). The
+      # pull is bounded and retried.
+      - run: bash scripts/playwright-ci-image.sh pull
+      - run: bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
 
   release-web-validation:
     name: Release web validated
