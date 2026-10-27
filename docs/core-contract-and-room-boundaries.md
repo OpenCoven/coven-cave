@@ -143,6 +143,14 @@ The automations domain is the first with that definition: the switch is read
 when a worker starts, so a changed setting takes effect at the next server
 start, and the disabled-domain idle server owns only the heap monitor's timer.
 
+### Startup-worker maintenance and shutdown reports
+
+Change backup enablement, destination, retention, and quit-push preferences through the existing backup settings/API. A disabled backup scheduler owns no recurring timer; re-enabling it starts one owner and preserves boot catch-up. Stop Cave through its normal shutdown path before maintenance. Signal shutdown observes HTTP close and worker drains together for up to three seconds; packaged quit uses the shorter native lease (1,200 ms on Unix, 400 ms on Windows). These deadlines do not guarantee completion; the native fallback can end the process while admitted work is still pending.
+
+Inspect startup-worker shutdown warnings before treating quit as a completed backup or send. `pending` means the deadline expired, `failed` means a stop callback rejected, and `unavailable` means no worker owner registered in time. Only `drained` proves that the registered stop callback completed; it does not independently prove a remote effect succeeded. Preserve backup state, encrypted credentials, snapshots, reminder records, and scheduled-chat claims, and use their existing status/reconciliation paths after restart. Do not clear a durable `sending` claim or manually replay an uncertain send to make a shutdown receipt look successful.
+
+The reporting correction adds no persisted-state migration, deadline change, cancellation, or replay. Reverting it through a reviewed PR restores the previous diagnostic gap for unregistered workers; it does not change worker lifetimes. If rolling back the broader lifecycle implementation, revert that complete change through review or return to a previously qualified application build; do not partially restore an old signal hook beside the coordinator. Retain user data and validate backup-state version compatibility before an older build opens it. Malformed, unreadable, or newer backup state must remain untouched. Re-run the isolated disabled/enabled/held-archive probes and verify process/port cleanup before claiming recovery.
+
 ## Common acceptance for an optional boundary
 
 Use the existing Research interface where its contract fits. Prefer a small
