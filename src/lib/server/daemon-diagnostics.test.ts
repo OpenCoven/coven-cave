@@ -89,6 +89,61 @@ assert.equal(
   false,
   "exported events exclude secrets and personal paths",
 );
+// #6298 slice 4: the export carries what the server believed about the daemon
+// lifecycle at export time, so support can tell a bundle taken mid-restart
+// from one taken at rest. Only the owner's own bookkeeping goes out: kinds,
+// codes and instants, sanitized like every other token.
+const lifecycleBundle = buildDaemonDiagnosticBundle({
+  events: [],
+  generatedAt: "2026-10-27T14:05:09.000Z",
+  lifecycle: {
+    operation: { kind: "restart", startedAt: "2026-10-27T14:05:00.000Z", phase: "stopping" },
+    mutation: {
+      inFlight: { kind: "restart", startedAt: Date.parse("2026-10-27T14:05:00.000Z") },
+      lastOutcome: {
+        kind: "start",
+        code: `started?token=${secret}`,
+        settledAt: Date.parse("2026-10-27T13:59:59.000Z"),
+      },
+    },
+  },
+});
+assert.deepEqual(
+  lifecycleBundle.lifecycle,
+  {
+    operation: { kind: "restart", startedAt: "2026-10-27T14:05:00.000Z", phase: "stopping" },
+    mutation: {
+      inFlight: { kind: "restart", startedAt: "2026-10-27T14:05:00.000Z" },
+      lastOutcome: { kind: "start", code: "unknown", settledAt: "2026-10-27T13:59:59.000Z" },
+    },
+  },
+  "lifecycle operation and mutation-owner state export as sanitized tokens and instants",
+);
+assert.ok(
+  lifecycleBundle.manifest.included.some((entry) => /lifecycle operation and mutation-owner state/.test(entry)),
+  "the manifest declares the lifecycle block",
+);
+assert.deepEqual(
+  buildDaemonDiagnosticBundle({ events: [], generatedAt: "2026-10-27T14:05:09.000Z" }).lifecycle,
+  { operation: null, mutation: { inFlight: null, lastOutcome: null } },
+  "a bundle built without lifecycle input still has the block, explicitly empty",
+);
+assert.deepEqual(
+  buildDaemonDiagnosticBundle({
+    events: [],
+    generatedAt: "2026-10-27T14:05:09.000Z",
+    lifecycle: {
+      operation: { kind: "start", startedAt: "not a date" },
+      mutation: { inFlight: { kind: "start", startedAt: Number.NaN }, lastOutcome: null },
+    },
+  }).lifecycle,
+  {
+    operation: { kind: "start", startedAt: null },
+    mutation: { inFlight: { kind: "start", startedAt: null }, lastOutcome: null },
+  },
+  "an unreadable instant exports as null rather than as the export time",
+);
+
 assert.notEqual(
   createDaemonDiagnosticContext({ correlationId: secret }).correlationId,
   secret,
@@ -225,6 +280,11 @@ assert.match(
   "the export route uses the redacted manifest builder",
 );
 
+assert.match(
+  diagnosticsRoute,
+  /lifecycle: \{[\s\S]*?operation: daemonLifecycleOperation\(\),[\s\S]*?mutation: daemonMutationOwnerSnapshot\(\),/,
+  "the export reads the lifecycle owner and mutation owner without probing the daemon (#6298)",
+);
 assert.match(
   diagnosticsRoute,
   /eventPlane: readEventPlaneDiagnostics\(\)/,

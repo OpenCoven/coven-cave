@@ -53,7 +53,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`windows-update-preparation.md`](windows-update-preparation.md) — download, verify, and install as three distinct phases
 - [`windows-upgrade-benchmark.md`](windows-upgrade-benchmark.md) — what `scripts/windows-upgrade-diagnostics.ps1` captures
 - [`performance/daemon-lifecycle.md`](performance/daemon-lifecycle.md) — the opt-in real-daemon lifecycle probe and its 2026-10-20 diagnostic observation (#6120)
-- [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the daemon connectivity launch flow, readiness checks, fault coverage, and measurement contract; the `cave-58eoq` program's tracked work all merged (#4485–#4528), and its residual risks have no issue yet
+- [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the daemon connectivity launch flow, readiness checks, fault coverage, and measurement contract; the `cave-58eoq` program's tracked work all merged (#4485–#4528); #6298 owns the lifecycle, fault-matrix and diagnostics-export follow-ups and #6303 the boundary proof
 
 ### Mobile and handoff
 
