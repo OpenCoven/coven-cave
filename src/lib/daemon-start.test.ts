@@ -47,10 +47,24 @@ assert.match(daemonStart, /inspectDaemonAddress/, "occupancy is proven by connec
 assert.match(daemonStart, /daemonStartCoordinator\.run/, "production starts enter the shared coordinator");
 assert.match(
   daemonStart,
-  /beginDaemonLifecycleOperation\(options\.automatic \? "recovery" : "start"\)/,
+  /beginDaemonLifecycleOperation\(\s*\n\s*options\.automatic \? "recovery" : options\.restart \? "restart" : "start",/,
   "every start records itself as the one lifecycle mutation in flight (#6298)",
 );
 assert.match(daemonStart, /lifecycleOperation\.end\(\)/, "the in-flight record is released when the start settles");
+assert.match(
+  daemonStart,
+  /const result = runDaemonMutation<DaemonStartResult>\(\{\s*\n\s*kind,/,
+  "production starts, recoveries and restarts are admitted by the one mutation owner (#6298 slice 2)",
+);
+assert.doesNotMatch(daemonStart, /activeDaemonStart/, "the ad-hoc shared-operation latch is gone; the owner joins or refuses");
+assert.match(daemonStart, /\| "mutation_in_flight"\s*\n\s*\| "duplicate_after_timeout";/, "the owner's refusals are named start outcomes");
+assert.match(daemonStart, /refusal\.code === "mutation_in_flight"/, "a restart during another mutation is refused by name");
+assert.match(daemonStart, /probeReady: \(\) => localDaemonReadyNow\(diagnostics\)/, "a timed-out mutation is reconciled through health, never replayed");
+assert.match(
+  daemonStart,
+  /lifecycle\?\.phase\("stopping"\);\s*\n\s*try \{\s*\n\s*await stopDaemon\(\)\.catch\(\(\) => undefined\);\s*\n\s*\} finally \{\s*\n\s*lifecycle\?\.phase\(null\);/,
+  "the restart hand-back marks the stopping phase only while the displaced daemon is being stopped",
+);
 assert.match(
   daemonStart,
   /findService: async \(\) => null,\s*\n\s*\.\.\.options,/,
@@ -267,10 +281,11 @@ test("a start is visible as the in-flight lifecycle operation until it settles",
   resetDaemonLifecycleOwnerForTests();
   const seen = [];
   try {
-    for (const [automatic, kind] of [[false, "start"], [true, "recovery"]]) {
+    for (const [automatic, restart, kind] of [[false, false, "start"], [true, false, "recovery"], [false, true, "restart"]]) {
       let probes = 0;
       const result = await startLocalDaemon({
         automatic,
+        restart,
         probe: async () => {
           seen.push(daemonLifecycleOperation()?.kind ?? null);
           return { ok: ++probes >= 2 };
@@ -692,6 +707,29 @@ test("restart hands a displaced daemon back: stop it, then kickstart -k the serv
   assert.deepEqual(calls.kick, [{ label: SERVICE.label, restart: true }]);
   assert.equal(calls.spawn, 0);
   assert.equal(result.ok, true);
+});
+
+test("the restart hand-back projects stopping while the displaced daemon stops, then recovering", async () => {
+  resetDaemonLifecycleOwnerForTests();
+  const seen = [];
+  const { options } = serviceHarness({ running: false });
+  options.stopDaemon = async () => { seen.push(daemonLifecycleOperation()); };
+  options.kickstartService = async () => {
+    seen.push(daemonLifecycleOperation());
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  try {
+    const result = await startLocalDaemon({ restart: true, ...options });
+    assert.equal(result.ok, true);
+    assert.equal(seen.length, 2);
+    assert.equal(seen[0].kind, "restart");
+    assert.equal(seen[0].phase, "stopping", "the stop window is visible as stopping");
+    assert.equal(seen[1].kind, "restart");
+    assert.equal(seen[1].phase, undefined, "the kick runs after the stopping phase clears");
+    assert.equal(daemonLifecycleOperation(), null);
+  } finally {
+    resetDaemonLifecycleOwnerForTests();
+  }
 });
 
 test("restart of a healthy service only restarts the service", async () => {

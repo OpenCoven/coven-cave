@@ -10,6 +10,7 @@ export const DAEMON_LIFECYCLE_STATES = [
   "stopped",
   "starting",
   "recovering",
+  "stopping",
   "ready",
   "unreachable",
   "unauthorized",
@@ -26,9 +27,21 @@ export type DaemonLifecycleState = (typeof DAEMON_LIFECYCLE_STATES)[number];
 export type DaemonRuntimeEvidence = "present" | "missing" | "unknown";
 
 export type DaemonLifecycleOperation = {
-  kind: "start" | "recovery";
+  kind: "start" | "recovery" | "restart";
   startedAt: string;
+  /** A restart is stopping the displaced daemon before the service relaunches it. */
+  phase?: "stopping";
 };
+
+/** States that mean a mutation is in flight: neither settled nor failed. */
+export const DAEMON_LIFECYCLE_TRANSITIONAL_STATES = ["starting", "recovering", "stopping"] as const;
+export type DaemonLifecycleTransitionalState = (typeof DAEMON_LIFECYCLE_TRANSITIONAL_STATES)[number];
+
+const TRANSITIONAL_SET: ReadonlySet<string> = new Set(DAEMON_LIFECYCLE_TRANSITIONAL_STATES);
+
+export function isTransitionalDaemonLifecycleState(value: unknown): value is DaemonLifecycleTransitionalState {
+  return typeof value === "string" && TRANSITIONAL_SET.has(value);
+}
 
 export type DaemonLifecycleEvidence = {
   /** `unknown` when config never loaded, so no target was resolved. */
@@ -69,6 +82,8 @@ function projectState(evidence: DaemonLifecycleEvidence): DaemonLifecycleState {
   }
   if (availability === "status-unavailable") return "unknown";
   if (availability === "incompatible") return "incompatible";
+  // A deliberate stop owns its window even while the endpoint still answers.
+  if (evidence.operation?.phase === "stopping") return "stopping";
   if (availability === "online") {
     return evidence.serviceConflict ? "foreign-owned" : "ready";
   }
@@ -119,6 +134,8 @@ export function describeDaemonLifecycle(
       return { label: "Starting…", tone: "warning" };
     case "recovering":
       return { label: "Reconnecting…", tone: "warning" };
+    case "stopping":
+      return { label: "Stopping…", tone: "warning" };
     case "missing":
       return { label: "Runtime missing", tone: "danger" };
     case "stopped":

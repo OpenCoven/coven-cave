@@ -145,7 +145,7 @@ Illegal transitions:
 - `Incompatible`/`PermissionDenied` -> blind retry loop.
 - Mutation timeout -> automatic duplicate mutation.
 
-### Projected lifecycle state (#6298, slice 1)
+### Projected lifecycle state (#6298, slices 1 and 2)
 
 `src/lib/daemon-lifecycle.ts` is the pure projection from recorded evidence
 to one state, and `src/lib/server/daemon-lifecycle-owner.ts` is the one
@@ -164,6 +164,7 @@ Settings daemon card prefers that label over the availability fallback.
 | `stopped` | `Stopped` | Target offline; runtime present or not yet probed (never guessed missing) |
 | `starting` | `Starting`/`WaitingForEndpoint` | A start operation in flight and no ready instance observed before |
 | `recovering` | `Recovering` | An automatic recovery in flight, or any start after a ready instance |
+| `stopping` | `Stopping` | A restart is stopping the displaced daemon before the service relaunches it; wins over a still-answering endpoint |
 | `ready` | `Ready` | Health probe succeeded, compatibility passed, no service conflict |
 | `foreign-owned` | `Ready` with a `Degraded` note | Health succeeded but the system service does not own the daemon (#5730) |
 | `unreachable` | `Failed` (transport) | Probe got no answer and the local target did not report "daemon offline" |
@@ -174,15 +175,55 @@ Settings daemon card prefers that label over the availability fallback.
 | `unknown` | none | Cave home status could not be read; the daemon was not checked |
 
 Ordering is fixed: configuration and compatibility failures win over health,
-confirmed health wins over an in-flight operation (so `ready` is never
-downgraded to `starting` by a stale operation record), and an in-flight
-operation wins over an offline or unhealthy probe (a daemon still booting
-answers unhealthy). Every observation carries a monotonic generation;
-`mergeDaemonLifecycle` keeps the newer one, so a slower, older probe cannot
-overwrite a newer state. `Stopping`, `Handshaking`, and `Degraded` are not
-projected yet: nothing records a deliberate stop, the handshake is folded into
-`starting`, and capability degradation is still reported per surface. Those
-belong to the mutation-owner slice.
+a deliberate stop wins over a still-answering endpoint, confirmed health wins
+over a start or recovery in flight (so `ready` is never downgraded to
+`starting` by a stale operation record), and an in-flight operation wins over
+an offline or unhealthy probe (a daemon still booting answers unhealthy).
+Every observation carries a monotonic generation; `mergeDaemonLifecycle`
+keeps the newer one, so a slower, older probe cannot overwrite a newer state.
+`Handshaking` and `Degraded` are not projected: the handshake is folded into
+`starting`, and capability degradation is still reported per surface.
+
+The client reads the projection too. `classifyDaemonStatusPoll` returns
+`transitioning` for a local `starting`, `recovering` or `stopping` state, and
+every consumer treats that as neither offline nor failure: the Workspace keeps
+its current banners, the desktop auto-start coordinator does not start or
+revive, the familiar liveness verdict is `degraded` (no revive), the
+connection supervisor keeps the 5 s cadence, and no reliability failure class
+is recorded. The tests are `daemon-status-classification.test.ts`,
+`workspace-daemon-connection.test.ts`, `daemon-desktop-auto-start.test.ts`,
+`familiar-liveness.test.ts`, `daemon-connection-supervisor.test.ts` and
+`daemon-reliability.test.ts`.
+
+### One mutation owner (#6298, slice 2)
+
+`src/lib/server/daemon-mutation-owner.ts` admits every start, automatic
+recovery and restart before anything spawns, kicks launchd or stops a daemon;
+`startLocalDaemonOperation` routes through it and the bounded restart lane
+(`RuntimeStartupCoordinator`) runs inside it. Adopt is the owner's existing
+pre-state reconciliation: a healthy daemon is reported `alreadyRunning`
+without a spawn, with `serviceConflict` when the system service does not own
+it (`foreign-owned`), and an incompatible daemon is refused as
+`runtime_incompatible`; neither is retried by the owner or by the client's
+automatic recovery (`runWorkspaceDaemonStart` reports `failed`, and the
+coordinator only revives on a definitive `offline`). Stop is the restart
+hand-back's stop step, projected as `stopping` while it runs.
+
+| Situation | Owner decision | Result code | Test |
+| --- | --- | --- | --- |
+| Start or recovery while any mutation runs | Join: every one of them wants a running daemon | The in-flight result | `daemon-mutation-owner.behavior.test.ts` |
+| Restart while a start or recovery runs | Refuse by name; joining would report "restarted" for a daemon nobody restarted | `mutation_in_flight` (409) | same |
+| Restart while a restart runs | Join | The in-flight result | same |
+| Same kind within 30 s of a `readiness_timeout` | Reconcile: health proves the late finish (`alreadyRunning`), otherwise refuse with the time left; never replay a stop-and-kick | `duplicate_after_timeout` (409) | same |
+| Different kind after a timeout, or after the window | Admit | normal | same |
+| Mutation throws | Lane released; recorded as `unexpected-error`, not a timeout | rethrown | same |
+| Healthy daemon the service does not own | Adopt, report conflict, no spawn or kick | `ok` + `serviceConflict` | `daemon-start.test.ts` (#5730 cases) |
+| Incompatible daemon | Refuse, no spawn, no retry | `runtime_incompatible` (409) | `daemon-start.test.ts` |
+| Restart hand-back | `stopping` during the stop, then kickstart | `ok`, `launchMode: "service"` | `daemon-start.test.ts` |
+
+Deferred to the fault-matrix slice: the real-process receipt for revive after
+a post-ready kill, and `Stopping` as a user-initiated action (no stop route or
+control exists; stop is only the restart hand-back today).
 
 ## Failure-mode and effects analysis
 
@@ -206,6 +247,9 @@ belong to the mutation-owner slice.
 | Response reset/partial body | Response error handler | Request resolves as transport failure | GET may retry once; mutations do not | Cross-component partial-write tests remain open |
 | Oversized response | `maxResponseBytes` where supplied | Request fails with size-limit diagnostic | No retry unless caller chooses | Call-site coverage of limits remains open |
 | App exits during startup | Cleanup guard, cancellation, process job/watchdog | Owned tree is stopped/reaped | Relaunch cleanly | Cross-platform stress coverage remains open |
+| Concurrent start/restart requests | Mutation owner admission (`daemon-mutation-owner.ts`) | Start and recovery join the running mutation; restart is refused by name | None needed; the client polls at the healthy cadence until the owner settles | Only this Next process is coordinated; a second Cave process is the duplicate-GUI row |
+| Duplicate mutation after a timeout | Owner remembers the last `readiness_timeout` for 30 s | Same kind reconciles through health or is refused with the time left | Wait out the window, or Retry after health answers | A service that takes longer than the window to come up is still kicked again on the next request |
+| Foreign-owned instance | Health succeeds while launchd's job is not running (#5730) | Reported `foreign-owned`/`serviceConflict`; no spawn, no automatic retry | Settings Restart hands the daemon back to the service | Ownership is inferred from the service's running state, not from the serving PID |
 
 ## Warning truthfulness audit
 

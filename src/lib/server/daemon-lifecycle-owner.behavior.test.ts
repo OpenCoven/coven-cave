@@ -110,3 +110,17 @@ test("a hub target carries no local runtime or ownership evidence", () => {
   assert.equal(observed.evidence.runtime, "unknown");
   assert.equal(observed.reason, "hub unauthorized: unauthorized");
 });
+
+test("an operation can enter and leave its stopping phase, and only the current record is touched", () => {
+  const restart = beginDaemonLifecycleOperation("restart", () => 1_000);
+  restart.phase("stopping");
+  assert.deepEqual(daemonLifecycleOperation(), { kind: "restart", startedAt: "1970-01-01T00:00:01.000Z", phase: "stopping" });
+  assert.equal(observeDaemonLifecycle(probeInput({ availability: "online", reason: null })).state, "stopping");
+  restart.phase(null);
+  assert.deepEqual(daemonLifecycleOperation(), { kind: "restart", startedAt: "1970-01-01T00:00:01.000Z" });
+  const newer = beginDaemonLifecycleOperation("start", () => 2_000);
+  restart.phase("stopping");
+  assert.deepEqual(daemonLifecycleOperation(), { kind: "start", startedAt: "1970-01-01T00:00:02.000Z" }, "a stale handle cannot mark a newer operation");
+  newer.end();
+  restart.end();
+});

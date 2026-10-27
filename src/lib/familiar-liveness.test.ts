@@ -14,6 +14,11 @@ import {
 assert.equal(familiarHealthVerdictFromPoll({ kind: "running" }), "healthy");
 assert.equal(familiarHealthVerdictFromPoll({ kind: "offline" }), "absent");
 assert.equal(
+  familiarHealthVerdictFromPoll({ kind: "transitioning" }),
+  "degraded",
+  "a mutation already in flight is not an absence to revive (#6298)",
+);
+assert.equal(
   familiarHealthVerdictFromPoll({ kind: "auth-expired" }),
   "degraded",
   "restarting cannot fix a credential",

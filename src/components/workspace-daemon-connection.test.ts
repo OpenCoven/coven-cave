@@ -176,6 +176,11 @@ test("Workspace applies connection polls through the existing classifier-driven 
   );
   assert.match(
     applyPoll,
+    /if \(result\.kind === "transitioning"\) \{[\s\S]*daemonHealthyStreakRef\.current = 0[\s\S]*setDaemonStatusUnavailable\(null\)[\s\S]*return;[\s\S]*if \(result\.kind === "offline"\)/,
+    "a server-side start, recovery or stop in flight keeps the current banners instead of reading as offline (#6298)",
+  );
+  assert.match(
+    applyPoll,
     /setDaemonRecovery\(\(current\) => daemonRecoveryPresentation\(current, \{ type: "offline" \}\)\)/,
     "definitive offline polls should advance the bounded recovery presentation window",
   );

@@ -289,6 +289,30 @@ test("failures back off through 5s, 10s, 20s, and 30s bands", async () => {
   );
 });
 
+test("a transitioning poll keeps the 5s cadence so readiness is noticed promptly", async () => {
+  const rig = createRig({ random: () => 0.5 });
+
+  rig.supervisor.start();
+  await rig.resolveRequest(0, offlinePoll());
+  rig.fireLatestTimer();
+  await rig.resolveRequest(1, offlinePoll());
+  assert.equal(rig.latestPendingTimer().delayMs, 10_000);
+
+  rig.fireLatestTimer();
+  await rig.resolveRequest(2, {
+    responseStatus: 200,
+    responseOk: true,
+    payload: {
+      running: false,
+      availability: "offline",
+      reason: "daemon offline",
+      target: { mode: "local" },
+      lifecycle: { state: "starting" },
+    },
+  });
+  assert.equal(rig.latestPendingTimer().delayMs, 5_000, "a start in flight is polled at the healthy cadence");
+});
+
 test("a running poll after failures resets the cadence", async () => {
   const rig = createRig({ random: () => 0.5 });
 
