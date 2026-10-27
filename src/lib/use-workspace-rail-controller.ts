@@ -5,7 +5,6 @@ import { changedFileCount, fetchChangesSummary } from "@/lib/changes-summary-fet
 import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { useCodeRail } from "@/lib/use-code-rail";
 import { codeRailChangeSignature, hasNewCodeRailChanges } from "@/lib/code-rail";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useIsMobile } from "@/lib/use-viewport";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 
@@ -154,8 +153,6 @@ export function useWorkspaceRailController({
   const showInline = active && rail.available && rail.open && !isMobile && !paneNarrow;
   const mobileAvailable = active && (isMobile || paneNarrow) && rail.available;
   const [mobileOpen, setMobileOpen] = useState(false);
-  const mobileSheetRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(mobileOpen, mobileSheetRef, { onEscape: () => setMobileOpen(false) });
   useEffect(() => {
     if (!rail.available || (!isMobile && !paneNarrow) || !active) setMobileOpen(false);
   }, [active, isMobile, paneNarrow, rail.available]);
@@ -216,7 +213,6 @@ export function useWorkspaceRailController({
     mobileAvailable,
     mobileOpen,
     setMobileOpen,
-    mobileSheetRef,
     openTarget,
     openChanges,
     collapse,

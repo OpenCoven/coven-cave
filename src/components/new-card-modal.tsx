@@ -61,6 +61,7 @@ export function NewCardModal({
   onCreate,
 }: Props) {
   const [title, setTitle] = useState("");
+  const titleRef = useRef<HTMLInputElement>(null);
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState<CardStatus>(defaultStatus);
   const [priority, setPriority] = useState<CardPriority>("medium");
@@ -210,9 +211,11 @@ export function NewCardModal({
 
   return (
     <Modal
+      busy={busy}
       open={open}
       onClose={onClose}
-      wide
+      initialFocusRef={coarse ? undefined : titleRef}
+      size="wide"
       breadcrumb={["Tasks", "New task"]}
       footerPills={
         <>
@@ -245,6 +248,7 @@ export function NewCardModal({
         <>
           <Button
             variant="secondary"
+            disabled={busy}
             onClick={onClose}
           >
             Cancel
@@ -261,10 +265,10 @@ export function NewCardModal({
     >
       <Field label="Title">
         <input
+          ref={titleRef}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Task title"
-          autoFocus={!coarse}
           className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
         />
       </Field>

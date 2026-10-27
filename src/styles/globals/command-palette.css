@@ -1,18 +1,5 @@
 /* Command palette — compact, search-first global navigation. */
 
-.command-palette {
-  display: flex;
-  flex-direction: column;
-  width: calc(var(--space-10) * 16);
-  max-width: calc(100vw - var(--space-8));
-  max-height: calc(100vh - var(--space-12) - var(--space-12));
-  margin-top: var(--space-12);
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-panel);
-  box-shadow: var(--shadow-popover);
-}
-
 .command-palette__search {
   display: flex;
   align-items: center;
@@ -162,25 +149,7 @@
   box-shadow: inset var(--ring-width) 0 0 var(--accent-presence);
 }
 
-.command-palette__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-height: var(--space-8);
-  padding: var(--space-2) var(--space-3);
-  border-top: 1px solid var(--border-hairline);
-  color: var(--text-muted);
-  font-size: var(--text-2xs);
-}
-
 @media (max-width: 767px) {
-  .command-palette {
-    max-width: calc(100vw - var(--space-4));
-    max-height: calc(100vh - var(--space-4) - var(--sai-top));
-    margin-top: calc(var(--space-2) + var(--sai-top));
-    border-radius: var(--radius-card);
-  }
 
   .command-palette__search {
     min-height: var(--touch-target);
@@ -198,18 +167,12 @@
 /* Dynamic viewport units keep the palette above mobile browser chrome and the
    on-screen keyboard. The vh declarations above remain the fallback. */
 @supports (height: 100dvh) {
-  .command-palette {
-    max-height: calc(100dvh - var(--space-12) - var(--space-12));
-  }
 
   .command-palette__results {
     max-height: 54dvh;
   }
 
   @media (max-width: 767px) {
-    .command-palette {
-      max-height: calc(100dvh - var(--space-4) - var(--sai-top));
-    }
 
     .command-palette__results {
       max-height: 58dvh;

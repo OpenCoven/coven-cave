@@ -109,6 +109,9 @@ async function openReader(page: Page, turn: TurnSpec) {
     window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
     window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
   });
+  await page.route("**/api/projects**", route => route.fulfill({ json: { ok: true, projects: [
+    { id: "reader-project", name: "Reader fixture", root: SESSION.project_root, access: "write" },
+  ] } }));
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({
       json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] },
@@ -155,7 +158,7 @@ async function openReader(page: Page, turn: TurnSpec) {
   // 30s on a cold server. Generous here on purpose: the alternative is a spec
   // that passes only on Playwright's retry, and a test that needs a retry to
   // go green is a test that will eventually go red for no reason.
-  await expect(page.locator(".cave-reader")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByRole("dialog").filter({ has: page.locator(".cave-reader-body") })).toBeVisible({ timeout: 90_000 });
   // ...and then for the DOCUMENT, not just the shell that holds it. Every caller
   // below asserts against `.cave-reader-doc .cave-md`, and those assertions get
   // expect()'s default 5s window — not the 90s above. On a cold server, where
@@ -275,19 +278,19 @@ test("Escape unwinds one layer at a time: source viewer, then menu, then reader"
   await expect(page.locator(".cave-reader-menu")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator(".cave-reader-menu")).toHaveCount(0);
-  await expect(page.locator(".cave-reader")).toBeVisible();
+  await expect(page.getByRole("dialog").filter({ has: page.locator(".cave-reader-body") })).toBeVisible();
 
   // Then a source viewer opened from the footer.
   await page.locator(".cave-reader-foot__toggle").click();
   await page.locator(".cave-reader-row--source").first().click();
-  await expect(page.locator(".cave-reader-viewer")).toBeVisible();
+  await expect(page.getByRole("dialog").filter({ has: page.locator(".cave-reader-viewer__body") })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.locator(".cave-reader-viewer")).toHaveCount(0);
-  await expect(page.locator(".cave-reader")).toBeVisible();
+  await expect(page.getByRole("dialog").filter({ has: page.locator(".cave-reader-viewer__body") })).toHaveCount(0);
+  await expect(page.getByRole("dialog").filter({ has: page.locator(".cave-reader-body") })).toBeVisible();
 
   // Only now does Escape close the reader itself.
   await page.keyboard.press("Escape");
-  await expect(page.locator(".cave-reader")).toHaveCount(0);
+  await expect(page.getByRole("dialog").filter({ has: page.locator(".cave-reader-body") })).toHaveCount(0);
 });
 
 test("the reader echoes the prompt that produced the answer", async ({ page }) => {

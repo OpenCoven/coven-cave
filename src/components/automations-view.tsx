@@ -169,6 +169,8 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     setSelectedCodex(null);
   }, [onOpenLink]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createBusy, setCreateBusy] = useState(false);
+  const createPendingRef = useRef(false);
   // GitHub subscriptions manager, reachable from the Inbox tab (cave-hlxn).
   const [subsOpen, setSubsOpen] = useState(false);
   const [subsHasPat, setSubsHasPat] = useState(false);
@@ -660,6 +662,9 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   }, [refreshRuns, refreshLastRuns]);
 
   const createCodex = useCallback(async (input: AutomationCreateInput) => {
+    if (createPendingRef.current) return;
+    createPendingRef.current = true;
+    setCreateBusy(true);
     const { start, ...body } = input;
     try {
       // Every new routine is created paused; activation is a separate,
@@ -688,6 +693,9 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
       if (json.automation) { setSelectedCodex(json.automation); setSelectedItem(null); }
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex create failed");
+    } finally {
+      createPendingRef.current = false;
+      setCreateBusy(false);
     }
   }, [reloadAfterMutation, sendLifecycle]);
 
@@ -1449,6 +1457,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
       {createOpen && (
         <AutomationCreateDialog
           resolvedFamiliars={resolvedFamiliars}
+          busy={createBusy}
           onClose={() => setCreateOpen(false)}
           onCreate={(i) => void createCodex(i)}
         />

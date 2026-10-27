@@ -34,6 +34,7 @@ const ConfirmContext = createContext<((opts: ConfirmOptions) => Promise<boolean>
  * boolean — same control flow as `if (!window.confirm(...)) return;`, just async.
  */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const pendingRef = useRef<Pending | null>(null);
   pendingRef.current = pending;
@@ -58,13 +59,14 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       <Modal
         open={!!pending}
         onClose={() => settle(false)}
-        ariaLabel={pending?.title ?? "Confirm"}
+        title={pending?.title ?? "Confirm"}
+        size="compact"
+        initialFocusRef={cancelRef}
         footerActions={
           pending ? (
             <>
-              {/* Cancel first so it takes the focus-trap's initial focus — the
-                  safe default, especially for destructive confirms. */}
-              <Button variant="secondary" onClick={() => settle(false)}>
+              {/* Cancel receives initial focus even when the header has a close button. */}
+              <Button ref={cancelRef} variant="secondary" onClick={() => settle(false)}>
                 {pending.cancelLabel ?? "Cancel"}
               </Button>
               <Button
@@ -77,12 +79,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
           ) : null
         }
       >
-        {pending ? (
-          <div className="ui-confirm">
-            <h2 className="ui-confirm-title">{pending.title}</h2>
-            {pending.body ? <div className="ui-confirm-body">{pending.body}</div> : null}
-          </div>
-        ) : null}
+        {pending?.body ?? null}
       </Modal>
     </ConfirmContext.Provider>
   );

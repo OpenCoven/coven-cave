@@ -9,9 +9,9 @@ test("the first-project gate is a detail-scoped dialog with no dismiss path", ()
   assert.doesNotMatch(src, /import \{ createPortal \} from "react-dom"/, "does not portal to document.body");
   assert.match(src, /if \(!open\) return null;/, "visibility is controlled entirely by Workspace policy");
   assert.doesNotMatch(src, /const visible = open \|\| Boolean\(pendingGrant\);/, "pending retry no longer bypasses Workspace policy locally");
-  assert.match(src, /<section[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*aria-labelledby=\{titleId\}[\s\S]*aria-describedby=\{copyId\}/, "renders a labelled, described dialog scoped to the detail pane (#5528)");
-  assert.match(src, /useFocusTrap\(open, dialogRef, \{\s*focusFirst: false,\s*restoreFocus: \(\) => !leavingForTasksRef\.current,\s*\}\)/, "Tab stays inside the gate; leaving for Tasks doesn't hand focus back to <body>");
-  assert.match(src, /\[background:var\(--backdrop-scrim\)\]/, "the scrim is the shared token, not a raw color");
+  assert.match(src, /<Modal[\s\S]*scope="container"[\s\S]*dismissible=\{false\}[\s\S]*breadcrumb=[\s\S]*description=/, "renders a labelled, described dialog scoped to the detail pane (#5528)");
+  assert.match(src, /restoreFocus=\{\(\) => !leavingForTasksRef\.current\}/, "Tab stays inside the gate; leaving for Tasks doesn't hand focus back to <body>");
+  assert.match(src, /<Modal/, "the scrim is the shared token, not a raw color");
   assert.doesNotMatch(src, /bg-black\//, "no raw black scrim");
   assert.match(src, /onOpenTasks \? \([\s\S]*?Open Tasks[\s\S]*?\) : null/, "keyboard users have an in-gate way out");
   assert.match(
@@ -19,10 +19,10 @@ test("the first-project gate is a detail-scoped dialog with no dismiss path", ()
     /const frame = window\.requestAnimationFrame\(\(\) => \{\s*wasVisibleRef\.current = true;\s*initialFocusTarget\?\.focus/,
     "initial focus is only marked done once it lands, so a cancelled frame retries",
   );
-  assert.match(src, /className="absolute inset-0[^\"]*"/, "covers only the detail area, not the whole viewport");
+  assert.match(src, /scope="container"/, "covers only the detail area, not the whole viewport");
   assert.doesNotMatch(src, /className="fixed inset-0/, "does not use a viewport-fixed scrim");
-  assert.match(src, /aria-hidden=\{pickerOpen \|\| undefined\}/, "hides the underlying gate subtree from assistive tech while the picker is open");
-  assert.match(src, /inert=\{pickerOpen \|\| undefined\}/, "makes the underlying gate subtree inert while the picker is open");
+  assert.match(src, /covered=\{pickerOpen\}/, "hides the underlying gate subtree from assistive tech while the picker is open");
+  assert.match(src, /covered=\{pickerOpen\}/, "makes the underlying gate subtree inert while the picker is open");
   assert.doesNotMatch(src, />\s*Close\s*</, "does not offer a close button");
   assert.doesNotMatch(src, />\s*Cancel\s*</, "does not offer a cancel button");
   assert.doesNotMatch(src, />\s*Skip\s*</, "does not offer a skip action");

@@ -312,7 +312,7 @@ assert.match(
 );
 
 // ── A11y: trap, announcer, roles ─────────────────────────────────────────────
-assert.match(source, /useFocusTrap\(true, dialogRef, \{ onEscape: handleClose \}\)/, "the circle traps focus and closes on Escape");
+assert.match(source, /<Modal open onClose=\{onClose\} size="reader" busy=\{submitting\}/, "the circle traps focus and closes on Escape");
 assert.match(source, /useAnnouncer\(\)/, "the circle announces through the shared live region");
 assert.match(
   source,

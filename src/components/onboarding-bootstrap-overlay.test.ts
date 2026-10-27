@@ -30,10 +30,11 @@ assert.match(
   /import\("@\/components\/onboarding-bootstrap-overlay"\)/,
   "the workspace loads the one-confirmation bootstrap surface",
 );
+assert.match(source, /breadcrumb=\{\["First run", "Set up Cave"\]\}/, "the shared heading uses the approved copy");
 assert.equal(
   source.match(/>\s*Set up Cave\s*</g)?.length,
-  2,
-  "the heading and one primary confirmation use the approved action copy",
+  1,
+  "one primary confirmation uses the approved action copy",
 );
 assert.match(
   source,
@@ -47,12 +48,12 @@ assert.match(
 );
 assert.match(
   source,
-  /useFocusTrap\(open && !diagnosticsOpen, dialogRef, \{ onEscape: dismiss \}\)/,
+  /<Modal[\s\S]*onClose=\{dismiss\}[\s\S]*covered=\{diagnosticsOpen\}/,
   "the outer trap yields while the nested diagnostics modal owns focus",
 );
 assert.match(
   source,
-  /inert=\{diagnosticsOpen \|\| undefined\}/,
+  /covered=\{diagnosticsOpen\}/,
   "the underlying setup dialog leaves interaction and the tab order",
 );
 assert.doesNotMatch(
@@ -67,7 +68,7 @@ assert.match(
 );
 assert.match(
   source,
-  /useFocusTrap\(open && !diagnosticsOpen[\s\S]*?useEffect\(\(\) => \{[\s\S]*?diagnosticsTriggerRef\.current\?\.focus\(\)/,
+  /useEffect\(\(\) => \{[\s\S]*?diagnosticsTriggerRef\.current\?\.focus\(\)/,
   "focus restoration runs after the outer trap effect reactivates",
 );
 assert.match(

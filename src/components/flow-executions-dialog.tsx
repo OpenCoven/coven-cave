@@ -120,7 +120,7 @@ export function FlowExecutionsDialog({
       open={open}
       onClose={onClose}
       breadcrumb={selectedSessionId ? ["Flow runs", "Transcript"] : ["Chat", "Flow runs"]}
-      wide
+      size="wide"
       footerActions={<Button onClick={onClose}>Close</Button>}
     >
       <div className="flex flex-col gap-4">

@@ -18,10 +18,12 @@ import { Icon, type IconName } from "@/lib/icon";
 import {
   acquirePortalLayerRoot,
   FocusTrapPortalLayersContext,
+  FocusTrapOwnerHiddenContext,
   isTopmostPortalLayerRoot,
   PortalLayerDepthContext,
   PortalLayerRootContext,
   usePortalLayerRootId,
+  usePortalLayerZIndex,
 } from "@/lib/use-focus-trap";
 import { computeSubmenuPosition } from "@/lib/submenu-position";
 
@@ -248,7 +250,7 @@ export function usePopoverEscapeLayer(active: boolean, close: () => void) {
  * complex flipping/collision use a real positioning library.
  */
 export function Popover({
-  open,
+  open: requestedOpen,
   onOpenChange,
   anchorRef,
   placement = "bottom-start",
@@ -260,12 +262,21 @@ export function Popover({
   ariaLabel,
   children,
 }: PopoverProps) {
+  const ownerHidden = useContext(FocusTrapOwnerHiddenContext);
+  const ownerHiddenRef = useRef(ownerHidden);
+  ownerHiddenRef.current = ownerHidden;
+  const open = requestedOpen && !ownerHidden;
+  useEffect(() => {
+    if (requestedOpen && ownerHidden) onOpenChange(false);
+  }, [requestedOpen, ownerHidden, onOpenChange]);
+
   const parentLayers = useContext(PopoverLayersContext);
   const parentLayerDepth = useContext(PortalLayerDepthContext);
   const focusTrapPortalLayers = useContext(FocusTrapPortalLayersContext);
   const inheritedEscapeTreeId = useContext(PopoverEscapeTreeContext);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const escapeRootId = usePortalLayerRootId();
+  const layerZIndex = usePortalLayerZIndex(open, escapeRootId, parentLayerDepth + 1);
   const isEscapeRoot = parentLayers === null;
   const ownEscapeTreeIdRef = useRef(0);
   const escapeHandlerIdRef = useRef(0);
@@ -447,14 +458,14 @@ export function Popover({
     const anchor = anchorRef.current;
     return () => {
       const active = document.activeElement;
-      if (!active || active === document.body) anchor?.focus?.();
+      if (!ownerHiddenRef.current && (!active || active === document.body)) anchor?.focus?.();
     };
   }, [open, anchorRef]);
 
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="ui-popover-portal">
+    <div className="ui-popover-portal" style={{ zIndex: layerZIndex }}>
       <div
         ref={popoverRef}
         className={["ui-popover", className ?? ""].filter(Boolean).join(" ")}
@@ -676,7 +687,11 @@ export function PopoverSubmenu({
   const wantsFirstItemFocus = useRef(false);
 
   // Grouped mode: openId decides; ungrouped fallback keeps local state.
-  const open = group ? group.openId === id : selfOpen;
+  const ownerHidden = useContext(FocusTrapOwnerHiddenContext);
+  const requestedOpen = group ? group.openId === id : selfOpen;
+  const open = requestedOpen && !ownerHidden;
+  const layerRootId = usePortalLayerRootId();
+  const layerZIndex = usePortalLayerZIndex(open, layerRootId, parentLayerDepth + 1);
   const setOpen = useCallback(
     (next: boolean) => {
       if (group) group.setOpenId(next ? id : group.openId === id ? null : group.openId);
@@ -684,6 +699,10 @@ export function PopoverSubmenu({
     },
     [group, id],
   );
+
+  useEffect(() => {
+    if (requestedOpen && ownerHidden) setOpen(false);
+  }, [requestedOpen, ownerHidden, setOpen]);
 
   const clearHoverTimer = () => {
     if (hoverTimer.current !== null) {
@@ -818,11 +837,11 @@ export function PopoverSubmenu({
       </button>
       {open && typeof document !== "undefined"
         ? createPortal(
-            <div className="ui-popover-portal">
+            <div className="ui-popover-portal" style={{ zIndex: layerZIndex }}>
               <div
                 ref={panelRef}
                 className="ui-popover ui-popover-submenu"
-                style={covered ? { ...style, visibility: "hidden" } : style}
+                style={{ ...style, ...(covered ? { visibility: "hidden" as const } : {}) }}
                 role={panelRole}
                 aria-label={typeof label === "string" ? label : undefined}
                 data-covered={covered || undefined}

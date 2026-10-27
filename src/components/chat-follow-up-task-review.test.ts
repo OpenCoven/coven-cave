@@ -16,8 +16,7 @@ assert.match(
 assert.match(source, /aria-label="Task title"/, "the task title is explicitly editable before creating");
 assert.match(source, /Create task/, "creation is an explicit review action");
 assert.match(source, /Cancel/, "review can be cancelled without creating a task");
-assert.match(source, /dismissOnEscape=\{!creating\}/, "escape dismissal is gated while creation is in flight");
-assert.match(source, /dismissOnBackdrop=\{!creating\}/, "backdrop dismissal is gated while creation is in flight");
+assert.match(source, /busy=\{creating\}/, "shared dismissal gate stays active while creation is in flight");
 assert.match(source, /error=\{error \?\? undefined\}/, "creation failures use the shared Field alert treatment");
 assert.match(source, /announce\(`Task "\$\{result\.card\.title\}" created from this chat\.`\)/, "successful creation is announced with its task title");
 assert.match(

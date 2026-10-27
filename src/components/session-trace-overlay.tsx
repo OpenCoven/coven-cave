@@ -159,7 +159,7 @@ export function SessionTraceOverlay({
     <Modal
       open
       onClose={onClose}
-      wide
+      size="wide"
       breadcrumb={["Sessions", target.title?.trim() || target.id, "Trace"]}
       footerActions={
         <Button size="sm" variant="ghost" onClick={onClose}>

@@ -193,6 +193,15 @@
   color: var(--accent-presence);
 }
 
+@media (pointer: coarse) {
+  .ui-modal .fa-segmented {
+    height: auto;
+    min-height: var(--touch-target);
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
 .fa-chip {
   position: relative;
   display: inline-flex;
@@ -2278,72 +2287,6 @@
    CSS that still looks live is how cave-k3a9u shipped a layout rule that had
    never once applied. */
 /* ── Stage overlays ─────────────────────────────────────────────────────── */
-.fa-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  background: color-mix(in oklch, var(--bg-base) 96%, transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  animation: fa-fade var(--duration-base) var(--ease-decelerate);
-}
-@keyframes fa-fade {
-  from { opacity: 0; transform: scale(0.985); }
-  to { opacity: 1; transform: scale(1); }
-}
-.fa-overlay__head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-hairline);
-  flex-wrap: wrap;
-}
-.fa-overlay__title { margin: 0; font-size: var(--text-md); font-weight: 650; }
-.fa-overlay__head .fa-ghost-btn { margin-left: auto; }
-.fa-overlay__body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-4);
-}
-
-.fa-contract-panel {
-  position: absolute;
-  left: var(--space-3);
-  bottom: var(--space-3);
-  z-index: 45;
-  width: min(760px, 72%);
-  height: min(560px, calc(100% - 24px));
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transform-origin: bottom left;
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 32%, transparent);
-  border-radius: var(--radius-panel);
-  background: var(--bg-elevated);
-  box-shadow: 0 40px 80px -34px color-mix(in oklch, var(--accent-presence) 25%, transparent),
-    0 14px 34px -14px color-mix(in oklch, var(--color-mix-dark) 60%, transparent);
-  animation: fa-grow-card var(--duration-slow) var(--ease-standard);
-}
-@keyframes fa-grow-card {
-  from { opacity: 0; transform: scale(0.82) translate(-6px, 10px); }
-  to { opacity: 1; transform: none; }
-}
-.fa-contract-panel__head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-hairline);
-  background: linear-gradient(135deg, var(--bg-hover), var(--bg-elevated));
-  flex-wrap: wrap;
-}
-.fa-contract-panel__head > b { font-size: var(--text-md); font-weight: 650; }
-.fa-contract-panel__head .fa-ghost-btn { margin-left: auto; }
 .fa-contract-panel__body {
   flex: 1;
   min-height: 0;
@@ -2962,7 +2905,6 @@
   .fa-scope__summary { flex: 1 1 100%; order: 9; }
   .fa-foot__meta { display: none; }
   .fa-pulse-panel { left: var(--space-4); }
-  .fa-contract-panel { width: calc(100% - var(--space-6)); }
 }
 
 @media (max-width: 720px) {
@@ -3014,7 +2956,6 @@
   .fa-panel-slot { height: 420px; }
   .fa-foot { padding: 10px var(--space-3); }
   .fa-pulse-panel { position: static; max-height: none; }
-  .fa-contract-panel { position: fixed; inset: var(--space-3); width: auto; height: auto; }
   .fa-contract-panel__body { grid-template-columns: minmax(0, 1fr); }
   .fa-contract-panel__list { border-right: 0; border-bottom: 1px solid var(--border-hairline); }
   .fa-foot-panel { position: static; }

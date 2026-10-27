@@ -12,12 +12,9 @@ assert.match(source, /role="option"/, "items have role=option");
 assert.match(source, /aria-controls=/, "input has aria-controls");
 assert.match(source, /aria-activedescendant=/, "input uses aria-activedescendant");
 assert.match(source, /aria-selected=/, "active item announced via aria-selected");
-// Dialog convention (use-focus-trap.ts): the trapped container must be
-// programmatically focusable.
-assert.match(
-  source,
-  /role="dialog"[\s\S]{0,120}tabIndex=\{-1\}/,
-  "dialog container carries tabIndex={-1} so the focus trap can seat focus",
-);
+// The canonical Modal now seats focus and owns Escape/Tab/return.
+assert.match(source, /<Modal\b/, "quick-open uses the shared modal shell");
+assert.match(source, /initialFocusRef=\{inputRef\}/, "quick-open starts at the search field");
+assert.doesNotMatch(source, /useFocusTrap\(|role="dialog"/, "quick-open has no duplicate trap/container");
 
 console.log("browser-quick-open.test.ts OK");

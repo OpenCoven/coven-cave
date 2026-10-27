@@ -273,6 +273,18 @@ BASELINES.inlineTsxStyles = 287;
 // Measured 284 on this branch at origin/main cb1598389.
 BASELINES.inlineTsxStyles = 284;
 
+// #6200: measured after shared Modal migrations and shell CSS removal.
+// Bank the actual scan counts, including prior baseline headroom.
+BASELINES.offScaleFontSizePx = 125;
+BASELINES.offScaleSpacingPx = 1364;
+BASELINES.offScaleRadiusPx = 209;
+// +1 (#6200): Modal's shared backdrop now carries the computed portal-layer
+// z-index for viewport and pane scope. Root bands and nested/sibling ordering
+// come from the live portal owner/depth; a static CSS token cannot hold that
+// number. This is runtime layering, with no inline color, spacing or radius.
+BASELINES.inlineTsxStyles = 285;
+
+
 // ── unit sanity for the codemod transform ───────────────────────────────────
 
 {

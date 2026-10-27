@@ -16,7 +16,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   Group,
   Panel,
@@ -49,7 +48,7 @@ import { StandardSelect } from "@/components/ui/select";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useCopy } from "@/lib/use-copy";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import type { Familiar } from "@/lib/types";
 import type { Card } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
@@ -142,20 +141,6 @@ function PatSetupModal({
   const removeConfirm = useArmedConfirm();
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { inputRef.current?.focus(); }, []);
-  // While a save is in flight, dismissal is deferred: closing mid-save would
-  // unmount under the pending setStates and leave the user unsure whether the
-  // PAT persisted (cave-b8ba).
-  const savingRef = useRef(false);
-  savingRef.current = saving;
-  const closeUnlessSaving = () => {
-    if (!savingRef.current) onClose();
-  };
-  // Trap Tab/Shift+Tab inside the modal and close on Escape. focusFirst is off
-  // so the username input's focus effect above keeps the initial focus.
-  useFocusTrap(true, dialogRef, { onEscape: closeUnlessSaving, focusFirst: false });
 
   async function save() {
     const trimmedPat = pat.trim();
@@ -193,33 +178,27 @@ function PatSetupModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      role="presentation"
-      onClick={closeUnlessSaving}
+    <Modal open onClose={onClose} title="Connect GitHub" busy={saving || removing} initialFocusRef={inputRef}
+      footerActions={<>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => void openExternalUrl(GITHUB_PAT_URL)}
+            >
+              Generate a PAT on GitHub →
+            </Button>
+            <Button
+              type="submit"
+              form="github-pat-connect-form"
+              variant="primary"
+              size="sm"
+              disabled={(!pat.trim() && !usernameInput.trim()) || saving}
+              loading={saving}
+            >
+              {saving ? "Verifying…" : "Save"}
+            </Button>
+</>}
     >
-      <div
-        ref={dialogRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="github-pat-modal-title"
-        onClick={(event) => event.stopPropagation()}
-        className="gh-pat-dialog"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Icon name="ph:github-logo" width={18} className="text-[var(--text-secondary)]" />
-            <h3 id="github-pat-modal-title" className="text-[length:var(--text-md)] font-semibold">Connect GitHub</h3>
-          </div>
-          <IconButton
-            icon="ph:x"
-            size="sm"
-            aria-label="Close"
-            onClick={onClose}
-          />
-        </div>
-
         <p className="text-[length:var(--text-sm)] text-[var(--text-muted)] mb-1">
           Enter your GitHub username to pull live public data (free, no auth needed).
         </p>
@@ -228,7 +207,7 @@ function PatSetupModal({
           Your PAT is stored only on this machine — never synced, never shared.
         </p>
 
-        <form
+        <form id="github-pat-connect-form"
           onSubmit={(e) => {
             e.preventDefault();
             void save();
@@ -271,24 +250,7 @@ function PatSetupModal({
             <p className="mb-3 text-[length:var(--text-xs)] text-[var(--color-danger)]">{error}</p>
           )}
 
-          <div className="flex items-center justify-between mt-4">
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={() => void openExternalUrl(GITHUB_PAT_URL)}
-            >
-              Generate a PAT on GitHub →
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              disabled={(!pat.trim() && !usernameInput.trim()) || saving}
-              loading={saving}
-            >
-              {saving ? "Verifying…" : "Save"}
-            </Button>
-          </div>
+
         </form>
 
         {canRemoveStoredPat && (
@@ -334,8 +296,7 @@ function PatSetupModal({
             GitHub authentication is supplied by the launch environment; manage that credential outside Cave.
           </p>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -523,7 +484,6 @@ function OpenChatAction({
       >
         <div onClick={(e) => e.stopPropagation()}>
           <GitHubActionPopover
-            positioned={false}
             mode="chat"
             item={item}
             familiars={familiars}
@@ -744,7 +704,6 @@ function AddToBoardAction({
       >
         <div onClick={(e) => e.stopPropagation()}>
           {mode ? <GitHubActionPopover
-            positioned={false}
             mode={mode}
             item={item}
             familiars={familiars}
@@ -907,23 +866,18 @@ function compactCount(n: number): string {
 const profileCache = new Map<string, UserProfile>();
 
 /**
- * Floating GitHub profile card. Anchored under the clicked chip, clamped to the
- * viewport, focus-trapped, and dismissed on Escape / outside click. Fetches the
+ * Compact GitHub profile preview. The shared Modal owns focus and dismissal. Fetches the
  * public profile on open (cache-first); a since-closed selection's response is
  * dropped.
  */
 function UserProfileCard({
   login,
-  anchor,
   onClose,
 }: {
   login: string;
-  anchor: DOMRect;
   onClose: () => void;
 }) {
   const [state, setState] = useState<ProfileState>({ status: "loading" });
-  const cardRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(true, cardRef, { onEscape: onClose, focusFirst: false });
 
   useEffect(() => {
     const cached = profileCache.get(login);
@@ -947,39 +901,10 @@ function UserProfileCard({
     return () => ctl.abort();
   }, [login]);
 
-  // Outside-click dismissal (deferred one tick so the opening click doesn't
-  // immediately close it).
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (cardRef.current && !cardRef.current.contains(e.target as Node)) onClose();
-    }
-    const id = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 30);
-    return () => { window.clearTimeout(id); document.removeEventListener("mousedown", onDoc); };
-  }, [onClose]);
-
-  // Clamp to the viewport: prefer opening just below the chip, flip up if it
-  // would overflow the bottom, and keep a gutter from the right edge.
-  const CARD_W = 288;
-  const left = Math.max(8, Math.min(anchor.left, window.innerWidth - CARD_W - 8));
-  const below = anchor.bottom + 6;
-  const flipUp = below + 210 > window.innerHeight;
-  const style: React.CSSProperties = flipUp
-    ? { left, bottom: window.innerHeight - anchor.top + 6, width: CARD_W }
-    : { left, top: below, width: CARD_W };
-
   const p = state.status === "ready" ? state.profile : null;
 
   return (
-    <div
-      ref={cardRef}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`GitHub profile for ${login}`}
-      tabIndex={-1}
-      className="gh-profile-card"
-      style={style}
-      onClick={(e) => e.stopPropagation()}
-    >
+    <Modal open onClose={onClose} title={`GitHub profile for ${login}`} size="compact">
       {state.status === "loading" ? (
         <div className="gh-profile-loading">Loading @{login}…</div>
       ) : state.status === "error" || !p ? (
@@ -1062,30 +987,23 @@ function UserProfileCard({
           </Button>
         </>
       )}
-    </div>
+    </Modal>
   );
 }
 
 /** Owns the single open profile card; children open it via {@link useProfileViewer}. */
 function GitHubProfileProvider({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState<{ login: string; anchor: DOMRect } | null>(null);
+  const [open, setOpen] = useState<{ login: string } | null>(null);
   const viewer = useMemo<ProfileViewer>(
     () => ({
-      open: (login, el) => setOpen({ login, anchor: el.getBoundingClientRect() }),
+      open: (login) => setOpen({ login }),
     }),
     [],
   );
   return (
     <ProfileViewerContext.Provider value={viewer}>
       {children}
-      {/* Portal to <body> so the fixed-position card escapes the workspace's
-          transformed content area — otherwise `position:fixed` resolves against
-          that transformed ancestor and the card lands offset by the nav width. */}
-      {open && typeof document !== "undefined" &&
-        createPortal(
-          <UserProfileCard login={open.login} anchor={open.anchor} onClose={() => setOpen(null)} />,
-          document.body,
-        )}
+      {open ? <UserProfileCard login={open.login} onClose={() => setOpen(null)} /> : null}
     </ProfileViewerContext.Provider>
   );
 }
@@ -2396,12 +2314,6 @@ function GitHubItemGlassPanel({
   // verbs. The choice sticks for the visit: triage opens it once, not per row.
   const [nextOpen, setNextOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const panelRef = useRef<HTMLElement | null>(null);
-  // Focused, this is a real modal: trap the tab ring inside it, return focus to
-  // whatever opened it, and let the hook own Escape. Inert while docked in the
-  // split, where the panel is just another region of the page.
-  useFocusTrap(focused, panelRef, { onEscape: onUnfocus });
-
   const toggle = useCallback((key: string) => {
     setOpen((prev) => ({ ...prev, [key]: prev[key] === false }));
   }, []);
@@ -2481,26 +2393,7 @@ function GitHubItemGlassPanel({
   ];
 
   const panel = (
-    <aside
-      ref={panelRef}
-      // Docked, it is a labelled region. Raised over the list behind a scrim it
-      // IS a modal, and saying so is what lets a screen reader treat it as one.
-      role={focused ? "dialog" : undefined}
-      aria-modal={focused ? true : undefined}
-      className={`gh-glass-panel gh-detail${focused ? " is-focused" : ""}`}
-      aria-label={`${detailLabel} details`}
-    >
-      {focused ? (
-        <div className="gh-detail-focusbar">
-          <button type="button" className="gh-detail-back focus-ring" onClick={onUnfocus}>
-            <Icon name="ph:caret-left" width={10} aria-hidden />
-            {backLabel}
-          </button>
-          <span className="gh-detail-spacer" />
-          <span className="gh-detail-esc">Esc to close</span>
-        </div>
-      ) : null}
-
+    <aside className={focused ? "gh-detail-content" : "gh-glass-panel gh-detail"} aria-label={`${detailLabel} details`}>
       <div className="gh-detail-mast">
         <div className="gh-detail-kindrow">
           <span className="gh-detail-kind" style={{ color: kindColor }}>
@@ -2516,7 +2409,7 @@ function GitHubItemGlassPanel({
           <CopyButton value={item.url} label="Copy the link to this item" />
         </div>
 
-        <h2 className="gh-detail-title">{detail?.title ?? item.title}</h2>
+        {!focused ? <h2 className="gh-detail-title">{detail?.title ?? item.title}</h2> : null}
 
         <div className="gh-detail-byline">
           {detail?.author ? <PersonChip person={detail.author} /> : null}
@@ -2741,13 +2634,10 @@ function GitHubItemGlassPanel({
   );
 
   if (!focused) return panel;
-  return createPortal(
-    <div className="gh-detail-overlay">
-      <div className="gh-detail-scrim" onClick={onUnfocus} aria-hidden />
-      {panel}
-    </div>,
-    document.body,
-  );
+  return <Modal open onClose={() => onUnfocus?.()} title={detail?.title ?? item.title} size="reader" bodyLayout="fill"
+    description={`${detailLabel}${item.number != null ? ` #${item.number}` : ""} · ${item.repo}`}
+    headerActions={<Button variant="ghost" size="sm" onClick={onUnfocus}>{backLabel}</Button>}
+  >{panel}</Modal>;
 }
 
 /** Where the focused read returns to — named, so the way out is never a guess. */
@@ -3284,17 +3174,6 @@ export function GitHubView({
     setOrgFilter("all");
     setRepoFilter("all");
   }, [setOrgFilter, setRepoFilter]);
-
-  // Esc leaves the focused read and returns to the split — the only way out
-  // that doesn't require finding a button.
-  useEffect(() => {
-    if (!focused) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); setFocused(false); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [focused]);
 
   return (
     <GitHubProfileProvider>

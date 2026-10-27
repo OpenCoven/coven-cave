@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
 import { openExternalUrl } from "@/lib/open-external";
 import { HOME_DRAFT_KEY, writeComposerDraft } from "@/lib/use-composer-draft";
@@ -189,8 +189,6 @@ function DraftCraftDetail({
   onDeleted?: () => void;
   onAdjustRoles?: (seed: CraftDrawerSeed) => void;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(true, ref, { onEscape: onClose });
   const { announce } = useAnnouncer();
   const craft = plugin.craft;
   const skills = craft?.bundled.skills ?? [];
@@ -321,35 +319,62 @@ function DraftCraftDetail({
   }, [announce, onClose, onDeleted, plugin.displayName, plugin.draftId, plugin.id]);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${plugin.displayName} draft`}
-        tabIndex={-1}
-        className="flex h-full w-full max-w-lg flex-col gap-4 overflow-y-auto border-l border-[var(--border-hairline)] bg-[var(--bg-base)] p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <MarketplaceLogo
-              id={plugin.id}
-              displayName={plugin.displayName}
-              logo={plugin.logo}
-              size="detail"
-            />
-            <div className="min-w-0">
-              <p className="text-[length:var(--text-xs)] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">Local draft</p>
-              <h2 className="truncate text-[length:var(--text-xl)] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
-              <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">{plugin.description}</p>
-            </div>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-            <Icon name="ph:x" width={16} />
-          </button>
-        </div>
-
+    <Modal open onClose={onClose} presentation="sheet-right" size="standard"
+      breadcrumb={["Local draft", plugin.displayName]} description={plugin.description} busy={deleting}
+      headerIcon={<MarketplaceLogo id={plugin.id} displayName={plugin.displayName} logo={plugin.logo} size="detail" />}
+      footerActions={<>
+          {onAdjustRoles ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon="ph:stack"
+              disabled={deleting || !fullDraft}
+              onClick={adjustRoles}
+              title="Reopen the create flow with this draft's roles pre-selected"
+            >
+              Adjust roles
+            </Button>
+          ) : null}
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:chat-circle-dots"
+            disabled={deleting}
+            onClick={refineInChat}
+            title="Open a chat where a familiar adjusts the bundle (recreate-and-replace)"
+          >
+            Refine in chat
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            leadingIcon="ph:git-pull-request"
+            disabled={deleting}
+            onClick={prepareForCatalog}
+            title="Open a chat that prepares the human-reviewed catalog PR"
+          >
+            Prepare for catalog
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            leadingIcon="ph:trash"
+            loading={deleting}
+            onClick={() => {
+              if (armedDelete) {
+                setArmedDelete(false);
+                void deleteDraft();
+              } else {
+                setArmedDelete(true);
+              }
+            }}
+            aria-label={armedDelete ? `Really delete draft ${plugin.displayName}? Click again to confirm` : `Delete draft ${plugin.displayName}`}
+          >
+            {armedDelete ? "Really delete?" : "Delete draft"}
+          </Button>
+</>}
+    >
+      <div className="flex flex-col gap-4">
         {/* Lifecycle strip (docs/craft-ux.md F8): where this draft stands and
             what the road to equipping actually is. */}
         <div className="craft-lifecycle-strip" aria-label="Craft lifecycle">
@@ -406,63 +431,13 @@ function DraftCraftDetail({
           </p>
         ) : null}
 
-        <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-[var(--border-hairline)] pt-3">
-          {onAdjustRoles ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              leadingIcon="ph:stack"
-              disabled={!fullDraft}
-              onClick={adjustRoles}
-              title="Reopen the create flow with this draft's roles pre-selected"
-            >
-              Adjust roles
-            </Button>
-          ) : null}
-          <Button
-            variant="secondary"
-            size="sm"
-            leadingIcon="ph:chat-circle-dots"
-            onClick={refineInChat}
-            title="Open a chat where a familiar adjusts the bundle (recreate-and-replace)"
-          >
-            Refine in chat
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            leadingIcon="ph:git-pull-request"
-            onClick={prepareForCatalog}
-            title="Open a chat that prepares the human-reviewed catalog PR"
-          >
-            Prepare for catalog
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            leadingIcon="ph:trash"
-            loading={deleting}
-            onClick={() => {
-              if (armedDelete) {
-                setArmedDelete(false);
-                void deleteDraft();
-              } else {
-                setArmedDelete(true);
-              }
-            }}
-            aria-label={armedDelete ? `Really delete draft ${plugin.displayName}? Click again to confirm` : `Delete draft ${plugin.displayName}`}
-          >
-            {armedDelete ? "Really delete?" : "Delete draft"}
-          </Button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 
 function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Props) {
-  const ref = useRef<HTMLDivElement | null>(null);
   type ConnState = { state: "idle" | "testing" | "reachable" | "unreachable"; message?: string };
   const [conn, setConn] = useState<ConnState>({ state: "idle" });
 
@@ -483,7 +458,6 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
       setConn({ state: "unreachable", message: err instanceof Error ? err.message : "check failed" });
     }
   }, [plugin.id]);
-  useFocusTrap(true, ref, { onEscape: onClose });
 
   // "Try it" hands the template body to the Home composer: write its draft
   // slot, close the detail, and navigate Home. Race-free — Home reads the
@@ -501,35 +475,20 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
   const state = plugin.unlisted ? "added" : pluginBadgeState(plugin);
   const decisionItems = detailDecisionItems(plugin);
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${plugin.displayName} details`}
-        className="flex h-full w-full max-w-md flex-col gap-4 overflow-y-auto border-l border-[var(--border-hairline)] bg-[var(--bg-base)] p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <MarketplaceLogo
-              id={plugin.id}
-              displayName={plugin.displayName}
-              logo={plugin.logo}
-              size="detail"
-            />
-            <div className="min-w-0">
-              <h2 className="truncate text-[length:var(--text-lg)] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
-              <p className="truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                {plugin.unlisted ? "Installed item · Local record" : `By ${plugin.author} · ${plugin.category}`}
-              </p>
-            </div>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-            <Icon name="ph:x" width={16} />
-          </button>
-        </div>
-
+    <Modal open onClose={onClose} presentation="sheet-right" size="standard"
+      title={plugin.displayName} description={plugin.unlisted ? "Installed item · Local record" : `By ${plugin.author} · ${plugin.category}`} busy={busy}
+      headerIcon={<MarketplaceLogo id={plugin.id} displayName={plugin.displayName} logo={plugin.logo} size="detail" />}
+      footerActions={<>
+          {state === "added" ? (
+            <Button variant="secondary" fullWidth leadingIcon="ph:check" loading={busy} onClick={onRemove}>Added — remove</Button>
+          ) : state === "unavailable" ? (
+            <Button variant="ghost" fullWidth disabled>Unavailable</Button>
+          ) : (
+            <Button variant="primary" fullWidth leadingIcon="ph:plus" loading={busy} onClick={onAdd}>Add to Cave</Button>
+          )}
+</>}
+    >
+      <div className="flex flex-col gap-4">
         {plugin.description ? <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">{plugin.description}</p> : null}
         {plugin.unlisted ? (
           <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
@@ -664,17 +623,8 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
           </Section>
         ) : null}
 
-        <div className="mt-auto pt-2">
-          {state === "added" ? (
-            <Button variant="secondary" fullWidth leadingIcon="ph:check" loading={busy} onClick={onRemove}>Added — remove</Button>
-          ) : state === "unavailable" ? (
-            <Button variant="ghost" fullWidth disabled>Unavailable</Button>
-          ) : (
-            <Button variant="primary" fullWidth leadingIcon="ph:plus" loading={busy} onClick={onAdd}>Add to Cave</Button>
-          )}
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

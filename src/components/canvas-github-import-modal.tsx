@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -48,6 +48,7 @@ export function CanvasGitHubImportModal({
     updateRepoUrl,
   } = useProjects({ enabled: open });
   const [fileUrl, setFileUrl] = useState("");
+  const fileUrlRef = useRef<HTMLInputElement>(null);
   const [fileUrlBlurred, setFileUrlBlurred] = useState(false);
   const [projectChoice, setProjectChoice] = useState(
     CREATE_CANVAS_IMPORT_PROJECT,
@@ -262,10 +263,10 @@ export function CanvasGitHubImportModal({
     <Modal
       open={open}
       onClose={onClose}
+      initialFocusRef={fileUrlRef}
       breadcrumb={["Canvas", "Import GitHub file"]}
       ariaDescribedBy="canvas-github-import-description"
-      dismissOnBackdrop={!busy}
-      dismissOnEscape={!busy}
+      busy={busy}
       footerActions={(
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>
@@ -293,6 +294,7 @@ export function CanvasGitHubImportModal({
         <label className="canvas-github-import__field">
           <span>GitHub file URL</span>
           <input
+            ref={fileUrlRef}
             className="focus-ring"
             value={fileUrl}
             onChange={(event) => {
@@ -305,7 +307,6 @@ export function CanvasGitHubImportModal({
             placeholder="https://github.com/owner/repo/blob/main/src/App.tsx"
             inputMode="url"
             autoComplete="url"
-            autoFocus
             aria-invalid={Boolean(sourceError) || undefined}
             aria-describedby={
               sourceError

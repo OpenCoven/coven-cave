@@ -70,26 +70,10 @@ describe("Code Desk action popovers stay portalled (cave-cadp4)", () => {
       path.join(root, "src/components/github-action-popover.tsx"),
       "utf8",
     );
-    assert.match(
-      actionPopover,
-      /positioned\s*=\s*true/,
-      "GitHubActionPopover takes a `positioned` prop, defaulting to its standalone behaviour",
-    );
-    assert.match(
-      actionPopover,
-      /positioned \? "absolute right-0 top-full/,
-      "and drops its own absolute placement when it is false",
-    );
-    // Every use inside a Popover must hand placement over.
-    const uses = view.split("<GitHubActionPopover").slice(1);
-    assert.equal(uses.length, 2, "two GitHubActionPopover call sites");
-    for (const use of uses) {
-      assert.match(
-        use.slice(0, 200),
-        /positioned=\{false\}/,
-        "a GitHubActionPopover inside a Popover must not position itself",
-      );
-    }
+    assert.doesNotMatch(actionPopover, /positioned|absolute right-0 top-full/, "action content delegates all placement to Popover");
+    assert.doesNotMatch(actionPopover, /aria-modal|useFocusTrap|addEventListener\("mousedown"/, "action content does not create a second modal or dismissal owner");
+    assert.match(actionPopover, /className="ui-popover-body"/, "action content uses the shared Popover body");
+    assert.equal(view.split("<GitHubActionPopover").length - 1, 2, "both action flows remain mounted through their Popover owners");
   });
 
   it("leaves dismissal to the Popover rather than re-adding document listeners", () => {

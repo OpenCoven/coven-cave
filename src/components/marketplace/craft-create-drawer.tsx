@@ -5,7 +5,7 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
@@ -79,7 +79,6 @@ type Props = {
 };
 
 export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Props) {
-  const ref = useRef<HTMLDivElement | null>(null);
   const [mode, setMode] = useState<CreateMode>(initialCreateMode);
   const [step, setStep] = useState<ExtractStep>("select");
   const [roles, setRoles] = useState<RoleEntry[]>([]);
@@ -111,7 +110,6 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
   // the load instead of leaving a dead-end error.
   const [rolesNonce, setRolesNonce] = useState(0);
   const { announce } = useAnnouncer();
-  useFocusTrap(open, ref, { onEscape: onClose });
 
   useEffect(() => {
     if (!open) {
@@ -384,33 +382,65 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
   if (!open) return null;
 
   return (
-    <div className="craft-create-drawer__backdrop" onClick={onClose}>
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Create Craft"
-        tabIndex={-1}
-        className="craft-create-drawer"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="craft-create-drawer__header">
-          <div className="craft-create-drawer__headline">
-            <p className="craft-create-drawer__eyebrow">Craft authoring</p>
-            <h2 className="craft-create-drawer__title">Create Craft</h2>
-            <p className="craft-create-drawer__subtitle">
-              {mode === "extract"
-                ? step === "preview"
-                  ? "Review the extracted bundle before saving the draft."
-                  : "Extract a reusable bundle from a familiar's roles."
-                : "Describe the Craft — a familiar builds and verifies the draft for you."}
-            </p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="focus-ring craft-create-drawer__close">
-            <Icon name="ph:x" width={16} />
-          </button>
-        </div>
-
+    <Modal open onClose={onClose} presentation="sheet-right" size="wide" busy={saving}
+      breadcrumb={["Craft authoring", "Create Craft"]}
+      description={mode === "extract"
+        ? step === "preview" ? "Review the extracted bundle before saving the draft." : "Extract a reusable bundle from a familiar's roles."
+        : "Describe the Craft — a familiar builds and verifies the draft for you."}
+      footerActions={<>
+          <Button variant="ghost" size="sm" disabled={saving} onClick={onClose}>Cancel</Button>
+          {mode === "describe" ? (
+            <Button
+              variant="primary"
+              size="sm"
+              leadingIcon="ph:sparkle"
+              disabled={!goal.trim() || awaiting || noRolesAnywhere}
+              onClick={() => void draftWithFamiliar()}
+            >
+              {awaiting ? "Drafting…" : "Draft with familiar"}
+            </Button>
+          ) : step === "preview" ? (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                leadingIcon="ph:arrow-left"
+                disabled={saving}
+                onClick={() => {
+                  setStep("select");
+                  announce("Back to role selection", "polite");
+                }}
+              >
+                Adjust roles
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                leadingIcon="ph:package-bold"
+                loading={saving}
+                disabled={!previewDraft}
+                onClick={save}
+              >
+                {seed && appliedSeedId.current === seed.draftId ? "Save changes" : "Save draft"}
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              leadingIcon="ph:magnifying-glass-bold"
+              disabled={!familiar || selectedRoleIds.size === 0}
+              onClick={() => {
+                setStep("preview");
+                announce("Draft preview ready", "polite");
+              }}
+            >
+              Preview draft
+            </Button>
+          )}
+</>}
+    >
+      <div className="flex flex-col gap-4">
         <Tabs
           items={CREATE_MODES}
           value={mode}
@@ -594,58 +624,7 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
           </>
         )}
 
-        <div className="craft-create-drawer__actions">
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          {mode === "describe" ? (
-            <Button
-              variant="primary"
-              size="sm"
-              leadingIcon="ph:sparkle"
-              disabled={!goal.trim() || awaiting || noRolesAnywhere}
-              onClick={() => void draftWithFamiliar()}
-            >
-              {awaiting ? "Drafting…" : "Draft with familiar"}
-            </Button>
-          ) : step === "preview" ? (
-            <>
-              <Button
-                variant="secondary"
-                size="sm"
-                leadingIcon="ph:arrow-left"
-                onClick={() => {
-                  setStep("select");
-                  announce("Back to role selection", "polite");
-                }}
-              >
-                Adjust roles
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                leadingIcon="ph:package-bold"
-                loading={saving}
-                disabled={!previewDraft}
-                onClick={save}
-              >
-                {seed && appliedSeedId.current === seed.draftId ? "Save changes" : "Save draft"}
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              leadingIcon="ph:magnifying-glass-bold"
-              disabled={!familiar || selectedRoleIds.size === 0}
-              onClick={() => {
-                setStep("preview");
-                announce("Draft preview ready", "polite");
-              }}
-            >
-              Preview draft
-            </Button>
-          )}
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

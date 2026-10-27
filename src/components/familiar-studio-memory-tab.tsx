@@ -43,7 +43,7 @@ export function FamiliarStudioMemoryTab({
 
       <Modal
         open={noteOpen}
-        wide
+        size="wide"
         onClose={() => setNoteOpen(false)}
         breadcrumb={["Familiars", familiar.display_name, "Add note"]}
         footerActions={(

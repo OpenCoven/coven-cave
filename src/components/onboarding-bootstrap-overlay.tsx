@@ -17,7 +17,7 @@ import {
   setOnboardingDialogOpen,
 } from "@/lib/onboarding-bootstrap-status";
 import { clearSetupBackgrounded, markSetupBackgrounded } from "@/lib/setup-events";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 type Props = {
@@ -80,7 +80,6 @@ export function OnboardingOverlay({
   const [requestError, setRequestError] = useState<string | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [runtimeReady, setRuntimeReady] = useState(false);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const diagnosticsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const restoreDiagnosticsFocusRef = useRef(false);
   const autoFinishFiredRef = useRef(false);
@@ -122,7 +121,6 @@ export function OnboardingOverlay({
     onDismiss();
   }, [onDismiss, persistDismissal]);
 
-  useFocusTrap(open && !diagnosticsOpen, dialogRef, { onEscape: dismiss });
 
   useEffect(() => {
     if (diagnosticsOpen || !restoreDiagnosticsFocusRef.current) return;
@@ -275,40 +273,66 @@ export function OnboardingOverlay({
 
   return (
     <>
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal={diagnosticsOpen ? undefined : true}
-        inert={diagnosticsOpen || undefined}
-        aria-label="Set up Cave"
-        tabIndex={-1}
-        className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[color-mix(in_oklch,var(--bg-base)_94%,transparent)] p-4 backdrop-blur-sm"
+      <Modal
+        open={open}
+        onClose={dismiss}
+        closeLabel={running ? "Run setup in background" : "Close setup"}
+        covered={diagnosticsOpen}
+        breadcrumb={["First run", "Set up Cave"]}
+        description="One confirmation prepares Cave’s local components, creates your defaults, and starts the local service. Existing setup is kept."
+        size="wide"
+        footerPills={<p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+            {state.complete
+              ? runtimeReady
+                ? "Cave is ready."
+                : "Local setup is complete. Install a chat runtime to start a chat."
+              : running
+                ? "Setup continues if you close this dialog."
+                : started
+                  ? "Setup is ready to resume."
+                  : "No provider credentials or administrator access are requested."}
+          </p>}
+        footerActions={<>
+            {state.complete ? (
+              <Button
+                variant="secondary"
+                loading={loading}
+                onClick={() => void request("POST", { confirm: true })}
+              >
+                Run setup again
+              </Button>
+            ) : null}
+            {!started && !state.complete ? (
+              <>
+                <Button variant="ghost" onClick={dismiss}>
+                  Not now
+                </Button>
+                <Button
+                  variant="primary"
+                  loading={loading}
+                  onClick={() => void request("POST", { confirm: true })}
+                >
+                  Set up Cave
+                </Button>
+              </>
+            ) : state.complete ? (
+              runtimeReady ? (
+                <Button variant="primary" onClick={finish}>
+                  Open Cave
+                </Button>
+              ) : (
+                <Button variant="ghost" onClick={finish}>
+                  Not now
+                </Button>
+              )
+            ) : running ? (
+              <Button variant="secondary" onClick={runInBackground}>
+                Run in background
+              </Button>
+            ) : null}
+        </>}
       >
-      <section className="w-full max-w-2xl rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] shadow-[var(--shadow-elevated)]">
-        <header className="flex items-start justify-between gap-4 border-b border-[var(--border-hairline)] p-5">
-          <div>
-            <p className="font-mono text-[length:var(--text-2xs)] uppercase tracking-[var(--tracking-eyebrow)] text-[var(--text-muted)]">
-              First run
-            </p>
-            <h1 className="mt-1 font-display text-[length:var(--text-xl)] font-semibold text-[var(--text-primary)]">
-              Set up Cave
-            </h1>
-            <p className="mt-2 max-w-xl text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
-              One confirmation prepares Cave’s local components, creates your
-              defaults, and starts the local service. Existing setup is kept.
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label={running ? "Run setup in background" : "Close setup"}
-            onClick={dismiss}
-            className="focus-ring grid size-8 shrink-0 place-items-center rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:x-bold" aria-hidden />
-          </button>
-        </header>
-
-        <div className="space-y-4 p-5">
+        <div className="space-y-4">
           <ol aria-label="Setup progress" className="grid gap-2">
             {state.stages.map((stage) => (
               <li
@@ -419,60 +443,7 @@ export function OnboardingOverlay({
           </div>
         </div>
 
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-hairline)] p-5">
-          <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
-            {state.complete
-              ? runtimeReady
-                ? "Cave is ready."
-                : "Local setup is complete. Install a chat runtime to start a chat."
-              : running
-                ? "Setup continues if you close this dialog."
-                : started
-                  ? "Setup is ready to resume."
-                  : "No provider credentials or administrator access are requested."}
-          </p>
-          <div className="flex items-center gap-2">
-            {state.complete ? (
-              <Button
-                variant="secondary"
-                loading={loading}
-                onClick={() => void request("POST", { confirm: true })}
-              >
-                Run setup again
-              </Button>
-            ) : null}
-            {!started && !state.complete ? (
-              <>
-                <Button variant="ghost" onClick={dismiss}>
-                  Not now
-                </Button>
-                <Button
-                  variant="primary"
-                  loading={loading}
-                  onClick={() => void request("POST", { confirm: true })}
-                >
-                  Set up Cave
-                </Button>
-              </>
-            ) : state.complete ? (
-              runtimeReady ? (
-                <Button variant="primary" onClick={finish}>
-                  Open Cave
-                </Button>
-              ) : (
-                <Button variant="ghost" onClick={finish}>
-                  Not now
-                </Button>
-              )
-            ) : running ? (
-              <Button variant="secondary" onClick={runInBackground}>
-                Run in background
-              </Button>
-            ) : null}
-          </div>
-        </footer>
-      </section>
-      </div>
+      </Modal>
       {state.failure?.diagnostics && diagnosticsOpen ? (
         <OnboardingSetupDiagnosticsModal
           diagnostics={state.failure.diagnostics}

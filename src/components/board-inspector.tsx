@@ -3,7 +3,6 @@
 import { SearchInput } from "@/components/ui/search-input";
 
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type {
   BoardAgenticEnhanceState,
@@ -44,7 +43,7 @@ import { StandardSelect } from "@/components/ui/select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
 import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat-tab-events";
@@ -1742,7 +1741,10 @@ export function BoardInspector({ card: listCard, familiars, sessions, projects, 
     replaceListCard(next);
   };
   const dtPrefs = useDateTimePrefs();
-  const [closing, setClosing] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [lifecycleBusy, setLifecycleBusy] = useState<CardLifecycle | null>(null);
   const [lifecycleErr, setLifecycleErr] = useState<string | null>(null);
@@ -1883,17 +1885,11 @@ export function BoardInspector({ card: listCard, familiars, sessions, projects, 
             ...eligibleFamiliars.map((familiar) => ({ value: familiar.id, label: familiar.display_name })),
           ];
 
-  const close = () => { setClosing(true); setTimeout(onClose, 180); };
-
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(!closing, dialogRef, { onEscape: close });
-
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
-    document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const close = () => {
+    // Commit the editable title's blur contract before unmounting on Escape.
+    titleInputRef.current?.blur();
+    onClose();
+  };
 
   const addLabel = () => {
     const l = newLabel.trim();
@@ -1918,21 +1914,37 @@ export function BoardInspector({ card: listCard, familiars, sessions, projects, 
     } finally { setLifecycleBusy(null); }
   };
 
-  if (typeof document === "undefined") return null;
-
-  // Portal to <body> so the drawer's `position: fixed` resolves against the
-  // viewport, NOT the `.cave-mode-fade` mode wrapper. That wrapper retains a
-  // transform from its `cave-mode-in … both` animation, which silently makes
-  // it the containing block for fixed descendants — so an inline drawer
-  // anchored its `right:0`/`width:480px` to the (narrower, inset) detail panel
-  // instead of the window. Symptoms: a right-edge gap on desktop and left-
-  // clipped content on narrow viewports. Mirrors the ui/Modal portal pattern.
-  return createPortal(
-    <>
-      <div className="board-drawer-backdrop" onClick={close} />
-      <div ref={dialogRef} className={`board-drawer${closing ? " board-drawer--closing" : ""}`} role="dialog" aria-modal aria-label="Card inspector" tabIndex={-1}>
-        <div className="board-drawer-header">
-          <input
+  return (
+    <Modal open onClose={close} title="Card inspector" presentation="sheet-right" size="standard"
+      busy={deleting || Boolean(lifecycleBusy)} initialFocusRef={titleInputRef}
+      footerPills={deleteError ? <span role="alert">{deleteError}</span> : undefined}
+      footerActions={<>
+          {deleteConfirm ? (
+            <div className="board-drawer-confirm">
+              <span className="board-drawer-confirm-text">Delete this card?</span>
+              <button type="button" className="board-toolbar-btn" disabled={deleting} onClick={() => setDeleteConfirm(false)}>Cancel</button>
+              <button type="button" className="board-drawer-delete-btn board-drawer-delete-btn--solid"
+                disabled={deleting || Boolean(lifecycleBusy)}
+                onClick={async () => {
+                  setDeleting(true); setDeleteError(null);
+                  try { await onDelete(card.id); close(); }
+                  catch (error) {
+                    const message = error instanceof Error ? error.message : "Could not delete this card.";
+                    setDeleteError(message); announce(message, "assertive");
+                  } finally { setDeleting(false); }
+                }}>
+                <Icon name="ph:trash" width={11} /> Delete
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="board-drawer-delete-btn" disabled={Boolean(lifecycleBusy)} onClick={() => setDeleteConfirm(true)}>
+              <Icon name="ph:trash" width={11} /> Delete
+            </button>
+          )}
+          <button type="button" className="board-toolbar-btn" disabled={deleting || Boolean(lifecycleBusy)} onClick={close}>Close</button>
+</>}
+    >
+      <div className="mb-4">          <input ref={titleInputRef}
             className="board-drawer-title-input"
             defaultValue={card.title}
             aria-label="Card title"
@@ -1945,12 +1957,7 @@ export function BoardInspector({ card: listCard, familiars, sessions, projects, 
               if (next && next !== card.title) onPatch(card.id, { title: next });
               else e.target.value = card.title;
             }}
-          />
-          <button type="button" className="board-drawer-close" onClick={close} aria-label="Close">
-            <Icon name="ph:x-bold" width={12} />
-          </button>
-        </div>
-
+          /></div>
         <div className="board-drawer-body">
           <div className="board-drawer-meta-card">
             <div className="board-drawer-grid-2">
@@ -2392,28 +2399,10 @@ export function BoardInspector({ card: listCard, familiars, sessions, projects, 
           <BoardInspectorDebug card={card} />
         </div>
 
-        <div className="board-drawer-footer">
-          {deleteConfirm ? (
-            <div className="board-drawer-confirm">
-              <span className="board-drawer-confirm-text">Delete this card?</span>
-              <button type="button" className="board-toolbar-btn" onClick={() => setDeleteConfirm(false)}>Cancel</button>
-              <button type="button" className="board-drawer-delete-btn board-drawer-delete-btn--solid"
-                onClick={async () => { await onDelete(card.id); close(); }}>
-                <Icon name="ph:trash" width={11} /> Delete
-              </button>
-            </div>
-          ) : (
-            <button type="button" className="board-drawer-delete-btn" onClick={() => setDeleteConfirm(true)}>
-              <Icon name="ph:trash" width={11} /> Delete
-            </button>
-          )}
-          <button type="button" className="board-toolbar-btn" onClick={close}>Close</button>
-        </div>
-      </div>
-    </>,
-    document.body,
+    </Modal>
   );
 }
+
 function safeHref(value: string): string | null {
   try {
     const url = new URL(value);

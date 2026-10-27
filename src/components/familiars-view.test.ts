@@ -352,7 +352,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /role="dialog"[\s\S]*aria-modal="true"/,
+  /<Modal open onClose=\{onClose\} title=\{`Memory for \$\{familiar.display_name\}`\} size="reader" bodyLayout="fill"/,
   "Overlay exposes modal dialog semantics",
 );
 

@@ -5,8 +5,8 @@
  *
  * Ported from the Claude Design handoff "Daily Report - Redesign.dc.html"
  * (sessions / reminder / share card / all chapters). The parent owns which
- * modal is open and owns the Escape key; this module owns the dialog chrome,
- * the focus trap, and the rendering of `DayModel` facts.
+ * modal is open; the shared Modal owns chrome and keyboard focus. This module
+ * renders `DayModel` facts and feature actions.
  *
  * Everything shown here is derived from real model fields. Where the mock
  * showed data the cave does not hold (per-session uncommitted diffs, "fired
@@ -15,13 +15,15 @@
  * done, audio narration) are omitted rather than shipped dead.
  */
 
-import { type JSX, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type JSX, useCallback, useEffect, useRef, useState } from "react";
 
 import type { InboxItem } from "@/lib/cave-inbox";
 import { itemHasTarget, itemHref } from "@/lib/daily-report";
 import { clockLabel, type Chapter, type DayModel } from "@/lib/daily-report-day";
 import { Icon, type IconName } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 
 import "@/styles/daily-report-modals.css";
 
@@ -122,79 +124,6 @@ function readMinutes(chapters: Chapter[]): number {
   return Math.max(1, Math.round(words / 200));
 }
 
-// ── shell ───────────────────────────────────────────────────────────────────
-
-type ShellProps = {
-  /** Dialog accessible name. */
-  label: string;
-  /** Mono eyebrow, left of the slash. */
-  kicker: string;
-  /** Sentence-case title, right of the slash. */
-  title: string;
-  size: "sessions" | "reminder" | "share" | "chapters";
-  onClose: () => void;
-  children: ReactNode;
-};
-
-function ModalShell({ label, kicker, title, size, onClose, children }: ShellProps): JSX.Element {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-
-  // Repo-wide overlay contract: focus moves in on open, Tab cycles inside,
-  // focus returns to the opener on unmount. Escape stays the parent's.
-  useFocusTrap(true, dialogRef);
-
-  return (
-    <div className="drd-modal-backdrop" onClick={onClose}>
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={label}
-        tabIndex={-1}
-        className={`drd-modal-dialog drd-modal-dialog--${size}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="drd-modal-head">
-          <span className="drd-modal-kicker">{kicker}</span>
-          <span className="drd-modal-sep" aria-hidden="true">
-            /
-          </span>
-          <span className="drd-modal-heading">{title}</span>
-          <button
-            type="button"
-            className="drd-modal-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <Icon name="ph:x" aria-hidden />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({
-  icon,
-  title,
-  body,
-}: {
-  icon: IconName;
-  title: string;
-  body: string;
-}): JSX.Element {
-  return (
-    <div className="drd-modal-empty">
-      <span className="drd-modal-empty__icon">
-        <Icon name={icon} aria-hidden />
-      </span>
-      <span className="drd-modal-empty__title">{title}</span>
-      <p className="drd-modal-empty__body">{body}</p>
-    </div>
-  );
-}
-
 // ── sessions ────────────────────────────────────────────────────────────────
 
 function SessionsModal({
@@ -206,19 +135,19 @@ function SessionsModal({
 }): JSX.Element {
   const items = model.carries.openItems;
   return (
-    <ModalShell
-      label="Carries into tomorrow"
-      kicker="CARRIES INTO TOMORROW"
-      title={`${items.length} ${items.length === 1 ? "thread" : "threads"} left mid-thought`}
-      size="sessions"
+    <Modal
+      open
+      breadcrumb={["Daily report", "Carries into tomorrow"]}
+      description={`${items.length} ${items.length === 1 ? "thread" : "threads"} left mid-thought`}
+      size="wide"
       onClose={onClose}
     >
-      <div className="drd-modal-body">
+      <>
         {items.length === 0 ? (
           <EmptyState
             icon="ph:check-circle"
-            title="Nothing carries into tomorrow"
-            body="Every thread from this day was answered, merged or closed."
+            headline="Nothing carries into tomorrow"
+            subtitle="Every thread from this day was answered, merged or closed."
           />
         ) : (
           <div className="drd-modal-list">
@@ -235,7 +164,7 @@ function SessionsModal({
                   </span>
                 </span>
                 {itemHasTarget(item) ? (
-                  <a className="drd-modal-row__action" href={itemHref(item)} onClick={onClose}>
+                  <a className="ui-btn ui-btn--secondary drd-modal-row__action" href={itemHref(item)} onClick={onClose}>
                     {actionLabel(item)}
                   </a>
                 ) : null}
@@ -247,8 +176,8 @@ function SessionsModal({
             </p>
           </div>
         )}
-      </div>
-    </ModalShell>
+      </>
+    </Modal>
   );
 }
 
@@ -266,19 +195,20 @@ function ReminderModal({
   const repeat = item ? recurrenceLabel(item.recurrence) : null;
 
   return (
-    <ModalShell
-      label="Next reminder"
-      kicker="REMINDER"
-      title={when ?? "Nothing scheduled"}
-      size="reminder"
+    <Modal
+      open
+      breadcrumb={["Daily report", "Next reminder"]}
+      description={when ?? "Nothing scheduled"}
+      size="standard"
       onClose={onClose}
+      footerActions={item ? <a className="ui-btn ui-btn--secondary focus-ring" href={itemHref(item)} onClick={onClose}>Open in Rituals</a> : null}
     >
-      <div className="drd-modal-body">
+      <>
         {!item ? (
           <EmptyState
             icon="ph:bell"
-            title="No reminder scheduled"
-            body="Nothing is queued to fire after this day. Ask a familiar to set one and it will show up here."
+            headline="No reminder scheduled"
+            subtitle="Nothing is queued to fire after this day. Ask a familiar to set one and it will show up here."
           />
         ) : (
           <>
@@ -300,16 +230,11 @@ function ReminderModal({
                 </div>
               </div>
             </div>
-            <div className="drd-modal-foot">
-              <a className="drd-modal-link" href={itemHref(item)} onClick={onClose}>
-                <Icon name="ph:arrow-square-out" aria-hidden />
-                Open in Rituals
-              </a>
-            </div>
+
           </>
         )}
-      </div>
-    </ModalShell>
+      </>
+    </Modal>
   );
 }
 
@@ -357,14 +282,16 @@ function ShareModal({
   ];
 
   return (
-    <ModalShell
-      label="Share card"
-      kicker="SHARE CARD"
-      title={`${dateLabel} · 1200×630`}
-      size="share"
+    <Modal
+      open
+      breadcrumb={["Daily report", "Share card"]}
+      description={`${dateLabel} · 1200×630`}
+      footerPills={<span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">The card freezes with the day&rsquo;s facts.</span>}
+      footerActions={<Button variant="secondary" leadingIcon={copied ? "ph:check-circle" : "ph:link-simple"} onClick={copy}>{copied ? "Link copied" : "Copy link"}</Button>}
+      size="wide"
       onClose={onClose}
     >
-      <div className="drd-modal-body">
+      <>
         {shareImageUrl ? (
           <div className="drd-modal-card drd-modal-card--image">
             <img src={shareImageUrl} alt="" />
@@ -392,26 +319,9 @@ function ShareModal({
             </div>
           </div>
         )}
-        <div className="drd-modal-foot">
-          <span className="drd-modal-note drd-modal-note--inline">
-            The card freezes with the day&rsquo;s facts.
-          </span>
-          <button type="button" className="drd-modal-button" onClick={copy}>
-            {copied ? (
-              <>
-                <Icon name="ph:check-circle" aria-hidden />
-                Link copied
-              </>
-            ) : (
-              <>
-                <Icon name="ph:link-simple" aria-hidden />
-                Copy link
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    </ModalShell>
+
+      </>
+    </Modal>
   );
 }
 
@@ -433,19 +343,21 @@ function ChaptersModal({
   const last = clockLabel(model.window.lastAt);
 
   return (
-    <ModalShell
-      label="The whole day"
-      kicker="THE WHOLE DAY"
-      title={`${chapters.length} ${chapters.length === 1 ? "chapter" : "chapters"} · ${readMinutes(chapters)} min read`}
-      size="chapters"
+    <Modal
+      open
+      breadcrumb={["Daily report", "The whole day"]}
+      description={`${chapters.length} ${chapters.length === 1 ? "chapter" : "chapters"} · ${readMinutes(chapters)} min read`}
+      size="reader"
+      footerPills={narrativeByline ? <span className="drd-modal-byline"><Icon name="ph:sparkle" aria-hidden />{narrativeByline}</span> : null}
+      footerActions={<Button variant="secondary" onClick={onClose}>Back to the day</Button>}
       onClose={onClose}
     >
-      <div className="drd-modal-body drd-modal-body--read">
+      <>
         {chapters.length === 0 ? (
           <EmptyState
             icon="ph:book-open"
-            title="A day without chapters"
-            body="Nothing timestamped happened, so there is no narrative to tell yet."
+            headline="A day without chapters"
+            subtitle="Nothing timestamped happened, so there is no narrative to tell yet."
           />
         ) : (
           <>
@@ -483,25 +395,11 @@ function ChaptersModal({
               );
             })}
 
-            <div className="drd-modal-foot drd-modal-foot--read">
-              {narrativeByline ? (
-                <span className="drd-modal-byline">
-                  <Icon name="ph:sparkle" aria-hidden />
-                  {narrativeByline}
-                </span>
-              ) : null}
-              <button
-                type="button"
-                className="drd-modal-button drd-modal-button--primary"
-                onClick={onClose}
-              >
-                Back to the day
-              </button>
-            </div>
+
           </>
         )}
-      </div>
-    </ModalShell>
+      </>
+    </Modal>
   );
 }
 

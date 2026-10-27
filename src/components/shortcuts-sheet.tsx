@@ -18,7 +18,7 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
       open={open}
       onClose={onClose}
       breadcrumb={["CovenCave", "Keyboard shortcuts"]}
-      wide
+      size="wide"
       ariaLabel="Keyboard shortcuts"
     >
       <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">

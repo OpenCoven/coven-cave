@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const src = readFileSync(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
 
 assert.match(src, /export function WorkspaceRail\(/, "exports WorkspaceRail");
-assert.match(src, /className=\{`workspace-rail\$\{isFullscreen \? " workspace-rail--fullscreen" : ""\}`\}/, "root class includes fullscreen modifier state");
+assert.match(src, /className=\{`workspace-rail\$\{isFullscreen \? " workspace-rail--fullscreen" : ""\}/, "root class includes fullscreen modifier state");
 assert.match(src, /aria-label="Code rail"/, "labels the rail region");
 for (const t of ["Changes", "Files", "Terminal"]) {
   assert.match(src, new RegExp(`aria-label="${t}"`), `has a ${t} tab`);

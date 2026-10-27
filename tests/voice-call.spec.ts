@@ -69,6 +69,7 @@ async function openVoiceCall(page: Page, failFirst = false) {
   await call.click();
   const dialog = page.getByRole("dialog", { name: "Voice acceptance", exact: true });
   await expect(dialog).toBeVisible();
+  await dialog.evaluate(async element => { await Promise.all(element.getAnimations().map(animation => animation.finished)); });
   return { dialog, call, saved };
 }
 
@@ -109,7 +110,7 @@ test("voice controls stay reachable in a narrow viewport with keyboard focus con
     expect(bounds!.height).toBeGreaterThanOrEqual(44);
   }
   await expect(dialog.getByRole("textbox", { name: "Reply without speaking" })).toBeInViewport();
-  await dialog.getByRole("button", { name: "End call" }).focus();
+  await dialog.getByRole("button", { name: "End call", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect.poll(() => dialog.evaluate(el => el.contains(document.activeElement))).toBe(true);
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -120,7 +121,7 @@ test("voice controls stay reachable in a narrow viewport with keyboard focus con
     }, { theme, mode });
     await page.screenshot({ path: test.info().outputPath(`voice-${theme}-${mode}.png`), animations: "disabled" });
   }
-  await dialog.getByRole("button", { name: "End call" }).click();
+  await dialog.getByRole("button", { name: "End call", exact: true }).click();
   await expect(dialog).toHaveCount(0);
 });
 
@@ -151,7 +152,7 @@ test("fullscreen game keeps live captions above play and exposes full history", 
   await page.keyboard.press("Escape");
   await expect(captions).toBeVisible();
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "End call" }).click();
+  await dialog.getByRole("button", { name: "End call", exact: true }).click();
 });
 
 test("voice selection saves and reconnects with preserved history and mute", async ({ page }) => {
@@ -178,7 +179,7 @@ test("voice selection saves and reconnects with preserved history and mute", asy
   expect(saved).toEqual([{ voiceProvider: "elevenlabs", voiceModel: "eleven_flash_v2_5", voiceName: "EXAVITQu4vr4xnSDxMaL" }]);
   await expect(dialog.getByRole("log", { name: "Call transcript" })).toContainText("Keep this conversation.");
   await expect.poll(() => page.evaluate(() => (window as any).__voiceAcceptance.contexts.filter((c: AudioContext) => c.state === "closed").length)).toBeGreaterThan(0);
-  await dialog.getByRole("button", { name: "End call" }).click();
+  await dialog.getByRole("button", { name: "End call", exact: true }).click();
 });
 
 test("long game captions follow new words in a narrow viewport", async ({ page }) => {
@@ -202,5 +203,5 @@ test("long game captions follow new words in a narrow viewport", async ({ page }
   expect((await reply.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await reply.click();
   expect((await dialog.getByRole("button", { name: "Cancel reply" }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  await dialog.getByRole("button", { name: "End call" }).click();
+  await dialog.getByRole("button", { name: "End call", exact: true }).click();
 });

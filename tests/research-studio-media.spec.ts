@@ -584,7 +584,7 @@ async function verifyPlaybackAndDownload(page: Page, viewer: Locator) {
   // fetching playable data. Check both stages in their actual order.
   await expect.poll(() => player.evaluate(node => (node as HTMLMediaElement).readyState)).toBeGreaterThanOrEqual(1);
   const tabKey = page.context().browser()?.browserType().name() === "webkit" ? "Alt+Tab" : "Tab";
-  await viewer.getByRole("button", { name: "Close viewer", exact: true }).focus();
+  await viewer.getByLabel("Close", { exact: true }).focus();
   for (let index = 0; index < 16 && !await player.evaluate((node) => node === document.activeElement); index += 1) {
     await page.keyboard.press(tabKey);
   }
@@ -894,7 +894,7 @@ test.describe("Research Studio media honesty and playback", () => {
         viewer.getByRole("link", { name: /Download media/ }),
       ).toHaveAttribute("href", /download=1/);
       await viewer
-        .getByRole("button", { name: "Close", exact: true })
+        .getByLabel("Close", { exact: true })
         .click();
     }
 
@@ -943,7 +943,9 @@ test("blog directions keep keyboard focus and submit all editorial choices", asy
       document.documentElement.dataset.mode = mode;
     }, { theme, mode });
     await expect(config).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath(`blog-${theme}-${mode}.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`blog-${theme}-${mode}.png`), animations: "disabled" });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
   }
   await config.getByRole("button", { name: /Generate Blog/ }).click();
   await expect.poll(() => submitted?.directions).toBe('Keep citations.\n\nVisual direction: ["Diagrams"]\n\nTone: ["Technical"]\n\nAudience: ["Researchers","Platform engineers"]');

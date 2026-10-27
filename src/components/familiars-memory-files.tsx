@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useMemo, useState } from "react";
+import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -48,10 +48,6 @@ type MemoryReaderModalProps = {
 
 export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalProps) {
   const { text, error } = useMemoryFile(path);
-  const panelRef = useRef<HTMLDivElement>(null);
-  // Trap focus inside the reader + Escape-to-close + restore focus to the opener.
-  useFocusTrap(true, panelRef, { onEscape: onClose });
-
   const heading = title ?? path.split("/").pop() ?? "Memory";
   const readerDocument = useMemo(
     () => parseMarkdownReaderDocument(text ?? "", heading),
@@ -59,33 +55,7 @@ export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalPro
   );
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Memory reader: ${heading}`}
-    >
-      <div
-        ref={panelRef}
-        tabIndex={-1}
-        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl focus:outline-none"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
-          <Icon name="ph:book-open" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-          <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-secondary)]" title={path}>
-            {heading}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="focus-ring ml-1 flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-            aria-label="Close memory reader"
-          >
-            <Icon name="ph:x-bold" width={11} aria-hidden />
-          </button>
-        </div>
+    <Modal open onClose={onClose} breadcrumb={["Memory", heading]} size="reader" bodyLayout="fill">
         <div className="min-h-0 flex-1">
           {error ? (
             <p className="p-6 text-[length:var(--text-sm)] text-[var(--color-warning)]">{error}</p>
@@ -106,8 +76,7 @@ export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalPro
             />
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

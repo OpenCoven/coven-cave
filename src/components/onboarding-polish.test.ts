@@ -7,38 +7,14 @@ const source = [
   readFileSync(new URL("./onboarding-model.ts", import.meta.url), "utf8"),
 ].join("\n");
 
-// Setup status actions stay together as one compact row. On narrow panes the
-// row scrolls within its own width instead of wrapping or widening the page.
-const setupHeader = source.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
-const setupActionsMatch = setupHeader.match(
-  /<div\s+className="([^"]*\boverflow-x-auto\b[^"]*)"/,
-);
-const setupActionsClasses = setupActionsMatch?.[1]?.split(/\s+/) ?? [];
-for (const className of [
-  "flex",
-  "w-full",
-  "flex-nowrap",
-  "items-center",
-  "gap-2",
-  "overflow-x-auto",
-  "lg:w-auto",
-  "lg:shrink-0",
-]) {
-  assert.ok(
-    setupActionsClasses.includes(className),
-    `setup actions retain ${className} without pinning harmless class order`,
-  );
-}
-assert.equal(
-  setupHeader.match(/focus-ring-inset/g)?.length,
-  2,
-  "scrollable setup actions keep their focus indicator inside the clipped row",
-);
-assert.equal(
-  setupHeader.match(/shrink-0 whitespace-nowrap/g)?.length,
-  3,
-  "each setup status action keeps its label on one line",
-);
+// Setup actions use the shared wrapping header, which keeps controls reachable
+// in narrow viewports without requiring horizontal toolbar scrolling.
+const setupHeader = source.match(/headerActions=\{<>[\s\S]*?<\/>\}/)?.[0] ?? "";
+assert.match(setupHeader, /Re-check/, "the shared header retains the status refresh action");
+assert.match(setupHeader, /Copy diagnostics/, "the shared header retains diagnostic export");
+const modalCss = readFileSync(new URL("../styles/globals/primitives.css", import.meta.url), "utf8");
+assert.match(modalCss, /\.ui-modal-header-actions \{[\s\S]*?flex-wrap: wrap/, "header actions wrap within the modal");
+assert.equal(setupHeader.match(/focus-ring-inset/g)?.length, 2, "setup actions retain visible focus indicators");
 
 assert.doesNotMatch(
   source,

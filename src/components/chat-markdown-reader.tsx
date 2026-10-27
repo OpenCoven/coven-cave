@@ -3,20 +3,17 @@
 import "@/styles/chat-spec-card.css";
 
 import {
-  useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { readerOutline, readingStats } from "@/lib/reader-outline";
 import { parseMdDocument } from "@/lib/md-frontmatter";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -79,11 +76,9 @@ export function ChatMarkdownReader({
 }: ChatMarkdownReaderProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const documentRef = useRef<HTMLDivElement | null>(null);
   const progressRef = useRef<HTMLDivElement | null>(null);
   const headingsRef = useRef<HTMLElement[]>([]);
-  const titleId = useId();
   const parsedDocument = useMemo(() => parseMdDocument(markdown ?? ""), [markdown]);
   const outline = useMemo(() => readerOutline(parsedDocument.body), [parsedDocument.body]);
   // Keep source comments and formatting intact; exports still use `markdown`.
@@ -91,8 +86,6 @@ export function ChatMarkdownReader({
     ? markdown.slice(0, markdown.length - parsedDocument.body.length).trimEnd()
     : null;
 
-  const close = useCallback(() => onClose(), [onClose]);
-  useFocusTrap(true, dialogRef, { onEscape: close });
 
   useEffect(() => {
     setActiveId(outline[0]?.id ?? null);
@@ -187,36 +180,12 @@ export function ChatMarkdownReader({
         .join(" · ")
     : metaPrefix ?? "";
 
-  const reader = (
-    <div
-      className="chat-spec-reader__backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        className="chat-spec-reader"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-      >
-        <div className="chat-spec-reader__progress" aria-hidden>
-          <div ref={progressRef} className="chat-spec-reader__progress-bar" />
-        </div>
-        <header className="chat-spec-reader__header">
-          <span className="chat-spec-reader__mark" aria-hidden>
-            <Icon name="ph:file-text-bold" width={16} />
-          </span>
-          <div className="chat-spec-reader__heading">
-            <span className="chat-spec-reader__eyebrow">{eyebrow}</span>
-            <h2 id={titleId} title={parsedDocument.title ?? title}>{parsedDocument.title ?? title}</h2>
-          </div>
-          <span className="chat-spec-reader__meta">{meta}</span>
-          {headerActions}
-          {markdown ? (
+  return (
+    <Modal open onClose={onClose} size="reader" bodyLayout="fill"
+      breadcrumb={[eyebrow, parsedDocument.title ?? title]} description={meta || undefined}
+      closeLabel={`Close ${noun} reader`}
+      headerActions={headerActions}
+      footerActions={<>          {markdown ? (
             <>
               <button
                 type="button"
@@ -236,16 +205,11 @@ export function ChatMarkdownReader({
               </button>
             </>
           ) : null}
-          <button
-            type="button"
-            className="chat-spec-reader__close focus-ring"
-            onClick={close}
-            aria-label={`Close ${noun} reader`}
-          >
-            <Icon name="ph:x-bold" width={14} aria-hidden />
-          </button>
-        </header>
-
+</>}
+    >
+      <div className="chat-spec-reader__progress" aria-hidden>
+        <div ref={progressRef} className="chat-spec-reader__progress-bar" />
+      </div>
         <div className="chat-spec-reader__body">
           {markdown && outline.length > 0 ? (
             <nav className="chat-spec-reader__contents" aria-label="Contents">
@@ -305,11 +269,6 @@ export function ChatMarkdownReader({
         <span className="sr-only" aria-live="polite">
           {loading ? `Loading ${noun}…` : announcement}
         </span>
-      </div>
-    </div>
+    </Modal>
   );
-
-  return typeof document !== "undefined"
-    ? createPortal(reader, document.body)
-    : null;
 }

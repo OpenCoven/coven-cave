@@ -439,8 +439,6 @@ export const BANKED_UNDEFINED_NO_FALLBACK = new Map([
   // Scale steps that do not exist: the space scale is 1/2/3/4/5/6/8/10.
   ["--space-7", 8],
   ["--space-9", 3],
-  // Shadow and motion vocabularies that were never defined here.
-  ["--shadow-elevated", 1],
   // Vendored Beautiful UI's own shadow token, which did not come across with
   // the components (src/components/ui/beautiful/, MIT, beautifului.dev).
   ["--bui-shadow-bui-btn", 1],

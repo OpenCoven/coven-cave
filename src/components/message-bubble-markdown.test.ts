@@ -253,7 +253,7 @@ assert.match(
 // renders as a sibling after the markdown container.
 assert.match(
   markdownContent,
-  /dangerouslySetInnerHTML=\{\{ __html: html \}\}\s*\/>[\s\S]{0,350}?\{pending \? \(\s*<span className="cave-response-typing"/,
+  /dangerouslySetInnerHTML=\{htmlContent\}\s*\/>[\s\S]{0,350}?\{pending \? \(\s*<span className="cave-response-typing"/,
   "While pending, the typing indicator renders as a sibling element after the markdown container",
 );
 assert.match(

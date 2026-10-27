@@ -3,26 +3,29 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./automation-create-dialog.tsx", import.meta.url), "utf8");
-const styles = await readFile(
-  new URL("../styles/globals/surface-compact-calendar.css", import.meta.url),
-  "utf8",
-);
+const styles = await readFile(new URL("../styles/globals/primitives.css", import.meta.url), "utf8");
 
 assert.match(source, /import \{ Button \}/, "dialog actions should use the shared Button primitive");
 assert.match(source, /StandardSelect/, "dialog dropdowns should use the shared StandardSelect primitive");
 assert.doesNotMatch(source, /<button\b/, "dialog should not hand-roll button controls");
 assert.doesNotMatch(source, /rounded-md|rounded-lg/, "dialog controls should use radius tokens instead of hard-coded radii");
-assert.match(source, /automation-create-dialog__hero/, "new automation editor should have a structured hero/header");
+assert.match(source, /breadcrumb=\{\["New automation", "Schedule a Codex run"\]\}/, "new automation editor should have a structured hero/header");
 assert.match(source, /automation-create-dialog__section/, "new automation editor should group fields into scan-friendly sections");
 assert.match(source, /automation-create-dialog__body/, "new automation editor should scroll fields separately from the action footer");
 assert.match(source, /automation-create-dialog__primary-grid/, "name and cadence controls should sit in a compact primary grid");
 assert.match(source, /automation-create-dialog__prompt-grid/, "goals and deliverables should be grouped together");
 assert.match(source, /automation-create-dialog__runtime-grid/, "runtime settings should be grouped in a responsive grid");
 assert.match(source, /automation-create-dialog__scope-grid/, "working directories, tags, and skill should be grouped in the scope section");
-assert.match(source, /automation-create-dialog__footer/, "new automation editor should have a stable action footer");
+assert.match(source, /footerActions=/, "new automation editor should have a stable action footer");
+assert.match(source, /busy=\{busy\}/, "pending creation uses the shared dismissal guard");
+assert.match(source, /disabled=\{busy\} onClick=\{onClose\}/, "Cancel stays disabled while creation is pending");
+assert.match(source, /disabled=\{!canCreate \|\| busy\}/, "pending creation cannot be submitted twice");
+const owner = await readFile(new URL("./automations-view.tsx", import.meta.url), "utf8");
+assert.match(owner, /busy=\{createBusy\}/, "the owner passes its actual write state to the dialog");
+assert.match(owner, /finally\s*\{\s*createPendingRef\.current = false;\s*setCreateBusy\(false\);/, "creation failure also releases the modal busy guard");
 assert.doesNotMatch(source, /\bAutomationCreateInitialValues\b|\binitialValues\b/, "the dialog has no unreachable template-prefill interface");
-assert.match(styles, /\.workflow-dialog[\s\S]*height: 100dvh;[\s\S]*overflow: hidden;/, "drawer should own the viewport height without scrolling");
-assert.match(styles, /\.automation-create-dialog__body[\s\S]*min-height: 0;[\s\S]*overflow-y: auto;/, "dialog body should be the scroll container");
+assert.match(styles, /\.ui-modal-backdrop\[data-presentation="sheet-right"\][\s\S]*height: 100dvh;/, "drawer should own the viewport height without scrolling");
+assert.match(styles, /\.ui-modal-body[\s\S]*overflow-y: auto;[\s\S]*min-height: 0;/, "dialog body should be the scroll container");
 
 // Prompt-to-generate: one sentence fills the form via CronPromptBar; parsed
 // updates land in field state only, so the user reviews before Create.

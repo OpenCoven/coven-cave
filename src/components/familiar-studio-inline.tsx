@@ -527,12 +527,11 @@ function FamiliarTestRunModal({
     <Modal
       open={open}
       onClose={close}
-      dismissOnBackdrop={state !== "running"}
-      dismissOnEscape={state !== "running"}
+      busy={state === "running"}
       breadcrumb={["Familiars", familiar.display_name, "Test run"]}
       footerActions={(
         <>
-          <Button variant="secondary" onClick={close}>Close</Button>
+          <Button variant="secondary" onClick={close} disabled={state === "running"}>Close</Button>
           <Button
             variant="primary"
             leadingIcon="ph:sparkle"

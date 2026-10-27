@@ -76,8 +76,7 @@ export function FollowUpTaskReview({
       open={open}
       onClose={close}
       breadcrumb={["Chat", "Review task"]}
-      dismissOnBackdrop={!creating}
-      dismissOnEscape={!creating}
+      busy={creating}
       footerActions={
         <>
           <Button variant="ghost" onClick={close} disabled={creating}>

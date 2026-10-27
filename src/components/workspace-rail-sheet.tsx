@@ -1,5 +1,8 @@
 "use client";
 
+import "@/styles/workspace-rail-sheet.css";
+import { useEffect, useState } from "react";
+import { Modal } from "@/components/ui/modal";
 import { WorkspaceRail } from "@/components/lazy-surfaces";
 import type { Familiar } from "@/lib/types";
 import type { WorkspaceRailController } from "@/lib/use-workspace-rail-controller";
@@ -13,23 +16,13 @@ export function WorkspaceRailSheet({
   familiar: Familiar | null;
   sessionId: string | null;
 }) {
-  if (!controller.mobileAvailable || !controller.mobileOpen) return null;
+  const [fullscreen, setFullscreen] = useState(false);
+  const open = controller.mobileAvailable && controller.mobileOpen;
+  useEffect(() => { if (!open) setFullscreen(false); }, [open]);
+  const close = () => { setFullscreen(false); controller.closeMobile(); };
+  if (!open) return null;
   return (
-    <div className="mobile-code-rail-sheet fixed inset-0 z-[200] flex justify-end" role="presentation">
-      <button
-        type="button"
-        aria-label="Close code rail"
-        className="absolute inset-0 bg-[var(--backdrop-scrim)]"
-        onClick={controller.closeMobile}
-      />
-      <div
-        ref={controller.mobileSheetRef}
-        className="mobile-code-rail-sheet__panel relative flex h-full w-[min(92vw,420px)] flex-col bg-[var(--bg-raised)] shadow-[-8px_0_32px_rgba(0,0,0,0.2)] [padding-bottom:var(--sai-bottom)] [padding-top:var(--sai-top)]"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Code rail"
-        tabIndex={-1}
-      >
+    <Modal open onClose={close} title="Code rail" size={fullscreen ? "workspace" : "compact"} presentation={fullscreen ? "fullscreen" : "sheet-right"} bodyLayout="fill">
         <WorkspaceRail
           changeCount={controller.changeCount ?? 0}
           activeTab={controller.rail.activeTab}
@@ -39,11 +32,12 @@ export function WorkspaceRailSheet({
           sessionId={sessionId}
           focus={controller.focus}
           hidePin
+          hostedFullscreen
+          onFullscreenChange={setFullscreen}
           onSelectTab={controller.rail.setActiveTab}
           onTogglePin={controller.rail.togglePin}
-          onCollapse={controller.closeMobile}
+          onCollapse={close}
         />
-      </div>
-    </div>
+    </Modal>
   );
 }

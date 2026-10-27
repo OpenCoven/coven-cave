@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { createPortal } from "react-dom";
 import "@/styles/directory-picker-modal.css";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/lib/icon";
 import {
@@ -179,8 +178,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const [createBusy, setCreateBusy] = useState(false);
   const newFolderInputRef = useRef<HTMLInputElement | null>(null);
   const newFolderTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const modalSessionRef = useRef(0);
   const loadGenerationRef = useRef(0);
   // `load` reads the preference through a ref rather than closing over the
@@ -318,12 +316,6 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     navigateTo(nextPath, { fromPathEntry: true });
   };
 
-  // This is a true modal (aria-modal, covers the page). Trap focus inside it,
-  // close on Escape, and restore focus to the trigger on close — the hook does
-  // all three, replacing the old window-level Escape listener (which left focus
-  // free to Tab out to the page behind the scrim).
-  useFocusTrap(open, dialogRef, { onEscape: onClose });
-
   const beginCreatingFolder = () => {
     setCreatingFolder(true);
     setNewFolderError(null);
@@ -341,8 +333,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     const requestedName = newFolderName.trim();
     const sessionGeneration = modalSessionRef.current;
     let shouldRefocusInput = false;
-    let shouldRefocusCloseButton = false;
-    closeButtonRef.current?.focus({ preventScroll: true });
+    let shouldRefocusCancelButton = false;
+    cancelButtonRef.current?.focus({ preventScroll: true });
     setCreateBusy(true);
     setNewFolderError(null);
     try {
@@ -378,7 +370,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       await load(cwd, sessionGeneration);
       if (sessionGeneration === modalSessionRef.current) {
         setSelectedPath(body.path);
-        shouldRefocusCloseButton = true;
+        shouldRefocusCancelButton = true;
       }
     } catch {
       if (sessionGeneration !== modalSessionRef.current) return;
@@ -387,8 +379,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     } finally {
       if (sessionGeneration !== modalSessionRef.current) return;
       setCreateBusy(false);
-      if (shouldRefocusCloseButton) {
-        requestAnimationFrame(() => closeButtonRef.current?.focus({ preventScroll: true }));
+      if (shouldRefocusCancelButton) {
+        requestAnimationFrame(() => cancelButtonRef.current?.focus({ preventScroll: true }));
       }
       if (shouldRefocusInput) {
         requestAnimationFrame(() => newFolderInputRef.current?.focus({ preventScroll: true }));
@@ -482,51 +474,51 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const selectDisabled =
     !cwd || createBusy || !pendingPath || pendingPath === home || isVolumeRootPath(pendingPath);
 
-  // Portal to <body>: this modal mounts inside arbitrary hosts (the home
-  // composer card, the projects form), and a transformed/backdrop-filtered
-  // ancestor there becomes the containing block for position:fixed — trapping
-  // the scrim in that ancestor's stacking context, where sibling composer
-  // chrome paints on top of the "open" modal. Rendering from <body> restores
-  // true-viewport fixed positioning regardless of the host's styling.
-  return createPortal(
-    <div
-      className="directory-picker-scrim fixed inset-0 z-[200] flex items-center justify-center p-6 [background:color-mix(in_oklch,var(--bg-panel)_62%,transparent)] backdrop-blur-[6px] [animation:ui-modal-fade-in_var(--duration-fast)_var(--ease-decelerate)] motion-reduce:[animation:none]"
-      onClick={onClose}
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Choose a project folder"
+      description="Pick where this project's chats will live."
+      size="wide"
+      bodyLayout="fill"
+      busy={createBusy}
+      initialFocusRef={cancelButtonRef}
+      footerPills={<div className="flex min-w-0 flex-col gap-[3px]">
+            <span className="text-[length:var(--text-xs)] uppercase tracking-[0.06em] text-[var(--text-muted)]">{selectDisabled ? "Choose a project folder" : "Selected folder"}</span>
+            <span
+              className="max-w-[260px] truncate font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)]"
+              title={pendingPath ?? undefined}
+            >
+              {pendingPath && (pendingPath === home || isVolumeRootPath(pendingPath)) ? "Select a subfolder to continue." : pendingPath ? collapseHome(pendingPath) : "Open a location to continue."}
+            </span>
+          </div>}
+      footerActions={<>
+            <Button
+              variant="secondary"
+              size="sm"
+              ref={cancelButtonRef}
+              disabled={createBusy}
+              onClick={onClose}
+              className="h-9 rounded-[var(--radius-control)] px-3.5 text-[length:var(--text-sm)] text-[var(--text-secondary)]"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={selectDisabled}
+              onClick={() => {
+                if (pendingPath) onSelect(pendingPath);
+              }}
+              className="h-9 rounded-[var(--radius-control)] px-[18px] text-[length:var(--text-sm)] disabled:opacity-50"
+            >
+              {selectLabel}
+            </Button>
+      </>}
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Choose a project folder"
-        tabIndex={-1}
-        className="directory-picker flex w-[760px] max-w-full max-h-[min(680px,92dvh)] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-[0_30px_70px_-18px_oklch(0_0_0/70%),0_0_0_1px_color-mix(in_oklch,var(--foreground)_4%,transparent)] [animation:ui-modal-enter_var(--duration-base)_var(--ease-decelerate)] motion-reduce:[animation:none] focus:outline-none"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="directory-picker-header flex items-center justify-between gap-4 px-5 py-3">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-[length:var(--text-md)] font-semibold tracking-[-0.01em] text-[var(--text-primary)]">
-              Choose a project folder
-            </span>
-            <span className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
-              Pick where this project&apos;s chats will live.
-            </span>
-            <span className="directory-picker-workspace-help sr-only">
-              {PROJECT_ROOT_WORKSPACE_HELP}
-            </span>
-          </div>
-          <Button
-            ref={closeButtonRef}
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            aria-label="Close"
-            className="h-[30px] w-[30px] flex-none rounded-[var(--radius-control)] p-0 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:x" width={16} height={16} aria-hidden />
-          </Button>
-        </div>
-
-        <div className="directory-picker-body flex min-h-0 flex-1">
+      <span className="directory-picker-workspace-help sr-only">{PROJECT_ROOT_WORKSPACE_HELP}</span>
+        <div className="directory-picker directory-picker-body flex min-h-0 flex-1">
           <nav
             aria-label="Places"
             className="directory-picker-places flex w-[196px] flex-none flex-col gap-3.5 overflow-y-auto border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-2.5"
@@ -889,40 +881,6 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
           </div>
         </div>
 
-        <div className="directory-picker-footer flex items-center justify-between gap-4 border-t border-[var(--border-hairline)] bg-[var(--bg-panel)] px-5 py-3.5">
-          <div className="flex min-w-0 flex-col gap-[3px]">
-            <span className="text-[length:var(--text-xs)] uppercase tracking-[0.06em] text-[var(--text-muted)]">{selectDisabled ? "Choose a project folder" : "Selected folder"}</span>
-            <span
-              className="max-w-[260px] truncate font-mono text-[length:var(--text-sm)] text-[var(--text-secondary)]"
-              title={pendingPath ?? undefined}
-            >
-              {pendingPath && (pendingPath === home || isVolumeRootPath(pendingPath)) ? "Select a subfolder to continue." : pendingPath ? collapseHome(pendingPath) : "Open a location to continue."}
-            </span>
-          </div>
-          <div className="flex flex-none items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="h-9 rounded-[var(--radius-control)] px-3.5 text-[length:var(--text-sm)] text-[var(--text-secondary)]"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={selectDisabled}
-              onClick={() => {
-                if (pendingPath) onSelect(pendingPath);
-              }}
-              className="h-9 rounded-[var(--radius-control)] px-[18px] text-[length:var(--text-sm)] disabled:opacity-50"
-            >
-              {selectLabel}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

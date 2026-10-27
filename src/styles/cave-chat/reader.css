@@ -13,32 +13,6 @@
 
 /* ---------------------------------------------------------------- shell -- */
 
-.cave-reader-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--backdrop-scrim);
-  backdrop-filter: blur(3px);
-}
-
-.cave-reader {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: 94vw;
-  max-width: 1180px;
-  height: 92vh;
-  overflow: hidden;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-panel);
-  background: var(--bg-panel);
-  color: var(--text-primary);
-  box-shadow: 0 25px 50px -12px color-mix(in oklch, var(--shadow-color) 60%, transparent);
-}
-
 /* Read progress — a 3px hairline across the very top. It is the only thing in
    the reader that tracks the scroll position continuously, so it stays cheap:
    a transform, never a layout-affecting width. */
@@ -59,64 +33,8 @@
 
 /* ----------------------------------------------------------------- head -- */
 
-.cave-reader-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 49px;
-  padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--border-hairline);
-}
-
-.cave-reader-head__title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-base);
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.cave-reader-head__actions {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.cave-reader-head__divider {
-  width: 1px;
-  height: 20px;
-  background: var(--border-hairline);
-}
-
 /* The familiar's mark, lit from within. The glow is the only ambient motion in
    the chrome; it is the first thing suppressed under reduced motion. */
-.cave-reader-sigil {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-control);
-  border: 1px solid color-mix(in oklch, var(--accent-presence-soft) 40%, transparent);
-  background: linear-gradient(
-    140deg,
-    color-mix(in oklch, var(--accent-presence) 42%, var(--bg-panel)),
-    var(--bg-panel)
-  );
-  color: color-mix(in oklch, var(--accent-presence) 72%, var(--foreground));
-  animation: cave-reader-glow 5s ease-in-out infinite;
-}
-
-@keyframes cave-reader-glow {
-  0%,
-  100% { box-shadow: 0 0 9px color-mix(in oklch, var(--accent-presence-soft) 20%, transparent); }
-  50%  { box-shadow: 0 0 16px color-mix(in oklch, var(--accent-presence-soft) 45%, transparent); }
-}
 
 /* Icon buttons in the head — square, quiet until hovered. */
 .cave-reader-iconbtn {
@@ -941,59 +859,10 @@ button.cave-reader-row { cursor: pointer; }
 
 /* Click a source row and it opens over the reader rather than navigating away
    — the answer stays behind it, so checking a citation never costs your place. */
-.cave-reader-viewer {
-  position: absolute;
-  inset: 0;
-  z-index: 120;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-10);
-  background:
-    radial-gradient(640px 420px at 50% 42%, color-mix(in oklch, var(--accent-presence) 26%, transparent), transparent 70%),
-    color-mix(in oklch, var(--bg-base) 78%, transparent);
-  backdrop-filter: blur(3px);
-}
-.cave-reader-viewer__card {
-  width: 620px;
-  max-width: 100%;
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-card);
-  background: var(--bg-raised);
-  box-shadow: 0 34px 90px color-mix(in oklch, var(--shadow-color) 62%, transparent);
-  animation: cave-reader-pop 180ms var(--ease-decelerate) both;
-}
-.cave-reader-viewer__head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 46px;
-  padding: 0 var(--space-3);
-  border-bottom: 1px solid var(--border-hairline);
-}
-.cave-reader-viewer__title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-}
 .cave-reader-viewer__body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-4);
 }
 .cave-reader-viewer__summary {
   margin: 0;
@@ -1020,20 +889,6 @@ button.cave-reader-row { cursor: pointer; }
   flex-direction: column;
   gap: var(--space-2);
 }
-.cave-reader-viewer__foot {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 38px;
-  padding: 0 var(--space-3);
-  border-top: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--foreground) 3%, transparent);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
-.cave-reader-viewer__hint { margin-left: auto; }
 
 /* ------------------------------------------------------------ responsive - */
 
@@ -1041,7 +896,6 @@ button.cave-reader-row { cursor: pointer; }
    columns; the rail becomes an overlay the toggle summons, and the document
    keeps the full width. */
 @media (max-width: 60rem) {
-  .cave-reader { width: 100vw; height: 100vh; max-width: none; border: 0; border-radius: 0; }
   .cave-reader-rail {
     position: absolute;
     z-index: 40;
@@ -1063,33 +917,12 @@ button.cave-reader-row { cursor: pointer; }
    "Export PDF" prints the transcript underneath with a modal pasted over it. */
 @media print {
   /* Research sits above Chat (350 vs 60); print only that foreground reader. */
-  body:has(> .cave-reader-backdrop):not(:has(> .research-reader-overlay)) > *:not(.cave-reader-backdrop) { display: none !important; }
-
-  .cave-reader-backdrop {
-    position: static;
-    display: block;
-    padding: 0;
-    background: none;
-    backdrop-filter: none;
-  }
-  .cave-reader {
-    width: auto;
-    max-width: none;
-    height: auto;
-    border: 0;
-    border-radius: 0;
-    background: none;
-    box-shadow: none;
-  }
   .cave-reader-progress,
   .cave-reader-rail,
   .cave-reader-foot,
-  .cave-reader-selbar,
-  .cave-reader-viewer,
-  .cave-reader-head__actions {
+  .cave-reader-selbar {
     display: none !important;
   }
-  .cave-reader-head { border-bottom: 1px solid var(--border-hairline); }
   .cave-reader-body,
   .cave-reader-main { display: block; }
   .cave-reader-doc {
@@ -1105,13 +938,11 @@ button.cave-reader-row { cursor: pointer; }
 /* ---------------------------------------------------------------- motion - */
 
 @media (prefers-reduced-motion: reduce) {
-  .cave-reader-sigil,
   .cave-reader-copyfill,
   .cave-reader-menu,
   .cave-reader-rail,
   .cave-reader-selbar,
-  .cave-reader-panel,
-  .cave-reader-viewer__card {
+  .cave-reader-panel {
     animation: none;
   }
   .cave-reader-progress__bar,

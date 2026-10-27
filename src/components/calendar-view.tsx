@@ -17,14 +17,14 @@ import {
   runDensityBands,
 } from "@/lib/calendar-run-density";
 
-import { useCallback, useContext, useId, useMemo, useState, useRef, useEffect, type SetStateAction } from "react";
+import { useCallback, useContext, useMemo, useState, useRef, useEffect, type SetStateAction, type RefObject } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { familiarAccent } from "@/lib/familiar-color";
 import { Icon } from "@/lib/icon";
 import { formatClock, formatDate } from "@/lib/datetime-format";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -1416,41 +1416,26 @@ function MonthView({
 // ─── Item Detail Panel ───────────────────────────────────────────────────────
 
 function MiniMonthPopover({
+  anchorRef,
   anchor,
   onPick,
   onClose,
 }: {
+  anchorRef: RefObject<HTMLElement | null>;
   anchor: Date;
   onPick: (d: Date) => void;
   onClose: () => void;
 }) {
   const [view, setView] = useState<Date>(startOfMonth(anchor));
-  const ref = useRef<HTMLDivElement>(null);
   const today = new Date();
-
-  // Trap focus + Escape + restore focus to the trigger on close. Previously
-  // Tab fell straight through to the calendar behind this dialog.
-  useFocusTrap(true, ref, { onEscape: onClose });
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    window.addEventListener("mousedown", onClick);
-    return () => window.removeEventListener("mousedown", onClick);
-  }, [onClose]);
 
   const monthStart = view;
   const gridStart = startOfWeek(monthStart);
   const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
 
   return (
-    <div
-      ref={ref}
-      role="dialog"
-      aria-label="Jump to date"
-      tabIndex={-1}
-      className="absolute top-full left-0 z-20 mt-2 w-[260px] rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] p-3 shadow-2xl"
-    >
+    <Popover open onOpenChange={(next) => { if (!next) onClose(); }} anchorRef={anchorRef} ariaLabel="Jump to date" placement="bottom-start" minWidth={260}>
+      <PopoverBody>
       <div className="mb-2 flex items-center justify-between gap-2">
         <IconButton
           icon="ph:arrow-left-bold"
@@ -1507,7 +1492,7 @@ function MiniMonthPopover({
       >
         Today
       </Button>
-    </div>
+    </PopoverBody></Popover>
   );
 }
 
@@ -1548,10 +1533,7 @@ function ItemDetailPanel({
   onDismiss?: (id: string) => void;
   onSnooze?: (id: string, untilIso: string) => void;
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const titleId = useId();
   const { announce } = useAnnouncer();
-  useFocusTrap(true, panelRef, { onEscape: onClose });
 
   const meta = (item as unknown as { comms?: { urgency?: string } }).comms;
   const body = (item as unknown as { body?: string }).body;
@@ -1559,66 +1541,9 @@ function ItemDetailPanel({
   const isDone = item.status === "done";
 
   return (
-    <>
-      {/* Backdrop makes aria-modal honest (the calendar behind is inert) and
-          adds the outside-click dismiss the drawer was missing. */}
-      <div className="cave-cal-detail-backdrop" role="presentation" onClick={onClose} />
-      <div
-        ref={panelRef}
-        className="cave-cal-detail-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-      >
-        <div className="cave-cal-detail-header">
-          <div className="flex items-center gap-2 min-w-0">
-            <Icon name={platformIcon(item)} className="shrink-0 text-[var(--text-muted)] text-[length:var(--text-md)]" />
-            <span id={titleId} className="truncate text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">
-              {item.title}
-            </span>
-          </div>
-          <IconButton
-            icon="ph:x"
-            aria-label="Close"
-            size="sm"
-            onClick={onClose}
-            className="shrink-0"
-          />
-        </div>
-
-        <div className="flex flex-col gap-3 px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] overflow-y-auto flex-1">
-          <div className="flex flex-wrap items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-            <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{KIND_LABEL[item.kind]}</span>
-            {isDone ? <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--color-success)]"><Icon name="ph:check" width={9} />Done</span> : null}
-          </div>
-          {meta?.urgency && meta.urgency !== "normal" && (
-            <div className="flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${urgencyColor(item)}`} />
-              <span className="capitalize">{meta.urgency.replace("-", " ")}</span>
-            </div>
-          )}
-          {(item.fireAt ?? item.firedAt) && (
-            <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
-              <Icon name="ph:clock" width={12} />
-              <span>
-                {(() => {
-                  const at = (item.fireAt ?? item.firedAt)!;
-                  // Short weekday isn't a preference; the date order + clock are.
-                  const weekday = new Date(at).toLocaleDateString([], { weekday: "short" });
-                  return `${weekday}, ${formatDate(at, undefined, { month: "short" })} ${formatClock(at)}`;
-                })()}
-              </span>
-            </div>
-          )}
-          {body && (
-            <p className="text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
-              {body}
-            </p>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
+    <Modal open onClose={onClose} title={item.title} presentation="sheet-right" size="compact"
+      headerIcon={<Icon name={platformIcon(item)} width={18} />}
+      footerActions={<>
           {openLabel && onOpen ? (
             <Button
               variant="primary"
@@ -1658,9 +1583,40 @@ function ItemDetailPanel({
               />
             ) : null}
           </div>
+</>}
+    >
+        <div className="flex flex-col gap-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+          <div className="flex flex-wrap items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+            <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{KIND_LABEL[item.kind]}</span>
+            {isDone ? <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--color-success)]"><Icon name="ph:check" width={9} />Done</span> : null}
+          </div>
+          {meta?.urgency && meta.urgency !== "normal" && (
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${urgencyColor(item)}`} />
+              <span className="capitalize">{meta.urgency.replace("-", " ")}</span>
+            </div>
+          )}
+          {(item.fireAt ?? item.firedAt) && (
+            <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
+              <Icon name="ph:clock" width={12} />
+              <span>
+                {(() => {
+                  const at = (item.fireAt ?? item.firedAt)!;
+                  // Short weekday isn't a preference; the date order + clock are.
+                  const weekday = new Date(at).toLocaleDateString([], { weekday: "short" });
+                  return `${weekday}, ${formatDate(at, undefined, { month: "short" })} ${formatClock(at)}`;
+                })()}
+              </span>
+            </div>
+          )}
+          {body && (
+            <p className="text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
+              {body}
+            </p>
+          )}
         </div>
-      </div>
-    </>
+
+    </Modal>
   );
 }
 
@@ -1668,6 +1624,7 @@ function ItemDetailPanel({
 
 export function CalendarView({ items, itemsLoadFailed = false, onRetryItems, familiars, activeFamiliarId, scopeFamiliarIds, deadlines, onAddEntry, onOpenItem, onReschedule, onComplete, onDismiss, onSnooze, onOpenDeadline }: Props) {
   const isMobile = useIsMobile();
+  const datePickerAnchorRef = useRef<HTMLButtonElement | null>(null);
   // SSR returns false from useIsMobile, so initial render is always "week"
   // on the server; the effect below snaps to agenda on mount when the
   // viewport actually matches mobile. Keeps server/client markup in sync.
@@ -2044,6 +2001,7 @@ export function CalendarView({ items, itemsLoadFailed = false, onRetryItems, fam
         <div className="relative flex min-w-[120px] flex-1 items-center gap-2">
           <button
             type="button"
+            ref={datePickerAnchorRef}
             onClick={() => setPickerOpen((v) => !v)}
             aria-expanded={pickerOpen}
             aria-haspopup="dialog"
@@ -2058,6 +2016,7 @@ export function CalendarView({ items, itemsLoadFailed = false, onRetryItems, fam
           )}
           {pickerOpen ? (
             <MiniMonthPopover
+              anchorRef={datePickerAnchorRef}
               anchor={anchor}
               onPick={(d) => { setAnchor(d); setPickerOpen(false); }}
               onClose={() => setPickerOpen(false)}

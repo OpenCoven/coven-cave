@@ -3,10 +3,9 @@
 import "@/styles/voice-call.css";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { getVoiceProvider } from "@/lib/voice/registry";
 import {
@@ -75,7 +74,6 @@ export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initial
   const grantRef = useRef<VoiceSessionGrant | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const attemptRef = useRef({ active: true });
   const cleanup = useCallback(() => {
     attemptRef.current.active = false;
@@ -107,16 +105,14 @@ export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initial
   // its handler once.
   const replyTargetRef = useRef<ReplyTarget | null>(null);
   replyTargetRef.current = replyTarget;
-  useFocusTrap(true, dialogRef, {
-    onEscape: () => {
+  const closeFromEscape = () => {
       if (dismissHistoryRef.current?.()) return;
       if (replyTargetRef.current) {
         setReplyTarget(null);
         return;
       }
       dispatch({ type: "CLOSE_REQUEST" });
-    },
-  });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -417,24 +413,13 @@ export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initial
   const mm = String(Math.floor(duration / 60)).padStart(2, "0");
   const ss = String(duration % 60).padStart(2, "0");
 
-  const overlay = (
-    <div className="voice-call-overlay" role="presentation">
-      <div
-        ref={dialogRef}
-        className="voice-call-overlay__dialog"
-        data-game={arcadeOpen || undefined}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="voice-call-overlay-title"
-        aria-describedby={state.state === "error" ? "voice-call-overlay-error" : undefined}
-        tabIndex={-1}
-      >
-        <header className="voice-call-overlay__header">
-          <div className="voice-call-overlay__heading">
-            <strong id="voice-call-overlay-title">{familiar.display_name}</strong>
-            <span className="voice-call-overlay__state" role="status" aria-live="polite">{statusLabel}</span>
-          </div>
-          <div className="voice-call-overlay__header-actions">
+  return (
+    <Modal open onClose={(reason) => reason === "escape" ? closeFromEscape() : dispatch({ type: "CLOSE_REQUEST" })}
+      title={familiar.display_name} description={<span role="status" aria-live="polite">{statusLabel}</span>}
+      presentation="fullscreen" bodyLayout="fill" busy={state.state === "ending"}
+      dismissOnBackdrop={false} closeLabel="End call and close"
+      ariaDescribedBy={state.state === "error" ? "voice-call-overlay-error" : undefined}
+      headerActions={<>
             {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
             <button ref={voiceButtonRef} type="button" className="voice-call-overlay__voice focus-ring" aria-label="Change familiar voice" title={providerLabel}
               disabled={waiting || state.state === "ending"} onClick={() => setVoiceSettingsOpen(true)}>
@@ -449,8 +434,50 @@ export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initial
             {arcadeOpen && <button type="button" className="voice-call-overlay__control focus-ring"
               aria-label={historyOpen ? "Hide full transcript" : "Show full transcript"} aria-pressed={historyOpen}
               onClick={() => setHistoryOpen(open => !open)}><Icon icon="ph:chat-text" /></button>}
+</>}
+      footerPills={<>
+          <div className="voice-call-overlay__controls">
+            <button
+              type="button"
+              className="voice-call-overlay__control focus-ring"
+              aria-label={state.muted ? "Unmute" : "Mute"}
+              aria-pressed={state.muted}
+              title={state.muted ? "Unmute microphone" : "Mute microphone"}
+              onClick={() => {
+                announce(state.muted ? "Microphone unmuted." : "Microphone muted.", "polite");
+                dispatch({ type: "MUTE_TOGGLE" });
+              }}
+              disabled={state.state !== "live"}
+            >
+              <Icon icon={state.muted ? "ph:microphone-slash-fill" : "ph:microphone-fill"} />
+            </button>
+            {/* Barge-in without typing: cut the familiar off mid-sentence.
+                Only offered while it is actually speaking, so the control
+                never lies about what it would do. */}
+            {state.state === "live" && transcript.speaking && (
+              <button
+                type="button"
+                className="voice-call-overlay__control focus-ring"
+                aria-label="Stop speaking"
+                title="Stop speaking"
+                onClick={() => liveRef.current?.interrupt?.()}
+              >
+                <Icon icon="ph:speaker-slash-fill" />
+              </button>
+            )}
           </div>
-        </header>
+</>}
+      footerActions={<>          <button
+            type="button"
+            className="voice-call-overlay__end focus-ring"
+            aria-label="End call"
+            disabled={state.state === "ending"}
+            onClick={() => dispatch({ type: "CLOSE_REQUEST" })}
+          >
+            End call
+          </button>
+</>}
+    >
         <div className="voice-call-overlay__body" data-game={arcadeOpen || undefined} data-history={historyOpen || undefined}>
           {arcadeOpen && (
             <ArcadePanel
@@ -650,54 +677,11 @@ export function VoiceCallOverlay({ familiar: initialFamiliar, sessionId: initial
             </div>
           </form>
         )}
-        <footer className="voice-call-overlay__footer">
-          <div className="voice-call-overlay__controls">
-            <button
-              type="button"
-              className="voice-call-overlay__control focus-ring"
-              aria-label={state.muted ? "Unmute" : "Mute"}
-              aria-pressed={state.muted}
-              title={state.muted ? "Unmute microphone" : "Mute microphone"}
-              onClick={() => {
-                announce(state.muted ? "Microphone unmuted." : "Microphone muted.", "polite");
-                dispatch({ type: "MUTE_TOGGLE" });
-              }}
-              disabled={state.state !== "live"}
-            >
-              <Icon icon={state.muted ? "ph:microphone-slash-fill" : "ph:microphone-fill"} />
-            </button>
-            {/* Barge-in without typing: cut the familiar off mid-sentence.
-                Only offered while it is actually speaking, so the control
-                never lies about what it would do. */}
-            {state.state === "live" && transcript.speaking && (
-              <button
-                type="button"
-                className="voice-call-overlay__control focus-ring"
-                aria-label="Stop speaking"
-                title="Stop speaking"
-                onClick={() => liveRef.current?.interrupt?.()}
-              >
-                <Icon icon="ph:speaker-slash-fill" />
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
-            className="voice-call-overlay__end focus-ring"
-            aria-label="End call"
-            onClick={() => dispatch({ type: "CLOSE_REQUEST" })}
-          >
-            End call
-          </button>
-        </footer>
+
         <audio ref={audioElRef} autoPlay hidden />
         {voiceSettingsOpen && <VoiceCallSettings familiar={familiar} onClose={() => setVoiceSettingsOpen(false)} onSaved={changeVoice} />}
-      </div>
-    </div>
+    </Modal>
   );
-
-  if (typeof document === "undefined") return null;
-  return createPortal(overlay, document.body);
 }
 
 // The engine badge is honest, not decorative: "On-device" is the no-cloud

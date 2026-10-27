@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, type RefObject } from "react";
+import { createContext, useContext, useEffect, useRef, useSyncExternalStore, type RefObject } from "react";
 
 export const FOCUSABLE = [
   "button:not([disabled])",
@@ -22,6 +22,8 @@ type Options = {
    *  focusable child exists, focuses the container itself — caller MUST give
    *  the container `tabIndex={-1}` so this is reachable. */
   focusFirst?: boolean;
+  /** Prefer this in-dialog target when activating (e.g. the safe Cancel action). */
+  initialFocusRef?: RefObject<HTMLElement | null>;
   /** Recapture native Tab focus escapes. Callers with portaled
    *  controls must register them through portalLayers. Defaults to false. */
   containTabFocus?: boolean;
@@ -85,6 +87,27 @@ let nextTrapId = 1;
 let nextTrapOrder = 1;
 let nextTrapRootOrder = 1;
 
+const portalRootListeners = new Set<() => void>();
+function notifyPortalRootOrder() { for (const listener of portalRootListeners) listener(); }
+function subscribePortalRootOrder(listener: () => void) {
+  portalRootListeners.add(listener);
+  return () => { portalRootListeners.delete(listener); };
+}
+
+/** Paint order follows the same root activation and descendant depth as Escape.
+ * Live ranks keep the z-index bounded when many dialogs open over a session. */
+export function usePortalLayerZIndex(active: boolean, rootId: number, depth: number): number {
+  useEffect(() => {
+    if (!active) return;
+    return acquirePortalLayerRoot(rootId).release;
+  }, [active, rootId]);
+  return useSyncExternalStore(subscribePortalRootOrder, () => {
+    const roots = [...portalLayerRoots.entries()].sort((a, b) => a[1].order - b[1].order);
+    const rank = Math.max(0, roots.findIndex(([id]) => id === rootId));
+    return 350 + rank * 100 + depth;
+  }, () => 350 + depth);
+}
+
 function compareTrapOrder(a: TrapEntry, b: TrapEntry): number {
   return a.rootOrder - b.rootOrder || a.depth - b.depth || a.order - b.order;
 }
@@ -106,6 +129,7 @@ export function acquirePortalLayerRoot(rootId: number): {
       trapCount: 0,
       returnFocus: null,
     });
+    notifyPortalRootOrder();
   }
   let released = false;
   return {
@@ -122,7 +146,10 @@ function releasePortalLayerRoot(rootId: number): void {
   const current = portalLayerRoots.get(rootId);
   if (!current) return;
   current.count -= 1;
-  if (current.count === 0) portalLayerRoots.delete(rootId);
+  if (current.count === 0) {
+    portalLayerRoots.delete(rootId);
+    notifyPortalRootOrder();
+  }
 }
 
 export function isTopmostPortalLayerRoot(rootId: number): boolean {
@@ -136,6 +163,9 @@ export function isTopmostPortalLayerRoot(rootId: number): boolean {
   }
   return topmostId === rootId;
 }
+
+/** Nonmodal keyboard shortcuts yield to any active modal owner. */
+export function hasActiveFocusTrap(): boolean { return trapStack.length > 0; }
 
 function topmostTrap(): TrapEntry | undefined {
   return trapStack.reduce<TrapEntry | undefined>(
@@ -284,6 +314,7 @@ export function useFocusTrap(
   {
     onEscape,
     focusFirst = true,
+    initialFocusRef,
     containTabFocus = false,
     restoreFocus = () => true,
     portalLayers,
@@ -293,6 +324,7 @@ export function useFocusTrap(
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const onEscapeRef = useRef(onEscape);
   const restoreFocusRef = useRef(restoreFocus);
+  const preferredFocusRef = useRef(initialFocusRef);
   // Stable per-hook-instance identity for the trap stack — assigned once
   // (lazy ref init) and unaffected by StrictMode's double render/effect
   // invocation, which reuses this same ref cell rather than re-creating it.
@@ -313,6 +345,9 @@ export function useFocusTrap(
   useEffect(() => {
     restoreFocusRef.current = restoreFocus;
   }, [restoreFocus]);
+  useEffect(() => {
+    preferredFocusRef.current = initialFocusRef;
+  }, [initialFocusRef]);
 
   useEffect(() => {
     if (!active) return;
@@ -331,7 +366,10 @@ export function useFocusTrap(
     );
 
     if (focusFirst && isTopmostTrap(trapId)) {
-      const first = container.querySelector<HTMLElement>(FOCUSABLE);
+      const preferred = preferredFocusRef.current?.current;
+      const first = preferred && container.contains(preferred)
+        ? preferred
+        : container.querySelector<HTMLElement>(FOCUSABLE);
       if (first) {
         first.focus();
       } else {

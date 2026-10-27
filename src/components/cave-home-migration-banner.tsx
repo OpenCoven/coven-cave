@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
 import { useShellBanners } from "@/lib/shell-banners";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
@@ -202,18 +204,21 @@ export function CaveHomeMigrationBannerTrigger() {
   if (!reviewOpen || !status) return null;
 
   return (
-    <div className="cave-migration-review-backdrop" role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) setReviewOpen(false);
-    }}>
-      <section className="cave-migration-review" role="dialog" aria-modal="true" aria-labelledby="cave-migration-title">
-        <header className="cave-migration-review__header">
-          <div>
-            <h2 id="cave-migration-title">Review Cave data migration</h2>
-            <p>Canonical storage is <code>~/.coven/cave</code>. Cave verifies a recovery bundle before changing either divergent copy.</p>
-          </div>
-          <button type="button" aria-label="Close migration review" onClick={() => setReviewOpen(false)}>×</button>
-        </header>
-
+    <Modal
+      open
+      onClose={() => setReviewOpen(false)}
+      title="Review Cave data migration"
+      description={<>Canonical storage is <code>~/.coven/cave</code>. Cave verifies a recovery bundle before changing either divergent copy.</>}
+      size="wide"
+      busy={working !== null}
+      footerPills={<span role="status">{notice}</span>}
+      footerActions={<>
+        <Button variant="secondary" onClick={() => void openBackupFolder(status.backupRoot).then((ok) => {
+          if (!ok) setNotice(`Backups are stored at ${status.backupRoot}`);
+        })}>Open backup folder</Button>
+        <Button variant="secondary" disabled={working !== null} onClick={() => setReviewOpen(false)}>Close</Button>
+      </>}
+    >
         <div className="cave-migration-review__files">
           {status.details.map((detail) => (
             <article className="cave-migration-file" key={detail.legacy}>
@@ -234,22 +239,22 @@ export function CaveHomeMigrationBannerTrigger() {
                 <div className="cave-migration-file__confirm" role="alert">
                   <p>{confirmRequest.summary}</p>
                   <div className="cave-migration-file__actions">
-                    <button
+                    <Button
                       type="button"
                       disabled={working !== null}
                       onClick={() => void runAction(detail, confirmRequest.action, confirmRequest.discardToken)}
                     >
                       {working === `${detail.legacy}:${confirmRequest.action}` ? "Working…" : "Discard larger copy anyway"}
-                    </button>
-                    <button type="button" disabled={working !== null} onClick={() => setConfirmRequest(null)}>
+                    </Button>
+                    <Button type="button" disabled={working !== null} onClick={() => setConfirmRequest(null)}>
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : null}
               <div className="cave-migration-file__actions">
                 {detail.actions.map((action) => (
-                  <button
+                  <Button
                     type="button"
                     key={action}
                     disabled={working !== null}
@@ -258,23 +263,12 @@ export function CaveHomeMigrationBannerTrigger() {
                     {working === `${detail.legacy}:${action}`
                       ? "Working…"
                       : action === "merge" && detail.state === "pending" ? "Migrate safely" : actionLabel(action)}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </article>
           ))}
         </div>
-
-        <footer className="cave-migration-review__footer">
-          <span role="status">{notice}</span>
-          <div>
-            <button type="button" onClick={() => void openBackupFolder(status.backupRoot).then((ok) => {
-              if (!ok) setNotice(`Backups are stored at ${status.backupRoot}`);
-            })}>Open backup folder</button>
-            <button type="button" onClick={() => setReviewOpen(false)}>Close</button>
-          </div>
-        </footer>
-      </section>
-    </div>
+    </Modal>
   );
 }

@@ -14,7 +14,6 @@ import { Modal } from "@/components/ui/modal";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { ThreadSignalsSection } from "@/components/thread-signals-section";
 import {
   FamiliarAnalyticsDock,
@@ -1144,25 +1143,18 @@ function StageOverlay({
   onClose,
   head,
   children,
+  restoreFocus,
 }: {
   label: string;
   onClose: () => void;
   head: ReactNode;
   children: ReactNode;
+  restoreFocus?: () => boolean;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(true, ref, { onEscape: onClose });
   return (
-    <div ref={ref} className="fa-overlay" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>
-      <div className="fa-overlay__head">
-        {head}
-        <button type="button" className="fa-ghost-btn focus-ring" onClick={onClose}>
-          <Icon name="ph:x" width={12} aria-hidden />
-          Close · Esc
-        </button>
-      </div>
-      <div className="fa-overlay__body">{children}</div>
-    </div>
+    <Modal open onClose={onClose} title={label} description={head} scope="container" size="reader" restoreFocus={restoreFocus}>
+      {children}
+    </Modal>
   );
 }
 
@@ -1435,7 +1427,7 @@ function HealBoardModal({
   const traceableCount = requests.filter((request) => Boolean(request.traceSessionId)).length;
 
   return (
-    <Modal open wide onClose={onClose} breadcrumb={["Self-heal", "Board"]}>
+    <Modal open size="wide" onClose={onClose} breadcrumb={["Self-heal", "Board"]}>
       <div className="fa-board__summary">
         <div className="fa-board__summary-copy">
           <span>Intervention queue</span>
@@ -1647,36 +1639,21 @@ function ContractPanel({
   onClose: () => void;
   criticalCount: number;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(true, ref, { onEscape: onClose });
   const passCount = report.properties.filter((property) => property.pass).length;
   const active = activeProperty
     ? report.properties.find((property) => property.property === activeProperty) ?? null
     : null;
   const detail = active ? contractPropertyDetail(active.property, active.pass, report) : null;
   return (
-    <div
-      ref={ref}
-      className="fa-contract-panel"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Contract compliance detail"
-      tabIndex={-1}
+    <Modal
+      open
+      onClose={onClose}
+      title="Contract compliance"
+      description={`${passCount}/${report.properties.length} · ${report.pass ? "passing" : "needs review"}. The five properties every familiar must declare.`}
+      scope="container"
+      size="wide"
+      bodyLayout="fill"
     >
-      <div className="fa-contract-panel__head">
-        <span className="fa-band-crest fa-band-crest--warn" aria-hidden>
-          <Icon name="ph:file-text" width={14} />
-        </span>
-        <b>Contract compliance</b>
-        <span className={`fa-band-count${report.pass ? "" : " is-warn"}`}>
-          {passCount}/{report.properties.length} · {report.pass ? "passing" : "needs review"}
-        </span>
-        <span className="fa-band-hint">the five properties every familiar must declare</span>
-        <button type="button" className="fa-ghost-btn focus-ring" onClick={onClose} title="Collapse · Esc">
-          <Icon name="ph:arrows-in-simple" width={12} aria-hidden />
-          Collapse
-        </button>
-      </div>
       <div className="fa-contract-panel__body">
         <div className="fa-contract-panel__list">
           <ul>
@@ -1752,7 +1729,7 @@ function ContractPanel({
           ) : null}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1779,7 +1756,7 @@ function TrustModal({
   const current = confidence.hasData ? confidenceTier(confidence.label) : null;
   const trendByKey = new Map(trends.metrics.map((metric) => [metric.key, metric]));
   return (
-    <Modal open onClose={onClose} wide breadcrumb={["Trust", `How ${confidence.hasData ? confidence.score : "this"} is computed`]}>
+    <Modal open onClose={onClose} size="wide" breadcrumb={["Trust", `How ${confidence.hasData ? confidence.score : "this"} is computed`]}>
       {confidence.hasData ? (
         <>
           <div className="fa-trust-modal">
@@ -1916,6 +1893,9 @@ export function FamiliarAnalyticsContent({
   const [pulseOpen, setPulseOpen] = useState(false);
   const [deepDive, setDeepDive] = useState<DeepDive>(null);
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const signalsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const runtimeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const overlayReturnFocusRef = useRef<HTMLElement | null>(null);
   const [trustOpen, setTrustOpen] = useState(false);
   const [contractOpen, setContractOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
@@ -2089,24 +2069,33 @@ export function FamiliarAnalyticsContent({
 
   // A full-stage overlay is the top layer: it retires the anchored contract
   // panel and the pulse first, so two focus traps can never be live at once.
-  const openOverlay = useCallback((next: Exclude<Overlay, null>) => {
+  const openOverlay = useCallback((next: Exclude<Overlay, null>, returnTarget: HTMLElement | null = null) => {
+    overlayReturnFocusRef.current = returnTarget;
     setContractOpen(false);
     setPulseOpen(false);
     setDeepDive(null);
     setOverlay(next);
+  }, []);
+  const restoreOverlayFocus = useCallback(() => {
+    // A summary's full-view button retires when its dialog opens. Its
+    // persistent deep-dive control is the route back to that context.
+    const target = overlayReturnFocusRef.current;
+    if (!target?.isConnected) return true;
+    target.focus();
+    return false;
   }, []);
 
   // Esc unwinds the stack one layer at a time: the innermost open thing first.
   // Modal/StageOverlay own their own Esc; this covers the lighter panels.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || overlay || contractOpen || actionModal || trustOpen || boardOpen || traceTarget) return;
       if (deepDive) setDeepDive(null);
       else if (pulseOpen) setPulseOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [deepDive, pulseOpen]);
+  }, [actionModal, boardOpen, contractOpen, deepDive, overlay, pulseOpen, traceTarget, trustOpen]);
 
   const windowTitle = ANALYTICS_WINDOWS.find((entry) => entry.id === windowId)?.title ?? "";
   const errors = model.errors;
@@ -2323,6 +2312,7 @@ export function FamiliarAnalyticsContent({
           <button
             type="button"
             className={`fa-foot__btn${deepDive === "signals" ? " is-open" : ""} focus-ring`}
+            ref={signalsTriggerRef}
             aria-expanded={deepDive === "signals"}
             onClick={() => setDeepDive((prev) => (prev === "signals" ? null : "signals"))}
           >
@@ -2336,6 +2326,7 @@ export function FamiliarAnalyticsContent({
           <button
             type="button"
             className={`fa-foot__btn${deepDive === "model" ? " is-open" : ""} focus-ring`}
+            ref={runtimeTriggerRef}
             aria-expanded={deepDive === "model"}
             onClick={() => setDeepDive((prev) => (prev === "model" ? null : "model"))}
           >
@@ -2374,7 +2365,7 @@ export function FamiliarAnalyticsContent({
                 {reviewQueue.length} queued · {windowReports.length} report
                 {windowReports.length === 1 ? "" : "s"}
               </span>
-              <button type="button" className="fa-primary-btn focus-ring" onClick={() => openOverlay("signals")}>
+              <button type="button" className="fa-primary-btn focus-ring" onClick={() => openOverlay("signals", signalsTriggerRef.current)}>
                 Open full view
                 <Icon name="ph:arrow-up-right" width={11} aria-hidden />
               </button>
@@ -2424,7 +2415,7 @@ export function FamiliarAnalyticsContent({
               <span className="fa-band-hint">
                 measured execution metadata with explicit coverage
               </span>
-              <button type="button" className="fa-primary-btn focus-ring" onClick={() => openOverlay("model")}>
+              <button type="button" className="fa-primary-btn focus-ring" onClick={() => openOverlay("model", runtimeTriggerRef.current)}>
                 Open full view
                 <Icon name="ph:arrow-up-right" width={11} aria-hidden />
               </button>
@@ -2450,10 +2441,10 @@ export function FamiliarAnalyticsContent({
         {overlay === "signals" ? (
           <StageOverlay
             label="Thread signals"
+            restoreFocus={restoreOverlayFocus}
             onClose={() => setOverlay(null)}
             head={
               <>
-                <h2 className="fa-overlay__title">Thread signals</h2>
                 <span className="fa-band-count">
                   {windowReports.length} report{windowReports.length === 1 ? "" : "s"} ·{" "}
                   {reviewQueue.length} queued
@@ -2469,10 +2460,10 @@ export function FamiliarAnalyticsContent({
         {overlay === "model" ? (
           <StageOverlay
             label="Runtime performance"
+            restoreFocus={restoreOverlayFocus}
             onClose={() => setOverlay(null)}
             head={
               <>
-                <h2 className="fa-overlay__title">Runtime performance</h2>
                 <span className="fa-band-count">
                   {model.executionAnalytics?.windows[windowId].attempts ?? 0} attempt
                   {(model.executionAnalytics?.windows[windowId].attempts ?? 0) === 1 ? "" : "s"}

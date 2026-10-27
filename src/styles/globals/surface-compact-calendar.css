@@ -429,57 +429,10 @@
   }
 }
 
-.workflow-dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 260;
-  display: flex;
-  justify-content: flex-end;
-  background: color-mix(in oklch, black 18%, transparent);
-}
-
-.workflow-dialog {
-  width: min(760px, calc(100vw - 72px));
-  height: 100dvh;
-  max-height: 100dvh;
-  overflow: hidden;
-  border-left: 1px solid color-mix(in oklch, var(--border-hairline) 92%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in oklch, var(--bg-raised) 62%, transparent), transparent 220px),
-    var(--bg-panel);
-  box-shadow: -22px 0 54px color-mix(in oklch, black 34%, transparent);
-}
-
-.automation-create-dialog {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  max-height: 100%;
-  padding: 18px var(--space-5) 0;
-  color: var(--text-primary);
-}
-
-.automation-create-dialog__hero {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin: -18px -20px 2px;
-  padding: 18px var(--space-5) 14px;
-  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 84%, transparent);
-  background: color-mix(in oklch, var(--bg-panel) 94%, transparent);
-  backdrop-filter: blur(16px) saturate(140%);
-}
 
 .automation-create-dialog__body {
   display: grid;
-  flex: 1 1 auto;
-  min-height: 0;
-  gap: 14px;
-  overflow-y: auto;
-  padding-bottom: 14px;
-  scrollbar-gutter: stable;
+  gap: var(--space-4);
 }
 
 .workflow-eyebrow {
@@ -492,14 +445,6 @@
   text-transform: uppercase;
 }
 
-.automation-create-dialog__hero h2 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: 0;
-  line-height: 1.2;
-}
 
 .workflow-icon-button {
   display: grid;
@@ -627,50 +572,15 @@
   margin-bottom: 0;
 }
 
-.automation-create-dialog__footer {
-  flex: 0 0 auto;
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin: 0 -20px;
-  padding: var(--space-3) var(--space-5) calc(12px + max(0px, var(--sai-bottom)));
-  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 84%, transparent);
-  background: color-mix(in oklch, var(--bg-panel) 94%, transparent);
-  backdrop-filter: blur(16px) saturate(140%);
-}
 
 @media (max-width: 920px) {
-  .workflow-dialog {
-    width: min(100vw, 680px);
-  }
+
 
   .automation-create-dialog__primary-grid,
   .automation-create-dialog__prompt-grid,
   .automation-create-dialog__runtime-grid,
   .automation-create-dialog__scope-grid {
     grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 560px) {
-  .workflow-dialog-backdrop {
-    background: var(--bg-panel);
-  }
-
-  .workflow-dialog {
-    width: 100vw;
-    border-left: 0;
-    box-shadow: none;
-  }
-
-  .automation-create-dialog {
-    padding-inline: 14px;
-  }
-
-  .automation-create-dialog__hero,
-  .automation-create-dialog__footer {
-    margin-inline: -14px;
-    padding-inline: 14px;
   }
 }
 

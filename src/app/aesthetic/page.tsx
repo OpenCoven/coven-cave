@@ -7,6 +7,7 @@ import { Field } from "@/components/ui/field";
 import { TextArea } from "@/components/ui/text-area";
 import { TextInput } from "@/components/ui/text-input";
 import "./aesthetic.css";
+import { ModalSpecimens } from "./modal-specimens";
 
 const PALETTE: Array<{ name: string; cssVar: string; note?: string }> = [
   { name: "bg-base", cssVar: "--bg-base", note: "page background" },
@@ -243,6 +244,10 @@ export default function AestheticPage() {
             <TextInput placeholder="Choose a runtime first" disabled />
           </Field>
         </div>
+      </Section>
+
+      <Section title="Modals">
+        <ModalSpecimens />
       </Section>
 
       <Section title="Typography">

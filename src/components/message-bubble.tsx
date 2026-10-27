@@ -101,6 +101,7 @@ import {
   type MarkdownRenderGate,
 } from "@/lib/message-markdown-stream";
 import { CodeReadingContext, FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
+import { useMarkdownViewer } from "./markdown-viewer";
 export { CodeReadingContext, FileLinkResolverContext } from "./message-dom-wiring";
 export type { CodeReading, CodeReadingRequest } from "./message-dom-wiring";
 export type { FileLinkResolver } from "./message-dom-wiring";
@@ -411,7 +412,10 @@ type SyntaxBlockProps = {
  */
 export function SyntaxBlock({ text, lang, className, highlightLine, label, bare = false }: SyntaxBlockProps) {
   const [html, setHtml] = useState<string | null>(null);
-  const containerRef = useWireCopyButtons(html);
+  // Viewer state must not replace injected controls, focus or scroll state.
+  const htmlContent = useMemo(() => ({ __html: html ?? "" }), [html]);
+  const { openViewer, viewer } = useMarkdownViewer();
+  const containerRef = useWireCopyButtons(html, undefined, null, null, undefined, openViewer);
   const resolvedLang = lang ?? autoDetectLang(text);
   // The reader's place in the block, carried across a re-render (#5781).
   // New text replaces the whole block, its scroller included, so each change
@@ -507,11 +511,12 @@ export function SyntaxBlock({ text, lang, className, highlightLine, label, bare 
   return (
     <>
       {hiddenNote}
+      {viewer}
       <div
         ref={containerRef}
         className={`cave-syntax-block${bare ? " cave-syntax-block--bare" : ""} text-[length:var(--text-sm)] ${className ?? ""}`}
         // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={htmlContent}
       />
     </>
   );
@@ -539,7 +544,9 @@ export function MarkdownBlock({
   suppressRemoteMedia?: boolean;
 }) {
   const [html, setHtml] = useState<string | null>(null);
-  const containerRef = useWireCopyButtons(html, onOpenUrl, null, null, resolveOpenUrl);
+  const htmlContent = useMemo(() => ({ __html: html ?? "" }), [html]);
+  const { openViewer, viewer } = useMarkdownViewer();
+  const containerRef = useWireCopyButtons(html, onOpenUrl, null, null, resolveOpenUrl, openViewer);
 
   useEffect(() => {
     // An emptied file shows as empty, not as its old text (#5781).
@@ -563,12 +570,15 @@ export function MarkdownBlock({
   }
 
   return (
+    <>
+    {viewer}
     <div
       ref={containerRef}
       className={`cave-md ${className ?? ""}`}
       // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={htmlContent}
     />
+    </>
   );
 }
 
@@ -994,6 +1004,7 @@ function MarkdownContent({
   const [html, setHtml] = useState<string | null>(
     () => pending ? null : renderCacheGet(cacheKey) ?? null,
   );
+  const htmlContent = useMemo(() => ({ __html: html ?? "" }), [html]);
   // Chat prose file references (`src/foo.ts:42`) open in Code — but only when
   // the surface's resolver (FileLinkResolverContext) confirms the file exists
   // under the session's project root. No resolver ⇒ refs stay plain text.
@@ -1001,7 +1012,8 @@ function MarkdownContent({
   // Same posture for code blocks (cave-f6mu9): Read/Compare stay hidden until a
   // surface supplies an inspector to receive them.
   const reading = useContext(CodeReadingContext);
-  const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver, reading);
+  const { openViewer, viewer } = useMarkdownViewer();
+  const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver, reading, undefined, openViewer);
   // mdToHtml is async and several streaming renders can be in flight at once.
   // The gate orders their commits and invalidates pre-settle work synchronously
   // during render, before React runs passive-effect cleanup or the final pass.
@@ -1125,12 +1137,13 @@ function MarkdownContent({
 
   return (
     <>
+      {viewer}
       <div
         ref={containerRef}
         className={`cave-md${className ? ` ${className}` : ""}`}
         // Markdown output is sanitized in mdToHtml before DOM insertion.
         // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={htmlContent}
       />
       {/* This is a separate response status, not a cursor intended to trail the
           final rendered line. Keeping it outside sanitized HTML avoids malformed

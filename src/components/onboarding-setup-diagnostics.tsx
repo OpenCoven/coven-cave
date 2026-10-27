@@ -135,7 +135,7 @@ export function OnboardingSetupDiagnosticsModal({
       onClose={onClose}
       breadcrumb={["First run", "Setup diagnostics"]}
       ariaDescribedBy={descriptionId}
-      wide
+      size="wide"
       footerActions={
         <>
           <Button variant="secondary" onClick={onClose}>

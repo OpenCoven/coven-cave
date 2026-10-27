@@ -27,6 +27,8 @@ export function WorkspaceRail({
   onSelectTab,
   onTogglePin,
   onCollapse,
+  hostedFullscreen = false,
+  onFullscreenChange,
 }: {
   changeCount: number;
   activeTab: CodeRailTab;
@@ -42,6 +44,9 @@ export function WorkspaceRail({
   onSelectTab: (tab: CodeRailTab) => void;
   onTogglePin: () => void;
   onCollapse: () => void;
+  /** A modal host owns viewport coverage while the rail keeps its panel state. */
+  hostedFullscreen?: boolean;
+  onFullscreenChange?: (fullscreen: boolean) => void;
 }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   // Lazy pty: the terminal (and its shell) is not mounted until the Terminal tab
@@ -69,7 +74,7 @@ export function WorkspaceRail({
 
   return (
     <section
-      className={`workspace-rail${isFullscreen ? " workspace-rail--fullscreen" : ""}`}
+      className={`workspace-rail${isFullscreen ? " workspace-rail--fullscreen" : ""}${isFullscreen && hostedFullscreen ? " workspace-rail--hosted-fullscreen" : ""}`}
       aria-label="Code rail"
       data-fullscreen={isFullscreen ? "true" : undefined}
     >
@@ -128,7 +133,11 @@ export function WorkspaceRail({
               aria-label={isFullscreen ? "Exit code rail fullscreen" : "Expand code rail fullscreen"}
               title={isFullscreen ? "Exit code rail fullscreen" : "Expand code rail fullscreen"}
               aria-pressed={isFullscreen}
-              onClick={() => setIsFullscreen((value) => !value)}
+              onClick={() => {
+                const next = !isFullscreen;
+                setIsFullscreen(next);
+                onFullscreenChange?.(next);
+              }}
             >
               <Icon name={isFullscreen ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={13} aria-hidden />
             </button>

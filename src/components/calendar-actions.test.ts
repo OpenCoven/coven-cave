@@ -20,17 +20,7 @@ assert.match(view, /onOpen\(item\); onClose\(\)/, "Open action must invoke onOpe
 assert.match(view, /function openTargetLabel/, "Open label must be derived from item.link/sessionId");
 
 // ───────── Detail panel as accessible dialog ─────────
-assert.match(view, /role="dialog"/, "Detail panel must be a dialog");
-assert.match(view, /aria-modal="true"/, "Detail panel must be aria-modal");
-assert.match(view, /aria-labelledby=\{titleId\}/, "Detail panel must be labelled by its title");
-assert.match(view, /useFocusTrap\(true, panelRef, \{ onEscape: onClose \}\)/, "Detail panel must trap focus + Escape");
-// A backdrop makes aria-modal honest (calendar behind is inert) and gives the
-// drawer the outside-click dismiss it was missing (was: close button/Escape only).
-assert.match(
-  view,
-  /<div className="cave-cal-detail-backdrop" role="presentation" onClick=\{onClose\} \/>/,
-  "Detail panel has a click-to-dismiss backdrop behind it",
-);
+assert.match(view, /<Modal open onClose=\{onClose\} title=\{item.title\} presentation="sheet-right"/, "the detail panel delegates dialog semantics, focus and backdrop dismissal to Modal");
 
 // ───────── Dismissed items leave the calendar ─────────
 assert.match(view, /\.filter\(\(it\) => it\.status !== "dismissed"\)/, "Dismissed items must be filtered out of the calendar");
@@ -149,7 +139,7 @@ assert.match(view, /aria-label=\{`\$\{fmtTime\(\(ev\.item\.fireAt \?\? ev\.item\
 // Deadlines read as deadlines, not indistinguishable from events.
 assert.match(view, /aria-label=\{`\$\{deadline\.title\}, task deadline/, "deadline chips are distinguishable from events non-visually");
 // The jump-to-date popover traps focus + Escape (it leaked Tab before).
-assert.match(view, /function MiniMonthPopover[\s\S]*?useFocusTrap\(true, ref, \{ onEscape: onClose \}\)/, "MiniMonthPopover traps focus");
+assert.match(view, /function MiniMonthPopover[\s\S]*?<Popover open[\s\S]*?anchorRef=\{anchorRef\}/, "MiniMonthPopover delegates nonmodal keyboard and dismissal behavior to Popover");
 // Today is conveyed with aria-current, not colour alone (month cell + mini-month).
 assert.ok((view.match(/aria-current=\{isToday \? "date" : undefined\}/g) ?? []).length >= 2, "today is marked with aria-current=\"date\"");
 // Horizontal arrows don't page the period out from under a focused grid event

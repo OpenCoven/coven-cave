@@ -9,3 +9,6 @@ onlyBuiltDependencies:
   - unrs-resolver
 allowBuilds:
   sharp: set this to true or false
+
+patchedDependencies:
+  "@opencoven/research@0.1.0": patches/opencoven-research-0.1.0-modal.patch

@@ -154,8 +154,8 @@ export function FamiliarDailyNotes({ familiar }: Props) {
   return (
     <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
       {/* Date navigation */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-4 py-2">
-        <div className="flex items-center gap-1">
+      <div className="familiar-daily-notes__navigation flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-4 py-2">
+        <div className="familiar-daily-notes__date flex items-center gap-1">
           <button
             type="button"
             onClick={() => selectDate(shiftDay(date, -1))}

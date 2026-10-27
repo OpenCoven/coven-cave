@@ -1,24 +1,7 @@
 /* A compact file-browser surface. Only the folder list scrolls. */
-.directory-picker-scrim {
-  padding: var(--space-4);
-}
 .directory-picker {
   container-type: inline-size;
-  height: min(600px, calc(100dvh - var(--space-8)));
-  max-height: calc(100dvh - var(--space-8));
   background: var(--bg-raised);
-}
-.directory-picker-header,
-.directory-picker-footer {
-  flex-shrink: 0;
-  padding: var(--space-3) var(--space-4);
-}
-.directory-picker-header {
-  align-items: flex-start;
-  border-bottom: 1px solid var(--border-hairline);
-}
-.directory-picker-header > div {
-  gap: var(--space-1);
 }
 .directory-picker-places {
   width: 168px;
@@ -65,24 +48,15 @@
 .directory-picker svg {
   flex-shrink: 0;
 }
-.directory-picker-footer > div:first-child > span:first-child {
-  text-transform: none;
-  letter-spacing: normal;
-}
 @container (max-width: 560px) {
   .directory-picker-places { width: 128px; }
   .directory-picker-search { flex-wrap: wrap; }
   .directory-picker-search label { flex-basis: 100%; }
-  .directory-picker-footer { gap: var(--space-2); }
-  .directory-picker-footer > div:first-child { flex: 1; }
-  .directory-picker-footer > div:first-child > span { max-width: 100%; }
 }
 @container (max-width: 400px) {
   .directory-picker-places { width: 112px; }
   .directory-picker-workspace-badge { display: none; }
   .directory-picker-places button { gap: var(--space-1); }
-  .directory-picker-footer { align-items: stretch; flex-direction: column; }
-  .directory-picker-footer > div:last-child { justify-content: flex-end; }
 }
 @media (pointer: coarse) {
   .directory-picker input { font-size: var(--text-lg); }

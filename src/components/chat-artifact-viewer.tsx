@@ -3,10 +3,9 @@
 import "@/styles/chat-artifact.css";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
 import {
   buildPreviewSrcDoc,
@@ -117,7 +116,7 @@ export function ChatArtifactViewer({
   } | null>(null);
   const [selectionAnnouncement, setSelectionAnnouncement] = useState("");
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  const shellRef = useRef<HTMLDivElement | null>(null);
+  const expandButtonRef = useRef<HTMLButtonElement | null>(null);
   const refineRef = useRef<HTMLTextAreaElement | null>(null);
   const refineAbortRef = useRef<AbortController | null>(null);
   const artifactRef = useRef(artifact);
@@ -460,10 +459,6 @@ export function ChatArtifactViewer({
     return () => window.removeEventListener("message", onMessage);
   }, [srcDoc]);
 
-  // Fullscreen is a modal dialog: trap focus inside it, restore focus to the
-  // Expand button on close, and close on Escape (shared convention).
-  useFocusTrap(fullscreen, shellRef, { onEscape: () => setFullscreen(false) });
-
   const copyCode = useCallback(() => {
     void navigator.clipboard?.writeText(code).catch(() => undefined);
   }, [code]);
@@ -689,18 +684,7 @@ export function ChatArtifactViewer({
     }
   }, [saveState, sourcePrompt, title, code, kind]);
 
-  const shell = (
-    <div
-      ref={shellRef}
-      className={`chat-artifact${fullscreen ? " chat-artifact--fullscreen" : ""}`}
-      {...(fullscreen ? { role: "dialog" as const, "aria-modal": true, "aria-label": "Artifact (fullscreen)", tabIndex: -1 } : {})}
-    >
-      <div className="chat-artifact__head">
-        <span className="chat-artifact__dots" aria-hidden>
-          <i className="chat-artifact__dot chat-artifact__dot--danger" />
-          <i className="chat-artifact__dot chat-artifact__dot--warning" />
-          <i className="chat-artifact__dot chat-artifact__dot--success" />
-        </span>
+  const viewTabs = (
         <Tabs
           variant="segment"
           size="sm"
@@ -712,8 +696,8 @@ export function ChatArtifactViewer({
             { id: "code", label: "Code", icon: "ph:code" },
           ]}
         />
-        <span className="chat-artifact__title" title={title}>{title}</span>
-        <span className="chat-artifact__spacer" />
+  );
+  const viewActions = (
         <div className="chat-artifact__actions">
           {artifact ? (
             <button
@@ -737,7 +721,9 @@ export function ChatArtifactViewer({
           <button type="button" className="chat-artifact__btn" title="Copy code" aria-label="Copy code" onClick={copyCode}>
             <Icon name="ph:copy" width={14} />
           </button>
+          {!fullscreen ? (
           <button
+            ref={expandButtonRef}
             type="button"
             className={`chat-artifact__btn${fullscreen ? " is-active" : ""}`}
             title={fullscreen ? "Exit fullscreen" : "Expand fullscreen"}
@@ -747,6 +733,7 @@ export function ChatArtifactViewer({
           >
             <Icon name={fullscreen ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={14} />
           </button>
+          ) : null}
           <button type="button" className="chat-artifact__btn" title="Open in browser" aria-label="Open in browser" onClick={openInBrowser}>
             <Icon name="ph:arrow-square-out" width={14} />
           </button>
@@ -760,7 +747,21 @@ export function ChatArtifactViewer({
             </button>
           )}
         </div>
+  );
+  const shell = (
+    <div className={fullscreen ? "chat-artifact-content" : "chat-artifact"}>
+      {!fullscreen ? (      <div className="chat-artifact__head">
+        <span className="chat-artifact__dots" aria-hidden>
+          <i className="chat-artifact__dot chat-artifact__dot--danger" />
+          <i className="chat-artifact__dot chat-artifact__dot--warning" />
+          <i className="chat-artifact__dot chat-artifact__dot--success" />
+        </span>
+        {viewTabs}
+        <span className="chat-artifact__title" title={title}>{title}</span>
+        <span className="chat-artifact__spacer" />
+        {viewActions}
       </div>
+) : null}
 
       <div className="chat-artifact__body">
         {tab === "canvas" ? (
@@ -1006,15 +1007,18 @@ export function ChatArtifactViewer({
     </div>
   );
 
-  // When expanded, portal the shell to <body> so it escapes the chat turn's
-  // containing block. The turn row (.cave-linear-turn) uses
-  // `content-visibility: auto`, which implies `contain: layout paint` — that
-  // makes it a containing block for position:fixed descendants, so an inline
-  // `.chat-artifact--fullscreen` overlay would be clipped to the turn's box
-  // instead of filling the viewport. Inline (non-fullscreen) stays in place.
-  return fullscreen && typeof document !== "undefined"
-    ? createPortal(shell, document.body)
-    : shell;
+  // Keep the existing inline/portal boundary: the message row uses paint
+  // containment, so fullscreen must escape it. Authoring state lives above
+  // this boundary. The sandbox reloads on this transition, as it did before.
+  return fullscreen ? <Modal open onClose={() => setFullscreen(false)} title={title || "Artifact"}
+    presentation="fullscreen" bodyLayout="fill" containTabFocus closeLabel="Exit artifact fullscreen"
+    headerActions={<>{viewTabs}{viewActions}</>}
+    restoreFocus={() => {
+      if (!expandButtonRef.current) return true;
+      expandButtonRef.current.focus();
+      return false;
+    }}
+  >{shell}</Modal> : shell;
 }
 
 /**

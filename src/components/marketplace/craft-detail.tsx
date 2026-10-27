@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
@@ -8,7 +8,7 @@ import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 import { isCraftInstallationVerified, type MarketplacePlugin } from "@/lib/marketplace-catalog";
 import { openExternalUrl } from "@/lib/open-external";
 import type { RoleEffectiveComposition } from "@/lib/role-craft-composition";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 
 type CraftPlanComponent = {
   id: string;
@@ -112,7 +112,6 @@ export function CraftDetail({
   onRemove,
   onActionCleared,
 }: Props) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const [plan, setPlan] = useState<CraftInstallPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [roles, setRoles] = useState<RoleWire[]>([]);
@@ -122,7 +121,6 @@ export function CraftDetail({
   const [roleActionError, setRoleActionError] = useState<string | null>(null);
   const [selectedRoleKey, setSelectedRoleKey] = useState<string | null>(null);
   const { announce } = useAnnouncer();
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
 
   const loadRoles = useCallback(async (signal?: AbortSignal) => {
     setRolesLoading(true);
@@ -227,33 +225,27 @@ export function CraftDetail({
   const displayedAffectedRoles = actionError?.affectedRoles ?? [];
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
-      <div
-        ref={dialogRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${plugin.displayName} Craft details`}
-        className="craft-dossier"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="craft-dossier__header">
-          <MarketplaceLogo
-            id={plugin.id}
-            displayName={plugin.displayName}
-            logo={plugin.logo}
-            size="dossier"
-          />
-          <div className="min-w-0 flex-1">
-            <p className="craft-dossier__eyebrow">Research Craft · v{plugin.version}</p>
-            <h2>{plugin.displayName}</h2>
-            <p>{plugin.description}</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close Craft details" className="focus-ring craft-dossier__close">
-            <Icon name="ph:x" width={16} />
-          </button>
-        </header>
-
+    <Modal open onClose={onClose} presentation="sheet-right" size="wide"
+      title={plugin.displayName} description={plugin.description}
+      breadcrumb={[`Research Craft · v${plugin.version}`, plugin.displayName]}
+      headerIcon={<MarketplaceLogo id={plugin.id} displayName={plugin.displayName} logo={plugin.logo} size="detail" />}
+      closeLabel="Close Craft details" busy={busy || roleBusy !== null}
+      footerPills={<div className="flex flex-col gap-1">
+            <strong>{current ? "Verified in Codex" : plugin.updateAvailable ? "Version mismatch" : "Not installed"}</strong>
+            <span>{plan ? `${plan.runtime.marketplace} · ${plan.version}` : "Plan loading"}</span>
+          </div>}
+      footerActions={<>{plugin.installed ? (
+            <>
+              {plugin.updateAvailable ? <Button variant="primary" loading={busy} disabled={!plan} onClick={onInstall}>Update Craft</Button> : null}
+              <Button variant="secondary" loading={busy} disabled={attachedRoles.length > 0} onClick={onRemove}>
+                {attachedRoles.length > 0 ? `Detach from ${attachedRoles.length} Role${attachedRoles.length === 1 ? "" : "s"} first` : "Remove Craft"}
+              </Button>
+            </>
+          ) : (
+            <Button variant="primary" leadingIcon="ph:package-bold" loading={busy} disabled={!plan} onClick={onInstall}>{installLabel}</Button>
+          )}
+        </>}
+    >
         <div className="craft-dossier__body">
           <div className="craft-dossier__runtime" aria-live="polite">
             <span><Icon name={current ? "ph:seal-check" : "ph:package-bold"} width={14} aria-hidden /></span>
@@ -403,23 +395,6 @@ export function CraftDetail({
           </section>
         </div>
 
-        <footer className="craft-dossier__footer">
-          <div>
-            <strong>{current ? "Verified in Codex" : plugin.updateAvailable ? "Version mismatch" : "Not installed"}</strong>
-            <span>{plan ? `${plan.runtime.marketplace} · ${plan.version}` : "Plan loading"}</span>
-          </div>
-          {plugin.installed ? (
-            <>
-              {plugin.updateAvailable ? <Button variant="primary" loading={busy} disabled={!plan} onClick={onInstall}>Update Craft</Button> : null}
-              <Button variant="secondary" loading={busy} disabled={attachedRoles.length > 0} onClick={onRemove}>
-                {attachedRoles.length > 0 ? `Detach from ${attachedRoles.length} Role${attachedRoles.length === 1 ? "" : "s"} first` : "Remove Craft"}
-              </Button>
-            </>
-          ) : (
-            <Button variant="primary" leadingIcon="ph:package-bold" loading={busy} disabled={!plan} onClick={onInstall}>{installLabel}</Button>
-          )}
-        </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -91,11 +91,10 @@ test("Tab cycles inside the palette and never lands on the results scroller or t
   // the trap did not know about, and the next Tab left the modal (#5527).
   for (let step = 0; step < 24; step += 1) {
     await page.keyboard.press("Tab");
-    const where = await page.evaluate(() => {
+    const where = await palette.evaluate(dialog => {
       const active = document.activeElement;
-      const dialog = document.querySelector('[role="dialog"][aria-label="Command palette"]');
       return {
-        inside: Boolean(dialog && active && dialog.contains(active)),
+        inside: Boolean(active && dialog.contains(active)),
         isResults: active?.getAttribute("role") === "listbox",
         tag: active?.tagName ?? "none",
       };

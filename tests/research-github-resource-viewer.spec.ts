@@ -283,9 +283,10 @@ test.describe("saved GitHub repository modal", () => {
     // Esc is layered — help, then menu, then filter, then the modal — so it
     // never closes more than the user asked it to.
     await page.keyboard.press("?");
-    await expect(modal.locator(".research-gh__help")).toBeVisible();
+    const shortcuts = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true });
+    await expect(shortcuts).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(modal.locator(".research-gh__help")).toHaveCount(0);
+    await expect(shortcuts).toHaveCount(0);
     await expect(modal).toBeVisible();
   });
 });

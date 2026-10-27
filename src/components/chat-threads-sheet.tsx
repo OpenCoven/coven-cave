@@ -13,9 +13,9 @@
 // Selecting a thread dismisses the sheet. A slide-over that stayed open over
 // the conversation it just navigated to would cover the thing you asked for.
 
-import { useRef, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { SidebarChatsSection } from "@/components/workspace-sidebar";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import type { ChatBrowseScope } from "@/lib/chat-browse-scope";
 import type { SessionRow } from "@/lib/types";
 
@@ -54,25 +54,8 @@ export function ChatThreadsSheet({
    *  strip away, so the sheet is where Sessions / Projects / Familiar live. */
   sections?: ReactNode;
 }) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(open, panelRef, { onEscape: onClose });
-  if (!open) return null;
   return (
-    <div className="chat-threads-sheet fixed inset-0 z-[200] flex justify-start" role="presentation">
-      <button
-        type="button"
-        aria-label="Close chat list"
-        className="absolute inset-0 bg-[var(--backdrop-scrim)]"
-        onClick={onClose}
-      />
-      <div
-        ref={panelRef}
-        className="chat-threads-sheet__panel relative flex h-full w-[min(88vw,320px)] flex-col bg-[var(--bg-base)] shadow-[8px_0_32px_rgba(0,0,0,0.2)] [padding-bottom:var(--sai-bottom)] [padding-top:var(--sai-top)]"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Chat threads"
-        tabIndex={-1}
-      >
+    <Modal open={open} onClose={onClose} title="Chat threads" size="compact" presentation="sheet-left" bodyLayout="fill">
         {sections}
         <SidebarChatsSection
           sessions={sessions}
@@ -92,7 +75,6 @@ export function ChatThreadsSheet({
           onCollapse={onClose}
           collapseLabel="Close chat list"
         />
-      </div>
-    </div>
+    </Modal>
   );
 }

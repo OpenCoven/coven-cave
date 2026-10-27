@@ -823,6 +823,32 @@
   border-left: 1px solid var(--border);
 }
 
+.cr-stats-modal { container: chart-stats / inline-size; }
+.cr-stats-modal .cr-node__top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding-right: 0;
+}
+.cr-stats-modal .cr-chain__title {
+  grid-column: 2 / -1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.cr-stats-modal .cr-node__top > .cr-mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.cr-stats-modal .cr-node__top > .cr-mono:nth-child(3) { grid-column: 2; }
+@container chart-stats (max-width: 40rem) {
+  .cr-stats__grid { grid-template-columns: minmax(0, 1fr); }
+  .cr-stats__col + .cr-stats__col {
+    padding-left: 0;
+    border-left: 0;
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border);
+  }
+}
+
 .cr-change {
   display: flex;
   align-items: baseline;
@@ -2545,86 +2571,9 @@
   line-height: var(--leading-normal);
 }
 
-/* ── Modals ──────────────────────────────────────────────────────────────── */
-
-.cr-modal {
-  position: absolute;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-6);
-}
-
-.cr-modal__scrim {
-  position: absolute;
-  inset: 0;
-  background: var(--backdrop-scrim);
-  border: 0;
-  cursor: default;
-}
-
-.cr-modal__dialog {
-  position: relative;
-  max-height: 100%;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid color-mix(in oklch, var(--room-accent) 40%, transparent);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  box-shadow: 0 26px 70px var(--shadow-color);
-}
-
-.cr-modal__dialog--sheet {
-  width: 620px;
-  max-width: 100%;
-}
-
-.cr-modal__dialog--stats {
-  width: 940px;
-  max-width: 100%;
-}
-
-.cr-modal__head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5) var(--space-3);
-  border-bottom: 1px solid var(--border);
-}
-
-.cr-modal__title {
-  font-size: var(--text-md);
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  flex: none;
-}
-
-.cr-modal__body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-5) var(--space-4);
-}
-
-.cr-modal__foot {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-5) var(--space-3);
-  border-top: 1px solid var(--border);
-  background: color-mix(in oklch, var(--bg-base) 30%, transparent);
-}
-
 /* Step sheet */
+
+.cr-sheet__content { container: chart-step / inline-size; }
 
 .cr-sheet__title {
   width: 100%;
@@ -2722,6 +2671,25 @@
   color: var(--text-muted);
   opacity: 0.3;
   cursor: default;
+}
+
+@container chart-step (max-width: 36rem) {
+  .cr-sheet__stage {
+    display: grid;
+    grid-template-columns: var(--touch-target) minmax(0, 1fr) minmax(0, 1fr) var(--touch-target);
+  }
+  .cr-sheet__stage-current {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    height: auto;
+    min-height: var(--touch-target);
+    flex-wrap: wrap;
+    padding: var(--space-2);
+  }
+  .cr-sheet__neighbour, .cr-sheet__arrow {
+    grid-row: 2;
+    width: auto;
+  }
 }
 
 .cr-conn {

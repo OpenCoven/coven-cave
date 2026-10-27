@@ -130,7 +130,7 @@ assert.match(
 );
 assert.match(
   source,
-  /className=\{`gh-glass-panel gh-detail\$\{focused \? " is-focused" : ""\}`\}/,
+  /className=\{focused \? "gh-detail-content" : "gh-glass-panel gh-detail"\}/,
   "detail panel keeps the glass panel styling hook and adds the focused-read modifier",
 );
 // Three bands: the masthead and the body scroll independently and the
@@ -318,8 +318,8 @@ assert.match(source, /new ResizeObserver\(\(entries\) => \{\s*const width = Math
 // ── Focused read ──────────────────────────────────────────────────────────────
 // Portalled: an ancestor with backdrop-filter would otherwise become the
 // containing block for position:fixed and strand the modal inside the split.
-assert.match(source, /if \(!focused\) return panel;\s*\n\s*return createPortal\(/, "the focused read escapes the split through a portal");
-assert.match(source, /if \(e\.key === "Escape"\) \{ e\.preventDefault\(\); setFocused\(false\); \}/, "Esc leaves the focused read");
+assert.match(source, /if \(!focused\) return panel;\s*return <Modal/, "the focused read escapes the split through a portal");
+assert.doesNotMatch(source, /if \(e\.key === "Escape"\)[^\n]*setFocused\(false\)/, "Escape belongs to Modal so a child dialog closes one layer only");
 assert.match(source, /const FILTER_BACK_LABEL: Record<Filter, string>/, "the way out of the focused read is named per tab");
 
 // ── Freshness + budget ────────────────────────────────────────────────────────
@@ -338,9 +338,7 @@ assert.match(stream, /r\.getAttribute\("aria-current"\) === "true"/, "roving-ind
 
 // Raised over the list behind a scrim, the detail panel IS a modal: it says so,
 // traps the tab ring, and returns focus on close.
-assert.match(source, /role=\{focused \? "dialog" : undefined\}/, "the focused read carries dialog semantics");
-assert.match(source, /aria-modal=\{focused \? true : undefined\}/, "the focused read is announced as modal");
-assert.match(source, /useFocusTrap\(focused, panelRef, \{ onEscape: onUnfocus \}\)/, "the focused read traps focus and returns it");
+assert.match(source, /return <Modal open onClose=\{\(\) => onUnfocus\?\.\(\)\}/, "the focused read delegates focus, semantics and dismissal to Modal");
 
 // The freshness ticker only runs when there is a label on screen to age.
 assert.match(source, /const ticking = syncedAt !== null;/, "the sync pill gates its ticker on having something to age");
@@ -709,7 +707,7 @@ assert.doesNotMatch(
 }
 assert.match(source, /const pendingResolveRef = useRef\(new Map<string, boolean>\(\)\)/, "optimistic resolves are tracked for override");
 assert.match(source, /pending\.delete\(t\.id\); \/\/ API caught up — stop overriding/, "overrides drop once the API confirms");
-assert.match(source, /const closeUnlessSaving = \(\) => \{\s*\n\s*if \(!savingRef\.current\) onClose\(\);/, "the PAT modal defers dismissal while saving");
-assert.match(source, /onClick=\{closeUnlessSaving\}/, "the backdrop uses the saving-aware close");
+assert.match(source, /title="Connect GitHub" busy=\{saving \|\| removing\}/, "the PAT modal defers every dismissal while saving or removing");
+assert.match(source, /<Modal open onClose=\{onClose\} title="Connect GitHub"/, "the shared backdrop uses the same guarded close contract");
 
 console.log("github-view-polish.test.ts OK");

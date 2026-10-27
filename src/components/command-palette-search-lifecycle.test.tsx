@@ -6,6 +6,8 @@ import {
 } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+vi.mock("react-dom", () => ({ createPortal: (node) => node }));
+
 import { CommandPalette } from "./command-palette";
 
 const resources = vi.hoisted(() => ({

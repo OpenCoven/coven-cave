@@ -164,10 +164,11 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
   return (
     <Modal
       open={open}
+      busy={busyKeys.size > 0}
       onClose={onClose}
       ariaLabel={`Configure ${displayName}`}
       breadcrumb={["Marketplace", displayName, "Set up"]}
-      footerActions={<Button variant="secondary" size="sm" onClick={onClose}>Done</Button>}
+      footerActions={<Button variant="secondary" size="sm" disabled={busyKeys.size > 0} onClick={onClose}>Done</Button>}
     >
       <div className="flex flex-col gap-4">
         {!loaded || fields.length > 0 ? (

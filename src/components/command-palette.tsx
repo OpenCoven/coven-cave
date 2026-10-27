@@ -1,11 +1,12 @@
 "use client";
 
+import { flushSync } from "react-dom";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
 import { Icon, type IconName } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
 import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
@@ -247,7 +248,6 @@ export function CommandPalette({
   const [globalPartial, setGlobalPartial] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const keys = useKeySymbols();
 
 
@@ -500,7 +500,6 @@ export function CommandPalette({
     onClose();
   };
 
-  useFocusTrap(open, dialogRef, { onEscape: closeWithState });
 
   // Fetch the searchable corpora once on first open. Cheap calls; refreshed
   // every time the palette opens so the index doesn't go stale.
@@ -1081,24 +1080,19 @@ export function CommandPalette({
   // on a second click ("doesn't grab unless I unfocus first").
   const onScrimPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const { clientX, clientY, button } = e;
-    const scrim = e.currentTarget;
+    // Restore the background before hit-testing; inert nodes cannot be targets.
+    flushSync(onClose);
     let target: HTMLElement | null = null;
     // Only a primary (left) press forwards through; secondary/middle just close.
     // Presses inside the dialog never reach here (it stops propagation), so the
     // hit point is always over the backdrop itself.
     if (button === 0) {
-      // Make the scrim transparent to hit-testing so elementFromPoint reports
-      // the app control beneath it, then restore it before unmounting.
-      const prev = scrim.style.pointerEvents;
-      scrim.style.pointerEvents = "none";
       const under = document.elementFromPoint(clientX, clientY);
-      scrim.style.pointerEvents = prev;
       target =
         under?.closest<HTMLElement>(
           'a[href], button:not([disabled]), input, textarea, select, [role="button"], [role="option"], [role="menuitem"], [role="tab"], [role="link"], [role="checkbox"], [role="switch"]',
         ) ?? null;
     }
-    onClose();
     if (!target) return;
     // Defer activation until the overlay has unmounted so the forwarded click
     // lands with the palette already gone (and any close side-effects settled).
@@ -1112,25 +1106,24 @@ export function CommandPalette({
   if (!open) return null;
 
   return (
-    <div
-      // Dismiss on press (pointerdown), not click, so the backdrop never lingers
-      // "armed" to swallow the next click. onScrimPointerDown also forwards the
-      // press to the control underneath (click-through) — see its definition.
-      onPointerDown={onScrimPointerDown}
-      role="presentation"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm [animation:ui-modal-fade-in_var(--duration-fast)_var(--ease-decelerate)]!"
+    <Modal open onClose={closeWithState} title="Command palette" size="wide" bodyLayout="fill"
+      initialFocusRef={inputRef} onBackdropPress={onScrimPointerDown}
+      footerPills={<>
+          {/* Keyboard hints are desktop vocabulary — hidden on coarse-pointer
+              devices where there is no ⌘/esc to press (cave-4gg0). */}
+          <span className="touch-hidden flex items-center gap-1">
+            <kbd className="palette-kbd">{keys.up}{keys.down}</kbd> navigate ·{" "}
+            <kbd className="palette-kbd">{keys.enter}</kbd> select ·{" "}
+            <kbd className="palette-kbd">esc</kbd> close
+          </span>
+          <span className="flex items-center gap-1">
+            {counts[category]} results
+            <span className="touch-hidden flex items-center gap-1">
+              {" "}· <kbd className="palette-kbd">{keys.mod}K</kbd>
+            </span>
+          </span>
+</>}
     >
-      <div
-        ref={dialogRef}
-        // Keep presses inside the dialog from bubbling to the backdrop's
-        // pointerdown dismissal (matches the dismissal event above).
-        onPointerDown={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Command palette"
-        tabIndex={-1}
-        className="command-palette glass-overlay [animation:ui-modal-enter_var(--duration-base)_var(--ease-decelerate)]!"
-      >
         <div className="command-palette__search">
           <Icon
             name="ph:magnifying-glass"
@@ -1585,23 +1578,7 @@ export function CommandPalette({
             );
           })}
         </ul>
-        <div className="command-palette__footer">
-          {/* Keyboard hints are desktop vocabulary — hidden on coarse-pointer
-              devices where there is no ⌘/esc to press (cave-4gg0). */}
-          <span className="touch-hidden flex items-center gap-1">
-            <kbd className="palette-kbd">{keys.up}{keys.down}</kbd> navigate ·{" "}
-            <kbd className="palette-kbd">{keys.enter}</kbd> select ·{" "}
-            <kbd className="palette-kbd">esc</kbd> close
-          </span>
-          <span className="flex items-center gap-1">
-            {counts[category]} results
-            <span className="touch-hidden flex items-center gap-1">
-              {" "}· <kbd className="palette-kbd">{keys.mod}K</kbd>
-            </span>
-          </span>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

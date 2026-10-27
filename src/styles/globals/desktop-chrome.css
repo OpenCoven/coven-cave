@@ -588,46 +588,9 @@ button:active > .edge-rail-chip {
   opacity: 1;
 }
 
-.cave-migration-review-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  display: grid;
-  place-items: center;
-  padding: var(--space-6);
-  background: color-mix(in oklch, black 54%, transparent);
-  backdrop-filter: blur(8px);
-}
 
-.cave-migration-review {
-  width: min(760px, 100%);
-  max-height: min(780px, calc(100vh - 48px));
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-panel);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-lg);
-}
 
-.cave-migration-review__header,
-.cave-migration-review__footer {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-5);
-  padding: 18px var(--space-5);
-  border-bottom: 1px solid var(--border-hairline);
-}
 
-.cave-migration-review__header h2 {
-  margin: 0 0 6px;
-  font-size: var(--text-lg);
-}
-
-.cave-migration-review__header p,
 .cave-migration-file p {
   margin: 0;
   color: var(--text-secondary);
@@ -643,28 +606,9 @@ button:active > .edge-rail-chip {
   line-height: 1.45;
 }
 
-.cave-migration-review button {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
-  padding: 6px 10px;
-  background: var(--bg-subtle);
-  color: var(--text-primary);
-  cursor: pointer;
-}
 
-.cave-migration-review button:hover:not(:disabled) {
-  border-color: var(--accent-presence);
-}
 
-.cave-migration-review button:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
-}
 
-.cave-migration-review__files {
-  overflow: auto;
-  padding: var(--space-3) var(--space-5) var(--space-5);
-}
 
 .cave-migration-file {
   padding: var(--space-4) 0;
@@ -672,8 +616,7 @@ button:active > .edge-rail-chip {
 }
 
 .cave-migration-file__heading,
-.cave-migration-file__actions,
-.cave-migration-review__footer > div {
+.cave-migration-file__actions {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -734,17 +677,7 @@ button:active > .edge-rail-chip {
   font-size: var(--text-sm);
 }
 
-.cave-migration-review__footer {
-  align-items: center;
-  border-top: 1px solid var(--border-hairline);
-  border-bottom: 0;
-}
 
-.cave-migration-review__footer > span {
-  min-width: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-}
 
 @media (max-width: 767px) {
   .shell-banner {
@@ -769,24 +702,12 @@ button:active > .edge-rail-chip {
     -webkit-tap-highlight-color: transparent;
   }
 
-  .cave-migration-review-backdrop {
-    align-items: end;
-    padding: 0;
-  }
 
-  .cave-migration-review {
-    max-height: 92vh;
-    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
-  }
 
   .cave-migration-file dl {
     grid-template-columns: 1fr;
   }
 
-  .cave-migration-review__footer {
-    align-items: stretch;
-    flex-direction: column;
-  }
 }
 
 /* ────────────────────────────────────────────────
@@ -2003,6 +1924,8 @@ button:active > .edge-rail-chip {
   outline-offset: 1px;
 }
 
+.mobile-handoff-layout { container: mobile-handoff / inline-size; }
+
 .mobile-handoff {
   display: grid;
   grid-template-columns: 272px minmax(0, 1fr);
@@ -2014,6 +1937,7 @@ button:active > .edge-rail-chip {
   /* QR scanability: fixed paper ground, near-black modules, muted placeholder
      ink — identical in both modes so cameras always read it. */
   width: 272px;
+  max-width: 100%;
   aspect-ratio: 1;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
@@ -2042,6 +1966,16 @@ button:active > .edge-rail-chip {
   place-items: center;
   color: var(--surface-paper-muted);
   font-size: var(--text-sm);
+}
+
+@container mobile-handoff (max-width: 36rem) {
+  .mobile-handoff { grid-template-columns: minmax(0, 1fr); }
+  .mobile-handoff-qr { justify-self: center; }
+  .mobile-handoff-qr__svg, .mobile-handoff-qr__placeholder {
+    width: min(256px, 100%);
+    height: auto;
+    aspect-ratio: 1;
+  }
 }
 
 .mobile-handoff__body {

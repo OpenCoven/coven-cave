@@ -157,7 +157,7 @@ test.describe("Craft Marketplace transactions", () => {
     const preview = page.getByTestId("detail").getByRole("button", { name: "Preview" });
     await preview.focus();
     await preview.click();
-    const dialog = page.getByRole("dialog", { name: "Seeker's Lens Craft details" });
+    const dialog = page.getByRole("dialog", { name: "Research Craft · v0.1.0 Seeker's Lens", exact: true });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`codex plugin add ${CRAFT_ID}@opencoven-first-party --json`)).toBeVisible();
     await expect(dialog.getByText("EXA_API_KEY")).toBeVisible();
@@ -224,7 +224,7 @@ test.describe("Craft Marketplace transactions", () => {
       installation: { version: "0.1.0", source: "catalog", installedAt: "2026-07-09T23:30:00.000Z" },
     }));
     await page.locator("#marketplace-panel-crafts").getByRole("button", { name: "Manage", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "Seeker's Lens Craft details" });
+    const dialog = page.getByRole("dialog", { name: "Research Craft · v0.1.0 Seeker's Lens", exact: true });
     await expect(dialog.getByText("Update available")).toBeVisible();
     await dialog.getByRole("button", { name: "Update Craft" }).click();
     await expect(dialog.getByRole("alert")).toContainText("Configure the OpenCoven marketplace first.");

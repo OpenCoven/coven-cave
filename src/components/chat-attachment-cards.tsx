@@ -1,5 +1,5 @@
-import { useContext, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useMemo, useState } from "react";
+import { Modal } from "@/components/ui/modal";
 import { DocumentReader } from "@/components/document-reader";
 import { ImageCarousel } from "@/components/image-carousel";
 import { MarkdownReaderBlock } from "@/components/document-reader-markdown";
@@ -8,13 +8,6 @@ import { useAuthedImageState } from "@/lib/authed-image";
 import { attachmentIcon, attachmentMediaKind, chatAttachmentSrc, type ChatAttachment } from "@/lib/chat-attachments";
 import { parseMarkdownReaderDocument } from "@/lib/document-reader";
 import { Icon } from "@/lib/icon";
-import {
-  FocusTrapPortalLayersContext,
-  PortalLayerDepthContext,
-  PortalLayerRootContext,
-  useFocusTrap,
-  usePortalLayerRootId,
-} from "@/lib/use-focus-trap";
 import "@/styles/chat-attachment-reader.css";
 
 export function formatAttachmentBytes(size?: number): string {
@@ -50,82 +43,16 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
         : null,
     [attachment],
   );
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const portalLayerElementsRef = useRef<Map<HTMLElement, number>>(new Map());
-  const ownerLayerDepth = useContext(PortalLayerDepthContext);
-  const portalLayerRootId = usePortalLayerRootId();
-  const portalLayers = useMemo(
-    () => ({
-      register: (el: HTMLElement) => {
-        portalLayerElementsRef.current.set(
-          el,
-          (portalLayerElementsRef.current.get(el) ?? 0) + 1,
-        );
-        return () => {
-          const next = (portalLayerElementsRef.current.get(el) ?? 1) - 1;
-          if (next === 0) portalLayerElementsRef.current.delete(el);
-          else portalLayerElementsRef.current.set(el, next);
-        };
-      },
-      contains: (node: Node | null) => {
-        if (!node) return false;
-        for (const el of portalLayerElementsRef.current.keys()) if (el.contains(node)) return true;
-        return false;
-      },
-      elements: () => Array.from(portalLayerElementsRef.current.keys()),
-    }),
-    [],
-  );
-  // This component only mounts while open: trap Tab/Shift+Tab and restore the
-  // chip trigger on dismissal, including Escape.
-  useFocusTrap(true, dialogRef, {
-    onEscape: onClose,
-    portalLayers,
-    portalRootId: portalLayerRootId,
-  });
-  // The transcript establishes containing blocks, so the preview must portal
-  // to body for a viewport-sized fixed overlay. That places it in the root
-  // stacking context next to the other portalled overlays, so it carries the
-  // same z-index as the carousel lightbox and for the same reason — an
-  // attachment expanded inside the message reader must not land under the
-  // reader's scrim (cave-yin71).
-  return createPortal(
-    <div
-      className="chat-attachment-backdrop fixed inset-0 z-[90] flex items-center justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
-      onClick={onClose}
-      role="presentation"
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      breadcrumb={["Preview", attachment.name]}
+      description={`${formatAttachmentBytes(attachment.size)}${attachment.truncated ? " · truncated" : ""}`}
+      size="reader"
+      bodyLayout="fill"
+      containTabFocus
     >
-      <div
-        ref={dialogRef}
-        className={[
-          "chat-attachment-lightbox relative flex max-h-[90vh] w-[90vw] max-w-screen-2xl flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl",
-          markdownDocument ? "chat-attachment-lightbox--document" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Preview ${attachment.name}`}
-        tabIndex={-1}
-      >
-        <FocusTrapPortalLayersContext.Provider value={portalLayers}>
-          <PortalLayerRootContext.Provider value={portalLayerRootId}>
-            <PortalLayerDepthContext.Provider value={ownerLayerDepth + 1}>
-              <div className="flex items-center gap-2 border-b border-[var(--border-hairline)]/60 px-4 py-2.5">
-                <Icon name={attachmentIcon(attachment)} width={13} className="shrink-0 text-[var(--text-muted)]" />
-                <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-secondary)]">{attachment.name}</span>
-                <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">{formatAttachmentBytes(attachment.size)}</span>
-                {attachment.truncated ? <span className="shrink-0 rounded bg-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-1.5 py-0.5 text-[length:var(--text-2xs)] text-[var(--color-warning)]">truncated</span> : null}
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="focus-ring ml-2 flex h-6 w-6 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-primary)]"
-                  aria-label="Close"
-                >
-                  <Icon name="ph:x-bold" width={11} />
-                </button>
-              </div>
               {markdownDocument ? (
                 <div className="chat-attachment-reader">
                   <DocumentReader
@@ -162,12 +89,7 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
                   <span className="text-[length:var(--text-base)]">No preview available</span>
                 </div>
               )}
-            </PortalLayerDepthContext.Provider>
-          </PortalLayerRootContext.Provider>
-        </FocusTrapPortalLayersContext.Provider>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 

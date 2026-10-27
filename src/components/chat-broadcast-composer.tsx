@@ -14,10 +14,11 @@
  * per-familiar resolution all live on the server — see that route.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
 import type { BroadcastResult } from "@/lib/chat-broadcast";
 
 export function ChatBroadcastComposer({
@@ -32,17 +33,11 @@ export function ChatBroadcastComposer({
   onClose: () => void;
   onSent: (results: BroadcastResult[]) => void;
 }) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
+  const fieldId = useId();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useFocusTrap(true, panelRef, { onEscape: () => (busy ? undefined : onClose()) });
-
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
-
   const trimmed = text.trim();
 
   async function send() {
@@ -75,28 +70,26 @@ export function ChatBroadcastComposer({
   }
 
   return (
-    <div className="chat-broadcast fixed inset-0 z-[220] flex items-center justify-center" role="presentation">
-      <button
-        type="button"
-        aria-label="Cancel broadcast"
-        className="absolute inset-0 bg-[var(--backdrop-scrim)]"
-        onClick={() => (busy ? undefined : onClose())}
-      />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Broadcast to ${count} chat${count === 1 ? "" : "s"}`}
-        tabIndex={-1}
-        className="chat-broadcast__panel relative flex w-[min(92vw,520px)] flex-col gap-3 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-4 shadow-[0_16px_48px_rgba(0,0,0,0.28)]"
-      >
-        <h2 className="chat-broadcast__title">
-          Broadcast to {count} chat{count === 1 ? "" : "s"}
-        </h2>
-        <p className="chat-broadcast__note">
-          Each chat answers on its own. Replies land in their own threads, not here.
-        </p>
+    <Modal
+      open
+      onClose={onClose}
+      title={`Broadcast to ${count} chat${count === 1 ? "" : "s"}`}
+      description="Each chat answers on its own. Replies land in their own threads, not here."
+      busy={busy}
+      initialFocusRef={textareaRef}
+      footerActions={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button variant="primary" onClick={() => void send()} disabled={!trimmed || busy} loading={busy}>
+            {busy ? "Sending…" : `Send to ${count}`}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <label htmlFor={fieldId} className="text-[length:var(--text-base)] text-[var(--text-secondary)]">Message</label>
         <textarea
+          id={fieldId}
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -116,20 +109,7 @@ export function ChatBroadcastComposer({
             <Icon name="ph:warning-circle" width={13} aria-hidden /> {error}
           </p>
         ) : null}
-        <div className="chat-broadcast__actions">
-          <button type="button" className="focus-ring chat-broadcast__cancel" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="focus-ring chat-broadcast__send"
-            onClick={() => void send()}
-            disabled={!trimmed || busy}
-          >
-            {busy ? "Sending…" : `Send to ${count}`}
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

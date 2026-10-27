@@ -157,7 +157,7 @@ assert.match(
   const prModal = read("../components/daily-report-pr-modal.tsx");
   assert.match(prModal, /from "@\/components\/github-card"/, "the PR overlay mounts the app's GitHubCard");
   assert.match(prModal, /kind: "pr"/, "it asks the card for a pull request");
-  assert.match(prModal, /useFocusTrap/, "the overlay traps focus like the report's other dialogs");
+  assert.match(prModal, /<Modal\b/, "the overlay uses the shared modal chrome and focus behavior");
   assert.doesNotMatch(prModal, /api\/github\//, "the overlay must not fetch PR data itself — the card owns that");
 
   // Shipped rows open it rather than leaving the app.
@@ -165,7 +165,7 @@ assert.match(
   assert.match(view, /DailyReportPrModal/, "the report shell mounts the PR overlay");
   assert.match(view, /setPr\(\{ repo: row\.repo/, "a shipped row opens its own PR");
   // Escape unwinds the layer stack top-down.
-  assert.match(view, /setPr\(\(current\) => \{/, "Escape closes the PR card before the dialogs and panels");
+  assert.match(view, /if \(pr \|\| modal\) return;/, "inline Escape handling yields to the shared modal stack");
   // A spine line standing for one merge carries the PR through the model.
   assert.match(
     read("../lib/daily-report-day.ts"),

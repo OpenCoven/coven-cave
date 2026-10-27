@@ -20,13 +20,12 @@
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { Modal } from "@/components/ui/modal";
 
 import { AuthedImage } from "@/components/ui/authed-image";
 import { Icon } from "@/lib/icon";
 import { imageLabel, type ImageBlockDescriptor } from "@/lib/image-blocks";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 
 type Props = {
   images: ImageBlockDescriptor[];
@@ -50,8 +49,6 @@ function ImageLightbox({
   onIndex: (next: number) => void;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
   const image = images[index];
   const total = images.length;
 
@@ -72,50 +69,8 @@ function ImageLightbox({
 
   if (!image) return null;
 
-  // The transcript establishes containing blocks, so a viewport-sized fixed
-  // overlay has to portal to body (same reason as the attachment lightbox).
-  // Portalling puts this in the ROOT stacking context, alongside every other
-  // portalled overlay, so the z-index competes with them directly. It has to
-  // clear the surfaces an image can be expanded from underneath: the message
-  // reader backdrop (60), the research-studio backdrops (65-70), the research
-  // reader (70), and .rr-kroverlay / the daily-report PR modal (80). At z-50 an
-  // image expanded inside the reader rendered BEHIND the reader's scrim
-  // (cave-yin71). Kept below the full-surface layers that should still cover a
-  // lightbox — inspector-pane (100) and directory-picker-modal (200).
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        ref={dialogRef}
-        className="relative flex max-h-[90vh] w-[90vw] max-w-screen-2xl flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={imageLabel(image, index, total)}
-        tabIndex={-1}
-      >
-        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)]/60 px-4 py-2.5">
-          <Icon name="ph:image-bold" width={13} className="shrink-0 text-[var(--text-muted)]" />
-          <span className="flex-1 truncate text-[length:var(--text-sm)] text-[var(--text-secondary)]">
-            {image.caption || image.alt || "Image"}
-          </span>
-          {total > 1 ? (
-            <span className="shrink-0 tabular-nums text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              {index + 1} / {total}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            onClick={onClose}
-            className="focus-ring ml-2 flex h-6 w-6 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-primary)]"
-            aria-label="Close"
-          >
-            <Icon name="ph:x-bold" width={11} />
-          </button>
-        </div>
+  return (
+    <Modal open onClose={onClose} title={imageLabel(image, index, total)} size="reader" bodyLayout="fill" containTabFocus>
         <div className="flex flex-1 items-center justify-center overflow-hidden p-4">
           {total > 1 ? (
             <button
@@ -148,9 +103,7 @@ function ImageLightbox({
             </button>
           ) : null}
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 

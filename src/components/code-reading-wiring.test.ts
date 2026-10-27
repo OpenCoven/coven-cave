@@ -140,10 +140,10 @@ assert.match(
 // a live conversation and trapping there would strand the reader.
 assert.match(
   inspector,
-  /useFocusTrap\(mode === "modal", panelRef/,
+  /if \(mode === "modal"\) \{[\s\S]*return <Modal/,
   "focus is trapped for the modal layout only",
 );
-assert.match(inspector, /aria-modal=\{mode === "modal" \? true : undefined\}/, "aria-modal matches the real behavior");
+assert.match(inspector, /role="complementary"/, "nonmodal layouts retain complementary semantics");
 assert.match(inspector, /focus-ring/, "interactive elements carry the focus ring");
 assert.match(inspector, /aria-pressed=\{selected\}/, "line rows expose their selected state");
 

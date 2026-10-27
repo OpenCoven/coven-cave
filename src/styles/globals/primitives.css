@@ -20,7 +20,7 @@
      A Popover that launches a Modal hides its own panel while the Modal is
      open, so later Popovers launched from inside the Modal still layer above. */
   z-index: 350;
-  padding: var(--space-4);
+  padding: max(var(--space-4), var(--sai-top)) max(var(--space-4), var(--sai-right)) max(var(--space-4), var(--sai-bottom)) max(var(--space-4), var(--sai-left));
   animation: ui-modal-fade-in var(--duration-fast) var(--ease-decelerate);
 }
 
@@ -40,8 +40,8 @@
 
 .ui-modal {
   width: 100%;
-  max-width: 560px;
-  max-height: calc(100vh - 2 * var(--space-4));
+  max-width: var(--modal-width-standard);
+  max-height: calc(100dvh - max(var(--space-4), var(--sai-top)) - max(var(--space-4), var(--sai-bottom)));
   /* Glassmorphic sheet — the dimmed app blurs through the dialog body. */
   background: var(--glass-raised);
   backdrop-filter: blur(calc(var(--glass-blur) + 2px)) saturate(var(--glass-saturate));
@@ -50,11 +50,38 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 24px 64px oklch(0 0 0 / 50%);
+  box-shadow: 0 24px 64px color-mix(in oklch, var(--shadow-color) 50%, transparent);
   animation: ui-modal-enter var(--duration-base) var(--ease-decelerate);
 }
 
-.ui-modal--wide { max-width: 720px; }
+.ui-modal[data-size="compact"] { max-width: var(--modal-width-compact); }
+.ui-modal--wide { max-width: var(--modal-width-wide); }
+.ui-modal[data-size="reader"] { max-width: var(--modal-width-reader); }
+.ui-modal[data-size="workspace"] { max-width: var(--modal-width-workspace); }
+.ui-modal[data-body-layout="fill"] { height: 80dvh; }
+/* Author display rules must not override the retained layer's hidden state. */
+.ui-modal-backdrop[hidden] { display: none; }
+.ui-modal-backdrop[data-scope="container"] { position: absolute; }
+.ui-modal-backdrop[data-scope="container"] > .ui-modal {
+  max-height: min(100%, calc(100dvh - max(var(--space-4), var(--sai-top)) - max(var(--space-4), var(--sai-bottom))));
+}
+
+.ui-modal-backdrop[data-presentation="sheet-left"],
+.ui-modal-backdrop[data-presentation="sheet-right"],
+.ui-modal-backdrop[data-presentation="fullscreen"] {
+  padding: 0;
+}
+.ui-modal-backdrop[data-presentation="sheet-left"] { justify-content: flex-start; }
+.ui-modal-backdrop[data-presentation="sheet-right"] { justify-content: flex-end; }
+.ui-modal-backdrop[data-presentation="sheet-left"] > .ui-modal,
+.ui-modal-backdrop[data-presentation="sheet-right"] > .ui-modal,
+.ui-modal-backdrop[data-presentation="fullscreen"] > .ui-modal {
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  padding: var(--sai-top) var(--sai-right) var(--sai-bottom) var(--sai-left);
+}
+.ui-modal-backdrop[data-presentation="fullscreen"] > .ui-modal { max-width: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .ui-modal-backdrop,
@@ -65,7 +92,8 @@
 
 .ui-modal-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-shrink: 0;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border-hairline);
@@ -73,16 +101,33 @@
   color: var(--muted-foreground);
 }
 
+.ui-modal-icon { flex-shrink: 0; }
+.ui-modal-heading { flex: 1; min-width: 0; }
+.ui-modal-title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ui-modal-description {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+
 .ui-modal-header-breadcrumb {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
   flex: 1;
   min-width: 0;
 }
 
 .ui-modal-header-breadcrumb > span {
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -102,15 +147,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: var(--space-8);
+  height: var(--space-8);
   border-radius: var(--radius-sm);
   background: transparent;
   border: none;
   color: var(--muted-foreground);
   cursor: pointer;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition: background-color var(--duration-fast) var(--ease-decelerate), color var(--duration-fast) var(--ease-decelerate);
 }
+.ui-modal-close:disabled { opacity: 0.5; cursor: wait; }
 
 .ui-modal-close:hover {
   background: var(--muted);
@@ -122,24 +168,19 @@
   overflow-y: auto;
   min-height: 0;
   flex: 1;
+  overscroll-behavior: contain;
 }
-
-/* In-app confirm dialog (ConfirmProvider) — title + supporting detail. */
-.ui-confirm-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--fg-base, var(--foreground));
-}
-.ui-confirm-body {
-  margin-top: var(--space-2);
-  font-size: var(--text-base);
-  line-height: 1.5;
-  color: var(--text-secondary);
+.ui-modal-body[data-layout="fill"] {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
 }
 
 .ui-modal-footer {
   display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-5);
@@ -147,21 +188,44 @@
   background: var(--bg-base);
 }
 
+@media (pointer: coarse) {
+  .ui-modal-close { width: var(--touch-target); height: var(--touch-target); }
+  .ui-modal :is(button, [role="button"], .ui-btn) {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+  .ui-modal :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"]), select, textarea) {
+    min-height: var(--touch-target);
+    font-size: var(--text-lg);
+  }
+  .ui-modal label:has(> input:is([type="checkbox"], [type="radio"])) {
+    display: flex;
+    align-items: center;
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+}
+
 .ui-modal-footer-pills {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
 }
+.ui-modal-footer-pills > * { flex-shrink: 0; max-width: 100%; }
 
 .ui-modal-footer-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
-  flex-shrink: 0;
+  margin-left: auto;
+  max-width: 100%;
 }
+.ui-modal-footer-actions .ui-btn { white-space: normal; }
 
 /* ---- Property pill ----------------------------------------- */
 .ui-pill {
@@ -1345,11 +1409,7 @@
 .ui-popover-portal {
   position: fixed;
   inset: 0;
-  /* Popovers are the topmost transient layer: they must paint above every
-     dialog/drawer they can be opened from — including the board task drawer
-     (.board-drawer, z 300/301) — or the drawer's backdrop swallows the click
-     and closes the drawer instead. Kept below drag ghosts (1000) and
-     tooltips (9000). */
+  /* Inline root/depth order is applied to this outer stacking context. */
   z-index: 400;
   pointer-events: none;
 }
@@ -1717,4 +1777,59 @@ input.ui-search-field {
 @media (max-width: 767px), (pointer: coarse) {
   input.ui-search-field { min-height: var(--touch-target); font-size: var(--text-lg); }
   .ui-search-action { min-width: var(--touch-target); min-height: var(--touch-target); }
+}
+
+/* Header tools wrap as a group; narrow screens give them their own row. */
+.ui-modal-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+@media (max-width: 40rem) {
+  .ui-modal-header { flex-wrap: wrap; }
+  .ui-modal-header-actions { flex-basis: 100%; order: 1; }
+}
+
+/* Document exports use the same shell without printing the application. */
+@media print {
+  html:has(.ui-modal-backdrop[data-printable="true"]:not([hidden], [inert])),
+  body:has(> .ui-modal-backdrop[data-printable="true"]:not([hidden], [inert])) {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  body:has(> .ui-modal-backdrop[data-printable="true"]:not([hidden], [inert])) > *:not(.ui-modal-backdrop[data-printable="true"]:not([hidden], [inert])) { display: none !important; }
+  .ui-modal-backdrop[data-printable="true"]:not([hidden], [inert]) {
+    --text-primary: CanvasText;
+    --text-secondary: CanvasText;
+    --text-muted: CanvasText;
+    --bg-base: Canvas;
+    --bg-panel: Canvas;
+    --bg-raised: Canvas;
+    --bg-subtle: Canvas;
+    color-scheme: light;
+    color: CanvasText;
+    position: static;
+    display: block;
+    padding: 0;
+    background: Canvas;
+    backdrop-filter: none;
+  }
+  .ui-modal-backdrop[data-printable="true"]:not([hidden], [inert]) > .ui-modal {
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: Canvas;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+  .ui-modal-backdrop[data-printable="true"]:not([hidden], [inert]) .ui-modal-body { display: block; overflow: visible; padding: 0; }
+  .ui-modal-backdrop[data-printable="true"]:not([hidden], [inert]) .ui-modal-header-actions,
+  .ui-modal-backdrop[data-printable="true"]:not([hidden], [inert]) .ui-modal-close,
+  .ui-modal-backdrop[data-printable="true"]:not([hidden], [inert]) .ui-modal-footer { display: none !important; }
 }

@@ -7,7 +7,7 @@ import {
   type FileRefDispatch,
 } from "@/lib/file-ref-open";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
-import { FOCUSABLE } from "@/lib/use-focus-trap";
+import type { MarkdownViewerRequest } from "./markdown-viewer";
 import {
   isCodeProvenance,
   stalenessForRead,
@@ -221,73 +221,6 @@ function wireFilePathLinks(container: HTMLElement, resolve: FileLinkResolver | n
   }
 }
 
-function openTableLightbox(scroll: HTMLElement) {
-  const table = scroll.querySelector("table");
-  if (!table) return;
-  const overlay = document.createElement("div");
-  overlay.className = "cave-table-lightbox";
-  overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Expanded table");
-  const panel = document.createElement("div");
-  panel.className = "cave-table-lightbox__panel";
-  const bar = document.createElement("div");
-  bar.className = "cave-table-lightbox__bar";
-  const title = document.createElement("span");
-  title.className = "cave-table-lightbox__title";
-  title.textContent = "Table";
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "cave-table-lightbox__close focus-ring";
-  close.textContent = "Close";
-  bar.append(title, close);
-  const body = document.createElement("div");
-  body.className = "cave-table-lightbox__body cave-md";
-  body.appendChild(table.cloneNode(true));
-  panel.append(bar, body);
-  overlay.appendChild(panel);
-  document.body.appendChild(overlay);
-  const prevOverflow = document.body.style.overflow;
-  document.body.style.overflow = "hidden";
-  const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const dismiss = () => {
-    document.body.style.overflow = prevOverflow;
-    document.removeEventListener("keydown", onKey);
-    overlay.remove();
-    returnFocus?.focus();
-  };
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.stopPropagation();
-      dismiss();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const focusables = Array.from(overlay.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => !el.hasAttribute("disabled"));
-    if (focusables.length === 0) {
-      event.preventDefault();
-      return;
-    }
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    const activeEl = document.activeElement as HTMLElement | null;
-    if (!activeEl || !overlay.contains(activeEl)) {
-      event.preventDefault();
-      (event.shiftKey ? last : first).focus();
-    } else if (event.shiftKey && activeEl === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && activeEl === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-  overlay.addEventListener("click", (event) => { if (event.target === overlay) dismiss(); });
-  close.addEventListener("click", dismiss);
-  document.addEventListener("keydown", onKey);
-  close.focus();
-}
-
 // ── Code reading wiring ──────────────────────────────────────────────────────
 
 /**
@@ -400,7 +333,7 @@ function wireCodeReading(container: HTMLElement, reading: CodeReading | null) {
   }
 }
 
-function wireExpandableTables(container: HTMLElement) {
+function wireExpandableTables(container: HTMLElement, openViewer: (request: MarkdownViewerRequest) => void) {
   for (const scroll of Array.from(container.querySelectorAll<HTMLElement>(".cave-table-scroll"))) {
     const flagged = scroll as HTMLElement & { _caveTableWired?: boolean };
     if (flagged._caveTableWired || !scroll.querySelector("table")) continue;
@@ -415,7 +348,10 @@ function wireExpandableTables(container: HTMLElement) {
     btn.title = "Expand table";
     btn.setAttribute("aria-label", "Expand table");
     btn.innerHTML = '<span class="cave-table-expand-glyph" aria-hidden="true">⤢</span> Expand';
-    btn.addEventListener("click", () => openTableLightbox(scroll));
+    btn.addEventListener("click", () => {
+      const table = scroll.querySelector("table");
+      if (table) openViewer({ kind: "table", source: table });
+    });
     wrap.appendChild(btn);
   }
 }
@@ -428,6 +364,7 @@ export function useWireCopyButtons(
   fileLinkResolver: FileLinkResolver | null = null,
   reading: CodeReading | null = null,
   resolveOpenUrl?: (url: string) => string | null,
+  openViewer?: (request: MarkdownViewerRequest) => void,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -436,8 +373,10 @@ export function useWireCopyButtons(
     const wireAll = () => {
       wireCopyButtons(el);
       wireMarkdownLinks(el, onOpenUrl, resolveOpenUrl);
-      wireMermaidDiagrams(el);
-      wireExpandableTables(el);
+      if (openViewer) {
+        wireMermaidDiagrams(el, (source) => openViewer({ kind: "diagram", source }));
+        wireExpandableTables(el, openViewer);
+      }
       wireFilePathLinks(el, fileLinkResolver);
       wireCodeReading(el, reading);
     };
@@ -448,6 +387,6 @@ export function useWireCopyButtons(
       observer.disconnect();
       cleanupMarkdownLinks(el);
     };
-  }, [html, onOpenUrl, fileLinkResolver, reading, resolveOpenUrl]);
+  }, [html, onOpenUrl, fileLinkResolver, reading, resolveOpenUrl, openViewer]);
   return containerRef;
 }

@@ -23,11 +23,12 @@ import "@/styles/code-reading.css";
  * conversation stays live behind them); only the phone-width modal traps focus.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
+import { hasActiveFocusTrap } from "@/lib/use-focus-trap";
 import { highlightToHtml } from "@/components/message-bubble";
 import { splitHighlightedLines } from "@/lib/code-lines";
 import { diffLines, type LineDiffOp } from "@/lib/line-diff";
@@ -273,7 +274,6 @@ export function CodeReadingInspector({
   onOpenInWorkshop,
 }: CodeReadingInspectorProps) {
   const { announce } = useAnnouncer();
-  const panelRef = useRef<HTMLDivElement | null>(null);
   const viewportWidth = useViewportWidth();
   const mode: InspectorMode = resolveInspectorMode(pin, viewportWidth);
 
@@ -331,16 +331,11 @@ export function CodeReadingInspector({
     setSelection((current) => extendSelection(current, line, shiftKey));
   }, []);
 
-  // Only the phone-width modal is modal. A split or overlay inspector sits
-  // beside a live conversation; trapping focus there would strand the reader
-  // away from the composer they opened it to write in.
-  useFocusTrap(mode === "modal", panelRef, { onEscape: onClose });
-
   // Escape closes the non-modal layouts too (the trap owns it for the modal).
   useEffect(() => {
     if (mode === "modal") return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !hasActiveFocusTrap()) onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -386,17 +381,7 @@ export function CodeReadingInspector({
 
   const canOpen = canOpenInWorkshop(target.provenance) && Boolean(target.path) && Boolean(onOpenInWorkshop);
 
-  return (
-    <>
-      {mode === "modal" ? <div className="cri-backdrop" onClick={onClose} aria-hidden="true" /> : null}
-      <div
-        ref={panelRef}
-        className={`cri cri--${mode}`}
-        role={mode === "modal" ? "dialog" : "complementary"}
-        aria-modal={mode === "modal" ? true : undefined}
-        aria-label={`Reading ${displayName}`}
-      >
-        <header className="cri-head">
+  const metadata = (<>
           <span className={`cri-prov cri-prov--${target.provenance}`} title={provenanceTitle(target.provenance)}>
             {provenanceLabel(target.provenance)}
           </span>
@@ -411,8 +396,8 @@ export function CodeReadingInspector({
               {staleText}
             </span>
           ) : null}
-          <span className="cri-spacer" />
-          <div className="cri-pins" role="group" aria-label="Where the inspector opens">
+</>);
+  const placementControls = (<>          <div className="cri-pins" role="group" aria-label="Where the inspector opens">
             {(["auto", "split", "overlay"] as const).map((option) => (
               <button
                 key={option}
@@ -425,12 +410,40 @@ export function CodeReadingInspector({
               </button>
             ))}
           </div>
-          <button type="button" className="cri-close focus-ring" onClick={onClose} aria-label="Close the inspector">
-            <Icon name="ph:x" width={12} />
+</>);
+  const footerPills = (<>
+          <span className="cri-sel">
+            {label ? label : "Click a line number to select · shift-click to extend"}
+          </span>
+          {selection ? (
+            <button type="button" className="cri-clear focus-ring" onClick={() => setSelection(null)}>
+              clear
+            </button>
+          ) : null}
+</>);
+  const footerActions = (<>
+          {onReference ? (
+            <button type="button" className="ui-btn ui-btn--ghost ui-btn--xs focus-ring" onClick={doReference}>
+              Reference in reply
+            </button>
+          ) : null}
+          {onQuote ? (
+            <button type="button" className="ui-btn ui-btn--ghost ui-btn--xs focus-ring" onClick={doQuote}>
+              Quote
+            </button>
+          ) : null}
+          <button type="button" className="ui-btn ui-btn--ghost ui-btn--xs focus-ring" onClick={doCopy}>
+            <Icon name="ph:copy" width={11} />
+            Copy
           </button>
-        </header>
-
-        {tabs.length > 1 ? (
+          {canOpen ? (
+            <button type="button" className="ui-btn ui-btn--primary ui-btn--xs focus-ring" onClick={doOpen}>
+              Open in workshop
+              <Icon name="ph:arrow-square-out" width={11} />
+            </button>
+          ) : null}
+</>);
+  const content = (<div className="cri-content">        {tabs.length > 1 ? (
           <div className="cri-tabs" role="tablist" aria-label="What to read">
             {tabs.map((entry) => (
               <button
@@ -486,38 +499,21 @@ export function CodeReadingInspector({
           ) : null}
         </div>
 
-        <footer className="cri-foot">
-          <span className="cri-sel">
-            {label ? label : "Click a line number to select · shift-click to extend"}
-          </span>
-          {selection ? (
-            <button type="button" className="cri-clear focus-ring" onClick={() => setSelection(null)}>
-              clear
-            </button>
-          ) : null}
-          <span className="cri-spacer" />
-          {onReference ? (
-            <button type="button" className="ui-btn ui-btn--ghost ui-btn--xs focus-ring" onClick={doReference}>
-              Reference in reply
-            </button>
-          ) : null}
-          {onQuote ? (
-            <button type="button" className="ui-btn ui-btn--ghost ui-btn--xs focus-ring" onClick={doQuote}>
-              Quote
-            </button>
-          ) : null}
-          <button type="button" className="ui-btn ui-btn--ghost ui-btn--xs focus-ring" onClick={doCopy}>
-            <Icon name="ph:copy" width={11} />
-            Copy
-          </button>
-          {canOpen ? (
-            <button type="button" className="ui-btn ui-btn--primary ui-btn--xs focus-ring" onClick={doOpen}>
-              Open in workshop
-              <Icon name="ph:arrow-square-out" width={11} />
-            </button>
-          ) : null}
-        </footer>
-      </div>
-    </>
+</div>);
+
+  if (mode === "modal") {
+    return <Modal open onClose={onClose} title={`Reading ${displayName}`} size="reader" bodyLayout="fill"
+      headerActions={placementControls} footerPills={footerPills} footerActions={footerActions}
+    ><div className="flex flex-wrap items-center gap-2 px-3 py-2">{metadata}</div>{content}</Modal>;
+  }
+  return (
+    <div className={`cri cri--${mode}`} role="complementary" aria-label={`Reading ${displayName}`}>
+      <header className="cri-head">
+        {metadata}<span className="cri-spacer" />{placementControls}
+        <button type="button" className="cri-close focus-ring" onClick={onClose} aria-label="Close the inspector"><Icon name="ph:x" width={12} /></button>
+      </header>
+      {content}
+      <footer className="cri-foot">{footerPills}<span className="cri-spacer" />{footerActions}</footer>
+    </div>
   );
 }

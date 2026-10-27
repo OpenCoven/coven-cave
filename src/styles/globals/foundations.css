@@ -172,6 +172,14 @@
   --space-10: 40px;
   --space-12: 48px;
 
+  /* Shared modal measures: compact decisions, forms, workspaces, readers. */
+  --modal-width-compact: 400px;
+  --modal-width-standard: 560px;
+  --modal-width-wide: 720px;
+  --modal-width-reader: 1040px;
+  /* Multi-panel documents keep their own prose measure and evidence rails. */
+  --modal-width-workspace: 1536px;
+
   /* ---- Shell pane widths ----
      Mirrors of the nav/list Panel px props in components/shell.tsx (the
      authoritative values — React props can't read CSS vars). Kept in sync

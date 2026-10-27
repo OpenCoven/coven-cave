@@ -62,8 +62,17 @@ export function ProposalSubmission({ available, onRefresh }: { available: () => 
   return <>
     <Button size="sm" onClick={() => setOpen(true)}>Send an edit</Button>
     <Modal open={open} onClose={close} breadcrumb={["Proposals", "Send an edit"]}
-      dismissOnBackdrop={!busy} dismissOnEscape={!busy} ariaDescribedBy={`${id}-help`}>
-      <form className="proposal-submission" onSubmit={event => void send(event)}>
+      busy={busy} ariaDescribedBy={`${id}-help`} footerActions={        <>
+          <Button onClick={close} disabled={busy}>Close</Button>
+          {snapshot.phase === "settled" ? <>
+            <Button onClick={onRefresh}>Refresh proposals</Button>
+            <Button onClick={() => {
+              if (controller.reset()) { setContents(""); setError(null); announce("Ready for another edit."); }
+              else announce("Browser storage is unavailable. Submission remains blocked.");
+            }}>{snapshot.outcome?.kind === "unknown" ? "I checked the file and audit log" : "Prepare another edit"}</Button>
+          </> : <Button form={`${id}-form`} type="submit" variant="primary" disabled={!canSend} loading={busy}>Send edit</Button>}
+        </>}>
+      <form id={`${id}-form`} className="proposal-submission" onSubmit={event => void send(event)}>
         <p id={`${id}-help`}>Send the complete replacement for one file. The daemon may apply it immediately or hold it for review. Protected surfaces remain subject to its authority checks.</p>
         <label htmlFor={`${id}-familiar`}>Familiar ID</label>
         <input id={`${id}-familiar`} className="focus-ring" required value={familiarId} maxLength={128}
@@ -81,16 +90,7 @@ export function ProposalSubmission({ available, onRefresh }: { available: () => 
         {error ? <p id={`${id}-error`} role="alert">{error}</p> : null}
         {busy ? <p role="status">Waiting for the daemon’s response…</p> : null}
         {snapshot.outcome ? <p role="status">{outcomeText(snapshot.outcome)}</p> : null}
-        <div className="proposal-submission__actions">
-          <Button onClick={close} disabled={busy}>Close</Button>
-          {snapshot.phase === "settled" ? <>
-            <Button onClick={onRefresh}>Refresh proposals</Button>
-            <Button onClick={() => {
-              if (controller.reset()) { setContents(""); setError(null); announce("Ready for another edit."); }
-              else announce("Browser storage is unavailable. Submission remains blocked.");
-            }}>{snapshot.outcome?.kind === "unknown" ? "I checked the file and audit log" : "Prepare another edit"}</Button>
-          </> : <Button type="submit" variant="primary" disabled={!canSend} loading={busy}>Send edit</Button>}
-        </div>
+
       </form>
     </Modal>
   </>;
