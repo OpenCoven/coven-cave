@@ -5,6 +5,10 @@ struct AssistantResponseProjection: Equatable {
     let suggestions: [String]
     let previewURLs: [URL]
 
+    /// What Copy hands back: `visible`, with each coven:ui block as its
+    /// readable lines rather than its markup (#6060).
+    var copyText: String { UiBlockReadableText.project(visible) }
+
     private final class CacheEntry: NSObject {
         let projection: AssistantResponseProjection
 

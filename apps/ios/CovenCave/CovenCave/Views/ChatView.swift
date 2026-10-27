@@ -3070,7 +3070,7 @@ struct ResponseReaderView: View {
     @ToolbarContentBuilder private var readerToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button {
-                UIPasteboard.general.string = item.markdown
+                UIPasteboard.general.string = UiBlockReadableText.project(item.markdown)
                 Haptics.tap()
             } label: {
                 Label("Copy response", systemImage: "doc.on.doc")

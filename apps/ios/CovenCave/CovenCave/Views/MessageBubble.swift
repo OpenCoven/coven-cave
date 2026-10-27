@@ -63,7 +63,7 @@ struct MessageBubble: View {
     @ViewBuilder private var messageActions: some View {
         if !parsed.visible.isEmpty {
             Button {
-                UIPasteboard.general.string = parsed.visible
+                UIPasteboard.general.string = parsed.copyText
                 Haptics.tap()
             } label: {
                 Label("Copy message", systemImage: "doc.on.doc")
@@ -402,7 +402,7 @@ struct MessageBubble: View {
     private var actionRow: some View {
         HStack(spacing: 18) {
             Button {
-                UIPasteboard.general.string = parsed.visible
+                UIPasteboard.general.string = parsed.copyText
                 Haptics.tap()
                 withAnimation(.snappy(duration: 0.18)) { justCopied = true }
                 Task {
