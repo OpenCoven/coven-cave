@@ -134,6 +134,18 @@ const nextConfig: NextConfig = {
       // longer does, so the #6082 leak guard holds (#6093).
       "./tsconfig.json",
     ],
+    // Next's own server trace reaches its dev bundler: the hot reloaders and
+    // on-demand entry handler import `next build`, webpack and Babel modules.
+    // Next 16.4 prunes that subtree in an order-dependent pass, so Linux and
+    // macOS drop it while Windows kept 244 of its files and overflowed the
+    // sidecar budget (#6276). Only the dev bundler setup and webpack build
+    // plugins load these four, so excluding them prunes the subtree everywhere.
+    "next-server": [
+      "**/next/dist/server/dev/hot-reloader-rspack.js",
+      "**/next/dist/server/dev/hot-reloader-turbopack.js",
+      "**/next/dist/server/dev/hot-reloader-webpack.js",
+      "**/next/dist/server/dev/on-demand-entry-handler.js",
+    ],
   },
   // No `outputFileTracingIncludes` (#6093). Turbopack 16.3 resolves an include
   // by reading every directory under its first segment: `./node_modules/...`
