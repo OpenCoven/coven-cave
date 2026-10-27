@@ -137,9 +137,10 @@ const nextConfig: NextConfig = {
     // Next's own server trace reaches its dev bundler, whose hot reloaders
     // import `next build`, webpack and Babel modules. Next 16.4 prunes them in
     // an order-dependent pass: Linux and macOS drop all of them, but Windows
-    // kept 244 files and overflowed the sidecar budget (#6276). Exclude the
-    // dev-only entry points and the build-tooling directories outright. None
-    // of these holds a file the Linux or macOS server ships.
+    // kept 244 files and overflowed the sidecar budget (#6276). Exclude each
+    // one by name: none is a file the Linux or macOS server ships. Naming
+    // them, not the 25 runtime files under dist/build, fails safe; a new
+    // build module can only cost budget, never a runtime file.
     "next-server": [
       "**/next/dist/server/dev/hot-reloader-rspack.js",
       "**/next/dist/server/dev/hot-reloader-turbopack.js",
@@ -148,6 +149,21 @@ const nextConfig: NextConfig = {
       "**/next/dist/build/{analysis,analyze,babel,jest,manifests,polyfills,templates}/**/*",
       "**/next/dist/build/{turbopack-analyze,turbopack-build,turborepo-access-trace}/**/*",
       "**/next/dist/build/{webpack,webpack-build,webpack-config-rules}/**/*",
+      "**/next/dist/build/segment-config/{middleware,pages}/**/*",
+      "**/next/dist/build/adapter/{build-complete,fallback-shell-runs,synthetic-symlinks}.js",
+      "**/next/dist/build/{output/index,output/store,static-paths/types}.js",
+      "**/next/dist/build/{after-production-compile,browser-variant-modules,build-context}.js",
+      "**/next/dist/build/{collect-build-traces,compiler,create-compiler-aliases,entries}.js",
+      "**/next/dist/build/{file-classifier,generate-build-id,generate-routes-manifest}.js",
+      "**/next/dist/build/{get-babel-config-file,get-babel-loader-config}.js",
+      "**/next/dist/build/{get-convention-file-base-name,get-static-info-including-layouts}.js",
+      "**/next/dist/build/{handle-entrypoints,handle-externals,index,is-writeable}.js",
+      "**/next/dist/build/{load-entrypoint,load-jsconfig,lockfile,next-dir-paths}.js",
+      "**/next/dist/build/{normalize-catchall-routes,page-extensions-type,preview-key-utils}.js",
+      "**/next/dist/build/{print-build-errors,progress,rendering-mode,route-bundle-stats}.js",
+      "**/next/dist/build/{route-discovery,sort-by-page-exts,spinner,type-check}.js",
+      "**/next/dist/build/{validate-app-paths,warn-about-edge-runtime,webpack-config}.js",
+      "**/next/dist/build/{worker,write-build-id}.js",
     ],
   },
   // No `outputFileTracingIncludes` (#6093). Turbopack 16.3 resolves an include
