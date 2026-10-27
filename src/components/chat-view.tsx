@@ -281,6 +281,7 @@ import { verificationEvidenceFromTools } from "@/lib/chat-tool-verification";
 import { createStreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
 import { useStreamingPresentationSource } from "@/lib/use-streaming-presentation-source";
 import { copyText } from "@/lib/clipboard";
+import { projectUiBlocksToReadable } from "@/lib/ui-block-readable";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
@@ -10241,7 +10242,8 @@ function TurnRowImpl({
                       onRetry={turn.error ? onRegenerate : undefined}
                       onCopyCompleted={
                         streamingModel.committedText
-                          ? () => copyText(streamingModel.committedText)
+                          // coven:ui blocks copy as their readable lines (#6060).
+                          ? () => copyText(projectUiBlocksToReadable(streamingModel.committedText, { streaming: pending }))
                           : undefined
                       }
                       proseContent={proseContent}

@@ -31,8 +31,13 @@ test("3a — Expand opens the reader, and frame 1a's sheet is gone", () => {
   );
   assert.match(
     bubble,
-    /<MessageReader[\s\S]{0,2000}<MarkdownContent\s*\n\s*text=\{readerCited\.body\}[\s\S]{0,300}<\/MessageReader>/,
+    /<MessageReader[\s\S]{0,2000}<ReaderBody body=\{readerCited\.body\} citations=\{readerCited\.citations\} \/>\s*<\/MessageReader>/,
     "the reader takes the rendered answer as children — it must not import the markdown pipeline itself",
+  );
+  assert.match(
+    bubble,
+    /function ReaderBody\([\s\S]{0,600}sliceReadableUiBlocks\(body\)[\s\S]{0,400}<UiBlockReadable[\s\S]{0,200}<MarkdownContent/,
+    "the body is the markdown pipeline, with each coven:ui block as readable lines (#6060)",
   );
   assert.doesNotMatch(
     reader,
@@ -78,7 +83,7 @@ test("3a — the reader renders the CITED body, not raw footnote plumbing", () =
   );
   assert.match(
     bubble,
-    /text=\{readerCited\.body\}/,
+    /body=\{readerCited\.body\}/,
     "and that cited body is what gets rendered",
   );
   assert.match(
@@ -96,7 +101,7 @@ test("3a — cited sources are interactive chips, not bare links", () => {
   // transcript showed real source chips.
   assert.match(
     bubble,
-    /<MarkdownContent\s*\n\s*text=\{readerCited\.body\}\s*\n\s*citations=\{readerCited\.citations\}/,
+    /function ReaderBody\([\s\S]{0,1000}<MarkdownContent\s*\n\s*key=\{`md-\$\{index\}`\}\s*\n\s*text=\{piece\.text\}\s*\n\s*citations=\{citations\}/,
     "the reader passes citations to the renderer that wires the previews",
   );
   assert.match(

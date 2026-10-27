@@ -14,6 +14,7 @@ import {
   STATUS_TABLE,
   uiBlockFence,
 } from "../src/lib/ui-block-fixtures";
+import { UI_BLOCK_FALLBACK_CASES } from "../src/lib/ui-block-fallback-fixtures";
 
 // Native UI tier (docs/chat-native-ui-tier.md), daemon-less: an assistant turn
 // carrying ```coven:ui fences renders Cave-native components in place, with
@@ -59,6 +60,16 @@ const FENCED_EXAMPLE_REPLY = [
   "~~~",
   "That is example text.",
 ].join("\n");
+
+const LIST_EXAMPLE_REPLY = [
+  "- Use this syntax:",
+  "",
+  ...uiBlockFence('<Badge tone="danger">Should stay literal</Badge>').split("\n").map((line) => `  ${line}`),
+  "",
+  "That is example text.",
+].join("\n");
+
+const STATUS_READABLE = UI_BLOCK_FALLBACK_CASES.find((c) => c.id === "status-table")!.readable;
 
 async function setup(page: Page, text: string) {
   const turns = [
@@ -358,4 +369,22 @@ test("a coven:ui example inside another fence stays literal text", async ({ page
   await expect(chat.getByText("That is example text.", { exact: true })).toBeVisible();
   await expect(chat.locator("[data-ui-block]")).toHaveCount(0);
   await expect(chat.locator("pre, code").filter({ hasText: "Should stay literal" }).first()).toBeVisible();
+});
+
+test("a coven:ui example indented under a list item stays literal text (#6060)", async ({ page }) => {
+  const { chat } = await setup(page, LIST_EXAMPLE_REPLY);
+  await expect(chat.getByText("That is example text.", { exact: true })).toBeVisible();
+  await expect(chat.locator("[data-ui-block]")).toHaveCount(0);
+  await expect(chat.locator("pre, code").filter({ hasText: "Should stay literal" }).first()).toBeVisible();
+});
+
+test("Copy hands back a block's readable lines, never its markup (#6060)", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const { chat } = await setup(page, `Here is the status.\n\n${uiBlockFence(STATUS_TABLE)}\n\nExports needs attention.`);
+  await expect(chat.locator("[data-ui-block]")).toHaveCount(1);
+  await chat.getByText("Exports needs attention.", { exact: true }).hover();
+  await chat.getByRole("button", { name: "Copy completed response" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
+    `Here is the status.\n\n${STATUS_READABLE}\n\nExports needs attention.`,
+  );
 });
