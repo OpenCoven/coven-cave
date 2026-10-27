@@ -129,6 +129,50 @@ const selfEdge = await board.updateCard(downstream.id, {
 });
 assert.equal(selfEdge.dependencies.length, 2, "a self-edge is never imported");
 
+// ── Human dependency edits from a stale snapshot (#6286) ──────────────────────
+// Two browsers show the same card. One links a new upstream; the other, which
+// never saw that link, cuts a different edge and then undoes the cut. Every
+// edit applies to the CURRENT card, so each survives the other.
+const upC = await board.createCard({ title: "Review the plan" });
+const humanCard = await board.createCard({ title: "Ship the plan" });
+const cutEdge = {
+  id: "cut-edge",
+  kind: "task",
+  label: "Write the migration",
+  taskId: upstreamB.id,
+  state: "unresolved",
+  origin: "human",
+  createdAt: new Date().toISOString(),
+};
+await board.updateCard(humanCard.id, {
+  dependencies: [cutEdge],
+  primaryBlockerId: "cut-edge",
+  primaryBlockerPinned: true,
+});
+// Browser 1 links Review the plan as a human edge.
+await board.updateCard(humanCard.id, {
+  ops: { dependencyOps: [{ op: "addTask", id: "link-edge", taskId: upC.id, label: "Review the plan", origin: "human" }] },
+});
+// Browser 2, still showing only cut-edge, cuts it.
+let afterCut = await board.updateCard(humanCard.id, {
+  ops: { dependencyOps: [{ op: "removeTask", taskId: upstreamB.id }] },
+});
+assert.deepEqual(afterCut.dependencies.map((dep) => dep.id), ["link-edge"], "the cut keeps the link it never saw");
+assert.equal(afterCut.dependencies[0].origin, "human", "a human link records human authorship");
+assert.equal(afterCut.primaryBlockerId, "link-edge", "cutting the primary re-points it to the next unresolved edge");
+assert.equal(afterCut.primaryBlockerPinned, false, "a re-pointed primary is not pinned");
+// Browser 2 undoes its cut: the exact record and its pinned primary return.
+afterCut = await board.updateCard(humanCard.id, {
+  ops: { dependencyOps: [{ op: "restore", dependencies: [cutEdge], primaryBlockerId: "cut-edge", primaryBlockerPinned: true }] },
+});
+assert.deepEqual(afterCut.dependencies.map((dep) => dep.id).sort(), ["cut-edge", "link-edge"], "undoing the cut keeps the link");
+assert.deepEqual(afterCut.dependencies.find((dep) => dep.id === "cut-edge"), cutEdge, "the restored record is exact");
+assert.equal(afterCut.primaryBlockerId, "cut-edge");
+assert.equal(afterCut.primaryBlockerPinned, true);
+// Browser 1 undoes its link by id: only that edge goes.
+afterCut = await board.updateCard(humanCard.id, { ops: { dependencyOps: [{ op: "remove", id: "link-edge" }] } });
+assert.deepEqual(afterCut.dependencies.map((dep) => dep.id), ["cut-edge"], "undoing the link removes only its own edge");
+
 // ── Back-compat: full-array patches still replace wholesale ───────────────────
 const replaced = await board.updateCard(card.id, { steps: [] });
 assert.deepEqual(replaced.steps, [], "legacy full-array patch replaces (enrich-steps relies on this)");

@@ -189,8 +189,11 @@ never fake production data.
   a read-side legacy store: its edges are imported onto the cards on load with
   `dependencyOps`, which the server merges into the current card under the
   board lock, so a stale browser can neither drop another writer's edge nor
-  duplicate an edge another device already imported. Dangling edges are pruned
-  on every read. Retiring the overlay reader is #6258.
+  duplicate an edge another device already imported. Linking, cutting and
+  undoing a dependency in the room are `dependencyOps` too (#6286): a cut
+  primary blocker re-points to the next unresolved dependency on the current
+  card, and an undo removes or restores exactly the records its edit touched.
+  Dangling edges are pruned on every read. Retiring the overlay reader is #6258.
 
   Agentic Enhance uses the canonical Board task graph and persists its proposal
   audit with the task. It may normalize only mechanically verified references;
