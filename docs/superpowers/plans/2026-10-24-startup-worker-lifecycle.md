@@ -84,3 +84,34 @@ run only on hosted Windows lanes and were not executed on this Unix host.
 ## Review checkpoint at 96b01583e
 
 Independent review found late scheduled restarts after coordinated shutdown, backup configuration bypassing a pending restart drain, early parallel-store rejection releasing another admitted send, and normal packaged quit bypassing the coordinator. The first three now have failing-first regressions and local corrections pending complete verification. Task 3 remains incomplete until the native EOF/Windows normal-quit path is reconciled; the earlier inline ledger entry covered only the signal path and must not be used as native or whole-task completion evidence.
+
+
+## Reminder worker and domain disablement (#6295 continuation)
+
+Delivered after the merge of #6294 as the first minimal-core cut from the
+#6119 production baseline. The inbox reminder worker
+(`src/lib/inbox-scheduler.ts`) now has the same owner shape as scheduled chat:
+one `globalThis.__caveInboxScheduler` owner, one 15-second timer, one pass in
+flight, `stopScheduler()` that closes admission synchronously and returns the
+retained drain, restart fenced behind the old pass, and no start after
+coordinated shutdown. It registers as `inbox-reminders` in
+`startup-worker-shutdown.ts`, so the signal path and the packaged parent lease
+drain three workers under the unchanged deadlines (three-second observer;
+1,200 ms Unix and 400 ms Windows lease budgets).
+
+`src/lib/server/automations-domain.ts` defines domain disablement for
+reminders and scheduled chat: `COVEN_CAVE_AUTOMATIONS_ENABLED` set to `0`,
+`false` or `off` means no timer and no pass; admitted reminders and scheduled
+claims stay exactly as written and their routes keep serving them; re-enabling
+delivers what became due once, and `fired`/claimed records are never replayed.
+The setting is read when a worker starts, so it takes effect at the next server
+start. Editors, UI and the daemon-owned Coven Automations are out of scope.
+
+Maintenance: the probe (`scripts/startup-worker-lifecycle-probe.mjs`) gained a
+`reminders-due` mode, which seeds one due reminder and can hold its admitted
+store read across SIGTERM, and a fifth `enabled|disabled` argument for the
+domain switch; the preload samples the reminder owner beside the others.
+Rollback is removing the `inbox-reminders` registration and the gate; the
+worker then behaves as before #6295 (no stop handle, no domain switch).
+Native quit behavior with a held reminder delivery is verified by the shared
+packaged-lease tests only, not on physical hardware.

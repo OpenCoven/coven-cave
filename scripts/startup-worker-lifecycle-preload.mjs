@@ -16,6 +16,7 @@ const timers = new Map();
 let backupReads = 0;
 let fetchCalls = 0;
 let held = false;
+let reminderHeld = false;
 let priorCpu = process.cpuUsage();
 let priorAt = started;
 const emit = value => fs.appendFileSync(output, JSON.stringify({ elapsedMs: performance.now() - started, ...value }) + '\n');
@@ -36,11 +37,23 @@ async function holdArchiveSource() {
     await new Promise(resolve => nativeTimeout(resolve, delay));
   }
 }
+// Hold the admitted reminder pass on its store read, once, so SIGTERM lands
+// while a delivery is in flight; the receipt then shows whether it finished.
+async function holdReminderPass() {
+  const delay = Number(process.env.CAVE_WORKER_PROBE_REMINDER_DELAY_MS ?? 0);
+  if (delay > 0 && globalThis.__caveInboxScheduler?.pending && !reminderHeld) {
+    reminderHeld = true;
+    emit({ event: 'reminder-pass-held', delayMs: delay });
+    await new Promise(resolve => nativeTimeout(resolve, delay));
+  }
+}
 const configPath = path.join(home, 'coven', 'cave', 'config.json');
+const inboxPath = path.join(home, 'coven', 'cave', 'inbox.json');
 const originalRead = fsp.readFile;
 fsp.readFile = async function (...args) {
   if (String(args[0]) === path.join(home, 'coven', 'cave', 'backup-sync.json')) backupReads += 1;
   if (String(args[0]) === configPath) await holdArchiveSource();
+  if (String(args[0]) === inboxPath) await holdReminderPass();
   return Reflect.apply(originalRead, this, args);
 };
 const originalOpen = fsp.open;
@@ -66,6 +79,8 @@ function sample(event) {
   emit({ event, memory: process.memoryUsage(), cpuMs, intervalMs: elapsed,
     cpuPercentOfOneCore: elapsed ? cpuMs / elapsed * 100 : 0,
     intervalDelaysMs: [...timers.values()].sort((a, b) => a - b), backupReads, fetchCalls,
+    reminders: { wanted: globalThis.__caveInboxScheduler?.wanted ?? null,
+      pending: Boolean(globalThis.__caveInboxScheduler?.pending), timer: Boolean(globalThis.__caveInboxScheduler?.timer) },
     scheduled: { wanted: globalThis.__caveScheduledChatScheduler?.wanted ?? null,
       pending: Boolean(globalThis.__caveScheduledChatScheduler?.pending) },
     backup: { wanted: owner?.wanted ?? null, pending: Boolean(owner?.pending),

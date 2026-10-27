@@ -7,9 +7,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
-const [checkoutArg, outputArg, mode = 'disabled', delayArg = '0'] = process.argv.slice(2);
-if (!checkoutArg || !outputArg || !['missing', 'disabled', 'enabled-idle', 'enabled-due'].includes(mode)) {
-  throw new Error('usage: node scripts/startup-worker-lifecycle-probe.mjs CHECKOUT OUTPUT_DIR [missing|disabled|enabled-idle|enabled-due] [ARCHIVE_DELAY_MS]');
+const [checkoutArg, outputArg, mode = 'disabled', delayArg = '0', automations = 'enabled'] = process.argv.slice(2);
+if (!checkoutArg || !outputArg || !['missing', 'disabled', 'enabled-idle', 'enabled-due', 'reminders-due'].includes(mode)
+  || !['enabled', 'disabled'].includes(automations)) {
+  throw new Error('usage: node scripts/startup-worker-lifecycle-probe.mjs CHECKOUT OUTPUT_DIR [missing|disabled|enabled-idle|enabled-due|reminders-due] [HOLD_DELAY_MS] [enabled|disabled]');
 }
 const checkout = path.resolve(checkoutArg);
 const output = path.resolve(outputArg);
@@ -22,6 +23,17 @@ await mkdir(cave, { recursive: true });
 await mkdir(snapshots);
 await writeFile(path.join(cave, 'config.json'), JSON.stringify({ multiHost: { mode: 'local' }, probeMarker: 'synthetic retained marker' }));
 const enabled = mode.startsWith('enabled');
+// reminders-due: backup disabled, one reminder already due, and (with a delay)
+// the admitted delivery's store read is held while SIGTERM arrives, so the
+// receipt shows whether quit truncated it (#6295). The automations switch
+// measures the disabled-domain idle baseline: no reminder or scheduled timer.
+if (mode === 'reminders-due') {
+  const dueAt = new Date(Date.now() - 60_000).toISOString();
+  await writeFile(path.join(cave, 'inbox.json'), JSON.stringify({ version: 1, items: [{
+    id: 'probe-due-reminder', kind: 'reminder', title: 'synthetic due reminder', status: 'pending',
+    fireAt: dueAt, firedAt: null, snoozeUntil: null, readAt: null, createdAt: dueAt, updatedAt: dueAt,
+  }] }));
+}
 if (mode !== 'missing') await writeFile(path.join(cave, 'backup-sync.json'), JSON.stringify({
   version: 1, config: { enabled, directory: snapshots, retainCount: 2, intervalHours: 24, onQuitPush: true },
   status: { lastSuccessAt: mode === 'enabled-idle' ? new Date().toISOString() : null },
@@ -34,6 +46,8 @@ const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'xdg'
   NODE_ENV: 'production', NEXT_TELEMETRY_DISABLED: '1', COVEN_CAVE_E2E: '1',
   COVEN_CAVE_EVENT_PLANE_ENABLED: '0', CAVE_WORKER_PROBE_HOME: home,
   CAVE_WORKER_PROBE_OUTPUT: path.join(output, 'samples.jsonl'), CAVE_WORKER_PROBE_DELAY_MS: delayArg,
+  CAVE_WORKER_PROBE_REMINDER_DELAY_MS: mode === 'reminders-due' ? delayArg : '0',
+  ...(automations === 'disabled' ? { COVEN_CAVE_AUTOMATIONS_ENABLED: '0' } : {}),
 };
 if (enabled) {
   const setup = spawnSync(process.execPath, ['--input-type=module', '-e',
@@ -59,7 +73,8 @@ const manifest = {
   buildId: (await readFile(path.join(checkout, '.next/BUILD_ID'), 'utf8')).trim(),
   customServerSha256: createHash('sha256').update(await readFile(path.join(checkout, 'server.mjs'))).digest('hex'),
   preloadSha256: createHash('sha256').update(await readFile(preload)).digest('hex'),
-  mode, archiveDelayMs: Number(delayArg), home, port, env: { COVEN_CAVE_E2E: '1', NODE_ENV: 'production', COVEN_CAVE_EVENT_PLANE_ENABLED: '0' },
+  mode, automations, archiveDelayMs: mode === 'reminders-due' ? 0 : Number(delayArg), reminderDelayMs: mode === 'reminders-due' ? Number(delayArg) : 0,
+  home, port, env: { COVEN_CAVE_E2E: '1', NODE_ENV: 'production', COVEN_CAVE_EVENT_PLANE_ENABLED: '0', COVEN_CAVE_AUTOMATIONS_ENABLED: automations === 'disabled' ? '0' : undefined },
   environment: { platform: os.platform(), release: os.release(), arch: os.arch(), node: process.version,
     cpus: os.cpus().length, cpuModel: os.cpus()[0]?.model, totalMemoryBytes: os.totalmem(), loadAverage: os.loadavg() },
   sampleIntervalMs: 1_000, readySamples: 1, idleTargetMs: 10_000,
@@ -86,6 +101,11 @@ try {
       if (terminal || performance.now() - start > 60_000) throw new Error('admitted archive hold not observed');
       await pause(20);
     }
+  } else if (mode === 'reminders-due' && Number(delayArg) > 0) {
+    while (!(await readFile(env.CAVE_WORKER_PROBE_OUTPUT, 'utf8')).includes('reminder-pass-held')) {
+      if (terminal || performance.now() - start > 60_000) throw new Error('admitted reminder hold not observed');
+      await pause(20);
+    }
   } else {
     await pause(10_000);
   }
@@ -94,6 +114,11 @@ try {
   const [code, signal] = await Promise.race([exited, pause(7_000).then(() => { throw new Error('owned server exceeded 7s probe stop bound'); })]);
   manifest.shutdown = { code, signal, elapsedMs: performance.now() - signalAt };
   manifest.snapshotFiles = (await readdir(snapshots)).filter(file => file.endsWith('.ccbackup'));
+  if (mode === 'reminders-due') {
+    const inbox = JSON.parse(await readFile(path.join(cave, 'inbox.json'), 'utf8'));
+    const item = inbox.items.find(entry => entry.id === 'probe-due-reminder');
+    manifest.reminder = { status: item?.status ?? 'missing', firedAt: item?.firedAt ?? null, items: inbox.items.length };
+  }
   const verify = createServer();
   await new Promise((resolve, reject) => { verify.once('error', reject); verify.listen(port, '127.0.0.1', resolve); });
   await new Promise(resolve => verify.close(resolve));

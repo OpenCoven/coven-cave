@@ -1,6 +1,6 @@
 // Shared by the custom server and Next's separately bundled worker modules.
 // Retain stop promises after the observation deadline: timeout is not drain.
-const WORKERS = ["scheduled-chat", "backup-sync"] as const;
+const WORKERS = ["inbox-reminders", "scheduled-chat", "backup-sync"] as const;
 type Worker = typeof WORKERS[number];
 export type ShutdownOutcome = {
   status: "unavailable" | "pending" | "drained" | "failed";
@@ -36,7 +36,7 @@ function slot(): Slot {
 function owner(): Owner {
   return globalThis.__caveStartupWorkerShutdown ??= {
     coordinated: false, closing: false,
-    workers: { "scheduled-chat": slot(), "backup-sync": slot() },
+    workers: { "inbox-reminders": slot(), "scheduled-chat": slot(), "backup-sync": slot() },
   };
 }
 
@@ -108,6 +108,7 @@ export function coordinateStartupWorkerShutdown(
       return {
         http: { ...http.outcome },
         workers: {
+          "inbox-reminders": { ...state.workers["inbox-reminders"].outcome },
           "scheduled-chat": { ...state.workers["scheduled-chat"].outcome },
           "backup-sync": { ...state.workers["backup-sync"].outcome },
         },

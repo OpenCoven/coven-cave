@@ -32,6 +32,7 @@ function serverShutdown(ready = true) {
 test("the custom server waits for the quit drain even after HTTP closes", async () => {
   let finish!: () => void;
   const held = new Promise<void>(resolve => { finish = resolve; });
+  registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("backup-sync", () => held);
   const server = serverShutdown();
@@ -46,6 +47,7 @@ test("the custom server waits for the quit drain even after HTTP closes", async 
 });
 
 test("the custom server exits unsuccessfully when the shared deadline leaves work pending", async () => {
+  registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("backup-sync", () => new Promise<void>(() => undefined));
   const server = serverShutdown();
@@ -64,6 +66,7 @@ test("signals own shutdown before Next preparation can start workers", () => {
 });
 
 test("a shutdown during preparation drains registered workers without an HTTP listener", async () => {
+  registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const server = serverShutdown(false);
@@ -71,4 +74,33 @@ test("a shutdown during preparation drains registered workers without an HTTP li
   await vi.advanceTimersByTimeAsync(0);
   expect(server.close).not.toHaveBeenCalled();
   expect(server.exit).toHaveBeenCalledExactlyOnceWith(0);
+});
+
+test("the custom server waits for an admitted reminder delivery even after HTTP closes", async () => {
+  let finish!: () => void;
+  const held = new Promise<void>(resolve => { finish = resolve; });
+  registerStartupWorker("inbox-reminders", () => held);
+  registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("backup-sync", async () => undefined);
+  const server = serverShutdown();
+  server.shutdown();
+  expect(server.close).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(2_000);
+  expect(server.exit).not.toHaveBeenCalled();
+  finish();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(server.exit).toHaveBeenCalledExactlyOnceWith(0);
+});
+
+test("a reminder delivery that outlives the shared deadline is reported, not cancelled", async () => {
+  registerStartupWorker("inbox-reminders", () => new Promise<void>(() => undefined));
+  registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("backup-sync", async () => undefined);
+  const server = serverShutdown();
+  server.shutdown();
+  await vi.advanceTimersByTimeAsync(3_000);
+  expect(server.exit).toHaveBeenCalledExactlyOnceWith(1);
+  expect(server.console.warn).toHaveBeenCalledWith("[startup-workers] Incomplete shutdown:", expect.objectContaining({
+    workers: expect.objectContaining({ "inbox-reminders": { status: "pending" } }),
+  }));
 });

@@ -59,9 +59,13 @@ export async function register() {
   } catch (error) {
     console.warn("[instrumentation] X mission runtime sweep could not start:", error);
   }
-  const mod = await import("@/lib/inbox-scheduler");
-  mod.startScheduler();
   const shutdown = await import("@/lib/server/startup-worker-shutdown");
+  const inbox = await import("@/lib/inbox-scheduler");
+  if (shutdown.registerStartupWorker("inbox-reminders", inbox.stopScheduler)) {
+    void inbox.startScheduler().catch(error => {
+      console.warn("[instrumentation] inbox reminders failed to start:", error);
+    });
+  }
   const scheduledChat = await import("@/lib/server/scheduled-chat-scheduler");
   if (shutdown.registerStartupWorker("scheduled-chat", scheduledChat.stopScheduledChatScheduler)) {
     void scheduledChat.startScheduledChatScheduler().catch(error => {
