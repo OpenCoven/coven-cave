@@ -438,6 +438,53 @@ shipped measurement contract.
 | One-click repairs are not yet implemented for every classified failure | Follow from the issue whose evidence identifies the repair boundary |
 | Hardware-only Windows installer/Defender and macOS signing/quarantine behavior still require release-host validation | Release validation checklist |
 
+## Maintenance and rollback (#6298)
+
+The daemon lifecycle track landed as four squash commits on `main`, each
+independently revertable through a pull request. Nothing in the track
+persists state: the lifecycle owner, the mutation owner, and the diagnostic
+event ring live in process-global memory of the sidecar, so a rollback has
+no data or migration step and takes effect on the next sidecar start.
+
+| Slice | Merge commit | Owns | Revert note |
+| --- | --- | --- | --- |
+| 1 Projection (#6299) | 475d61157 | `src/lib/daemon-lifecycle.ts`, `src/lib/server/daemon-lifecycle-owner.ts`, the `lifecycle` field on `GET /api/daemon/status` | Clients treat a missing `lifecycle` as the pre-slice status payload (`classifyDaemonStatusPoll` falls back to `availability`). Revert last. |
+| 2 Mutation owner (#6301) | 122da80a3 | `src/lib/server/daemon-mutation-owner.ts`, admission in `startLocalDaemonOperation`, the `mutation_in_flight` and `duplicate_after_timeout` refusals, the `transitioning` poll result | Reverting restores the earlier single-promise coalescing in `daemon-start.ts`. The coordinator's deferral set loses the two codes with it. Depends on slice 1's types. |
+| 3 Fault matrix (#6302) | 9b802dca7 | `runnerFailed` in `daemon-readiness.ts`, backwards-clock re-stamps in the two owners and `familiar-liveness.ts`, `revive-after-kill` in the probe | Reverting reintroduces the readiness-deadline wait on spawn failure and the frozen windows after a backwards clock jump; the fault-matrix table rows that cite these tests must be marked unverified again. Depends on slice 2. |
+| 4 Diagnostics export (#6304) | see the PR | `src/lib/daemon-diagnostics-export.ts`, the export row in `settings-daemon.tsx`, the `lifecycle` block in the bundle | The client parser requires only `manifest` and `events`, so the bundle's `lifecycle` block can be removed without touching the control. Reverting the whole slice returns the residual-risk row to "unowned". Depends on both owners' snapshot functions. |
+
+Revert in reverse order (4, 3, 2, 1). Reverting a lower slice while a higher
+one remains does not compile.
+
+Maintenance rules:
+
+- **Adding a lifecycle state or transition.** Change the ordered rules in
+  `daemon-lifecycle.ts`, add the failing-first case to
+  `daemon-lifecycle.test.ts`, add the label to `describeDaemonLifecycle`, and
+  teach every exhaustive consumer (`workspace.tsx`, the supervisor, the
+  reliability recorder, `familiar-liveness.ts`). The typecheck names each one.
+- **Adding a fault-matrix row.** The row is not done until it names a
+  deterministic test and, where a real process is involved, a probe receipt.
+  A row this host cannot run is listed as unverified, never omitted.
+- **Re-taking probe receipts.** Run
+  `node --experimental-strip-types scripts/daemon-lifecycle-probe.mjs <coven-binary> 5`
+  against isolated synthetic homes only; record the exact commit, binary
+  digest, host, sample size and any retained failed sample in
+  `docs/performance/daemon-lifecycle.md`. A receipt from a dirty tree or an
+  earlier head is not evidence for the current head.
+- **Changing admission or timeouts.** `DAEMON_MUTATION_TIMEOUT_WINDOW_MS`
+  and the readiness budget are the only two knobs; both have a backwards-clock
+  test that must keep passing. Do not add a second coalescing layer in a
+  route; every start, restart and recovery goes through `runDaemonMutation`.
+- **Changing the diagnostics bundle.** Bump `manifest.schemaVersion` and the
+  client's `DAEMON_DIAGNOSTICS_BUNDLE_SCHEMA_VERSION` together, extend the
+  redaction pins in `daemon-diagnostics.test.ts`, and keep the export free of
+  probes.
+- **Monitoring after a change.** `pnpm main:health` for the oldest failing
+  commit, the Windows startup lane for pipe-side regressions (#6303 owns the
+  pipe contracts), and the native recorder's `daemon-reliability-v1.json`,
+  which this track did not change.
+
 ## Daemon fault-injection CI coverage decision
 
 Routine pull-request validation is path-aware. When changed paths select the
