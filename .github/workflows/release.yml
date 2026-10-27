@@ -1105,6 +1105,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job has no checkout, so `gh release` cannot read the
+          # repository from a Git remote (#6288).
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
           DESKTOP_UPLOADS: ${{ github.event_name != 'workflow_dispatch' || (inputs.platform != 'ios' && !inputs.windows_diagnostics_only) }}
         run: |
