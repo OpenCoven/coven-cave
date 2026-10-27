@@ -869,7 +869,7 @@ details[open] > .cave-tool-summary::before {
    Gated in MetaLine by a 60s significance floor + a global per-kind
    cooldown (src/lib/flare-cooldown.ts) + the celebrations pref; the row's
    role=status announcement carries the information either way. */
-.cave-chat-meta-line--reward {
+.cave-chat-header-row:has(> .cave-chat-meta-line--reward) {
   border-radius: var(--radius-md);
   animation: cave-chat-settle-flare 700ms var(--ease-decelerate) forwards;
 }
@@ -883,7 +883,7 @@ details[open] > .cave-tool-summary::before {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cave-chat-meta-line--reward { animation: none; }
+  .cave-chat-header-row:has(> .cave-chat-meta-line--reward) { animation: none; }
 }
 
 /* Inline remedy inside the offline meta line — a real button (keyboard
