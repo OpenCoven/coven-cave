@@ -64,3 +64,7 @@ jobs:
           Invoke-NativeTest 'app_lifecycle_tests::port_conflicts_offer_packaged_app_recovery_without_development_commands' 1 -Exact
           Invoke-NativeTest 'app_lifecycle_tests::preparation_errors_give_accurate_packaged_recovery' 1 -Exact
           Invoke-NativeTest 'app_lifecycle_tests::capacity_guidance_rounds_available_down_and_required_up' 1 -Exact
+          # Normal quit drains Node over the private stdin pipe before the Job fallback (#6209).
+          Invoke-NativeTest 'app_lifecycle_tests::windows_normal_quit_requests_drain_over_the_private_pipe_before_the_job_fallback' 1 -Exact
+          Invoke-NativeTest 'app_lifecycle_tests::windows_normal_quit_keeps_the_job_fallback_when_the_child_ignores_eof' 1 -Exact
+          Invoke-NativeTest 'app_lifecycle_tests::windows_startup_failure_terminates_immediately_without_a_drain_window' 1 -Exact
