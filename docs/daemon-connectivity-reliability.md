@@ -145,6 +145,45 @@ Illegal transitions:
 - `Incompatible`/`PermissionDenied` -> blind retry loop.
 - Mutation timeout -> automatic duplicate mutation.
 
+### Projected lifecycle state (#6298, slice 1)
+
+`src/lib/daemon-lifecycle.ts` is the pure projection from recorded evidence
+to one state, and `src/lib/server/daemon-lifecycle-owner.ts` is the one
+process-global record it reads: the start or recovery mutation in flight
+(recorded by `runLocalDaemonStart` for its whole duration), whether this
+process has observed a ready daemon, and the cached answer to "does the
+local Coven runtime exist" (probed at most once per 30 s, and only by the
+status route for an offline local target, so hubs never spawn anything).
+`/api/daemon/status` and `/api/daemon/connection` both publish the result as
+`lifecycle: { state, generation, observedAt, evidence, reason? }`, and the
+Settings daemon card prefers that label over the availability fallback.
+
+| Projected state | Target-table state | Evidence required |
+| --- | --- | --- |
+| `missing` | `NotInstalled` | Local target offline and the runtime probe returned no version |
+| `stopped` | `Stopped` | Target offline; runtime present or not yet probed (never guessed missing) |
+| `starting` | `Starting`/`WaitingForEndpoint` | A start operation in flight and no ready instance observed before |
+| `recovering` | `Recovering` | An automatic recovery in flight, or any start after a ready instance |
+| `ready` | `Ready` | Health probe succeeded, compatibility passed, no service conflict |
+| `foreign-owned` | `Ready` with a `Degraded` note | Health succeeded but the system service does not own the daemon (#5730) |
+| `unreachable` | `Failed` (transport) | Probe got no answer and the local target did not report "daemon offline" |
+| `unauthorized` | `PermissionDenied` (hub) | Hub answered 401/403 |
+| `incompatible` | `Incompatible` | Compatibility assessment failed, or Cave home is on an incompatible layout |
+| `unhealthy` | `Failed` (endpoint) | Endpoint answered but not healthy, and no operation is in flight |
+| `misconfigured` | `Stopped` (no target) | Selected hub configuration is missing or invalid |
+| `unknown` | none | Cave home status could not be read; the daemon was not checked |
+
+Ordering is fixed: configuration and compatibility failures win over health,
+confirmed health wins over an in-flight operation (so `ready` is never
+downgraded to `starting` by a stale operation record), and an in-flight
+operation wins over an offline or unhealthy probe (a daemon still booting
+answers unhealthy). Every observation carries a monotonic generation;
+`mergeDaemonLifecycle` keeps the newer one, so a slower, older probe cannot
+overwrite a newer state. `Stopping`, `Handshaking`, and `Degraded` are not
+projected yet: nothing records a deliberate stop, the handshake is folded into
+`starting`, and capability degradation is still reported per surface. Those
+belong to the mutation-owner slice.
+
 ## Failure-mode and effects analysis
 
 | Failure mode | Detection | Current effect | Safe recovery | Residual risk |
