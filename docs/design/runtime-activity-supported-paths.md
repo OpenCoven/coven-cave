@@ -48,7 +48,24 @@ Refresh installed versions with `scripts/runtime-activity-runtime-matrix.mjs`.
 It runs bounded help/version probes with credential-bearing environment variables
 removed, scratch Coven state and registry network refresh disabled. It does not
 start a provider conversation or publish trust. Record its result beside the
-exact-candidate evidence, not as a timeless support table.
+exact-candidate evidence, not as a timeless support table. Since 2026-10-28 the
+inventory (schema 2) also probes Claude and Copilot, derives the local Codex
+rows from the same CLI, and lists SSH, Coven relay and OpenClaw declaratively.
+
+The current per-path matrix is
+[evidence/runtime-activity-2026-10-28/capability-matrix.json](evidence/runtime-activity-2026-10-28/capability-matrix.json)
+with its [README](evidence/runtime-activity-2026-10-28/README.md). It maps the
+seven #5763 acceptance criteria to route-level fixtures for every claimed path.
+No path meets all seven at route level; Hermes over the Responses API is the only
+path with a vertical-slice fixture that includes a second summary. Claude
+reasoning is `unknown` on every path until a Runtimes descriptor says whether
+thinking is a summary or progress; the request is drafted in
+[claude-reasoning-display-descriptor-proposal.md](claude-reasoning-display-descriptor-proposal.md).
+Hermes over its direct CLI is unsupported for activity, OpenCode read-only is
+unsupported (501), SSH relays report every detail as unverified, and OpenClaw is
+deferred per #4892. `route-launch-path-activity.integration.test.ts` runs those
+states and refusals through the real route; the 2026-10-18 matrix below is
+historical.
 
 Rollout uses these existing capability gates and the instance's reviewed runtime
 configuration. Enable a claimed path only after its exact-candidate receipts are
