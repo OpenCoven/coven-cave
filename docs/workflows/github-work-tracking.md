@@ -93,6 +93,11 @@ A configured directory that no longer exists, such as the removed
 `.beads/hooks`, is replaced. It also drops a stale `merge.beads-jsonl` driver
 section left in older clones. Do not use `--no-verify` or an empty hook path.
 
+The commit-msg hook accepts `Co-authored-by` only in the numeric GitHub
+no-reply form and accepts the `Coven-Familiar`, `Coven-Harness` and
+`Coven-Session` provenance trailers. Every other co-author address, including
+`<id>@opencoven.ai`, and every AI credit footer is rejected (#6068).
+
 The automatic `SessionEnd` cleanup hook and `wt:retire-on-exit` shortcut are
 removed. Stale calls to `scripts/worktree-session-exit-retirement.mjs` exit 2
 before any status probe or Git operation. A local `SAFE-RETIRE` verdict cannot
