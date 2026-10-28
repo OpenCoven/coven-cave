@@ -56,8 +56,10 @@ The current per-path matrix is
 [evidence/runtime-activity-2026-10-28/capability-matrix.json](evidence/runtime-activity-2026-10-28/capability-matrix.json)
 with its [README](evidence/runtime-activity-2026-10-28/README.md). It maps the
 seven #5763 acceptance criteria to route-level fixtures for every claimed path.
-No path meets all seven at route level; Hermes over the Responses API is the only
-path with a vertical-slice fixture that includes a second summary. Claude
+Each row carries one status: `passes`, `unverified`, `unsupported` or
+`deferred`. Hermes over the Responses API is the only path that passes all seven
+at route level (synthetic upstream traffic; its real provider stays unverified),
+and the only one with a vertical-slice fixture that includes a second summary. Claude
 reasoning is `unknown` on every path until a Runtimes descriptor says whether
 thinking is a summary or progress; the request is drafted in
 [claude-reasoning-display-descriptor-proposal.md](claude-reasoning-display-descriptor-proposal.md).
