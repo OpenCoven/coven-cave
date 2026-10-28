@@ -14,7 +14,7 @@ receipts quoted here are historical and build-bound.
 | File | Contents |
 | --- | --- |
 | [runtime-matrix.json](runtime-matrix.json) | Passive, credential-free launch inventory from `scripts/runtime-activity-runtime-matrix.mjs` (schema 2: adds Claude, Copilot and local-Codex rows, plus declarative SSH, Coven relay and OpenClaw entries) |
-| [capability-matrix.json](capability-matrix.json) | One row per claimed runtime/path: installed version, schema, reported activity, the seven #5763 criteria with `covered` / `partial` / `none` / `n/a`, evidence references, the missing input, owner and next step |
+| [capability-matrix.json](capability-matrix.json) | One row per claimed runtime/path: a `status` of `passes` / `unverified` / `unsupported` / `deferred`, installed version, schema, reported activity, the seven #5763 criteria with `covered` / `partial` / `none` / `n/a`, evidence references, the missing input, owner and next step |
 
 ## What the inventory found on this host
 
@@ -29,23 +29,29 @@ receipts quoted here are historical and build-bound.
 
 ## Status per claimed path
 
+Each path has exactly one status: **passes** (all seven criteria covered by
+route-level fixtures with synthetic upstream traffic), **unverified**,
+**unsupported** or **deferred**. "Passes" is a fixture claim, never a
+real-provider qualification.
+
 | Path | Status | Criteria covered at route level | Blocking input |
 | --- | --- | --- | --- |
-| Claude · Coven relay | fixture-partial; reasoning `unknown` by design | 5; others partial | Runtimes descriptor (summary vs progress); canary authority |
-| Claude · SSH relay | unverified; activity `ssh/unknown/unknown` asserted | 2, 5, 7 | registered host |
-| Copilot · direct JSONL | fixture-partial; reasoning `unsupported` | 5; others partial | canary authority |
-| Codex · direct JSONL | fixture-partial for admitted versions; installed 0.164.0 unadmitted | 7; others partial | signed ≥ 0.146 admission (publisher key, endpoint, checkpoint) |
-| Codex · Coven fallback | honest degraded path; `coven/unknown/unknown` asserted | 2, 5, 7 | none claimed |
-| Codex · Ollama / LM Studio | unverified-activity (launch/preflight only, #6088) | none | Codex admission first |
-| Hermes · Responses API | fixture-conformant; real provider unverified | 1–6; 7 partial | served-model report; canary authority |
-| Hermes · direct CLI | **unsupported** for activity; asserted `direct/unsupported/unsupported` | 2, 5 | none |
-| OpenCode · direct CLI | unverified; read-only **unsupported** (501 asserted) | 7; others partial | Val's Full-access decision |
-| Grok · direct CLI | unverified; SSH refused (asserted) | 7; others partial | signed ACP admission |
+| Claude · Coven relay | **unverified**; reasoning `unknown` by design | 5; others partial | Runtimes descriptor (summary vs progress); canary authority |
+| Claude · SSH relay | **unverified**; activity `ssh/unknown/unknown` asserted | 2, 5, 7 | registered host |
+| Copilot · direct JSONL | **unverified**; reasoning `unsupported` | 5; others partial | canary authority |
+| Codex · direct JSONL | **unverified**; fixtures cover admitted versions only, installed 0.164.0 unadmitted | 7; others partial | signed ≥ 0.146 admission (publisher key, endpoint, checkpoint) |
+| Codex · Coven fallback | **unsupported** for activity by design; `coven/unknown/unknown` asserted | 2, 5, 7 | none claimed |
+| Codex · Ollama / LM Studio | **unverified** (launch/preflight only, #6088) | none | Codex admission first |
+| Hermes · Responses API | **passes** at route level; real provider unverified | 1–7 | served-model report; canary authority |
+| Hermes · direct CLI | **unsupported** for activity; asserted `direct/unsupported/unsupported` | 2, 5, 7 | none |
+| OpenCode · direct CLI | **unverified**; read-only unsupported (501 asserted) | 7; others partial | Val's Full-access decision |
+| Grok · direct CLI | **unverified**; SSH refused (asserted) | 7; others partial | signed ACP admission |
 | OpenClaw | **deferred** per #4892; SSH refused (asserted) | 7 | not under #5763 |
 
-No path meets all seven criteria at route level. Hermes over the Responses API
-is closest and is the only path with a vertical-slice fixture that includes a
-second summary. Claude thinking is `unknown` everywhere until a Runtimes
+Hermes over the Responses API is the only path that passes all seven criteria
+at route level, and the only one with a vertical-slice fixture that includes a
+second summary. Every other claimed path is explicitly unverified, unsupported
+or deferred. Claude thinking is `unknown` everywhere until a Runtimes
 descriptor says whether it is a summary or progress; see
 [the descriptor proposal](../../claude-reasoning-display-descriptor-proposal.md).
 
@@ -71,10 +77,26 @@ behaviours the sibling `harness-routing-*.test.ts` files only regex-matched:
 `direct/supported/unsupported`, the `running → ok` lifecycle of the native call
 id, and that a full message after its deltas does not duplicate prose.
 
+`src/app/api/chat/send/route-hermes-boundaries.integration.test.ts` closes
+criterion 7 for Hermes with two local HTTP fixtures (a redirecting endpoint and
+the target it points at):
+
+- Read-only is refused with 501 on the Responses API and on the direct CLI
+  before any request leaves Cave or any process starts.
+- A redirecting endpoint fails the turn: one request reaches the configured
+  endpoint, the target is never contacted, the done frame is an error, the only
+  assistant text is the existing withheld-diagnostic notice, and neither the
+  bearer key nor either address appears in the stream, ordinary logs or saved
+  history. The activity claim stays `api/supported/supported`.
+- Hermes over SSH ignores the local endpoint and key: only the ssh transport
+  runs, nothing is sent to the configured URL, and the key is absent from argv.
+
 Red evidence: with the route's SSH activity path changed to `coven`, the SSH
 case fails and the other seven pass; with the OpenCode read-only refusal
-disabled, the OpenCode case fails and the other seven pass. The route was
-restored and is unchanged in the delivered diff.
+disabled, the OpenCode case fails and the other seven pass; with the Hermes
+fetch changed from `redirect: "error"` to `"follow"`, only the redirect case
+fails; with the Hermes read-only refusal disabled, only the two read-only cases
+fail. The route was restored and is unchanged in the delivered diff.
 
 ## Commands
 
@@ -86,6 +108,10 @@ node --experimental-strip-types --import ./scripts/test-alias-register.mjs \
 node --require ./scripts/css-source-contract-hook.cjs --experimental-strip-types \
   --import ./scripts/test-alias-register.mjs \
   src/app/api/chat/send/route-launch-path-activity.integration.test.ts
+
+node --require ./scripts/css-source-contract-hook.cjs --experimental-strip-types \
+  --import ./scripts/test-alias-register.mjs \
+  src/app/api/chat/send/route-hermes-boundaries.integration.test.ts
 ```
 
 The inventory used a scratch `COVEN_HOME`; `~/.coven` was not read or modified.
