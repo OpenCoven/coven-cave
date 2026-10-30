@@ -2318,9 +2318,11 @@ function handleEventUpgrade(
   eventWss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
     const handlers = broker.attach(ws);
     const remote = !isDirectLoopbackRequest(req);
+    const releaseRemote = remote ? deviceAccess.holdRemoteConnection() : null;
     if (remote) remoteEventClients.add(ws);
     const closed = () => {
       remoteEventClients.delete(ws);
+      releaseRemote?.();
       handlers.closed();
     };
     ws.on("message", (data: RawData, isBinary: boolean) => handlers.message(data, isBinary));
@@ -2527,7 +2529,8 @@ server.on("upgrade", async (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
     if (!isDirectLoopbackRequest(req)) {
       remotePtyClients.add(ws);
-      ws.once("close", () => { remotePtyClients.delete(ws); });
+      const releaseRemote = deviceAccess.holdRemoteConnection();
+      ws.once("close", () => { remotePtyClients.delete(ws); releaseRemote(); });
     }
     handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor);
   });

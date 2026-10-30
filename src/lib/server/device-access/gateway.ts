@@ -110,7 +110,33 @@ export function createDeviceAccessGateway(options: {
   const active = new Map<ServerResponse, { req: IncomingMessage; credential: string; device: DeviceRecord }>();
   const legacy = new Set<ServerResponse>();
   const completionWrites = new Set<Promise<void>>();
+  let remoteHolds = 0;
   let revalidating = false;
+  // The tick acts only on connections that are already open; a new request or
+  // upgrade reads the policy itself. It therefore runs while something live
+  // could need closing, and an idle server owns no recurring work here.
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let tickRetired = false;
+
+  function live(): boolean {
+    return active.size > 0 || legacy.size > 0 || remoteHolds > 0;
+  }
+
+  function syncTick(): void {
+    if (live() && !timer && !tickRetired) {
+      timer = setInterval(() => { void revalidateActive(); }, 1_000);
+      timer.unref();
+    } else if (!live() && timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  function retireTick(): void {
+    tickRetired = true;
+    if (timer) clearInterval(timer);
+    timer = null;
+  }
   let managedObserved = false;
   const actor = `desktop:${userInfo().username}`;
 
@@ -118,6 +144,7 @@ export function createDeviceAccessGateway(options: {
     for (const response of legacy) response.destroy();
     legacy.clear();
     options.onPolicyChanged?.();
+    syncTick();
   }
 
   async function currentPolicy() {
@@ -160,14 +187,12 @@ export function createDeviceAccessGateway(options: {
       console.warn("[device-access] Policy revalidation failed:", error instanceof Error ? error.message : "unavailable");
       closeLegacy();
       for (const res of active.keys()) res.destroy();
-      if (error instanceof DeviceAccessInitializationError) clearInterval(timer);
+      if (error instanceof DeviceAccessInitializationError) retireTick();
     } finally {
       revalidating = false;
+      syncTick();
     }
   }
-
-  const timer = setInterval(() => { void revalidateActive(); }, 1_000);
-  timer.unref();
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     delete req.headers[DEVICE_GRANT_HEADER];
@@ -258,7 +283,8 @@ export function createDeviceAccessGateway(options: {
       if (direct) return false;
       if (!policy.enabled) {
         legacy.add(res);
-        res.once("close", () => { legacy.delete(res); });
+        res.once("close", () => { legacy.delete(res); syncTick(); });
+        syncTick();
         return false;
       }
       res.setHeader("x-coven-device-pairing", "1");
@@ -297,8 +323,10 @@ export function createDeviceAccessGateway(options: {
       req.headers[DEVICE_GRANT_HEADER] = options.stampSecret;
       options.onAuthenticated?.(req, device);
       active.set(res, { req, credential, device });
+      syncTick();
       const finish = () => {
         active.delete(res);
+        syncTick();
         const write = store.recordAccess(device.id, {
           requestId, method: req.method ?? "GET", path: pathname,
           status: res.writableFinished ? res.statusCode : 499,
@@ -325,11 +353,27 @@ export function createDeviceAccessGateway(options: {
 
   return {
     handle,
+    /**
+     * A remote WebSocket (terminal or event plane) is open. Keeps the tick
+     * running so a policy change reaches it through `onPolicyChanged`; call
+     * the returned release once when the socket closes.
+     */
+    holdRemoteConnection(): () => void {
+      remoteHolds += 1;
+      syncTick();
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        remoteHolds -= 1;
+        syncTick();
+      };
+    },
     async blocksUpgrade(req: IncomingMessage): Promise<boolean> {
       return !options.isDirectLoopback(req) && (await currentPolicy()).enabled;
     },
     async close() {
-      clearInterval(timer);
+      retireTick();
       const closing = [...active.keys()].map((res) => new Promise<void>((resolve) => {
         res.once("close", resolve);
         res.destroy();
