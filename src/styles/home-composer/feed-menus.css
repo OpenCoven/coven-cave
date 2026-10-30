@@ -1,14 +1,14 @@
 /* ── Home content feed (Videos · Tweets · Repos) ─────────────────────────────────────────────────────────
  *   A compact feed reader replacing the old connector cards. The wrapper keeps
  *   the `.home-composer-suggestions` class so it inherits the home layout's
- *   1200px content cap and viewport centering; `.home-feed` overrides the
+ *   content width (--hc-content-max) and viewport centering; `.home-feed` overrides the
  *   flex-center to a single full-width card. */
 .home-composer-suggestions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   width: 100%;
-  max-width: min(1200px, 100%);
+  max-width: var(--hc-content-max, 100%);
   justify-content: center;
   margin-inline: auto;
 }

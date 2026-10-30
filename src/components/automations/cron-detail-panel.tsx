@@ -574,7 +574,7 @@ export function CodexDetailPanel({
       {/* Merge of main's expanded variant with the split-fit container: columns
           key off the pane, not the viewport (cave-hivd). */}
       <div className={`@container flex-1 overflow-y-auto py-5 ${expanded ? "px-6 md:px-8" : "px-5"}`}>
-        <div className={`space-y-5${expanded ? " mx-auto w-full max-w-6xl" : ""}`}>
+        <div className="space-y-5">
         {conflict ? (
           <RevisionConflictReview
             rebase={conflict}
@@ -657,7 +657,9 @@ export function CodexDetailPanel({
       </div>
 
       <div className="cron-detail-actions border-t px-5 py-4 [border-color:var(--border-hairline)]!">
-        <div className={`space-y-3${expanded ? " mx-auto w-full max-w-xl" : ""}`}>
+        {/* The detail fills the pane; its buttons keep a readable width and
+          align with the content's leading edge. */}
+        <div className={`space-y-3${expanded ? " w-full max-w-xl" : ""}`}>
         {saveBlockedReason ? (
           <p className="text-[length:var(--text-xs)] [color:var(--color-warning)]!" role="alert">
             {saveBlockedReason}

@@ -49,10 +49,8 @@
 
 .bd-frame {
   min-width: 1240px;
-  max-width: 1536px;
   min-height: 640px;
   height: 100%;
-  margin: 0 auto;
   border: 1px solid var(--bd-line);
   border-radius: var(--radius-lg);
   overflow: hidden;
