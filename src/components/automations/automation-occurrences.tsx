@@ -168,6 +168,9 @@ export function AutomationOccurrences({
   const controller = useRef<AbortController | null>(null);
   const olderController = useRef<AbortController | null>(null);
   const detailController = useRef<AbortController | null>(null);
+  const rereadButton = useRef<HTMLButtonElement | null>(null);
+  const olderButton = useRef<HTMLButtonElement | null>(null);
+  const focusAfterOlder = useRef<HTMLButtonElement | null>(null);
   const openIdRef = useRef<string | null>(null);
   openIdRef.current = openId;
   const base = `/api/coven-automations/${encodeURIComponent(automationId)}/occurrences`;
@@ -247,6 +250,8 @@ export function AutomationOccurrences({
     const cursor = older ? older.nextCursor : page?.nextCursor;
     // Refs also serialize clicks that arrive before React commits the disabled state.
     if (!cursor || controller.current || olderController.current) return;
+    const source = olderButton.current;
+    const ownedFocus = source !== null && source.ownerDocument.activeElement === source;
     const current = new AbortController();
     olderController.current = current;
     setOlderLoading(true);
@@ -257,6 +262,7 @@ export function AutomationOccurrences({
       if (current.signal.aborted || olderController.current !== current) return;
       if (result.kind === "available" && res.ok) {
         if (result.nextCursor === cursor) { setOlderFailure("stalled"); return; }
+        if (result.nextCursor === null && ownedFocus) focusAfterOlder.current = source;
         // Both pages are independently bounded by the shared response parser.
         setOlder({ readAt: result.readAt, occurrences: result.occurrences, nextCursor: result.nextCursor });
       } else {
@@ -298,6 +304,18 @@ export function AutomationOccurrences({
     setDetailFailure(null);
   }, [openId, openIsVisible]);
   const busy = loading || olderLoading;
+  useEffect(() => {
+    if (busy) return;
+    const source = focusAfterOlder.current;
+    focusAfterOlder.current = null;
+    if (!source || nextCursor !== null) return;
+    const document = source.ownerDocument;
+    // A removed/disabled button may fall back to body. Never take focus from
+    // a field the person deliberately selected while the read was pending.
+    if (document.activeElement === source || document.activeElement === document.body) {
+      rereadButton.current?.focus({ preventScroll: true });
+    }
+  }, [busy, nextCursor]);
 
   // Follow the streams of what is still open on screen: the newest open
   // occurrences, and the open runs of the one being inspected.
@@ -368,8 +386,8 @@ export function AutomationOccurrences({
           </ul>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button size="xs" disabled={busy} onClick={() => void refresh(true)}>{page ? "Re-read now" : "Retry"}</Button>
-          {nextCursor ? <Button size="xs" disabled={busy} aria-controls={listId} onClick={() => void loadOlder()}>Show older</Button> : null}
+          <Button ref={rereadButton} size="xs" disabled={busy} onClick={() => void refresh(true)}>{page ? "Re-read now" : "Retry"}</Button>
+          {nextCursor ? <Button ref={olderButton} size="xs" disabled={busy} aria-controls={listId} onClick={() => void loadOlder()}>Show older</Button> : null}
         </div>
       </div>
     </CronDetailSection>

@@ -255,3 +255,45 @@ test("a successful older read does not mark a failed newest-page read as fresh",
     assert.match(shown, /from the earlier read and may be stale/);
   } finally { await act(async () => renderer?.unmount()); globalThis.fetch = original; }
 });
+
+for (const [destination, expectedCalls, name] of [
+  ["button", 1, "a final older page returns focus from its removed button to Re-read now"],
+  ["body", 1, "a final older page repairs the browser's fallback to body focus"],
+  ["field", 0, "a final older page does not take focus from a user-selected field"],
+]) {
+  test(name, async () => {
+    const original = globalThis.fetch;
+    const pending = deferred();
+    globalThis.fetch = async (url) => String(url).includes("cursor=")
+      ? pending.promise : answer({ ...pageAnswer, nextCursor: "page-2" });
+    // Only the DOM focus boundary is substituted; real state, reads and effects run.
+    const ownerDocument = { body: {}, activeElement: null };
+    let focusCalls = 0;
+    const rereadNode = { ownerDocument, focus() { focusCalls += 1; ownerDocument.activeElement = this; } };
+    const olderNode = { ownerDocument };
+    const selectedField = {};
+    const { element } = mount();
+    let renderer;
+    try {
+      await act(async () => {
+        renderer = create(element(), { createNodeMock: (node) => {
+          if (node.type !== "button") return null;
+          if (node.props.children.includes("Re-read now") || node.props.children.includes("Retry")) return rereadNode;
+          if (node.props.children.includes("Show older")) return olderNode;
+          return null;
+        } });
+      });
+      ownerDocument.activeElement = olderNode;
+      await act(async () => { button(renderer, /Show older/).props.onClick(); });
+      if (destination === "field") ownerDocument.activeElement = selectedField;
+      if (destination === "body") ownerDocument.activeElement = ownerDocument.body;
+      await act(async () => { pending.resolve(answer({ ...pageAnswer, occurrences: [{ ...done, id: "occ-last-page" }], nextCursor: null })); });
+      assert.equal(button(renderer, /Show older/), undefined);
+      assert.equal(focusCalls, expectedCalls);
+      assert.equal(ownerDocument.activeElement, destination === "field" ? selectedField : rereadNode);
+    } finally {
+      await act(async () => { pending.resolve(answer(pageAnswer)); renderer?.unmount(); });
+      globalThis.fetch = original;
+    }
+  });
+}
