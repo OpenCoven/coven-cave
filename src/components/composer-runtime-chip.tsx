@@ -43,6 +43,15 @@ const HarnessAuthTerminal = dynamic(
   { ssr: false },
 );
 
+/**
+ * Runtimes whose local CLI can switch its signed-in account from the Runtime
+ * menu. Each command signs in, then prints the account it now uses.
+ */
+const ACCOUNT_SWITCH: Record<string, { label: string; command: string }> = {
+  claude: { label: "Claude", command: "claude auth login && claude auth status --text" },
+  codex: { label: "Codex", command: "codex login && codex login status" },
+};
+
 /** Preserve the exact provider-qualified selection in every composer. */
 export function runtimeModelLabel(
   modelValue: string,
@@ -146,8 +155,10 @@ export function ComposerRuntimePopover({
 }) {
   const [switchingAccount, setSwitchingAccount] = useState(false);
   const { announce } = useAnnouncer();
-  const canSwitchAccount = !disabled && runtime === "claude" &&
-    (executionRuntime === "local" || executionRuntime?.startsWith("local:"));
+  const accountSwitch = !disabled &&
+    (executionRuntime === "local" || executionRuntime?.startsWith("local:"))
+    ? ACCOUNT_SWITCH[runtime]
+    : undefined;
   return (
     <>
       <Popover
@@ -180,7 +191,7 @@ export function ComposerRuntimePopover({
               {runtimeDisplayName(catalog.runtime)}
             </PopoverItem>
           ))}
-          {canSwitchAccount ? (
+          {accountSwitch ? (
             <>
               <PopoverSeparator />
               <PopoverItem onSelect={() => {
@@ -189,22 +200,22 @@ export function ComposerRuntimePopover({
                 anchorRef.current?.focus({ preventScroll: true });
                 onOpenChange(false);
                 setSwitchingAccount(true);
-                announce("Opening Claude account sign-in.");
+                announce(`Opening ${accountSwitch.label} account sign-in.`);
               }}>
-                Switch Claude account…
+                Switch {accountSwitch.label} account…
               </PopoverItem>
             </>
           ) : null}
         </PopoverBody>
       </Popover>
-      {switchingAccount ? (
+      {switchingAccount && accountSwitch ? (
         <HarnessAuthTerminal
           intent="switch-account"
-          failure={{ harness: "claude", harnessLabel: "Claude", kind: "login",
-            loginCommand: "claude auth login && claude auth status --text" }}
+          failure={{ harness: runtime, harnessLabel: accountSwitch.label, kind: "login",
+            loginCommand: accountSwitch.command }}
           onClose={() => {
             setSwitchingAccount(false);
-            announce("Claude sign-in terminal closed.");
+            announce(`${accountSwitch.label} sign-in terminal closed.`);
           }}
         />
       ) : null}

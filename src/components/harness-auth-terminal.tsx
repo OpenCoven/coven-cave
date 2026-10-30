@@ -29,8 +29,8 @@ export function HarnessAuthTerminal({
     >
       <p className="mb-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
         {intent === "switch-account" ? (
-          <>Choose your other Claude account in the sign-in page. This changes the sign-in used by
-            other local Claude CLI launches, not only this chat. Existing running sessions keep
+          <>Choose your other {failure.harnessLabel ?? "runtime"} account in the sign-in page. This changes the sign-in used by
+            other local {failure.harnessLabel ?? "runtime"} CLI launches, not only this chat. Existing running sessions keep
             their current account. API keys or Vault credentials can override CLI sign-in.
             Check the account printed here after sign-in, then close the terminal and send your next message.</>
         ) : <>Complete sign-in here. {failure.harness === "claude" || failure.harness === "copilot"
