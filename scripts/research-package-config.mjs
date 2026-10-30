@@ -1,17 +1,17 @@
-import { createRequire } from 'node:module';
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
-/** Resolve the optional package without evaluating any of its modules. */
+/**
+ * Detect the optional package without evaluating any of its modules.
+ *
+ * Look only in this project's own node_modules, the scope Turbopack resolves
+ * the aliases below in. Node's resolver would also walk parent directories,
+ * so an issue worktree nested under a checkout that has the package would be
+ * judged "installed" and then fail to build on aliases it cannot resolve
+ * (#6312). pnpm always links a direct dependency at the project root.
+ */
 export function researchPackageConfig(root = process.cwd()) {
-  const require = createRequire(path.join(root, 'package.json'));
-  let available = false;
-  try {
-    require.resolve('@opencoven/research/package.json');
-    available = true;
-  } catch (error) {
-    if (error?.code !== 'MODULE_NOT_FOUND') throw error;
-  }
+  const available = existsSync(path.join(root, 'node_modules', '@opencoven', 'research', 'package.json'));
   const aliases = {
     '@opencoven/research-runtime': available
       ? '@opencoven/research/server'
