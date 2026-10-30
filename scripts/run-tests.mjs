@@ -746,6 +746,7 @@ export const SUITES = {
     "src/components/projects-view-repair-behavior.test.tsx",
     "src/components/projects-view-focus-latch.behavior.test.tsx",
     "src/components/project-settings-modal.test.ts",
+    "src/components/project-settings-folder-pin.behavior.test.tsx",
     "src/lib/projects/access-page.test.ts",
     "src/lib/projects/access-views.test.ts",
     "src/components/dnd-context-stable-ids.test.ts",
@@ -1730,6 +1731,7 @@ export const SUITES = {
     "src/lib/process-execution.test.ts",
     "src/lib/process-boundary-contracts.test.ts",
     "src/app/api/projects/route.test.ts",
+    "src/app/api/projects/route-pin.integration.test.ts",
     "src/app/api/coven/exec/route.test.ts",
     "src/lib/coven-daemon.test.ts",
     "src/lib/coven-daemon-bytes.test.ts",
@@ -2222,6 +2224,8 @@ export const SUITE_PREFLIGHTS = {
 const ALIAS_LOADER = new Set([
   // Real PATCH /api/chat/model-state requests against a scratch home (#6098).
   "src/app/api/chat/model-state/route-handoff.integration.test.ts",
+  // Real project registration and confirm-folder requests (#6215).
+  "src/app/api/projects/route-pin.integration.test.ts",
   "src/lib/server/automation-consumer-routes.test.ts",
   // Real inbox store and route regressions reach @/lib runtime imports.
   "src/lib/cave-inbox-preservation.test.ts",
@@ -2727,6 +2731,7 @@ const VITEST_TESTS = new Set([
   "src/components/dashboard/dashboard-loading.test.tsx",
   "src/components/projects-view-repair-behavior.test.tsx",
   "src/components/projects-view-focus-latch.behavior.test.tsx",
+  "src/components/project-settings-folder-pin.behavior.test.tsx",
   "src/components/familiar-x-section-behavior.test.tsx",
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.

@@ -208,6 +208,7 @@ import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
   projectlessGenerationLaunch,
+  projectRootPinIn,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
@@ -2675,6 +2676,7 @@ async function postAdmittedChat(
               throw error;
             }
           },
+          projectRootPin: projectRootPinIn(projects),
         },
         {
           familiarId: body.familiarId,

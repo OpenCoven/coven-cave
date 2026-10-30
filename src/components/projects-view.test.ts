@@ -55,7 +55,7 @@ test("the toolbar carries picker, search, tally, and reset", () => {
 });
 
 test("rows cycle a direct grant against /api/project-grants", () => {
-  assert.match(view, /const \{ projects, loading: projectsLoading, error: projectsError, reload, createProject, createProjectOrThrow, updateRepoUrl, renameProject, deleteProject \} = useProjects\(\)/, "projects load unscoped — access is managed over every project");
+  assert.match(view, /const \{ projects, loading: projectsLoading, error: projectsError, reload, createProject, createProjectOrThrow, updateRepoUrl, renameProject, confirmRoot, deleteProject \} = useProjects\(\)/, "projects load unscoped — access is managed over every project");
   assert.match(view, /fetch\("\/api\/project-grants", \{ cache: "no-store" \}\)/, "grants snapshot comes from the console API");
   assert.match(view, /method: op\.op === "grant" \? "POST" : "DELETE"/, "grant/revoke map to POST/DELETE");
   assert.match(view, /targetFamiliarId: familiarId/, "mutations target the picked familiar");
@@ -248,7 +248,7 @@ test("empty projects offer New project and Ask Salem", () => {
 test("the toolbar creates projects through the one shared add flow", () => {
   assert.match(view, /import \{ useAddProjectFlow \} from "@\/components\/project-picker"/, "creation reuses the shared add-project flow (native dialog + web fallback + grant)");
   assert.match(view, /const addFlow = useAddProjectFlow\(\{[\s\S]{0,200}familiarId: familiar\?\.id \?\? null/, "the new project is granted to the picked familiar");
-  assert.match(view, /createProject, createProjectOrThrow, updateRepoUrl, renameProject, deleteProject \} = useProjects\(\)/, "creation + repo-link + rename/remove mutations come from useProjects");
+  assert.match(view, /createProject, createProjectOrThrow, updateRepoUrl, renameProject, confirmRoot, deleteProject \} = useProjects\(\)/, "creation + repo-link + rename/remove mutations come from useProjects");
   assert.match(view, /useAddProjectFlow\(\{[\s\S]{0,260}createProjectOrThrow,/, "the shared add flow keeps the throwing creation error contract");
   assert.match(view, /onAdded: \(\) => \{[\s\S]{0,120}reload\(\);[\s\S]{0,120}void loadGrants\(\);/, "a successful add refreshes both the registry and the grants snapshot");
   assert.match(view, /className="projects-access-new"[\s\S]{0,220}onClick=\{addFlow\.beginAddProject\}/, "the toolbar exposes the New project button");
@@ -264,6 +264,7 @@ test("each row opens per-project settings with the GitHub repo link", () => {
   assert.match(view, /aria-label=\{`Project settings — \$\{row\.name\}`\}/, "the settings trigger is named per project");
   assert.match(view, /row\.kind === "workspace" \? "ph:folder" : "ph:github-logo"/, "the kind glyph distinguishes workspaces from repositories");
   assert.match(view, /<ProjectSettingsModal[\s\S]{0,160}project=\{settingsProject\}[\s\S]{0,160}onSaveRepoUrl=\{saveRepoUrl\}/, "the modal is wired to the derived project + save handler");
+  assert.match(view, /<ProjectSettingsModal[\s\S]{0,320}onConfirmRoot=\{confirmRoot\}/, "the modal confirms a project's folder through useProjects (#6215)");
   assert.match(view, /const ok = await updateRepoUrl\(id, repoUrl\);/, "saves go through useProjects().updateRepoUrl");
   assert.match(css, /\.projects-access-card \{/, "the card is styled");
   assert.match(css, /\.projects-access-gear \{/, "settings trigger is styled");

@@ -93,6 +93,8 @@ export async function POST(req: Request) {
     repoUrl = normalized;
   }
 
+  // Registering pins the folder (#6215); createProject computes the pin, so a
+  // caller can never supply one.
   const project = await createProject({
     name,
     root: validatedRoot.root,

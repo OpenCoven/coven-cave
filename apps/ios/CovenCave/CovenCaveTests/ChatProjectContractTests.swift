@@ -235,6 +235,32 @@ final class ChatProjectContractTests: XCTestCase {
         XCTAssertFalse(CaveError.isAuthFailure(error))
     }
 
+    func testFolderPinRefusalsRequireProjectSelection() {
+        // #6215: an unconfirmed or moved project folder is fixed on the
+        // desktop, so the phone reopens selection with the server's message.
+        for code in ["project_root_unconfirmed", "project_root_moved"] {
+            let data = Data(
+                """
+                {
+                  "ok": false,
+                  "code": "\(code)",
+                  "error": "Confirm Cave’s folder in project settings before starting chat."
+                }
+                """.utf8
+            )
+
+            let error = CaveClient.serverResponseError(statusCode: 409, data: data)
+
+            XCTAssertTrue(error.requiresProjectSelection, code)
+            XCTAssertFalse(CaveError.isAuthFailure(error), code)
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Confirm Cave’s folder in project settings before starting chat.",
+                code
+            )
+        }
+    }
+
     func testMalformedEnvelopeFallsBackToStatus() {
         let error = CaveClient.serverResponseError(
             statusCode: 502,

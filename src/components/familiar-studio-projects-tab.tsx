@@ -191,6 +191,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
     renameProject,
     deleteProject,
     updateRepoUrl,
+    confirmRoot,
   } = useProjects({ familiarId: familiar.id });
   const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null);
   const settingsProject = useMemo(
@@ -798,6 +799,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
             onClose={() => setSettingsProjectId(null)}
             onSaveRepoUrl={updateRepoUrl}
             onRename={renameRegistryProject}
+            onConfirmRoot={confirmRoot}
             onDelete={removeRegistryProject}
           />
           {addFlow.addProjectModal}

@@ -65,8 +65,12 @@ export type ProjectsState = {
   updateColor: (id: string, color: string | null) => Promise<boolean>;
   /** Tie the project to a GitHub repository link, or pass null to unlink it. */
   updateRepoUrl: (id: string, repoUrl: string | null) => Promise<boolean>;
+  /** Pin the project to the folder its root resolves to now (#6215). */
+  confirmRoot: (id: string) => Promise<ConfirmProjectRootResult>;
   deleteProject: (id: string) => Promise<boolean>;
 };
+
+export type ConfirmProjectRootResult = { ok: true } | { ok: false; error: string };
 
 export type UseProjectsOptions = {
   enabled?: boolean;
@@ -321,6 +325,29 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     return false;
   }, []);
 
+  const confirmRoot = useCallback(async (id: string): Promise<ConfirmProjectRootResult> => {
+    try {
+      const res = await fetch(`/api/projects/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmRoot: true }),
+      });
+      const data = (await res.json()) as { ok?: boolean; project?: CaveProject; error?: unknown };
+      if (!data.ok || !data.project) {
+        return { ok: false, error: typeof data.error === "string" ? data.error : `request failed (${res.status})` };
+      }
+      const confirmed = data.project;
+      // Merge rather than replace: a familiar-scoped row carries its access level.
+      setProjects((prev) =>
+        sortProjectsAlphabetically(prev.map((project) => (project.id === id ? { ...project, ...confirmed } : project))),
+      );
+      emitProjectRegistryMutation();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "request failed" };
+    }
+  }, []);
+
   const deleteProject = useCallback(async (id: string): Promise<boolean> => {
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     const data = await res.json();
@@ -345,6 +372,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     updateRoot,
     updateColor,
     updateRepoUrl,
+    confirmRoot,
     deleteProject,
   };
 }

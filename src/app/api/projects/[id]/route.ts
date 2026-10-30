@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { deleteProject, patchProject } from "@/lib/cave-projects";
+import { confirmProjectRoot, deleteProject, patchProject } from "@/lib/cave-projects";
 import { revokeAllGrantsForProject } from "@/lib/project-permissions";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
@@ -21,6 +21,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     body = (await req.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
+  }
+
+  if (body.confirmRoot !== undefined) {
+    // Confirm folder (#6215): a person pins the project to the folder its root
+    // resolves to now. It stands alone so a pin never rides along another edit.
+    if (body.confirmRoot !== true || Object.keys(body).length !== 1) {
+      return NextResponse.json(
+        { ok: false, error: "confirmRoot must be true and sent on its own" },
+        { status: 400 },
+      );
+    }
+    const confirmed = await confirmProjectRoot(id, validateCaveProjectRoot);
+    if (!confirmed) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+    if (!confirmed.ok) return NextResponse.json({ ok: false, error: confirmed.error }, { status: 400 });
+    return NextResponse.json({ ok: true, project: confirmed.project });
   }
 
   const patch: { name?: string; root?: string; color?: string | null; repoUrl?: string | null } = {};
@@ -52,6 +67,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (!validatedRoot.ok) {
       return NextResponse.json({ ok: false, error: validatedRoot.error }, { status: 400 });
     }
+    // patchProject moves the folder pin (#6215) with an applied root change.
     patch.root = validatedRoot.root;
   }
   if (typeof body.color === "string") {

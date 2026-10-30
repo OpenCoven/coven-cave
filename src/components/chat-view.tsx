@@ -2582,10 +2582,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // a chat whose cwd sits outside every registered project the familiar can
   // reach. Drives the error strip's "Add project" recovery action.
   const [projectAccessRoot, setProjectAccessRoot] = useState<string | null>(null);
-  // The chat's project folder no longer exists on disk (moved/deleted): the
-  // send 400s with code project_root_unavailable and Retry can never succeed —
-  // the recovery is re-pointing the project, not retrying (cave-ivcc).
-  const [projectRootMissing, setProjectRootMissing] = useState(false);
+  // The fix lives in Projects, and Retry can never succeed: the chat's project
+  // folder no longer exists on disk (400 project_root_unavailable, cave-ivcc),
+  // or a person must confirm the folder in project settings (409
+  // project_root_unconfirmed / project_root_moved, #6215).
+  const [projectsFixNeeded, setProjectsFixNeeded] = useState(false);
   // 409 chat_run_active: the server still runs an earlier turn of this chat
   // that this view no longer tracks. Holds that chat's id so the error strip
   // can stop the earlier run; Retry then sends the preserved message.
@@ -5523,7 +5524,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setDebugError(null);
     setLastFailedSend(null);
     setProjectAccessRoot(null);
-    setProjectRootMissing(false);
+    setProjectsFixNeeded(false);
     setProjectRootRequired(false);
     setEarlierRunSessionId(null);
     setEarlierRunId(null);
@@ -5784,7 +5785,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (accessGuard.revoked()) return;
       if (!res.ok) {
         const refusal = res.status === 409
-          ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown; code?: unknown } | null
+          ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown; code?: unknown; error?: unknown } | null
           : null;
         const message = await chatBridgeFailureMessage(res);
         let surfacedMessage = message;
@@ -5805,11 +5806,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // succeed — swap in actionable copy + an Open-projects fix (cave-ivcc).
         if (res.status === 400 && /project_root_unavailable|projectRoot does not exist/i.test(message)) {
           const missingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
-          setProjectRootMissing(true);
+          setProjectsFixNeeded(true);
           surfacedMessage =
             missingRoot
               ? `This chat's project folder is missing (${missingRoot}) — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.`
               : "This chat's project folder is missing — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.";
+        }
+        // The project's folder needs a person to confirm it (#6215): never
+        // confirmed since folder pinning, or it now resolves somewhere else.
+        // The server's copy names the project and the fix.
+        if (
+          res.status === 409 &&
+          (refusal?.code === "project_root_unconfirmed" || refusal?.code === "project_root_moved")
+        ) {
+          setProjectsFixNeeded(true);
+          if (typeof refusal.error === "string" && refusal.error.trim()) surfacedMessage = refusal.error;
         }
         // Missing, unregistered, and newly revoked project contexts all need a
         // fresh choice. Retry alone cannot repair them, so route every stable
@@ -8893,7 +8904,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           addingProject={addingProject}
           onAddProject={projectAccessRoot ? handleAddProject : undefined}
           onOpenProjects={
-            projectRootMissing
+            projectsFixNeeded
               ? () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT))
               : undefined
           }
@@ -8920,7 +8931,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setError(null);
             setDebugError(null);
             setProjectAccessRoot(null);
-            setProjectRootMissing(false);
+            setProjectsFixNeeded(false);
             setProjectRootRequired(false);
             setEarlierRunSessionId(null);
             setEarlierRunId(null);

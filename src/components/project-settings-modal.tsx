@@ -15,6 +15,7 @@ import { ProjectAvatar } from "@/components/project-avatar";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useAnnouncer } from "@/components/ui/live-region";
+import type { ConfirmProjectRootResult } from "@/lib/use-projects";
 
 /**
  * Per-project settings sheet — the registry-management surface behind both the
@@ -22,14 +23,17 @@ import { useAnnouncer } from "@/components/ui/live-region";
  * project, ties it to a GitHub repository (any spelling normalizeGitHubRepoUrl
  * understands; the canonical https link persists via updateRepoUrl), and removes
  * it from the registry (with a two-step confirm; the DELETE cascade revokes the
- * project's grants server-side). All writes go through PUT/DELETE
- * /api/projects/[id] via the caller's useProjects handlers.
+ * project's grants server-side). Confirm folder pins the project to the folder
+ * its root resolves to now; Chat refuses to start outside that folder (#6215).
+ * All writes go through PUT/DELETE /api/projects/[id] via the caller's
+ * useProjects handlers.
  */
 export function ProjectSettingsModal({
   project,
   onClose,
   onSaveRepoUrl,
   onRename,
+  onConfirmRoot,
   onDelete,
 }: {
   /** The project being edited, or null when the modal is closed. */
@@ -39,6 +43,8 @@ export function ProjectSettingsModal({
   onSaveRepoUrl: (id: string, repoUrl: string | null) => Promise<boolean>;
   /** From useProjects().renameProject. Omit to hide the name field. */
   onRename?: (id: string, name: string) => Promise<boolean>;
+  /** From useProjects().confirmRoot. Omit to hide the folder confirmation. */
+  onConfirmRoot?: (id: string) => Promise<ConfirmProjectRootResult>;
   /** From useProjects().deleteProject. Omit to hide the remove action. */
   onDelete?: (id: string) => Promise<boolean>;
 }) {
@@ -51,6 +57,8 @@ export function ProjectSettingsModal({
   const [generatingIcon, setGeneratingIcon] = useState(false);
   const [removingIcon, setRemovingIcon] = useState(false);
   const [iconError, setIconError] = useState<string | null>(null);
+  const [confirmingRoot, setConfirmingRoot] = useState(false);
+  const [rootError, setRootError] = useState<string | null>(null);
 
   const projectImages = useProjectImages();
   const { announce } = useAnnouncer();
@@ -69,6 +77,8 @@ export function ProjectSettingsModal({
     setGeneratingIcon(false);
     setRemovingIcon(false);
     setIconError(null);
+    setConfirmingRoot(false);
+    setRootError(null);
   }, [projectId, projectName, projectRepoUrl]);
 
   if (!project) return null;
@@ -78,7 +88,8 @@ export function ProjectSettingsModal({
   const linkedSlug = project.repoUrl ? gitHubRepoSlug(project.repoUrl) : null;
   const trimmedName = nameDraft.trim();
   const iconBusy = generatingIcon || removingIcon;
-  const busy = saving || deleting || iconBusy;
+  const busy = saving || deleting || iconBusy || confirmingRoot;
+  const folderPin = project.rootRealpath?.trim() || null;
 
   const save = async () => {
     if (busy) return;
@@ -151,6 +162,23 @@ export function ProjectSettingsModal({
     announce("Project icon removed.");
   };
 
+  const confirmRoot = async () => {
+    if (busy || !onConfirmRoot) return;
+    setConfirmingRoot(true);
+    setRootError(null);
+    const result = await onConfirmRoot(project.id);
+    setConfirmingRoot(false);
+    if (!result.ok) {
+      const message = result.error === "root does not exist"
+        ? "Couldn’t confirm the folder: it no longer exists. Choose the project’s folder again."
+        : `Couldn’t confirm the folder: ${result.error}`;
+      setRootError(message);
+      announce(message, "assertive");
+      return;
+    }
+    announce("Folder confirmed.");
+  };
+
   const remove = async () => {
     if (busy || !onDelete) return;
     if (!confirmingDelete) {
@@ -179,7 +207,7 @@ export function ProjectSettingsModal({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => void save()} loading={saving} disabled={deleting || iconBusy}>
+          <Button variant="primary" onClick={() => void save()} loading={saving} disabled={deleting || iconBusy || confirmingRoot}>
             Save changes
           </Button>
         </>
@@ -191,6 +219,51 @@ export function ProjectSettingsModal({
           {project.root}
         </span>
       </div>
+
+      {onConfirmRoot ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-border bg-card px-3 py-3">
+          <div className="flex min-w-0 items-start gap-2">
+            <Icon
+              name={folderPin ? "ph:seal-check" : "ph:warning-circle"}
+              width={15}
+              aria-hidden
+              className={folderPin ? "mt-0.5 shrink-0 text-muted-foreground" : "mt-0.5 shrink-0 text-[var(--color-warning)]"}
+            />
+            <div className="min-w-0">
+              <div className="text-[length:var(--text-sm)] text-foreground">
+                {folderPin ? "Folder confirmed" : "Folder not confirmed"}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {folderPin ? (
+                  <>
+                    Chats start only inside{" "}
+                    <span className="break-all text-foreground" title={folderPin}>{folderPin}</span>. If you
+                    moved this folder on purpose, confirm it again.
+                  </>
+                ) : (
+                  "Chats can’t start in this project until you confirm its folder."
+                )}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant={folderPin ? "ghost" : "secondary"}
+            size="sm"
+            leadingIcon="ph:seal-check"
+            className="shrink-0"
+            loading={confirmingRoot}
+            disabled={saving || deleting || iconBusy}
+            onClick={() => void confirmRoot()}
+          >
+            {folderPin ? "Confirm again" : "Confirm folder"}
+          </Button>
+          {rootError ? (
+            <p className="w-full text-xs text-muted-foreground" role="alert">
+              {rootError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-border bg-card px-3 py-3">
         <div className="flex min-w-0 items-center gap-3">

@@ -25,6 +25,13 @@ export type StartVoiceChatResult =
 export function voiceChatStartErrorMessage(code: string): string {
   if (code === "network") return "Couldn't start a voice chat — is the daemon running?";
   if (code === "familiar_not_found") return "Couldn't start a voice chat: that familiar no longer exists.";
+  // The project's folder needs a person's confirmation (#6215).
+  if (code === "project_root_unconfirmed") {
+    return "Couldn't start a voice chat: confirm this project's folder in project settings first.";
+  }
+  if (code === "project_root_moved") {
+    return "Couldn't start a voice chat: this project's folder now resolves somewhere else. If you moved it on purpose, confirm the folder in project settings.";
+  }
   return `Couldn't start a voice chat (${code}).`;
 }
 

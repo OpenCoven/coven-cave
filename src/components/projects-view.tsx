@@ -143,7 +143,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   const confirm = useConfirm();
   // Unscoped: access is managed over EVERY registered project, not just the
   // ones the active familiar can already see.
-  const { projects, loading: projectsLoading, error: projectsError, reload, createProject, createProjectOrThrow, updateRepoUrl, renameProject, deleteProject } = useProjects();
+  const { projects, loading: projectsLoading, error: projectsError, reload, createProject, createProjectOrThrow, updateRepoUrl, renameProject, confirmRoot, deleteProject } = useProjects();
 
   const [grantsData, setGrantsData] = useState<GrantsSnapshot | null>(null);
   const [grantsLoading, setGrantsLoading] = useState(true);
@@ -1334,6 +1334,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         onClose={() => setSettingsProjectId(null)}
         onSaveRepoUrl={saveRepoUrl}
         onRename={renameProjectAndAnnounce}
+        onConfirmRoot={confirmRoot}
         onDelete={removeProject}
       />
       {addFlow.addProjectModal}

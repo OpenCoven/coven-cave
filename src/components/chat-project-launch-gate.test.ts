@@ -62,6 +62,11 @@ const initialLatchIndex = chat.indexOf("initialPromptSentRef.current = true", in
 assert.ok(initialReadyIndex > initialPromptIndex, "handoff auto-send should wait for project readiness");
 assert.ok(initialReadyIndex < initialLatchIndex, "waiting for a project must not consume the prompt latch");
 
+assert.match(
+  chat,
+  /res\.status === 409 &&\s*\(refusal\?\.code === "project_root_unconfirmed" \|\| refusal\?\.code === "project_root_moved"\)\s*\)\s*\{\s*setProjectsFixNeeded\(true\);\s*if \(typeof refusal\.error === "string"[^\n]*surfacedMessage = refusal\.error;/,
+  "an unconfirmed or moved project folder offers Projects with the server's copy, not a futile Retry (#6215)",
+);
 assert.doesNotMatch(
   chat,
   /\ballowNoProject\b/,

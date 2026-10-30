@@ -242,8 +242,11 @@ oversized, malformed, or non-JSON.
 
 Project launch codes (`project_root_required`, `project_root_unavailable`,
 `project_root_not_directory`, `project_root_invalid`,
-`project_not_registered`, and `project_access_denied`) mark a pre-session
-thread as needing project selection. The failed assistant placeholder becomes
+`project_not_registered`, `project_access_denied`, and the folder-pin codes
+`project_root_unconfirmed` and `project_root_moved`) mark a pre-session
+thread as needing project selection. The folder-pin codes are fixed by
+confirming the folder in desktop project settings; see
+[project permission integrity](../project-permission-integrity.md#pinned-project-folders). The failed assistant placeholder becomes
 an actionable error, and Chat surfaces the project picker before retry. No
 automatic retry occurs after a user-visible project change.
 

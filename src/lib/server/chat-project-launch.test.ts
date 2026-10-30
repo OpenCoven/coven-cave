@@ -15,6 +15,7 @@ const {
   ChatProjectLaunchError,
   isProjectlessGenerationOrigin,
   projectlessGenerationLaunch,
+  projectRootPinIn,
 } = await import(moduleUrl.href);
 
 function launch(overrides = {}) {
@@ -39,6 +40,7 @@ function harness(overrides = {}) {
     validate: [],
     resolve: [],
     access: [],
+    pin: [],
   };
   const deps = {
     validateProjectRoot: (root) => {
@@ -53,6 +55,10 @@ function harness(overrides = {}) {
     hasProjectAccess: async (familiarId, projectId, surface) => {
       calls.access.push([familiarId, projectId, surface]);
       return true;
+    },
+    projectRootPin: (projectId) => {
+      calls.pin.push(projectId);
+      return { name: "Cave", pin: "/real/repo" };
     },
     ...overrides,
   };
@@ -89,7 +95,7 @@ test("missing project root fails before validation or access", async () => {
     "project_root_required",
     400,
   );
-  assert.deepEqual(calls, { validate: [], resolve: [], access: [] });
+  assert.deepEqual(calls, { validate: [], resolve: [], access: [], pin: [] });
 });
 
 test("a missing directory fails before registration or access checks", async () => {
@@ -197,6 +203,107 @@ test("a registered worktree authorizes through its parent project id", async () 
     projectId: "parent-project",
   });
   assert.deepEqual(calls.access, [["milo", "parent-project", "chat"]]);
+});
+
+// ── #6215: a registered project's folder is pinned to the directory a person
+// registered or confirmed. Validation follows symlinks, so without the pin a
+// familiar that can write to the root's parent could swap the folder for a
+// symlink and carry the project's grant to any directory.
+
+test("a project whose folder no one has confirmed is refused until a person confirms it", async () => {
+  const { deps, calls } = harness({
+    projectRootPin: (projectId) => {
+      calls.pin.push(projectId);
+      return { name: "Cave", pin: null };
+    },
+  });
+  await assert.rejects(
+    () => authorizeChatProjectLaunch(deps, {
+      familiarId: "milo",
+      projectRoot: "/repo",
+      surface: "chat",
+    }),
+    (error) =>
+      error instanceof ChatProjectLaunchError &&
+      error.code === "project_root_unconfirmed" &&
+      error.status === 409 &&
+      error.message.includes("Cave") &&
+      error.message.includes("project settings"),
+  );
+  assert.deepEqual(calls.access, [["milo", "project-1", "chat"]]);
+  assert.deepEqual(calls.pin, ["project-1"]);
+});
+
+test("a familiar without a grant is denied before the folder pin is consulted", async () => {
+  const { deps, calls } = harness({
+    hasProjectAccess: async () => false,
+    projectRootPin: (projectId) => {
+      calls.pin.push(projectId);
+      return { name: "Cave", pin: null };
+    },
+  });
+  await expectLaunchError(
+    () => authorizeChatProjectLaunch(deps, {
+      familiarId: "milo",
+      projectRoot: "/repo",
+      surface: "chat",
+    }),
+    "project_access_denied",
+    403,
+  );
+  assert.deepEqual(calls.pin, []);
+});
+
+test("a root that resolves outside the pinned folder is refused as moved", async () => {
+  for (const pin of ["/real/elsewhere", "/real/rep", "/real/repo/nested"]) {
+    const { deps } = harness({ projectRootPin: () => ({ name: "Cave", pin }) });
+    await assert.rejects(
+      () => authorizeChatProjectLaunch(deps, {
+        familiarId: "milo",
+        projectRoot: "/repo",
+        surface: "chat",
+      }),
+      (error) =>
+        error instanceof ChatProjectLaunchError &&
+        error.code === "project_root_moved" &&
+        error.status === 409 &&
+        error.message.includes("Cave") &&
+        error.message.includes("project settings"),
+      `a pin at ${pin} does not contain /real/repo`,
+    );
+  }
+});
+
+test("a worktree below the pinned folder launches under the parent's pin", async () => {
+  const { deps, calls } = harness({
+    resolveProjectId: () => "parent-project",
+    projectRootPin: (projectId) => {
+      calls.pin.push(projectId);
+      return { name: "Cave", pin: "/real/repo" };
+    },
+  });
+  const result = await authorizeChatProjectLaunch(deps, {
+    familiarId: "milo",
+    projectRoot: "/repo/.worktrees/feature",
+    surface: "chat",
+  });
+  assert.deepEqual(result, {
+    root: "/real/repo/.worktrees/feature",
+    projectId: "parent-project",
+  });
+  assert.deepEqual(calls.pin, ["parent-project"]);
+});
+
+test("the pin adapter reads a registry snapshot and treats a missing pin as unconfirmed", () => {
+  const pinOf = projectRootPinIn([
+    { id: "pinned", name: "Pinned", root: "/a", rootRealpath: "/real/a" },
+    { id: "legacy", name: "Legacy", root: "/b" },
+    { id: "blank", name: "Blank", root: "/c", rootRealpath: "   " },
+  ]);
+  assert.deepEqual(pinOf("pinned"), { name: "Pinned", pin: "/real/a" });
+  assert.deepEqual(pinOf("legacy"), { name: "Legacy", pin: null });
+  assert.deepEqual(pinOf("blank"), { name: "Blank", pin: null });
+  assert.equal(pinOf("missing").pin, null);
 });
 
 // ── cave-o3nq7: the projectless exemption covers the familiar's own workspace
@@ -367,10 +474,13 @@ test("an alias-registered project keeps its identity on resume and still needs i
     fs.mkdirSync(realProject, { recursive: true });
     fs.symlinkSync(realParent, path.join(base, "alias"));
     const aliasProject = path.join(base, "alias", "cave");
+    // Registration pins the folder where the alias resolves (#6215), so a
+    // legitimate alias spelling keeps launching.
     const projects = [{
       id: "proj-alias",
       name: "Cave",
       root: aliasProject,
+      rootRealpath: realProject,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     }];
@@ -389,6 +499,7 @@ test("an alias-registered project keeps its identity on resume and still needs i
         chatProjectAccessId({ projects, requestedProjectRoot: requestedRoot, resolvedCwd: resolvedRoot }),
       isProjectRegistered: (projectId) => projects.some((project) => project.id === projectId),
       hasProjectAccess: async (familiarId, projectId) => grants.has(`${familiarId}:${projectId}`),
+      projectRootPin: projectRootPinIn(projects),
     };
     const resume = (familiarId, projectRoot) =>
       authorizeChatProjectLaunch(deps, { familiarId, projectRoot, surface: "chat" });
@@ -492,6 +603,138 @@ test("an alias-registered project inside the familiar workspace is gated, not ex
       { kind: "workspace", root: scratch },
       "an unregistered workspace directory keeps the auth-free exemption",
     );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// REGRESSION (#6215): a registered folder swapped for a symlink after a person
+// pinned it must not carry the project's grant to the symlink's target — not
+// through the registered spelling, a `.worktrees/` checkout, or a Board task
+// worktree. Re-pinning, which only a person does, admits the new folder.
+test("a pinned folder replaced by a symlink is refused until a person re-pins it", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { chatProjectAccessId, taskWorktreeProjectAccessId } = await import("../chat-project-access.ts");
+
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpl-pin-")));
+  try {
+    const sub = path.join(base, "mono", "sub");
+    const elsewhere = path.join(base, "elsewhere");
+    for (const root of [sub, elsewhere]) {
+      fs.mkdirSync(path.join(root, ".worktrees", "feature"), { recursive: true });
+      fs.mkdirSync(path.join(root, ".worktrees", "task-1"), { recursive: true });
+    }
+    const projects = [{
+      id: "proj-sub",
+      name: "Sub",
+      root: sub,
+      rootRealpath: sub,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }];
+    const grants = new Set(["milo:proj-sub"]);
+    const boardCwd = path.join(sub, ".worktrees", "task-1");
+    const deps = (taskCard) => ({
+      validateProjectRoot: (root) => {
+        try {
+          if (!fs.statSync(root).isDirectory()) return { ok: false, error: "root must be a directory" };
+        } catch {
+          return { ok: false, error: "root does not exist" };
+        }
+        return { ok: true, root: fs.realpathSync(root) };
+      },
+      // The send route's composition: the Board handoff first, then Chat.
+      resolveProjectId: (requestedRoot, resolvedRoot) =>
+        taskWorktreeProjectAccessId({
+          projects,
+          startNewConversation: true,
+          hasExistingConversation: false,
+          taskProjectId: taskCard?.projectId,
+          taskCwd: taskCard?.cwd,
+          requestedProjectRoot: requestedRoot,
+          resolvedCwd: resolvedRoot,
+        }) ?? chatProjectAccessId({ projects, requestedProjectRoot: requestedRoot, resolvedCwd: resolvedRoot }),
+      isProjectRegistered: (projectId) => projects.some((project) => project.id === projectId),
+      hasProjectAccess: async (familiarId, projectId) => grants.has(`${familiarId}:${projectId}`),
+      projectRootPin: projectRootPinIn(projects),
+    });
+    const start = (projectRoot, taskCard) =>
+      authorizeChatProjectLaunch(deps(taskCard), { familiarId: "milo", projectRoot, surface: "chat" });
+    const board = () => start(boardCwd, { projectId: "proj-sub", cwd: boardCwd });
+    const refusedAsMoved = (error) =>
+      error instanceof ChatProjectLaunchError && error.code === "project_root_moved" && error.status === 409;
+
+    assert.deepEqual(await start(sub), { root: sub, projectId: "proj-sub" });
+    assert.deepEqual(
+      await start(path.join(sub, ".worktrees", "feature")),
+      { root: path.join(sub, ".worktrees", "feature"), projectId: "proj-sub" },
+      "a worktree inside the pinned folder launches",
+    );
+    assert.deepEqual(await board(), { root: boardCwd, projectId: "proj-sub" }, "a Board task worktree launches");
+
+    fs.renameSync(sub, path.join(base, "mono", "sub-original"));
+    fs.symlinkSync(elsewhere, sub);
+
+    await assert.rejects(start(sub), refusedAsMoved, "the registered spelling no longer reaches the pinned folder");
+    await assert.rejects(
+      start(path.join(sub, ".worktrees", "feature")),
+      refusedAsMoved,
+      "a worktree under the swapped folder follows the pin, not the symlink",
+    );
+    await assert.rejects(board(), refusedAsMoved, "a Board task worktree follows the pin");
+    await assert.rejects(
+      start(elsewhere),
+      refusedAsMoved,
+      "naming the symlink's target directly maps to the project and is refused too",
+    );
+
+    grants.delete("milo:proj-sub");
+    await assert.rejects(
+      start(sub),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_access_denied",
+      "a revoked grant still denies, ahead of the pin",
+    );
+    grants.add("milo:proj-sub");
+
+    // A person confirms the folder again: the pin moves to where it resolves now.
+    projects[0].rootRealpath = fs.realpathSync.native(sub);
+    assert.deepEqual(await start(sub), { root: elsewhere, projectId: "proj-sub" }, "re-pinning admits the new folder");
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// The pin is stored in on-disk letter case. On a case-insensitive volume a
+// launch spelled in another case is the same folder and must not read as moved
+// (#6216).
+test("a launch spelled in another letter case stays inside its pin", async (t) => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpl-case-")));
+  try {
+    const onDisk = path.join(base, "Cave");
+    fs.mkdirSync(onDisk);
+    const otherCase = path.join(base, "cave");
+    if (!fs.existsSync(otherCase)) {
+      t.skip("this volume is case-sensitive");
+      return;
+    }
+    const projects = [{ id: "proj-case", name: "Cave", root: otherCase, rootRealpath: fs.realpathSync.native(onDisk) }];
+    const result = await authorizeChatProjectLaunch(
+      {
+        validateProjectRoot: (root) => ({ ok: true, root: fs.realpathSync(root) }),
+        resolveProjectId: () => "proj-case",
+        isProjectRegistered: () => true,
+        hasProjectAccess: async () => true,
+        projectRootPin: projectRootPinIn(projects),
+      },
+      { familiarId: "milo", projectRoot: otherCase, surface: "chat" },
+    );
+    assert.equal(result.projectId, "proj-case");
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

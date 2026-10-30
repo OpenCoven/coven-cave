@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -9,6 +10,7 @@ process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(tmpDir, "cave-projects.json"
 
 try {
   const {
+    confirmProjectRoot,
     createProject,
     deleteProject,
     dedupeProjectsByRoot,
@@ -124,6 +126,70 @@ try {
   // Restore the store to the three projects the rest of the suite expects.
   await deleteProject(collideSrc.id);
 
+  // #6215: the folder pin. The store computes it — registration pins a new
+  // folder, an applied root change moves the pin with the root, and nothing a
+  // caller passes can set it.
+  const realTmp = realpathSync.native(tmpDir);
+  const pinnedDir = path.join(tmpDir, "pinned");
+  const movedDir = path.join(tmpDir, "pinned-moved");
+  await mkdir(pinnedDir);
+  await mkdir(movedDir);
+  const pinned = await createProject({ name: "Pinned", root: pinnedDir, rootRealpath: "/elsewhere" });
+  assert.equal(pinned.rootRealpath, path.join(realTmp, "pinned"), "registration pins the folder's realpath");
+  const readded = await createProject({ name: "Again", root: pinnedDir });
+  assert.equal(readded.id, pinned.id);
+  assert.equal(readded.rootRealpath, path.join(realTmp, "pinned"), "re-adding a folder never re-pins it");
+  const renamedPinned = await patchProject(pinned.id, { name: "Renamed pin", rootRealpath: "/elsewhere" });
+  assert.equal(renamedPinned?.rootRealpath, path.join(realTmp, "pinned"), "a patch without a root keeps the pin");
+  const movedPinned = await patchProject(pinned.id, { root: movedDir });
+  assert.equal(movedPinned?.rootRealpath, path.join(realTmp, "pinned-moved"), "a root change moves the pin");
+  const droppedMove = await patchProject(pinned.id, { root: "/tmp/test" });
+  assert.equal(droppedMove?.root, movedDir, "the colliding root change is dropped");
+  assert.equal(
+    droppedMove?.rootRealpath,
+    path.join(realTmp, "pinned-moved"),
+    "a dropped root change keeps the pin of the root it kept",
+  );
+
+  // Confirming pins whatever root the record holds, validated inside the lock.
+  const legacyDir = path.join(tmpDir, "legacy");
+  await mkdir(legacyDir);
+  const legacy = await createProject({ name: "Legacy", root: legacyDir });
+  const file = JSON.parse(await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"));
+  for (const entry of file.projects) if (entry.id === legacy.id) delete entry.rootRealpath;
+  await writeFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, JSON.stringify(file));
+  assert.equal(
+    (await loadProjects()).find((entry) => entry.id === legacy.id)?.rootRealpath,
+    undefined,
+    "a record from before pinning has no pin",
+  );
+  const validatedRoots = [];
+  const confirmed = await confirmProjectRoot(legacy.id, (root) => {
+    validatedRoots.push(root);
+    return { ok: true, root };
+  });
+  assert.deepEqual(validatedRoots, [legacyDir]);
+  assert.equal(confirmed?.ok, true);
+  assert.equal(confirmed?.project.rootRealpath, path.join(realTmp, "legacy"));
+  assert.equal(confirmed?.project.root, legacyDir, "confirming never rewrites the root key");
+  assert.equal(
+    (await loadProjects()).find((entry) => entry.id === legacy.id)?.rootRealpath,
+    path.join(realTmp, "legacy"),
+    "the pin persists",
+  );
+  assert.deepEqual(
+    await confirmProjectRoot(legacy.id, () => ({ ok: false, error: "root does not exist" })),
+    { ok: false, error: "root does not exist" },
+  );
+  assert.equal(
+    (await loadProjects()).find((entry) => entry.id === legacy.id)?.rootRealpath,
+    path.join(realTmp, "legacy"),
+    "a failed confirmation keeps the previous pin",
+  );
+  assert.equal(await confirmProjectRoot("missing", (root) => ({ ok: true, root })), null);
+  await deleteProject(pinned.id);
+  await deleteProject(legacy.id);
+
   const projects = await loadProjects();
   assert.equal(projectForRoot("/tmp/test/", projects)?.id, created.id);
   assert.equal(projectForRoot(`C:/tmp/slash-heavy${"/".repeat(5000)}`, projects)?.id, slashHeavy.id);
@@ -151,7 +217,6 @@ try {
   // load time, so server consumers (projectById/trustedProjectCwd) can never
   // resolve an entry the UI hides. Newest record wins; ~ expands like the
   // server normalizer so a tilde row and its absolute twin are one project.
-  const { writeFile } = await import("node:fs/promises");
   const homeAbs = path.join(os.homedir(), "dupe-home").replace(/\\/g, "/");
   await writeFile(
     process.env.CAVE_PROJECTS_PATH_OVERRIDE,

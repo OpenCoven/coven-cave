@@ -12,6 +12,7 @@ import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
+  projectRootPinIn,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
@@ -160,6 +161,7 @@ export async function POST(
             throw error;
           }
         },
+        projectRootPin: projectRootPinIn(projects),
       },
       {
         familiarId,
