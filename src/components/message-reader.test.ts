@@ -225,7 +225,7 @@ test("3a — Escape unwinds one layer at a time", () => {
   assert.match(escape, /if \(viewer\)[\s\S]*if \(exportOpen\)[\s\S]*onClose\(\);/, "viewer, then menu, then the reader");
   assert.match(
     reader,
-    /useFocusTrap\(true, dialogRef, \{ onEscape: escape \}\);/,
+    /<Modal open onClose=\{\(reason\) => reason === "escape" \? escape\(\) : onClose\(\)\}/,
     "the shared trap owns focus return, as every other modal does",
   );
 });
@@ -281,9 +281,12 @@ test("3a — Export PDF prints the reader, not the app behind it", () => {
   assert.ok(print, "expected a print block — window.print() alone prints the transcript underneath");
   assert.match(
     print,
-    /body:has\(> \.cave-reader-backdrop\):not\(:has\(> \.research-reader-overlay\)\) > \*:not\(\.cave-reader-backdrop\) \{ display: none !important; \}/,
-    "hide the app only while the chat reader is open so other readers can print",
+    /\.cave-reader-doc[\s\S]*overflow: visible/,
+    "reader document print rules allow the entire answer to flow",
   );
+  assert.match(reader, /bodyLayout="fill" printable/, "the reader opts into shared document export chrome");
+  const modalCss = readFileSync(new URL("../styles/globals/primitives.css", import.meta.url), "utf8");
+  assert.match(modalCss, /body:has\(> \.ui-modal-backdrop\[data-printable="true"\]:not\(\[hidden\], \[inert\]\)\)/, "only a visible, active printable shell hides the app; retained or covered readers do not");
   assert.match(print, /\.cave-reader-rail,\s*\n\s*\.cave-reader-foot,/, "screen-only chrome drops out");
   assert.match(
     print,

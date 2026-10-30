@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 
 /**
  * Event subscriptions modal for the GitHub surface: pick repos to watch and
@@ -31,10 +30,8 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [repoInput, setRepoInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
   const { announce } = useAnnouncer();
 
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
 
   useEffect(() => {
     let cancelled = false;
@@ -96,35 +93,12 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
   );
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      role="presentation"
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      breadcrumb={["GitHub", "Event subscriptions"]}
+      description="Get a Cave notification when things happen in repos you watch — new PRs opened, CI runs finishing. Checked every minute, delivered to the bell."
     >
-      <div
-        ref={dialogRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="github-subs-modal-title"
-        onClick={(event) => event.stopPropagation()}
-        className="gh-pat-dialog"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Icon name="ph:bell-ringing" width={18} className="text-[var(--text-secondary)]" />
-            <h3 id="github-subs-modal-title" className="text-[length:var(--text-md)] font-semibold">
-              Event subscriptions
-            </h3>
-          </div>
-          <IconButton icon="ph:x" size="sm" aria-label="Close" onClick={onClose} />
-        </div>
-
-        <p className="mb-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-          Get a Cave notification when things happen in repos you watch — new PRs
-          opened, CI runs finishing. Checked every minute, delivered to the bell.
-        </p>
-
         {!hasPat ? (
           <div className="mb-4 flex flex-col gap-2">
             <p className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">
@@ -223,7 +197,6 @@ export function GithubSubscriptionsModal({ hasPat, onConnectPat, onClose }: Prop
             {error}
           </p>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

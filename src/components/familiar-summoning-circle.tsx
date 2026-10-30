@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode, RefObject } from "react";
-import { createPortal } from "react-dom";
 import "@/styles/summoning-circle.css";
 import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { COMPATIBILITY_ADAPTERS, isHostOnlyHarness, isSummonableLocalHarness } from "@/lib/harness-adapters";
 import { slugifyFamiliarId } from "@/lib/onboarding-familiars";
 import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
@@ -71,6 +70,16 @@ function useObjectUrl(file: File | null): string | null {
     return () => URL.revokeObjectURL(next);
   }, [file]);
   return url;
+}
+
+function useErrorReveal(error: string | null) {
+  const ref = useRef<HTMLParagraphElement | null>(null);
+  useEffect(() => {
+    // A failed request can append below the phone's scrollport. Reveal its
+    // recovery message without moving keyboard focus or adding motion.
+    if (error) ref.current?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+  }, [error]);
+  return ref;
 }
 
 const inputClass =
@@ -145,26 +154,14 @@ function SummoningCircleOverlay({
   memoryCount,
 }: Omit<Props, "open">) {
   const { announce } = useAnnouncer();
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const handleClose = useCallback(() => {
     if (submitting) return;
     onClose();
   }, [submitting, onClose]);
-  useFocusTrap(true, dialogRef, { onEscape: handleClose });
 
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <div className="summoning-backdrop" role="presentation" onClick={handleClose}>
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={enhance ? `Enhancement rite — ${enhance.display_name}` : "Summoning circle"}
-        tabIndex={-1}
-        className="summoning-dialog"
-        onClick={(e) => e.stopPropagation()}
-      >
+  return (
+    <>
         {enhance ? (
           <EnhancementRite
             familiar={enhance}
@@ -190,9 +187,7 @@ function SummoningCircleOverlay({
             onClose={handleClose}
           />
         )}
-      </div>
-    </div>,
-    document.body,
+    </>
   );
 }
 
@@ -228,9 +223,16 @@ function SummoningRite({
       ? draft.vessel
       : null;
   const [stage, setStage] = useState<StageIndex>((draft?.stage ?? 0) as StageIndex);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    // Stage transitions happen inside an active trap. On a saved-draft reopen,
+    // Modal must capture the opener before it focuses this input.
+    if (stage === 1) nameInputRef.current?.focus();
+  }, [stage]);
   // Stages the user has reached — sigil chips for these are clickable.
   const [maxVisited, setMaxVisited] = useState<StageIndex>((draft?.maxVisited ?? 0) as StageIndex);
   const [error, setError] = useState<string | null>(null);
+  const errorRef = useErrorReveal(error);
   const [summoned, setSummoned] = useState<{ id: string; name: string } | null>(null);
 
   // Stage I — the vessel.
@@ -557,23 +559,48 @@ function SummoningRite({
   );
 
   return (
+    <Modal open onClose={onClose} size="reader" busy={submitting} initialFocusRef={nameInputRef}
+      breadcrumb={["Familiars", "Summoning circle"]} closeLabel="Close the summoning circle"
+      footerActions={!summoned ? <>
+                <Button variant="ghost" onClick={onClose} disabled={submitting}>
+                  Cancel
+                </Button>
+                <>
+                  {stage > 0 ? (
+                    <Button
+                      variant="secondary"
+                      leadingIcon="ph:caret-left"
+                      onClick={() => goTo((stage - 1) as StageIndex)}
+                      disabled={submitting}
+                    >
+                      Back
+                    </Button>
+                  ) : null}
+                  {stage < 3 ? (
+                    <Button
+                      variant="primary"
+                      trailingIcon="ph:caret-right"
+                      onClick={() => goTo((stage + 1) as StageIndex)}
+                      disabled={!canContinue || submitting}
+                    >
+                      Continue
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      leadingIcon="ph:magic-wand-fill"
+                      onClick={() => void handleSummon()}
+                      disabled={!vesselComplete || !identityComplete || idTaken || submitting}
+                      loading={submitting}
+                    >
+                      {submitting ? "Summoning…" : "Summon"}
+                    </Button>
+                  )}
+                </>
+</> : undefined}
+    >
     <div className="summoning-body" data-summoned={summoned ? "true" : undefined}>
-      <header className="summoning-header">
-        <div className="summoning-header__crumb">
-          <span>Familiars</span>
-          <span aria-hidden className="summoning-header__sep">›</span>
-          <strong>Summoning circle</strong>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={submitting}
-          aria-label="Close the summoning circle"
-          className="focus-ring summoning-header__close"
-        >
-          <Icon name="ph:x" width={14} />
-        </button>
-      </header>
+
 
       <div className="summoning-layout">
         <div className="summoning-stagecol">
@@ -677,6 +704,7 @@ function SummoningRite({
                   />
                 ) : stage === 1 ? (
                   <StageName
+                    inputRef={nameInputRef}
                     name={name}
                     setName={setName}
                     role={role}
@@ -730,54 +758,19 @@ function SummoningRite({
               </div>
 
               {error ? (
-                <p role="alert" className="summoning-error">
+                <p ref={errorRef} role="alert" className="summoning-error">
                   <Icon name="ph:warning-circle" width={12} />
                   {error}
                 </p>
               ) : null}
 
-              <footer className="summoning-footer">
-                <Button variant="ghost" onClick={onClose} disabled={submitting}>
-                  Cancel
-                </Button>
-                <div className="summoning-footer__nav">
-                  {stage > 0 ? (
-                    <Button
-                      variant="secondary"
-                      leadingIcon="ph:caret-left"
-                      onClick={() => goTo((stage - 1) as StageIndex)}
-                      disabled={submitting}
-                    >
-                      Back
-                    </Button>
-                  ) : null}
-                  {stage < 3 ? (
-                    <Button
-                      variant="primary"
-                      trailingIcon="ph:caret-right"
-                      onClick={() => goTo((stage + 1) as StageIndex)}
-                      disabled={!canContinue || submitting}
-                    >
-                      Continue
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      leadingIcon="ph:magic-wand-fill"
-                      onClick={() => void handleSummon()}
-                      disabled={!vesselComplete || !identityComplete || idTaken || submitting}
-                      loading={submitting}
-                    >
-                      {submitting ? "Summoning…" : "Summon"}
-                    </Button>
-                  )}
-                </div>
-              </footer>
+
             </>
           )}
         </div>
       </div>
     </div>
+    </Modal>
   );
 }
 
@@ -1197,6 +1190,7 @@ function StageVessel({
 }
 
 function StageName({
+  inputRef,
   name,
   setName,
   role,
@@ -1208,6 +1202,7 @@ function StageName({
   idLocked,
   onSuggest,
 }: {
+  inputRef: RefObject<HTMLInputElement | null>;
   name: string;
   setName: (v: string) => void;
   role: string;
@@ -1226,7 +1221,7 @@ function StageName({
         <div className="flex items-stretch gap-2">
           <input
             id="summon-name"
-            autoFocus
+            ref={inputRef}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Wren"
@@ -1645,7 +1640,12 @@ function EnhancementRite({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [model, setModel] = useState(familiar.model ?? "");
   const [error, setError] = useState<string | null>(null);
+  const errorRef = useErrorReveal(error);
   const [empowered, setEmpowered] = useState(false);
+  const doneRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (empowered) doneRef.current?.focus();
+  }, [empowered]);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const vitality = useMemo(() => vitalityFor(familiar, memoryCount), [familiar, memoryCount]);
@@ -1713,25 +1713,27 @@ function EnhancementRite({
   );
 
   return (
+    <Modal open onClose={onClose} size="reader" busy={submitting}
+      breadcrumb={["Familiars", familiar.display_name, "Enhancement rite"]} closeLabel="Close the enhancement rite"
+      footerActions={!empowered ? <>
+                <Button variant="ghost" onClick={onClose} disabled={submitting}>
+                  Cancel
+                </Button>
+                <>
+                  <Button
+                    variant="primary"
+                    leadingIcon="ph:lightning-fill"
+                    onClick={() => void handleEmpower()}
+                    disabled={!dirty || submitting}
+                    loading={submitting}
+                  >
+                    {submitting ? "Empowering…" : "Complete the rite"}
+                  </Button>
+                </>
+</> : undefined}
+    >
     <div className="summoning-body" data-summoned={empowered ? "true" : undefined}>
-      <header className="summoning-header">
-        <div className="summoning-header__crumb">
-          <span>Familiars</span>
-          <span aria-hidden className="summoning-header__sep">›</span>
-          <span>{familiar.display_name}</span>
-          <span aria-hidden className="summoning-header__sep">›</span>
-          <strong>Enhancement rite</strong>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={submitting}
-          aria-label="Close the enhancement rite"
-          className="focus-ring summoning-header__close"
-        >
-          <Icon name="ph:x" width={14} />
-        </button>
-      </header>
+
 
       <div className="summoning-layout">
         <div className="summoning-stagecol">
@@ -1793,7 +1795,7 @@ function EnhancementRite({
                 The rite is complete — every change is applied and syncing to the daemon.
               </p>
               <div className="summoning-success__actions">
-                <Button variant="primary" onClick={onClose}>Done</Button>
+                <Button ref={doneRef} variant="primary" onClick={onClose}>Done</Button>
               </div>
             </div>
           ) : (
@@ -1909,33 +1911,19 @@ function EnhancementRite({
               </div>
 
               {error ? (
-                <p role="alert" className="summoning-error">
+                <p ref={errorRef} role="alert" className="summoning-error">
                   <Icon name="ph:warning-circle" width={12} />
                   {error}
                 </p>
               ) : null}
 
-              <footer className="summoning-footer">
-                <Button variant="ghost" onClick={onClose} disabled={submitting}>
-                  Cancel
-                </Button>
-                <div className="summoning-footer__nav">
-                  <Button
-                    variant="primary"
-                    leadingIcon="ph:lightning-fill"
-                    onClick={() => void handleEmpower()}
-                    disabled={!dirty || submitting}
-                    loading={submitting}
-                  >
-                    {submitting ? "Empowering…" : "Complete the rite"}
-                  </Button>
-                </div>
-              </footer>
+
             </>
           )}
         </div>
       </div>
     </div>
+    </Modal>
   );
 }
 

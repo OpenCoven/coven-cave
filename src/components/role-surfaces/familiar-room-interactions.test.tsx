@@ -34,6 +34,7 @@ afterEach(async () => {
   globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
   clearRoleSurfaceStateForTest();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function response(body: unknown, ok = true): Response {
@@ -183,8 +184,20 @@ function stepSheet(renderer: ReactTestRenderer): ReactTestInstance | null {
   return (
     renderer.root
       .findAllByProps({ role: "dialog" })
-      .find((node) => String(node.props["aria-label"] ?? "").startsWith("Step — ")) ?? null
+      .find((node) => dialogLabel(node) === "Step details") ?? null
   );
+}
+
+function dialogLabel(node: ReactTestInstance | null): string | null {
+  if (!node) return null;
+  const headingId = node.props["aria-labelledby"];
+  return headingId ? textOf(node.findByProps({ id: headingId })) : node.props["aria-label"] ?? null;
+}
+
+function enableContainerModal() {
+  // Keep the real shared shell; this renderer does not install browser globals.
+  vi.stubGlobal("document", { body: {}, activeElement: null });
+  vi.stubGlobal("window", new EventTarget());
 }
 
 function rightRail(renderer: ReactTestRenderer, label: string): ReactTestInstance {
@@ -262,6 +275,7 @@ describe("active selections control compact inspectors", () => {
   // The Chart Room opens a step in a modal sheet rather than a compact rail,
   // so the contract is the dialog's presence, not a rail's expanded flag.
   test("Navigator opens the step sheet for the newly selected card", async () => {
+    enableContainerModal();
     const cards = [card("card-1", "First voyage"), card("card-2", "Second voyage")];
     globalThis.fetch = vi.fn(async () => response({ ok: true, cards }));
     const renderer = await renderSurface(NavigatorSurface, context("navigator-selection"));
@@ -269,7 +283,7 @@ describe("active selections control compact inspectors", () => {
     expect(stepSheet(renderer)).toBeNull();
 
     await act(async () => buttonContaining(renderer, "First voyage").props.onClick());
-    expect(stepSheet(renderer)?.props["aria-label"]).toBe("Step — First voyage");
+    expect(stepSheet(renderer)?.findByProps({ "aria-label": "Step title" }).props.value).toBe("First voyage");
 
     await act(async () =>
       stepSheet(renderer)!.findByProps({ "aria-label": "Close" }).props.onClick(),
@@ -277,7 +291,7 @@ describe("active selections control compact inspectors", () => {
     expect(stepSheet(renderer)).toBeNull();
 
     await act(async () => buttonContaining(renderer, "Second voyage").props.onClick());
-    expect(stepSheet(renderer)?.props["aria-label"]).toBe("Step — Second voyage");
+    expect(stepSheet(renderer)?.findByProps({ "aria-label": "Step title" }).props.value).toBe("Second voyage");
     await act(async () => renderer.unmount());
   });
 
@@ -324,6 +338,7 @@ describe("mutation revalidation keeps the selected inspector usable", () => {
   // the operator's context away: the step stays selected, its sheet stays open
   // and usable, and the failure is surfaced rather than swallowed.
   test("Navigator keeps the step sheet open and usable when lane revalidation fails", async () => {
+    enableContainerModal();
     const initial = card("card-focus", "Hold the course");
     const refresh = deferred<Response>();
     let boardReads = 0;
@@ -343,14 +358,15 @@ describe("mutation revalidation keeps the selected inspector usable", () => {
 
     const renderer = await renderSurface(NavigatorSurface, context("navigator-focus"));
     await act(async () => buttonContaining(renderer, "Hold the course").props.onClick());
-    expect(stepSheet(renderer)?.props["aria-label"]).toBe("Step — Hold the course");
+    expect(stepSheet(renderer)?.findByProps({ "aria-label": "Step title" }).props.value).toBe("Hold the course");
 
     // Walk the lane carousel forward; the board read that follows never lands.
     await act(async () => {
-      buttonContaining(renderer, "Inbox").props.onClick();
+      stepSheet(renderer)!.findByProps({ "aria-label": "Move a lane forward" }).props.onClick();
       await Promise.resolve();
       await Promise.resolve();
     });
+    expect(boardReads).toBeGreaterThan(1);
     expect(stepSheet(renderer)).not.toBeNull();
     expect(
       renderer.root.findAllByType(SurfaceLoading).some((node) => node.props.label === "Loading the board…"),
@@ -358,7 +374,7 @@ describe("mutation revalidation keeps the selected inspector usable", () => {
 
     await act(async () => refresh.reject(new Error("offline")));
     expect(buttonContaining(renderer, "Hold the course")).toBeDefined();
-    expect(stepSheet(renderer)?.props["aria-label"]).toBe("Step — Hold the course");
+    expect(stepSheet(renderer)?.findByProps({ "aria-label": "Step title" }).props.value).toBe("Hold the course");
     await act(async () => renderer.unmount());
   });
 

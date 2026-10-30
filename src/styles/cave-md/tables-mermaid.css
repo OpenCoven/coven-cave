@@ -67,80 +67,14 @@
 @media (hover: none) {
   .cave-table-expand-btn { opacity: 0.85; }
 }
-
-.cave-table-lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(12px, 4vw, 48px);
-  background: color-mix(in oklch, var(--bg-base) 72%, transparent);
-  backdrop-filter: blur(4px);
-  animation: cave-table-lightbox-in var(--duration-fast) var(--ease-standard);
-}
-@keyframes cave-table-lightbox-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.cave-table-lightbox__panel {
-  display: flex;
-  flex-direction: column;
-  max-width: min(96vw, 1280px);
-  max-height: 90vh;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-panel);
-  background: var(--glass-raised);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow: 0 24px 70px color-mix(in oklch, black 45%, transparent);
-  overflow: hidden;
-}
-.cave-table-lightbox__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: 9px var(--space-3);
-  border-bottom: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-elevated) 60%, transparent);
-}
-.cave-table-lightbox__title {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.cave-table-lightbox__close {
-  padding: var(--space-1) 14px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard);
-}
-.cave-table-lightbox__close:hover {
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-  background: color-mix(in oklch, var(--bg-hover) 70%, transparent);
-}
 .cave-table-lightbox__body {
   min-height: 0;
   overflow: auto;
   padding: var(--space-5) var(--space-6);
+  flex: 1;
 }
 .cave-table-lightbox__body table {
   font-size: 13.5px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .cave-table-lightbox { animation: none; }
 }
 
 /* Mermaid diagrams (```mermaid fences). The plugin's postProcess swaps the
@@ -200,19 +134,8 @@
 }
 
 /* Fullscreen diagram viewer (zoom + pan), mounted on <body>. */
-.cm-mermaid-viewer {
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  /* Mermaid diagrams are transparent, so unlike the modal (which sits on an
-     opaque panel) the backdrop must be near-solid or the chat bleeds through.
-     The mermaid theme is always dark, so a solid dark backdrop always fits. */
-  background: rgba(9, 9, 11, 0.97);
-  backdrop-filter: blur(6px);
-}
 .cm-mermaid-viewer__stage {
-  position: absolute;
-  inset: 0;
+  position: relative;
   overflow: hidden;
   cursor: grab;
   touch-action: none;
@@ -223,6 +146,9 @@
     transparent 1px
   );
   background-size: 22px 22px;
+  flex: 1;
+  min-height: 0;
+  background-color: var(--bg-panel);
 }
 .cm-mermaid-viewer__stage--grabbing {
   cursor: grabbing;
@@ -243,41 +169,6 @@
 .cm-mermaid-viewer__canvas svg foreignObject {
   overflow: visible;
 }
-.cm-mermaid-viewer__toolbar {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--bg-panel) 78%, transparent);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-}
-.cm-mermaid-viewer__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
-}
-.cm-mermaid-viewer__btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-.cm-mermaid-viewer__btn--close {
-  color: var(--text-muted);
-}
 .cm-mermaid-viewer__level {
   min-width: 46px;
   text-align: center;
@@ -285,20 +176,6 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
   user-select: none;
-}
-.cm-mermaid-viewer__hint {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 5px var(--space-3);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
-  border: 1px solid var(--border-hairline);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  user-select: none;
-  pointer-events: none;
 }
 
 .cave-md .cm-mermaid-container { margin: 8px 0 16px; }

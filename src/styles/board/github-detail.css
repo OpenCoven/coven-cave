@@ -350,19 +350,6 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 .gh-person--button:hover .gh-person-login { color:var(--text-primary); }
 
 /* ── Floating GitHub profile card ────────────────────────────────────────── */
-.gh-profile-card {
-  position:fixed;
-  z-index:60;
-  padding:14px;
-  border:1px solid var(--border-hairline);
-  border-radius:14px;
-  background:var(--glass-elevated);
-  backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow:0 16px 44px rgba(0,0,0,0.34);
-  display:flex;
-  flex-direction:column;
-  gap:9px;
-}
 .gh-profile-loading,
 .gh-profile-error { color:var(--text-muted); font-size:12px; }
 .gh-profile-error { display:flex; flex-direction:column; gap:8px; }
@@ -583,33 +570,7 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
   min-height:0;
   overflow:hidden;
 }
-
-.gh-detail-focusbar {
-  flex:none;
-  display:flex;
-  align-items:center;
-  gap:var(--space-2);
-  height:34px;
-  padding:0 var(--space-4);
-  border-bottom:1px solid var(--border-hairline);
-}
-.gh-detail-back {
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  height:var(--gh-control-h);
-  padding:0 var(--space-2) 0 var(--space-2);
-  border:1px solid var(--border-hairline);
-  border-radius:var(--radius-control);
-  background:transparent;
-  color:var(--text-muted);
-  font-size:var(--text-xs);
-  white-space:nowrap;
-  cursor:pointer;
-}
-.gh-detail-back:hover { background:var(--bg-hover); color:var(--text-primary); }
 .gh-detail-spacer { flex:1; min-width:4px; }
-.gh-detail-esc { font-family:var(--font-mono); font-size:var(--text-2xs); color:var(--text-muted); white-space:nowrap; }
 
 /* ── Masthead ─────────────────────────────────────────────────────────────── */
 
@@ -1018,26 +979,6 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 }
 
 /* ── Focused read ─────────────────────────────────────────────────────────── */
-
-.gh-detail-overlay { position:fixed; inset:0; z-index:60; display:grid; place-items:stretch; }
-.gh-detail-scrim {
-  position:absolute;
-  inset:0;
-  background:var(--backdrop-scrim);
-  backdrop-filter:blur(2px);
-}
-.gh-detail.is-focused {
-  position:relative;
-  z-index:1;
-  margin:var(--space-8) auto;
-  width:min(1060px,78vw);
-  max-height:calc(100% - var(--space-8) * 2);
-  border:1px solid color-mix(in oklch,var(--text-primary) 16%,transparent);
-  border-radius:var(--radius-panel);
-  box-shadow:0 30px 80px color-mix(in oklch,black 62%,transparent);
-  background:var(--bg-panel);
-  animation:ghFocusIn var(--duration-base) var(--ease-emphasized);
-}
 @keyframes ghFocusIn {
   from { opacity:0; transform:scale(.985) translateY(8px); }
   to { opacity:1; transform:none; }
@@ -1048,5 +989,6 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
   .gh-next-caret,
   .gh-section-caret,
   .gh-jump-pill { transition:none; }
-  .gh-detail.is-focused { animation:none; }
 }
+
+.gh-detail-content { display: flex; flex: 1; min-height: 0; flex-direction: column; }

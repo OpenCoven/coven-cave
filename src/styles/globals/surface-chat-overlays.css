@@ -1072,6 +1072,13 @@
   display: none !important;
 }
 
+/* Panel's outer wrapper has an inline auto height. In tab presentation the
+   group is block layout, so give that wrapper a definite height for its
+   percentage-sized descendants and their internal scroll areas. */
+.split-host__group[data-presentation="tabs"] > [data-panel] {
+  height: 100% !important;
+}
+
 .split-host__group[data-presentation="tabs"] .split-host__tile-panel,
 .split-host__group[data-presentation="tabs"] .split-host__tile {
   height: 100%;

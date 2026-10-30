@@ -12,7 +12,6 @@ import {
 } from "@/lib/github-tasks";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { SearchInput } from "@/components/ui/search-input";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -20,17 +19,6 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 export type PopoverMode = "board" | "chat" | "assign";
 
 type Props = {
-  /**
-   * Whether this dialog places ITSELF (`absolute right-0 top-full`).
-   *
-   * False when a Popover owns placement. It matters more than it looks: an
-   * absolutely-positioned child is out of flow, so the Popover's wrapper
-   * measures ZERO height, its auto-flip decides there is room below, and the
-   * dialog runs off the bottom of the viewport — measured at bottom 1004 in a
-   * 900px viewport before this existed (cave-cadp4).
-   */
-  positioned?: boolean;
-
   mode: PopoverMode;
   item: GitHubItem;
   familiars: Familiar[];
@@ -337,33 +325,7 @@ export function GitHubActionPopover({
   cardsFailed = false,
   onClose,
   onComplete,
-  positioned = true,
 }: Props) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Close on outside click
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose();
-      }
-    }
-    // Slightly delayed so the opening click doesn't immediately close the popover
-    const id = window.setTimeout(
-      () => document.addEventListener("mousedown", handleClick),
-      50,
-    );
-    return () => {
-      window.clearTimeout(id);
-      document.removeEventListener("mousedown", handleClick);
-    };
-  }, [onClose]);
-
-  // Trap focus inside the popover, close on Escape, and return focus to the
-  // trigger on close (the shared dialog convention). Replaces a bare keydown
-  // listener that left Tab escaping into the page and lost the return point.
-  useFocusTrap(true, ref, { onEscape: onClose });
-
   const TITLES: Record<PopoverMode, string> = {
     board: "Add to Tasks",
     chat: "Start chat",
@@ -377,15 +339,7 @@ export function GitHubActionPopover({
   };
 
   return (
-    <div
-      ref={ref}
-      role="dialog"
-      aria-modal="true"
-      aria-label={TITLES[mode]}
-      tabIndex={-1}
-      className={`${positioned ? "absolute right-0 top-full z-50 mt-1 " : ""}w-64 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-3 shadow-xl`}
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div className="ui-popover-body">
       {/* Header */}
       <div className="mb-2.5 flex items-center justify-between">
         <div className="flex items-center gap-1.5">

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Modal } from "@/components/ui/modal";
+import { acquirePageScrollLock } from "@/lib/modal-environment";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 
 export type MobileDrawerSlot = "nav" | "list" | "right-chat" | null;
@@ -37,7 +39,6 @@ type MobileDrawerProps = {
  * instead of stacking a second overlay.
  */
 export function MobileDrawer({ open, onClose, rightChat }: MobileDrawerProps) {
-  const rightChatRef = useRef<HTMLElement | null>(null);
   // nav/list panels are Shell's own persistent nav/list landmarks (rendered
   // in shell.tsx, not by this portal) that CSS merely slides into an
   // overlay at mobile widths — same cross-boundary reach as the `.shell-
@@ -52,43 +53,6 @@ export function MobileDrawer({ open, onClose, rightChat }: MobileDrawerProps) {
     navContainerRef.current = document.querySelector<HTMLElement>(".shell-nav-panel");
     listContainerRef.current = document.querySelector<HTMLElement>(".shell-list-panel");
   }
-
-  // Make the shell chrome behind the right Chat modal inert so Tab/AT users
-  // can't reach it while the dialog is up. `.shell-frame` is Shell's own
-  // root (shell.tsx) — this portal mounts to document.body, OUTSIDE that
-  // subtree, so making it inert never reaches the modal we're keeping
-  // interactive. Restores whatever inert state `.shell-frame` actually had
-  // before, rather than assuming it was false.
-  //
-  // Declared BEFORE useFocusTrap below on purpose: React runs a component's
-  // passive-effect cleanups in the same top-down order they were declared
-  // (not reversed), for both updates and unmount. useFocusTrap's own cleanup
-  // calls `returnFocusRef.current?.focus()` to return focus to the shell
-  // toggle that opened the drawer — but `.focus()` on an element inside an
-  // `inert` subtree is a silent no-op. So this effect's cleanup (clearing
-  // `shell.inert`) MUST run first, or the restored focus call lands while
-  // the shell is still inert and does nothing. Both effects intentionally
-  // stay plain `useEffect` (matching useFocusTrap's own passive-effect
-  // implementation) — mixing in `useLayoutEffect` here would just move this
-  // ahead of ALL passive effects regardless of declaration order, which
-  // works too, but decouples the ordering guarantee from something a future
-  // reader can see at a glance the way declaration order can.
-  useEffect(() => {
-    if (open !== "right-chat") return;
-    const shell = document.querySelector<HTMLElement>(".shell-frame");
-    if (!shell) return;
-    const prevInert = shell.inert;
-    shell.inert = true;
-    return () => {
-      shell.inert = prevInert;
-    };
-  }, [open]);
-
-  // The right Chat modal owns Escape + focus trap/return entirely through
-  // the shared hook (the same contract Modal uses) — the legacy standalone
-  // listener below is scoped away from it so Escape never fires two close
-  // paths for this slot.
-  useFocusTrap(open === "right-chat", rightChatRef, { onEscape: onClose });
 
   // nav/list drawers previously had NO focus management beyond the legacy
   // standalone Escape listener below — capture-on-open/restore-on-close and
@@ -110,75 +74,46 @@ export function MobileDrawer({ open, onClose, rightChat }: MobileDrawerProps) {
   useEffect(() => {
     if (!open) return;
     const ownsEscape = open !== "right-chat";
+    if (!ownsEscape) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     if (ownsEscape) window.addEventListener("keydown", onKey);
-    const prevRootOverflow = document.documentElement.style.overflow;
-    const prevRootOverscroll = document.documentElement.style.overscrollBehavior;
-    const prevOverflow = document.body.style.overflow;
-    const prevOverscroll = document.body.style.overscrollBehavior;
-    document.documentElement.style.overflow = "hidden";
-    document.documentElement.style.overscrollBehavior = "none";
-    document.body.style.overflow = "hidden";
-    document.body.style.overscrollBehavior = "none";
+    const releaseScroll = acquirePageScrollLock();
     return () => {
       if (ownsEscape) window.removeEventListener("keydown", onKey);
-      document.documentElement.style.overflow = prevRootOverflow;
-      document.documentElement.style.overscrollBehavior = prevRootOverscroll;
-      document.body.style.overflow = prevOverflow;
-      document.body.style.overscrollBehavior = prevOverscroll;
+      releaseScroll();
     };
   }, [open, onClose]);
 
   if (typeof document === "undefined") return null;
   if (!open && !rightChat) return null;
 
-  return createPortal(
+  return (
     <>
-      {open ? (
+      {open && open !== "right-chat" ? createPortal(
         <button
           type="button"
           className="mobile-drawer-backdrop"
           data-drawer-slot={open}
           aria-label="Close drawer"
           onClick={onClose}
-        />
+        />,
+        document.body,
       ) : null}
       {rightChat ? (
-        <section
+        <Modal
           id="shell-right-chat-drawer"
-          ref={rightChatRef}
-          className="mobile-right-chat-drawer"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Chat panel"
-          aria-hidden={open !== "right-chat"}
-          hidden={open !== "right-chat"}
-          inert={open !== "right-chat"}
-          tabIndex={-1}
+          open={open === "right-chat"}
+          keepMounted
+          onClose={onClose}
+          title="Chat panel"
+          presentation="sheet-right"
+          bodyLayout="fill"
         >
-          {/* Full-bleed close strip (cave-4snk9): on phones (≤480px) the
-              drawer is width:100vw and covers the backdrop button at every
-              pixel, so CSS hides the backdrop for this slot and THIS strip
-              owns dismissal instead. It is a child of the dialog — not a
-              sibling like the backdrop — so the focus trap reaches it: it is
-              the drawer's first focusable, and a Tab/Enter user can close
-              the drawer without ever touching the phantom backdrop. CSS
-              shows it only at ≤480px; at wider mobile widths the real,
-              exposed backdrop is the close surface and this strip stays
-              display:none. */}
-          <button
-            type="button"
-            className="focus-ring mobile-right-chat-drawer__close"
-            data-drawer-slot="right-chat"
-            aria-label="Close drawer"
-            onClick={onClose}
-          />
           {rightChat}
-        </section>
+        </Modal>
       ) : null}
-    </>,
-    document.body,
+    </>
   );
 }

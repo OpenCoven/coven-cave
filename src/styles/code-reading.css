@@ -43,20 +43,6 @@
   box-shadow: 0 14px 46px -18px var(--shadow-color);
 }
 
-.cri--modal {
-  position: fixed;
-  inset: var(--space-3);
-  z-index: 61;
-  box-shadow: 0 14px 46px -18px var(--shadow-color);
-}
-
-.cri-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: var(--backdrop-scrim);
-}
-
 /* ── Header ───────────────────────────────────────────────────────────── */
 
 .cri-head {
@@ -338,8 +324,7 @@
 
 /* The overlay and modal arrive; nothing moves for a reader who asked it not to. */
 @media (prefers-reduced-motion: no-preference) {
-  .cri--overlay,
-  .cri--modal {
+  .cri--overlay {
     animation: cri-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 }
@@ -354,3 +339,5 @@
     transform: none;
   }
 }
+
+.cri-content { display: flex; flex: 1; min-height: 0; flex-direction: column; }

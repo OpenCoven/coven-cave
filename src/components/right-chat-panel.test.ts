@@ -473,46 +473,9 @@ assert.match(
   /rightChat\?: ReactNode;/,
   "MobileDrawer accepts the right Chat panel's modal content",
 );
-assert.match(
-  drawerSource,
-  /useFocusTrap\(open === "right-chat", rightChatRef, \{ onEscape: onClose \}\)/,
-  "the right Chat drawer traps and returns focus via the shared hook, consistent with Modal's own usage",
-);
-assert.match(
-  drawerSource,
-  /role="dialog"[\s\S]{0,80}aria-modal="true"[\s\S]{0,80}aria-label="Chat panel"/,
-  "the right Chat drawer is a labelled modal dialog",
-);
-assert.match(
-  drawerSource,
-  /id="shell-right-chat-drawer"/,
-  "the right Chat drawer exposes a stable id for Shell/CSS to target",
-);
-assert.match(
-  drawerSource,
-  /className="mobile-right-chat-drawer"/,
-  "the right Chat drawer exposes a stable class hook for Task 8 styling",
-);
-assert.match(
-  drawerSource,
-  /aria-hidden=\{open !== "right-chat"\}/,
-  "closing marks the right Chat drawer aria-hidden rather than unmounting it",
-);
-assert.match(
-  drawerSource,
-  /hidden=\{open !== "right-chat"\}/,
-  "closing hides the right Chat drawer rather than unmounting it",
-);
-assert.match(
-  drawerSource,
-  /inert=\{open !== "right-chat"\}/,
-  "closing makes the right Chat drawer inert rather than unmounting it",
-);
-assert.match(
-  drawerSource,
-  /tabIndex=\{-1\}/,
-  "the right Chat drawer is a reachable focus-trap fallback container per useFocusTrap's contract",
-);
+assert.match(drawerSource, /<Modal[\s\S]*id="shell-right-chat-drawer"[\s\S]*open=\{open === "right-chat"\}[\s\S]*keepMounted/, "the right chat drawer retains its content through the shared modal");
+assert.match(drawerSource, /title="Chat panel"[\s\S]*presentation="sheet-right"[\s\S]*bodyLayout="fill"/, "the shared shell owns the labelled sheet and its close control");
+assert.doesNotMatch(drawerSource, /rightChatRef|<section/, "no duplicate chat trap or modal shell");
 
 // Retained mount: the drawer's presence is gated on the rightChat NODE only,
 // never on `open` — so React never unmounts/remounts the subtree (and the
@@ -534,27 +497,8 @@ assert.match(
   "the component itself stays mounted (portal included) whenever the rightChat node exists, even while every drawer is closed",
 );
 
-// Backdrop renders only while a drawer (nav, list, OR right-chat) is open —
-// never for a merely-retained, closed right-chat modal. It's a real <button>
-// (cave-rl980 Task 5 spec finding), not a role="presentation" div, so it's
-// reachable from the keyboard too.
-assert.match(
-  drawerSource,
-  /\{open \? \(\s*\n\s*<button\s*\n\s*type="button"\s*\n\s*className="mobile-drawer-backdrop"/,
-  "the backdrop renders only while any drawer is open, as a real <button>",
-);
-
-// Full-bleed close strip (cave-4snk9): on phones (≤480px) the drawer is
-// width:100vw and covers the backdrop at every pixel, so CSS hides the
-// backdrop for this slot and THIS button — the drawer's own first child,
-// inside the focus trap — is the close control pointer AND keyboard users
-// can reach. CSS (shell-responsive.css) shows it only at ≤480px; this pin
-// fixes its source shape and that it precedes the panel content.
-assert.match(
-  drawerSource,
-  /className="focus-ring mobile-right-chat-drawer__close"[\s\S]{0,120}aria-label="Close drawer"[\s\S]{0,60}onClick=\{onClose\}\s*\/>\s*\{rightChat\}/,
-  "the full-bleed close strip is the drawer's first child (inside the trap) and calls the same onClose the backdrop uses",
-);
+// Persistent nav/list landmarks keep their backdrop; right-chat uses Modal's.
+assert.match(drawerSource, /open && open !== "right-chat" \? createPortal\(/, "the retained chat modal never shares the nav/list backdrop");
 
 // Escape ownership: the legacy standalone listener must step aside for the
 // right Chat drawer, which owns Escape entirely through useFocusTrap's
@@ -575,55 +519,11 @@ assert.match(
   "the legacy Escape listener teardown mirrors its scoped registration",
 );
 
-// Body/root scroll + overscroll lock must still apply for EVERY open drawer
-// (nav, list, and right-chat alike) — the lock effect's gate stays the plain
-// `if (!open) return;`, never narrowed to exclude right-chat.
-assert.match(
-  drawerSource,
-  /document\.body\.style\.overflow = "hidden"/,
-  "every open drawer (nav/list/right-chat) keeps body scroll locked",
-);
-assert.match(
-  drawerSource,
-  /document\.documentElement\.style\.overflow = "hidden"/,
-  "every open drawer (nav/list/right-chat) keeps root scroll locked",
-);
-assert.doesNotMatch(
-  drawerSource,
-  /if \(open === "right-chat"\) return;\s*\n\s*const ownsEscape/,
-  "the scroll-lock effect must never early-return before locking for the right Chat drawer",
-);
-
-// Background inert: while the right Chat modal is open, the shell chrome
-// behind it must become inert — targeting `.shell-frame` specifically
-// (Shell's own root, see shell.tsx), never `document.body`, since the
-// backdrop/modal portal mounts to document.body itself and inerting that
-// would swallow the very modal we're trying to keep interactive.
-assert.match(
-  drawerSource,
-  /const shell = document\.querySelector<HTMLElement>\("\.shell-frame"\);/,
-  "the background-inert effect targets .shell-frame, which sits outside the portal's DOM subtree",
-);
-assert.match(
-  drawerSource,
-  /const prevInert = shell\.inert;/,
-  "the effect captures .shell-frame's prior inert state before overriding it",
-);
-assert.match(
-  drawerSource,
-  /shell\.inert = true;/,
-  "the right Chat modal makes the shell background inert while open",
-);
-assert.match(
-  drawerSource,
-  /shell\.inert = prevInert;/,
-  "closing restores .shell-frame's actual prior inert state rather than hard-coding false",
-);
-assert.doesNotMatch(
-  drawerSource,
-  /document\.body\.inert/,
-  "the inert effect must never target document.body — that is the portal's own mount point",
-);
+// Shared Modal owns the viewport environment; persistent nonmodal landmarks
+// retain only their shared scroll-lock lease.
+assert.match(drawerSource, /acquirePageScrollLock\(\)/, "landmark drawers use the shared scroll lock");
+assert.match(drawerSource, /if \(!ownsEscape\) return;/, "right Chat delegates the environment to Modal");
+assert.doesNotMatch(drawerSource, /shell\.inert|document\.body\.style\.overflow/, "right Chat has no private inert or scroll implementation");
 
 // cave-rl980 Task 5 modal/focus findings: nav/list drawers previously had no
 // focus management at all beyond the legacy standalone Escape listener above

@@ -36,20 +36,18 @@ import "@/styles/cave-chat/reader.css";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { projectUiBlocksToReadable } from "@/lib/ui-block-readable";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Segmented } from "@/components/ui/settings-controls";
 import { citationSourcePresentation, parseCitations, type Citation } from "@/lib/citations";
@@ -153,7 +151,6 @@ export function MessageReader({
   onRerunWith,
   familiarId,
 }: MessageReaderProps) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const docRef = useRef<HTMLDivElement | null>(null);
   const headingsRef = useRef<HTMLElement[]>([]);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -241,7 +238,6 @@ export function MessageReader({
     onClose();
   }, [viewer, exportOpen, onClose]);
 
-  useFocusTrap(true, dialogRef, { onEscape: escape });
 
   useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
 
@@ -250,8 +246,8 @@ export function MessageReader({
   // the nth outline id. The observer re-runs it because the markdown pipeline
   // renders asynchronously (Shiki) — without it the rail would anchor to an
   // empty document on first paint and never recover.
-  useLayoutEffect(() => {
-    const doc = docRef.current;
+  const attachDocument = useCallback((doc: HTMLDivElement | null) => {
+    docRef.current = doc;
     if (!doc) return;
 
     const anchor = () => {
@@ -266,7 +262,13 @@ export function MessageReader({
     anchor();
     const observer = new MutationObserver(anchor);
     observer.observe(doc, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (docRef.current === doc) {
+        docRef.current = null;
+        headingsRef.current = [];
+      }
+    };
   }, [outline]);
 
   // Until the reader is scrolled there is no scroll event to derive position
@@ -391,26 +393,10 @@ export function MessageReader({
 
   const railId = "cave-reader-rail";
 
-  return createPortal(
-    <div className="cave-reader-backdrop" onClick={onClose} role="presentation">
-      <div
-        ref={dialogRef}
-        className="cave-reader"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Expanded ${label}`}
-        tabIndex={-1}
-      >
-        <div className="cave-reader-progress" aria-hidden>
-          <div
-            className="cave-reader-progress__bar"
-            style={{ transform: `scaleX(${progress})` }}
-          />
-        </div>
-
-        <div className="cave-reader-head">
-          {outline.length ? (
+  return (
+    <Modal open onClose={(reason) => reason === "escape" ? escape() : onClose()}
+      title={label} size="reader" bodyLayout="fill" printable closeLabel="Close expanded view"
+      headerActions={<>          {outline.length ? (
             <button
               type="button"
               className="cave-reader-iconbtn cave-reader-iconbtn--ghost focus-ring"
@@ -422,12 +408,6 @@ export function MessageReader({
               <Icon name="ph:sidebar-simple" width={13} aria-hidden />
             </button>
           ) : null}
-          <span className="cave-reader-sigil" aria-hidden>
-            <Icon name="ph:book-open" width={13} />
-          </span>
-          <span className="cave-reader-head__title">{label}</span>
-
-          <div className="cave-reader-head__actions">
             {canRewrite ? (
               <span className="cave-reader-rewrite">
                 <span className="cave-reader-eyebrow">Rewrite</span>
@@ -501,17 +481,13 @@ export function MessageReader({
               />
             </button>
 
-            <span className="cave-reader-head__divider" aria-hidden />
-
-            <button
-              type="button"
-              className="cave-reader-iconbtn cave-reader-iconbtn--close focus-ring"
-              onClick={onClose}
-              aria-label="Close expanded view"
-            >
-              <Icon name="ph:x-bold" width={11} aria-hidden />
-            </button>
-          </div>
+</>}
+    >
+        <div className="cave-reader-progress" aria-hidden>
+          <div
+            className="cave-reader-progress__bar"
+            style={{ transform: `scaleX(${progress})` }}
+          />
         </div>
 
         <div className="cave-reader-body">
@@ -545,7 +521,7 @@ export function MessageReader({
 
           <div className="cave-reader-main">
             <div
-              ref={docRef}
+              ref={attachDocument}
               className="cave-reader-doc"
               onScroll={onScroll}
               onMouseUp={onSelect}
@@ -913,9 +889,7 @@ export function MessageReader({
         ) : null}
 
         {viewer ? <SourceViewer citation={viewer} onClose={() => setViewer(null)} /> : null}
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
 
@@ -924,18 +898,9 @@ export function MessageReader({
 function SourceViewer({ citation, onClose }: { citation: Citation; onClose: () => void }) {
   const presented = citationSourcePresentation(citation);
   return (
-    <div className="cave-reader-viewer" onClick={onClose} role="presentation">
-      <div
-        className="cave-reader-viewer__card"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={citation.title}
-      >
-        <div className="cave-reader-viewer__head">
-          <Icon name="ph:link-simple" width={13} aria-hidden />
-          <span className="cave-reader-viewer__title">{citation.title}</span>
-          {citation.url ? (
+    <Modal open onClose={onClose} title={citation.title} size="wide" closeLabel="Close source"
+      footerPills={<><span>{presented.provider}</span><span>·</span><span>{presented.context}</span></>}
+      footerActions={<>          {citation.url ? (
             <a
               className="ui-btn ui-btn--ghost ui-btn--sm focus-ring"
               href={citation.url}
@@ -946,16 +911,8 @@ function SourceViewer({ citation, onClose }: { citation: Citation; onClose: () =
               <Icon name="ph:arrow-square-out" width={9} aria-hidden />
             </a>
           ) : null}
-          <button
-            type="button"
-            className="cave-reader-iconbtn cave-reader-iconbtn--close focus-ring"
-            onClick={onClose}
-            aria-label="Close source"
-          >
-            <Icon name="ph:x-bold" width={10} aria-hidden />
-          </button>
-        </div>
-
+</>}
+    >
         <div className="cave-reader-viewer__body">
           <p className="cave-reader-viewer__summary">{presented.summary}</p>
           {citation.snippet ? (
@@ -966,13 +923,6 @@ function SourceViewer({ citation, onClose }: { citation: Citation; onClose: () =
           ) : null}
         </div>
 
-        <div className="cave-reader-viewer__foot">
-          <span>{presented.provider}</span>
-          <span>·</span>
-          <span>{presented.context}</span>
-          <span className="cave-reader-viewer__hint">Esc or click outside to return</span>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

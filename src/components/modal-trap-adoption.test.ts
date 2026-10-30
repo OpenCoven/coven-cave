@@ -2,37 +2,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const FILES = [
-  "command-palette.tsx",
-  "board-inspector.tsx",
-  "onboarding-overlay.tsx",
-  "github-view.tsx",
-  "github-action-popover.tsx",
-  "new-reminder-modal.tsx",
-  "notification-bell.tsx",
-  "message-reader.tsx",
-];
-
-for (const file of FILES) {
+for (const file of ["command-palette.tsx", "board-inspector.tsx", "onboarding-overlay.tsx", "github-view.tsx", "message-reader.tsx"]) {
   const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
-
-  assert.match(
-    source,
-    /import\s+\{[^}]*useFocusTrap[^}]*\}\s+from\s+["']@\/lib\/use-focus-trap["']/,
-    `${file} imports useFocusTrap from @/lib/use-focus-trap`,
-  );
-
-  assert.match(
-    source,
-    /useFocusTrap\(/,
-    `${file} calls useFocusTrap(...)`,
-  );
-
-  assert.match(
-    source,
-    /tabIndex=\{-1\}|tabIndex={\s*-1\s*}/,
-    `${file} sets tabIndex={-1} on the dialog/overlay container`,
-  );
+  assert.match(source, /<Modal[\s>]/, `${file} delegates modal behavior to the shared foundation`);
+  assert.doesNotMatch(source, /useFocusTrap\(|role="dialog"/, `${file} has no private modal trap or dialog`);
 }
-
+const actions = readFileSync(new URL("./github-action-popover.tsx", import.meta.url), "utf8");
+assert.doesNotMatch(actions, /useFocusTrap\(|aria-modal|role="dialog"/, "GitHub action content inherits its nonmodal Popover owner");
 console.log("modal-trap-adoption.test.ts OK");

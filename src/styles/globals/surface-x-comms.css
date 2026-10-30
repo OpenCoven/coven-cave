@@ -2962,6 +2962,12 @@
 
 /* ── Slot picker ─────────────────────────────────────────────────────────── */
 
+.x-comms-heat-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
 .x-comms-heat {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
@@ -2988,6 +2994,18 @@
   color: var(--text-secondary);
 }
 
+@media (pointer: coarse) {
+  .x-comms-heat {
+    grid-template-columns: 64px minmax(calc(24 * var(--touch-target) + 23 * 2px), 1fr);
+  }
+  .x-comms-heat-day {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--bg-panel);
+  }
+}
+
 /* Intensity is a color-mix of the one accent against the sunken surface, so
    the map stays inside the room's single-accent rule at every step. */
 .x-comms-cell {
@@ -2995,17 +3013,17 @@
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 3px;
-  background: color-mix(in oklch, var(--x-accent) var(--x-cell-intensity), var(--bg-sunken));
+  background: color-mix(in oklch, var(--x-accent, var(--color-warning)) var(--x-cell-intensity), var(--bg-sunken));
   cursor: pointer;
 }
 
 .x-comms-cell[data-band="true"] {
-  border-color: color-mix(in oklch, var(--x-accent) 50%, var(--border));
+  border-color: color-mix(in oklch, var(--x-accent, var(--color-warning)) 50%, var(--border));
 }
 
 .x-comms-cell[aria-checked="true"] {
-  background: var(--x-accent);
-  border-color: var(--x-accent);
+  background: var(--x-accent, var(--color-warning));
+  border-color: var(--x-accent, var(--color-warning));
 }
 
 .x-comms-cell:disabled {
@@ -3263,37 +3281,6 @@
 
 /* ── Slot dialog ─────────────────────────────────────────────────────────── */
 
-.x-comms-slot-dialog {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 45;
-  width: min(640px, calc(100vw - var(--space-8)));
-  border: 1px solid var(--border-strong, var(--border));
-  border-radius: var(--radius-card);
-  background: var(--bg-raised);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4) var(--space-4);
-  animation: x-comms-reveal var(--duration-fast) var(--ease-decelerate) both;
-}
-
-.x-comms-slot-head {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-}
-
-.x-comms-slot-head .x-comms-picked-value strong {
-  font-size: var(--text-lg);
-}
-
-.x-comms-slot-head .x-comms-mini {
-  margin-left: auto;
-}
-
 /* The scrim sits under the dialog and over the room, and closes on click —
    the same gesture Escape performs. */
 .x-comms-scrim {
@@ -3303,17 +3290,6 @@
   border: 0;
   padding: 0;
   background: transparent;
-}
-
-.x-comms-scrim[data-dim="true"] {
-  z-index: 44;
-  background: color-mix(in oklch, black 45%, transparent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .x-comms-slot-dialog {
-    animation: none;
-  }
 }
 
 /* The tone menu anchors to its trigger rather than the viewport, so it stays

@@ -4,44 +4,9 @@
    and falls back to the presence accent. All motion has a reduced-motion
    story at the bottom of this file. */
 
-.summoning-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4);
-  background: var(--backdrop-scrim);
-}
-
-.summoning-dialog {
-  display: flex;
-  flex-direction: column;
-  width: min(940px, 100%);
-  max-height: min(760px, calc(100vh - 2 * var(--space-4)));
-  overflow: hidden;
-  background: var(--glass-raised);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-panel);
-  box-shadow: 0 24px 64px oklch(0 0 0 / 35%);
-}
-
 /* Frosted glass needs a live blur behind it — restore the opaque surface
    wherever backdrop-filter is unavailable or the OS asked for less
    transparency. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .summoning-dialog {
-    background: var(--bg-raised);
-  }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .summoning-dialog {
-    background: var(--bg-raised);
-    backdrop-filter: none;
-  }
-}
 
 .summoning-body {
   display: flex;
@@ -53,46 +18,6 @@
 }
 
 /* Header */
-.summoning-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-hairline);
-}
-
-.summoning-header__crumb {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  font-size: var(--text-sm, 12px);
-  color: var(--text-secondary);
-}
-
-.summoning-header__crumb strong {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.summoning-header__sep {
-  color: var(--text-muted);
-}
-
-.summoning-header__close {
-  display: inline-grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-control);
-  color: var(--text-secondary);
-}
-
-.summoning-header__close:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
 
 /* Layout: circle column + working panel */
 .summoning-layout {
@@ -645,21 +570,6 @@
 }
 
 /* Footer */
-.summoning-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-top: auto;
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-hairline);
-}
-
-.summoning-footer__nav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
 
 /* Success */
 .summoning-success {

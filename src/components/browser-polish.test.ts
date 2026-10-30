@@ -377,9 +377,9 @@ assert.doesNotMatch(workspace, /setTimeout\(\(\) => browserPaneRef\.current\?\.n
 
 // ───────── Task 4: Quick-open backdrop ─────────
 const qo = await readFile(new URL("./browser-quick-open.tsx", import.meta.url), "utf8");
-assert.match(qo, /bg-black\/40 backdrop-blur-sm/, "Backdrop must use bg-black/40 + backdrop-blur-sm");
-assert.match(qo, /onClick=\{onClose\}/, "Outer container must handle onClick={onClose}");
-assert.match(qo, /onClick=\{\(e\) => e\.stopPropagation\(\)\}/, "Inner card must stopPropagation on click");
+assert.match(qo, /<Modal\s+open\s+onClose=\{onClose\}\s+title="Jump to tab"/, "Quick-open delegates scrim and dismissal to the named shared Modal");
+assert.match(qo, /initialFocusRef=\{inputRef\}/, "Quick-open initially focuses search through the shared focus owner");
+assert.doesNotMatch(qo, /role="dialog"|backdrop-blur-sm/, "Quick-open does not duplicate the Modal shell");
 
 // ───────── Security: iframe fallback sandbox ─────────
 // allow-top-navigation lets framed arbitrary content navigate the whole app
@@ -417,7 +417,7 @@ assert.match(pane, /aria-label=\{`Close tab: \$\{title\}`\}/, "the close button 
 assert.match(pane, /aria-label="Address bar"/, "the address input is labeled");
 assert.match(pane, /inert=\{!toolbarOpen \|\| undefined\}/, "the collapsed toolbar is inert (its controls leave the tab order)");
 // quick-open palette is a focus-trapped dialog
-assert.match(qo, /role="dialog"\r?\n\s*aria-modal="true"/, "quick-open palette is an aria-modal dialog");
-assert.match(qo, /useFocusTrap\(true, cardRef, \{ onEscape: onClose/, "quick-open traps focus + restores it on close");
+assert.match(qo, /import \{ Modal \} from "@\/components\/ui\/modal"/, "quick-open uses the tested shared dialog and focus trap");
+assert.doesNotMatch(qo, /containTabFocus=\{false\}|restoreFocus=\{false\}|dismissible=\{false\}/, "quick-open preserves shared focus containment, focus return and Escape dismissal");
 
 console.log("browser-polish.test.ts: ok");

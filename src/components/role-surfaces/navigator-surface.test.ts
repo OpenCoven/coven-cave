@@ -153,8 +153,8 @@ test("both dialogs trap focus and return it on Escape", () => {
     ["step sheet", sheet],
     ["stats modal", surface],
   ] as const) {
-    assert.match(source, /useFocusTrap\(true, dialogRef, \{ onEscape: onClose \}\)/, `${name} traps focus`);
-    assert.match(source, /role="dialog"[\s\S]{0,120}?aria-modal="true"/, `${name} is a modal dialog`);
+    assert.match(source, /<Modal\s+open\s+onClose=\{onClose\}/, `${name} delegates focus and Escape to Modal`);
+    assert.doesNotMatch(source, /useFocusTrap\(/, `${name} has no duplicate trap`);
   }
 });
 

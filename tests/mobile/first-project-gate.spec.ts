@@ -56,7 +56,7 @@ for (const height of [undefined, 844] as const) {
     // The gate scrolls when it's taller than the space left between the shell
     // chrome (and any banner) and the bottom tabs, so the title is checked as
     // the gate opens and Create once it's scrolled into view.
-    await expectOwnsCentre(gate.getByRole("heading", { name: "Create your first project" }), "title");
+    await expectOwnsCentre(gate.locator(".ui-modal-header-breadcrumb").getByText("Create your first project", { exact: true }), "title");
 
     await gate.getByLabel("Project name").fill("Demo");
     await gate.getByLabel("Absolute root").fill("/tmp/demo");

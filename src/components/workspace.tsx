@@ -164,7 +164,6 @@ import {
   CommandPalette,
   FamiliarsView,
   FamiliarWorkQueueView,
-  FamiliarGlyphPicker,
   GrimoireView,
   InboxEscalationsView,
   MarketplaceView,
@@ -1318,7 +1317,6 @@ export function Workspace() {
   }>({ fireAt: "", title: "", whenText: "" });
   const [editingReminder, setEditingReminder] = useState<InboxItem | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
   const { openOverlay: showReminderOverlay, closeOverlay: closeReminderModal } = useOverlayHistory({
     id: "overlay:reminder",
@@ -5321,14 +5319,6 @@ export function Workspace() {
       />
 
       <MagicTriggers />
-
-      {glyphPickerFor ? (
-        <FamiliarGlyphPicker
-          open
-          familiar={glyphPickerFor}
-          onClose={() => setGlyphPickerFor(null)}
-        />
-      ) : null}
 
       {mobileHandoffOpen && (
         <MobileHandoffModal

@@ -63,7 +63,7 @@
     "codemod:design:check": "node scripts/codemods/tokenize-tsx-design.mjs --check",
     "check:tokens:defined": "node scripts/design-system/token-reference-scan.mjs --check",
     "check:test-clocks": "node scripts/check-test-clock-consistency.mjs",
-    "lint": "pnpm codemod:design:check && pnpm check:tokens:defined && pnpm check:test-clocks && pnpm lint:source",
+    "lint": "pnpm codemod:design:check && pnpm check:tokens:defined && pnpm check:test-clocks && pnpm check:modals && pnpm lint:source",
     "lint:source": "eslint \"src/lib/**/*.ts\" \"src/lib/**/*.tsx\" \"src/app/**/*.ts\" \"src/app/**/*.tsx\" \"src/components/**/*.ts\" \"src/components/**/*.tsx\" --max-warnings=0",
     "lint:design": "eslint \"src/components/**/*.tsx\" --max-warnings=0",
     "typecheck": "tsc --noEmit",
@@ -104,7 +104,8 @@
     "start": "node server.mjs",
     "build:server": "node scripts/build-server.mjs",
     "postinstall": "node scripts/fix-node-pty-spawn-helper.mjs && node scripts/copy-pdf-worker.mjs",
-    "test:supply-chain": "node scripts/dependency-policy.test.mjs"
+    "test:supply-chain": "node scripts/dependency-policy.test.mjs",
+    "check:modals": "node scripts/check-modal-architecture.mjs"
   },
   "dependencies": {
     "@codemirror/language": "6.12.4",

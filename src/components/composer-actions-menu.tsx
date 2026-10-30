@@ -170,6 +170,14 @@ export function ComposerActionsMenu({
         aria-haspopup="menu"
         aria-expanded={expanded}
         title={`${isToolsTrigger ? "Tools" : "Chat options"} · ${context.summary}`}
+        onMouseDown={(event) => {
+          if (event.button !== 0) return;
+          // Safari does not focus buttons on pointer activation. Keep focus
+          // inside the composer until click opens the menu, so its compact
+          // layout cannot move this trigger between press and release.
+          event.preventDefault();
+          event.currentTarget.focus();
+        }}
         onClick={() => {
           if (expanded) {
             closeAll();

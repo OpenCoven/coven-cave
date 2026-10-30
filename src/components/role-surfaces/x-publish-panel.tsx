@@ -126,6 +126,7 @@ export function XPublishPanel({ familiarId, connectionSettings }: { familiarId: 
   const [postIdDrafts, setPostIdDrafts] = useState<Record<string, string>>({});
   const { announce } = useAnnouncer();
   const noLocationId = useId();
+  const reviewButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const load = useCallback(async (): Promise<PublicationsState> => {
     const res = await fetch(
@@ -546,6 +547,7 @@ export function XPublishPanel({ familiarId, connectionSettings }: { familiarId: 
 
       <div className="role-surface-btn-row">
         <button
+          ref={reviewButtonRef}
           type="button"
           className="role-surface-chip focus-ring"
           disabled={busy || Boolean(error) || gate.kind !== "confirm"}
@@ -567,8 +569,14 @@ export function XPublishPanel({ familiarId, connectionSettings }: { familiarId: 
         <Modal
           open
           onClose={withdraw}
-          dismissOnEscape={!busy}
-          dismissOnBackdrop={!busy}
+          busy={busy}
+          restoreFocus={() => {
+            // The async review disables its trigger before the dialog mounts,
+            // so the trap may capture the page as its previous focus target.
+            if (!reviewButtonRef.current) return true;
+            reviewButtonRef.current.focus();
+            return false;
+          }}
           ariaLabel="Confirm X post"
           ariaDescribedBy={noLocationId}
           footerActions={(

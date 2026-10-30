@@ -247,9 +247,6 @@
    transition. Fullscreen covering the shell's icon rail matches the
    portaled .chat-artifact--fullscreen precedent. */
 .workspace-rail--fullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
   background: var(--bg-base, var(--background));
   border: 0;
 }
@@ -354,26 +351,6 @@
   font-weight: 600;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-}
-
-@keyframes mobile-code-rail-sheet-in {
-  from {
-    opacity: 0;
-    transform: translateX(24px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-.mobile-code-rail-sheet__panel {
-  animation: mobile-code-rail-sheet-in var(--duration-base, 180ms)
-    var(--ease-decelerate, ease) both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .mobile-code-rail-sheet__panel {
-    animation: none;
-  }
 }
 
 .workspace-rail__strip {

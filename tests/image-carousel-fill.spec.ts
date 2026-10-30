@@ -32,6 +32,9 @@ async function setup(page: Page) {
     localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
     localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
   });
+  await page.route("**/api/projects**", route => route.fulfill({ json: { ok: true, projects: [
+    { id: "image-project", name: "Image fixture", root: SESSION.project_root, access: "write" },
+  ] } }));
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({
       json: {

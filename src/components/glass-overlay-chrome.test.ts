@@ -86,8 +86,8 @@ assert.deepEqual(
 );
 
 // ── Component-class surfaces ride the shared utility ─────────────────────────
-assert.match(palette, /className="command-palette glass-overlay\b/, "the command palette dialog is glass");
-assert.doesNotMatch(palette, /command-palette glass-overlay[^"]*bg-\[var\(--bg-elevated\)\]/, "the palette's old opaque fill is gone");
+assert.match(palette, /<Modal open onClose=\{closeWithState\} title="Command palette"/, "the command palette uses the shared glass Modal tested above");
+assert.doesNotMatch(palette, /className="command-palette(?: |")/, "the palette does not restore its private shell or opaque fill");
 assert.match(bell, /notification-bell__popover glass-overlay/, "the notification bell popover is glass");
 
 // ── Frosted floating chrome (autopilot: "ultra opaque components → frosty") ──
@@ -122,20 +122,28 @@ for (const sel of ["ui-dock-chat", "ui-tooltip", "familiar-switcher__popover", "
 
 // Feature stylesheets carry the same pairing + their own fallback blocks.
 // (#3264 split: snooze menu → dash-act.css; model popover → cave-composer.css;
-// table lightbox → cave-md.css — each sheet owns its selectors' fallbacks so
+// each remaining nonmodal sheet owns its selectors' fallbacks so
 // surfaces loading only the split sheet keep opaque glass.)
 const featureSheets: Array<[string, string[]]> = [
   // The shared sparkline's sheet, imported by src/components/ui/sparkline.tsx.
   ["../styles/sparkline.css", ["spark-tip"]],
   ["../styles/dash-act.css", ["dash-snooze__menu"]],
-  ["../styles/voice-call.css", ["voice-call-overlay__dialog"]],
   ["../styles/cave-composer.css", ["cave-chat-model-popover"]],
-  ["../styles/cave-md.css", ["cave-table-lightbox__panel"]],
   // flow.css left with the retired FlowView surface (cave-c3yt).
   ["../styles/home-composer.css", ["hc-slash-menu"]],
-  ["../styles/summoning-circle.css", ["summoning-dialog"]],
-  ["../styles/board.css", ["board-drawer", "gh-pat-dialog", "gh-action-popover", "gh-profile-card"]],
+  ["../styles/board.css", ["gh-action-popover"]],
 ];
+// Migrated dialogs inherit the shared Modal glass and opaque fallbacks above.
+for (const [file, opening] of [
+  ["./voice-call-overlay.tsx", /<Modal open onClose=/],
+  ["./markdown-viewer.tsx", /<Modal open onClose=\{onClose\} title="Expanded table"/],
+  ["./familiar-summoning-circle.tsx", /<Modal open onClose=\{onClose\} size="reader" busy=\{submitting\}/],
+  ["./board-inspector.tsx", /<Modal open onClose=\{close\} title="Card inspector"/],
+  ["./github-view.tsx", /<Modal open onClose=\{onClose\} title="Connect GitHub"/],
+  ["./github-view.tsx", /<Modal open onClose=\{onClose\} title=\{`GitHub profile for/],
+] as const) {
+  assert.match(readFileSync(new URL(file, import.meta.url), "utf8"), opening, `${file} inherits shared Modal glass`);
+}
 for (const [file, selectors] of featureSheets) {
   const sheet = readFileSync(new URL(file, import.meta.url), "utf8");
   const sheetSupports = sheet.match(/@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\) \{[\s\S]*?\n\}/g)?.join("\n") ?? "";

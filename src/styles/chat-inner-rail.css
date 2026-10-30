@@ -229,7 +229,7 @@
 /* The sheet's list fills the panel and scrolls inside it, exactly as the rail
    does — the list brings its own header and scroller, so the panel only bounds
    it. */
-.chat-threads-sheet__panel > .chat-sidebar {
+.ui-modal-body[data-layout="fill"] > .chat-sidebar {
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -329,17 +329,6 @@
 
 /* The broadcast composer — one textarea and one verb. Deliberately not a chat
    view: replies land in each target's own thread, never here. */
-.chat-broadcast__title {
-  color: var(--text-primary);
-  font-size: var(--text-base);
-  font-weight: 650;
-}
-
-.chat-broadcast__note {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
 .chat-broadcast__input {
   width: 100%;
   resize: vertical;
@@ -357,40 +346,6 @@
   gap: var(--space-1);
   color: var(--color-danger);
   font-size: var(--text-xs);
-}
-
-.chat-broadcast__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
-.chat-broadcast__cancel {
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  padding: var(--space-1) var(--space-3);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.chat-broadcast__send {
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--accent-presence);
-  padding: var(--space-1) var(--space-3);
-  color: var(--accent-presence-foreground);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.chat-broadcast__send:disabled {
-  background: color-mix(in oklch, var(--text-muted) 22%, transparent);
-  color: var(--text-muted);
-  cursor: default;
 }
 
 /* ── Phone chat chrome fold (#5529) ──────────────────────────────────────────

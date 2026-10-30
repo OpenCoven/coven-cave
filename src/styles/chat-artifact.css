@@ -7,44 +7,45 @@
   border-radius: 10px;
   overflow: hidden;
 }
-/* Expanded view. The shell is portaled to <body> (see chat-artifact-viewer.tsx)
-   so this fixed overlay positions against the viewport — escaping the chat
-   turn's content-visibility containing block — and fills the screen. */
-.chat-artifact--fullscreen {
-  position: fixed;
-  inset: 14px;
-  z-index: 1200;
-  margin: 0;
+/* The shared Modal owns fullscreen chrome. This wrapper owns content only. */
+.chat-artifact-content {
   display: flex;
-  flex-direction: column;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
-}
-.chat-artifact--fullscreen .chat-artifact__body {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+}
+.chat-artifact-content .chat-artifact__body {
+  flex: 1;
+  min-height: min(30dvh, 12rem);
   display: flex;
 }
-.chat-artifact--fullscreen .chat-artifact__preview-wrap,
-.chat-artifact--fullscreen .chat-artifact__code,
-.chat-artifact--fullscreen .chat-artifact__code-edit {
+.chat-artifact-content .chat-artifact__refine-panel {
+  min-height: 0;
+  max-height: 50%;
+  overflow-y: auto;
+}
+.chat-artifact-content .chat-artifact__preview-wrap,
+.chat-artifact-content .chat-artifact__code,
+.chat-artifact-content .chat-artifact__code-edit {
   flex: 1;
   width: 100%;
   height: auto;
   min-height: 0;
 }
-.chat-artifact--fullscreen .chat-artifact__comments {
+.chat-artifact-content .chat-artifact__comments {
   max-height: min(42vh, 360px);
   min-height: 0;
   overflow: hidden;
 }
-.chat-artifact--fullscreen .chat-artifact__comments-list {
+.chat-artifact-content .chat-artifact__comments-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
 }
-.chat-artifact--fullscreen .chat-artifact__comments-head,
-.chat-artifact--fullscreen .chat-artifact__comments-foot,
-.chat-artifact--fullscreen .chat-artifact__comments-save-error {
+.chat-artifact-content .chat-artifact__comments-head,
+.chat-artifact-content .chat-artifact__comments-foot,
+.chat-artifact-content .chat-artifact__comments-save-error {
   flex: none;
 }
 .chat-artifact__head {
@@ -62,7 +63,7 @@
 .chat-artifact__dot--success { background: var(--color-success); }
 .chat-artifact__title { font-size: var(--text-xs); color: var(--text-secondary); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-artifact__spacer { flex: 1; }
-.chat-artifact__actions { display: inline-flex; gap: 6px; align-items: center; }
+.chat-artifact__actions { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
 .chat-artifact__btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 5px;
   height: 26px; min-width: 26px; padding: 0 6px;

@@ -126,12 +126,13 @@ export function SaveTemplateModal({
 
   return (
     <Modal
+      busy={saving}
       open={open}
       onClose={onClose}
       breadcrumb={["Prompts", editing ? "Edit template" : "Save as template"]}
       footerActions={
         <>
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="secondary" size="sm" disabled={saving} onClick={onClose}>
             Cancel
           </Button>
           <Button variant="primary" size="sm" onClick={() => void save()} disabled={saving}>

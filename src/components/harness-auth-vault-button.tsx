@@ -28,7 +28,7 @@ export function HarnessAuthVaultButton({ familiarId, className }: { familiarId: 
         Open familiar Vault
       </button>
       {open ? (
-        <Modal open onClose={() => setOpen(false)} breadcrumb={["Familiar", "Vault"]} wide>
+        <Modal open onClose={() => setOpen(false)} breadcrumb={["Familiar", "Vault"]} size="wide">
           <p className="mb-3 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
             Save your credentials, then close the Vault and retry your message.
           </p>

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 import type { KnowledgePackManifest, KnowledgePackTemplateMeta } from "@/lib/knowledge-pack-types";
 import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { KnowledgePackSeedModal } from "@/components/marketplace/knowledge-pack-seed-modal";
 
 type Props = {
@@ -52,12 +52,10 @@ function TemplateList({ templates }: { templates: KnowledgePackTemplateMeta[] })
 }
 
 export function KnowledgePackDetail({ plugin, busy, onClose }: Props) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const [manifest, setManifest] = useState<KnowledgePackManifest | null>(null);
   const [manifestError, setManifestError] = useState<string | null>(null);
   const [seedOpen, setSeedOpen] = useState(false);
   const [trackedInstalled, setTrackedInstalled] = useState(plugin.installed);
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
 
   useEffect(() => setTrackedInstalled(plugin.installed), [plugin.installed]);
 
@@ -94,37 +92,18 @@ export function KnowledgePackDetail({ plugin, busy, onClose }: Props) {
   const installLabel = trackedInstalled ? "Seed again…" : "Install & seed…";
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${plugin.displayName} Knowledge pack details`}
-        tabIndex={-1}
-        className="craft-dossier"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="craft-dossier__header">
-          <MarketplaceLogo
-            id={plugin.id}
-            displayName={manifest?.displayName ?? plugin.displayName}
-            logo={plugin.logo}
-            size="dossier"
-          />
-          <div className="min-w-0 flex-1">
-            <p className="craft-dossier__eyebrow">Knowledge pack · v{manifest?.version ?? plugin.version}</p>
-            <h2>{manifest?.displayName ?? plugin.displayName}</h2>
-            <p>{manifest?.description ?? plugin.description}</p>
-            <div className="mt-2 flex flex-wrap gap-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5"><Icon name="ph:books" width={11} aria-hidden /> Knowledge pack</span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5"><Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}</span>
-            </div>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close Knowledge pack details" className="focus-ring craft-dossier__close">
-            <Icon name="ph:x" width={16} />
-          </button>
-        </header>
-
+    <Modal open onClose={onClose} presentation="sheet-right" size="wide" busy={busy}
+      breadcrumb={[`Knowledge pack · v${manifest?.version ?? plugin.version}`, manifest?.displayName ?? plugin.displayName]}
+      description={manifest?.description ?? plugin.description}
+      headerIcon={<MarketplaceLogo id={plugin.id} displayName={manifest?.displayName ?? plugin.displayName} logo={plugin.logo} size="detail" />}
+      closeLabel="Close Knowledge pack details"
+      footerPills={<div className="flex flex-col gap-1"><strong>{trackedInstalled ? "Track-installed" : "Not installed"}</strong><span>{manifest ? `${manifest.folders.length} folders · ${manifest.templates.length} templates` : "Manifest pending"}</span></div>}
+      footerActions={<Button variant="primary" leadingIcon="ph:books" loading={busy} disabled={!manifest} onClick={() => setSeedOpen(true)}>{installLabel}</Button>}
+    >
+      <div className="mb-3 flex flex-wrap gap-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+        <span><Icon name="ph:books" width={11} aria-hidden /> Knowledge pack</span>
+        <span><Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}</span>
+      </div>
         <div className="craft-dossier__body">
           <div className="craft-dossier__runtime" aria-live="polite">
             <span><Icon name={state === "added" ? "ph:seal-check" : "ph:books"} width={14} aria-hidden /></span>
@@ -188,14 +167,6 @@ export function KnowledgePackDetail({ plugin, busy, onClose }: Props) {
           ) : null}
         </div>
 
-        <footer className="craft-dossier__footer">
-          <div>
-            <strong>{trackedInstalled ? "Track-installed" : "Not installed"}</strong>
-            <span>{manifest ? `${manifest.folders.length} folders · ${manifest.templates.length} templates` : "Manifest pending"}</span>
-          </div>
-          <Button variant="primary" leadingIcon="ph:books" loading={busy} disabled={!manifest} onClick={() => setSeedOpen(true)}>{installLabel}</Button>
-        </footer>
-      </div>
       {manifest ? (
         <KnowledgePackSeedModal
           open={seedOpen}
@@ -205,6 +176,6 @@ export function KnowledgePackDetail({ plugin, busy, onClose }: Props) {
           onTrackedInstalled={() => setTrackedInstalled(true)}
         />
       ) : null}
-    </div>
+    </Modal>
   );
 }

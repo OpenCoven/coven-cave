@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./mermaid-viewer.ts", import.meta.url), "utf8");
+const viewer = readFileSync(new URL("./markdown-viewer.tsx", import.meta.url), "utf8");
 const domWiring = readFileSync(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
 
 // The rendered diagram is injected HTML (no React node), so the viewer must be
@@ -17,7 +18,7 @@ assert.match(
 );
 assert.match(
   domWiring,
-  /wireMermaidDiagrams\(el\)/,
+  /wireMermaidDiagrams\(el, \(source\) => openViewer\(\{ kind: "diagram", source \}\)\)/,
   "wireMermaidDiagrams runs in the shared useWireCopyButtons post-render hook",
 );
 
@@ -31,8 +32,7 @@ assert.match(
 );
 
 // Fullscreen overlay with the zoom/pan reading surface.
-assert.match(source, /class.*=.*"cm-mermaid-viewer"/, "opens a fullscreen viewer overlay");
-assert.match(source, /aria-modal/, "viewer overlay is a modal dialog");
+assert.match(viewer, /<Modal open onClose=\{onClose\} title="Diagram viewer" presentation="fullscreen"/, "the viewer delegates fullscreen dialog semantics to Modal");
 
 // Zoom: wheel (anchored at cursor), buttons, and keyboard.
 assert.match(source, /addEventListener\("wheel", onWheel/, "wheel zoom is wired");
@@ -41,15 +41,15 @@ assert.match(
   /tx = px - \(px - tx\) \* \(next \/ scale\)/,
   "wheel/button zoom keeps the point under the cursor anchored",
 );
-assert.match(source, /"Zoom in"/, "viewer exposes a zoom-in control");
-assert.match(source, /"Zoom out"/, "viewer exposes a zoom-out control");
-assert.match(source, /"Fit to screen"/, "viewer exposes a fit-to-screen control");
+assert.match(viewer, /"Zoom in"/, "viewer exposes a zoom-in control");
+assert.match(viewer, /"Zoom out"/, "viewer exposes a zoom-out control");
+assert.match(viewer, /"Fit to screen"/, "viewer exposes a fit-to-screen control");
 
 // Pan: pointer drag.
 assert.match(source, /addEventListener\("pointerdown", onPointerDown/, "drag-to-pan is wired");
 
 // Close: Escape, close button, and a non-drag backdrop tap.
-assert.match(source, /event\.key === "Escape"/, "Escape closes the viewer");
+assert.doesNotMatch(source, /event\.key === "Escape"|event\.key === "Tab"/, "Modal owns Escape and Tab without a competing imperative handler");
 assert.match(
   source,
   /if \(downOnBackdrop && moved < 5\) close\(\)/,
@@ -66,7 +66,7 @@ for (const ev of ["pointermove", "pointerup", "keydown"]) {
 }
 
 // Only one viewer at a time.
-assert.match(source, /activeViewer\?\.close\(\)/, "reopening replaces any existing viewer");
+assert.match(viewer, /if \(activeClose && activeClose !== close\) flushSync\(activeClose\)/, "reopening replaces any existing viewer");
 
 // Regression guard: mermaid scopes its embedded theme CSS to the svg id
 // (`#diagram-N .cluster rect { fill }`), so the clone MUST keep its id or the

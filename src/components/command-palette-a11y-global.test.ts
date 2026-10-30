@@ -12,17 +12,17 @@ const primitives = readFileSync(new URL("../styles/globals/primitives.css", impo
 // modal transitions + reduced-motion behavior.
 
 // ── Modal combobox/listbox + focus trap ────────────────────────────────
-assert.match(palette, /role="dialog"[\s\S]{0,120}?aria-modal="true"/, "the surface is a modal dialog");
+assert.match(palette, /<Modal open onClose=\{closeWithState\} title="Command palette"/, "the surface is a modal dialog");
 assert.match(palette, /role="combobox"/, "the input is a combobox");
 assert.match(palette, /role="listbox"/, "results are a listbox");
-assert.match(palette, /useFocusTrap\(open, dialogRef/, "focus is trapped while open");
+assert.match(palette, /initialFocusRef=\{inputRef\}/, "focus is trapped while open");
 assert.match(palette, /aria-activedescendant=/, "the active descendant is visible to AT");
 
 // ── Focus return ───────────────────────────────────────────────────────
 // use-focus-trap saves the previously-focused element on activate and
 // restores it on deactivate; the top-bar input is what opened the palette,
 // so Escape/navigation lands focus back there.
-assert.match(palette, /useFocusTrap\(open, dialogRef, \{ onEscape: closeWithState \}\)/, "focus trap drives Escape close + focus return");
+assert.match(palette, /<Modal open onClose=\{closeWithState\}/, "focus trap drives Escape close + focus return");
 
 // ── Live result counts + alert/status split ────────────────────────────
 assert.match(palette, /role="status"[\s\S]{0,200}?globalResults\.length/, "live result counts are status announcements");
@@ -41,8 +41,8 @@ assert.match(palette, /role="img"[\s\S]{0,120}?aria-label=\{\`\$\{row\.session\.
 assert.match(palette, /row\.result\.status[\s\S]{0,40}?\$\{row\.result\.status\}/, "global rows show status as text");
 
 // ── Motion: only existing modal transitions, reduced-motion respected ──
-assert.match(palette, /animation:ui-modal-fade-in_var\(--duration-fast\)/, "the scrim reuses the existing modal fade");
-assert.match(palette, /animation:ui-modal-enter_var\(--duration-base\)/, "the dialog reuses the existing modal enter");
+assert.match(primitives, /animation: ui-modal-fade-in var\(--duration-fast\)/, "the scrim reuses the existing modal fade");
+assert.match(primitives, /animation: ui-modal-enter var\(--duration-base\)/, "the dialog reuses the existing modal enter");
 assert.match(primitives, /prefers-reduced-motion: reduce/, "reduced-motion behavior exists for modal transitions");
 assert.doesNotMatch(
   palette,

@@ -63,7 +63,7 @@
 
 .vault-paste-input {
   min-height: calc(var(--space-4) * 4);
-  padding-right: calc(var(--space-4) * 6);
+  padding-right: calc(var(--space-4) * 9);
   resize: vertical;
   font-family: var(--font-mono, monospace);
   line-height: var(--leading-normal);
@@ -163,4 +163,43 @@
 .vault-btn:disabled {
   opacity: var(--opacity-disabled);
   cursor: default;
+}
+
+.vault-panel {
+  container: familiar-vault / inline-size;
+}
+
+@container familiar-vault (max-width: 40rem) {
+  .vault-row-main {
+    flex-wrap: wrap;
+    padding-right: 0;
+  }
+
+  .vault-row-key {
+    flex-basis: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .vault-row-actions {
+    position: static;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    opacity: 1;
+  }
+
+  .vault-paste-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .vault-paste-input {
+    padding-right: var(--space-2);
+  }
+
+  .vault-paste-actions {
+    position: static;
+    justify-content: flex-end;
+  }
 }

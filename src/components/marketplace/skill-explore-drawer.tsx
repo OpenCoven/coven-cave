@@ -2,7 +2,7 @@
 
 import "@/styles/cave-md.css";
 
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -10,7 +10,7 @@ import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
 import type { SkillBrowserEntry } from "@/lib/skill-directory";
 import { stripFrontmatter } from "@/lib/skill-directory";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 
 export type SkillExploreDrawerProps = {
@@ -30,8 +30,6 @@ export function SkillExploreDrawer({
   onClose,
   onChanged,
 }: SkillExploreDrawerProps): JSX.Element | null {
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(Boolean(skill), panelRef, { onEscape: onClose });
 
   const [body, setBody] = useState<BodyState>({ status: "idle", text: null, error: null });
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -148,29 +146,51 @@ export function SkillExploreDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${skill.name} details`}
-        className="flex h-full w-[min(560px,96vw)] flex-col border-l border-[var(--border-hairline)] bg-[var(--bg-base)]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-start gap-3 border-b border-[var(--border-hairline)] px-5 py-4">
-          <MarketplaceLogo id={skill.id} displayName={skill.name} size="detail" />
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate font-serif text-[length:var(--text-xl)] font-medium text-[var(--text-primary)]">
-              {skill.name}
-            </h2>
-            <p className="truncate font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              Local skill · {skill.local?.scope ?? "local"}
-            </p>
-          </div>
-          <IconButton icon="ph:x-bold" size="sm" aria-label="Close" onClick={onClose} />
-        </div>
-
-        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+    <Modal open onClose={onClose} presentation="sheet-right" size="standard"
+      title={skill.name} description={`Local skill · ${skill.local?.scope ?? "local"}`} busy={deleting}
+      headerIcon={<MarketplaceLogo id={skill.id} displayName={skill.name} size="detail" />}
+      footerActions={<>
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:clipboard-text"
+            disabled={deleting} onClick={handlePrompt}
+            title="Copy the generated skill prompt"
+          >
+            Prompt
+          </Button>
+          {canDelete ? (
+            confirmingDelete ? (
+              <div className="ml-auto flex items-center gap-2">
+                <Button variant="ghost" size="sm" disabled={deleting} onClick={() => setConfirmingDelete(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  leadingIcon="ph:trash"
+                  loading={deleting}
+                  onClick={handleDelete}
+                >
+                  Delete
+                </Button>
+              </div>
+            ) : (
+              <IconButton
+                icon="ph:trash"
+                size="sm"
+                danger
+                className="ml-auto"
+                aria-label="Delete this local skill"
+                onClick={handleDelete}
+                disabled={deleting}
+                title="Delete this local skill"
+              />
+            )
+          ) : null}
+</>}
+    >
+        <div className="space-y-5">
           <div className="marketplace-card__decision" aria-label="Installed local skill">
             <span className="marketplace-card__decision-chip">
               <Icon name="ph:check-circle" width={11} aria-hidden /> Installed
@@ -206,47 +226,6 @@ export function SkillExploreDrawer({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-hairline)] bg-[var(--bg-panel)] px-5 py-4">
-          <Button
-            variant="secondary"
-            size="sm"
-            leadingIcon="ph:clipboard-text"
-            onClick={handlePrompt}
-            title="Copy the generated skill prompt"
-          >
-            Prompt
-          </Button>
-          {canDelete ? (
-            confirmingDelete ? (
-              <div className="ml-auto flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setConfirmingDelete(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  leadingIcon="ph:trash"
-                  loading={deleting}
-                  onClick={handleDelete}
-                >
-                  Delete
-                </Button>
-              </div>
-            ) : (
-              <IconButton
-                icon="ph:trash"
-                size="sm"
-                danger
-                className="ml-auto"
-                aria-label="Delete this local skill"
-                onClick={handleDelete}
-                disabled={deleting}
-                title="Delete this local skill"
-              />
-            )
-          ) : null}
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

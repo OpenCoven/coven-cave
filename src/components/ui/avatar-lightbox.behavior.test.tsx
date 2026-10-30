@@ -47,6 +47,7 @@ function installDom() {
   documentListeners = new Map();
   nodesByClass = new Map();
   body = {
+    style: {}, children: [],
     nodeType: 1,
     contains: () => false,
     focus() {
@@ -65,6 +66,8 @@ function installDom() {
 
   vi.stubGlobal("document", {
     body,
+    documentElement: {style: {}},
+    querySelectorAll: () => [],
     get activeElement() {
       return activeElement;
     },
@@ -687,4 +690,41 @@ describe("AvatarLightbox nested in Popover", () => {
     );
     expect(visibleSubmenu.props["data-covered"]).toBeUndefined();
   });
+  test("the outer portal stacking context paints a child menu above its modal", () => {
+    function Scene() {
+      const anchorRef = useRef(null);
+      return <>
+        <Modal open onClose={() => {}} title="Earlier root">Earlier</Modal>
+        <Modal open onClose={() => {}} title="Current root">
+          <button ref={anchorRef}>Menu</button>
+          <Popover open anchorRef={anchorRef} onOpenChange={() => {}} ariaLabel="Child menu">Options</Popover>
+        </Modal>
+      </>;
+    }
+    act(() => { renderer = create(<Scene />, {createNodeMock}); });
+    const modals = renderer.root.findAllByProps({className: "ui-modal-backdrop"});
+    const portal = renderer.root.findByProps({className: "ui-popover-portal"});
+    expect(portal.props.style?.zIndex).toBeGreaterThan(modals[1].props.style.zIndex);
+  });
+
+  test("a retained modal closes its owned popover before hiding and does not resurrect it", () => {
+    let setOwnerOpen;
+    function Scene() {
+      const anchorRef = useRef(null);
+      const [ownerOpen, changeOwner] = useState(true);
+      const [menuOpen, changeMenu] = useState(true);
+      setOwnerOpen = changeOwner;
+      return <Modal open={ownerOpen} keepMounted onClose={() => changeOwner(false)} title="Retained chat">
+        <button ref={anchorRef}>Menu</button>
+        <Popover open={menuOpen} anchorRef={anchorRef} onOpenChange={changeMenu} ariaLabel="Retained child">Options</Popover>
+      </Modal>;
+    }
+    act(() => { renderer = create(<Scene />, {createNodeMock}); });
+    expect(renderer.root.findAllByProps({className: "ui-popover-portal"})).toHaveLength(1);
+    act(() => setOwnerOpen(false));
+    expect(renderer.root.findAllByProps({className: "ui-popover-portal"})).toHaveLength(0);
+    act(() => setOwnerOpen(true));
+    expect(renderer.root.findAllByProps({className: "ui-popover-portal"})).toHaveLength(0);
+  });
+
 });

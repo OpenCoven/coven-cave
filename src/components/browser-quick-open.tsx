@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import type { BrowserTab } from "@/components/browser-pane";
 import { useKeySymbols } from "@/lib/platform-keys";
 
@@ -49,16 +49,6 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
   const [highlightIdx, setHighlightIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
-  // Trap focus + Escape + restore focus to the trigger on close (the palette is
-  // a modal overlay but previously leaked Tab to the page behind it).
-  useFocusTrap(true, cardRef, { onEscape: onClose, focusFirst: false });
-
-  // Focus input on mount
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
   // Filter tabs by query
   const q = query.trim().toLowerCase();
   const filtered = q
@@ -89,33 +79,21 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
     } else if (e.key === "Enter") {
       const chosen = filtered[safeIdx];
       if (chosen) { onSelect(chosen.id); onClose(); }
-    } else if (e.key === "Escape") {
-      onClose();
     }
   }
 
-  // Click outside → close
-  const backdropRef = useRef<HTMLDivElement>(null);
-  function handleBackdrop(e: React.MouseEvent) {
-    if (e.target === backdropRef.current) onClose();
-  }
-
   return (
-    <div
-      ref={backdropRef}
-      className="absolute inset-0 z-50 flex items-start justify-center pt-[72px] bg-black/40 backdrop-blur-sm"
-      onMouseDown={handleBackdrop}
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      title="Jump to tab"
+      size="compact"
+      bodyLayout="fill"
+      initialFocusRef={inputRef}
+      footerPills={
+        <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">↑↓ navigate · {keys.enter} open · Esc close</span>
+      }
     >
-      <div
-        ref={cardRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Jump to tab"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-        className="w-[420px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl"
-      >
         {/* Search input */}
         <div className="flex items-center gap-2.5 border-b border-[var(--border-hairline)] px-4 py-3">
           <span className="text-sm text-[var(--text-muted)]">{keys.mod}</span>
@@ -218,13 +196,6 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
           </ul>
         )}
 
-        {/* Footer hint */}
-        <div className="flex items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[var(--text-muted)]">
-          <span className="text-[length:var(--text-2xs)]">↑↓ navigate</span>
-          <span className="text-[length:var(--text-2xs)]">{keys.enter} open</span>
-          <span className="text-[length:var(--text-2xs)]">esc close</span>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

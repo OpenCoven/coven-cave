@@ -37,7 +37,7 @@ import { useRoleSurfaceState } from "@/lib/role-surface-state";
 import { useLatestAsyncData } from "@/lib/use-role-surfaces";
 import { relativeTime } from "@/lib/relative-time";
 import { publishBoardChanged } from "@/lib/board-cache-events";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import {
   SurfaceCanvas,
   SurfaceEmpty,
@@ -1996,32 +1996,16 @@ function StatsModal({
   overdueCount: number;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
-
   return (
-    <div className="cr-modal">
-      <button type="button" className="cr-modal__scrim" aria-label="Close project stats" onClick={onClose} />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Project stats"
-        className="cr-modal__dialog cr-modal__dialog--stats"
-      >
-        <header className="cr-modal__head">
-          <Icon name="ph:chart-line-up" width={15} height={15} aria-hidden />
-          <h3 className="cr-modal__title">Project stats</h3>
-          <span className="cr-mono">
-            {totalSteps} steps across {progress.length} project{progress.length === 1 ? "" : "s"} · {overdueCount}{" "}
-            overdue
-          </span>
-          <span className="cr-lens__spacer" />
-          <button type="button" className="cr-icon-btn focus-ring" aria-label="Close" onClick={onClose}>
-            <Icon name="ph:x" width={14} height={14} aria-hidden />
-          </button>
-        </header>
-        <div className="cr-modal__body">
+    <Modal
+      open
+      onClose={onClose}
+      title="Project stats"
+      description={`${totalSteps} steps across ${progress.length} project${progress.length === 1 ? "" : "s"} · ${overdueCount} overdue`}
+      size="reader"
+      scope="container"
+    >
+        <div className="cr-stats-modal flex flex-col gap-3">
           <div className="cr-stats__grid">
             <div className="cr-stats__col">
               <span className="cr-eyebrow">Since yesterday</span>
@@ -2079,7 +2063,6 @@ function StatsModal({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

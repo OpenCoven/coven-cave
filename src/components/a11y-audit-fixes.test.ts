@@ -103,17 +103,10 @@ test("bulk-select checkmark glyphs pair with the accent's semantic foreground", 
 });
 
 test("table lightbox traps Tab and restores focus to its trigger (CHAT-D11-02)", async () => {
-  // openTableLightbox is imperative DOM — it can't mount useFocusTrap, so it
-  // must hand-mirror the hook's contract. Without this, Escape/Close drops
-  // keyboard focus to <body> and Tab walks the page behind the dialog.
-  const src = await read("./message-dom-wiring.ts");
-  const fn = src.slice(src.indexOf("function openTableLightbox"));
-  assert.match(fn, /const returnFocus = document\.activeElement instanceof HTMLElement \? document\.activeElement : null;/);
-  assert.match(fn, /returnFocus\?\.focus\(\);/, "dismiss must restore focus to the Expand trigger");
-  assert.match(fn, /event\.key !== "Tab"/, "keydown handler must intercept Tab");
-  assert.match(fn, /querySelectorAll<HTMLElement>\(FOCUSABLE\)/, "trap must cycle the shared FOCUSABLE set");
-  assert.match(fn, /\(event\.shiftKey \? last : first\)\.focus\(\);/, "escaped focus must be recaptured into the dialog");
-  assert.match(src, /import \{ FOCUSABLE \} from "@\/lib\/use-focus-trap";/);
+  const src = await read("./markdown-viewer.tsx");
+  const wiring = await read("./message-dom-wiring.ts");
+  assert.match(src, /<Modal open onClose=\{onClose\} title="Expanded table"/, "the table uses the same focus and dismissal owner as every modal");
+  assert.doesNotMatch(wiring, /openTableLightbox|FOCUSABLE|setAttribute\("aria-modal"/, "injected HTML does not own a second modal engine");
 });
 
 test("backdrop matchAccent switch carries its own accessible name (cave-rc09)", async () => {

@@ -135,7 +135,7 @@ export function OnboardingSetupDiagnosticsModal({
       onClose={onClose}
       breadcrumb={["First run", "Setup diagnostics"]}
       ariaDescribedBy={descriptionId}
-      wide
+      size="wide"
       footerActions={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -144,7 +144,12 @@ export function OnboardingSetupDiagnosticsModal({
           <Button
             variant="primary"
             leadingIcon="ph:clipboard-text"
-            onClick={() => void copyDiagnostics()}
+            onClick={(event) => {
+              // WebKit does not focus buttons on pointer activation. Give the
+              // clipboard fallback the invoking control to restore afterward.
+              event.currentTarget.focus({ preventScroll: true });
+              void copyDiagnostics();
+            }}
           >
             {copyStatus === "copied"
               ? "Copied"

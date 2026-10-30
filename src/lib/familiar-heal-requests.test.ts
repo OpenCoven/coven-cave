@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { FAMILIAR_CONTRACT_SPEC_VERSION, type ContractReport } from "./familiar-contract.ts";
-import { deriveHealRequests, escalateBlockers, type SelfHealRequest } from "./familiar-heal-requests.ts";
+import { compareHealRequestDates, deriveHealRequests, escalateBlockers, type SelfHealRequest } from "./familiar-heal-requests.ts";
 import type { FamiliarGrowthReport } from "./familiar-growth-signals.ts";
 import {
   aggregateThreadSignals,
@@ -154,7 +154,7 @@ describe("deriveHealRequests", () => {
     );
   });
 
-  it("sorts critical requests first, then warnings, newest first within severity", () => {
+  it("sorts critical requests before warnings without inventing dates for derived repairs", () => {
     const requests = deriveHealRequests({
       familiarId: "cody",
       contractReport: contractReport(),
@@ -166,8 +166,8 @@ describe("deriveHealRequests", () => {
       ["crit", "crit", "crit", "warn"],
     );
     assert.deepEqual(
-      requests.filter((request) => request.severity === "warn").map((request) => request.createdAt),
-      ["1970-01-01T00:00:00.000Z"],
+      requests.map((request) => request.createdAt),
+      [null, null, null, null],
     );
   });
 });
@@ -180,6 +180,7 @@ describe("escalateBlockers", () => {
       category: "auth" as const,
       impact: "blocking" as const,
       detail: "The thread could not authenticate.",
+      firstSeenAt: "2026-07-31T12:00:00.000Z",
     };
     const reports = [
       report({
@@ -202,6 +203,7 @@ describe("escalateBlockers", () => {
 
     assert.equal(request.traceSessionId, "session-newer");
     assert.equal(request.traceThreadTitle, "Repair deployment auth");
+    assert.equal(request.createdAt, "2026-07-31T12:00:00.000Z", "retain the observed first-seen date independently of the newest source thread");
   });
 
   it("leaves the trace unset when the source report lost its thread id", () => {
@@ -237,6 +239,7 @@ describe("escalateBlockers", () => {
     assert.equal(requests[0].source, "self-report-aggregate");
     assert.equal(requests[0].severity, "crit");
     assert.equal(requests[0].actionKind, "fix-contract");
+    assert.equal(requests[0].createdAt, null, "an undated aggregate must not acquire an epoch timestamp");
   });
 
   it("skips non-critical blockers", () => {
@@ -308,5 +311,22 @@ describe("escalateBlockers", () => {
 
     assert.deepEqual(aggregate.persistentBlockers[0], blockerBefore);
     assert.deepEqual(existing, []);
+  });
+});
+
+
+describe("repair date ordering", () => {
+  it("orders observed instants across offsets before undated requests and retains equal-date order", () => {
+    const requests = [
+      { id: "unknown-first", createdAt: null },
+      { id: "earlier-offset", createdAt: "2026-10-22T13:00:00+02:00" },
+      { id: "later-utc", createdAt: "2026-10-22T12:00:00.000Z" },
+      { id: "same-instant", createdAt: "2026-10-22T07:00:00-05:00" },
+      { id: "before-epoch", createdAt: "1969-12-31T00:00:00.000Z" },
+      { id: "unknown-last", createdAt: null },
+    ];
+    assert.deepEqual(requests.sort(compareHealRequestDates).map(request => request.id), [
+      "later-utc", "same-instant", "earlier-offset", "before-epoch", "unknown-first", "unknown-last",
+    ]);
   });
 });

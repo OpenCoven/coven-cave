@@ -175,24 +175,13 @@
 .board-kanban-card-action:hover:not(:disabled) { background:var(--bg-hover); color:var(--text-primary); border-color:var(--border-strong); }
 .board-kanban-card-action:disabled { opacity:.55; cursor:wait; }
 .board-kanban-card-action--chat:hover:not(:disabled) { border-color:color-mix(in oklch,var(--accent-presence) 45%,var(--border-hairline)); color:var(--accent-presence); }
-
-.board-drawer-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.30); z-index:300; animation:board-backdrop-in .18s ease; }
-@keyframes board-backdrop-in { from{opacity:0} to{opacity:1} }
-.board-drawer { position:fixed; top:0; right:0; bottom:0; width:480px; max-width:100vw; background:var(--glass-raised); backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); border-left:1px solid var(--border-strong); z-index:301; display:flex; flex-direction:column; overflow:hidden; box-shadow:-8px 0 32px rgba(0,0,0,.20); animation:board-drawer-in .22s ease-out; }
-@keyframes board-drawer-in { from{transform:translateX(100%)} to{transform:translateX(0)} }
-.board-drawer--closing { animation:board-drawer-out .18s ease-in forwards; }
-@keyframes board-drawer-out { from{transform:translateX(0)} to{transform:translateX(100%)} }
 /* padding-top/right clear the iOS status bar + Dynamic Island and the
    landscape rounded corner so the title and close button are never occluded;
    --sai-* fall back to 0px off-device so desktop is unaffected. */
-.board-drawer-header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:14px 16px; padding-top:calc(14px + var(--sai-top)); padding-right:calc(16px + var(--sai-right)); border-bottom:1px solid var(--border-hairline); flex-shrink:0; }
 .board-drawer-title-input { flex:1; min-width:0; background:transparent; border:1px solid transparent; border-radius:var(--radius-control); padding:4px 8px; margin-left:-8px; font:600 15px/1.3 var(--font-sans,inherit); color:var(--text-primary); outline:none; text-overflow:ellipsis; transition:background .12s,border-color .12s,box-shadow .12s; }
 .board-drawer-title-input:hover { border-color:var(--border-hairline); background:color-mix(in oklch,var(--bg-hover) 50%,transparent); }
 .board-drawer-title-input:focus { border-color:color-mix(in oklch,var(--accent-presence) 60%,transparent); background:var(--bg-base); box-shadow:0 0 0 3px color-mix(in oklch,var(--accent-presence) 16%,transparent); }
-.board-drawer-close { display:flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:var(--radius-control); border:1px solid var(--border-strong); background:var(--bg-base); color:var(--text-muted); cursor:pointer; flex-shrink:0; transition:background .1s,color .1s; }
-.board-drawer-close:hover { background:var(--bg-hover); color:var(--text-primary); }
-.board-drawer-close:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
-.board-drawer-body { flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:14px; scrollbar-width:thin; scrollbar-color:var(--border-hairline) transparent; }
+.board-drawer-body { display:flex; flex-direction:column; gap:14px; }
 .board-drawer-field { display:flex; flex-direction:column; gap:5px; }
 .board-drawer-field-label { display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--text-secondary); }
 .board-drawer-field-label svg { opacity:.85; }
@@ -217,7 +206,6 @@
   .board-drawer-field-textarea { font-size:13px; }
 }
 .board-drawer-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.board-drawer-footer { padding:12px 16px; border-top:1px solid var(--border-hairline); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
 .board-drawer-delete-btn { padding:6px 12px; border-radius:var(--radius-control); border:1px solid color-mix(in oklch,var(--color-danger) 40%,transparent); background:color-mix(in oklch,var(--color-danger) 8%,transparent); color:var(--color-danger); font-size:12px; cursor:pointer; transition:background .12s,border-color .12s; }
 .board-drawer-delete-btn:hover { background:color-mix(in oklch,var(--color-danger) 16%,transparent); border-color:color-mix(in oklch,var(--color-danger) 60%,transparent); }
 

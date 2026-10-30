@@ -1437,11 +1437,10 @@ export function XCommsSurface({ context }: { context: RoleSurfaceContext }) {
         </>
       </SurfaceRoom>
 
-      {anyOverlay && (
+      {anyOverlay && !slotPickerOpen && (
         <button
           type="button"
           className="x-comms-scrim"
-          data-dim={slotPickerOpen ? "true" : undefined}
           aria-label="Close"
           onClick={closeOverlays}
         />

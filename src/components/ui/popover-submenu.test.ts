@@ -42,7 +42,7 @@ test("flyouts register as inside layers so root dismissal ignores them", () => {
   );
   assert.match(
     src,
-    /style=\{covered \? \{ \.\.\.style, visibility: "hidden" \} : style\}/,
+    /style=\{\{ \.\.\.style, \.\.\.\(covered \? \{ visibility: "hidden" as const \} : \{\}\) \}\}/,
     "covered state overrides the submenu's inline visible positioning style",
   );
 });
@@ -114,7 +114,7 @@ test("hover-intent opens for mouse pointers only, after a delay", () => {
 test("one open flyout per level via the submenu group context", () => {
   assert.match(
     src,
-    /const open = group \? group\.openId === id : selfOpen;/,
+    /const requestedOpen = group \? group\.openId === id : selfOpen;/,
     "sibling coordination goes through the group's openId",
   );
   assert.match(

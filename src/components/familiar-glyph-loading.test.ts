@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const glyph = readFileSync(new URL("./familiar-glyph.tsx", import.meta.url), "utf8");
-const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const lazySurfaces = readFileSync(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
 
 assert.doesNotMatch(
   glyph,
@@ -45,22 +43,6 @@ assert.doesNotMatch(
   glyph,
   /const \[, \w+\] = useState/,
   "no unread-setState force-update may come back (React Compiler memoizes it away)",
-);
-
-assert.doesNotMatch(
-  workspace,
-  /from "@\/components\/familiar-glyph-picker"/,
-  "workspace must not statically import the glyph picker",
-);
-assert.match(
-  lazySurfaces,
-  /import\("@\/components\/familiar-glyph-picker"\)/,
-  "glyph picker is exposed through the shared lazy surface boundary",
-);
-assert.match(
-  workspace,
-  /glyphPickerFor \? \([\s\S]*<FamiliarGlyphPicker/,
-  "workspace does not mount or fetch the picker until it opens",
 );
 
 console.log("familiar-glyph-loading.test.ts: ok");

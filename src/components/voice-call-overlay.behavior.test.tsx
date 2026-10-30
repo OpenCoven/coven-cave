@@ -4,8 +4,9 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ mic: vi.fn(), connect: vi.fn(), announce: vi.fn() }));
 vi.mock("react-dom", () => ({ createPortal: (node) => node }));
+vi.mock("@/lib/icon", () => ({ Icon: () => null }));
 vi.mock("@iconify/react", () => ({ Icon: () => null }));
-vi.mock("@/lib/use-focus-trap", () => ({ useFocusTrap: () => {} }));
+vi.mock("@/lib/use-focus-trap", async (importOriginal) => ({ ...await importOriginal(), useFocusTrap: () => {} }));
 vi.mock("@/components/ui/live-region", () => ({ useAnnouncer: () => ({ announce: mocks.announce }) }));
 vi.mock("./arcade-panel", () => ({ ArcadePanel: () => null }));
 vi.mock("./voice-call-settings", () => ({ VoiceCallSettings: () => null }));
@@ -93,7 +94,7 @@ test("mute exposes its state and announces the change", async () => {
   expect(renderer.root.findByProps({ "aria-label": "Unmute" }).props["aria-pressed"]).toBe(true);
   expect(sessions[0].setMuted).toHaveBeenLastCalledWith(true);
   expect(mocks.announce).toHaveBeenCalledWith("Microphone muted.", "polite");
-  expect(renderer.root.findByProps({ className: "voice-call-overlay__state" }).props.children).toBe("Microphone off");
+  expect(renderer.root.findByProps({ role: "status", "aria-live": "polite" }).props.children).toBe("Microphone off");
 });
 
 test("a microphone granted after unmount is immediately released", async () => {

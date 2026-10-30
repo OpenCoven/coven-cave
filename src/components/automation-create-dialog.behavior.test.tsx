@@ -5,9 +5,13 @@ import { AutomationCreateDialog, type AutomationCreateInput } from "./automation
 import { StandardSelect } from "./ui/select";
 import { CwdPickerField } from "./cwd-picker-field";
 
+// Keep the real shared Modal while rendering its portal in the test tree.
+vi.mock("react-dom", () => ({ createPortal: (children: unknown) => children }));
+
 let renderer: ReactTestRenderer | undefined;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("document", { body: {}, activeElement: null });
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503, json: async () => ({ ok: false }) })));
 });
 afterEach(async () => { await act(async () => renderer?.unmount()); renderer = undefined; vi.unstubAllGlobals(); });

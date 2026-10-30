@@ -278,26 +278,11 @@ test("mobile uses one focus-trapped right drawer and returns focus", async ({ pa
   await expect(drawer).toBeHidden();
   await expect(toggle).toBeFocused();
 
-  // The drawer intentionally spans the full viewport width on narrow phones
-  // (`.mobile-right-chat-drawer` under `@media (max-width: 480px)`), so on
-  // Pixel 5 (393px) and iPhone 13 (390px) it covers the backdrop button at
-  // EVERY coordinate once its slide-in has settled. That made the backdrop a
-  // control no input modality could reach — invisible under the opaque
-  // drawer, un-hittable by pointer, and skipped by the focus trap's
-  // last→first wrap (cave-4snk9). Since then the backdrop is hidden for this
-  // slot and the drawer's own top close strip owns dismissal.
-  //
-  // The strip is a GENUINE pointer target: `elementFromPoint` at its centre
-  // resolves to it, and a REAL click — no `force`, no `dispatchEvent` —
-  // closes the drawer. `force` would not be a valid escape hatch here
-  // anyway: it only skips Playwright's actionability checks while still
-  // delivering the mouse event at real viewport coordinates, so the click
-  // would land on whatever is actually topmost, not on the located element
-  // (the cave-m1mgi flake was exactly that race with the slide-in).
+  // A full-width sheet covers its backdrop. The canonical close button
+  // must remain genuinely pointer-reachable, without forced delivery.
   await toggle.click();
   await expect(drawer).toBeVisible();
-  const closeStrip = drawer.getByRole("button", { name: "Close drawer" });
-  await expect(page.locator(".mobile-drawer-backdrop")).toBeHidden();
+  const closeStrip = drawer.getByRole("button", { name: "Close", exact: true });
   await expect(closeStrip).toBeVisible();
   await expect
     .poll(async () => {
@@ -308,14 +293,15 @@ test("mobile uses one focus-trapped right drawer and returns focus", async ({ pa
       if (!stripBox) return false;
       return page.evaluate(
         ([x, y]) =>
-          !!document.elementFromPoint(x, y)?.closest(".mobile-right-chat-drawer__close"),
+          !!document.elementFromPoint(x, y)?.closest(".ui-modal-close"),
         [Math.round(stripBox.x + stripBox.width / 2), Math.round(stripBox.y + stripBox.height / 2)],
       );
     })
     .toBe(true);
   await closeStrip.click();
   await expect(drawer).toBeHidden();
-  await expect(page.locator(".mobile-right-chat-drawer__close")).toBeHidden();
+  await expect(page.locator("#shell-right-chat-drawer")).toBeAttached();
+  await expect(page.locator(".ui-modal-backdrop").filter({ has: page.locator("#shell-right-chat-drawer") })).toHaveAttribute("inert", "");
   await expect(toggle).toBeFocused();
 
   await toggle.click();
@@ -336,16 +322,11 @@ test("full-bleed right drawer's close control is reachable by keyboard", async (
     await expect(drawer).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
 
-  // The close strip is the dialog's FIRST focusable, so the trap usually
-  // puts keyboard focus on it the moment the drawer opens. Don't depend on
-  // that landing, or on the trap having settled after a fixed number of
-  // presses: Tab through the trapped dialog until focus is on a real "Close
-  // drawer" control (the trap wraps last→first, so every focusable comes
-  // round), never the phantom backdrop (display:none at this width).
+  // Tab must reach the shared close control, regardless of initial focus.
   const activeLabel = () => page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
   await expect(async () => {
-    if ((await activeLabel()) !== "Close drawer") await page.keyboard.press("Tab");
-    expect(await activeLabel()).toBe("Close drawer");
+    if ((await activeLabel()) !== "Close") await page.keyboard.press("Tab");
+    expect(await activeLabel()).toBe("Close");
   }).toPass({ timeout: 15_000, intervals: [50] });
 
   // Activate the focused close control with the keyboard; focus returns to
@@ -575,16 +556,12 @@ test("tablet-width right drawer keeps a genuinely pointer-reachable backdrop", a
   const drawer = page.getByRole("dialog", { name: "Chat panel" });
   await expect(drawer).toBeVisible();
 
-  // At 768px the drawer is capped at min(100vw, 480px), so the backdrop is
-  // exposed along the viewport's left edge — a real pointer target that no
-  // phone project can exercise (pixel-5/iphone-13 are both full-bleed;
-  // cave-4snk9). The full-bleed close strip stays hidden here.
-  const backdrop = page.locator(".mobile-drawer-backdrop");
+  // The standard sheet leaves an exposed backdrop at tablet widths.
+  const backdrop = page.locator(".ui-modal-backdrop").filter({ has: drawer });
   await expect(backdrop).toBeVisible();
-  await expect(page.locator(".mobile-right-chat-drawer__close")).toBeHidden();
   await expect
     .poll(() =>
-      page.evaluate(() => !!document.elementFromPoint(2, 2)?.closest(".mobile-drawer-backdrop")),
+      page.evaluate(() => document.elementFromPoint(2, 2)?.classList.contains("ui-modal-backdrop") === true),
     )
     .toBe(true);
 
@@ -592,7 +569,8 @@ test("tablet-width right drawer keeps a genuinely pointer-reachable backdrop", a
   // hit-tests the real mouse event there — and the drawer closes.
   await backdrop.click({ position: { x: 2, y: 2 } });
   await expect(drawer).toBeHidden();
-  await expect(backdrop).toHaveCount(0);
+  await expect(page.locator("#shell-right-chat-drawer")).toBeAttached();
+  await expect(page.locator(".ui-modal-backdrop").filter({ has: page.locator("#shell-right-chat-drawer") })).toBeHidden();
   await expect(toggle).toBeFocused();
 });
 

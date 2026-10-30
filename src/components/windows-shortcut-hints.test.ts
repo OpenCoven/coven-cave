@@ -85,7 +85,10 @@ assert.match(boardGantt, /pinch \/ \$\{keys\.mod\}-scroll the timeline[\s\S]*pin
 
 const browserQuickOpen = await read("./browser-quick-open.tsx");
 assert.doesNotMatch(browserQuickOpen, />⌘<\/span>|>↵<\/span>|>↵ open</, "BrowserQuickOpen no longer hard-codes ⌘ or ↵");
-assert.match(browserQuickOpen, /\{keys\.mod\}<\/span>[\s\S]*\{keys\.enter\}<\/span>[\s\S]*\{keys\.enter\} open</, "BrowserQuickOpen reads its glyphs from useKeySymbols");
+assert.match(browserQuickOpen, /const keys = useKeySymbols\(\)/, "BrowserQuickOpen resolves platform glyphs");
+assert.match(browserQuickOpen, /\{keys\.mod\}<\/span>/, "BrowserQuickOpen search uses the platform modifier");
+assert.match(browserQuickOpen, /\{keys\.enter\}<\/span>/, "BrowserQuickOpen selected result uses the platform enter glyph");
+assert.match(browserQuickOpen, /footerPills=\{[\s\S]*\{keys\.enter\} open · Esc close<\/span>/, "BrowserQuickOpen shared footer uses the platform enter glyph");
 
 const shell = await read("./shell.tsx");
 assert.doesNotMatch(shell, /= labelPanelShortcut\(panelShortcuts\.toggle(Left|Right)Panel\);/, "Shell no longer renders the Mac-canonical panel labels verbatim");

@@ -112,18 +112,10 @@ export function DailyReportDay({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      // Unwind the layer stack top-down: the PR card sits above the dialogs,
-      // which sit above the inline panels.
-      setPr((current) => {
-        if (current) return null;
-        setModal((m) => {
-          if (m) return null;
-          setCarouselOpen(false);
-          setShipOpen(false);
-          return m;
-        });
-        return current;
-      });
+      // Modal owns its own Escape; this listener only collapses inline panels.
+      if (pr || modal) return;
+      setCarouselOpen(false);
+      setShipOpen(false);
     };
     const onAway = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
@@ -138,7 +130,7 @@ export function DailyReportDay({
       window.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onAway, true);
     };
-  }, []);
+  }, [pr, modal]);
 
   useEffect(() => () => {
     if (doneTimer.current) clearTimeout(doneTimer.current);

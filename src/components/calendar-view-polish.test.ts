@@ -119,7 +119,7 @@ assert.match(
 // ───────── Task 8: Mini-month popover ─────────
 assert.match(
   source,
-  /function MiniMonthPopover\(\s*\{\s*anchor,\s*onPick,\s*onClose,?\s*\}/,
+  /function MiniMonthPopover\(\s*\{\s*anchorRef,\s*anchor,\s*onPick,\s*onClose,?\s*\}/,
   "MiniMonthPopover component must be defined",
 );
 assert.match(
@@ -129,7 +129,7 @@ assert.match(
 );
 assert.match(
   source,
-  /aria-label="Jump to date"/,
+  /ariaLabel="Jump to date"/,
   "Popover dialog must carry aria-label='Jump to date'",
 );
 assert.match(
@@ -291,7 +291,7 @@ for (const name of ["AgendaView", "ItemDetailPanel"]) {
 }
 
 const detail = fnRegion("ItemDetailPanel");
-assert.match(detail, /<IconButton\b[\s\S]*?aria-label="Close"/, "detail panel Close is an IconButton");
+assert.match(detail, /<Modal open onClose=\{onClose\}/, "detail panel Close is owned by the shared modal");
 assert.match(detail, /<Button\b[\s\S]*?variant="primary"/, "detail panel Open is a primary Button");
 assert.match(detail, /<Button\b[\s\S]*?variant="secondary"[\s\S]*?Done/, "detail panel Done is a secondary Button");
 assert.match(detail, /<IconButton\b[\s\S]*?aria-label="Dismiss"/, "detail panel Dismiss is an IconButton");

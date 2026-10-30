@@ -9,10 +9,8 @@ const readerStyles = await readFile(new URL("../styles/chat-attachment-reader.cs
 assert.match(cards, /export function formatAttachmentBytes/, "attachment byte formatting has a dedicated presentation boundary");
 assert.match(cards, /if \(size == null\) return "unknown"/, "unknown attachment sizes retain their existing label");
 assert.match(cards, /const units = \["KB", "MB", "GB"\]/, "attachment byte formatting retains GB support");
-assert.match(cards, /createPortal\([\s\S]*document\.body/, "attachment preview portals outside transcript containing blocks");
-assert.match(cards, /useFocusTrap\(true, dialogRef, \{[\s\S]*?onEscape: onClose,[\s\S]*?portalLayers,[\s\S]*?portalRootId: portalLayerRootId/, "attachment preview includes reader popovers in keyboard focus containment");
-assert.match(cards, /<FocusTrapPortalLayersContext.Provider value=\{portalLayers\}>[\s\S]*?<PortalLayerRootContext.Provider value=\{portalLayerRootId\}>[\s\S]*?<PortalLayerDepthContext.Provider value=\{ownerLayerDepth \+ 1\}>[\s\S]*?<DocumentReader/, "reader menus share the lightbox portal registry and nesting identity");
-assert.match(cards, /aria-modal="true"/, "attachment preview remains a modal dialog");
+assert.match(cards, /<Modal[\s\S]*breadcrumb=\{\["Preview", attachment.name\]\}[\s\S]*size="reader"[\s\S]*containTabFocus/, "preview delegates portal and focus ownership to the shared Modal");
+assert.doesNotMatch(cards, /createPortal|useFocusTrap|role="dialog"/, "preview has no second modal shell");
 assert.match(cards, /export function isMarkdownAttachment/, "Markdown preview detection has a dedicated boundary");
 assert.match(cards, /mimeType === "text\/markdown"/, "Markdown MIME attachments use the document preview");
 const markdownExtensionSource = cards.match(/const MARKDOWN_ATTACHMENT_EXTENSION = \/(.+)\/i;/)?.[1];
@@ -32,7 +30,6 @@ assert.match(cards, /<DocumentReader[\s\S]*?navigation="rail"[\s\S]*?collapsible
 assert.match(cards, /<MarkdownReaderBlock block=\{block\} blockKey=\{key\} \/>/, "Markdown attachment blocks use the shared safe renderer");
 assert.match(cards, /import "@\/styles\/chat-attachment-reader\.css"/, "the dialog-gated reader styling stays component-scoped");
 assert.match(readerStyles, /\.chat-attachment-reader \.document-reader\s*\{[^}]*--document-reader-accent:\s*var\(--text-primary\)/, "reader labels and selected contents use a text token rather than the default surface accent");
-assert.match(readerStyles, /@media \(max-width: 1023px\)[\s\S]*?\.chat-attachment-backdrop\s*\{[\s\S]*?z-index:\s*160;/, "the full-height attachment dialog clears mobile navigation without covering pickers");
 assert.match(readerStyles, /\.document-reader__column a\s*\{\s*text-decoration:\s*underline;/, "reader links remain identifiable without decorative color");
 assert.match(cards, /export function AttachmentList/, "attachment chips have a dedicated presentation component");
 assert.match(cards, /export function InlineImageAttachments/, "familiar-produced images have an inline presentation component");
@@ -105,44 +102,10 @@ assert.match(
 
 console.log("chat-attachment-cards.test.ts: ok");
 
-// ── cave-yin71: both expand overlays portal to body, which puts them in the
-// ROOT stacking context alongside the message reader (.cave-reader-backdrop,
-// z-index 60), the research reader (70) and .rr-kroverlay / the daily-report PR
-// modal (80). At z-50 an image expanded from inside a reader rendered behind
-// the reader's own scrim. Pin the cleared band so a future edit cannot quietly
-// drop either overlay back under it.
+// Both previews share Modal's portal/stack contract; nested reader coverage
+// is exercised in the focus-stack suite and the /aesthetic nested specimen.
 const carousel = await readFile(new URL("./image-carousel.tsx", import.meta.url), "utf8");
-// Match the classes independently of their order inside the attribute: a
-// harmless reorder or an inserted class must not fail this, only a z-index that
-// drops back under the reader.
-function overlayZIndex(source) {
-  for (const attr of source.matchAll(/className="([^"]*)"/g)) {
-    const classes = attr[1].split(/\s+/);
-    if (!classes.includes("fixed") || !classes.includes("inset-0")) continue;
-    const z = classes.find((cls) => /^z-\[?\d+\]?$/.test(cls));
-    if (z) return Number(z.replace(/\D/g, ""));
-  }
-  return null;
-}
-for (const [name, source] of [
-  ["attachment lightbox", cards],
-  ["carousel lightbox", carousel],
-]) {
-  const z = overlayZIndex(source);
-  assert.ok(z !== null, `${name} keeps a full-viewport fixed overlay with an explicit z-index`);
-  assert.ok(z > 80, `${name} must sit above the reader/modal overlay band (found z-${z})`);
-  assert.ok(z < 100, `${name} must stay below inspector-pane (100) and the directory picker (200)`);
-}
-
-// The scrim is a token, not a literal — both lightboxes share the one the
-// reader and every other full-viewport overlay use.
-for (const [name, source] of [
-  ["attachment lightbox", cards],
-  ["carousel lightbox", carousel],
-]) {
-  assert.match(
-    source,
-    /bg-\[var\(--backdrop-scrim\)\]/,
-    `${name} scrims with the shared --backdrop-scrim token`,
-  );
+for (const source of [cards, carousel]) {
+  assert.match(source, /<Modal/, "preview uses the canonical layer");
+  assert.doesNotMatch(source, /z-\[90\]/, "no feature-specific layer number");
 }

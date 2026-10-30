@@ -7,12 +7,11 @@ import { parseWhen } from "@/lib/parse-when";
 import { describeRecurrence, nextOccurrences } from "@/lib/schedule-plan";
 import { parseCron } from "@/lib/cron";
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { readDateTimePrefs } from "@/lib/datetime-format";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { ReminderLinkField } from "@/components/reminder-link-field";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import { StandardSelect } from "@/components/ui/select";
 import type { LinkRef } from "@/lib/cave-inbox";
 
@@ -196,10 +195,7 @@ export function NewReminderModal({
     setError(null);
   }, [open, defaultFamiliarId, defaultFireAt, defaultWhenText, defaultTitle, editing]);
 
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  // Trap focus inside the dialog and close on Escape (replaces the old
-  // window-level Escape listener; adds Tab containment).
-  useFocusTrap(open, dialogRef, { onEscape: onClose });
+  const titleRef = useRef<HTMLInputElement | null>(null);
 
   const parsed = useMemo(() => {
     const w = whenText.trim();
@@ -332,50 +328,43 @@ export function NewReminderModal({
       : null;
 
   return (
-    <div
-      onClick={onClose}
-      role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm"
-    >
-      <div
-        ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="new-reminder-title"
-        tabIndex={-1}
-        className="flex max-h-[calc(100dvh-1.5rem)] w-[560px] max-w-[94vw] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] shadow-[0_24px_70px_color-mix(in_oklch,var(--bg-base)_72%,transparent)] outline-none"
-      >
-        <header className="flex items-start justify-between gap-4 px-6 pb-3 pt-6">
-          <div className="min-w-0">
-            <h2
-              id="new-reminder-title"
-              className="text-[length:var(--text-xl)] font-medium leading-tight text-[var(--text-primary)]"
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isEditing ? "Edit reminder" : "New reminder"}
+      description="Say when in plain words — the plan below shows exactly what fires."
+      busy={busy}
+      initialFocusRef={coarse ? undefined : titleRef}
+      footerActions={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button
+              variant="primary"
+              onClick={create}
+              disabled={!title.trim() || !resolvedFireAt || busy}
+              loading={busy}
             >
-              {isEditing ? "Edit reminder" : "New reminder"}
-            </h2>
-            <p className="mt-1 text-[length:var(--text-base)] leading-5 text-[var(--text-muted)]">
-              Say when in plain words — the plan below shows exactly what fires.
-            </p>
-          </div>
-          <IconButton
-            onClick={onClose}
-            icon="ph:x-bold"
-            aria-label="Close"
-            size="sm"
-            className="shrink-0 border border-[var(--border-hairline)] bg-[var(--bg-base)]/45"
-          />
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-3">
+              {isEditing
+                ? busy
+                  ? "Saving…"
+                  : "Save"
+                : busy
+                  ? "Creating…"
+                  : previewLabel
+                    ? `Remind ${previewLabel}`
+                    : "Create"}
+            </Button>
+        </>
+      }
+    >
           <div className="space-y-4">
             <FloatingField id="new-reminder-what" label="Remind me to">
               <input
+                ref={titleRef}
                 id="new-reminder-what"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="check the deploy"
-                autoFocus={!coarse}
                 className="focus-ring h-11 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-transparent px-3 text-[length:var(--text-md)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
               />
             </FloatingField>
@@ -574,43 +563,14 @@ export function NewReminderModal({
               </div>
             ) : null}
           </div>
-        </div>
 
         {error ? (
-          <div className="mx-6 mb-2 rounded-[var(--radius-control)] border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,transparent)] px-3 py-2 text-xs text-[var(--color-warning)]">
+          <div role="alert" className="mt-3 rounded-[var(--radius-control)] border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,transparent)] px-3 py-2 text-xs text-[var(--color-warning)]">
             {error}
           </div>
         ) : null}
 
-        <footer className="px-6 pb-5 pt-3">
-          <div
-            aria-hidden="true"
-            className="mb-3 h-px bg-[linear-gradient(90deg,transparent,var(--border-hairline)_18%,var(--border-hairline)_82%,transparent)]"
-          />
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <Button variant="secondary" onClick={onClose} className="w-full sm:w-auto">
-              Cancel
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={create}
-              disabled={!title.trim() || !resolvedFireAt || busy}
-              className="w-full min-w-24 sm:w-auto !border-[color-mix(in_oklch,var(--accent-presence)_52%,var(--border-strong))] !bg-transparent !whitespace-normal !text-center hover:!bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))]"
-            >
-              {isEditing
-                ? busy
-                  ? "Saving…"
-                  : "Save"
-                : busy
-                  ? "Creating…"
-                  : previewLabel
-                    ? `Remind ${previewLabel}`
-                    : "Create"}
-            </Button>
-          </div>
-        </footer>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

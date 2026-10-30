@@ -6,7 +6,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import type { Familiar } from "@/lib/types";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { Icon, type IconName } from "@/lib/icon";
@@ -132,6 +133,7 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
   const isMarkdown = path.endsWith(".md");
   const filename = path.split("/").slice(-2).join("/");
   const text = file?.text ?? "loading…";
+  const redactionStatus = `${totalRedactions} secret${totalRedactions === 1 ? "" : "s"} ${file?.revealed ? "revealed" : "redacted"}`;
 
   const header = (
     <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-xs">
@@ -164,7 +166,7 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
     <div className="flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-3 py-1.5 text-[length:var(--text-xs)]">
       <div>
         {totalRedactions > 0 ? (
-          <span className="text-[var(--color-warning)]">{totalRedactions} secret{totalRedactions === 1 ? "" : "s"} redacted</span>
+          <span className="text-[var(--color-warning)]">{redactionStatus}</span>
         ) : (
           <span className="text-[var(--text-muted)]">no secrets detected</span>
         )}
@@ -184,7 +186,7 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
   );
 
   const body = isMarkdown ? (
-    <MarkdownBlock text={text} className="min-h-0 flex-1 overflow-auto px-4 py-4" />
+    <MarkdownBlock text={text} preserveScroll className="min-h-0 flex-1 overflow-auto px-4 py-4" />
   ) : (
     <SyntaxBlock text={text} className="min-h-0 flex-1 overflow-auto px-3 py-3 text-[length:var(--text-xs)]" />
   );
@@ -197,54 +199,39 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
     </div>
   );
 
-  if (!fullscreen) return inlineView;
-
   return (
     <>
       {inlineView}
-      {createPortal(
-        <div
-          className="fixed inset-0 z-[100] flex flex-col bg-[var(--bg-base)] text-[var(--text-primary)] [font-family:inherit]!"
-        >
-          <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5 text-xs">
-            <button
-              onClick={() => setFullscreen(false)}
-              className="rounded border border-[var(--border-strong)] px-2 py-0.5 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-            >
-              ← back
-            </button>
-            <div className="flex-1 truncate font-mono text-[length:var(--text-base)] text-[var(--text-secondary)]">{filename}</div>
-            <div className="flex items-center gap-2">
-              {totalRedactions > 0 && (
-                <span className="text-[length:var(--text-xs)] text-[var(--color-warning)]">{totalRedactions} secret{totalRedactions === 1 ? "" : "s"} redacted</span>
-              )}
-              <button
-                onClick={onRevealToggle}
-                className={`rounded px-2.5 py-1 text-[length:var(--text-2xs)] uppercase tracking-widest transition-colors ${
-                  reveal
-                    ? "bg-[color-mix(in_oklch,var(--color-danger)_80%,transparent)] text-white hover:bg-[var(--color-danger)]"
-                    : "border border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                }`}
-                title={reveal ? "Hide secrets" : "Reveal raw (shows secrets)"}
-              >
-                {reveal ? "hide secrets" : "reveal secrets"}
-              </button>
-              <button
-                onClick={() => setFullscreen(false)}
-                className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
-              >
-                <Icon name="ph:arrows-in-simple" width={14} />
-              </button>
-            </div>
-          </div>
-          {isMarkdown ? (
-            <MarkdownBlock text={text} className="min-h-0 flex-1 overflow-auto px-8 py-6 max-w-4xl mx-auto w-full" />
-          ) : (
-            <SyntaxBlock text={text} className="min-h-0 flex-1 overflow-auto px-6 py-4 text-[length:var(--text-sm)]" />
-          )}
-        </div>,
-        document.body,
-      )}
+      <Modal
+        open={fullscreen}
+        onClose={() => setFullscreen(false)}
+        title={filename}
+        size="reader"
+        presentation="fullscreen"
+        bodyLayout="fill"
+        headerActions={
+          <Button
+            variant={reveal ? "danger-ghost" : "secondary"}
+            onClick={onRevealToggle}
+            title={reveal ? "Hide secrets" : "Reveal raw (shows secrets)"}
+          >
+            {reveal ? "Hide secrets" : "Reveal secrets"}
+          </Button>
+        }
+        footerPills={
+          totalRedactions > 0 ? (
+            <span className="text-[length:var(--text-xs)] text-[var(--color-warning)]">
+              {redactionStatus}
+            </span>
+          ) : null
+        }
+      >
+        {isMarkdown ? (
+          <MarkdownBlock text={text} preserveScroll className="min-h-0 flex-1 overflow-auto px-8 py-6 max-w-4xl mx-auto w-full" />
+        ) : (
+          <SyntaxBlock text={text} className="min-h-0 flex-1 overflow-auto px-6 py-4 text-[length:var(--text-sm)]" />
+        )}
+      </Modal>
     </>
   );
 }
@@ -522,7 +509,7 @@ export function RailInspector({
     );
   }
   return (
-    <div className="rail-inspector">
+    <div className="rail-inspector flex h-full min-h-0 flex-1 flex-col">
       <InspectorPane
         familiar={familiar}
         compact={true}

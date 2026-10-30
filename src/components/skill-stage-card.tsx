@@ -147,7 +147,7 @@ export function SkillRunSummary({ skills }: { skills: SkillStageUpdate[] }) {
         open={selected !== null}
         onClose={() => setSelectedName(null)}
         breadcrumb={["Chat", "Run skills"]}
-        wide
+        size="wide"
         ariaDescribedBy="skill-run-details-description"
         footerPills={
           <>

@@ -272,7 +272,7 @@ export function ApprovalCard({
 
             {confirmCopy && (
               <div
-                role="alertdialog"
+                role="group"
                 aria-label={confirmCopy.title}
                 className="x-comms-confirm"
               >

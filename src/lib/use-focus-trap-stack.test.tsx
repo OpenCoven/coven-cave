@@ -172,8 +172,11 @@ function TrapProbe({
   portalLayers?: import("@/lib/use-focus-trap").FocusTrapPortalLayers;
 }) {
   const containerRef = useRef<unknown>(null);
-  useFocusTrap(active, containerRef as never, { onEscape, restoreFocus, containTabFocus, portalLayers });
-  return <div data-probe-id={probeId} ref={containerRef as never} />;
+  const focusBoundary = useFocusTrap(active, containerRef as never, { onEscape, restoreFocus, containTabFocus, portalLayers });
+  return <div data-probe-id={probeId} ref={containerRef as never}>
+    <span data-test-boundary={`${probeId}-start`} onFocus={(event) => focusBoundary("start", event?.relatedTarget ?? null)} />
+    <span data-test-boundary={`${probeId}-end`} onFocus={(event) => focusBoundary("end", event?.relatedTarget ?? null)} />
+  </div>;
 }
 
 let renderer: ReactTestRenderer | null = null;
@@ -343,7 +346,17 @@ describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)
     option.focus();
     win.dispatchFocusin();
     expect(activeHolder.current).toBe(option);
+    trigger.focus();
+    act(() => renderer!.root.findByProps({ "data-test-boundary": "config-end" }).props.onFocus());
+    expect(activeHolder.current).toBe(option);
+    act(() => renderer!.root.findByProps({ "data-test-boundary": "config-end" }).props.onFocus({ relatedTarget: option }));
+    expect(activeHolder.current).toBe(trigger);
+    trigger.focus();
+    act(() => renderer!.root.findByProps({ "data-test-boundary": "config-start" }).props.onFocus());
+    expect(activeHolder.current).toBe(option);
     registered = false;
+    act(() => renderer!.root.findByProps({ "data-test-boundary": "config-end" }).props.onFocus());
+    expect(activeHolder.current).toBe(trigger);
     trigger.focus();
     win.dispatchKeydown({ key: "Tab" });
     option.focus();
@@ -432,6 +445,11 @@ describe("useFocusTrap stack-awareness (cave-rl980 Task 5 nested modal findings)
     act(() => {
       renderer!.update(<Scene showChild />);
     });
+    expect(activeHolder.current).toBe(childFocusable);
+
+    act(() => renderer!.root.findByProps({ "data-test-boundary": "parent-end" }).props.onFocus());
+    expect(activeHolder.current).toBe(childFocusable);
+    act(() => renderer!.root.findByProps({ "data-test-boundary": "child-end" }).props.onFocus());
     expect(activeHolder.current).toBe(childFocusable);
 
     act(() => {

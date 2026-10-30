@@ -91,7 +91,7 @@ assert.match(wiring, /_caveFileLinkCleanup = \(\) => \{[\s\S]*?removeEventListen
 assert.match(bubble, /const fileLinkResolver = useContext\(FileLinkResolverContext\)/, "MarkdownContent reads the resolver from FileLinkResolverContext");
 assert.match(
   bubble,
-  /const containerRef = useWireCopyButtons\(html, onOpenUrl, null, null, resolveOpenUrl\);/,
+  /const containerRef = useWireCopyButtons\(html, onOpenUrl, null, null, resolveOpenUrl, openViewer\);/,
   "MarkdownBlock keeps file-linkify off while forwarding commit-aware web links",
 );
 // ChatView provides the resolver over its transcript, backed by the project

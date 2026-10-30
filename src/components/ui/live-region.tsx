@@ -59,6 +59,7 @@ export function LiveRegionProvider({ children }: { children: ReactNode }) {
       {children}
       <div
         className="sr-only"
+        data-modal-announcer
         role="status"
         aria-live="polite"
         aria-atomic="true"
@@ -67,6 +68,7 @@ export function LiveRegionProvider({ children }: { children: ReactNode }) {
       </div>
       <div
         className="sr-only"
+        data-modal-announcer
         role="alert"
         aria-live="assertive"
         aria-atomic="true"

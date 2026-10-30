@@ -19,7 +19,8 @@ export type SelfHealRequest = {
   detail: string;
   suggestedAction: string;
   actionKind: HealActionKind;
-  createdAt: string;
+  /** Observed first-seen time; derived conditions may have no recorded date. */
+  createdAt: string | null;
   /** Real Cave session backing a self-report-derived request. Derived contract
    * and growth requests deliberately omit this because they have no thread. */
   traceSessionId?: string;
@@ -45,8 +46,6 @@ export type SelfHealRequest = {
   resolved: boolean;
 };
 
-const STATIC_CREATED_AT = "1970-01-01T00:00:00.000Z";
-
 const SEVERITY_RANK: Record<SelfHealRequest["severity"], number> = {
   crit: 0,
   warn: 1,
@@ -67,7 +66,7 @@ function fromContractViolation(
     detail: violation.message,
     suggestedAction: `Fix ${violation.field} in ${violation.file}.`,
     actionKind: "fix-contract",
-    createdAt: STATIC_CREATED_AT,
+    createdAt: null,
     resolved: false,
   };
 }
@@ -99,16 +98,28 @@ function fromGrowthSignal(familiarId: string, signal: GrowthSignal, index: numbe
       ? "Write or refresh memory for this familiar."
       : "Review the growth signal and choose the next manual intervention.",
     actionKind,
-    createdAt: STATIC_CREATED_AT,
+    createdAt: null,
     resolved: false,
   };
+}
+
+/** Newest observed repairs first; requests without a timestamp stay last. */
+export function compareHealRequestDates(
+  a: Pick<SelfHealRequest, "createdAt">,
+  b: Pick<SelfHealRequest, "createdAt">,
+): number {
+  const aTime = Date.parse(a.createdAt ?? "");
+  const bTime = Date.parse(b.createdAt ?? "");
+  if (!Number.isFinite(aTime)) return Number.isFinite(bTime) ? 1 : 0;
+  if (!Number.isFinite(bTime)) return -1;
+  return bTime - aTime;
 }
 
 function sortRequests(requests: SelfHealRequest[]): SelfHealRequest[] {
   return [...requests].sort((a, b) => {
     const severityDelta = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
     if (severityDelta !== 0) return severityDelta;
-    return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+    return compareHealRequestDates(a, b);
   });
 }
 
@@ -156,7 +167,7 @@ export function escalateBlockers(
           blocker.suggestedResolution ??
           "Review the recurring blocker and choose the next manual intervention.",
         actionKind,
-        createdAt: blocker.firstSeenAt ?? STATIC_CREATED_AT,
+        createdAt: blocker.firstSeenAt ?? null,
         traceSessionId: sourceReport ? selfReportSourceSessionId(sourceReport) ?? undefined : undefined,
         traceThreadTitle: sourceReport?.threadTitle,
         resolved: false,

@@ -12,10 +12,8 @@
  * post is otherwise easy to read as touching the decision that released it.
  */
 
-import { useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import {
   dayActivityScale,
   dayDelta,
@@ -49,50 +47,23 @@ export function SlotPicker({
   onCancel: () => void;
   onUse: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const peak = Math.max(...X_FOLLOWER_ACTIVITY);
   const pickedHour = hourOf(picked);
   const pickedDay = dayDelta(now, picked);
   const inBand = isInPeakBand(pickedHour);
   const dailyTotal = X_FOLLOWER_ACTIVITY.reduce((sum, value) => sum + value, 0);
 
-  // The repository's contract for anything that declares aria-modal: real
-  // containment, Escape, and focus returned to whatever opened it. Moving
-  // focus once is not that — Tab walked straight out of the dialog into the
-  // room behind it, and closing left focus on the body.
-  useFocusTrap(true, dialogRef, { onEscape: onCancel });
-
   const justification = inBand
     ? `inside the 5–7 PM band · ${Math.round((X_FOLLOWER_ACTIVITY[pickedHour] / dailyTotal) * 100)}% of daily follower activity in this hour`
     : `outside the band · ${Math.round((X_FOLLOWER_ACTIVITY[pickedHour] / peak) * 100)}% of peak activity · fine for replies, weaker for reach`;
 
   return (
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Change slot"
-      className="x-comms-slot-dialog"
+    <Modal open onClose={onCancel} title="Change slot" size="wide"
+      description="Follower activity, next 7 days · PT. Darker is busier; the 5–7 PM band is outlined."
+      footerPills={<span>Changing the slot doesn’t re-approve · the post stays approved</span>}
+      footerActions={<><Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button><Button variant="primary" size="sm" onClick={onUse}>Use this slot</Button></>}
     >
-      <header className="x-comms-slot-head">
-        <span className="x-comms-picked-value">
-          <strong>Change slot</strong>
-          <span className="x-comms-card-sub">
-            Follower activity, next 7 days · PT. Darker is busier; the 5–7 PM band is
-            outlined.
-          </span>
-        </span>
-        <button
-          type="button"
-          className="x-comms-mini focus-ring"
-          data-icon="true"
-          aria-label="Close"
-          onClick={onCancel}
-        >
-          <Icon name="ph:x" width={13} height={13} aria-hidden />
-        </button>
-      </header>
-
+      <div className="x-comms-heat-scroll focus-ring" role="region" aria-label="Follower activity by hour" tabIndex={0}>
       <div className="x-comms-heat">
         <span />
         <div className="x-comms-heat-hours">
@@ -142,6 +113,7 @@ export function SlotPicker({
           );
         })}
       </div>
+      </div>
 
       <div className="x-comms-picked">
         <span className="x-comms-picked-value">
@@ -151,20 +123,7 @@ export function SlotPicker({
         <span className="x-comms-picked-why">{justification}</span>
       </div>
 
-      <footer className="x-comms-dialog-foot">
-        <span>changing the slot doesn&apos;t re-approve · the post stays approved</span>
-        <span className="x-comms-dialog-actions">
-          <Button variant="ghost" size="sm" onClick={onCancel}>
-            Cancel
-          </Button>
-          <span className="x-comms-primary" data-emphasis="true">
-            <Button variant="secondary" size="sm" onClick={onUse}>
-              Use this slot
-            </Button>
-          </span>
-        </span>
-      </footer>
-    </div>
+    </Modal>
   );
 }
 

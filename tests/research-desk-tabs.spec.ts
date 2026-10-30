@@ -559,6 +559,8 @@ async function mockResearchApis(page: Page, options: MockResearchApiOptions = {}
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "researcher");
   });
+  // Represent the installed room without starting its server workers.
+  await page.route("**/api/research/capability", route => route.fulfill({ json: { available: true, enabled: true, reason: "available" } }));
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({
       json: {
@@ -1158,7 +1160,7 @@ test.describe("research desk tabs", () => {
     await railTabs.getByRole("tab", { name: /^Artifacts/ }).click();
     await desk.getByRole("button", { name: "View Working synthesis" }).click();
     const reader = page.getByRole("dialog", {
-      name: "Working synthesis — research reader",
+      name: "Working synthesis", exact: true,
     });
     await expect(reader).toBeVisible({ timeout: 15_000 });
     await reader.getByRole("button", { name: "Close" }).focus();
@@ -1338,7 +1340,7 @@ test.describe("research desk tabs", () => {
       await expect(viewer).toBeVisible();
       if (kind === "diagram") {
         const summary = viewer.locator("summary");
-        await viewer.getByRole("button", { name: "Close viewer", exact: true }).focus();
+        await viewer.locator(".ui-modal-close").focus();
         for (let index = 0; index < 16 && !await summary.evaluate((node) => node === document.activeElement); index += 1) {
           await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
         }
@@ -1349,7 +1351,7 @@ test.describe("research desk tabs", () => {
       if (kind === "blog") {
         await viewer.getByRole("button", { name: /Open in Markdown editor/ }).focus();
         await page.keyboard.press("Enter");
-        const editor = page.getByRole("dialog");
+        const editor = page.getByRole("dialog").filter({ has: page.getByRole("group", { name: "Editor mode", exact: true }) });
         await editor.getByRole("textbox", { name: "Draft markdown" }).fill("# Edited findings\n\nMy local revision.");
         await editor.getByRole("button", { name: "Rich preview", exact: true }).click();
         await expect(editor.getByRole("heading", { name: "Edited findings" })).toBeVisible();
@@ -1447,12 +1449,9 @@ test.describe("research desk tabs", () => {
     await expect(overlay).toBeVisible();
     // Focus moved into the dialog (focus trap active).
     await expect
-      .poll(() => page.evaluate(() => {
-        const dialog = document.querySelector('.research-res-overlay__dialog');
-        return Boolean(dialog && dialog.contains(document.activeElement));
-      }))
+      .poll(() => overlay.evaluate((dialog) => dialog.contains(document.activeElement)))
       .toBe(true);
-    await expect(overlay.locator(".research-res-overlay__sub")).toHaveText("github.com");
+    await expect(overlay.locator(".ui-modal-description")).toHaveText("github.com");
 
     // The rollout flag is not Context Pack consent. Resources has no
     // authoritative explicit pack selection, so the browser modal must stay
@@ -1476,13 +1475,13 @@ test.describe("research desk tabs", () => {
     await browserDialog.getByRole("button", { name: "Close" }).click();
     await expect(previewTrigger).toBeFocused();
 
-    await overlay.getByRole("button", { name: "Close resource details" }).click();
+    await overlay.getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     // Focus returns to the card title that opened it.
     await expect(opener).toBeFocused();
   });
 
-  test("Resources opens papers edge-to-edge and Escape exits focus before closing", async ({ page }) => {
+  test("Resources opens papers edge-to-edge and Escape exits focus before closing", async ({ page }, testInfo) => {
     await page.route("**/api/research/papers/pdf?id=2401.01234", async (route) => {
       await route.fulfill({
         path: "tests/fixtures/sample-paper.pdf",
@@ -1498,15 +1497,20 @@ test.describe("research desk tabs", () => {
     await opener.focus();
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog", { name: "Efficient ANN search" });
+    const footer = dialog.locator(".ui-modal-footer");
+    await expect(footer).toHaveCount(1);
+    await expect(footer).toBeVisible();
     await dialog.getByRole("button", { name: "Read", exact: true }).click();
 
-    await expect(dialog).toHaveAttribute("data-reader", "true");
-    await expect(dialog.getByRole("button", { name: "Download PDF" })).toBeVisible();
+    await expect(dialog.locator(".research-res-content")).toHaveAttribute("data-reader", "true");
+    // Focus reading retains the header download and removes unrelated footer actions.
+    await expect(footer).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Download PDF", exact: true })).toHaveCount(1);
+    await expect(dialog.getByRole("button", { name: "Download PDF", exact: true })).toBeVisible();
     const exitFocus = dialog.getByRole("button", { name: "Exit focus reader" });
     await expect(exitFocus).toBeVisible();
     await expect(exitFocus).toBeFocused();
     await expect(dialog.locator(".research-res-overlay__source")).toBeHidden();
-    await expect(dialog.locator(".research-res-overlay__actions")).toBeHidden();
     const stage = dialog.locator(".research-paper-view__stage");
     await expect(stage).toHaveCSS("max-height", "none");
     await expect(stage).toHaveAttribute("data-status", "ready", { timeout: 15_000 });
@@ -1536,8 +1540,11 @@ test.describe("research desk tabs", () => {
     expect(box!.width).toBeGreaterThanOrEqual(viewport!.width - 1);
     expect(box!.height).toBeGreaterThanOrEqual(viewport!.height - 1);
 
+    await page.screenshot({ path: testInfo.outputPath("paper-focus.png"), animations: "disabled" });
     await page.keyboard.press("Escape");
-    await expect(dialog).not.toHaveAttribute("data-reader", "true");
+    await expect(footer).toHaveCount(1);
+    await expect(footer).toBeVisible();
+    await expect(dialog.locator(".research-res-content")).not.toHaveAttribute("data-reader", "true");
     await expect(dialog.locator(".research-res-overlay__source")).toBeVisible();
 
     await page.keyboard.press("Escape");

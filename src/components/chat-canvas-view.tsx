@@ -9,7 +9,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SearchInput } from "@/components/ui/search-input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { IconButton } from "@/components/ui/icon-button";
+import { Modal } from "@/components/ui/modal";
 import { CanvasAddTile } from "@/components/canvas-add-tile";
 import { CanvasEditor } from "@/components/canvas-editor";
 import { buildPreviewSrcDoc, type CanvasArtifact } from "@/lib/canvas-artifacts";
@@ -64,7 +65,6 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   const artifactVersionRef = useRef(0);
   const loadRequestTokenRef = useRef(0);
   const deletedArtifactIdsRef = useRef(new Set<string>());
-  const previewDialogRef = useRef<HTMLDivElement | null>(null);
   // The delete confirm dialog stacks its own focus trap over the preview's.
   // Escape there must settle the confirm, not also dismiss the preview.
   const confirmingDeleteRef = useRef(false);
@@ -179,12 +179,6 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
     setPreviewExpanded(false);
     setPreviewPlaying(false);
   }, [previewId]);
-
-  useFocusTrap(preview !== null, previewDialogRef, {
-    onEscape: () => {
-      if (!confirmingDeleteRef.current) setPreviewId(null);
-    },
-  });
 
   const galleryArtifacts = useMemo(
     () => activeComposerId ? artifacts.filter((artifact) => artifact.id !== activeComposerId) : artifacts,
@@ -380,62 +374,51 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
       {/* Preview modal: the sketch is live and interactive. Refining,
           inspecting, and commenting remain editor actions. */}
       {preview ? (
-        <div
-          className="chat-canvas-preview-backdrop"
-          data-expanded={previewExpanded || undefined}
-          role="presentation"
-          onClick={() => setPreviewId(null)}
+        <Modal
+          open
+          onClose={() => { if (!confirmingDeleteRef.current) setPreviewId(null); }}
+          title={stripInlineMarkdown(preview.title) || preview.title}
+          description={`${galleryArtifactKind(preview) === "react" ? "React" : "HTML"}${formatArtifactWhen(preview.updatedAt) ? ` · ${formatArtifactWhen(preview.updatedAt)}` : ""}`}
+          size="reader"
+          presentation={previewExpanded ? "fullscreen" : "dialog"}
+          bodyLayout="fill"
+          containTabFocus
+          busy={deletingId === preview.id}
+          headerActions={<>
+            <IconButton
+              icon={previewPlaying ? "ph:pause" : "ph:play"}
+              aria-label={previewPlaying ? "Stop interacting with the sketch" : "Interact with the sketch"}
+              active={previewPlaying}
+              onClick={() => setPreviewPlaying((current) => !current)}
+            />
+            <IconButton
+              icon={previewExpanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"}
+              aria-label={previewExpanded ? "Restore preview" : "Expand preview"}
+              active={previewExpanded}
+              onClick={() => setPreviewExpanded((current) => !current)}
+            />
+          </>}
+          footerPills="Live preview — open it in the editor to inspect, comment, or refine."
+          footerActions={<>
+              <Button
+                variant="ghost"
+                onClick={() => void remove(preview)}
+                disabled={deletingId === preview.id}
+              >
+                Delete
+              </Button>
+              <Button variant="secondary" disabled={deletingId === preview.id} onClick={() => setPreviewId(null)}>Close</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setEditorId(preview.id);
+                  setPreviewId(null);
+                }}
+              >
+                Open in editor
+              </Button>
+          </>}
         >
-          <div
-            ref={previewDialogRef}
-            className="chat-canvas-preview"
-            data-expanded={previewExpanded || undefined}
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Sketch preview: ${preview.title}`}
-            tabIndex={-1}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header className="chat-canvas-preview__head">
-              <span
-                className="chat-canvas-preview__title"
-                title={stripInlineMarkdown(preview.title) || preview.title}
-              >
-                {stripInlineMarkdown(preview.title) || preview.title}
-              </span>
-              <span className="chat-canvas-preview__tag">
-                {galleryArtifactKind(preview) === "react" ? "React" : "HTML"}
-                {(() => { const when = formatArtifactWhen(preview.updatedAt); return when ? ` · ${when}` : ""; })()}
-              </span>
-              <button
-                type="button"
-                className="chat-canvas-preview__expand focus-ring"
-                title={previewPlaying ? "Stop interacting with the sketch" : "Interact with the sketch"}
-                aria-label={previewPlaying ? "Stop interacting with the sketch" : "Interact with the sketch"}
-                aria-pressed={previewPlaying}
-                onClick={() => setPreviewPlaying((current) => !current)}
-              >
-                <Icon name={previewPlaying ? "ph:pause" : "ph:play"} width={15} aria-hidden />
-              </button>
-              <button
-                type="button"
-                className="chat-canvas-preview__expand focus-ring"
-                title={previewExpanded ? "Restore preview" : "Expand preview"}
-                aria-label={previewExpanded ? "Restore preview" : "Expand preview"}
-                aria-pressed={previewExpanded}
-                onClick={() => setPreviewExpanded((current) => !current)}
-              >
-                <Icon name={previewExpanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={15} aria-hidden />
-              </button>
-              <button
-                type="button"
-                className="chat-canvas-preview__close focus-ring"
-                aria-label="Close preview"
-                onClick={() => setPreviewId(null)}
-              >
-                <Icon name="ph:x" width={15} aria-hidden />
-              </button>
-            </header>
             <div className="chat-canvas-preview__body">
               <iframe
                 className="chat-canvas-preview__frame"
@@ -446,31 +429,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
                 tabIndex={0}
               />
             </div>
-            <p className="chat-canvas-preview__hint">
-              Live preview — open it in the editor to inspect, comment, or refine.
-            </p>
-            <footer className="chat-canvas-preview__foot">
-              <Button
-                variant="ghost"
-                onClick={() => void remove(preview)}
-                disabled={deletingId === preview.id}
-              >
-                Delete
-              </Button>
-              <span className="chat-canvas-preview__spacer" />
-              <Button variant="secondary" onClick={() => setPreviewId(null)}>Close</Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setEditorId(preview.id);
-                  setPreviewId(null);
-                }}
-              >
-                Open in editor
-              </Button>
-            </footer>
-          </div>
-        </div>
+        </Modal>
       ) : null}
     </div>
   );

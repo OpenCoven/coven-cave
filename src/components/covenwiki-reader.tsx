@@ -112,7 +112,7 @@ export function CovenWikiReader({ manifest, slug }: { manifest: CovenWikiManifes
           </section>}
         </> : <div role="status" aria-label="Loading wiki page"><SkeletonRows count={4} /></div>}
     </main>
-    <Modal open={citation !== null} onClose={() => setCitation(null)} ariaLabel="Wiki source file" wide>
+    <Modal open={citation !== null} onClose={() => setCitation(null)} ariaLabel="Wiki source file" size="wide">
       {sourcePath && <div className="covenwiki-file"><FilePreview path={sourcePath} projectRoot={root ?? null} initialLine={citation?.startLine} rangeLabel="Wiki citation" /></div>}
     </Modal>
   </div>;

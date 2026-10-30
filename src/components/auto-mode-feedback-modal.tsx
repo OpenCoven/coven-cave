@@ -141,12 +141,13 @@ export function AutoModeFeedbackModal({ open, onClose, familiarId, mission, outc
 
   return (
     <Modal
+      busy={saving}
       open={open}
       onClose={skip}
       breadcrumb={["Auto mission", copy.crumb]}
       footerActions={
         <>
-          <Button variant="secondary" size="sm" onClick={skip}>
+          <Button variant="secondary" size="sm" disabled={saving} onClick={skip}>
             Skip
           </Button>
           <Button variant="primary" size="sm" onClick={() => void submit()} disabled={saving}>

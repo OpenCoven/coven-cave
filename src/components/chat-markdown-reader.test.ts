@@ -8,10 +8,8 @@ const wiring = readFileSync(new URL("./message-dom-wiring.ts", import.meta.url),
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
 // ── The shared reader shell ─────────────────────────────────────────────────
-assert.match(reader, /createPortal\(reader, document\.body\)/);
-assert.match(reader, /useFocusTrap\(true, dialogRef/);
-assert.match(reader, /role="dialog"/);
-assert.match(reader, /aria-modal="true"/);
+assert.match(reader, /<Modal open onClose=\{onClose\} size="reader" bodyLayout="fill"/, "the document uses the shared accessible reader shell");
+assert.match(reader, /breadcrumb=\{\[eyebrow, parsedDocument.title \?\? title\]\}/, "the shared heading labels the reader");
 assert.match(reader, /aria-live="polite"/);
 assert.match(reader, /parseMdDocument\(markdown \?\? ""\)/);
 assert.match(reader, /readerOutline\(parsedDocument\.body\)/);

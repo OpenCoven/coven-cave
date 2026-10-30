@@ -399,7 +399,7 @@ function SkillDetailModal({
     <Modal
       open
       onClose={onClose}
-      wide
+      size="wide"
       breadcrumb={[data.familiar.display_name, "Skills", row.name]}
       footerActions={
         <Button variant="secondary" onClick={onClose}>

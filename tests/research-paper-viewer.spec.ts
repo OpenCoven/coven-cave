@@ -54,6 +54,8 @@ async function boot(page: Page): Promise<PdfRequest> {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "rida");
   });
+  // Represent the installed room without starting its server workers.
+  await page.route("**/api/research/capability", route => route.fulfill({ json: { available: true, enabled: true, reason: "available" } }));
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({
       json: {
@@ -141,7 +143,7 @@ test.describe("research paper viewer", () => {
 
     const overlay = page.getByRole("dialog", { name: "Fixture Paper" });
     await expect(overlay).toBeVisible();
-    await expect(overlay.locator(".research-res-overlay__sub")).toHaveText(
+    await expect(overlay.locator(".ui-modal-description")).toHaveText(
       "huggingface.co",
     );
 

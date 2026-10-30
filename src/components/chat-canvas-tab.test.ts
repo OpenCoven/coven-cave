@@ -131,22 +131,22 @@ assert.match(
 assert.match(view, /onClick=\{\(\) => setPreviewId\(artifact\.id\)\}/, "card click opens the preview modal");
 assert.match(
   view,
-  /className="chat-canvas-preview"[\s\S]{0,200}?role="dialog"[\s\S]{0,120}?aria-modal="true"/,
+  /<Modal[\s\S]*title=\{stripInlineMarkdown\(preview.title\)/,
   "the preview is an accessible modal dialog",
 );
 assert.match(
   view,
-  /useFocusTrap\(preview !== null, previewDialogRef/,
+  /containTabFocus/,
   "the preview dialog traps focus and closes on Escape per app convention",
 );
 assert.match(
   view,
-  /className="chat-canvas-preview-backdrop"[\s\S]{0,120}?onClick=\{\(\) => setPreviewId\(null\)\}/,
+  /onClose=\{\(\) => \{ if \(!confirmingDeleteRef.current\) setPreviewId\(null\); \}\}/,
   "backdrop click dismisses the preview",
 );
 assert.match(
-  view,
-  /onClick=\{\(event\) => event\.stopPropagation\(\)\}/,
+  readFileSync(new URL("./ui/modal.tsx", import.meta.url), "utf8"),
+  /onClick=\{inline \? undefined : \(e\) => e\.stopPropagation\(\)\}/,
   "clicks inside the dialog never fall through to the backdrop dismiss",
 );
 assert.match(

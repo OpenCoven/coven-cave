@@ -36,8 +36,8 @@ assert.match(
 
 assert.match(
   attachmentCards,
-  /role="dialog"[\s\S]*aria-modal="true"/,
-  "Attachment lightbox should expose modal dialog semantics",
+  /<Modal\s+open\s+onClose=\{onClose\}[\s\S]*breadcrumb=\{\["Preview", attachment.name\]\}[\s\S]*containTabFocus/,
+  "Attachment preview delegates its named dialog and focus containment to the shared Modal",
 );
 // Behavioral: mention token parsing + fuzzy ranking (src/lib/file-mention.ts)
 const { fileMentionToken, filterFileMentions, MAX_FILE_MENTIONS, FILE_MENTION_RESULT_LIMIT } =

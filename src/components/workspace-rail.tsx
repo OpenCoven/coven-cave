@@ -6,6 +6,7 @@ import { Icon } from "@/lib/icon";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { RailFilesPanel } from "@/components/rail-files-panel";
 import { RailTerminalPanel } from "@/components/rail-terminal-panel";
+import { Modal } from "@/components/ui/modal";
 import type { CodeRailTab } from "@/lib/code-rail";
 import type { PendingCodeOpen as CodeRailFocus } from "@/lib/pending-code-open";
 
@@ -27,6 +28,8 @@ export function WorkspaceRail({
   onSelectTab,
   onTogglePin,
   onCollapse,
+  hostedFullscreen = false,
+  onFullscreenChange,
 }: {
   changeCount: number;
   activeTab: CodeRailTab;
@@ -42,8 +45,12 @@ export function WorkspaceRail({
   onSelectTab: (tab: CodeRailTab) => void;
   onTogglePin: () => void;
   onCollapse: () => void;
+  /** A modal host owns viewport coverage while the rail keeps its panel state. */
+  hostedFullscreen?: boolean;
+  onFullscreenChange?: (fullscreen: boolean) => void;
 }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const fullscreenButtonRef = useRef<HTMLButtonElement | null>(null);
   // Lazy pty: the terminal (and its shell) is not mounted until the Terminal tab
   // is first selected. Once opened it stays mounted (keepalive) but is hidden
   // when another tab is active.
@@ -67,7 +74,7 @@ export function WorkspaceRail({
   }, [terminalEverOpened, terminalVisible]);
   const title = TAB_TITLE[activeTab];
 
-  return (
+  const rail = (
     <section
       className={`workspace-rail${isFullscreen ? " workspace-rail--fullscreen" : ""}`}
       aria-label="Code rail"
@@ -123,12 +130,17 @@ export function WorkspaceRail({
               </button>
             )}
             <button
+              ref={fullscreenButtonRef}
               type="button"
               className={`workspace-rail__btn focus-ring${isFullscreen ? " is-on" : ""}`}
               aria-label={isFullscreen ? "Exit code rail fullscreen" : "Expand code rail fullscreen"}
               title={isFullscreen ? "Exit code rail fullscreen" : "Expand code rail fullscreen"}
               aria-pressed={isFullscreen}
-              onClick={() => setIsFullscreen((value) => !value)}
+              onClick={() => {
+                const next = !isFullscreen;
+                setIsFullscreen(next);
+                onFullscreenChange?.(next);
+              }}
             >
               <Icon name={isFullscreen ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={13} aria-hidden />
             </button>
@@ -189,4 +201,21 @@ export function WorkspaceRail({
       </div>
     </section>
   );
+  // Sheets already own the modal environment. Direct desktop rails keep one
+  // child tree as the shared Modal moves it between the pane and viewport.
+  if (hostedFullscreen) return rail;
+  return <Modal
+    open={isFullscreen}
+    inlineWhenClosed
+    onClose={() => { setIsFullscreen(false); onFullscreenChange?.(false); }}
+    title="Code rail"
+    presentation="fullscreen"
+    size="workspace"
+    bodyLayout="fill"
+    containTabFocus
+    restoreFocus={() => {
+      fullscreenButtonRef.current?.focus();
+      return false;
+    }}
+  >{rail}</Modal>;
 }

@@ -10,7 +10,7 @@ import {
   shouldRequeueOn409,
 } from "@/lib/onboarding-install-queue";
 import type { IconName } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { openExternalUrl } from "@/lib/open-external";
@@ -154,9 +154,7 @@ export function OnboardingOverlay({
   const [savingOnboardingConnection, setSavingOnboardingConnection] =
     useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
-  useFocusTrap(open, dialogRef, { onEscape: onDismiss });
 
   // Finishing setup ("Open Cave") records the dismissal just like "Skip for
   // now" does. Without this, the workspace auto-open effect re-launches the
@@ -1053,29 +1051,9 @@ export function OnboardingOverlay({
   const hasFamiliars = status?.steps.familiars.ok === true;
 
   return (
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Onboarding"
-      tabIndex={-1}
-      className="fixed inset-0 z-50 overflow-y-auto bg-[var(--bg-base)]/96 backdrop-blur-sm"
-    >
-      <div className="mx-auto flex min-h-full w-full max-w-[1100px] flex-col px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 border-b border-[var(--border-hairline)] pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <h1 className="text-2xl font-semibold text-[var(--text-primary)] sm:text-3xl">
-              Set up CovenCave, step by step.
-            </h1>
-            <p className="mt-2 max-w-2xl text-[length:var(--text-base)] leading-6 text-[var(--text-secondary)]">
-              Follow the numbered steps. Each one carries its own instructions,
-              a one-click action where Cave can do the work for you, and the
-              exact command if you&rsquo;d rather use a terminal. Finished
-              steps tick themselves while setup is in progress — status
-              re-checks every 2 seconds until everything is ready.
-            </p>
-          </div>
-          <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto lg:w-auto lg:shrink-0">
+    <Modal open onClose={onDismiss} presentation="fullscreen" title="Set up CovenCave, step by step."
+      description="Follow the numbered steps. Each one carries its own instructions, a one-click action where Cave can do the work for you, and the exact command if you’d rather use a terminal. Finished steps tick themselves while setup is in progress — status re-checks every 2 seconds until everything is ready."
+      headerActions={<>
             <button
               onClick={() => void recheckNow()}
               disabled={rechecking}
@@ -1117,9 +1095,44 @@ export function OnboardingOverlay({
             <div className="shrink-0 whitespace-nowrap rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
               {ready}/{total} ready
             </div>
-          </div>
-        </header>
-
+</>}
+      footerActions={<>
+          <button
+            onClick={() => {
+              try {
+                localStorage.setItem("cave:onboarding:dismissed", "1");
+              } catch {
+                /* private mode */
+              }
+              onDismiss();
+            }}
+            className="focus-ring rounded text-[length:var(--text-xs)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+          >
+            Skip for now
+          </button>
+          {setupComplete ? (
+            <Button
+              variant="primary"
+              leadingIcon="ph:rocket-launch-bold"
+              onClick={finishOnboarding}
+            >
+              {hasFamiliars ? "Open Cave" : "Open Cave — summon your familiar"}
+            </Button>
+          ) : mayContinue ? (
+            <Button variant="primary" onClick={continueToCave}>
+              Continue to Cave
+            </Button>
+          ) : (
+            <span
+              role="status"
+              className="text-[length:var(--text-xs)] text-[var(--text-muted)]"
+            >
+              Finish required setup
+            </span>
+          )}
+</>}
+    >
+      <div className="mx-auto w-full max-w-5xl">
         {/* Journey strip: the wizard is beat one of a three-beat first run.
             Without it the page reads as a dead-ended infra checklist — users
             can't see that a 30-second summoning and a first chat follow. */}
@@ -1536,43 +1549,8 @@ export function OnboardingOverlay({
           <MaintenancePanel prune={prune} setPrune={setPrune} />
         </main>
 
-        <footer className="flex items-center justify-between border-t border-[var(--border-hairline)] py-4">
-          <button
-            onClick={() => {
-              try {
-                localStorage.setItem("cave:onboarding:dismissed", "1");
-              } catch {
-                /* private mode */
-              }
-              onDismiss();
-            }}
-            className="focus-ring rounded text-[length:var(--text-xs)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-          >
-            Skip for now
-          </button>
-          {setupComplete ? (
-            <Button
-              variant="primary"
-              leadingIcon="ph:rocket-launch-bold"
-              onClick={finishOnboarding}
-            >
-              {hasFamiliars ? "Open Cave" : "Open Cave — summon your familiar"}
-            </Button>
-          ) : mayContinue ? (
-            <Button variant="primary" onClick={continueToCave}>
-              Continue to Cave
-            </Button>
-          ) : (
-            <span
-              role="status"
-              className="text-[length:var(--text-xs)] text-[var(--text-muted)]"
-            >
-              Finish required setup
-            </span>
-          )}
-        </footer>
       </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -83,24 +83,19 @@ assert.match(src, /Pop-up blocked/, "popup blocking is surfaced to the user inst
 assert.match(src, /fullscreen,\s*setFullscreen/, "tracks fullscreen artifact state");
 assert.match(src, /aria-label=\{fullscreen \? "Exit fullscreen" : "Expand artifact fullscreen"\}/, "renders a fullscreen toggle action");
 assert.match(src, /Icon name=\{fullscreen \? "ph:arrows-in-simple" : "ph:arrows-out-simple"\}/, "fullscreen toggle uses expand/collapse icons");
-assert.match(src, /useFocusTrap\(fullscreen, shellRef, \{ onEscape: \(\) => setFullscreen\(false\) \}\)/, "Escape exits fullscreen via the shared focus-trap hook");
-assert.match(src, /chat-artifact--fullscreen/, "fullscreen state applies the overlay class");
-assert.match(src, /import \{ createPortal \} from "react-dom"/, "imports createPortal");
-assert.match(src, /createPortal\(shell, document\.body\)/, "fullscreen overlay is portaled to document.body to escape the turn's containing block");
-
-
-// ── 2026-07-03: fullscreen artifact overlay is a proper modal dialog ─────────
-assert.match(src, /useFocusTrap\(fullscreen, shellRef, \{ onEscape: \(\) => setFullscreen\(false\) \}\)/, "fullscreen traps focus + closes on Escape + returns focus via the shared hook");
-assert.match(src, /role: "dialog" as const, "aria-modal": true/, "fullscreen overlay is a labelled modal dialog");
+assert.match(src, /<Modal open onClose=\{\(\) => setFullscreen\(false\)\}/, "fullscreen delegates dismissal and focus to Modal");
+assert.match(src, /presentation="fullscreen" bodyLayout="fill" containTabFocus/, "fullscreen uses the shared fill presentation");
+assert.match(src, /expandButtonRef\.current\.focus\(\)/, "focus returns to the newly mounted inline expand action");
+assert.doesNotMatch(src, /createPortal|useFocusTrap/, "fullscreen has no private portal or trap");
 assert.doesNotMatch(src, /addEventListener\("keydown"/, "the hand-rolled Escape listener is gone (the focus trap owns it)");
 assert.match(
   css,
-  /\.chat-artifact--fullscreen \.chat-artifact__comments\s*\{[^}]*max-height:[^;}]+;[^}]*min-height:\s*0;[^}]*\}/s,
+  /\.chat-artifact-content \.chat-artifact__comments\s*\{[^}]*max-height:[^;}]+;[^}]*min-height:\s*0;[^}]*\}/s,
   "fullscreen bounds the comments region without changing the non-fullscreen panel",
 );
 assert.match(
   css,
-  /\.chat-artifact--fullscreen \.chat-artifact__comments-list\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;[^}]*\}/s,
+  /\.chat-artifact-content \.chat-artifact__comments-list\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;[^}]*\}/s,
   "fullscreen makes only the annotation list vertically scrollable",
 );
 assert.doesNotMatch(

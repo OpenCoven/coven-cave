@@ -103,7 +103,7 @@ export function VoiceCallSettings({ familiar, onClose, onSaved }: {
     options.some(o => o.value === value) ? options : [{ value, label: value || "Default", detail: "Saved selection" }, ...options];
   const close = () => { if (!savingRef.current) onClose(); };
   return (
-    <Modal open onClose={close} breadcrumb={["Call", "Familiar voice"]} dismissOnEscape={!saving} dismissOnBackdrop={!saving}
+    <Modal open onClose={close} breadcrumb={["Call", "Familiar voice"]}  busy={saving}
       footerActions={<><Button onClick={close} disabled={saving}>Cancel</Button><Button variant="primary" onClick={() => void save()} loading={saving} disabled={!canSave}>Save and reconnect</Button></>}>
       <div className="voice-call-settings">
         <p>Saves the voice for {familiar.display_name} and reconnects this call. Your conversation stays here.</p>

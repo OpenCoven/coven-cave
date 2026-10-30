@@ -816,15 +816,13 @@ describe("FamiliarAnalyticsView", () => {
 
     // Deep dives cover the stage, never the dock — the identity stays put.
     assert.match(contentSource, /covers the stage — the dock stays put/, "the overlay states its own scope");
-    assert.match(faCss, /\.fa-overlay \{[^}]*position: absolute/, "the overlay is scoped to the stage, not the viewport");
-    assert.match(contentSource, /useFocusTrap\(true, ref, \{ onEscape: onClose \}\)/, "stage overlays trap focus and close on Esc");
+    assert.match(contentSource, /scope="container"/, "the shared overlay stays scoped to the stage");
+    assert.match(contentSource, /<Modal open onClose=\{onClose\}/, "stage overlays trap focus and close on Esc");
     // Two live focus traps would fight over the tab ring, so opening the top
     // layer retires the anchored panels underneath it first.
-    assert.match(
-      contentSource,
-      /const openOverlay = useCallback\(\(next: Exclude<Overlay, null>\) => \{\s*setContractOpen\(false\);\s*setPulseOpen\(false\);/,
-      "opening a stage overlay retires the contract panel and the pulse",
-    );
+    const overlayTransition = contentSource.match(/const openOverlay = useCallback\([\s\S]*?=>\s*\{([\s\S]*?)\},\s*\[\]\);/)?.[1];
+    assert.ok(overlayTransition, "the stage overlay has one transition owner");
+    assert.match(overlayTransition, /setContractOpen\(false\);\s*setPulseOpen\(false\);\s*setDeepDive\(null\);\s*setOverlay\(next\);/, "opening a stage overlay retires the contract panel, pulse and summary before opening the overlay");
     assert.match(
       contentSource,
       /const openAction = useCallback\(\(request: SelfHealRequest\) => \{\s*setChatLaunchError\(null\);\s*setBoardOpen\(false\);\s*setActionModal\(buildActionModal\(request\)\);/,
@@ -1134,7 +1132,7 @@ describe("confidence from thread analysis + metric labeling", () => {
   it("enlarges the trust computation modal and shows the actual weighted arithmetic", () => {
     assert.match(
       contentSource,
-      /<Modal open onClose=\{onClose\} wide breadcrumb=\{\["Trust"/,
+      /<Modal open onClose=\{onClose\} size="wide" breadcrumb=\{\["Trust"/,
       "trust computation uses the wide modal treatment",
     );
     assert.match(contentSource, /className="fa-trust-modal__equation"/, "the exact weighted equation is visible");

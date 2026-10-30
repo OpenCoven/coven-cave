@@ -513,9 +513,35 @@
 
 .familiar-studio-note-editor {
   display: flex;
+  min-width: 0;
   min-height: min(62vh, 36rem);
   max-height: 72vh;
   overflow: hidden;
+  container: familiar-note / inline-size;
+}
+
+.familiar-studio-note-editor > * {
+  min-width: 0;
+}
+
+@container familiar-note (max-width: 40rem) {
+  .familiar-daily-notes__navigation {
+    flex-wrap: wrap;
+  }
+
+  .familiar-daily-notes__date {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .familiar-daily-notes__date h3 {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .familiar-daily-notes__navigation > :last-child {
+    margin-left: auto;
+  }
 }
 
 .familiar-studio-grimoire {

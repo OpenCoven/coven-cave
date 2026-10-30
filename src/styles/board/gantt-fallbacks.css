@@ -239,19 +239,12 @@
    Glass needs a live blur behind it — restore the opaque surfaces wherever
    backdrop-filter is unavailable or the OS asked for less transparency. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .board-drawer { background: var(--bg-raised); }
   .gh-pat-dialog,
-  .gh-action-popover:not(.gh-action-popover--wide),
-  .gh-profile-card { background: var(--bg-elevated); }
+  .gh-action-popover:not(.gh-action-popover--wide) { background: var(--bg-elevated); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .board-drawer {
-    background: var(--bg-raised);
-    backdrop-filter: none;
-  }
   .gh-pat-dialog,
-  .gh-action-popover:not(.gh-action-popover--wide),
-  .gh-profile-card {
+  .gh-action-popover:not(.gh-action-popover--wide) {
     background: var(--bg-elevated);
     backdrop-filter: none;
   }

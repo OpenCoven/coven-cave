@@ -10668,7 +10668,7 @@ function EditCardActions({
         open={reviewOpen}
         onClose={() => setReviewOpen(false)}
         breadcrumb={["Review", base]}
-        wide
+        size="wide"
       >
         <div className="cave-review-modal">
           <p className="cave-review-modal__path" title={displayPath}>

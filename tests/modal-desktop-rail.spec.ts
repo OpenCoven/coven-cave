@@ -1,0 +1,114 @@
+import { expect, test } from "@playwright/test";
+import { createDefaultPreferences } from "../src/lib/preferences-schema";
+
+const themes = [{ theme: "coven", mode: "dark" }, { theme: "coven", mode: "light" }, { theme: "tide", mode: "dark" }] as const;
+
+for (const width of [1440, 1100]) test.describe(`${width}px desktop rail`, () => {
+  test.use({ viewport: { width, height: 1000 }, serviceWorkers: "block" });
+  for (const theme of themes) test(`${theme.theme}/${theme.mode} fullscreen owns focus without replacing the rail or terminal host`, async ({ page }, testInfo) => {
+    const preferences = createDefaultPreferences(true);
+    preferences.appearance.theme = { ...preferences.appearance.theme, id: theme.theme, modePreference: theme.mode, resolvedMode: theme.mode };
+    await page.context().addCookies([{ name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" }]);
+    const terminalConnections = { opened: 0, closed: 0 };
+    const terminalFrames: Buffer[] = [];
+    await page.context().routeWebSocket(() => true, socket => {
+      if (new URL(socket.url()).pathname !== "/api/pty-ws") return socket.close();
+      terminalConnections.opened++;
+      socket.onClose(() => { terminalConnections.closed++; });
+      socket.onMessage(message => {
+        const frame = Buffer.from(message);
+        terminalFrames.push(frame);
+        if (frame[0] === 0x03) socket.send(Buffer.concat([Buffer.from([0x01]), frame.subarray(1)]));
+      });
+      socket.send(Buffer.concat([Buffer.from([0x01]), Buffer.from("rail-ready> ")]));
+    });
+    await page.addInitScript(() => {
+      localStorage.setItem("cave:onboarding:dismissed", "1");
+      localStorage.setItem("cave:active-familiar", "rail-review");
+      localStorage.setItem("cave:workspace:project-scope:v1", JSON.stringify("rail-project"));
+      localStorage.setItem("cave:code-rail:pinned:v1", "false");
+    });
+    await page.route("**/api/**", async route => {
+      const path = new URL(route.request().url()).pathname;
+      if (route.request().method() !== "GET") return route.fulfill({ status: 403, json: { ok: false, error: "Read-only rail review." } });
+      if (path === "/api/preferences") return route.fulfill({ json: { ok: true, preferences } });
+      if (path === "/api/theme") return route.fulfill({ json: { ok: true, theme: { themeId: theme.theme, mode: theme.mode, modePreference: theme.mode, revision: preferences.revision, selectionRevision: preferences.appearance.theme.selectionRevision } } });
+      if (path === "/api/familiars") return route.fulfill({ json: { ok: true, familiars: [{ id: "rail-review", display_name: "Rail review", harness: "codex", status: "active" }] } });
+      if (path === "/api/projects") return route.fulfill({ json: { ok: true, projects: [{ id: "rail-project", name: "Rail project", root: "/fixture/rail", access: "write", familiarIds: ["rail-review"], defaultFamiliarId: "rail-review" }] } });
+      if (path === "/api/sessions/list") return route.fulfill({ json: { ok: true, sessions: [{ id: "rail-session", title: "Rail review thread", project_root: "/fixture/rail", familiarId: "rail-review", harness: "codex", status: "idle", created_at: "2026-10-27T12:00:00Z", updated_at: "2026-10-27T12:00:00Z" }] } });
+      if (path.startsWith("/api/chat/conversation/")) return route.fulfill({ json: { ok: true, conversation: { turns: [{ id: "rail-ready", role: "assistant", text: "Ready to review the project rail.", createdAt: "2026-10-27T12:00:00Z" }] }, context: {} } });
+      if (path === "/api/changes") return route.fulfill({ json: { ok: true, repo: true, repoRoot: "/fixture/rail", files: [] } });
+      if (path === "/api/project-tree") return route.fulfill({ json: { ok: true, entries: [{ name: "README.md", path: "/fixture/rail/README.md", isDir: false }] } });
+      if (path === "/api/project-file") return route.fulfill({ json: { ok: true, kind: "text", content: "# Rail acceptance\n\nKeep this selected document.", size: 48 } });
+      if (path === "/api/daemon/status" || path === "/api/daemon/connection") return route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } });
+      return route.fulfill({ json: { ok: true, items: [], cards: [] } });
+    });
+    await page.goto("/?mode=chat#chat-rail-session");
+    await expect(page.getByTestId("chat-main").getByText("Ready to review the project rail.", { exact: true })).toBeVisible();
+    await page.locator(".workspace-rail-reopen").click();
+    const rail = page.getByRole("region", { name: "Code rail", exact: true });
+    await expect(rail).toBeVisible();
+    const railNode = (await rail.elementHandle())!;
+    await rail.getByRole("button", { name: "Terminal", exact: true }).click();
+    const terminal = rail.locator("[data-terminal-host]");
+    await expect(terminal).toBeVisible();
+    const terminalNode = (await terminal.elementHandle())!;
+    const terminalOutput = terminal.getByRole("region", { name: "Terminal output", exact: true });
+    await expect(terminalOutput).toContainText("rail-ready>");
+    await terminal.locator(".xterm-helper-textarea").pressSequentially("unsent-shell-input");
+    await expect(terminalOutput).toContainText("unsent-shell-input");
+    await rail.getByRole("button", { name: "Files", exact: true }).click();
+    await rail.getByRole("tree").getByText("README.md", { exact: true }).click();
+    await expect(rail.locator(".workspace-rail__preview-name")).toContainText("README.md");
+    const draft = "# Keep this unsaved rail draft across fullscreen transitions.";
+    await rail.getByRole("button", { name: "Edit", exact: true }).click();
+    await rail.locator(".cm-content[contenteditable='true']").fill(draft);
+    await expect(page.getByRole("dialog", { name: "Code rail", exact: true })).toHaveCount(0);
+    const composer = page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true });
+    const bodyOverflow = await page.evaluate(() => document.body.style.overflow);
+    const opener = rail.getByRole("button", { name: "Expand code rail fullscreen", exact: true });
+    await opener.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "Code rail", exact: true });
+    await expect(dialog).toBeVisible();
+    expect(await railNode.evaluate(element => element.isConnected && !!element.closest('[role="dialog"]'))).toBe(true);
+    expect(await terminalNode.evaluate(element => element.isConnected)).toBe(true);
+    await expect(dialog.locator(".workspace-rail__preview-name")).toContainText("README.md");
+    await expect(dialog.locator(".cm-content[contenteditable='true']")).toHaveText(draft);
+    expect(await composer.evaluate(element => !!element.closest("[inert]"))).toBe(true);
+    await dialog.evaluate(async element => { await Promise.all(element.getAnimations().map(animation => animation.finished)); });
+    const box = (await dialog.boundingBox())!;
+    expect(Math.abs(box.width - width)).toBeLessThan(1);
+    expect(Math.abs(box.height - 1000)).toBeLessThan(1);
+    const close = dialog.locator(".ui-modal-close");
+    await close.focus();
+    for (const key of ["Shift+Tab", "Tab"]) {
+      await page.keyboard.press(key);
+      expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
+    }
+    await page.screenshot({ path: testInfo.outputPath("desktop-rail-fullscreen.png"), animations: "disabled" });
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    expect(await railNode.evaluate(element => element.isConnected)).toBe(true);
+    expect(await terminalNode.evaluate(element => element.isConnected)).toBe(true);
+    await expect(rail.locator(".workspace-rail__preview-name")).toContainText("README.md");
+    await expect(rail.locator(".cm-content[contenteditable='true']")).toHaveText(draft);
+    expect(await composer.evaluate(element => !!element.closest("[inert]"))).toBe(false);
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe(bodyOverflow);
+    await rail.getByRole("button", { name: "Terminal", exact: true }).click();
+    await expect(terminal).toBeVisible();
+    await expect(terminalOutput).toContainText("unsent-shell-input");
+    await opener.click();
+    await expect(dialog).toBeVisible();
+    expect(await terminalNode.evaluate(element => element.isConnected)).toBe(true);
+    await dialog.locator(".ui-modal-close").click();
+    await expect(opener).toBeFocused();
+    expect(await terminalNode.evaluate(element => element.isConnected)).toBe(true);
+    await terminal.locator(".xterm-helper-textarea").pressSequentially("-retained");
+    await expect(terminalOutput).toContainText("unsent-shell-input-retained");
+    expect(terminalConnections).toEqual({ opened: 1, closed: 0 });
+    expect(terminalFrames.some(frame => frame[0] === 0x05), "fullscreen never kills the shell").toBe(false);
+    await page.screenshot({ path: testInfo.outputPath("desktop-rail-inline-return.png"), animations: "disabled" });
+  });
+});

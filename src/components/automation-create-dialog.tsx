@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import {
   RRULE_DAY_ORDER,
   RRULE_DAY_LABEL,
@@ -48,9 +48,8 @@ const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[length:var(--t
 const monoTextareaClass = `${textareaClass} font-mono text-[length:var(--text-xs)]`;
 
 export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, busy = false, error }: Props) {
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const familiarHelpId = useId();
-  useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
 
   const [name, setName] = useState("");
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("daily");
@@ -114,7 +113,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, b
   const canCreate = !busy && name.trim().length > 0 && validSchedule && selected.length > 0 && parseListInput(cwds).length <= 1;
 
   const handleCreate = () => {
-    if (!canCreate) return;
+    if (!canCreate || busy) return;
     const prompt = composeAutomationPrompt(goals, deliverables, true);
     onCreate({
       name: name.trim(),
@@ -129,31 +128,36 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, b
   };
 
   return (
-    <div className="workflow-dialog-backdrop" role="presentation" onClick={onClose}>
-      <div
-        ref={dialogRef}
-        tabIndex={-1}
-        className="workflow-dialog automation-create-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="New automation"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="workflow-panel-heading automation-create-dialog__hero">
-          <div>
-            <p className="workflow-eyebrow">New automation</p>
-            <h2>Schedule a Codex run</h2>
-          </div>
+    <Modal
+      open
+      busy={busy}
+      onClose={onClose}
+      breadcrumb={["New automation", "Schedule a Codex run"]}
+      size="wide"
+      presentation="sheet-right"
+      initialFocusRef={nameRef}
+      footerActions={<>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
           <Button
-            variant="ghost"
-            className="workflow-icon-button p-0"
-            onClick={onClose}
-            aria-label="Close"
-            leadingIcon="ph:x"
-          />
-        </div>
-
-        <div className="automation-create-dialog__body">
+            variant="primary"
+            className="workflow-primary-button"
+            disabled={!canCreate || busy}
+            loading={busy}
+            onClick={handleCreate}
+            leadingIcon="ph:plus-bold"
+          >
+            {/* The CTA names its outcome. The spec files a bare "+ Create" as a
+                P1 — it never says what it creates — and the plan is already
+                computed, so the label costs nothing it does not already know.
+                It falls back to plain "Create" rather than inventing a summary
+                when there is no readable plan to name. */}
+            {busy ? "Creating…" : planLabel ? `Create · ${planLabel}` : "Create"}
+          </Button>
+      </>}
+    >
+        <div className="automation-create-dialog automation-create-dialog__body">
           <CronPromptBar
             onApply={applyPromptUpdate}
             placeholder='Describe it — "name it Nightly triage, every weekday at 9am, check open PRs"'
@@ -169,7 +173,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, b
                 <input
                   type="text"
                   value={name}
-                  autoFocus
+                  ref={nameRef}
                   placeholder="Nightly code review"
                   onChange={(event) => setName(event.target.value)}
                   className={inputClass}
@@ -366,28 +370,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, b
             </div>
           </section>
         </div>
-
         {error && <p role="alert" className="text-[length:var(--text-sm)] [color:var(--color-danger)]!">{error}</p>}
-        <div className="workflow-dialog-actions automation-create-dialog__footer">
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            className="workflow-primary-button"
-            disabled={!canCreate}
-            onClick={handleCreate}
-            leadingIcon="ph:plus-bold"
-          >
-            {/* The CTA names its outcome. The spec files a bare "+ Create" as a
-                P1 — it never says what it creates — and the plan is already
-                computed, so the label costs nothing it does not already know.
-                It falls back to plain "Create" rather than inventing a summary
-                when there is no readable plan to name. */}
-            {busy ? "Creating…" : planLabel ? `Create · ${planLabel}` : "Create"}
-          </Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

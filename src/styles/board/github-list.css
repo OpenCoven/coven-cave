@@ -104,16 +104,6 @@
   color:var(--color-warning);
 }
 .gh-completeness-action { margin-left:auto; }
-.gh-pat-dialog {
-  width:100%;
-  max-width:28rem;
-  border-radius:var(--radius-panel);
-  border:1px solid var(--border-hairline);
-  background:var(--glass-elevated);
-  backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  padding:1.5rem;
-  box-shadow:var(--shadow-popover, 0 25px 50px -12px rgb(0 0 0 / .25));
-}
 .gh-input {
   width:100%;
   border-radius:var(--radius-control);

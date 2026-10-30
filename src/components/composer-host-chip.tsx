@@ -32,6 +32,7 @@ export function hostStatusKind(option: ChatHostOption): "online" | "offline" | "
  *  then persist to config.remoteHosts via POST /api/hosts. */
 export function ConnectHostDialog({ onClose, onConnected }: { onClose: () => void; onConnected: (host: string) => void }) {
   const [host, setHost] = useState("");
+  const hostRef = useRef<HTMLInputElement>(null);
   const [cwd, setCwd] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,9 +63,9 @@ export function ConnectHostDialog({ onClose, onConnected }: { onClose: () => voi
     <Modal
       open
       onClose={onClose}
+      initialFocusRef={hostRef}
       breadcrumb={["Chat", "Connect a new host"]}
-      dismissOnBackdrop={!pending}
-      dismissOnEscape={!pending}
+      busy={pending}
       footerActions={
         <>
           <Button variant="ghost" onClick={onClose} disabled={pending}>
@@ -87,7 +88,7 @@ export function ConnectHostDialog({ onClose, onConnected }: { onClose: () => voi
           <input
             type="text"
             value={host}
-            autoFocus
+            ref={hostRef}
             placeholder="vm-1 or user@server.tailnet"
             onChange={(event) => setHost(event.target.value)}
             onKeyDown={(event) => {

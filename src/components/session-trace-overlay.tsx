@@ -159,7 +159,7 @@ export function SessionTraceOverlay({
     <Modal
       open
       onClose={onClose}
-      wide
+      size="wide"
       breadcrumb={["Sessions", target.title?.trim() || target.id, "Trace"]}
       footerActions={
         <Button size="sm" variant="ghost" onClick={onClose}>
@@ -200,12 +200,12 @@ export function SessionTraceOverlay({
             headline="No event log for this session."
             subtitle="Expected for Cave-local chats that never ran through the daemon — and for sessions the daemon lost on a restart or pruned."
           />
-        ) : events.length === 0 ? (
+        ) : error && events.length === 0 ? null : events.length === 0 ? (
           <EmptyState
             compact
             icon="ph:tree-structure"
             headline="No events recorded for this session."
-            subtitle={error ? undefined : "The daemon hasn't logged activity for this session yet."}
+            subtitle="The daemon hasn't logged activity for this session yet."
           />
         ) : (
           <ol className="trace-list" aria-label={`Session trace, ${events.length} events`}>

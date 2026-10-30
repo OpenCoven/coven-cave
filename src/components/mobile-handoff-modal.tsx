@@ -378,6 +378,7 @@ export function MobileHandoffModal({
       }
       ariaLabel="Open CovenCave on phone"
     >
+      <div className="mobile-handoff-layout">
       <div className="mobile-handoff">
         <div className="mobile-handoff-qr" aria-label="CovenCave mobile QR code">
           {handoff?.qrSvg ? (
@@ -525,6 +526,7 @@ export function MobileHandoffModal({
             </p>
           )}
         </div>
+      </div>
       </div>
     </Modal>
   );

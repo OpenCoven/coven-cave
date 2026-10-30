@@ -35,7 +35,7 @@ assert.match(src, /detail\.canonicalSize/, "review shows the canonical copy size
 assert.match(src, /review-dismissed:/, "dismissal is keyed by the exact review set");
 assert.match(src, /detail\.legacyHash \?\? "missing"/, "a changed legacy mirror re-surfaces after an earlier dismissal");
 assert.match(src, /detail\.canonicalHash \?\? "missing"/, "a changed canonical copy re-surfaces after an earlier dismissal");
-assert.match(css, /\.cave-migration-review/, "review workflow has responsive shell styling");
+assert.match(css, /\.cave-migration-file/, "review keeps content styling separate from its shared shell");
 assert.match(shell, /CaveHomeMigrationBannerTrigger/, "Shell mounts the migration trigger");
 assert.match(status, /caveHomeReconciliationStatus\(CAVE_HOME_MIGRATIONS\)/, "qualification stays centralized");
 assert.match(reconciliation, /migration-state\.json/, "reconciliation persists an atomic journal");

@@ -17,7 +17,8 @@ assert.match(panel, /useState<string \| null>\(null\)/, "owns selectedPath state
 assert.match(panel, /onFileClick=\{setSelectedPath\}/, "passes onFileClick to the tree");
 assert.match(panel, /selectedPath=\{selectedPath\}/, "threads selectedPath into the tree");
 assert.match(panel, /path=\{selectedPath\}/, "feeds the selected path into the preview");
-assert.match(panel, /if \(isFullscreen\)/, "fullscreen Files takes a distinct IDE layout branch");
+assert.match(panel, /if \(isFullscreen && !mobile\)/, "fullscreen Files uses the IDE split only above the shared mobile breakpoint");
+assert.match(panel, /const mobile = useIsMobile\(\)/, "fullscreen Files follows live viewport changes");
 assert.match(panel, /className="workspace-rail__files workspace-rail__files--ide"/, "fullscreen root gets an IDE layout class");
 assert.match(panel, /orientation="horizontal"/, "fullscreen Files splits left-to-right");
 assert.match(panel, /id="workspace-rail-files-tree"[\s\S]*?defaultSize="280px"[\s\S]*?minSize="220px"[\s\S]*?ProjectTree/, "file tree is the left resizable pane");
@@ -85,12 +86,7 @@ assert.match(
   "the --code fill modifier is gated to the read-mode SyntaxBlock branch",
 );
 
-// ─── cave-chat.css: fullscreen sizes to its containing block ─────────────────
-// Sizing via inset alone keeps this correct regardless of what the containing
-// block is: historically the mode wrapper (.cave-mode-fade retained a
-// transform), now the true viewport (root cause fixed in cave-cco). width/
-// height:100v* stacked on a containing-block offset is what clipped the
-// diffs pane — the rule must never size to viewport units.
+// Shared Modal owns viewport coverage; rail CSS only styles its contents.
 const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
@@ -98,7 +94,7 @@ const fullscreenBlock = css.slice(
   css.indexOf(".workspace-rail--fullscreen {"),
   css.indexOf("}", css.indexOf(".workspace-rail--fullscreen {")),
 );
-assert.match(fullscreenBlock, /inset: 0/, "fullscreen fills via inset");
+assert.doesNotMatch(fullscreenBlock, /position:\s*fixed|inset:|z-index:/, "shared Modal owns fullscreen coverage rather than a private rail overlay");
 assert.doesNotMatch(fullscreenBlock, /100vw|100vh/, "fullscreen never sizes to the viewport (containing-block offset would clip the right pane)");
 
 // ─── cave-chat.css: --code preview fills the pane (cave-7zg) ──────────────────

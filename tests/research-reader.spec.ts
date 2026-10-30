@@ -120,6 +120,9 @@ async function openReader(
   );
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
   await page.route(/\/api\/roles(\?|$)/, (route) => route.fulfill({ json: { roles: [] } }));
+  // This fixture supplies the installed Research room without enabling its
+  // server workers or reaching a real provider in the isolated preview.
+  await page.route("**/api/research/capability", (route) => route.fulfill({ json: { available: true, enabled: true, reason: "available" } }));
   await page.route(/\/api\/research\/missions\?/, (route) => route.fulfill({ json: { ok: true, missions: [mission] } }));
   await page.route("**/api/research/links", (route) => route.fulfill({ json: { ok: true, links: [] } }));
   await page.route(/\/api\/research\/generations/, (route) => route.fulfill({ json: { ok: true, generations: [] } }));
@@ -171,6 +174,8 @@ async function openReader(
   await page.getByRole("button", { name: "View Findings" }).click();
   await expect(page.locator(".research-reader")).toBeVisible({ timeout: 60_000 });
 }
+
+const readerModal = (page: Page) => page.getByRole("dialog").filter({ has: page.locator(".research-reader") });
 
 test.describe("research reader", () => {
   test.describe.configure({ timeout: 180_000 });
@@ -503,7 +508,7 @@ Verified claim [S1]. Missing claim [S99].`,
       .getByRole("button", { name: "Close evidence inspector" })
       .click();
     await page.setViewportSize({ width: 1000, height: 800 });
-    const missingReference = reader.getByRole("button", {
+    const missingReference = readerModal(page).getByRole("button", {
       name: "Missing source S99",
     });
     await missingReference.hover();
@@ -535,8 +540,8 @@ Verified claim [S1]. Missing claim [S99].`,
       '[data-research-reference-id="S1"][data-research-reference-representation="inline"]',
     );
 
-    await expect(reader.locator(".rr-status")).toContainText("Published");
-    await expect(reader.locator(".rr-integrity")).toHaveText(
+    await expect(readerModal(page).locator(".rr-status")).toContainText("Published");
+    await expect(readerModal(page).locator(".rr-integrity")).toHaveText(
       "Sources unavailable — references can't be verified",
     );
     await expect(edgeReference).toHaveAttribute("data-tone", "unresolved");
@@ -560,20 +565,20 @@ Verified claim [S1]. Missing claim [S99].`,
     await openReader(page);
     const reader = page.locator(".research-reader");
 
-    await expect(reader.getByRole("button", { name: "Publish" })).toHaveAttribute(
+    await expect(readerModal(page).getByRole("button", { name: "Publish" })).toHaveAttribute(
       "title",
       "Publish",
     );
     await expect(
-      reader.getByRole("button", { name: "More research reader actions" }),
+      readerModal(page).getByRole("button", { name: "More research reader actions" }),
     ).toHaveAttribute("title", "More research reader actions");
     await expect(reader.locator(".rr-toc")).toBeHidden();
-    await reader.getByRole("button", { name: "Show contents" }).click();
+    await readerModal(page).getByRole("button", { name: "Show contents" }).click();
     await expect(reader).toHaveAttribute("data-toc", "true");
     await expect(reader.locator(".rr-toc")).toBeVisible();
     await expect(reader.locator(".rr-toclink", { hasText: "Key results" })).toBeVisible();
 
-    const evidenceToggle = reader.getByRole("button", { name: "Show evidence" });
+    const evidenceToggle = readerModal(page).getByRole("button", { name: "Show evidence" });
     await evidenceToggle.click();
     const inspector = reader.locator(".research-evidence-inspector");
     await expect(inspector).toBeVisible();
@@ -581,31 +586,31 @@ Verified claim [S1]. Missing claim [S99].`,
     await expect(inspector).toBeHidden();
     await expect(evidenceToggle).toBeFocused();
 
-    await reader.getByRole("button", { name: "More research reader actions" }).click();
+    await readerModal(page).getByRole("button", { name: "More research reader actions" }).click();
     await expect(page.getByRole("menuitem", { name: "Copy findings" })).toBeEnabled();
     await page.keyboard.press("Escape");
 
-    await reader.getByRole("button", { name: "Reading preferences" }).click();
+    await readerModal(page).getByRole("button", { name: "Reading preferences" }).click();
     const preferences = page.getByRole("dialog", { name: "Reading preferences" });
     await expect(preferences).toContainText("Width");
     await expect(preferences).toContainText("Line spacing");
     await expect(preferences).toContainText("Hyphenation");
     await page.keyboard.press("Escape");
 
-    await reader.getByRole("button", { name: "Close" }).click();
+    await readerModal(page).getByRole("button", { name: "Close" }).click();
     await expect(page.locator(".research-reader")).toHaveCount(0);
   });
 
   test("focused table traps Tab and Escape returns focus to its invoker", async ({ page }) => {
     await openReader(page);
     const reader = page.locator(".research-reader");
-    const focusTable = reader.getByRole("button", { name: "Focus table" });
+    const focusTable = readerModal(page).getByRole("button", { name: "Focus table" });
 
     await focusTable.click();
     const tableDialog = page.getByRole("dialog", { name: "Key results" });
     await expect(tableDialog).toBeVisible();
     await expect(
-      tableDialog.getByRole("button", { name: "Close focused table" }),
+      tableDialog.getByRole("button", { name: "Close", exact: true }),
     ).toBeFocused();
 
     for (let step = 0; step < 8; step += 1) {
@@ -628,7 +633,7 @@ Verified claim [S1]. Missing claim [S99].`,
     await openReader(page);
     const reader = page.locator(".research-reader");
 
-    await reader.getByRole("button", { name: "Focus table" }).click();
+    await readerModal(page).getByRole("button", { name: "Focus table" }).click();
     const tableDialog = page.getByRole("dialog", { name: "Key results" });
     const focusedReference = tableDialog
       .locator(
@@ -665,7 +670,7 @@ Verified claim [S1]. Missing claim [S99].`,
     });
     const reader = page.locator(".research-reader");
 
-    await expect(reader.locator(".rr-integrity")).toHaveText(
+    await expect(readerModal(page).locator(".rr-integrity")).toHaveText(
       "Sources unavailable — references can't be verified",
     );
     await expect(
@@ -675,7 +680,7 @@ Verified claim [S1]. Missing claim [S99].`,
       reader.locator('[data-research-reference-id="S1"]').first(),
     ).toHaveAttribute("aria-label", "Missing source S1");
 
-    await reader.getByRole("button", { name: "Show evidence" }).click();
+    await readerModal(page).getByRole("button", { name: "Show evidence" }).click();
     const inspector = reader.locator(".research-evidence-inspector");
     await expect(inspector).toContainText("Sources unavailable");
     await expect(inspector).toContainText(
@@ -684,7 +689,7 @@ Verified claim [S1]. Missing claim [S99].`,
     await expect(inspector.locator(".research-evidence-card")).toHaveCount(0);
 
     await inspector.getByRole("button", { name: "Retry sources" }).click();
-    await expect(reader.locator(".rr-integrity")).toHaveText(
+    await expect(readerModal(page).locator(".rr-integrity")).toHaveText(
       "1 source verified",
     );
     await expect(inspector.locator('[data-source-id="S1"]')).toHaveCount(1);
@@ -709,14 +714,14 @@ Verified claim [S1]. Missing claim [S99].`,
     );
     await expect(reader).toContainText("Opening claim");
     await expect(
-      reader.getByRole("button", { name: /^(Show|Hide) contents$/ }),
+      readerModal(page).getByRole("button", { name: /^(Show|Hide) contents$/ }),
     ).toHaveCount(0);
 
-    await reader.getByRole("button", { name: "Show evidence" }).click();
+    await readerModal(page).getByRole("button", { name: "Show evidence" }).click();
     await page.keyboard.press("Escape");
     await expect(reader.locator(".research-evidence-inspector")).toBeHidden();
     await expect(
-      reader.getByRole("button", { name: "Show evidence" }),
+      readerModal(page).getByRole("button", { name: "Show evidence" }),
     ).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(page.locator(".research-reader")).toHaveCount(0);
@@ -815,14 +820,77 @@ Verified claim [S1]. Missing claim [S99].`,
     ).toBe(true);
   });
 
+  test("reader observers attach on first mount, track resizing, and disconnect on close", async ({ page }, testInfo) => {
+    await page.addInitScript(() => {
+      const records: { targets: string[]; disconnected: boolean }[] = [];
+      Object.defineProperty(window, "__researchResizeRecords", { value: records });
+      const NativeResizeObserver = ResizeObserver;
+      window.ResizeObserver = class extends NativeResizeObserver {
+        receipt = { targets: [] as string[], disconnected: false };
+        constructor(callback: ResizeObserverCallback) {
+          super(callback);
+          records.push(this.receipt);
+        }
+        observe(target: Element, options?: ResizeObserverOptions) {
+          if (target.matches(".research-reader, .document-reader")) this.receipt.targets.push(target.className);
+          super.observe(target, options);
+        }
+        disconnect() {
+          this.receipt.disconnected = true;
+          super.disconnect();
+        }
+      };
+    });
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await openReader(page);
+    const reader = page.locator(".research-reader");
+    const document = reader.locator(".document-reader");
+    await expect(reader).toHaveCSS("--rail-w", "18.75rem");
+    expect(await page.evaluate(() => {
+      const records = (window as unknown as { __researchResizeRecords: { targets: string[] }[] }).__researchResizeRecords;
+      return { reader: records.some(record => record.targets.some(name => name.split(" ").includes("research-reader"))), document: records.some(record => record.targets.some(name => name.split(" ").includes("document-reader"))) };
+    })).toEqual({ reader: true, document: true });
+    await readerModal(page).getByRole("button", { name: "Show evidence", exact: true }).click();
+    await expect(document).not.toHaveAttribute("inert", "");
+    await page.setViewportSize({ width: 400, height: 720 });
+    await expect(document).toHaveAttribute("inert", "");
+    await expect(reader.getByRole("button", { name: "Close evidence inspector", exact: true })).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath("research-resized-overlay.png"), animations: "disabled" });
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await expect(document).not.toHaveAttribute("inert", "");
+    await readerModal(page).getByRole("button", { name: "Close", exact: true }).click();
+    await expect(reader).toHaveCount(0);
+    expect(await page.evaluate(() => {
+      const records = (window as unknown as { __researchResizeRecords: { targets: string[]; disconnected: boolean }[] }).__researchResizeRecords;
+      return records.filter(record => record.targets.length > 0).every(record => record.disconnected);
+    })).toBe(true);
+    await page.getByRole("button", { name: "View Findings", exact: true }).click();
+    await expect(reader).toBeVisible();
+    await expect(reader).toHaveCSS("--rail-w", "18.75rem");
+    expect(await page.evaluate(() => {
+      const records = (window as unknown as { __researchResizeRecords: { targets: string[]; disconnected: boolean }[] }).__researchResizeRecords;
+      return records.filter(record => record.targets.length > 0 && !record.disconnected).length;
+    })).toBe(2);
+    await readerModal(page).getByRole("button", { name: "Show evidence", exact: true }).click();
+    await page.setViewportSize({ width: 400, height: 720 });
+    await expect(document).toHaveAttribute("inert", "");
+    await readerModal(page).getByRole("button", { name: "Close", exact: true }).click();
+    await expect(reader).toHaveCount(0);
+    expect(await page.evaluate(() => {
+      const records = (window as unknown as { __researchResizeRecords: { targets: string[]; disconnected: boolean }[] }).__researchResizeRecords;
+      return records.filter(record => record.targets.length > 0).every(record => record.disconnected);
+    })).toBe(true);
+  });
+
   test("wide Escape closes Contents and Evidence in most-recently-opened order", async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 900 });
     await openReader(page);
     const reader = page.locator(".research-reader");
-    const contentsToggle = reader.getByRole("button", {
+    await expect(reader).toHaveCSS("--rail-w", "18.75rem");
+    const contentsToggle = readerModal(page).getByRole("button", {
       name: /^(Show|Hide) contents$/,
     });
-    const evidenceToggle = reader.getByRole("button", {
+    const evidenceToggle = readerModal(page).getByRole("button", {
       name: /^(Show|Hide) evidence$/,
     });
     const contents = reader.locator(".rr-toc");
@@ -869,10 +937,10 @@ Verified claim [S1]. Missing claim [S99].`,
     await page.setViewportSize({ width: 1200, height: 800 });
     await openReader(page);
     const reader = page.locator(".research-reader");
-    const contentsToggle = reader.getByRole("button", {
+    const contentsToggle = readerModal(page).getByRole("button", {
       name: /^(Show|Hide) contents$/,
     });
-    const evidenceToggle = reader.getByRole("button", {
+    const evidenceToggle = readerModal(page).getByRole("button", {
       name: /^(Show|Hide) evidence$/,
     });
     const contents = reader.locator(".rr-toc");
@@ -923,7 +991,7 @@ Verified claim [S1]. Missing claim [S99].`,
         return result;
       });
 
-    await reader.getByRole("button", { name: "Show contents" }).click();
+    await readerModal(page).getByRole("button", { name: "Show contents" }).click();
     const aboveBoundary = await measure();
     expect(aboveBoundary.actual).toBeGreaterThanOrEqual(
       aboveBoundary.preferred - 8,
@@ -1023,12 +1091,12 @@ Verified claim [S1]. Missing claim [S99].`,
     const reader = page.locator(".research-reader");
     const documentReader = reader.locator(".document-reader");
     const documentScroll = reader.locator(".document-reader__scroll");
-    const evidenceToggle = reader.getByRole("button", { name: "Show evidence" });
-    const chrome = reader.locator(".rr-head");
+    const evidenceToggle = readerModal(page).getByRole("button", { name: "Show evidence" });
+    const chrome = readerModal(page).locator(".ui-modal-header");
 
     expect(await chrome.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-    await expect(reader.locator(".rr-status")).toBeVisible();
-    await expect(reader.locator(".rr-integrity")).toBeVisible();
+    await expect(readerModal(page).locator(".rr-status")).toBeVisible();
+    await expect(readerModal(page).locator(".rr-integrity")).toBeVisible();
     await expect(reader.locator(".research-provenance-edge__item").first()).toBeHidden();
     await expect(reader.locator(".rr-doc")).toHaveCSS(
       "--research-evidence-edge-reserve",
@@ -1069,7 +1137,7 @@ Verified claim [S1]. Missing claim [S99].`,
     await expect(documentReader).not.toHaveAttribute("inert", "");
     await expect(reader.locator("[data-document-target]:focus")).toHaveCount(1);
 
-    await reader.getByRole("button", { name: "Show contents" }).click();
+    await readerModal(page).getByRole("button", { name: "Show contents" }).click();
     await expect(reader).toHaveAttribute("data-toc", "true");
     await expect(reader.locator(".rr-toc")).toBeVisible();
     await expect(reader.locator(".document-reader__compact-nav")).toBeHidden();
@@ -1077,7 +1145,7 @@ Verified claim [S1]. Missing claim [S99].`,
     await expect(
       reader.locator('.rr-toclink[data-active="true"]'),
     ).toBeFocused();
-    await expect(reader.getByRole("button", { name: "Hide contents" })).toHaveAttribute(
+    await expect(readerModal(page).getByRole("button", { name: "Hide contents" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -1123,17 +1191,18 @@ Verified claim [S1]. Missing claim [S99].`,
     });
 
     const reader = page.locator(".research-reader");
-    const overlay = page.locator(".research-reader-overlay");
+    const overlay = page.locator(".ui-modal-backdrop").filter({ has: reader });
     const mobileTabs = page.locator(".mobile-bottom-tabs");
     await expect(mobileTabs).toBeVisible();
     const layers = await Promise.all([
       overlay.evaluate((element) => Number(getComputedStyle(element).zIndex)),
       mobileTabs.evaluate((element) => Number(getComputedStyle(element).zIndex)),
     ]);
-    expect(layers[0]).toBe(350);
+    // Shared Modal adds its nesting depth to the root modal stack band.
+    expect(layers[0]).toBeGreaterThanOrEqual(350);
     expect(layers[0]).toBeGreaterThan(layers[1]);
     expect(layers[0]).toBeLessThan(400);
-    await reader.getByRole("button", {
+    await readerModal(page).getByRole("button", {
       name: "More research reader actions",
     }).click();
     const popoverPortal = page.locator(".ui-popover-portal");
@@ -1181,7 +1250,7 @@ Verified claim [S1]. Missing claim [S99].`,
     await expect(missingEdge).toHaveCount(1);
     await expect(missingEdge).toHaveAttribute("data-tone", "unresolved");
     await expect(missingEdge).toBeHidden();
-    const missingRef = reader.getByRole("button", {
+    const missingRef = readerModal(page).getByRole("button", {
       name: "Missing source S99",
     });
     await expect(missingRef).toBeVisible();
@@ -1254,7 +1323,9 @@ test("final report stays readable and prints the complete document", async ({ pa
   await expect(reader).toBeVisible();
   await expect(page.locator(".cave-reader-backdrop")).toBeHidden();
   await expect(page.locator(".shell-frame")).toBeHidden();
-  await expect(reader.locator(".rr-head__actions")).toBeHidden();
+  const headerActions = page.locator(".ui-modal").filter({ has: reader }).locator(".ui-modal-header-actions");
+  await expect(headerActions).toHaveCount(1);
+  await expect(headerActions).toBeHidden();
   await expect(reader.locator(".rr-print-sources")).toContainText("https://example.com/s1");
   await expect(reader.locator(".rr-print-sources")).toContainText("/research/local-evidence.md");
   await expect(longCode.locator("pre")).toBeVisible();

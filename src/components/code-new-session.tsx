@@ -192,6 +192,7 @@ export function CodeNewSession({
 
   return (
     <Modal
+      busy={phase.kind === "provisioning"}
       open={open}
       onClose={() => {
         if (busy && phase.kind !== "starting") return; // don't abandon mid-provision

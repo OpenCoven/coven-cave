@@ -245,12 +245,8 @@ test.describe("onboarding bootstrap", () => {
     await page.waitForTimeout(1_000);
     for (let index = 0; index < 6; index += 1) {
       await page.keyboard.press("Tab");
-      const inDialog = await page.evaluate(() =>
-        Boolean(
-          document.activeElement?.closest(
-            '[role="dialog"][aria-label="Set up Cave"]',
-          ),
-        ),
+      const inDialog = await setup(page).evaluate((dialog) =>
+        dialog.contains(document.activeElement),
       );
       expect(inDialog).toBe(true);
     }
@@ -547,9 +543,11 @@ test.describe("onboarding bootstrap", () => {
     const modal = page.getByRole("dialog", { name: /Setup diagnostics/ });
     await modal.getByRole("button", { name: "Copy diagnostics" }).click();
     await expect(modal.getByText(/Couldn’t copy diagnostics/)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(modal).toHaveCount(0);
     await expect(
-      page.locator('[aria-label="Set up Cave"] button', { hasText: "Retry setup" }),
-    ).toHaveCount(1);
+      setup(page).getByRole("button", { name: "Retry setup", exact: true }),
+    ).toBeVisible();
   });
 
   test("keeps the legacy copy fallback inside setup diagnostics", async ({ page }) => {

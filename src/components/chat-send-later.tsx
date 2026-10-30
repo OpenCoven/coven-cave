@@ -103,7 +103,7 @@ export function ChatSendLater({ sessionId, captureMessage, onScheduled }: {
   return <>
     <IconButton icon="ph:clock" aria-label="Send later and scheduled replies" title="Send later and scheduled replies" onClick={show} />
     <Modal open={open} onClose={() => { if (!mutation.current) setOpen(false); }} breadcrumb={['Chat', 'Send later']}
-      dismissOnEscape={!saving} dismissOnBackdrop={!saving} ariaDescribedBy={`${fieldId}-help`}
+       busy={saving} ariaDescribedBy={`${fieldId}-help`}
       footerActions={<><Button disabled={saving} onClick={() => setOpen(false)}>Close</Button>{message ? <Button variant="primary" loading={saving} onClick={() => void schedule()}>Schedule reply</Button> : null}</>}>
       <div className="chat-send-later">
         <p id={`${fieldId}-help`}>{SCHEDULE_HOST_NOTICE}</p>

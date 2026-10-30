@@ -51,7 +51,7 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
   assert.doesNotMatch(src, /<button\b/, "modal should not hand-roll button controls");
   // cave-psp8: a true modal must trap focus + restore it on close, not just listen
   // for Escape at the window (which let Tab escape to the page behind the scrim).
-  assert.match(src, /useFocusTrap\(open, dialogRef, \{ onEscape: onClose \}\)/, "modal traps focus, closes on Escape, and returns focus on close");
+  assert.match(src, /<Modal[\s\S]*open=\{open\}[\s\S]*onClose=\{onClose\}/, "modal traps focus, closes on Escape, and returns focus on close");
   assert.doesNotMatch(src, /addEventListener\("keydown"/, "the hand-rolled window Escape listener is gone (useFocusTrap owns it)");
   assert.doesNotMatch(
     src,
@@ -64,7 +64,7 @@ test("the modal keeps a stable panel and creates folders inline", () => {
   const src = read("./directory-picker-modal.tsx");
   assert.match(
     src,
-    /className="directory-picker flex w-\[760px\] max-w-full max-h-\[min\(680px,92dvh\)\] flex-col overflow-hidden/,
+    /size="wide"[\s\S]*bodyLayout="fill"/,
     "the panel keeps its viewport caps at the width the places rail needs",
   );
   assert.match(src, /fetch\("\/api\/fs-browse", \{\s*method: "POST"/, "new folders post to the browse route");
@@ -115,12 +115,12 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
   );
   assert.match(src, /const newFolderTriggerRef = useRef<HTMLButtonElement \| null>\(null\);/, "keeps a stable ref for the New folder trigger");
   assert.match(src, /ref=\{newFolderTriggerRef\}/, "wires the trigger ref to the New folder button");
-  assert.match(src, /const closeButtonRef = useRef<HTMLButtonElement \| null>\(null\);/, "keeps a stable ref for the header Close button");
-  assert.match(src, /ref=\{closeButtonRef\}/, "wires the stable ref to the header Close button");
+  assert.match(src, /const cancelButtonRef = useRef<HTMLButtonElement \| null>\(null\);/, "keeps a stable ref for the footer Cancel button");
+  assert.match(src, /ref=\{cancelButtonRef\}/, "wires the stable ref to the footer Cancel button");
   assert.match(
     src,
-    /closeButtonRef\.current\?\.focus\(\{ preventScroll: true \}\);\s*setCreateBusy\(true\);/,
-    "submit moves focus to the stable Close button before busy disables inline controls",
+    /cancelButtonRef\.current\?\.focus\(\{ preventScroll: true \}\);\s*setCreateBusy\(true\);/,
+    "submit moves focus to the stable Cancel button before busy disables inline controls",
   );
   assert.match(
     src,
@@ -134,13 +134,13 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
   );
   assert.match(
     src,
-    /await load\(cwd, sessionGeneration\);\s*if \(sessionGeneration === modalSessionRef\.current\) \{\s*setSelectedPath\(body\.path\);\s*shouldRefocusCloseButton = true;/,
-    "successful creation refocuses the stable Close button after the reload",
+    /await load\(cwd, sessionGeneration\);\s*if \(sessionGeneration === modalSessionRef\.current\) \{\s*setSelectedPath\(body\.path\);\s*shouldRefocusCancelButton = true;/,
+    "successful creation refocuses the stable Cancel button after the reload",
   );
   assert.match(
     src,
-    /if \(shouldRefocusCloseButton\) \{\s*requestAnimationFrame\(\(\) => closeButtonRef\.current\?\.focus\(\{ preventScroll: true \}\)\);/,
-    "post-navigation focus lands on the stable Close button",
+    /if \(shouldRefocusCancelButton\) \{\s*requestAnimationFrame\(\(\) => cancelButtonRef\.current\?\.focus\(\{ preventScroll: true \}\)\);/,
+    "post-navigation focus lands on the stable Cancel button",
   );
   assert.doesNotMatch(
     src,
@@ -171,10 +171,9 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
 // Portaling to <body> restores true-viewport fixed positioning.
 test("the modal portals to <body> so host stacking contexts can't bury it", () => {
   const src = read("./directory-picker-modal.tsx");
-  assert.match(src, /import \{ createPortal \} from "react-dom"/, "imports createPortal");
-  assert.match(src, /return createPortal\(\s*<div\s*\n?\s*className="directory-picker-scrim fixed inset-0 z-\[200\]/, "the fixed scrim renders through a portal");
-  assert.match(src, /document\.body,\s*\n\s*\);/, "the portal targets document.body");
-  assert.match(src, /if \(!open\) return null;[\s\S]*createPortal/, "closed modal renders nothing (portal only touches document.body when open)");
+  assert.match(src, /import \{ Modal \}/, "uses the shared portal owner");
+  assert.doesNotMatch(src, /createPortal|role="dialog"/, "the picker does not implement a second shell");
+  assert.match(src, /if \(!open\) return null;[\s\S]*<Modal/, "closed picker renders nothing");
 });
 
 // cave-tv71: project-folder-modal redesign (Claude Design handoff). Clicking a
@@ -257,12 +256,10 @@ test("the redesigned modal badges workspace folders and keeps the design-languag
   assert.match(src, /title="Inside a Cave workspace"/, "workspace rows explain the badge on hover");
   assert.match(src, /entry\.workspace \? "text-\[var\(--accent-presence\)\]" : "text-\[var\(--text-muted\)\]"/, "workspace folder icons pick up the accent");
   assert.match(src, /Pick where this project(&apos;|')s chats will live\./, "the header keeps the redesign subtitle");
-  assert.match(src, /color-mix\(in_oklch,var\(--bg-panel\)_62%,transparent\)/, "the scrim uses the translucent panel mix, not bg-black");
-  assert.doesNotMatch(src, /bg-black\/50/, "the old opaque scrim is gone");
-  assert.match(src, /backdrop-blur-\[6px\]/, "the scrim blurs the page behind the modal");
-  assert.match(src, /\[animation:ui-modal-enter_var\(--duration-base\)_var\(--ease-decelerate\)\]/, "the card reuses the shared pop-in keyframes");
-  const motionReduceCount = src.split("motion-reduce:[animation:none]").length - 1;
-  assert.ok(motionReduceCount >= 2, "scrim and card both honor prefers-reduced-motion");
+  const sharedStyles = read("../styles/globals/primitives.css");
+  assert.match(sharedStyles, /background: var\(--backdrop-scrim\)/, "the shared scrim uses the theme token");
+  assert.match(sharedStyles, /backdrop-filter: blur/, "the shared scrim supplies the depth cue");
+  assert.match(sharedStyles, /prefers-reduced-motion: reduce/, "the shared shell owns reduced motion");
   assert.doesNotMatch(src, /rgba\(255,\s*255,\s*255/, "no hard-coded white overlays");
 });
 

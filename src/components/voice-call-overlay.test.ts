@@ -19,40 +19,13 @@ const styles = [
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 
-assert.match(
-  component,
-  /import\s+\{[^}]*useFocusTrap[^}]*\}\s+from\s+["']@\/lib\/use-focus-trap["']/,
-  "VoiceCallOverlay imports the shared focus trap",
-);
-
-assert.match(
-  component,
-  /useFocusTrap\(true,\s*dialogRef,\s*\{\s*onEscape:/,
-  "VoiceCallOverlay traps focus and handles Escape",
-);
-assert.match(
-  component,
-  /onEscape:[\s\S]{0,300}dispatch\(\{\s*type:\s*"CLOSE_REQUEST"\s*\}\);?\s*\},/,
-  "Escape ends the call cleanly once nothing else is staged",
-);
-
-assert.match(
-  component,
-  /role="dialog"[\s\S]{0,160}aria-modal="true"[\s\S]{0,160}aria-labelledby="voice-call-overlay-title"/,
-  "VoiceCallOverlay exposes named modal dialog semantics",
-);
-
-assert.match(
-  component,
-  /id="voice-call-overlay-title"/,
-  "VoiceCallOverlay provides a heading id for aria-labelledby",
-);
-
-assert.match(
-  component,
-  /tabIndex=\{-1\}/,
-  "VoiceCallOverlay dialog can receive fallback focus",
-);
+const modal = readFileSync(new URL("./ui/modal.tsx", import.meta.url), "utf8");
+const modalStyles = readFileSync(new URL("../styles/globals/primitives.css", import.meta.url), "utf8");
+assert.match(component, /import \{ Modal \} from "@\/components\/ui\/modal"/, "Voice calls use the shared modal");
+assert.match(component, /reason === "escape" \? closeFromEscape\(\)/, "Escape retains the call-specific unwind behavior");
+assert.match(component, /const closeFromEscape = \(\) => \{[\s\S]*?dispatch\(\{ type: "CLOSE_REQUEST" \}\)/, "Escape ends the call once no staged action remains");
+assert.match(component, /title=\{familiar.display_name\}/, "The shared heading names the call");
+assert.match(modal, /tabIndex=\{inline \? undefined : -1\}/, "The shared dialog supports fallback focus without making its inline host focusable");
 
 assert.match(
   component,
@@ -67,14 +40,14 @@ assert.match(
 );
 
 assert.match(
-  styles,
-  /\.voice-call-overlay\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*1200;[\s\S]*?place-items:\s*center;/,
+  component,
+  /presentation="fullscreen" bodyLayout="fill"/,
   "voice overlay is fixed, centered, and above mobile chrome",
 );
 
 assert.match(
-  styles,
-  /\.voice-call-overlay__dialog\s*\{[\s\S]*?background:\s*var\(--glass-raised\);[\s\S]*?backdrop-filter:\s*blur\(var\(--glass-blur\)\)[\s\S]*?box-shadow:/,
+  modalStyles,
+  /\.ui-modal \{[\s\S]*?background: var\(--glass-raised\);[\s\S]*?backdrop-filter:[\s\S]*?box-shadow:/,
   "voice overlay dialog is a frosted raised surface",
 );
 
@@ -89,7 +62,7 @@ assert.match(
 // live → error with no live region, so screen readers heard nothing.
 assert.match(
   component,
-  /className="voice-call-overlay__state" role="status" aria-live="polite"/,
+  /description=\{<span role="status" aria-live="polite">/,
   "the call-status label is a polite live region so transitions are announced",
 );
 assert.match(
@@ -99,7 +72,7 @@ assert.match(
 );
 assert.match(
   component,
-  /aria-describedby=\{state\.state === "error" \? "voice-call-overlay-error" : undefined\}/,
+  /ariaDescribedBy=\{state\.state === "error" \? "voice-call-overlay-error" : undefined\}/,
   "the dialog is described by the error message while in the error state",
 );
 assert.match(

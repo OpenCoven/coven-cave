@@ -90,8 +90,8 @@ assert.doesNotMatch(
   "the footer does not repeat scope syntax as persistent visual noise",
 );
 assert.match(
-  paletteStyles,
-  /@supports \(height: 100dvh\) \{[\s\S]*?\.command-palette \{[\s\S]*?100dvh/,
+  readFileSync(new URL("../styles/globals/primitives.css", import.meta.url), "utf8"),
+  /\.ui-modal \{[\s\S]*?max-height: calc\(100dvh/,
   "the palette progressively uses the dynamic viewport height on supported browsers",
 );
 assert.match(

@@ -171,6 +171,7 @@ export function ProjectSettingsModal({
 
   return (
     <Modal
+      busy={busy}
       open
       onClose={onClose}
       breadcrumb={["Projects", project.name]}

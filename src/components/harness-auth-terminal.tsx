@@ -18,7 +18,7 @@ export function HarnessAuthTerminal({
   const command = failure.loginCommand;
 
   return (
-    <Modal open onClose={onClose} breadcrumb={["Connect", failure.harnessLabel ?? "Runtime"]} wide
+    <Modal open onClose={onClose} breadcrumb={["Connect", failure.harnessLabel ?? "Runtime"]} size="wide"
       footerActions={
         <button type="button" className="focus-ring rounded-md border border-[var(--border-strong)] px-3 py-1.5 text-[var(--text-primary)]" onClick={onClose}>
           Close terminal

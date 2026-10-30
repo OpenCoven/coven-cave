@@ -4,9 +4,11 @@ import { expect, test, type Page } from "@playwright/test";
 test.use({ serviceWorkers: "block" });
 
 async function openVoiceCall(page: Page, failFirst = false) {
+  const phone = (page.viewportSize()?.width ?? 1280) < 768;
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "voice-acceptance");
+    localStorage.setItem("cave:workspace:project-scope:v1", JSON.stringify("p1"));
     Object.defineProperty(navigator, "mediaDevices", { configurable: true,
       value: { getUserMedia: async () => new MediaStream() },
     });
@@ -31,12 +33,15 @@ async function openVoiceCall(page: Page, failFirst = false) {
   await page.route("**/api/familiars**", route => route.fulfill({ json: { ok: true, familiars: [
     { id: "voice-acceptance", display_name: "Voice acceptance", role: "Builder", status: "active", icon: "ph:sparkle-fill", voiceProvider: "elevenlabs" },
   ] } }));
-  await page.route("**/api/projects**", route => route.fulfill({ json: { ok: true, projects: [{ id: "p1", name: "Queue", root: "/repo/queue", access: "write" }] } }));
-  await page.route("**/api/sessions/list**", route => route.fulfill({ json: { ok: true, sessions: [] } }));
+  await page.route("**/api/projects**", route => route.fulfill({ json: { ok: true, projects: [{ id: "p1", name: "Queue", root: "/repo/queue", access: "write", familiarIds: ["voice-acceptance"], defaultFamiliarId: "voice-acceptance" }] } }));
+  await page.route("**/api/sessions/list**", route => route.fulfill({ json: { ok: true, sessions: phone ? [{
+    id: "voice-acceptance-session", title: "Voice acceptance thread", status: "idle", familiarId: "voice-acceptance",
+    project_root: "/repo/queue", harness: "codex", created_at: "2026-10-27T12:00:00Z", updated_at: "2026-10-27T12:00:00Z",
+  }] : [] } }));
   await page.route("**/api/board**", route => route.fulfill({ json: { ok: true, cards: [] } }));
   await page.route("**/api/inbox**", route => route.fulfill({ json: { ok: true, items: [] } }));
   await page.route("**/api/chat/conversation", route => route.fulfill({ json: { ok: true, sessionId: "voice-acceptance-session" } }));
-  await page.route("**/api/chat/conversation/**", route => route.fulfill({ json: { ok: true, conversation: { turns: [] }, context: { task: null, github: [] } } }));
+  await page.route("**/api/chat/conversation/**", route => route.fulfill({ json: { ok: true, conversation: { turns: phone ? [{ id: "voice-review-ready", role: "assistant", text: "Ready to continue voice review.", createdAt: "2026-10-27T12:00:00Z" }] : [] }, context: { task: null, github: [] } } }));
   const settings = { voiceProvider: "elevenlabs", voiceModel: "eleven_v3_conversational", voiceName: "21m00Tcm4TlvDq8ikWAM" };
   const saved: unknown[] = [];
   await page.route("**/api/voice/elevenlabs/catalog", route => route.fulfill({ json: { ok: true,
@@ -63,12 +68,30 @@ async function openVoiceCall(page: Page, failFirst = false) {
     expect(route.request().postDataJSON().format).toBe("pcm");
     return route.fulfill({ contentType: "audio/pcm", body: Buffer.alloc(24_000 * 2 * 8) });
   });
-  await page.goto("/?mode=chat");
-  const call = page.getByTestId("chat-main").getByRole("button", { name: "Voice call", exact: true });
+  // The phone Tools menu starts calls from an existing thread. Desktop also
+  // supports minting a new conversation, covered by the original journeys.
+  await page.goto(phone ? "/?mode=chat#chat-voice-acceptance-session" : "/?mode=chat");
+  if (phone) {
+    // Wait for the selected thread's real view, rather than its loading view.
+    await expect(page.getByTestId("chat-main").getByText("Ready to continue voice review.", { exact: true })).toBeVisible();
+    const tools = page.getByTestId("chat-main").getByRole("button", { name: "Tools", exact: true });
+    const coarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+    if (coarse) await tools.tap();
+    else {
+      // Safari must keep the pressed Tools trigger in place when input focus
+      // would otherwise leave the composer and collapse its expanded layout.
+      await page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true }).focus();
+      await tools.click();
+    }
+  }
+  const call = phone
+    ? page.getByRole("menuitem", { name: "Start voice call", exact: true })
+    : page.getByTestId("chat-main").getByRole("button", { name: "Voice call", exact: true });
   await expect(call).toBeVisible({ timeout: 45_000 });
   await call.click();
   const dialog = page.getByRole("dialog", { name: "Voice acceptance", exact: true });
   await expect(dialog).toBeVisible();
+  await dialog.evaluate(async element => { await Promise.all(element.getAnimations().map(animation => animation.finished)); });
   return { dialog, call, saved };
 }
 
@@ -109,7 +132,7 @@ test("voice controls stay reachable in a narrow viewport with keyboard focus con
     expect(bounds!.height).toBeGreaterThanOrEqual(44);
   }
   await expect(dialog.getByRole("textbox", { name: "Reply without speaking" })).toBeInViewport();
-  await dialog.getByRole("button", { name: "End call" }).focus();
+  await dialog.getByRole("button", { name: "End call", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect.poll(() => dialog.evaluate(el => el.contains(document.activeElement))).toBe(true);
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -120,7 +143,7 @@ test("voice controls stay reachable in a narrow viewport with keyboard focus con
     }, { theme, mode });
     await page.screenshot({ path: test.info().outputPath(`voice-${theme}-${mode}.png`), animations: "disabled" });
   }
-  await dialog.getByRole("button", { name: "End call" }).click();
+  await dialog.getByRole("button", { name: "End call", exact: true }).click();
   await expect(dialog).toHaveCount(0);
 });
 
@@ -151,7 +174,7 @@ test("fullscreen game keeps live captions above play and exposes full history", 
   await page.keyboard.press("Escape");
   await expect(captions).toBeVisible();
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "End call" }).click();
+  await dialog.getByRole("button", { name: "End call", exact: true }).click();
 });
 
 test("voice selection saves and reconnects with preserved history and mute", async ({ page }) => {
@@ -178,7 +201,7 @@ test("voice selection saves and reconnects with preserved history and mute", asy
   expect(saved).toEqual([{ voiceProvider: "elevenlabs", voiceModel: "eleven_flash_v2_5", voiceName: "EXAVITQu4vr4xnSDxMaL" }]);
   await expect(dialog.getByRole("log", { name: "Call transcript" })).toContainText("Keep this conversation.");
   await expect.poll(() => page.evaluate(() => (window as any).__voiceAcceptance.contexts.filter((c: AudioContext) => c.state === "closed").length)).toBeGreaterThan(0);
-  await dialog.getByRole("button", { name: "End call" }).click();
+  await dialog.getByRole("button", { name: "End call", exact: true }).click();
 });
 
 test("long game captions follow new words in a narrow viewport", async ({ page }) => {
@@ -202,5 +225,61 @@ test("long game captions follow new words in a narrow viewport", async ({ page }
   expect((await reply.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await reply.click();
   expect((await dialog.getByRole("button", { name: "Cancel reply" }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  await dialog.getByRole("button", { name: "End call" }).click();
+  await dialog.getByRole("button", { name: "End call", exact: true }).click();
+});
+
+for (const [width, hasTouch] of [[1440, false], [390, false], [390, true]] as const) test.describe(`${width}px ${hasTouch ? "touch" : "pointer"} voice settings`, () => {
+  test.use({ viewport: { width, height: width === 390 ? 844 : 1000 }, hasTouch });
+  for (const [theme, mode] of [["coven", "dark"], ["coven", "light"], ["tide", "dark"]]) {
+  test(`voice settings preserve selection through pending dismissal and retry at ${width}px ${theme}/${mode}`, async ({ page }, testInfo) => {
+    const { dialog, saved } = await openVoiceCall(page);
+    await expect(dialog.getByText("Listening", { exact: true })).toBeVisible();
+    await page.evaluate(({ theme, mode }) => {
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.dataset.mode = mode;
+    }, { theme, mode });
+    const trigger = dialog.getByRole("button", { name: "Change familiar voice" });
+    await trigger.click();
+    const settings = page.getByRole("dialog", { name: "Call Familiar voice" });
+    await settings.evaluate(async element => { await Promise.all(element.getAnimations().map(animation => animation.finished)); });
+    const voice = settings.getByRole("button", { name: "Familiar voice", exact: true });
+    await voice.click();
+    await page.getByRole("menuitemradio", { name: "Bella" }).click();
+    let releaseFailure!: () => void;
+    const failure = new Promise<void>(resolve => { releaseFailure = resolve; });
+    let requests = 0;
+    await page.route("**/api/config", async route => {
+      requests++;
+      if (requests !== 1) return route.fallback();
+      await failure;
+      return route.fulfill({ status: 503, json: { ok: false, error: "Synthetic save failure" } });
+    });
+    const save = settings.getByRole("button", { name: "Save and reconnect" });
+    await save.click();
+    await expect.poll(() => requests).toBe(1);
+    await expect(settings.locator(".ui-modal-close")).toBeDisabled();
+    await expect(settings.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(settings).toBeVisible();
+    await page.keyboard.press("Tab");
+    expect(await settings.evaluate(element => element.contains(document.activeElement))).toBe(true);
+    expect(saved).toEqual([]);
+    releaseFailure();
+    await expect(settings.getByRole("alert")).toContainText("Couldn't confirm the saved voice");
+    await expect(voice).toContainText("Bella");
+    await expect(save).toBeEnabled();
+    await expect(settings.locator(".ui-modal-close")).toBeEnabled();
+    await expect(save).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath("voice-save-failure.png"), animations: "disabled" });
+    await save.click();
+    await expect(settings).toHaveCount(0);
+    await expect(dialog.getByText("Listening", { exact: true })).toBeVisible();
+    await expect(trigger).toBeFocused();
+    expect(requests).toBe(2);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ voiceName: "EXAVITQu4vr4xnSDxMaL" });
+    await dialog.getByRole("button", { name: "End call", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+  });
+  }
 });

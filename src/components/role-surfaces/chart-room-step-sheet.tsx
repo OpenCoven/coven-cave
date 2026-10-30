@@ -9,9 +9,10 @@
  * dependency is a place something goes, and it should look like one.
  */
 
-import { useRef, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
 import { ChartDot, ChartSelect, StateTag } from "./chart-room-parts";
 import {
   CHART_STAGES,
@@ -118,8 +119,6 @@ export function ChartRoomStepSheet({
   onDelete: () => void;
   onFocusCard: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
 
   const upstreams = step.edges.map((edge) => ({
     edge,
@@ -132,26 +131,20 @@ export function ChartRoomStepSheet({
   const owner = familiars.find((familiar) => familiar.id === step.owner);
 
   return (
-    <div className="cr-modal">
-      <button type="button" className="cr-modal__scrim" aria-label="Close step" onClick={onClose} />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Step — ${step.title}`}
-        className="cr-modal__dialog cr-modal__dialog--sheet"
-      >
-        <header className="cr-modal__head">
-          <ChartDot color={projectColor(step.project)} large />
-          <StateTag state={step.state} />
-          <span className="cr-mono">{owner?.name ?? "unassigned"}</span>
-          <span className="cr-lens__spacer" />
-          <button type="button" className="cr-icon-btn focus-ring" aria-label="Close" onClick={onClose}>
-            <Icon name="ph:x" width={13} height={13} aria-hidden />
-          </button>
-        </header>
-
-        <div className="cr-modal__body">
+    <Modal
+      open
+      onClose={onClose}
+      title="Step details"
+      scope="container"
+      size="wide"
+      busy={saving}
+      footerPills={<><ChartDot color={projectColor(step.project)} large /><StateTag state={step.state} /><span className="cr-mono">{owner?.name ?? "unassigned"}</span></>}
+      footerActions={<>
+        <Button variant="secondary" onClick={onFocusCard} disabled={saving} leadingIcon="ph:kanban">Open on the board</Button>
+        <Button variant="danger-ghost" disabled={saving} title="Remove this card from the board and cut every link into it" onClick={onDelete} leadingIcon="ph:trash">Remove</Button>
+      </>}
+    >
+        <div className="cr-sheet__content flex flex-col gap-3">
           <input
             className="cr-sheet__title focus-ring"
             value={step.title}
@@ -376,23 +369,7 @@ export function ChartRoomStepSheet({
           </div>
         </div>
 
-        <div className="cr-modal__foot">
-          <button type="button" className="cr-btn focus-ring" onClick={onFocusCard}>
-            <Icon name="ph:kanban" width={11} height={11} aria-hidden /> Open on the board
-          </button>
-          <span className="cr-lens__spacer" />
-          <button
-            type="button"
-            className="cr-btn focus-ring"
-            disabled={saving}
-            title="Remove this card from the board and cut every link into it"
-            onClick={onDelete}
-          >
-            <Icon name="ph:trash" width={11} height={11} aria-hidden /> Remove
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -11,6 +11,7 @@ import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { useSurfacePreference } from "@/lib/surface-preferences";
+import { useIsMobile } from "@/lib/use-viewport";
 
 /**
  * Files tab of the code rail: a scrollable project tree stacked over a
@@ -35,6 +36,7 @@ export function RailFilesPanel({
   focusNonce?: number;
 }) {
   const [selectedPath, setSelectedPathState] = useState<string | null>(null);
+  const mobile = useIsMobile();
 
   // The rail unmounts between edit batches (use-code-rail dismissal), which
   // would drop the open file right before a reopen or fullscreen expansion.
@@ -111,7 +113,9 @@ export function RailFilesPanel({
     );
   }
 
-  if (isFullscreen) {
+  // The desktop split's minimum widths cannot fit a phone. Keep the full-width
+  // stacked tree/editor there; Changes remains available through the rail tab.
+  if (isFullscreen && !mobile) {
     return (
       <div className="workspace-rail__files workspace-rail__files--ide">
         <Group

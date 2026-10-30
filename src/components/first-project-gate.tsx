@@ -6,7 +6,7 @@ import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Modal } from "@/components/ui/modal";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { addChatProject, type CreateProjectOptions } from "@/lib/chat-add-project";
 import { projectErrorCode } from "@/lib/project-errors";
@@ -83,24 +83,15 @@ export function FirstProjectGate({
   const [selectedExistingProjectId, setSelectedExistingProjectId] = useState("");
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
-  const dialogRef = useRef<HTMLElement | null>(null);
   // Set when the gate is left through "Open Tasks": the destination takes
   // focus, so the trap must not hand it back to whatever held it before the
   // gate opened (usually <body>).
   const leavingForTasksRef = useRef(false);
-  // Tab cycles inside the gate (#5528); the surface behind it is already inert.
-  // No Escape: the gate has nothing to dismiss to. Initial focus stays with the
-  // effect below, which picks the field or the locked project's action.
-  useFocusTrap(open, dialogRef, {
-    focusFirst: false,
-    restoreFocus: () => !leavingForTasksRef.current,
-  });
   const wasVisibleRef = useRef(false);
   // An empty select value is the explicit "Add a different project…" path,
   // not an uninitialized choice. Only apply the convenient default once.
   const existingProjectSelectionInitializedRef = useRef(false);
-  const titleId = useId();
-  const copyId = useId();
+  const formId = useId();
   const rootHintId = useId();
   const registeredProject = pendingGrant?.project ?? null;
   const selectedExistingProject = availableProjects.find(
@@ -244,26 +235,16 @@ export function FirstProjectGate({
 
   return (
     <>
-      <section
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={copyId}
-        className="absolute inset-0 z-[20] overflow-auto [background:var(--backdrop-scrim)] p-4"
-      >
-        <div className="flex min-h-full items-center justify-center">
-          <div className="w-full max-w-2xl overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-xl">
-            <div aria-hidden={pickerOpen || undefined} inert={pickerOpen || undefined}>
-              <div className="border-b border-[var(--border-hairline)] px-6 py-5">
-                <p className="text-[length:var(--text-xs)] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
-                  Project required
-                </p>
-                <h2 id={titleId} className="mt-2 text-[length:var(--text-display)] font-semibold leading-tight text-[var(--text-primary)]">
-                  {lockedProject ? "Give this familiar project access" : "Create your first project"}
-                </h2>
-                <p id={copyId} className="mt-2 max-w-2xl text-[length:var(--text-md)] leading-6 text-[var(--text-secondary)]">
-                  {registeredProject ? (
+      <Modal
+        open={open}
+        onClose={() => {}}
+        scope="container"
+        size="wide"
+        dismissible={false}
+        busy={submitting}
+        covered={pickerOpen}
+        breadcrumb={["Project required", lockedProject ? "Give this familiar project access" : "Create your first project"]}
+        description={<>{registeredProject ? (
                     <>
                       Project <span className="font-medium text-[var(--text-primary)]">{registeredProject.name}</span> was
                       created. Retry access so the required familiar can use
@@ -279,11 +260,39 @@ export function FirstProjectGate({
                     </>
                   ) : (
                     "Chat requires a project. Add the absolute root for the codebase you want this familiar to use before you start chatting."
-                  )}
-                </p>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
+                  )}</>}
+        initialFocusRef={lockedProject ? submitButtonRef : nameInputRef}
+        restoreFocus={() => !leavingForTasksRef.current}
+        footerActions={<>
+                  {onOpenTasks ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        leavingForTasksRef.current = true;
+                        onOpenTasks();
+                      }}
+                      disabled={submitting}
+                      className="!h-10"
+                    >
+                      Open Tasks
+                    </Button>
+                  ) : null}
+                  <Button
+                    ref={submitButtonRef}
+                    type="submit"
+                    form={formId}
+                    variant="primary"
+                    size="sm"
+                    loading={submitting}
+                    disabled={submitting || loadingProjects || Boolean(projectsError) || !canSubmit}
+                    className="!h-10 rounded-[var(--radius-control)] px-4 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
+                  >
+                    {registeredProject ? "Retry access" : lockedProject ? "Grant access" : "Create"}
+                  </Button>
+        </>}
+      >
+              <form id={formId} onSubmit={handleSubmit} className="space-y-4">
                 {projectsError ? (
                   <div
                     role="alert"
@@ -407,38 +416,8 @@ export function FirstProjectGate({
                   </p>
                 </div> : null}
 
-                <div className={`flex items-center gap-3 ${onOpenTasks ? "justify-between" : "justify-end"}`}>
-                  {onOpenTasks ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        leavingForTasksRef.current = true;
-                        onOpenTasks();
-                      }}
-                      disabled={submitting}
-                      className="!h-10"
-                    >
-                      Open Tasks
-                    </Button>
-                  ) : null}
-                  <Button
-                    ref={submitButtonRef}
-                    type="submit"
-                    variant="primary"
-                    size="sm"
-                    loading={submitting}
-                    disabled={submitting || loadingProjects || Boolean(projectsError) || !canSubmit}
-                    className="!h-10 rounded-[var(--radius-control)] px-4 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
-                  >
-                    {registeredProject ? "Retry access" : lockedProject ? "Grant access" : "Create"}
-                  </Button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      </section>
+        </form>
+      </Modal>
 
       <DirectoryPickerModal
         open={pickerOpen}

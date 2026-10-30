@@ -12,10 +12,10 @@ assert.match(src, /<textarea[\s\S]*?value=\{value\}[\s\S]*?onChange=\{\(event\) 
 assert.match(src, /Browse projects/, "offers a Browse-projects affordance");
 assert.match(src, /fetch\("\/api\/projects"\)/, "lazy-loads the project list from /api/projects when the picker opens");
 assert.match(src, /<ProjectTree[\s\S]*?onDirSelect=\{addCwd\}[\s\S]*?selectedDirs=\{selectedDirs\}/, "browses with the shared ProjectTree, toggling dirs in/out");
-assert.match(src, /role="dialog"[\s\S]*?aria-modal="true"/, "the picker is a labelled modal dialog");
+assert.match(src, /<Modal open=\{pickerOpen\}[\s\S]*?title="Working directories"/, "the picker is a labelled modal dialog");
 // Escape + Tab cycling + focus management come from the shared focus-trap hook,
 // not a bespoke inline onKeyDown.
-assert.match(src, /useFocusTrap\(pickerOpen, dialogRef, \{ onEscape: \(\) => setPickerOpen\(false\) \}\)/, "the picker dismisses via the shared useFocusTrap hook");
+assert.match(src, /onClose=\{\(\) => setPickerOpen\(false\)\}/, "the picker dismisses via the shared useFocusTrap hook");
 assert.doesNotMatch(src, /onKeyDown=/, "no hand-rolled key handler — the focus trap owns Escape");
 assert.match(src, /list\.includes\(clean\)/, "addCwd dedupes already-listed paths");
 assert.match(src, /import \{ Button \}/, "picker actions use the shared Button primitive");

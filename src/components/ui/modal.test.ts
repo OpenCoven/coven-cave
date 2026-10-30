@@ -10,17 +10,17 @@ const src = readFileSync(new URL("./modal.tsx", import.meta.url), "utf8");
 // readers announce those dialogs with no title.
 assert.match(
   src,
-  /aria-labelledby=\{breadcrumb \? headingId : undefined\}/,
+  /aria-labelledby=\{!inline && hasHeading \? headingId : undefined\}/,
   "dialog names itself from the breadcrumb header when present",
 );
 assert.match(
   src,
-  /aria-label=\{breadcrumb \? undefined : ariaLabel\}/,
+  /aria-label=\{inline \|\| hasHeading \? undefined : ariaLabel\}/,
   "dialog falls back to ariaLabel only when there's no breadcrumb",
 );
 assert.match(
   src,
-  /aria-describedby=\{ariaDescribedBy\}/,
+  /aria-describedby=\{inline \? undefined : \[description != null \? descriptionId : null, ariaDescribedBy\]/,
   "dialog can expose a useful body description",
 );
 assert.match(src, /const headingId = useId\(\)/, "modal mints a stable id via useId");
@@ -38,17 +38,17 @@ assert.match(src, /dismissOnEscape\?: boolean/, "Modal exposes a dismissOnEscape
 assert.match(src, /dismissOnEscape = true/, "dismissOnEscape defaults to true");
 assert.match(
   src,
-  /useFocusTrap\(open, dialogRef, \{\s*onEscape: dismissOnEscape \? onClose : undefined,\s*portalLayers,\s*portalRootId: portalLayerRootId,\s*\}\)/,
+  /useFocusTrap\(visible && !covered, dialogRef, \{\s*onEscape: dismissOnEscape && canDismiss \? \(\) => requestClose\("escape"\) : undefined,\s*initialFocusRef,\s*restoreFocus: [^\n]+,\s*retainReturnFocus: visible && covered,\s*containTabFocus,\s*portalLayers,\s*portalRootId: portalLayerRootId,\s*\}\)/,
   "the trap stays active while busy; only the Esc dismissal callback is gated",
 );
 assert.match(
   src,
-  /<FocusTrapPortalLayersContext\.Provider value=\{portalLayers\}>/,
+  /<FocusTrapPortalLayersContext\.Provider value=\{inline \? ownerPortalLayers : portalLayers\}>/,
   "body-portaled descendants can join the Modal's focus boundary",
 );
 assert.match(
   src,
-  /<PortalLayerRootContext\.Provider value=\{portalLayerRootId\}>[\s\S]{0,120}<PortalLayerDepthContext\.Provider value=\{ownerLayerDepth \+ 1\}>/,
+  /<PortalLayerRootContext\.Provider value=\{inline \? ownerPortalRoot : portalLayerRootId\}>[\s\S]{0,120}<PortalLayerDepthContext\.Provider value=\{ownerLayerDepth \+ \(inline \? 0 : 1\)\}>/,
   "nested traps share a root while increasing their portal depth",
 );
 
@@ -64,12 +64,12 @@ assert.match(
 );
 assert.match(
   src,
-  /const setLayerElement = useCallback\(\s*\(el: HTMLDivElement \| null\) => \{\s*onLayerElement\?\.\(el\);\s*\},\s*\[onLayerElement\],\s*\);/,
+  /const setLayerElement = useCallback\(\s*\(el: HTMLDivElement \| null\) => \{\s*layerRef.current = el;\s*onLayerElement\?\.\(el\);\s*\},\s*\[onLayerElement\],\s*\);/,
   "the complete modal layer uses a memoized callback ref",
 );
 assert.match(
   src,
-  /ref=\{setLayerElement\}[\s\S]{0,120}className="ui-modal-backdrop"/,
+  /ref=\{setLayerElement\}[\s\S]{0,120}className=\{inline \? "contents" : "ui-modal-backdrop"\}/,
   "the stable callback ref exposes the backdrop rather than only the inner dialog",
 );
 assert.doesNotMatch(

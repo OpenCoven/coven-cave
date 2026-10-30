@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, type RefObject } from "react";
+import { createContext, useContext, useEffect, useRef, useSyncExternalStore, type RefObject } from "react";
 
 export const FOCUSABLE = [
   "button:not([disabled])",
@@ -9,7 +9,41 @@ export const FOCUSABLE = [
   "select:not([disabled])",
   "textarea:not([disabled])",
   "[tabindex]:not([tabindex='-1'])",
-].join(",");
+].map((selector) => `${selector}:not([data-focus-trap-guard])`).join(",");
+
+// WebKit does not focus buttons on pointer activation. Observe the activating
+// control before React can mount a conditional dialog, without moving focus.
+// Later input or explicit focus changes invalidate it; activation consumes it.
+let activationFocusTarget: HTMLElement | null = null;
+if (typeof document !== "undefined") {
+  let pointerActivation = false;
+  let focusDuringPointerActivation: EventTarget | null = null;
+  const clearActivation = () => {
+    activationFocusTarget = null;
+    pointerActivation = false;
+    focusDuringPointerActivation = null;
+  };
+  document.addEventListener("pointerdown", () => {
+    clearActivation();
+    pointerActivation = true;
+  }, true);
+  document.addEventListener("pointercancel", clearActivation, true);
+  document.addEventListener("keydown", clearActivation, true);
+  document.addEventListener("focusin", (event) => {
+    activationFocusTarget = null;
+    if (pointerActivation) focusDuringPointerActivation = event.target;
+  }, true);
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target.closest(FOCUSABLE) : null;
+    // WebKit's default mousedown focus can land on a focusable ancestor
+    // (the parent dialog). That is not a separately chosen destination.
+    const explicitDestination = pointerActivation && focusDuringPointerActivation instanceof Node &&
+      focusDuringPointerActivation !== target && !focusDuringPointerActivation.contains(target);
+    activationFocusTarget = !explicitDestination && target instanceof HTMLElement ? target : null;
+    pointerActivation = false;
+    focusDuringPointerActivation = null;
+  }, true);
+}
 
 /** Node.DOCUMENT_POSITION_FOLLOWING, without reaching for the `Node` global. */
 const DOCUMENT_POSITION_FOLLOWING = 4;
@@ -22,11 +56,15 @@ type Options = {
    *  focusable child exists, focuses the container itself — caller MUST give
    *  the container `tabIndex={-1}` so this is reachable. */
   focusFirst?: boolean;
+  /** Prefer this in-dialog target when activating (e.g. the safe Cancel action). */
+  initialFocusRef?: RefObject<HTMLElement | null>;
   /** Recapture native Tab focus escapes. Callers with portaled
    *  controls must register them through portalLayers. Defaults to false. */
   containTabFocus?: boolean;
   /** Late-bound restoration gate for transitions directly into another layer. */
   restoreFocus?: () => boolean;
+  /** Keep this trap's opener while temporarily covered by another dialog. */
+  retainReturnFocus?: boolean;
   /** Body-portaled descendants that remain part of this trap's focus boundary. */
   portalLayers?: FocusTrapPortalLayers;
   /** Root shared by nested traps; independent roots compete by activation order. */
@@ -85,6 +123,27 @@ let nextTrapId = 1;
 let nextTrapOrder = 1;
 let nextTrapRootOrder = 1;
 
+const portalRootListeners = new Set<() => void>();
+function notifyPortalRootOrder() { for (const listener of portalRootListeners) listener(); }
+function subscribePortalRootOrder(listener: () => void) {
+  portalRootListeners.add(listener);
+  return () => { portalRootListeners.delete(listener); };
+}
+
+/** Paint order follows the same root activation and descendant depth as Escape.
+ * Live ranks keep the z-index bounded when many dialogs open over a session. */
+export function usePortalLayerZIndex(active: boolean, rootId: number, depth: number): number {
+  useEffect(() => {
+    if (!active) return;
+    return acquirePortalLayerRoot(rootId).release;
+  }, [active, rootId]);
+  return useSyncExternalStore(subscribePortalRootOrder, () => {
+    const roots = [...portalLayerRoots.entries()].sort((a, b) => a[1].order - b[1].order);
+    const rank = Math.max(0, roots.findIndex(([id]) => id === rootId));
+    return 350 + rank * 100 + depth;
+  }, () => 350 + depth);
+}
+
 function compareTrapOrder(a: TrapEntry, b: TrapEntry): number {
   return a.rootOrder - b.rootOrder || a.depth - b.depth || a.order - b.order;
 }
@@ -106,6 +165,7 @@ export function acquirePortalLayerRoot(rootId: number): {
       trapCount: 0,
       returnFocus: null,
     });
+    notifyPortalRootOrder();
   }
   let released = false;
   return {
@@ -122,7 +182,10 @@ function releasePortalLayerRoot(rootId: number): void {
   const current = portalLayerRoots.get(rootId);
   if (!current) return;
   current.count -= 1;
-  if (current.count === 0) portalLayerRoots.delete(rootId);
+  if (current.count === 0) {
+    portalLayerRoots.delete(rootId);
+    notifyPortalRootOrder();
+  }
 }
 
 export function isTopmostPortalLayerRoot(rootId: number): boolean {
@@ -136,6 +199,9 @@ export function isTopmostPortalLayerRoot(rootId: number): boolean {
   }
   return topmostId === rootId;
 }
+
+/** Nonmodal keyboard shortcuts yield to any active modal owner. */
+export function hasActiveFocusTrap(): boolean { return trapStack.length > 0; }
 
 function topmostTrap(): TrapEntry | undefined {
   return trapStack.reduce<TrapEntry | undefined>(
@@ -213,6 +279,20 @@ function trapContains(entry: TrapEntry, node: HTMLElement): boolean {
   return entry.container.contains(node) || Boolean(entry.portalLayers?.contains(node));
 }
 
+function focusableElements(container: HTMLElement, portalLayers?: FocusTrapPortalLayers): HTMLElement[] {
+  return Array.from(new Set([
+    ...container.querySelectorAll<HTMLElement>(FOCUSABLE),
+    ...(portalLayers?.elements() ?? []).flatMap((layer) =>
+      Array.from(layer.querySelectorAll<HTMLElement>(FOCUSABLE)),
+    ),
+  ])).filter((el) =>
+    !el.hasAttribute("disabled") &&
+    !el.hasAttribute("data-focus-trap-guard") &&
+    !(el.tabIndex < 0) &&
+    (typeof el.getClientRects !== "function" || el.getClientRects().length > 0),
+  );
+}
+
 function focusTrap(entry: TrapEntry): void {
   const first =
     entry.container.querySelector<HTMLElement>(FOCUSABLE) ??
@@ -231,6 +311,7 @@ function focusTrap(entry: TrapEntry): void {
  *  trap and errors before unmounting from leaking a stale entry into a
  *  later test in the same file/process. */
 export function resetFocusTrapStackForTest(): void {
+  activationFocusTarget = null;
   trapStack.length = 0;
   portalLayerRoots.clear();
 }
@@ -284,15 +365,23 @@ export function useFocusTrap(
   {
     onEscape,
     focusFirst = true,
+    initialFocusRef,
     containTabFocus = false,
     restoreFocus = () => true,
+    retainReturnFocus = false,
     portalLayers,
     portalRootId,
   }: Options = {},
 ) {
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const hasReturnFocusRef = useRef(false);
   const onEscapeRef = useRef(onEscape);
   const restoreFocusRef = useRef(restoreFocus);
+  const retainReturnFocusRef = useRef(retainReturnFocus);
+  // Deactivation cleanup runs before the next passive effects. Read the
+  // current suspension state, as Modal does for its covered restoration gate.
+  retainReturnFocusRef.current = retainReturnFocus;
+  const preferredFocusRef = useRef(initialFocusRef);
   // Stable per-hook-instance identity for the trap stack — assigned once
   // (lazy ref init) and unaffected by StrictMode's double render/effect
   // invocation, which reuses this same ref cell rather than re-creating it.
@@ -313,13 +402,24 @@ export function useFocusTrap(
   useEffect(() => {
     restoreFocusRef.current = restoreFocus;
   }, [restoreFocus]);
+  useEffect(() => {
+    // Closing while already covered does not rerun the trap cleanup.
+    if (!active && !retainReturnFocus) hasReturnFocusRef.current = false;
+  }, [active, retainReturnFocus]);
+  useEffect(() => {
+    preferredFocusRef.current = initialFocusRef;
+  }, [initialFocusRef]);
 
   useEffect(() => {
     if (!active) return;
     const container = containerRef.current;
     if (!container) return;
 
-    returnFocusRef.current = (document.activeElement as HTMLElement) ?? null;
+    if (!hasReturnFocusRef.current) {
+      returnFocusRef.current = (activationFocusTarget?.isConnected ? activationFocusTarget : null) ?? (document.activeElement as HTMLElement) ?? null;
+      activationFocusTarget = null;
+      hasReturnFocusRef.current = true;
+    }
     const trapId = idRef.current;
     registerTrap(
       trapId,
@@ -331,7 +431,10 @@ export function useFocusTrap(
     );
 
     if (focusFirst && isTopmostTrap(trapId)) {
-      const first = container.querySelector<HTMLElement>(FOCUSABLE);
+      const preferred = preferredFocusRef.current?.current;
+      const first = preferred && container.contains(preferred)
+        ? preferred
+        : container.querySelector<HTMLElement>(FOCUSABLE);
       if (first) {
         first.focus();
       } else {
@@ -345,20 +448,7 @@ export function useFocusTrap(
     let tabFocusPending = false;
     let tabResetTimer: ReturnType<typeof setTimeout> | undefined;
     function getFocusables() {
-      return Array.from(
-        new Set([
-          ...container!.querySelectorAll<HTMLElement>(FOCUSABLE),
-          ...(portalLayers?.elements() ?? []).flatMap((layer) =>
-            Array.from(layer.querySelectorAll<HTMLElement>(FOCUSABLE)),
-          ),
-        ]),
-      ).filter(
-        (el) =>
-          !el.hasAttribute("disabled") &&
-          // Roving rows and controls hidden by a dialog mode are not Tab stops.
-          !(el.tabIndex < 0) &&
-          (typeof el.getClientRects !== "function" || el.getClientRects().length > 0),
-      );
+      return focusableElements(container!, portalLayers);
     }
 
     function onFocusIn() {
@@ -399,6 +489,9 @@ export function useFocusTrap(
         const focusables = getFocusables();
         if (focusables.length === 0) {
           e.preventDefault();
+          // Removing or disabling the focused action can leave focus on body.
+          // A trap with no enabled controls still owns its focusable container.
+          container.focus();
           return;
         }
         const first = focusables[0];
@@ -469,6 +562,7 @@ export function useFocusTrap(
           (rootReturnFocus ?? returnTarget)?.focus();
         }
       }
+      if (!retainReturnFocusRef.current) hasReturnFocusRef.current = false;
     };
   }, [
     active,
@@ -489,4 +583,23 @@ export function useFocusTrap(
     if (!active || !ownerHidden) return;
     onEscapeRef.current?.();
   }, [active, ownerHidden]);
+
+  // Native traversal out of an iframe never dispatches its Tab keydown to
+  // this window. Tabbable boundary guards receive that focus move instead.
+  return (edge: "start" | "end", previousTarget: Node | null = null) => {
+    const entry = topmostTrap();
+    if (!active || entry?.id !== idRef.current || entry.container !== containerRef.current) return;
+    const focusables = focusableElements(entry.container, entry.portalLayers);
+    // A portal can enter a guard from outside the dialog: reverse traversal
+    // through the end guard must return to the dialog instead of looping back
+    // into that portal. Iframe exits have no parent-window keydown, so infer
+    // this crossing from the focus event rather than a cached Tab direction.
+    const fromPortal = entry.portalLayers?.contains(previousTarget);
+    const dialogFocusables = focusables.filter((element) => entry.container.contains(element));
+    const target = fromPortal
+      ? edge === "end" ? dialogFocusables.at(-1) : dialogFocusables[0]
+      : edge === "start" ? focusables.at(-1)
+        : focusables.find((element) => !entry.container.contains(element)) ?? focusables[0];
+    (target ?? entry.container).focus();
+  };
 }

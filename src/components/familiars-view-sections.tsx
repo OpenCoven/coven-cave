@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
@@ -283,33 +282,8 @@ export function FamiliarMemoryOverlay({
   onClose,
   onOpenMemoryFile,
 }: AgentMemoryOverlayProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  // Trap focus inside the panel + Escape-to-close + restore focus to the opener.
-  useFocusTrap(true, panelRef, { onEscape: onClose });
-
   return (
-    <div
-      className="familiars-view__overlay fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Memory for ${familiar.display_name}`}
-      onClick={onClose}
-    >
-      <div
-        ref={panelRef}
-        tabIndex={-1}
-        className="familiars-view__overlay-panel relative flex h-[100dvh] w-full flex-col overflow-hidden border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl focus:outline-none md:h-[85vh] md:w-[90vw] md:max-w-[1280px] md:rounded-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="focus-ring absolute right-3 top-3 z-10 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/80"
-          aria-label="Close"
-        >
-          <Icon name="ph:x" width={12} />
-          Close
-        </button>
+    <Modal open onClose={onClose} title={`Memory for ${familiar.display_name}`} size="reader" bodyLayout="fill">
         <FamiliarsMemoryView
           familiars={familiars}
           activeFamiliar={familiar}
@@ -317,8 +291,7 @@ export function FamiliarMemoryOverlay({
           feed={memoryFeed}
           onOpenMemoryFile={onOpenMemoryFile}
         />
-      </div>
-    </div>
+    </Modal>
   );
 }
 

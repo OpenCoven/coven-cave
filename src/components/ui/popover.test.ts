@@ -149,34 +149,12 @@ assert.match(
   "popover restores focus to the anchor when it would otherwise land on body",
 );
 
-// Stacking: popovers portal to <body>, so they compete with every other
-// portaled layer purely on z-index. The board task drawer (also portaled to
-// <body>) sits at z 300/301 — the popover portal must layer ABOVE it, or the
-// drawer's backdrop paints over the open menu and the click that "selects an
-// option" lands on the backdrop and closes the drawer instead (the Tasks
-// inspector's Status/Priority/Familiar/Project dropdowns were unusable).
-const primitivesCss = readFileSync(
-  new URL("../../styles/globals/primitives.css", import.meta.url),
-  "utf8",
-);
-const boardCss = readFileSync(
-  new URL("../../styles/board/kanban-inspector.css", import.meta.url),
-  "utf8",
-);
-const portalZ = Number(
-  primitivesCss.match(/\.ui-popover-portal\s*\{[^}]*?z-index:\s*(\d+)/)?.[1],
-);
-const drawerZ = Math.max(
-  ...[...boardCss.matchAll(/\.board-drawer(?:-backdrop)?\s*\{[^}]*?z-index:\s*(\d+)/g)].map(
-    (m) => Number(m[1]),
-  ),
-);
-assert.ok(Number.isFinite(portalZ), "found .ui-popover-portal z-index in primitives.css");
-assert.ok(Number.isFinite(drawerZ), "found .board-drawer z-index in styles/board/kanban-inspector.css");
-assert.ok(
-  portalZ > drawerZ,
-  `popover portal (z ${portalZ}) must stack above the board drawer (z ${drawerZ})`,
-);
+// Paint ordering follows the same root/depth registry as keyboard ownership.
+// Behavior coverage opens independent roots, child popovers and nested modals.
+const primitivesCss = readFileSync(new URL("../../styles/globals/primitives.css", import.meta.url), "utf8");
+const drawer = readFileSync(new URL("../board-inspector.tsx", import.meta.url), "utf8");
+assert.match(drawer, /<Modal[\s>]/, "board inspector uses the shared modal layer");
+assert.match(src, /usePortalLayerZIndex\(open, escapeRootId, parentLayerDepth \+ 1\)/, "popover paint order shares root and depth ownership");
 
 // Non-modal dialog focus contract (cave-fu1y): the page behind stays
 // interactive (light dismiss), so instead of a focus trap the popover must

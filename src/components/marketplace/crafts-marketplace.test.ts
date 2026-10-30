@@ -34,9 +34,9 @@ assert.match(card, /state === "added" \? "Manage" : "Preview"/, "Craft cards use
 assert.match(card, /plugin\.draft[\s\S]*"Draft"/, "local draft Crafts have a distinct card state");
 assert.match(card, /kind === "craft"[\s\S]*"Craft"/, "Craft cards have a distinct kind label");
 assert.match(card, /kind === "knowledge-pack"[\s\S]*"Knowledge pack"/, "Knowledge pack cards have a distinct kind label");
-assert.match(createDrawer, /className="craft-create-drawer__backdrop"/, "Craft create drawer keeps a stable fixed-overlay hook");
-assert.match(createDrawer, /className="craft-create-drawer__header"/, "Craft create drawer header layout stays on semantic hooks");
-assert.match(createDrawer, /className="craft-create-drawer__actions"/, "Craft create drawer footer actions stay on semantic hooks");
+assert.match(createDrawer, /<Modal open onClose=\{onClose\} presentation="sheet-right"/, "Craft creation uses the shared sheet");
+assert.match(createDrawer, /breadcrumb=\{\["Craft authoring", "Create Craft"\]\}/, "Craft creation supplies the shared heading");
+assert.match(createDrawer, /footerActions=\{<>/, "Craft creation supplies the shared footer actions");
 
 // ── Agentic build path (cave-4n7j) ───────────────────────────────────────────
 // The drawer offers two ways in: hand-pick roles, or describe the Craft and
@@ -203,7 +203,7 @@ assert.match(craftDetail, /originLabel/, "effective Role capability chips retain
 assert.match(craftDetail, /affectedRoles/, "detach-first failure shows affected Roles");
 assert.match(craftDetail, /affectedRolesTruncated/, "bounded detach-first diagnostics disclose omitted Role counts");
 assert.match(craftDetail, /aria-live="polite"/, "plan and action state changes are announced");
-assert.match(craftDetail, /ref=\{dialogRef\}[\s\S]*tabIndex=\{-1\}/, "focus-trap container remains programmatically focusable for its fallback path");
+assert.match(craftDetail, /<Modal open onClose=\{onClose\}/, "Craft detail uses the shared focusable dialog container");
 assert.doesNotMatch(craftDetail, /<label[^>]+className="craft-role-row"/, "Role rows do not nest a button inside a label");
 assert.match(craftDetail, /Install Craft/, "new Crafts expose an explicit install state");
 assert.match(craftDetail, /Update Craft/, "stale Crafts expose an explicit update state");
@@ -230,8 +230,8 @@ assert.match(knowledgePackSeedModal, /\/api\/marketplace\/install[\s\S]*\/api\/k
 assert.match(knowledgePackSeedModal, /useAnnouncer/, "seed results and errors are announced through the live region");
 
 assert.match(css, /\.craft-loadout-path \{/, "Craft hierarchy has a stable visual hook");
-assert.match(css, /\.craft-create-drawer__backdrop \{/, "Craft create drawer overlay has a stable visual hook");
-assert.match(css, /\.craft-create-drawer \{/, "Craft creation drawer has stable styling hooks");
+assert.doesNotMatch(css, /\.craft-create-drawer__backdrop \{/, "Craft creation has no duplicate backdrop styles");
+assert.doesNotMatch(css, /\.craft-create-drawer \{/, "Craft creation delegates its shell styling");
 assert.match(css, /\.craft-draft-ledger \{/, "Craft draft extraction ledger has stable styling hooks");
 assert.match(css, /\.craft-dossier__ledger \{/, "Craft grouped contents use a stable dossier ledger");
 assert.match(css, /\.craft-role-row:focus-within \{/, "Role picker has a visible keyboard focus treatment");
