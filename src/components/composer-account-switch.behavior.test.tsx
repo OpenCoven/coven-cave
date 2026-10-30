@@ -26,9 +26,12 @@ vi.mock("./model-inventory-feedback", () => ({ ModelInventoryFeedback: () => nul
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let renderer;
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); renderer = undefined; vi.clearAllMocks(); });
-const switchButton = () => renderer.root.findAllByType("button").find((node) => node.children.join("") === "Switch Claude account…");
+const switchButton = (label = "Claude") => renderer.root.findAllByType("button").find((node) => node.children.join("") === `Switch ${label} account…`);
 
-test("switching an account opens CLI sign-in without replacing the chat or changing runtime", async () => {
+for (const { runtime, label, command } of [
+  { runtime: "claude", label: "Claude", command: "claude auth login && claude auth status --text" },
+  { runtime: "codex", label: "Codex", command: "codex login && codex login status" },
+]) test(`switching a ${label} account opens CLI sign-in without replacing the chat or changing runtime`, async () => {
   const pick = vi.fn();
   const focus = vi.fn();
   let mounts = 0;
@@ -36,25 +39,26 @@ test("switching an account opens CLI sign-in without replacing the chat or chang
     const [draft] = useState(() => { mounts++; return "keep this draft"; });
     const [open, setOpen] = useState(true);
     return <><p>{draft}</p><ComposerRuntimePopover open={open} onOpenChange={setOpen}
-      anchorRef={{ current: { focus } }} runtime="claude" executionRuntime="local" onPickRuntime={pick} /></>;
+      anchorRef={{ current: { focus } }} runtime={runtime} executionRuntime="local" onPickRuntime={pick} /></>;
   }
   await act(async () => { renderer = create(<Chat />); });
   expect(renderer.root.findAllByType(BottomTerminal)).toHaveLength(0);
-  expect(switchButton()).toBeTruthy();
-  await act(async () => switchButton().props.onClick());
+  expect(switchButton(label)).toBeTruthy();
+  await act(async () => switchButton(label).props.onClick());
   expect(pick).not.toHaveBeenCalled();
   expect(focus).toHaveBeenCalled();
-  expect(announce).toHaveBeenCalledWith("Opening Claude account sign-in.");
+  expect(announce).toHaveBeenCalledWith(`Opening ${label} account sign-in.`);
   const terminal = renderer.root.findByType(BottomTerminal);
   const write = vi.fn();
   await act(async () => { terminal.props.onReady({ write }); });
-  expect(write).toHaveBeenCalledExactlyOnceWith("claude auth login && claude auth status --text\r");
+  expect(write).toHaveBeenCalledExactlyOnceWith(`${command}\r`);
   // BottomTerminal calls onReady once per shell, and Retry replaces the shell:
   // the new one gets the sign-in command again (#5800).
   await act(async () => { terminal.props.onReady({ write }); });
   expect(write).toHaveBeenCalledTimes(2);
   expect(terminal.props.disposeOnUnmount).toBe(true);
-  expect(JSON.stringify(renderer.toJSON())).toContain("other local Claude CLI launches");
+  expect(renderer.root.findByProps({ role: "dialog" }).findByType("p").children.join(""))
+    .toContain(`other local ${label} CLI launches, not only this chat`);
   await act(async () => renderer.root.findByProps({ role: "dialog" }).findByType("button").props.onClick());
   expect(renderer.root.findAllByType(BottomTerminal)).toHaveLength(0);
   expect(renderer.root.findByType("p").children).toEqual(["keep this draft"]);
@@ -62,13 +66,16 @@ test("switching an account opens CLI sign-in without replacing the chat or chang
 });
 
 for (const props of [
-  { runtime: "codex", executionRuntime: "local" },
+  { runtime: "opencode", executionRuntime: "local" },
   { runtime: "claude", executionRuntime: "ssh:host:/workspace" },
+  { runtime: "codex", executionRuntime: "ssh:host:/workspace" },
+  { runtime: "codex", executionRuntime: null },
   { runtime: "claude", executionRuntime: "local", disabled: true },
+  { runtime: "codex", executionRuntime: "local", disabled: true },
 ]) {
   test(`no local account action for ${JSON.stringify(props)}`, async () => {
     await act(async () => { renderer = create(<ComposerRuntimePopover open onOpenChange={() => {}}
       anchorRef={{ current: null }} onPickRuntime={() => {}} {...props} />); });
-    expect(switchButton()).toBeUndefined();
+    expect(renderer.root.findAllByType("button").filter((node) => /^Switch .+ account…$/.test(node.children.join("")))).toHaveLength(0);
   });
 }
