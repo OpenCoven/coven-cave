@@ -7,6 +7,70 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.19] - 2026-10-30
+
+> Wide windows filled, account switching from the Runtime menu, and the first Authenticode-signed Windows MSI.
+
+Patch release on top of v0.5.18. **The Windows MSI is Authenticode-signed**
+for the first time (#5986). The release workflow checks the signature, signer
+and timestamp before it uploads the MSI. Every MSI through v0.5.18 is unsigned.
+
+### Changed
+- **Pages fill the pane on wide windows** (#6319, #6321). Chat conversations,
+  assistant replies, the Familiar and Coven tabs, Familiar Growth, the daily
+  report, the dashboard, Home and Settings → Profile no longer sit in fixed
+  centered columns. The Medium and Narrow reading widths now narrow replies;
+  before, replies ignored them.
+- **Switch Claude account… and Switch Codex account…** (#6112, #6315). The
+  local Runtime menu in Home and Chat opens a sign-in terminal for that CLI.
+  CLI sign-in is machine-wide, running sessions keep their account, and API
+  keys or Vault credentials can still override it. Remote, unknown and busy
+  composers don't offer it.
+- **Run details, tool cards and reasoning disclosures share one look**
+  (#6275): the same summary rows, chevrons, focus rings and spacing.
+- **Chat headers stay at two rows**, including in narrow split panes, and the
+  Code pull tab no longer reserves a full-height column (#6220).
+- **Settings → Daemon can export diagnostics** (#6304): the redacted bundle,
+  now with the daemon's lifecycle state, as a file or a copy.
+- **Daemon status reads one lifecycle state** (#6299, #6301, #6302). Settings
+  shows states such as "Starting…", "Reconnecting…" and "Runtime missing", a
+  second start or restart joins the one in progress instead of racing it, and
+  a launcher that can't run is reported at once instead of after the whole
+  readiness wait.
+- **iOS supports iPhone Duo** (#6206): book pose keeps the list before the
+  hinge, the upright inner display stacks like a phone, and the outer display
+  no longer scrolls back and forth on a long newest reply (#6205).
+
+### Fixed
+- **Chart Room dependency edits keep each other's work** (#6287, #6292).
+  Importing the old per-browser dependency overlay, linking, cutting and undo
+  now apply to the current card, so an edge another device, familiar or
+  person added in the meantime is no longer dropped.
+- **Find jumps to its first match** even when a scroll to the latest reply
+  was already queued (#6291).
+- **Quitting the packaged app** drains scheduled chat, backup sync and inbox
+  reminders on Windows too, and reports a worker that never registered
+  instead of a clean exit (#6294, #6297, #6300).
+- **Linux:** a task the kernel is reaping counts as gone, not as a cleanup
+  failure (#6284).
+
+### Under the hood
+- **Automations:** `COVEN_CAVE_AUTOMATIONS_ENABLED=0` turns off Cave-local
+  reminders and scheduled chat without touching stored records (#6297).
+- **Remote access:** the device-access check runs only while a remote
+  connection is live (#6311).
+- **Research:** the optional package is detected only in the project's own
+  `node_modules` (#6313).
+- **Releases:** the release-object job can create the release (#6289), and
+  release E2E runs inside the Playwright image so a stalled apt mirror can't
+  cancel it (#6293).
+- **Dependencies:** rustls 0.23.46 (#6296).
+- **Contributors:** familiar provenance is recorded without a co-author line
+  (#6306).
+- **Tests and docs:** the runtime capability matrix and Hermes authorization
+  boundaries (#6307, #6308), the narrowing spec (#6285), and living docs
+  (#6282).
+
 ## [0.5.18] - 2026-10-26
 
 > Security updates for Next.js and DOMPurify, and local models checked on every launch.
