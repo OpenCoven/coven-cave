@@ -11,6 +11,8 @@ export type ShellBanner = {
   /** Diagnostic text (e.g. an OS error string) shown behind a "Details"
    *  disclosure, so the headline stays plain. */
   detail?: string;
+  /** Optional release text, disclosed separately from diagnostic details. */
+  releaseNotes?: string;
   cta?: { label: string; onClick: () => void };
   /** Called when the user dismisses the banner (before it's removed). Lets a
    *  pusher persist the dismissal (e.g. "don't show this version again"). */

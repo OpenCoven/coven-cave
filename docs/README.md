@@ -36,6 +36,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 ### Platform and runtime
 
+- [`audits/home-route-js-budget.md`](audits/home-route-js-budget.md) — the home route's first-load JavaScript budget: 2,800 KiB, enforced after every production build by `scripts/bundle-budget.mjs`, with how to reproduce and attribute a regression
 - [`client-v1-release.md`](client-v1-release.md) — the compatibility metadata a release advertises on `/api/client/v1/health`, and the fixture-check and release-smoke gates that protect it
 - [`client-v1-settings.md`](client-v1-settings.md) — approving, denying, auditing, and revoking native client access in Cave Settings
 - [`event-plane-operations.md`](event-plane-operations.md) — the invalidation WebSocket: switches, rollout modes, what each platform pauses, security, recovery and diagnostics
@@ -45,16 +46,21 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`model-catalog-pipeline.md`](model-catalog-pipeline.md) — the declarative source, generator, and validation workflow for harness model catalogs and context metadata
 - [`first-run-setup-diagnostics.md`](first-run-setup-diagnostics.md) — server-classified failure codes for the first-run bootstrap
 - [`settings-persistence.md`](settings-persistence.md) — why the desktop shell cannot use origin-keyed browser storage as its authoritative store
+- [`windows-startup-diagnostics.md`](windows-startup-diagnostics.md) — per-port relaunch, native failure reporting and retained private startup evidence
+- [`windows-window-placement.md`](windows-window-placement.md) — fitted and persisted main-window geometry, Quick Chat placement, title-bar/tray appearance, recovery and outstanding Windows acceptance
 - [`windows-runtime-cache.md`](windows-runtime-cache.md) — the content-addressed archive layer and its two digests
+- [`windows-sidecar-recovery.md`](windows-sidecar-recovery.md) — loaded-shell recovery, native Retry and Windows qualification limits
 - [`windows-update-preparation.md`](windows-update-preparation.md) — download, verify, and install as three distinct phases
 - [`windows-upgrade-benchmark.md`](windows-upgrade-benchmark.md) — what `scripts/windows-upgrade-diagnostics.ps1` captures
+- [`workflows/windows-msi-signing.md`](workflows/windows-msi-signing.md) — SSL.com eSigner setup, the five signing inputs, and the release gate that publishes only the Authenticode-verified MSI (#5739)
+- [`performance/daemon-lifecycle.md`](performance/daemon-lifecycle.md) — the opt-in real-daemon lifecycle probe and its 2026-10-20 diagnostic observation (#6120)
+- [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the daemon connectivity launch flow, readiness checks, fault coverage, and measurement contract; the `cave-58eoq` program's tracked work all merged (#4485–#4528); #6298 owns the lifecycle, fault-matrix and diagnostics-export follow-ups and #6303 the boundary proof
 
 ### Mobile and handoff
 
 - [`mobile-tailscale.md`](mobile-tailscale.md) — exposing the browser surface to a phone over Tailscale Serve, including tokenless tailnet-device access
-- [`mobile-memory.md`](mobile-memory.md) — the read-only iOS client of the canonical-memory API
 - [`ios-current-direction.md`](ios-current-direction.md) — the canonical native iOS product shape, active priorities, and historical-plan boundary
-- [`workflows/ios-testflight-rollout.md`](workflows/ios-testflight-rollout.md): iOS rollout preparation, exact-artifact/device receipts, cohort HOLD decisions, and non-destructive recovery; execution acceptance remains open in #5319
+- [`workflows/ios-testflight-rollout.md`](workflows/ios-testflight-rollout.md): iOS rollout preparation, exact-artifact/device receipts, cohort HOLD decisions, and non-destructive recovery. #5319 closed as not planned on 2026-10-18 (an obsolete v0.4-era gate); release tags already upload iOS builds to TestFlight, and a future external-tester cohort needs a new issue
 - [`ios-webrtc-dsym-symbolication.md`](ios-webrtc-dsym-symbolication.md) — why TestFlight uploads warn that the vendored WebRTC.framework has no dSYM, and how the release pipeline audits and restores symbolication coverage
 
 ### Chat, familiars, and tasks
@@ -75,8 +81,9 @@ authoritative absence; only a network failure can use offline history. The
 transport reuses the existing authenticated cache and revision/write guards.
 
 
+- [`thread-self-reports.md`](thread-self-reports.md) — familiar/session ownership, atomic automatic admission, manual repeats, and the persisted-report generation precheck
 - [`familiar-identity-context.md`](familiar-identity-context.md) — how a familiar's declared identity reaches the model, and what the injection may not do
-- [`local-models.md`](local-models.md) — Codex local mode on Ollama and LM Studio: setup, addresses, what stays on this computer, limitations and troubleshooting
+- [`local-models.md`](local-models.md) — Codex local mode on Ollama and LM Studio: setup, addresses, what stays on this computer, how Full access relates to Codex's own sandbox (cloud Codex too), limitations and troubleshooting
 - [`auto-mission-mode.md`](auto-mission-mode.md) — `/auto`, its status blocks, and the closing questionnaire
 - [`orchestration-ready-tasks.md`](orchestration-ready-tasks.md) — the shared task contract every familiar and orchestrator reads and writes
 - [`role-surfaces.md`](role-surfaces.md) — role-aware rooms, and why the Cave is not role-hardcoded
@@ -84,6 +91,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 - [`chat-image-carousel.md`](chat-image-carousel.md) — image carousel markers, reusing the protocol above
 - [`chat-proposal-review-card.md`](chat-proposal-review-card.md) — proposal-review receipt marker and evidence-only card (#5520)
 - [`research-host-contract.md`](research-host-contract.md) — explicit core adapters and shared saved links for the optional Research package
+- [`research-core-boundary.md`](research-core-boundary.md) — the optional Research boundary and the shared contracts core keeps; shipped in #6025 and enforced by `research-core-boundary.test.ts` and `research-maintenance-boundary.test.ts`
 - [`research-run-surface.md`](research-run-surface.md) — durable ResearchMission projections across Chat, Quick Chat, and Research Desk
 - [`execution-analytics.md`](execution-analytics.md) — model- and harness-level analytics: the three model identities, why harness version is never recorded, coverage as the honesty layer, and what the aggregate discards
 
@@ -112,7 +120,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 ### Integrity and integrations
 
 - [`dependency-advisories.md`](dependency-advisories.md) — open Dependabot alerts whose patched version is unreachable from this dependency graph: the resolver refusal, the exposure assessment, and the upstream change that would lift each
-- [`stuck-action-runs.md`](stuck-action-runs.md) — the four Actions runs wedged in `queued` since 2026-07-25 (issue #4905): the HTTP-500 history, the 2026-08-30 HTTP-403 retry record, the do-not-delete-workflow-history rule, and the retry tooling
+- [`stuck-action-runs.md`](stuck-action-runs.md) — the four Actions runs wedged in `queued` since 2026-07-25 (issue #4905, closed as not planned 2026-09-16; the runs remain queued): the HTTP-500 history, the 2026-08-30 HTTP-403 retry record, the do-not-delete-workflow-history rule, and the retry tooling
 - [`project-permission-integrity.md`](project-permission-integrity.md) — reconciling stale grants against the project registry
 - [`discord-rich-presence.md`](discord-rich-presence.md) — privacy-safe local activity publishing
 
@@ -120,16 +128,14 @@ transport reuses the existing authenticated cache and revision/write guards.
 
 ## Program
 
-- [`research-core-boundary.md`](research-core-boundary.md) — proposed optional Research boundary, shared contracts to retain, and extraction acceptance criteria
-- [`research-extraction-verification.md`](research-extraction-verification.md) — candidate compatibility evidence, size and timing measurements, and remaining extraction acceptance
-
 Active initiatives. Parts have shipped; parts have not. Each states which.
 
-- [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the reliability program (`cave-58eoq`); Windows supervision and authenticated native readiness have shipped
-- [`golden-paths.md`](golden-paths.md) — the eight journeys the Cave must make effortless, with per-item shipped/broken status
-- [`craft-ux.md`](craft-ux.md) — a friction inventory of the craft authoring flow with a reuse-first enablement plan
+- [`core-contract-and-room-boundaries.md`](core-contract-and-room-boundaries.md) — the minimal product contract and source inventory for #6119: all workspace modes, role rooms, auxiliary subsystems and startup workers, with current boundaries separated from unverified extraction and recovery acceptance
 - [`desktop-onboarding.md`](desktop-onboarding.md) — the evidence baseline and product contract for download → first successful familiar response, separating confirmed behavior from proposals still needing usability and packaged-app testing
-- [`ci-implementation-plan.md`](ci-implementation-plan.md) — the release-candidate CI rollout (`cave-7kix8.8`): signed promotion, full validation, and the parallel `PR checks` context have shipped; retiring routine PR fanout and the protection switch remain
+- [`chat-native-ui-tier.md`](chat-native-ui-tier.md) — `coven:ui` blocks: the component catalog, expression whitelist, and streaming and failure contracts; the parser and renderer merged in #6073 and are wired into Main Chat, every other surface shows readable text (#6060), and no familiar prompt teaches the syntax until the rollout decision (#6063)
+- [`ci-implementation-plan.md`](ci-implementation-plan.md) — the release-candidate CI rollout: signed promotion, full validation, the parallel `PR checks` context, and promotion at real release cuts have shipped; the protection switch, retiring routine PR fanout, and verifying the lean gate remain, tracked in #6257
+- [`roadmaps/coven-automations-v1.md`](roadmaps/coven-automations-v1.md) — the cross-repository Coven Automations v1 program (`OpenCoven/coven#854`) and its [machine-readable mapping](roadmaps/coven-automations-v1.mapping.json): foundation, protocol, scheduler reliability, embodiment, and authority have closed; dispatch-time trust (`coven#857`), certification (`coven#858`), the SDK, Cave oversight (#5217), Psyche, Docs, and organization canaries remain, and the 2026-10-18 release checkpoint is no-go
+- [`performance/ios-performance-audit.md`](performance/ios-performance-audit.md) — the native iOS performance record (opened 2026-08-10, updated through 2026-10-03): instrumentation, the Release capture driver, and the budgets ratified on 2026-10-02 (#5292), none CI-enforced; the main-thread hitch budget (#5748), inline-zoom device evidence (#5314), and the physical-device gates (#6259) remain
 
 ---
 
@@ -148,23 +154,37 @@ Point-in-time records. Read for intent, not for current behavior.
 - [`mobile-readiness.md`](mobile-readiness.md) — manual dogfood checklist for the `feat/mobile-readiness` rollout
 - [`windows-sidecar-compression.md`](windows-sidecar-compression.md) — a zstd-level benchmark against a fixed production payload
 - [`salem-chat-api-model.md`](salem-chat-api-model.md) — an outbound brief for the `opencoven-chat-api` repo, not a Cave contract
-- [`coven-autoloop-cli-wrapper-spec.md`](coven-autoloop-cli-wrapper-spec.md) — scoping handoff for the unbuilt `bin/coven-autoloop` write path; the read path in `src/lib/research-autoloop.ts` already ships and is not what this describes
+- [`golden-paths.md`](golden-paths.md) — the eight journeys mapped on 2026-07-09; every path's enablement plan has shipped (#2767–#5132), and several surfaces it describes have since moved
+- [`craft-ux.md`](craft-ux.md) — the craft authoring audit and redesign; all six checkpoints shipped on 2026-07-15 (#3188–#3208), and `marketplace.md` (Living, above) describes the flow now
+- [`research-extraction-verification.md`](research-extraction-verification.md) — candidate compatibility evidence and size and timing measurements for the Research extraction, which merged as #6025 (#5997 closed)
+- [`reviewed-cli-install-verification.md`](reviewed-cli-install-verification.md) — the 2026-10-21 fresh-install footprint and recovery measurements for the reviewed CLI 0.4.10 adoption (#6164)
+- [`plans/2026-07-26-dynamic-claude-opus-5.md`](plans/2026-07-26-dynamic-claude-opus-5.md) — capability-gated Claude Opus 5 across Claude Code, Copilot CLI, and OpenCode; shipped in #3954, and #5541 later limited the `opus` alias to Claude Code below 2.1.280
+- [`plans/2026-07-29-ios-new-chat-project-contract.md`](plans/2026-07-29-ios-new-chat-project-contract.md) — binding native iOS first turns to a familiar-authorized project; shipped in #4067 and reworked by the chat-only shell (#5379); the current contract is [`specs/ios-new-chat-project-contract.md`](specs/ios-new-chat-project-contract.md)
+- [`contracts/mobile-recovery-contract.md`](contracts/mobile-recovery-contract.md) — the transport-recovery contract proposed after the 2026-08-26 Serve-drift incident (#5051); #5056 and #5270 implemented its core rules differently, and `mobile-tailscale.md` (Living, above) describes current behavior
+- [`coven-autoloop-cli-wrapper-spec.md`](coven-autoloop-cli-wrapper-spec.md) — scoping handoff for the unbuilt `bin/coven-autoloop` write path; the read path that shipped in `src/lib/research-autoloop.ts` left Cave when Research became an optional, separately released package (#6025), and is not what this describes
+- [`2026-06-11 space hoggers`](audits/2026-06-11-space-hoggers.md) — the largest tracked files under `src`, `docs`, `README.md` and `package.json` on 2026-06-11
+- [`2026-06 chat UX audit`](audits/2026-06-chat-ux-audit.md) — Cave's chat measured against Claude Code, Cursor and ChatGPT at `af3fa0e` (2026-06-11)
+- [`2026-08-28 Cave conformance recount`](audits/2026-08-28-cave-conformance-recount.md) (`cave-ui5z`) — the conformance counts re-run after the P1.5 chrome and contrast fix (#3152)
 - [`2026-08-28 Coven Grimoire frame conformance`](audits/2026-08-28-coven-grimoire-frame-conformance.md) (`cave-wc0j7`) — frame-vs-surface conformance audit for `Coven Grimoire.dc.html`: the frame is a familiar-authored *publication* (issue contents, bylines, Share) while the repo's grimoire is the *memory* knowledge store; the collision is documented and the frame stays unbuilt pending a product decision
 
 ---
 
 ## Tombstone
 
-- [`codeql.md`](codeql.md) — CodeQL retired 2026-07-31, in three ordered steps; nothing scans in its place
+- [`codeql.md`](codeql.md) — the CodeQL Advanced workflow and required context, retired 2026-07-31 in three ordered steps; GitHub's default setup now scans, advisory only
+- [`mobile-memory.md`](mobile-memory.md) — Coven Memory's mobile routes, removed with the canonical memory vault in #5418 (2026-09-16)
 
 ---
 
 ## Other trees under `docs/`
 
 - [`api/`](api) — reference documentation for versioned public HTTP surfaces, listed individually under **Living** above
-- [`superpowers/`](superpowers) — the approved spec and plan store that issues and PRs cite (142 files)
-- [`specs/`](specs) — **frozen** (55 files). The earlier flat convention, which overlapped `superpowers/` from 2026-06-30 to 2026-08-06. Closed to new files, and deliberately not migrated: issues, PRs, and older plans cite these by path. See [`specs/README.md`](specs/README.md) for the reasoning and for the three undated standing contracts it holds
-- [`plans/`](plans), [`audits/`](audits) — small point-in-time sets predating the `superpowers/` store
+- [`superpowers/`](superpowers) — the approved spec and plan store that issues and PRs cite
+- [`specs/`](specs) — **frozen** (55 files at the freeze, plus three added after it; `docs-index.test.mjs` pins the count). The earlier flat convention, which overlapped `superpowers/` from 2026-06-30 to 2026-08-06. Closed to new files, and deliberately not migrated: issues, PRs, and older plans cite these by path. See [`specs/README.md`](specs/README.md) for the reasoning and for the three undated standing contracts it holds
+- [`plans/`](plans), [`audits/`](audits), [`contracts/`](contracts) — small point-in-time sets predating the `superpowers/` store; their documents are listed under **Historical** above, except `audits/home-route-js-budget.md`, a living budget under **Platform and runtime**
+- [`roadmaps/`](roadmaps), [`performance/`](performance) — program records kept current; listed under **Program** above
+- [`design/`](design) — runtime-activity design notes and their [`evidence/`](design/evidence) for the chat-observability work (#5761, #5767)
+- [`client-v1-conformance-results/`](client-v1-conformance-results), [`release-acceptance-results/`](release-acceptance-results) — machine-written run records; see [client-v1 conformance](workflows/client-v1-conformance.md) and [release acceptance](workflows/release-acceptance.md)
 - [`design-handoff/`](design-handoff), [`diagrams/`](diagrams), [`screenshots/`](screenshots), [`familiar-chatout-codex/`](familiar-chatout-codex) — supporting material
 
 ## Keeping this honest

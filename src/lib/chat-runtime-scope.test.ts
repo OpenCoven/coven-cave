@@ -10,6 +10,7 @@ import {
   buildPromptWithRuntimeScope,
   buildRuntimeScopePreamble,
   resolveLocalRuntimeCwd,
+  runtimeGrantDirs,
 } from "./chat-runtime-scope.ts";
 
 const tempRoot = await mkdtemp(path.join(tmpdir(), "cave-runtime-scope-"));
@@ -237,5 +238,123 @@ assert.equal(
   `${buildRuntimeScopePreamble({ kind: "local", root: repo })}\n\nCurrent user message:\nhello`,
   "runtime scope should wrap the user prompt as explicit startup context",
 );
+
+// REGRESSION (#6210): the spawn root arrives realpathed, while a granted
+// project keeps its registered spelling. A project registered through an alias
+// of the spawn directory (macOS /tmp -> /private/tmp) must not be forwarded
+// back to the harness as a second --add-dir grant of its own cwd.
+{
+  const aliasBase = realpathSync(await mkdtemp(path.join(tmpdir(), "cave-grant-dirs-")));
+  const realParent = path.join(aliasBase, "real");
+  const spawn = path.join(realParent, "primary");
+  const extra = path.join(realParent, "extra");
+  const workspace = path.join(aliasBase, "workspace");
+  await mkdir(spawn, { recursive: true });
+  await mkdir(extra, { recursive: true });
+  await mkdir(workspace, { recursive: true });
+  const { symlinkSync } = await import("node:fs");
+  symlinkSync(realParent, path.join(aliasBase, "alias"));
+  const aliasSpawn = path.join(aliasBase, "alias", "primary");
+  const aliasExtra = path.join(aliasBase, "alias", "extra");
+  const elsewhereLink = path.join(aliasBase, "link-to-extra");
+  symlinkSync(extra, elsewhereLink);
+
+  assert.deepEqual(
+    runtimeGrantDirs({
+      spawnRoot: spawn,
+      grantedProjectRoots: [aliasSpawn, aliasExtra, ` ${spawn} `, "", aliasExtra],
+      familiarWorkspace: workspace,
+    }),
+    [aliasExtra, workspace],
+    "the spawn root is excluded by canonical identity; other grants keep their registered spelling",
+  );
+  assert.deepEqual(
+    runtimeGrantDirs({ spawnRoot: spawn, grantedProjectRoots: [elsewhereLink] }),
+    [elsewhereLink],
+    "a symlinked grant that names another directory is still forwarded",
+  );
+  assert.deepEqual(
+    runtimeGrantDirs({ spawnRoot: spawn, grantedProjectRoots: [], familiarWorkspace: aliasSpawn }),
+    [],
+    "a familiar workspace that is the spawn directory is not forwarded again",
+  );
+  assert.deepEqual(
+    runtimeGrantDirs({ spawnRoot: spawn, grantedProjectRoots: [aliasExtra, extra, elsewhereLink] }),
+    [aliasExtra],
+    "one directory is forwarded once, under the first spelling granted",
+  );
+
+  // On a case-insensitive volume the spawn cwd carries the on-disk case, and a
+  // grant typed in another case is the same directory.
+  await mkdir(path.join(aliasBase, "CaseProbe"));
+  const { existsSync } = await import("node:fs");
+  if (existsSync(path.join(aliasBase, "caseprobe"))) {
+    const onDisk = path.join(realParent, "MyProj");
+    await mkdir(onDisk);
+    const spawnOnDisk = realpathSync.native(path.join(realParent, "myproj"));
+    assert.equal(spawnOnDisk, onDisk, "the native realpath reports the on-disk case");
+    assert.deepEqual(
+      runtimeGrantDirs({ spawnRoot: spawnOnDisk, grantedProjectRoots: [path.join(aliasBase, "alias", "myproj"), extra] }),
+      [extra],
+      "a grant of the spawn directory in another letter case is not forwarded again",
+    );
+  }
+
+  // REGRESSION (#6216): the runtime-scope preamble lists each granted
+  // directory once and never repeats the primary root. Spellings of one
+  // directory merge to the most permissive level, shown under a spelling that
+  // holds it.
+  const preamble = buildRuntimeScopePreamble({
+    kind: "local",
+    root: spawn,
+    allowedProjectRoots: [aliasSpawn, extra, aliasExtra],
+    projectRootAccess: { [aliasSpawn]: "write", [extra]: "read", [aliasExtra]: "write" },
+    readOnlyResourceRoots: [aliasSpawn, workspace],
+  });
+  const rootLines = preamble.split("\n").filter((line) => line.startsWith("  - "));
+  assert.deepEqual(
+    rootLines,
+    [`  - ${aliasExtra} (read + write)`, `  - ${workspace} (read-only)`],
+    "an alias of the primary root and a second spelling of a grant are not listed again",
+  );
+  assert.doesNotMatch(
+    preamble,
+    /Roots marked \(read-only\) above permit reading/,
+    "a directory granted write under any spelling is not described as read-only",
+  );
+
+  // Decision recorded on #6216: the persisted runtime access fingerprint keeps
+  // comparing spellings, so existing native sessions are not forced to
+  // refresh. Only the preamble above dedupes by directory.
+  assert.equal(
+    buildRuntimeAccessFingerprint({ primaryRoot: spawn, grantedProjectRoots: [aliasSpawn] }),
+    JSON.stringify({ version: 1, primaryRoot: spawn, roots: [{ root: aliasSpawn, access: "write" }] }),
+    "the persisted fingerprint format is unchanged",
+  );
+
+  // CI runs on case-sensitive Linux, where the case-variant check above is
+  // skipped. Simulate a case-insensitive volume by folding one directory's
+  // case in the native realpath, so the spawn-root exclusion is guarded on
+  // every platform.
+  const folded = path.join(realParent, "Folded");
+  await mkdir(folded);
+  const typedFolded = path.join(realParent, "folded");
+  const nativeBefore = realpathSync.native;
+  const fold = (value) => {
+    const text = String(value);
+    return text === typedFolded || text.startsWith(typedFolded + path.sep) ? folded + text.slice(typedFolded.length) : text;
+  };
+  const { mock } = await import("node:test");
+  mock.method(realpathSync, "native", (value, ...rest) => nativeBefore(fold(value), ...rest));
+  try {
+    assert.deepEqual(
+      runtimeGrantDirs({ spawnRoot: folded, grantedProjectRoots: [typedFolded, extra] }),
+      [extra],
+      "(simulated case-insensitive volume) a grant of the spawn directory in another case is not forwarded again",
+    );
+  } finally {
+    mock.restoreAll();
+  }
+}
 
 console.log("chat-runtime-scope.test.ts: ok");

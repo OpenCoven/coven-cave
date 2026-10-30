@@ -5,7 +5,7 @@ import { covenHome } from "@/lib/coven-paths";
 export const MAX_RUN_LOG_BYTES = 256 * 1024;
 
 function logsRoot(): string {
-  return path.join(covenHome(), "automation-run-logs");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "automation-run-logs");
 }
 
 function isWithinRoot(resolved: string, root: string): boolean {

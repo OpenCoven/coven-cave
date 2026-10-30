@@ -80,6 +80,14 @@ final class ActivityTransportTests: XCTestCase {
         guard let raw = ProcessInfo.processInfo.environment["CAVE_NATIVE_ACTIVITY_FIXTURE"] else {
             throw XCTSkip("Run scripts/runtime-activity-native-transport.mjs for the built-server TCP gate")
         }
+        let startedAt = ContinuousClock.now
+        func stage(_ name: String) {
+            let elapsed = startedAt.duration(to: .now).components
+            let milliseconds = Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15
+            print("CAVE_NATIVE_ACTIVITY_STAGE \(name) elapsed_ms=\(milliseconds)")
+        }
+        stage("start")
+        defer { stage("test-exit") }
         let config = try JSONDecoder().decode(Configuration.self, from: Data(raw.utf8))
         let expected = try scenario().expected
         let base = try XCTUnwrap(URL(string: config.origin))
@@ -131,9 +139,13 @@ final class ActivityTransportTests: XCTestCase {
                 if !Task.isCancelled { XCTFail("Initial stream failed: \(error)") }
             }
         }
+        stage("tool-running-wait")
         await fulfillment(of: [started], timeout: 30)
+        stage("tool-running-wait-finished")
         sendTask.cancel()
+        stage("send-cancellation-wait")
         await sendTask.value
+        stage("send-cancelled")
         XCTAssertFalse(live.done, "the transport is interrupted before the final frame")
         XCTAssertGreaterThan(live.cursor, 0)
         let cursor = live.cursor
@@ -147,9 +159,13 @@ final class ActivityTransportTests: XCTestCase {
         defer { resumeTask.cancel() }
         var release = URLRequest(url: try XCTUnwrap(URL(string: config.releaseURL)))
         release.httpMethod = "POST"
+        stage("provider-release-wait")
         let (_, released) = try await URLSession.shared.data(for: release)
+        stage("provider-released")
         XCTAssertEqual((released as? HTTPURLResponse)?.statusCode, 204)
+        stage("resumed-stream-wait")
         try await resumeTask.value
+        stage("resumed-stream-complete")
         XCTAssertTrue(live.done)
         let answer = expected.answer.replacingOccurrences(of: "{{MARKER}}", with: config.marker)
         XCTAssertEqual(live.text, answer)
@@ -167,7 +183,9 @@ final class ActivityTransportTests: XCTestCase {
         XCTAssertEqual(live.tools.compactMap(\.textOffset), ["Inspecting 🧙 café.\n".utf16.count])
 
         let sessionId = try XCTUnwrap(live.sessionId)
+        stage("initial-history-wait")
         let loadedConversation = try await client.conversation(sessionId: sessionId)
+        stage("initial-history-loaded")
         let conversation = try XCTUnwrap(loadedConversation)
         let turn = try XCTUnwrap(conversation.turns.last(where: { $0.role == "assistant" }))
         let restored = DisplayMessage.restored(from: turn, familiarId: "nativeactivity")
@@ -179,16 +197,20 @@ final class ActivityTransportTests: XCTestCase {
         XCTAssertEqual(snapshot.runtimeIdentity, live.identity)
         XCTAssertEqual(snapshot.activitySteps, live.tools)
 
-        for _ in 0..<2 {
+        for iteration in 0..<2 {
+            stage("completed-replay-\(iteration)-wait")
             let replay = Observation()
             for try await frame in client.resumeStream(runId: runId, cursor: 0) { replay.apply(frame) }
+            stage("completed-replay-\(iteration)-loaded")
             XCTAssertTrue(replay.done)
             XCTAssertEqual(replay.text, live.text)
             XCTAssertEqual(replay.identity, live.identity)
             XCTAssertEqual(replay.tools, live.tools)
             XCTAssertEqual(replay.summaries, live.summaries)
         }
+        stage("initial-tool-output-wait")
         let output = try await client.toolOutput(sessionId: sessionId, toolId: expected.toolId)
+        stage("initial-tool-output-loaded")
         XCTAssertTrue(output.contains(config.marker))
         let serialized = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
         for sentinel in expected.privateSentinels {
@@ -201,27 +223,35 @@ final class ActivityTransportTests: XCTestCase {
         var restart = URLRequest(url: try XCTUnwrap(URL(string: config.restartURL)))
         restart.httpMethod = "POST"
         restart.timeoutInterval = 150
+        stage("server-restart-wait")
         let (_, restarted) = try await URLSession.shared.data(for: restart)
+        stage("server-restarted")
         XCTAssertEqual((restarted as? HTTPURLResponse)?.statusCode, 204)
-        for key in [runId, sessionId] {
+        for (index, key) in [runId, sessionId].enumerated() {
+            stage("lost-replay-\(index)-wait")
             do {
                 for try await _ in client.resumeStream(runId: key, cursor: 0) {
                     XCTFail("A restarted server cannot retain this process-local replay")
                 }
                 XCTFail("The lost replay must report NoResumableRun")
             } catch is CaveClient.NoResumableRun {
+                stage("lost-replay-\(index)-confirmed")
                 // Canonical saved history, not another send, owns recovery.
             }
         }
-        for _ in 0..<2 {
+        for iteration in 0..<2 {
+            stage("saved-history-\(iteration)-wait")
             let reloaded = try await client.conversation(sessionId: sessionId)
+            stage("saved-history-\(iteration)-loaded")
             let saved = try XCTUnwrap(reloaded?.turns.last(where: { $0.role == "assistant" }))
             let recovered = DisplayMessage.restored(from: saved, familiarId: "nativeactivity")
             XCTAssertEqual(recovered.text, live.text)
             XCTAssertEqual(recovered.runtimeIdentity, live.identity)
             XCTAssertEqual(recovered.activitySteps, live.tools)
             XCTAssertEqual(recovered.reasoningBlocks, live.summaries)
+            stage("saved-tool-output-\(iteration)-wait")
             let savedOutput = try await client.toolOutput(sessionId: sessionId, toolId: expected.toolId)
+            stage("saved-tool-output-\(iteration)-loaded")
             XCTAssertEqual(savedOutput, output)
         }
         // Exercise the production thread's exact-delivery reconciliation, not
@@ -236,6 +266,7 @@ final class ActivityTransportTests: XCTestCase {
                 queuedTargetFamiliarIds: ["nativeactivity"],
                 queuedContext: .init(projectRoot: config.projectRoot, sessionIds: ["nativeactivity": sessionId]))
             thread.messages = partial ? [user, interrupted] : [user]
+            stage(partial ? "partial-thread-reconcile-wait" : "empty-thread-reconcile-wait")
             await thread.replayQueued(client: client,
                 onConnectionFailure: { XCTFail("Saved recovery failed: \($0)") },
                 dispatchLeaseIsCurrent: { true },
@@ -243,6 +274,7 @@ final class ActivityTransportTests: XCTestCase {
                 onAccessRefused: { XCTFail("Unexpected fixture access refusal: \(String(describing: $0))") },
                 persistBeforeDispatch: { XCTFail("Accepted delivery must not dispatch again"); return false },
                 persistAfterRollback: { true }, onChange: {})
+            stage(partial ? "partial-thread-reconciled" : "empty-thread-reconciled")
             XCTAssertEqual(thread.messages.count, 2)
             XCTAssertFalse(thread.messages[0].isQueued)
             let adopted = try XCTUnwrap(thread.messages.last)
@@ -257,11 +289,13 @@ final class ActivityTransportTests: XCTestCase {
             XCTAssertEqual(adopted.toolOutputReference,
                 ToolOutputReference(sessionId: sessionId, connection: client.connection))
         }
+        stage("denied-output-wait")
         CaveConnection.saveAccessToken("fixture-denied", for: base)
         do {
             _ = try await client.toolOutput(sessionId: sessionId, toolId: expected.toolId)
             XCTFail("A prior authorized read cannot satisfy a new denied read")
         } catch {
+            stage("denied-output-returned-error")
             XCTAssertEqual(error as? ToolOutputError, .unauthorized)
         }
     }

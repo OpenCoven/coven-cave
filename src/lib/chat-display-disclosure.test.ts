@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { ToolCallTracker, toPersistedTools, flattenToolResultContent } from "./chat-tool-events.ts";
 import { projectDisplayId, projectDisplayText, projectProgressDetails } from "./server/chat-display-projection.ts";
 import { ReasoningBlockTracker, projectReasoningText } from "./server/chat-reasoning-projection.ts";
@@ -54,4 +55,17 @@ assert.equal(projectDisplayText({ classification: "tool-output", complete: true,
 for (const separator of ["&amp;", "&#38;", "&#x26;", "&amp;amp;"]) {
   assert.equal(projectDisplayText(`https://example.com/?file=report${separator}Signature=HTML_SIGNED_SENTINEL`, { classification: "tool-output", complete: true }), "[redacted signed URL]");
 }
+// golden-13 (#6061): the shared tool sentinels in secret-shaped positions —
+// split across progress chunks, a bearer argument, a signed-URL signature in
+// a result and an opaque payload field — never reach a projected event.
+const toolSentinels = JSON.parse(readFileSync(new URL("../../apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-v1.json", import.meta.url), "utf8"))
+  .reasoningPrivacySentinels.tool as { argument: string; result: string; payloadSignature: string };
+const golden13 = new ToolCallTracker(() => 100, "", context);
+const golden13Start = golden13.envelopeToolUse("golden13", "Read", JSON.stringify({ path: "safe.ts", authorization: `Bearer ${toolSentinels.argument}` }));
+const golden13Chunks = ["password=", ...toolSentinels.argument.match(/.{1,8}/g)!].map((chunk) => golden13.envelopeToolProgress("golden13", chunk));
+const golden13End = golden13.envelopeToolResult("golden13", JSON.stringify({ text: `Safe result https://files.example.com/r?X-Amz-Signature=${toolSentinels.result}`, signature: toolSentinels.payloadSignature, encrypted_content: toolSentinels.payloadSignature }), false);
+assert.ok(golden13Start?.input?.includes("[redacted]"));
+assert.match(golden13End!.output!, /Safe result \[redacted signed URL\]/);
+assert.doesNotMatch(JSON.stringify([golden13Start, golden13Chunks, golden13End, golden13.snapshot(), toPersistedTools(golden13.snapshot(), 0)]),
+  new RegExp(Object.values(toolSentinels).join("|")));
 console.log("chat-display-disclosure: passed");

@@ -31,7 +31,20 @@ final class ActivityRecoveryUITests: XCTestCase {
             let composer = app.descendants(matching: .any).matching(identifier: "Message").firstMatch
             XCTAssertTrue(composer.waitForExistence(timeout: 20))
             composer.tap()
-            composer.typeText("Read the controlled marker.")
+            if let mention = config["mention"], let typedPath = config["typedPath"] {
+                // #6104: pick the file from the real server's @ index, then
+                // type another path by hand. Only the pick may be delivered.
+                composer.typeText("Read the controlled marker @mark")
+                let row = app.buttons[mention].firstMatch
+                XCTAssertTrue(row.waitForExistence(timeout: 20), "the @ menu lists the project's files from the server")
+                row.tap()
+                let picked = NSPredicate(format: "value == %@", "Read the controlled marker @\(mention) ")
+                await fulfillment(of: [XCTNSPredicateExpectation(predicate: picked, object: composer)], timeout: 5)
+                // Trailing words close the picker again before Send.
+                composer.typeText("but not @\(typedPath) typed by hand")
+            } else {
+                composer.typeText("Read the controlled marker.")
+            }
             let send = app.buttons["Send"]
             let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: send)
             await fulfillment(of: [enabled], timeout: 20)
@@ -53,7 +66,7 @@ final class ActivityRecoveryUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["Inspect the marker file."].exists)
             XCTAssertFalse(app.staticTexts["The marker was read."].exists)
             attachScreenshot("native-live-send-running")
-            XCUIDevice.shared.press(.home)
+            app.sendToBackground()
             var persisted = URLRequest(url: try XCTUnwrap(URL(string: try XCTUnwrap(config["snapshotURL"]))))
             persisted.httpMethod = "POST"
             let (_, snapshotResponse) = try await URLSession.shared.data(for: persisted)
@@ -64,7 +77,7 @@ final class ActivityRecoveryUITests: XCTestCase {
             XCTAssertTrue(queued.exists, "the accepted delivery stays queued during the outage")
             XCTAssertFalse(tool.exists, "saved activity is not injected into the phone fixture")
             attachScreenshot("native-recovery-offline")
-            XCUIDevice.shared.press(.home)
+            app.sendToBackground()
         }
         var restart = URLRequest(url: try XCTUnwrap(URL(string: try XCTUnwrap(config["restartURL"]))))
         restart.httpMethod = "POST"
@@ -102,7 +115,7 @@ final class ActivityRecoveryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts[marker].waitForExistence(timeout: 10), "output is loaded from the saved tool's real endpoint")
         attachScreenshot("native-recovered-output")
         app.buttons["Close tool output"].tap()
-        XCUIDevice.shared.press(.home)
+        app.sendToBackground()
         app.activate()
         XCTAssertTrue(output.waitForExistence(timeout: 10))
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "Reasoning summary")).count, 2)

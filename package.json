@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.5.14",
+  "version": "0.5.18",
   "private": true,
   "type": "module",
   "description": "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions.",
@@ -53,7 +53,9 @@
     "bench:chat-projects": "node --experimental-strip-types scripts/chat-project-grouping-benchmark.mjs",
     "bench:store-reads": "node --experimental-strip-types scripts/store-read-benchmark.mjs",
     "bench:daemon-reliability": "node --experimental-strip-types scripts/daemon-reliability-benchmark.mjs",
+    "bench:daemon-lifecycle": "node --experimental-strip-types scripts/daemon-lifecycle-probe.mjs",
     "performance:report": "node --experimental-strip-types scripts/cave-performance-report.mjs",
+    "performance:stream": "node scripts/run-stream-performance.mjs",
     "ios:performance:capture": "node scripts/ios-performance-capture.mjs",
     "test:performance-report": "node --test scripts/cave-performance-report.test.mjs",
     "analyze:bundle": "next experimental-analyze --output",
@@ -143,7 +145,7 @@
     "@xterm/xterm": "6.0.0",
     "canonicalize": "3.0.0",
     "mermaid": "11.16.1",
-    "next": "16.3.8",
+    "next": "16.4.3",
     "node-pty": "1.1.0",
     "pdfjs-dist": "6.2.108",
     "punycode": "2.3.1",
@@ -154,6 +156,7 @@
     "react-resizable-panels": "4.12.2",
     "sharp": "0.35.5",
     "shiki": "4.3.1",
+    "smol-toml": "1.9.1",
     "sucrase": "3.35.1",
     "twitter-text": "3.1.0",
     "typebox": "1.3.8",
@@ -180,7 +183,7 @@
     "simple-icons": "16.28.0",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   },
   "packageManager": "pnpm@10.34.0",
   "pnpm": {
@@ -190,7 +193,14 @@
       "nanoid@3": "3.3.18",
       "postcss@<8.5.23": "^8.5.26",
       "sharp": "0.35.5",
-      "@opencoven/sdk-core": "file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz"
+      "@opencoven/sdk-core": "file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz",
+      "vite@>=8.0.0 <8.1.6": "8.1.6",
+      "dompurify@<3.4.17": "3.4.17",
+      "katex@<0.18.2": "0.18.2",
+      "source-map-js@<1.2.2": "1.2.2",
+      "vue@<3.5.42": "3.5.42",
+      "prosemirror-view@<1.42.3": "1.42.3",
+      "brace-expansion@>=4.0.0 <5.0.12": "5.0.12"
     },
     "supportedArchitectures": {
       "os": [
@@ -209,6 +219,6 @@
     }
   },
   "optionalDependencies": {
-    "@opencoven/research": "https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz"
+    "@opencoven/research": "https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz"
   }
 }

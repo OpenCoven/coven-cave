@@ -31,6 +31,9 @@ struct ChatView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
+    /// Files picked from the `@` menu for this draft (#6104). Only these are
+    /// sent, and only while their `@path` is still in the text.
+    @State private var pickedFileMentions: [String] = []
     /// The suggestion row a hardware keyboard has highlighted (#5879).
     @State private var suggestionIndex = 0
     /// The draft Escape dismissed the suggestion menu for; editing reopens it.
@@ -126,7 +129,7 @@ struct ChatView: View {
     // surface at a time: command list → argument picker → mention picker
     // (see `ComposerIntent`).
     private var composerIntent: ComposerIntent {
-        ComposerIntent.detect(draft, allowsMentions: thread.isGroup)
+        ComposerIntent.detect(draft, allowsMentions: thread.isGroup || fileMentionRoot != nil)
     }
     private var slashMatches: [SlashCommand] {
         guard case .commands(let prefix) = composerIntent else { return [] }
@@ -167,19 +170,45 @@ struct ChatView: View {
     }
     private var showingMentionMenu: Bool { !mentionMatches.isEmpty && argumentCommand == nil }
 
+    // @-file mentions (one-to-one chats with a project, #6104): the trailing
+    // `@token` filters the project's files the way the desktop picker does.
+    /// The root a one-to-one chat's `@` lists files from, or nil in a group
+    /// chat (whose `@` names familiars) or a chat without a project.
+    private var fileMentionRoot: String? {
+        guard !thread.isGroup, !thread.isFlowRun,
+              let root = thread.projectRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !root.isEmpty else { return nil }
+        return root
+    }
+    /// The root whose file index the open `@` picker needs, so it loads the
+    /// first time the picker opens rather than with the chat.
+    private var fileIndexToLoad: String? {
+        guard case .mention = composerIntent else { return nil }
+        return fileMentionRoot
+    }
+    private var fileMentionMatches: [String] {
+        guard let root = fileMentionRoot, case .mention(let partial) = composerIntent else { return [] }
+        return FileMention.filter(app.composerSuggestions.files(for: root), query: partial)
+    }
+
     /// The one suggestion menu for the draft (#5879): commands, a command's
     /// argument picker, or mentions, unless Escape dismissed it for this draft.
     private var suggestionList: ComposerSuggestionList? {
         guard suggestionsDismissedFor != draft else { return nil }
         return ComposerSuggestionList.make(
             intent: composerIntent, commands: slashMatches,
-            argumentRows: argumentRows, mentions: showingMentionMenu ? mentionMatches : [])
+            argumentRows: argumentRows, mentions: showingMentionMenu ? mentionMatches : [],
+            files: fileMentionMatches)
     }
     private var suggestionIds: [String] { suggestionList?.items.map(\.id) ?? [] }
 
-    /// The composer placeholder says how to reach the menus.
+    /// The composer placeholder says how to reach the menus, and mentions
+    /// `@` only where it opens one.
     private var composerPlaceholder: String {
-        thread.isGroup ? "Write a message… / for commands, @ to mention" : "Write a message… / for commands"
+        if thread.isGroup { return "Write a message… / for commands, @ to mention" }
+        return fileMentionRoot == nil
+            ? "Write a message… / for commands"
+            : "Write a message… / for commands, @ for files"
     }
 
     // A voice call targets a single familiar, so the call button only appears
@@ -277,7 +306,8 @@ struct ChatView: View {
     }
 
     private func writeDraftPersistence(_ value: String, threadId: String) {
-        app.persistThreadDraft(threadId, text: value)
+        app.persistThreadDraft(threadId, text: value,
+                               mentionedFiles: FileMention.picked(pickedFileMentions, in: value))
     }
 
     private func scheduleDraftPersistence(_ value: String) {
@@ -558,6 +588,7 @@ struct ChatView: View {
         .onAppear {
             if draft.isEmpty, let saved = app.persistedThreadDraft(thread.id) {
                 draft = saved
+                pickedFileMentions = app.persistedThreadDraftMentions(thread.id)
             }
             // Place the "New messages" divider from the seen boundary BEFORE
             // marking viewed moves it.
@@ -805,13 +836,13 @@ struct ChatView: View {
 
     private var sessionModelLabel: String {
         if let pendingModelOverride = thread.pendingModelOverride {
-            if pendingModelOverride.isEmpty { return "Runtime default (unresolved)" }
+            if pendingModelOverride.isEmpty { return "Runtime default (not reported yet)" }
             return pendingModelOverride
         }
         guard let state = presentedSessionModelState else {
             return thread.isGroup ? "Per familiar" : "Loading…"
         }
-        if state.effectiveModel.isEmpty { return "Runtime default (unresolved)" }
+        if state.effectiveModel.isEmpty { return "Runtime default (not reported yet)" }
         return state.effectiveModel
     }
 
@@ -1174,7 +1205,16 @@ struct ChatView: View {
             // final flush of a completed stream still lands its scroll.
             .onChange(of: thread.messages.last?.text) { _, _ in
                 guard scrollState.isFollowingLatest else { return }
-                streamScroll.request { scrollToLatest(proxy, animation: .easeOut(duration: 0.15)) }
+                // Ease only live tokens. A settled reply arriving with loaded
+                // history jumps: an animated scroll aims at the reply's
+                // placeholder height, and SwiftUI keeps re-asserting that
+                // stale target as the reply measures — on a short viewport
+                // (iPhone Duo's closed outer display) the follow and the
+                // animation then traded the offset forever (#6205).
+                let streaming = thread.messages.last?.streaming == true
+                streamScroll.request {
+                    scrollToLatest(proxy, animation: streaming ? .easeOut(duration: 0.15) : nil)
+                }
             }
             // A new message reveals itself when it's the user's own send (you
             // always watch your message leave) or when already at the bottom —
@@ -1190,7 +1230,10 @@ struct ChatView: View {
                 guard old.count != new.count else { return }
                 let ownSend = ChatOwnSend.isOwnSend(from: old, to: new, messages: thread.messages)
                 guard scrollState.isFollowingLatest || ownSend else { return }
-                requestFollowLatest(proxy, animation: .snappy(duration: 0.25))
+                // A send or a reply eases in; a batch of loaded history jumps,
+                // for the same stale-target reason as above (#6205).
+                let batch = new.count - old.count > 2
+                requestFollowLatest(proxy, animation: batch ? nil : .snappy(duration: 0.25))
             }
             .onAppear {
                 computeUnreadDividerIfNeeded()
@@ -1474,6 +1517,11 @@ struct ChatView: View {
             guard let kind = suggestionKindToLoad else { return }
             await loadSuggestions(kind)
         }
+        // The project's files load when `@` first opens their picker (#6104).
+        .task(id: fileIndexToLoad) {
+            guard let root = fileIndexToLoad else { return }
+            await loadProjectFiles(root: root)
+        }
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
         .background(chrome.bgBase)
@@ -1494,7 +1542,7 @@ struct ChatView: View {
                 canSchedule: { requireChatAccess() && app.connectionDispatchLeaseIsCurrent(launch.lease) },
                 onScheduled: {
                     if draft == launch.draft && pendingImages.map(\.id) == launch.imageIds && replyingTo?.id == launch.replyId {
-                        draft = ""; pendingImages = []; replyingTo = nil
+                        draft = ""; pickedFileMentions = []; pendingImages = []; replyingTo = nil
                     }
                     app.showToast("Reply scheduled", systemImage: "clock")
                 })
@@ -1579,7 +1627,8 @@ struct ChatView: View {
         var message = thread.makeSendBody(familiarId: familiarId,
             prompt: replyingTo.map { replyQuote($0) + text } ?? text,
             attachments: attachments, runId: UUID().uuidString,
-            modelControls: modelControlValues, modelOverride: binding.modelOverride, modelOverrideScope: binding.scope)
+            modelControls: modelControlValues, modelOverride: binding.modelOverride, modelOverrideScope: binding.scope,
+            mentionedFiles: FileMention.picked(pickedFileMentions, in: text))
         message?.runId = nil
         scheduledReplyLaunch = ScheduledReplyLaunch(client: client, sessionId: sessionId,
             message: text.isEmpty && attachments.isEmpty ? nil : message,
@@ -1801,9 +1850,11 @@ struct ChatView: View {
                 }
             }
             draft = ""
+            pickedFileMentions = []
             dispatch(command, args: args)
         case .unknown(let token):
             draft = ""
+            pickedFileMentions = []
             thread.appendSystem("Unknown command \(token). Tap ⌘ or type /help for the full list.",
                                 isError: true)
             app.touch(thread)
@@ -1821,7 +1872,9 @@ struct ChatView: View {
             // Prepend the quoted message when replying, so the familiar sees
             // exactly what's being answered.
             let outgoing = replyingTo.map { replyQuote($0) + text } ?? text
+            let mentionedFiles = FileMention.picked(pickedFileMentions, in: text)
             draft = ""
+            pickedFileMentions = []
             pendingImages = []
             replyingTo = nil
             Haptics.tap()
@@ -1833,7 +1886,8 @@ struct ChatView: View {
                 thread.enqueue(outgoing, attachments: attachments,
                                modelControls: modelControlValues,
                                modelOverride: modelBinding.modelOverride,
-                               modelOverrideScope: modelBinding.scope)
+                               modelOverrideScope: modelBinding.scope,
+                               mentionedFiles: mentionedFiles)
                 app.touch(thread)
                 app.showToast("Queued — sends when reconnected", systemImage: "clock")
                 return
@@ -1844,6 +1898,7 @@ struct ChatView: View {
                         modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
+                        mentionedFiles: mentionedFiles,
                         onConnectionFailure: { app.noteConnectionFailure($0) },
                         liveDispatchLeaseIsCurrent: {
                             dispatchIsCurrent(dispatchBinding, in: thread, lease: dispatchLease)
@@ -1952,6 +2007,10 @@ struct ChatView: View {
         case .mention(let familiar):
             draft = MentionInput.insert(name: familiar.displayName, into: draft)
             composerFocused = true
+        case .file(let path):
+            if !pickedFileMentions.contains(path) { pickedFileMentions.append(path) }
+            draft = MentionInput.insert(name: path, into: draft)
+            composerFocused = true
         }
     }
 
@@ -1995,6 +2054,13 @@ struct ChatView: View {
             draft = ""
             dispatch(command, args: row.value)
         }
+    }
+
+    private func loadProjectFiles(root: String) async {
+        guard let client = app.client, let familiarId = thread.familiarIds.first else { return }
+        await app.composerSuggestions.ensureProjectFiles(
+            root: root, host: app.connection?.host,
+            load: { root in try await client.projectFiles(root: root, familiarId: familiarId) })
     }
 
     private func loadSuggestions(_ kind: ComposerSuggestionStore.Kind) async {
@@ -3004,7 +3070,7 @@ struct ResponseReaderView: View {
     @ToolbarContentBuilder private var readerToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button {
-                UIPasteboard.general.string = item.markdown
+                UIPasteboard.general.string = UiBlockReadableText.project(item.markdown)
                 Haptics.tap()
             } label: {
                 Label("Copy response", systemImage: "doc.on.doc")

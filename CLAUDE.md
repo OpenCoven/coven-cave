@@ -109,9 +109,16 @@ squash_body=$(jq -er .body "$squash_message")
 gh pr merge <#> --squash --match-head-commit "$expected_head" --subject "$squash_subject" --body "$squash_body"
 ```
 
-Do not pass `--delete-branch`. Local retirement requires separate evidence and
-authority; remote deletion remains proposal-only. Preserve human numeric
-GitHub no-reply trailers. Do not add AI attribution to commits or PRs.
+Do not pass `--delete-branch`; it also deletes the local branch. The
+repository's `delete_branch_on_merge` setting is on, so GitHub deletes a
+same-repository head branch when its PR merges (the 40-branch cap in
+`.github/workflows/branch-cap.yml` relies on it); `refs/pull/<#>/head` keeps
+the merged head. Local retirement requires separate evidence and authority;
+any other remote deletion remains proposal-only. Preserve human numeric
+GitHub no-reply trailers and `Coven-Familiar` provenance; the squash script
+carries both and drops `Coven-Harness` and `Coven-Session`. Do not add AI
+attribution to commits or PRs. A familiar is credited only through its
+`Coven-Familiar` trailer, never a `Co-authored-by` line (#6068).
 
 ## Worktree convention
 
@@ -140,6 +147,13 @@ is complete, and describe de-registration honestly: the directory remains.
 Playwright's CI path is daemon-less (`COVEN_CAVE_E2E=1`). Dismiss onboarding
 with `cave:onboarding:dismissed=1` and use scoped API mocks instead of expecting
 a live daemon.
+
+With `CI` set, Playwright runs `pnpm build` and serves its standalone output,
+including static/public assets, in the same isolated fixture environment.
+This avoids Turbopack dev-cache restore panics during browser tests (#6114).
+The 20-minute server readiness budget includes the production build and its
+gates; browser timeouts and retries are unchanged. Without `CI`, local
+Playwright runs retain `next dev`. Use `CI=true` to reproduce the hosted path.
 
 For missing CI delivery, use `pnpm ci:recovery` in read-only mode with the
 documented repository/token environment. Apply mode requires operator

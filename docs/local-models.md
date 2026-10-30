@@ -9,7 +9,7 @@ runtime. Ollama or LM Studio runs the model. Cave offers two runtimes:
 | Codex · Ollama | `codex-ollama` | Ollama, default `http://127.0.0.1:11434` |
 | Codex · LM Studio | `codex-lmstudio` | LM Studio's server, default `http://127.0.0.1:1234` |
 
-Tracking issue: #6049.
+Shipped in #6049 (local servers in Settings, #6092). #6261 extended the same launch preflight to every launch path (#6263).
 
 ## What you need
 
@@ -31,8 +31,8 @@ Tracking issue: #6049.
 3. Open **Settings → Local models**. Each server shows whether it is
    running, the address chats use, and its models, with the ones Codex can
    use marked **Tool support**.
-4. Open the familiar's **Brain** settings and choose **Codex · Ollama** or
-   **Codex · LM Studio** as its runtime.
+4. Choose **Codex · Ollama** or **Codex · LM Studio** as the runtime when you
+   create a familiar, or later in its **Brain** settings.
 5. In chat, choose a model from the composer's model menu. A local session
    never picks a model for you.
 
@@ -54,6 +54,37 @@ query, for example `http://127.0.0.1:11500`.
 A server on another computer is refused until you turn on **Allow servers on
 other computers** in Settings, or set `CAVE_LOCAL_MODELS_ALLOW_REMOTE=1`.
 That computer then receives your prompts and anything you share in chat.
+
+### LM Studio's LM Link
+
+LM Link lets LM Studio serve a model loaded on another of your computers
+through the local server, so `http://127.0.0.1:1234` can answer with
+inference that happens elsewhere. LM Studio's REST API doesn't say which
+computer a model is on, so Cave asks LM Studio's `lms` command (`lms ls` and
+`lms link status`) after the server answers.
+
+- Settings → Local models marks those models **LM Link** with the
+  computer's name.
+- Chats don't offer them, and a turn that names one is refused, unless
+  **Allow servers on other computers** is on. The same permission covers a
+  server address on another computer.
+- A model that exists on this computer and on a linked one counts as linked,
+  because LM Studio sends it to whichever device is preferred.
+- If `lms` isn't installed or doesn't answer, Settings says Cave couldn't
+  check. Nothing is blocked then, so with LM Link on, a model may run on
+  another computer.
+
+### Ollama cloud models
+
+Ollama can list cloud models, such as `gpt-oss:20b-cloud`, beside the ones
+it runs itself. Their prompts go to Ollama's service. Ollama marks them with
+`remote_host` in `/api/tags` (checked with Ollama 0.40.6).
+
+- Settings → Local models marks them **Cloud** and leaves them out of the
+  count of usable models.
+- Chats never offer them, and a turn that names one is refused, even with
+  **Allow servers on other computers** on. That permission covers your own
+  computers, not a cloud service.
 
 ## What stays on this computer
 
@@ -86,17 +117,65 @@ Cave then uses one of two transports:
 On both transports Cave clears any `CODEX_OSS_BASE_URL` or `CODEX_OSS_PORT`
 inherited from its own environment, so only the configured server is used.
 
+## Full access and Codex's sandbox
+
+The composer's access chip offers **Full access** and **Read only**. Cave
+enforces Read only by passing `--sandbox read-only` to Codex, directly or as
+`coven run --permission read-only`. Full access passes nothing, so Codex keeps
+the sandbox its own configuration sets. A chat can't widen a runtime's
+sandbox (#3297). This applies to the cloud `codex` runtime as well as
+`codex-ollama` and `codex-lmstudio`.
+
+Codex reads the sandbox from `sandbox_mode` in `~/.codex/config.toml`.
+Without that setting, `codex exec` runs read-only: a turn can read files, but
+every write is refused, even with Full access selected.
+
+| `sandbox_mode` | Commands Codex runs can |
+|---|---|
+| `read-only` | Read files. `codex exec` uses this when the setting is absent. |
+| `workspace-write` | Also write in the folder the chat runs in and the folders Cave grants with `--add-dir`. |
+| `danger-full-access` | Run with no sandbox. |
+
+Which one to use is your choice, and Cave doesn't change that file. The #6049
+smoke test confirmed writes on both local servers with
+`sandbox_mode = "danger-full-access"` and `approval_policy = "never"`.
+
+## Beyond chat
+
+The checks in [How a turn runs](#how-a-turn-runs) also guard every other
+place Cave starts a familiar's runtime. A local familiar runs the model saved
+in its Brain settings there, and a launch with no model, a stopped server or
+an unusable model stops with the same message instead of starting Codex on
+a cloud default.
+
+| Surface | How it runs a local familiar |
+|---|---|
+| Chat, quick chat, scheduled chats, broadcasts, prompt enhance, daily narrative, journal and canvas generation | Through chat, with every check. |
+| Board task chat | Handed to chat, so a task gets the same checks, address and continuation. |
+| Board enhance, task refresh, reader rewrite, Research topic discovery | `coven run`, checked first, with the saved model and address. |
+| Workflows, flows, offline replay | A Coven daemon session, checked first, with the saved model. The daemon starts Codex in its own environment, so it reaches only the server's default address; with a custom address saved, these refuse and say so. |
+| Research missions, journal reflection, Coven automations | Not offered: they run other runtimes. |
+
+## Harness support
+
+Codex is the only harness Cave runs on a local server today.
+
+| Harness | Local models in Cave |
+|---|---|
+| Codex | Yes: Codex · Ollama and Codex · LM Studio. |
+| Claude Code | Not yet. Ollama and LM Studio both serve Anthropic's Messages API, and Claude Code can use it through `ANTHROPIC_BASE_URL`, but Cave doesn't launch Claude Code that way. Inference routes (#4710) are the planned seam. |
+| Hermes, OpenClaw | Their own configuration chooses the provider. Cave runs them as configured and doesn't check where inference happens. |
+| Copilot, Grok Build | No. They use their own services. |
+
 ## Limitations
 
 - Research missions don't offer the local runtimes. Research launches through
   the daemon without the checks above, and it relies on web search.
 - A familiar bound to an SSH host can't use them, because the server address
-  belongs to this computer.
-- The new-familiar flow doesn't offer the local runtimes yet. Create the
-  familiar, then switch its runtime in Brain settings.
+  belongs to this computer. The new-familiar flow hides them for SSH.
 - The runtime picker lists the local runtimes as ready whenever Codex is
-  installed, even if the server is stopped. The check before each turn
-  catches a stopped server.
+  installed, even if the server is stopped. The model menu says the server
+  isn't answering, and the check before each turn refuses to start.
 - Cave writes each adapter manifest only when it is missing. If you edit
   `codex-ollama.json` or `codex-lmstudio.json` in Coven's adapter directory,
   Cave keeps your copy.
@@ -111,7 +190,10 @@ inherited from its own environment, so only the configured server is used.
 | … doesn't support tool calling | Choose a model marked **Tool support** in Settings. |
 | The server at … didn't answer like Ollama | The address points at something else, often the other server's port. Check it in Settings. |
 | … isn't this computer | The address is on another computer. Allow remote servers in Settings, or use a local address. |
-| The model menu is empty | Settings → Local models says why: server stopped, address invalid, or no tool-capable model. |
+| … runs on *computer* through LM Link | LM Studio serves that model from another computer. Load a model on this computer, or allow servers on other computers in Settings. |
+| … is an Ollama cloud model | Pull a model Ollama runs on this computer, or choose another. |
+| The model menu is empty | Settings → Local models says why: server stopped, address invalid, no tool-capable model, only cloud models, or only LM Link models while servers on other computers are off. |
+| `operation not permitted`, or another refused write, while **Full access** is selected | Codex's own sandbox refused the write. Without `sandbox_mode` in `~/.codex/config.toml`, it is read-only. See [Full access and Codex's sandbox](#full-access-and-codexs-sandbox). |
 
 Codex sends long instructions with every turn. If replies seem to ignore the
 conversation, the server may be truncating the prompt. Raise the model's

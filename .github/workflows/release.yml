@@ -8,9 +8,11 @@ name: Release
 #     upload an un-notarized DMG: a verification step runs `spctl` after
 #     the build and fails the job if Gatekeeper does not accept it.
 #   - Linux (AppImage) — unsigned.
-#   - Windows (MSI) — built and checked against the component/size budget,
-#     then uploaded with an updater signature and provenance attestation.
-#     The MSI is not Authenticode-signed in this release path.
+#   - Windows (MSI) — built without publishing, checked against the
+#     component/size budget, signed with SSL.com eSigner, Authenticode-
+#     verified (status, expected thumbprint, timestamp), then uploaded,
+#     updater-signed and attested as those exact bytes (one SHA-256).
+#     A diagnostics-only dispatch builds and measures without signing.
 #   - iOS (IPA) — signed with Apple Distribution assets, validated and uploaded
 #     to App Store Connect, then held until Apple reports processing complete.
 #
@@ -43,6 +45,17 @@ name: Release
 #   APPLE_PASSWORD             app-specific password for APPLE_ID.
 #   APPLE_TEAM_ID              Developer Team ID.
 #
+# Required repository secrets for the Windows MSI job
+# (docs/workflows/windows-msi-signing.md):
+#   ES_USERNAME                SSL.com eSigner account username.
+#   ES_PASSWORD                SSL.com eSigner account password.
+#   CREDENTIAL_ID              eSigner code-signing credential ID.
+#   ES_TOTP_SECRET             eSigner OAuth TOTP secret for automation.
+# Required repository variable for the Windows MSI job:
+#   WINDOWS_SIGNING_CERT_THUMBPRINT
+#                              SHA-1 thumbprint of the expected public code-
+#                              signing certificate (40 hexadecimal digits).
+#
 # Additional required repository secrets for the iOS/TestFlight job:
 #   IOS_DISTRIBUTION_CERTIFICATE_BASE64
 #                                base64-encoded Apple Distribution .p12.
@@ -59,8 +72,9 @@ name: Release
 #
 # The macOS leg intentionally uses scripts/release.sh instead of tauri-action
 # because it assembles + notarizes the DMG in a more reliable way for this
-# repository. Linux publishes via tauri-action; Windows uses tauri-action only
-# to build the MSI before the separate budget check and upload steps.
+# repository. Linux and Windows use tauri-action only to build; their assets
+# are uploaded by later steps. No build leg creates the release: the
+# `release-object` job makes the one release for the tag before they start.
 
 on:
   push:
@@ -453,11 +467,16 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-          cache: pnpm
+          # No pnpm cache: this job executes the release ref it checked out,
+          # and a cache written here would be restored on main (#6290).
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
+      # Inside the official Playwright image for the installed version, as PR
+      # CI does (#6191): it carries both engines and their system packages, so
+      # a stalled apt mirror can no longer cancel a release shard (#6290). The
+      # pull is bounded and retried.
+      - run: bash scripts/playwright-ci-image.sh pull
+      - run: bash scripts/playwright-ci-image.sh run pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
 
   release-e2e-agentic:
     name: Validate release E2E (agentic)
@@ -479,11 +498,16 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-          cache: pnpm
+          # No pnpm cache: this job executes the release ref it checked out,
+          # and a cache written here would be restored on main (#6290).
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+      # Inside the official Playwright image for the installed version, as PR
+      # CI does (#6191): it carries both engines and their system packages, so
+      # a stalled apt mirror can no longer cancel a release shard (#6290). The
+      # pull is bounded and retried.
+      - run: bash scripts/playwright-ci-image.sh pull
+      - run: bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
 
   release-web-validation:
     name: Release web validated
@@ -511,10 +535,11 @@ jobs:
       - daemon-package
       - source-version
     runs-on: ${{ matrix.os }}
-    # 90, not 60: on macos-15 this job builds three times (two Client v1
-    # fixtures, then the sidecar bundle, which keeps Next's TypeScript pass),
-    # and that pass now takes ~33 min there (#6036). Lower it when that's fixed.
-    timeout-minutes: 90
+    # On macos-15 this job builds three times: two Client v1 fixtures, then the
+    # sidecar bundle, which keeps the TypeScript pass. Since #6217 that pass runs
+    # before compiling and takes about 1-1.5 min there instead of 17-35 (#6036).
+    # Recent macOS runs took 33-50 min before it; 60 leaves a third in reserve.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -1074,6 +1099,80 @@ jobs:
           done
           rm -rf "$RUNNER_TEMP/app-store-connect-private-keys"
 
+  # One release per tag (#6248). The build legs used to create the release when
+  # they found none, and GitHub does not make that atomic: on v0.5.16 two legs
+  # created two releases for one tag within seconds, and the checksum and notes
+  # jobs then failed against the duplicate. This job runs once, behind the same
+  # gates as `build`, so the release is never made for a cut that cannot build.
+  # It is created not-latest. The legs' "Claim the release" steps make it latest
+  # just before its first upload, which is when a leg used to create it, so the
+  # updater alias moves no earlier than before and a cut whose legs all fail
+  # never takes the alias at all.
+  release-object:
+    name: Create the release once
+    needs:
+      - daemon-package
+      - source-version
+      - release-web-validation
+      - release-platform-validation
+      - release-windows-native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      release-id: ${{ steps.release.outputs.id }}
+    steps:
+      - id: release
+        name: Find or create the release for this tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # This job has no checkout, so `gh release` cannot read the
+          # repository from a Git remote (#6288).
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          DESKTOP_UPLOADS: ${{ github.event_name != 'workflow_dispatch' || (inputs.platform != 'ios' && !inputs.windows_diagnostics_only) }}
+        run: |
+          set -euo pipefail
+          if [ "$DESKTOP_UPLOADS" != "true" ]; then
+            echo "This run uploads no desktop assets; leaving the release untouched."
+            exit 0
+          fi
+          # Every release for the tag, drafts included: one line of
+          # "<id> <draft> <prerelease> <asset count>" each.
+          releases_for_tag() {
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.tag_name == env.RELEASE_TAG) | "\(.id) \(.draft) \(.prerelease) \(.assets | length)"'
+          }
+          found=$(releases_for_tag)
+          if [ -z "$found" ]; then
+            gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --title "CovenCave $RELEASE_TAG" \
+              --notes "Release artifacts are still being assembled by the release workflow." \
+              --latest=false
+            for attempt in 1 2 3; do
+              found=$(releases_for_tag)
+              [ -n "$found" ] && break
+              sleep 5
+            done
+          fi
+          count=$(printf '%s\n' "$found" | grep -c .) || true
+          if [ "$count" -ne 1 ]; then
+            echo "::error::Expected one release for $RELEASE_TAG, found $count (id draft prerelease assets):"
+            printf '%s\n' "$found"
+            echo "::error::Delete the extra release that has no assets, then rerun. Never delete the tag."
+            exit 1
+          fi
+          read -r id draft prerelease assets <<<"$found"
+          if [ "$draft" != false ] || [ "$prerelease" != false ]; then
+            echo "::error::Release $id for $RELEASE_TAG is a draft or prerelease; publish it as a final release or delete it, then rerun."
+            exit 1
+          fi
+          echo "Release $id for $RELEASE_TAG ($assets assets)"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.label }}
     needs:
@@ -1082,6 +1181,7 @@ jobs:
       - release-web-validation
       - release-platform-validation
       - release-windows-native
+      - release-object
     env:
       COVEN_CAVE_X_PRODUCTION_CLIENT_ID: ${{ vars.COVEN_CAVE_X_PRODUCTION_CLIENT_ID }}
       # Public Discord application ID, read by option_env! at compile time in
@@ -1127,6 +1227,42 @@ jobs:
           # signing and publishing assets from an unrelated ref.
           ref: ${{ needs.source-version.outputs.release-commit }}
           persist-credentials: false
+
+      # Fail the Windows leg before its long build when a signing input is
+      # absent. Presence only: no value is printed, and no downloaded code runs
+      # while these are in scope. The step runs on every leg so a tag push can
+      # never skip it; other legs receive empty values, not the secrets.
+      # Diagnostics-only dispatch builds an unsigned MSI on purpose.
+      - name: Require Windows signing configuration
+        if: >-
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        shell: bash
+        env:
+          MATRIX_FAMILY: ${{ matrix.family }}
+          ES_USERNAME: ${{ matrix.family == 'windows' && secrets.ES_USERNAME || '' }}
+          ES_PASSWORD: ${{ matrix.family == 'windows' && secrets.ES_PASSWORD || '' }}
+          CREDENTIAL_ID: ${{ matrix.family == 'windows' && secrets.CREDENTIAL_ID || '' }}
+          ES_TOTP_SECRET: ${{ matrix.family == 'windows' && secrets.ES_TOTP_SECRET || '' }}
+          WINDOWS_SIGNING_CERT_THUMBPRINT: ${{ matrix.family == 'windows' && vars.WINDOWS_SIGNING_CERT_THUMBPRINT || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$MATRIX_FAMILY" != "windows" ]; then
+            echo "The $MATRIX_FAMILY leg publishes no MSI; Windows signing configuration is not needed."
+            exit 0
+          fi
+          for name in ES_USERNAME ES_PASSWORD CREDENTIAL_ID ES_TOTP_SECRET WINDOWS_SIGNING_CERT_THUMBPRINT; do
+            value="${!name:-}"
+            if [ -z "${value//[[:space:]]/}" ]; then
+              echo "::error::Windows signing configuration is missing $name. See docs/workflows/windows-msi-signing.md."
+              exit 1
+            fi
+          done
+          if ! [[ "$WINDOWS_SIGNING_CERT_THUMBPRINT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "::error::WINDOWS_SIGNING_CERT_THUMBPRINT must be 40 hexadecimal digits."
+            exit 1
+          fi
+          echo "All five Windows signing inputs are present."
 
       - name: Overlay audited recovery release tooling
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling }}
@@ -1420,23 +1556,21 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
-      - name: Build with tauri-action
+      # Build only. With release inputs tauri-action creates the release when it
+      # finds none, which is the race #6248 removed; "Upload and re-sign
+      # stripped AppImage" publishes the final AppImage under the same name.
+      - name: Build Linux AppImage without publishing
         if: >-
           matrix.family == 'linux' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # GitHub-hosted Linux runners do not reliably expose FUSE to nested
           # AppImages. linuxdeploy is itself an AppImage, so force its
           # extract-and-run fallback instead of letting AppImage startup fail
           # with Tauri's opaque "failed to run linuxdeploy" wrapper error.
           APPIMAGE_EXTRACT_AND_RUN: ${{ matrix.family == 'linux' && '1' || '' }}
         with:
-          tagName: ${{ env.RELEASE_TAG }}
-          releaseName: "CovenCave ${{ env.RELEASE_TAG }}"
-          releaseDraft: false
-          prerelease: false
           # latest.json is built by the dedicated `updater-manifest` job after
           # all platforms upload their signed artifacts — per-job generation
           # here would clobber the manifest with a single platform.
@@ -1444,7 +1578,7 @@ jobs:
           args: ${{ matrix.args }}
 
       # Build without release inputs so tauri-action cannot publish the MSI
-      # before its component/size budget has passed.
+      # before its component/size budget and Authenticode gates have passed.
       - name: Build Windows MSI without publishing
         if: >-
           matrix.family == 'windows' &&
@@ -1468,6 +1602,117 @@ jobs:
             -MsiPath $msis[0].FullName `
             -OutputPath "$env:RUNNER_TEMP\windows-msi-metrics.json"
 
+      # The pinned action otherwise downloads this mutable release asset without
+      # integrity verification. Verify it before any eSigner credential is in
+      # scope; the action uses CODESIGNTOOL_PATH instead of downloading.
+      - name: Verify Windows signing tool
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archive = Join-Path $env:RUNNER_TEMP "CodeSignTool-v1.3.0-windows.zip"
+          $toolDir = Join-Path $env:RUNNER_TEMP "CodeSignTool-v1.3.0-verified"
+          if ((Test-Path -LiteralPath $archive) -or (Test-Path -LiteralPath $toolDir)) {
+            throw "Windows signing tool staging path already exists"
+          }
+          Invoke-WebRequest -UseBasicParsing `
+            -Uri "https://github.com/SSLcom/CodeSignTool/releases/download/v1.3.0/CodeSignTool-v1.3.0-windows.zip" `
+            -OutFile $archive
+          # SHA-256 of the upstream Windows v1.3.0 asset, verified 2026-10-03.
+          $expectedHash = "e22094505decbe622afe5b0c27abc618ed2ba179bd94f3450490352399d5ef2a"
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expectedHash) {
+            throw "CodeSignTool archive SHA-256 mismatch"
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $toolDir
+          foreach ($entry in @("CodeSignTool.bat", "jar/code_sign_tool-1.3.0.jar", "conf/code_sign_tool.properties")) {
+            if (-not (Test-Path -LiteralPath (Join-Path $toolDir $entry) -PathType Leaf)) {
+              throw "Verified CodeSignTool archive is missing $entry"
+            }
+          }
+          "CODESIGNTOOL_PATH=$toolDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Stage Windows MSI for code signing
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msis = @(Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File)
+          if ($msis.Count -ne 1) {
+            throw "Expected exactly one budget-approved MSI, found $($msis.Count)"
+          }
+          $signedDir = Join-Path $env:RUNNER_TEMP "windows-msi-signed"
+          if (Test-Path -LiteralPath $signedDir) {
+            throw "Signed MSI output directory already exists: $signedDir"
+          }
+          "WINDOWS_MSI_PATH=$($msis[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WINDOWS_SIGNED_DIR=$signedDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Sign Windows MSI with SSL.com eSigner
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        uses: SSLcom/esigner-codesign@b7f8ff36fc0de8690fbbab8e5b4421d29802f747
+        with:
+          command: sign
+          username: ${{ secrets.ES_USERNAME }}
+          password: ${{ secrets.ES_PASSWORD }}
+          credential_id: ${{ secrets.CREDENTIAL_ID }}
+          totp_secret: ${{ secrets.ES_TOTP_SECRET }}
+          file_path: ${{ env.WINDOWS_MSI_PATH }}
+          output_path: ${{ env.WINDOWS_SIGNED_DIR }}
+          environment_name: PROD
+          clean_logs: true
+
+      # Every later Windows step binds to WINDOWS_MSI_SHA256: the upload, the
+      # uploaded asset's digest, the updater signature and the attestation.
+      - name: Verify signed Windows MSI
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        shell: powershell
+        env:
+          WINDOWS_SIGNING_CERT_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_CERT_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $signedMsis = @(Get-ChildItem -LiteralPath $env:WINDOWS_SIGNED_DIR -Filter *.msi -File)
+          if ($signedMsis.Count -ne 1) {
+            throw "Expected exactly one signed MSI, found $($signedMsis.Count)"
+          }
+          $signedMsi = $signedMsis[0]
+          if ($signedMsi.Name -ne [IO.Path]::GetFileName($env:WINDOWS_MSI_PATH)) {
+            throw "eSigner changed the MSI filename: $($signedMsi.Name)"
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $signedMsi.FullName
+          if ($signature.Status -ne 'Valid') {
+            throw "Signed MSI Authenticode status is $($signature.Status): $($signature.StatusMessage)"
+          }
+          if ($null -eq $signature.SignerCertificate -or
+              $signature.SignerCertificate.Thumbprint -ne $env:WINDOWS_SIGNING_CERT_THUMBPRINT) {
+            throw "Signed MSI certificate does not match WINDOWS_SIGNING_CERT_THUMBPRINT"
+          }
+          if ($null -eq $signature.TimeStamperCertificate) {
+            throw "Signed MSI has no timestamp certificate"
+          }
+          & .\scripts\windows-msi-budget.ps1 `
+            -MsiPath $signedMsi.FullName `
+            -OutputPath "$env:RUNNER_TEMP\windows-msi-signed-metrics.json"
+          $signedHash = (Get-FileHash -LiteralPath $signedMsi.FullName -Algorithm SHA256).Hash
+          # Replace the unsigned build only after the signed output passes.
+          Copy-Item -LiteralPath $signedMsi.FullName -Destination $env:WINDOWS_MSI_PATH -Force
+          if ((Get-FileHash -LiteralPath $env:WINDOWS_MSI_PATH -Algorithm SHA256).Hash -ne $signedHash) {
+            throw "The release MSI differs from the verified signed MSI"
+          }
+          Write-Host "Verified signed MSI $($signedMsi.Name): signer $($signature.SignerCertificate.Subject), SHA-256 $signedHash"
+          "WINDOWS_MSI_SHA256=$signedHash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Retain Windows MSI diagnostics
         if: >-
           always() && matrix.family == 'windows' &&
@@ -1475,11 +1720,46 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-msi-diagnostics-${{ env.RELEASE_VERSION }}
-          path: ${{ runner.temp }}/windows-msi-metrics.json
+          path: |
+            ${{ runner.temp }}/windows-msi-metrics.json
+            ${{ runner.temp }}/windows-msi-signed-metrics.json
           if-no-files-found: warn
           compression-level: 0
 
-      - name: Publish validated Windows MSI
+      # Uploads go by tag, so first prove the tag still resolves to the release
+      # `release-object` made. The first upload makes that release latest, as
+      # creating it here used to. A release that already has assets is never
+      # promoted again: rerunning a leg after a rollback demoted it
+      # (docs/workflows/release-rollback-readiness.md) must not undo that.
+      # The macOS claim below runs the same script; keep the two identical.
+      - name: Claim the release for the Linux/Windows upload
+        if: >-
+          (
+            matrix.family == 'linux' &&
+            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
+          ) ||
+          (
+            matrix.family == 'windows' &&
+            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+            (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+          )
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.release-object.outputs.release-id }}
+        run: |
+          set -euo pipefail
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '"\(.id) \(.assets | length)"')
+          if [ -z "$RELEASE_ID" ] || [ "${release% *}" != "$RELEASE_ID" ]; then
+            echo "::error::$RELEASE_TAG resolves to release ${release% *}, not ${RELEASE_ID:-<none>} from release-object"
+            exit 1
+          fi
+          if [ "${release#* }" -eq 0 ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -f make_latest=true >/dev/null
+            echo "Release $RELEASE_ID is now latest"
+          fi
+
+      - name: Publish verified signed Windows MSI
         if: >-
           matrix.family == 'windows' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
@@ -1489,52 +1769,48 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_MSI_SHA256)) {
+            throw "No verified signed MSI hash; Verify signed Windows MSI did not run"
+          }
           $msis = @(Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File)
-          if ($msis.Count -ne 1) {
-            throw "Expected exactly one budget-approved MSI, found $($msis.Count)"
+          if ($msis.Count -ne 1 -or $msis[0].FullName -ne $env:WINDOWS_MSI_PATH) {
+            throw "Expected exactly one verified signed MSI at the staged release path"
+          }
+          if ((Get-FileHash -LiteralPath $env:WINDOWS_MSI_PATH -Algorithm SHA256).Hash -ne $env:WINDOWS_MSI_SHA256) {
+            throw "The MSI changed after Authenticode verification"
           }
 
-          # Windows PowerShell promotes native stderr to an ErrorRecord. Probe
-          # failures are expected while the first matrix leg creates a release,
-          # so isolate that non-zero result from the step-wide Stop policy.
-          function Test-GitHubRelease {
-            $previousErrorActionPreference = $ErrorActionPreference
-            try {
-              $ErrorActionPreference = "SilentlyContinue"
-              gh release view $env:RELEASE_TAG *> $null
-              return $LASTEXITCODE -eq 0
-            } finally {
-              $ErrorActionPreference = $previousErrorActionPreference
-            }
-          }
-
-          if (-not (Test-GitHubRelease)) {
-            $createExitCode = 1
-            $previousErrorActionPreference = $ErrorActionPreference
-            try {
-              # A concurrent matrix leg can win this create race. Preserve the
-              # exit code so the verified follow-up probe decides the outcome.
-              $ErrorActionPreference = "Continue"
-              gh release create $env:RELEASE_TAG `
-                --verify-tag `
-                --title "CovenCave $env:RELEASE_TAG" `
-                --notes "Release artifacts are still being assembled by the release workflow."
-              $createExitCode = $LASTEXITCODE
-            } finally {
-              $ErrorActionPreference = $previousErrorActionPreference
-            }
-            if ($createExitCode -ne 0) {
-              # Another matrix leg may have created the release concurrently.
-              Start-Sleep -Seconds 5
-              if (-not (Test-GitHubRelease)) {
-                throw "Could not create or find release $env:RELEASE_TAG"
-              }
-            }
-          }
-
-          gh release upload $env:RELEASE_TAG $msis[0].FullName --clobber
+          gh release upload $env:RELEASE_TAG $env:WINDOWS_MSI_PATH --clobber
           if ($LASTEXITCODE -ne 0) {
-            throw "Could not publish budget-approved MSI"
+            throw "Could not publish verified signed MSI"
+          }
+
+          $name = [IO.Path]::GetFileName($env:WINDOWS_MSI_PATH)
+          $assets = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not read the release to confirm the uploaded MSI"
+          }
+          $asset = @($assets.assets | Where-Object { $_.name -eq $name })
+          $expectedDigest = "sha256:$($env:WINDOWS_MSI_SHA256.ToLowerInvariant())"
+          if ($asset.Count -ne 1 -or $asset[0].digest -ne $expectedDigest) {
+            throw "Uploaded $name digest $($asset[0].digest) does not match the verified $expectedDigest"
+          }
+          Write-Host "Uploaded $name matches the verified signed MSI ($expectedDigest)"
+
+      - name: Recheck the signed Windows MSI before updater signing
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msis = @(Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Filter *.msi -File | Where-Object { $_.Extension -eq ".msi" })
+          if ($msis.Count -ne 1 -or $msis[0].FullName -ne $env:WINDOWS_MSI_PATH) {
+            throw "Expected only the verified signed MSI under the bundle directory"
+          }
+          if ((Get-FileHash -LiteralPath $env:WINDOWS_MSI_PATH -Algorithm SHA256).Hash -ne $env:WINDOWS_MSI_SHA256) {
+            throw "The MSI changed after Authenticode verification"
           }
 
       - name: Sign Linux/Windows updater artifact
@@ -1762,6 +2038,27 @@ jobs:
           fi
           echo "OK: $(grep 'origin=' /tmp/spctl.out)"
 
+      # Same script as "Claim the release for the Linux/Windows upload".
+      - name: Claim the release for the macOS upload
+        if: >-
+          matrix.family == 'macos' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.release-object.outputs.release-id }}
+        run: |
+          set -euo pipefail
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '"\(.id) \(.assets | length)"')
+          if [ -z "$RELEASE_ID" ] || [ "${release% *}" != "$RELEASE_ID" ]; then
+            echo "::error::$RELEASE_TAG resolves to release ${release% *}, not ${RELEASE_ID:-<none>} from release-object"
+            exit 1
+          fi
+          if [ "${release#* }" -eq 0 ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -f make_latest=true >/dev/null
+            echo "Release $RELEASE_ID is now latest"
+          fi
+
       - name: Upload macOS DMG to GitHub Release
         if: >-
           matrix.family == 'macos' &&
@@ -1771,27 +2068,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            # Either macOS matrix leg may win this race. Keep checking the
-            # exact tag when create reports that the other leg got there first.
-            if ! gh release create "$RELEASE_TAG" \
-              --verify-tag \
-              --title "CovenCave $RELEASE_TAG" \
-              --notes "Release artifacts are still being assembled by the release workflow."; then
-              echo "::notice::Release creation did not succeed; checking for a concurrent creator"
-            fi
-            for attempt in 1 2 3; do
-              if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-                break
-              fi
-              if [ "$attempt" -eq 3 ]; then
-                echo "::error::Could not create or find release $RELEASE_TAG"
-                exit 1
-              fi
-              sleep 5
-            done
-          fi
 
           UPLOAD_FILES=("release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.dmg")
           if [ -f "release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz" ]; then
@@ -1807,6 +2083,22 @@ jobs:
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
         with:
           subject-path: src-tauri/target/release/bundle/**/*.AppImage
+
+      - name: Recheck the signed Windows MSI before attestation
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msis = @(Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Filter *.msi -File | Where-Object { $_.Extension -eq ".msi" })
+          if ($msis.Count -ne 1 -or $msis[0].FullName -ne $env:WINDOWS_MSI_PATH) {
+            throw "Expected only the verified signed MSI under the bundle directory"
+          }
+          if ((Get-FileHash -LiteralPath $env:WINDOWS_MSI_PATH -Algorithm SHA256).Hash -ne $env:WINDOWS_MSI_SHA256) {
+            throw "The MSI changed after Authenticode verification"
+          }
 
       - name: Attest Windows MSI
         if: >-

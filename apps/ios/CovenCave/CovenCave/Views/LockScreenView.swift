@@ -54,7 +54,8 @@ struct LockScreenView: View {
             Spacer()
         }
         .padding(.horizontal, 32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Fills the screen, and keeps the Unlock button off a folded hinge.
+        .foldAvoiding()
         .background(chrome.bgBase.ignoresSafeArea())
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Coven Cave is locked")

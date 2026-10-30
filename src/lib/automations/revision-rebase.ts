@@ -17,6 +17,7 @@
 
 import type { CodexAutomation, CodexAutomationPatch } from "../codex-automations-types.ts";
 import { sameRoutineRrule } from "./routine-rrule.ts";
+import type { ReviewedAutomationSource } from "../server/automation-consumer-commands.ts";
 
 /** The fields Coven's routine keeps and Cave's save can change. */
 export const REBASE_FIELDS = ["name", "prompt", "rrule", "model", "cwd", "tags"] as const;
@@ -169,7 +170,7 @@ export function definitionMoved(base: CodexAutomation, theirs: CodexAutomation):
 }
 
 export type CurrentDefinition =
-  | { kind: "available"; automation: CodexAutomation; revision: number }
+  | { kind: "available"; automation: CodexAutomation; revision: number; reviewedSource: ReviewedAutomationSource }
   | { kind: "absent" }
   | { kind: "unavailable" };
 
@@ -181,15 +182,16 @@ export type CurrentDefinition =
 export async function readCurrentDefinition(path: string, signal?: AbortSignal): Promise<CurrentDefinition> {
   try {
     const res = await fetch(`${path}/definition`, { cache: "no-store", signal });
-    const json = await res.json().catch(() => null) as { ok?: unknown; automation?: unknown; revision?: unknown } | null;
+    const json = await res.json().catch(() => null) as { ok?: unknown; automation?: unknown; revision?: unknown; reviewedSource?: ReviewedAutomationSource } | null;
     if (res.status === 404) return { kind: "absent" };
     const automation = json?.automation as CodexAutomation | undefined;
     if (!res.ok || json?.ok !== true || typeof json.revision !== "number" || !Number.isSafeInteger(json.revision) || json.revision < 1 ||
       typeof automation !== "object" || automation === null || typeof automation.id !== "string" || typeof automation.name !== "string" ||
-      typeof automation.prompt !== "string" || !Array.isArray(automation.cwds) || !Array.isArray(automation.tags)) {
+      typeof automation.prompt !== "string" || !Array.isArray(automation.cwds) || !Array.isArray(automation.tags)
+      || json.reviewedSource?.revision !== json.revision || json.reviewedSource?.routine?.id !== automation.id) {
       return { kind: "unavailable" };
     }
-    return { kind: "available", automation, revision: json.revision };
+    return { kind: "available", automation, revision: json.revision, reviewedSource: json.reviewedSource };
   } catch {
     return { kind: "unavailable" };
   }
@@ -197,9 +199,14 @@ export async function readCurrentDefinition(path: string, signal?: AbortSignal):
 
 export type RevisionCheckedSave =
   | { kind: "saved"; automation: CodexAutomation | null }
+  | { kind: "resolved"; automation: CodexAutomation | null }
   /** Coven's definition moved since `base`: nothing was written; the person reviews. */
   | { kind: "review"; rebase: RevisionRebase }
   | { kind: "failed"; message: string };
+
+export type RevisionSaveSession = {
+  pending?: { id: string; base: CodexAutomation; patch: string; body: string };
+};
 
 /**
  * Save `patch`, an edit of `base` (the definition the form was loaded from).
@@ -209,32 +216,45 @@ export type RevisionCheckedSave =
  * refuses it because the definition moved in between, the answer is the same
  * review. The form is never written over a revision the person has not seen.
  */
-export async function saveWithRevisionCheck(base: CodexAutomation, patch: CodexAutomationPatch): Promise<RevisionCheckedSave> {
+export async function saveWithRevisionCheck(base: CodexAutomation, patch: CodexAutomationPatch, session: RevisionSaveSession = {}): Promise<RevisionCheckedSave> {
   const path = `/api/codex-automations/${encodeURIComponent(base.id)}`;
-  const current = await readCurrentDefinition(path);
-  if (current.kind === "absent") return { kind: "failed", message: "Not saved: Coven no longer holds this cron." };
-  if (current.kind !== "available") {
-    return { kind: "failed", message: "Not saved: couldn't confirm Coven's current revision. Check the daemon connection, then save again." };
+  if (session.pending && session.pending.id !== base.id) {
+    return { kind: "failed", message: `Resolve the pending save for ${session.pending.base.name} before saving another scheduled job.` };
   }
-  if (definitionMoved(base, current.automation)) {
-    return { kind: "review", rebase: reviewRevisionRebase(base, patch, current.automation, current.revision) };
+  if (!session.pending) {
+    const current = await readCurrentDefinition(path);
+    if (current.kind === "absent") return { kind: "failed", message: "Not saved: Coven no longer holds this scheduled job." };
+    if (current.kind !== "available") {
+      return { kind: "failed", message: "Not saved: couldn't confirm Coven's current revision. Check the daemon connection, then save again." };
+    }
+    if (definitionMoved(base, current.automation)) {
+      return { kind: "review", rebase: reviewRevisionRebase(base, patch, current.automation, current.revision) };
+    }
+    session.pending = { id: base.id, base: structuredClone(base), patch: JSON.stringify(patch),
+      body: JSON.stringify({ ...patch, expectedRevision: current.revision, reviewedSource: current.reviewedSource, adoptionKey: `cave-edit:${crypto.randomUUID()}` }) };
   }
+  const pending = session.pending;
   let res: Response;
-  let json: { ok?: unknown; error?: unknown; conflict?: unknown; automation?: CodexAutomation } | null;
+  let json: { ok?: unknown; error?: unknown; conflict?: unknown; uncertain?: unknown; automation?: CodexAutomation } | null;
   try {
     res = await fetch(path, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...patch, expectedRevision: current.revision }),
+      body: pending.body,
     });
     json = await res.json().catch(() => null);
   } catch {
-    return { kind: "failed", message: "The save may not have reached Coven. Check the cron's current state before saving again." };
+    return { kind: "failed", message: "The save may not have reached Coven. Save again to retry the original request before making another change." };
   }
   if (res.status === 409 && json?.conflict === true) {
+    delete session.pending;
     const moved = await readCurrentDefinition(path);
-    if (moved.kind === "available") return { kind: "review", rebase: reviewRevisionRebase(base, patch, moved.automation, moved.revision) };
+    if (moved.kind === "available") return { kind: "review", rebase: reviewRevisionRebase(pending.base, patch, moved.automation, moved.revision) };
   }
-  if (!res.ok || json?.ok !== true) return { kind: "failed", message: typeof json?.error === "string" ? json.error : `http ${res.status}` };
-  return { kind: "saved", automation: json.automation ?? null };
+  if (!res.ok || json?.ok !== true) {
+    if (res.status >= 400 && res.status < 500 && json?.uncertain !== true) delete session.pending;
+    return { kind: "failed", message: typeof json?.error === "string" ? json.error : "The save is unconfirmed. Save again to retry the original request." };
+  }
+  delete session.pending;
+  return { kind: pending.patch === JSON.stringify(patch) ? "saved" : "resolved", automation: json.automation ?? null };
 }

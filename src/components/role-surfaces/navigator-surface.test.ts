@@ -59,8 +59,17 @@ test("dependency edits write canonical card fields while the legacy overlay is i
   assert.match(surface, /overlay: ChartOverlay/);
   assert.match(surface, /normalizeOverlay\(state\.overlay, liveIds\)/);
   assert.match(surface, /overlayImportPlan\(cards, overlay\)/);
-  assert.match(surface, /\{ dependencies: \[\.\.\.existing, addition\] \}/);
-  assert.match(surface, /const body: Record<string, unknown> = \{ dependencies: kept \}/);
+  // The import merges server-side under the board lock (#6258): a stale
+  // snapshot can neither drop another writer's edge nor duplicate an import.
+  assert.match(surface, /body: JSON\.stringify\(\{ ops: \{ dependencyOps: additions \} \}\)/);
+  assert.doesNotMatch(surface, /dependencies: \[\.\.\.existing, \.\.\.additions\]/);
+  // Human link, cut and undo are ops resolved against the current card too
+  // (#6286): no Chart Room edit sends a whole dependency array any more.
+  assert.match(surface, /\{ ops: \{ dependencyOps: \[addition\] \} \}/);
+  assert.match(surface, /origin: "human",/);
+  assert.match(surface, /\{ ops: \{ dependencyOps: \[\{ op: "removeTask", taskId: parentId \}\] \} \}/);
+  assert.match(surface, /\{ ops: \{ dependencyOps: entry\.undo \} \}/);
+  assert.doesNotMatch(surface, /\{ dependencies: (?:kept|\[\.\.\.existing|entry\.dependencies)/);
   assert.match(surface, /setDependency\(overlay, stepId, null\)/);
   assert.doesNotMatch(surface, /setDependency\(overlay, stepId, parentId\)/);
   assert.doesNotMatch(surface, /body: JSON\.stringify\(\{[^}]*\bdependsOn\b/);

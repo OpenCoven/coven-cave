@@ -6,9 +6,9 @@ export type CovenantAutomation = {
   schemaVersion: number;
   id: string;
   name: string;
-  status: "ACTIVE" | "PAUSED";
+  status: "ACTIVE" | "PAUSED" | "DISABLED";
   rrule: string;
-  timezone: "local" | "utc";
+  timezone: string;
   misfire: "latest";
   overlap: "forbid";
   timeoutMinutes: number;
@@ -33,7 +33,7 @@ export type RoutineRun = {
   occurrenceId?: string;
   sessionId?: string;
   familiarId?: string;
-  runtime: string;
+  runtime?: string;
   status: "running" | "succeeded" | "failed" | "cancelled";
   exitCode?: number;
   logJson?: string;

@@ -34,7 +34,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
 
-  const familiarsToml = path.join(homedir(), ".coven", "familiars.toml");
+  const familiarsToml = path.join(/* turbopackIgnore: true */ homedir(), ".coven", "familiars.toml");
   let toml: string | null = null;
   try {
     toml = await readFile(familiarsToml, "utf8");

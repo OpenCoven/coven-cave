@@ -3,6 +3,22 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expectedBoundaries = new Map([
+  ["../src/lib/server/journal-command-intent.ts", [
+    ['path.join(/* turbopackIgnore: true */ await realpath(/* turbopackIgnore: true */ directory), ".cave-command-intents")', 1],
+    ['path.join(/* turbopackIgnore: true */ root, `${digest(adoptionKey)}.json`)', 1],
+    ['path.join(/* turbopackIgnore: true */ root, `.prepare-${randomUUID()}`)', 1],
+    ['open(/* turbopackIgnore: true */ file,', 1],
+    ['open(/* turbopackIgnore: true */ temporary,', 1],
+  ]],
+  ["../src/lib/server/research-automation-import.ts", [
+    ['path.join(/* turbopackIgnore: true */ caveHome(), "research-automation-import-plans")', 1],
+    ['path.join(/* turbopackIgnore: true */ base, ".codex", "automations", id, "automation.toml")', 1],
+    ['path.join(/* turbopackIgnore: true */ planRoot, `${plan.planId}.json`)', 1],
+    ['path.join(/* turbopackIgnore: true */ planRoot, `${planId}.json`)', 1],
+    ['open(/* turbopackIgnore: true */ file,', 1],
+    ['realpath(/* turbopackIgnore: true */ home)', 1],
+    ['realpath(/* turbopackIgnore: true */ file)', 1],
+  ]],
   // A `caveHome()` join matches by partial name: `"state.json"` traced Xcode's
   // `workspace-state.json` and failed the #6082 leak guard; `"config.json"`
   // traced `tsconfig.json` into every entry (#6093).
@@ -10,11 +26,28 @@ const expectedBoundaries = new Map([
     ['path.join(/* turbopackIgnore: true */ caveHome(), "config.json")', 1],
     ['path.join(/* turbopackIgnore: true */ caveHome(), "state.json")', 1],
   ]],
+  // Next 16.4 carried these three whole-project globs into the instrumentation
+  // trace, failing the #6082 leak guard with 6,226 checkout files (#6264).
+  ["../src/lib/server/adapter-manifest-scaffold.ts", [
+    ["path.join(/* turbopackIgnore: true */ adaptersDir, scaffold.filename)", 1],
+    ["readFile(/* turbopackIgnore: true */ manifestPath, \"utf8\")", 1],
+  ]],
+  ["../src/lib/chat-runtime-scope.ts", [
+    ["path.resolve(/* turbopackIgnore: true */ normalizePath(options.homeDir ?? homedir()))", 1],
+    ["realpath(/* turbopackIgnore: true */ homePath)", 1],
+  ]],
+  ["../src/lib/server/research-resource-store.ts", [
+    ["/* turbopackIgnore: true */ options.root ?? path.join(/* turbopackIgnore: true */ caveHome(), \"research-resources\")", 1],
+  ]],
   ["../src/lib/mobile-handoff.ts", [
     ["spawn(/* turbopackIgnore: true */ bin, args", 1],
   ]],
   ["../src/lib/server/backup-archive.ts", [
     ["path.join(/* turbopackIgnore: true */ researchRoot, relativeDirectory)", 1],
+  ]],
+  // Unmarked, the `.worktrees` join made the build scan 56,826 files (#6099).
+  ["../src/lib/server/issue-worktree-provision.ts", [
+    ['path.join(/* turbopackIgnore: true */ repoRoot, ".worktrees")', 1],
   ]],
   ["../src/lib/server/research-context-pack-store.ts", [
     ["readdir(/* turbopackIgnore: true */ layout.manifestsDir)", 2],

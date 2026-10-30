@@ -2,7 +2,30 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { projectDaemonLifecycle } from "@/lib/daemon-lifecycle";
+import type { DaemonConnectionSnapshot } from "@/lib/server/daemon-connection-snapshot";
 import { createDaemonTravelReconcilePostHandler } from "./route.ts";
+
+// Travel reconciliation reads the target and availability; the lifecycle
+// field is carried through untouched.
+function snapshotLifecycle(
+  targetMode: "local" | "hub",
+  availability: DaemonConnectionSnapshot["availability"],
+): DaemonConnectionSnapshot["lifecycle"] {
+  return {
+    ...projectDaemonLifecycle({
+      targetMode,
+      availability,
+      runtime: "unknown",
+      serviceConflict: null,
+      operation: null,
+      previouslyReady: false,
+      reason: null,
+    }),
+    generation: 0,
+    observedAt: "2026-08-01T00:00:00.000Z",
+  };
+}
 
 function request() {
   return new Request("http://127.0.0.1/api/daemon/travel/reconcile", {
@@ -15,6 +38,7 @@ test("daemon travel reconcile POST reuses the current connection snapshot", asyn
     running: false,
     availability: "unreachable",
     checkedAt: "2026-08-01T00:00:00.000Z",
+    lifecycle: snapshotLifecycle("hub", "unreachable"),
     target: {
       mode: "hub",
       label: "Server hub",
@@ -66,6 +90,7 @@ test("daemon travel reconcile POST converts reconcile failures into a generic 50
       running: false,
       availability: "unreachable",
       checkedAt: "2026-08-01T00:00:00.000Z",
+      lifecycle: snapshotLifecycle("hub", "unreachable"),
       target: {
         mode: "hub",
         label: "Server hub",

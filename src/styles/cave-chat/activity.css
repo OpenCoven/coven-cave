@@ -153,12 +153,17 @@
   border-color: color-mix(in oklch, var(--color-danger) 55%, transparent);
 }
 
+/* The turn's disclosures — reasoning and the work line — sit on one quiet
+   hairline card. Everything inside them is a flat row that lifts one surface
+   step when open, never a second box (design language §8). */
 .cave-reasoning-block,
 .cave-tool-group {
+  --tool-accent: var(--text-muted);
+  min-width: 0;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--bg-panel) 36%, transparent);
-  padding: 10px var(--space-3);
+  padding: var(--space-2) var(--space-3);
 }
 
 /* A quiet timeline inside the existing activity disclosure. Intrinsic grid
@@ -224,19 +229,44 @@
   color: var(--accent-presence);
 }
 
+/* One header grammar for every disclosure in a turn — reasoning, the work
+   line, a repeated run, a tool card: chevron, tinted glyph, sentence-case
+   title, trailing meta. The hover fill bleeds into the host's padding so it
+   reads as a row, not a label; the focus ring is the shared utility. */
 .cave-tool-summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+  min-height: var(--space-6);
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
   cursor: pointer;
   user-select: none;
   list-style: none;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 500;
+  line-height: 1.4;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.cave-tool-summary:hover {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+/* Trailing meta on a summary: counts, durations, word counts. */
+.cave-tool-summary__meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
 }
 
 /* One-off wrappers (data-one-off) render their summary hidden/inert — the
@@ -258,7 +288,7 @@ details[data-one-off] > .cave-tool-summary {
   height: 10px;
   flex-shrink: 0;
   background-color: currentColor;
-  opacity: 0.5;
+  opacity: 0.55;
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 4l4 4-4 4' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   mask-size: contain;
   mask-repeat: no-repeat;
@@ -277,11 +307,11 @@ details[open] > .cave-tool-summary::before {
 .cave-run-activity-context {
   max-height: min(28vh, 180px);
   overflow: auto;
-  margin: 7px 0 2px 21px;
+  margin: var(--space-2) 0 0 var(--space-5);
   border: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-elevated) 72%, transparent);
-  padding: 7px var(--space-2);
+  padding: var(--space-2);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -295,21 +325,68 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
+/* Counters on a summary: the signature hairline pill (§3). Running and
+   error counts take the tint recipe; the words carry the meaning. */
 .cave-tool-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-4);
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-hairline);
-  border-radius: 5px;
-  padding: 2px 5px;
+  border-radius: var(--radius-pill);
   color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .cave-tool-count--running {
-  border-color: color-mix(in oklch, var(--color-warning) 26%, transparent);
   color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 12%, transparent);
+  border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
 }
 
 .cave-tool-count--error {
-  border-color: color-mix(in oklch, var(--color-danger) 28%, transparent);
   color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  border-color: color-mix(in oklch, var(--color-danger) 38%, var(--border-hairline));
+}
+
+/* A call's outcome. Live states and failures carry a tint; a finished,
+   successful call is static metadata and reads as muted text (§8: a badge
+   means live state). The label is always a word, never only a colour. */
+.cave-tool-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-4);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.cave-tool-status[data-status="ok"] {
+  padding: 0;
+}
+
+.cave-tool-status[data-status="neutral"] {
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+
+.cave-tool-status[data-status="active"] {
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+}
+
+.cave-tool-status[data-status="error"] {
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
 }
 
 .cave-tool-count--notice {
@@ -382,25 +459,50 @@ details[open] > .cave-tool-summary::before {
   .cave-progress-step[data-running] .cave-progress-row > svg:first-child { animation: none; }
   .cave-progress-caret,
   .cave-progress-disclosure > summary,
+  .cave-tool-summary,
+  .cave-tool-block,
   .cave-tool-summary::before { transition: none; }
 }
 
+/* A tool card. Standalone (the turn timeline, the edit-card strip under a
+   reply) it is a hairline card; inside the work line it is a flat row that
+   lifts one surface step when open, so the panel never nests boxes (§8).
+   The category tints the glyph (data-tool-category → --tool-accent), not a
+   frame. */
 .cave-tool-block {
-  border: 1px solid var(--border-hairline);
-  border-radius: 7px;
-  background: color-mix(in oklch, var(--bg-base) 58%, transparent);
-  padding: var(--space-2);
-  /* Color-coded by tool category (data-tool-category) for quick visual
-     inspection — each category drives --tool-accent below. */
   --tool-accent: var(--text-muted);
-  border-left: 2px solid color-mix(in oklch, var(--tool-accent) 70%, transparent);
+  min-width: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 46%, transparent);
+  padding: var(--space-1) var(--space-2);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.cave-tool-block[open] {
+  padding-bottom: var(--space-2);
+}
+
+.cave-work-line .cave-tool-block {
+  border: 0;
+  background: transparent;
+}
+
+.cave-work-line .cave-tool-block[open] {
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
+}
+
+.cave-tool-block__summary {
+  min-height: calc(var(--space-6) + var(--space-1));
 }
 
 .cave-tool-run {
+  --tool-accent: var(--text-muted);
+  min-width: 0;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-subtle);
-  padding: var(--space-2);
+  padding: var(--space-1) var(--space-2);
 }
 
 /* Flatten run-group framing when nested inside the compact work-line disclosure.
@@ -410,11 +512,6 @@ details[open] > .cave-tool-summary::before {
   border-radius: 0;
   background: transparent;
   padding: var(--space-1) 0;
-}
-
-.cave-tool-run > .cave-tool-summary {
-  letter-spacing: normal;
-  text-transform: none;
 }
 
 .cave-tool-run__name {
@@ -434,7 +531,16 @@ details[open] > .cave-tool-summary::before {
   padding: var(--space-1) 0 0 var(--space-4);
 }
 
-.cave-tool-icon { color: var(--tool-accent); }
+/* The glyph sits on a tile tinted by its category: enough to scan a list of
+   calls by colour, quiet enough to leave the name as the loudest thing. */
+.cave-tool-icon {
+  flex: none;
+  box-sizing: content-box;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--tool-accent) 12%, transparent);
+  color: var(--tool-accent);
+}
 .cave-tool-name { color: color-mix(in oklch, var(--tool-accent) 80%, var(--text-secondary)); }
 
 /* Shared status chip row for work-line and repeated-run summaries. */
@@ -464,6 +570,17 @@ details[open] > .cave-tool-summary::before {
 :is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="mcp"]    { --tool-accent: oklch(0.72 0.14 270); } /* indigo */
 :is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="other"]  { --tool-accent: var(--text-muted); }
 
+/* Light mode keeps the hues and drops their lightness: the dark-surface
+   values above sit near white and wash out on a light page. */
+:root[data-mode="light"] :is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="shell"]  { --tool-accent: oklch(0.50 0.15 150); }
+:root[data-mode="light"] :is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="read"]   { --tool-accent: oklch(0.50 0.13 235); }
+:root[data-mode="light"] :is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="search"] { --tool-accent: oklch(0.50 0.16 295); }
+:root[data-mode="light"] :is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="edit"]   { --tool-accent: oklch(0.54 0.14 75); }
+:root[data-mode="light"] :is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="agent"]  { --tool-accent: oklch(0.52 0.18 350); }
+:root[data-mode="light"] :is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="web"]    { --tool-accent: oklch(0.50 0.12 200); }
+:root[data-mode="light"] :is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="task"]   { --tool-accent: oklch(0.52 0.13 95); }
+:root[data-mode="light"] :is(.cave-tool-block, .cave-tool-run, .cave-tool-batch, .cave-reader-row--batch)[data-tool-category="mcp"]    { --tool-accent: oklch(0.48 0.14 270); }
+
 /* ── Batch band (Chat.dc.html 2a ④) ────────────────────────────────────────
    A turn's calls arrive in blocks: the agent fires several, writes prose,
    fires again. Each block gets one thin tinted band — which move this is,
@@ -478,10 +595,10 @@ details[open] > .cave-tool-summary::before {
   border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--tool-accent) 7%, transparent);
   padding: 0 var(--space-3);
-  min-height: 25px;
+  min-height: var(--space-6);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  letter-spacing: 0.12em;
+  letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
 }
 .cave-tool-batch__dot {
@@ -542,9 +659,9 @@ details[open] > .cave-tool-summary::before {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  height: 22px;
+  min-height: var(--space-5);
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-pill);
   padding: 0 var(--space-2);
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -571,10 +688,10 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-tool-io-label {
-  margin-bottom: 5px;
+  margin-bottom: var(--space-1);
   font-size: var(--text-2xs);
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -583,11 +700,15 @@ details[open] > .cave-tool-summary::before {
   min-width: 0;
 }
 
+/* The field list sits in a sunken well, the same step a code block takes. */
 .cave-tool-fields {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   margin: 0;
+  padding: var(--space-2) var(--space-3);
   min-width: 0;
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
 }
 
 /* Inline field: label gutter + value on one row. Multiline fields stack the
@@ -596,7 +717,7 @@ details[open] > .cave-tool-summary::before {
   display: grid;
   grid-template-columns: minmax(56px, 132px) minmax(0, 1fr);
   align-items: baseline;
-  gap: var(--space-1) 10px;
+  gap: var(--space-1) var(--space-3);
   min-width: 0;
 }
 
@@ -623,7 +744,7 @@ details[open] > .cave-tool-summary::before {
 
 .cave-tool-field-inline {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
@@ -643,11 +764,12 @@ details[open] > .cave-tool-summary::before {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  margin-top: 7px;
-  padding: 2px 7px;
+  min-height: var(--space-5);
+  margin-top: var(--space-2);
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-sm);
-  background: color-mix(in oklch, var(--bg-elevated) 60%, transparent);
+  border-radius: var(--radius-pill);
+  background: transparent;
   color: var(--text-muted);
   font-size: var(--text-2xs);
   font-weight: 600;
@@ -661,6 +783,7 @@ details[open] > .cave-tool-summary::before {
 
 .cave-tool-raw-toggle:hover {
   border-color: color-mix(in oklch, var(--border-strong) 70%, transparent);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
   color: var(--text-secondary);
 }
 
@@ -742,18 +865,17 @@ details[open] > .cave-tool-summary::before {
   font-size: var(--text-sm);
 }
 
-/* Chat-revamp 1b: the session's familiar leads the header — a 24px circle
-   before the title. Photo avatars fill it; glyph avatars center on the quiet
-   accent tint. */
+/* The familiar spans the title and metadata rows. Photos fill the rounded
+   square; glyphs stay centered on the quiet accent tint. */
 .cave-chat-header-avatar {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: calc(var(--space-6) + var(--space-5));
+  height: calc(var(--space-6) + var(--space-5));
   flex: 0 0 auto;
   overflow: hidden;
   border: 1px solid color-mix(in oklch, var(--accent-presence) 22%, transparent);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--accent-presence) 9%, var(--bg-raised));
   color: var(--accent-presence);
 }
@@ -866,11 +988,13 @@ details[open] > .cave-tool-summary::before {
    and recorded runtime/model neutral during streaming, failure and outages. */
 /* One-shot session-settle flare (cave-q06w) — the summoning bloom (700ms,
    decelerate, radiate + fade) in success green as a LONG run settles.
-   Shadow-only: the meta line is borderless and nothing may shift layout.
+   Shadow-only: nothing may shift layout. The meta line is `display: contents`
+   inside the two-row header grid, so the flare paints on the header row that
+   wraps it (#6201); a boxless element has no shadow to animate.
    Gated in MetaLine by a 60s significance floor + a global per-kind
    cooldown (src/lib/flare-cooldown.ts) + the celebrations pref; the row's
    role=status announcement carries the information either way. */
-.cave-chat-meta-line--reward {
+.cave-chat-header-row:has(> .cave-chat-meta-line--reward) {
   border-radius: var(--radius-md);
   animation: cave-chat-settle-flare 700ms var(--ease-decelerate) forwards;
 }
@@ -884,7 +1008,7 @@ details[open] > .cave-tool-summary::before {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cave-chat-meta-line--reward { animation: none; }
+  .cave-chat-header-row:has(> .cave-chat-meta-line--reward) { animation: none; }
 }
 
 /* Inline remedy inside the offline meta line — a real button (keyboard
@@ -936,98 +1060,106 @@ details[open] > .cave-tool-summary::before {
   display: none;
 }
 
-/* ── One title row (#5953) ─────────────────────────────────────────────────
-   identity · run status · actions. The stats strip and the Last run strip
-   used to stack as two bands under the title; they ride the row now.
-   Above 52rem the row stays one line and space is given up in order (#6008):
-   a long title truncates first, down to a protected floor; then the run
-   status wraps its stats and Last run onto two lines inside its own box. A
-   long "Last run needs attention" status used to keep its full width while
-   the title fell to "Capabil…". Below 52rem the status takes its own line. */
+/* Two rows: title/actions, then metadata/activity beside the familiar. */
 .cave-chat-header-row {
-  display: flex;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: var(--space-6) var(--space-5);
   align-items: center;
-  column-gap: var(--space-3);
+  column-gap: var(--space-2);
   row-gap: var(--space-1);
   min-width: 0;
 }
 
 .cave-chat-header-row > .cave-chat-meta-line {
-  /* Start from the identity's own width and give up space first (the high
-     shrink factor), but never below the floor: 24rem keeps a typical title
-     (about 30 characters) whole beside the avatar and status pill. The
-     identity line under the title is usually wider than that anyway, so a
-     short title rarely reserves space it doesn't use. */
-  flex: 1 100 auto;
-  min-width: min(100%, 24rem);
-  width: auto;
-  /* Title and pill on the first line, the identity under them: the exact
-     runtime/model ID keeps wrapping (never an ellipsis) without taking the
-     row's width from the run status and actions. */
-  display: grid;
-  grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr);
-  align-items: center;
-  row-gap: 0;
+  display: contents;
 }
 
-/* Icon buttons never give up width; the identity and the status do. */
 .cave-chat-header-row > .cave-chat-session-actions {
+  grid-column: 3;
+  grid-row: 1;
   flex: none;
 }
 
 .cave-chat-header-row > .cave-chat-meta-line > .cave-chat-header-avatar {
+  grid-column: 1;
   grid-row: 1 / span 2;
 }
 
-.cave-chat-header-row .cave-chat-meta-line__meta {
+.cave-chat-header-row .cave-chat-title,
+.cave-chat-header-row .cave-chat-title-input {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cave-chat-meta-line__details {
   grid-column: 2 / -1;
   grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Preserve exact runtime details on one keyboard-scrollable metadata line. */
+.cave-chat-header-row .cave-chat-meta-line__meta {
+  flex: 1 1 0;
+  min-width: min(100%, calc(var(--space-8) * 5));
   max-width: none;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.cave-chat-header-row .cave-chat-meta-line__meta > .ui-session-pill {
+  margin-inline-end: var(--space-2);
+  vertical-align: middle;
+}
+
+.cave-chat-header-row .cave-chat-meta-line__meta::-webkit-scrollbar {
+  display: none;
 }
 
 .cave-chat-header-status {
-  display: flex;
   flex: 0 1 auto;
-  /* Squeezed beside a protected title, the stats and the Last run strip
-     stack, right-aligned, instead of pushing the title out (#6008). */
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  max-width: 60%;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: safe flex-end;
   min-width: 0;
   align-items: center;
-  gap: 0 var(--space-2);
+  gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.cave-chat-header-status::-webkit-scrollbar {
+  display: none;
 }
 
 .cave-chat-header-status:empty {
   display: none;
 }
 
-/* On the title row the stats are inline facts, not a band. */
+.cave-chat-header-status > * {
+  flex: none;
+}
+
+/* Keep focus indicators inside the horizontal scroll regions. */
+.cave-chat-header-status .focus-ring,
+.cave-chat-meta-line__meta .focus-ring {
+  --ring-offset: calc(-1 * var(--ring-width));
+}
+
+/* The stats remain inline facts, with their existing detail popovers. */
 .cave-chat-header-status .cave-chat-context-row {
   min-height: 0;
   padding: 0;
   border: 0;
   background: none;
-}
-
-@container chat-header (max-width: 52rem) {
-  .cave-chat-header-row {
-    flex-wrap: wrap;
-  }
-  .cave-chat-header-status {
-    order: 1;
-    flex: 1 0 100%;
-    justify-content: flex-end;
-  }
-}
-
-/* A split pane or narrow window: the identity takes the whole first line so
-   the title and its runtime/model line stay readable, and the actions and
-   run status wrap beneath it instead of squeezing the title to a sliver. */
-@container chat-header (max-width: 40rem) {
-  .cave-chat-header-row > .cave-chat-meta-line {
-    flex-basis: 100%;
-  }
 }
 
 /* The runtime's unreported identity, as one muted marker; the gaps are named

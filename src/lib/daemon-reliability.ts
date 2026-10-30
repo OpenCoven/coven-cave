@@ -143,6 +143,8 @@ export function classifyDaemonConnectionFailure(input: {
   status: DaemonStatusPollResult;
 }): DaemonReliabilityFailureClass | undefined {
   if (input.status.kind === "running") return undefined;
+  // Not a failure class: the server owns a start, recovery or stop right now.
+  if (input.status.kind === "transitioning") return undefined;
   if (input.status.kind === "auth-expired" || input.poll.responseStatus === 401) {
     return "authentication";
   }

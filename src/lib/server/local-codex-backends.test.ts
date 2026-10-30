@@ -15,6 +15,7 @@ import {
   resolveLocalCodexEndpoint,
 } from "./local-codex-backends.ts";
 import { EMPTY_LOCAL_MODEL_SETTINGS, type LocalModelSettings } from "./local-models-settings.ts";
+import type { LmsRunner } from "./lmstudio-devices.ts";
 
 // Probes read saved Settings when none are passed; keep that read off the
 // real Cave home.
@@ -29,6 +30,27 @@ after(() => {
 
 const ollama = LOCAL_CODEX_BACKENDS["codex-ollama"];
 const lmstudio = LOCAL_CODEX_BACKENDS["codex-lmstudio"];
+
+// `lms` as LM Studio 0.4.21 answers with LM Link online (ids and names
+// anonymized). Tests never run the real CLI.
+const PEER = "7c1972de0a025c8b753be245afd32df2";
+function lmsWith(answers: Record<string, unknown>): LmsRunner & { calls: string[][] } {
+  const calls: string[][] = [];
+  return Object.assign(async (args: string[]) => {
+    calls.push(args);
+    const answer = answers[args.join(" ")];
+    return answer === undefined ? null : JSON.stringify(answer);
+  }, { calls });
+}
+const linkedLms = () => lmsWith({
+  "ls --json": [
+    { modelKey: "plain-llm", deviceIdentifier: null },
+    { modelKey: "qwen3-8b", deviceIdentifier: null },
+    { modelKey: "qwen/qwen3.8-27b", deviceIdentifier: PEER, path: `${PEER}:qwen/qwen3.8-27b` },
+  ],
+  "link status --json": { status: "online", deviceIdentifier: "5acdfe12b91ff9ecbf75fe9da278b652", peers: [{ deviceIdentifier: PEER, deviceName: "studio-mac.local" }] },
+});
+const noLms: LmsRunner = async () => null;
 
 type Route = (init?: RequestInit) => { status?: number; json: unknown } | Error;
 function server(routes: Record<string, Route>) {
@@ -67,7 +89,43 @@ test("Ollama: chat models with their tool support and context; embedding models 
       { name: "llama2:7b", tools: false, contextLength: 4096 },
       { name: "qwen3:8b", tools: true, contextLength: 40960 },
     ],
+    deviceCheck: "not-needed",
   });
+});
+
+test("an Ollama cloud model is listed as cloud and never runs locally, whatever the remote permission", async () => {
+  // Shapes recorded from Ollama 0.40.6 after `ollama pull gpt-oss:20b-cloud`:
+  // /api/tags carries remote_host, /api/show doesn't.
+  const routes = ollamaRoutes({
+    "http://127.0.0.1:11434/api/tags": () => ({ json: { models: [
+      { name: "gpt-oss:20b-cloud", remote_model: "gpt-oss:20b", remote_host: "https://ollama.com" },
+      { name: "qwen3:8b" },
+    ] } }),
+    "http://127.0.0.1:11434/api/show": (init?: RequestInit) => {
+      const model = JSON.parse(String(init?.body)).model;
+      if (model === "gpt-oss:20b-cloud") return { json: { capabilities: ["completion", "tools", "thinking"], model_info: { "gptoss.context_length": 131072 } } };
+      return { json: { capabilities: ["completion", "tools"], model_info: { "qwen3.context_length": 40960 } } };
+    },
+  });
+  clearLocalCodexProbeCache();
+  const { fetchImpl } = server(routes);
+  const probe = await probeLocalCodexBackend(ollama, { env: {}, fetchImpl });
+  assert.ok(probe.kind === "available");
+  assert.deepEqual(probe.models, [
+    { name: "gpt-oss:20b-cloud", tools: true, contextLength: 131072, cloud: { host: "ollama.com" } },
+    { name: "qwen3:8b", tools: true, contextLength: 40960 },
+  ]);
+  for (const allowRemote of [false, true]) {
+    clearLocalCodexProbeCache();
+    const refused = await preflightLocalCodex("codex-ollama", "ollama/gpt-oss:20b-cloud", { env: {}, fetchImpl, settings: { endpoints: {}, allowRemote } });
+    assert.deepEqual(refused, {
+      ok: false, code: "local_model_cloud",
+      message: "gpt-oss:20b-cloud is an Ollama cloud model: it runs on ollama.com, not on this computer. Codex · Ollama runs only models on your computers. Choose a model Ollama runs locally.",
+    }, `refused with allowRemote=${allowRemote}`);
+  }
+  clearLocalCodexProbeCache();
+  const local = await preflightLocalCodex("codex-ollama", "ollama/qwen3:8b", { env: {}, fetchImpl, settings: EMPTY_LOCAL_MODEL_SETTINGS });
+  assert.equal(local?.ok, true, "a local model on the same server runs as before");
 });
 
 test("LM Studio: llm and vlm models with tool_use; embeddings left out", async () => {
@@ -81,15 +139,56 @@ test("LM Studio: llm and vlm models with tool_use; embeddings left out", async (
       { id: "plain-llm", type: "llm", state: "not-loaded", max_context_length: 8192 },
     ] } }),
   });
-  const probe = await probeLocalCodexBackend(lmstudio, { env: {}, fetchImpl });
+  const lms = linkedLms();
+  const probe = await probeLocalCodexBackend(lmstudio, { env: {}, fetchImpl, lms });
   assert.deepEqual(probe, {
     kind: "available", endpoint: "http://127.0.0.1:1234", version: null,
     models: [
       { name: "plain-llm", tools: false, contextLength: 8192 },
-      { name: "qwen/qwen3.8-27b", tools: true, contextLength: 262144 },
+      { name: "qwen/qwen3.8-27b", tools: true, contextLength: 262144, lmLink: { deviceName: "studio-mac.local" } },
       { name: "qwen3-8b", tools: true, contextLength: 40960 },
     ],
+    deviceCheck: "checked",
+  }, "LM Link's model is marked with the computer it runs on");
+
+  clearLocalCodexProbeCache();
+  const unchecked = await probeLocalCodexBackend(lmstudio, { env: {}, fetchImpl, lms: noLms });
+  assert.equal(unchecked.kind === "available" && unchecked.deviceCheck, "unavailable");
+  assert.ok(unchecked.kind === "available" && unchecked.models.every((model) => !model.lmLink), "without lms nothing is guessed");
+});
+
+test("LM Studio on another computer is gated by its address, so lms isn't asked", async () => {
+  clearLocalCodexProbeCache();
+  const lms = linkedLms();
+  const { fetchImpl } = server({
+    "http://gpu-box.lan:1234/api/v0/models": () => ({ json: { data: [{ id: "qwen3-8b", type: "llm", capabilities: ["tool_use"], max_context_length: 40960 }] } }),
   });
+  const probe = await probeLocalCodexBackend(lmstudio, { env: { CAVE_LMSTUDIO_URL: "http://gpu-box.lan:1234", CAVE_LOCAL_MODELS_ALLOW_REMOTE: "1" }, fetchImpl, lms });
+  assert.equal(probe.kind === "available" && probe.deviceCheck, "not-needed");
+  assert.deepEqual(lms.calls, []);
+});
+
+test("a model LM Link serves from another computer needs the remote permission", async () => {
+  const { fetchImpl } = server({
+    "http://127.0.0.1:1234/api/v0/models": () => ({ json: { data: [
+      { id: "qwen/qwen3.8-27b", type: "vlm", capabilities: ["tool_use"], max_context_length: 262144 },
+      { id: "qwen3-8b", type: "llm", capabilities: ["tool_use"], max_context_length: 40960 },
+    ] } }),
+  });
+  clearLocalCodexProbeCache();
+  const refused = await preflightLocalCodex("codex-lmstudio", "lmstudio/qwen/qwen3.8-27b", { env: {}, fetchImpl, lms: linkedLms(), settings: EMPTY_LOCAL_MODEL_SETTINGS });
+  assert.deepEqual(refused, {
+    ok: false, code: "local_model_other_computer",
+    message: "qwen/qwen3.8-27b runs on studio-mac.local through LM Link, not on this computer. To send prompts there, turn on “Allow servers on other computers” in Settings → Local models. Or choose a model on this computer.",
+  });
+  const local = await preflightLocalCodex("codex-lmstudio", "lmstudio/qwen3-8b", { env: {}, fetchImpl, lms: linkedLms(), settings: EMPTY_LOCAL_MODEL_SETTINGS });
+  assert.equal(local?.ok, true, "a model on this computer runs as before");
+  clearLocalCodexProbeCache();
+  const allowed = await preflightLocalCodex("codex-lmstudio", "lmstudio/qwen/qwen3.8-27b", { env: {}, fetchImpl, lms: linkedLms(), settings: { endpoints: {}, allowRemote: true } });
+  assert.equal(allowed?.ok, true, "the Settings permission allows it");
+  clearLocalCodexProbeCache();
+  const allowedByEnv = await preflightLocalCodex("codex-lmstudio", "lmstudio/qwen/qwen3.8-27b", { env: { CAVE_LOCAL_MODELS_ALLOW_REMOTE: "1" }, fetchImpl, lms: linkedLms(), settings: EMPTY_LOCAL_MODEL_SETTINGS });
+  assert.equal(allowedByEnv?.ok, true, "so does the environment");
 });
 
 test("a stopped server is unreachable, a foreign one is an invalid response, and failures are cached only briefly", async () => {
@@ -247,7 +346,8 @@ test("Settings status reports both servers, where each address came from, and wh
   assert.equal(first.endpoint, "http://127.0.0.1:11434");
   assert.deepEqual(first.server, {
     state: "running", version: "0.21.0",
-    models: [{ name: "llama2:7b", tools: false, contextLength: 4096 }, { name: "qwen3:8b", tools: true, contextLength: 40960 }],
+    models: [{ name: "llama2:7b", tools: false, contextLength: 4096, lmLink: null, cloud: null }, { name: "qwen3:8b", tools: true, contextLength: 40960, lmLink: null, cloud: null }],
+    deviceCheck: "not-needed",
   });
   assert.equal(second.backend, "lmstudio");
   assert.deepEqual(second.server, { state: "stopped" });

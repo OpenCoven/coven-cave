@@ -12,9 +12,11 @@
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 
+import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { covenLaunchCommand, covenWrapperSpawnEnv } from "@/lib/coven-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { familiarWorkspace } from "@/lib/coven-paths";
+import { launchModelArg, prepareLocalCodexLaunch, withLaunchModel } from "@/lib/server/local-codex-launch";
 
 /** A familiar id safe to pass as a CLI argument. */
 const SAFE_ID = /^[a-z0-9_-]+$/i;
@@ -38,6 +40,31 @@ export async function resolveFamiliarWorkspace(
   }
 }
 
+type OneShotLaunch = {
+  args: readonly string[];
+  applyEnv?: (env: Record<string, string | undefined>) => void;
+};
+
+/**
+ * A `coven run codex-ollama|codex-lmstudio` launch gets the checks a chat
+ * turn gets (#6049): the server answers, the model is installed and can call
+ * tools, and Codex receives that model and this computer's server. Callers
+ * that pass no `--model` run the familiar's saved one. Null when the launch
+ * can't run locally; the reason is logged, since callers only see no output.
+ */
+async function prepareOneShotLaunch(args: readonly string[], familiarId?: string): Promise<OneShotLaunch | null> {
+  if (args[0] !== "run" || !args[1]) return { args };
+  const requested = launchModelArg(args)
+    ?? (familiarId && SAFE_ID.test(familiarId) ? bindingFor(await loadConfig(), familiarId).model ?? null : null);
+  const local = await prepareLocalCodexLaunch(args[1], requested, "coven");
+  if (!local.local) return { args };
+  if (!local.ok) {
+    console.warn(`[coven-oneshot] ${args[1]} launch refused (${local.code}): ${local.message}`);
+    return null;
+  }
+  return { args: withLaunchModel(args, local.nativeModel), applyEnv: local.applyEnv };
+}
+
 /**
  * Run the Coven CLI and resolve with everything it wrote to stdout.
  *
@@ -46,8 +73,24 @@ export async function resolveFamiliarWorkspace(
  * died" the same way — fall back to what they already had. Aborting the signal
  * SIGTERMs the child and resolves with the partial output.
  */
-export function runCovenOneShot(
+export async function runCovenOneShot(
   args: readonly string[],
+  signal: AbortSignal,
+  cwd?: string,
+  familiarId?: string,
+): Promise<string> {
+  let launch: OneShotLaunch | null;
+  try {
+    launch = await prepareOneShotLaunch(args, familiarId);
+  } catch {
+    launch = null;
+  }
+  if (!launch || signal.aborted) return "";
+  return spawnOneShot(launch, signal, cwd, familiarId);
+}
+
+function spawnOneShot(
+  launch: OneShotLaunch,
   signal: AbortSignal,
   cwd?: string,
   familiarId?: string,
@@ -57,11 +100,13 @@ export function runCovenOneShot(
       let out = "";
       let settled = false;
       const { command, fixedArgs } = covenLaunchCommand();
-      const child = spawn(command, [...fixedArgs, ...args], {
+      const env = covenWrapperSpawnEnv(harnessSpawnEnv(familiarId));
+      launch.applyEnv?.(env);
+      const child = spawn(command, [...fixedArgs, ...launch.args], {
         windowsHide: true,
         cwd: cwd ?? process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
-        env: covenWrapperSpawnEnv(harnessSpawnEnv(familiarId)),
+        env,
       });
 
       const finish = () => {

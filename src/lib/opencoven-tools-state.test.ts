@@ -23,6 +23,13 @@ const cases: Array<{
   copy: string;
 }> = [
   {
+    name: "failed discovery is not confirmed absence",
+    input: { ...base, installed: false, current: null, compatible: false, discoveryError: "lookup-failed" },
+    state: "unavailable",
+    action: null,
+    copy: "Check again",
+  },
+  {
     name: "missing binary",
     input: { ...base, installed: false, current: null, latest: null, compatible: false },
     state: "missing",
@@ -35,6 +42,13 @@ const cases: Array<{
     state: "version-unreadable",
     action: "repair",
     copy: "Version unreadable",
+  },
+  {
+    name: "unverified installation cannot appear compatible",
+    input: { ...base, packageVerified: false },
+    state: "unverified",
+    action: "repair",
+    copy: "Installation unverified",
   },
   {
     name: "below minimum",
@@ -87,6 +101,9 @@ assert.equal(
   "unreadable tools offer a repair action",
 );
 
+assert.equal(openCovenToolState({ ...base, installed: false, packageVerified: false }), "missing");
+assert.equal(openCovenToolState({ ...base, current: null, packageVerified: false }), "unverified");
+
 const recoveryTransitions: Array<{
   name: string;
   before: OpenCovenToolStateInput;
@@ -96,6 +113,11 @@ const recoveryTransitions: Array<{
     name: "install a missing binary then recheck",
     before: { ...base, installed: false, current: null, latest: null, compatible: false },
     afterRecheck: base,
+  },
+  {
+    name: "verify a repaired installation then recheck",
+    before: { ...base, packageVerified: false, compatible: false },
+    afterRecheck: { ...base, packageVerified: true },
   },
   {
     name: "repair a broken shim then recheck",

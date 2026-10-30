@@ -28,6 +28,11 @@ class CovenAutomationsUnavailableError extends Error {
 }
 
 interface Flaws {
+  offlineFacadeListLooksAvailable?: boolean;
+  lastRunsInventsMissing?: boolean;
+  runLogInvented?: boolean;
+  facadeGetFindsMissing?: boolean;
+  historyWithoutReadAt?: boolean;
   missingAction?: string;
   createsActive?: boolean;
   refusalLooksOffline?: boolean;
@@ -68,10 +73,11 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
   let previous: CanaryRoutine | null = null;
   let revision = 0;
   let offline = false;
-  const events: { sequence: number; label: string; detail: string }[] = [];
+  const events: { id: string; sequence: number; recordedAt: string; label: string; detail: string }[] = [];
   const record = (kind: string) => {
     revision += 1;
-    events.push({ sequence: events.length, label: labels[kind] ?? kind, detail: `Revision ${revision}` });
+    events.push({ id: `evt${String(events.length).padStart(32, "0")}`, sequence: events.length,
+      recordedAt: `2026-10-18T00:00:0${events.length}.000Z`, label: labels[kind] ?? kind, detail: `Revision ${revision}` });
   };
   // The second routine, created through Cave's create route and driven by the lifecycle routes.
   let form: { state: "paused" | "active"; revision: number } | null = null;
@@ -91,6 +97,7 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
     [`occurrence:${occurrenceId}`]: ["Occurrence changed:none → claimed"],
     "automation:cave-release-canary-run": ["Definition created:Revision 1"],
   };
+  const degradedAnswer: CanaryResponse = { status: 503, body: { ok: false, error: "daemon request failed: connect ENOENT", degraded: true } };
   const online = () => {
     if (offline && flaws.fallsBackWhenStopped !== true) {
       throw new CovenAutomationsUnavailableError("daemon request failed: connect ENOENT", true);
@@ -106,6 +113,7 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
       if (!/^[A-Za-z0-9_.-]+$/u.test(String(draft.id))) {
         return Promise.reject(new CovenAutomationsUnavailableError("id may contain only ASCII letters", flaws.refusalLooksOffline === true));
       }
+      if (draft.id === "cave-release-canary-edit") return Promise.resolve({ id: "cave-release-canary-edit", status: "PAUSED" });
       if (draft.id === "cave-release-canary-run") return Promise.resolve({ id: "cave-release-canary-run", status: "PAUSED" });
       routine = { ...(draft as unknown as CanaryRoutine), ...(flaws.createsActive === true ? { status: "ACTIVE" } : {}) };
       record("created");
@@ -117,7 +125,7 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
     },
     listRoutines: () => Promise.resolve(routine === null ? [] : [{ ...routine }]),
     updateRoutine: (definition) => {
-      if (definition.id === "cave-release-canary-run") {
+      if (definition.id === "cave-release-canary-edit") {
         runDefinition = { name: String(definition.name), prompt: String(definition.prompt), revision: runDefinition.revision + 1 };
         return Promise.resolve({ id: definition.id, status: "PAUSED", prompt: runDefinition.prompt });
       }
@@ -147,14 +155,15 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
       const last = entries.at(-1)?.sequence ?? after;
       return Promise.resolve({
         status: 200,
-        body: { kind: "available", entries, hasEntries: entries.length > 0, checkpoint: `cp:${last}` },
+        body: { kind: "available", entries, withheld: 0, hasEntries: entries.length > 0, checkpoint: `cp:${last}`,
+          ...flaws.historyWithoutReadAt === true ? {} : { readAt: "2026-10-18T00:00:10.000Z" } },
       });
     },
     createRoutineViaRoute: (body): Promise<CanaryResponse> => {
       if (flaws.formRuleRefused === true && /BYMINUTE/u.test(String(body.rrule))) {
         return Promise.resolve({ status: 500, body: { ok: false, error: "rrule key `BYMINUTE` is not supported" } });
       }
-      form = { state: flaws.formCreatedActive === true ? "active" : "paused", revision: 1 };
+      form = { state: flaws.formCreatedActive === true ? "active" : "paused", revision: 2 };
       return Promise.resolve({ status: 200, body: { ok: true, automation: { id: body.id, status: form.state === "active" ? "ACTIVE" : "PAUSED" } } });
     },
     lifecycle: (ids): Promise<CanaryResponse> => {
@@ -250,6 +259,34 @@ function fakeCave(flaws: Flaws = {}): CanaryDependencies {
         byAutomation: ran && flaws.inFlightMisses !== true ? { "cave-release-canary-run": entry } : {},
       } });
     },
+    listViaRoute: (): Promise<CanaryResponse> => {
+      if (offline && flaws.offlineFacadeListLooksAvailable !== true) return Promise.resolve(degradedAnswer);
+      return Promise.resolve({ status: 200, body: { ok: true, automations: ran ? [{ id: "cave-release-canary-run", status: "PAUSED" }] : [] } });
+    },
+    getViaRoute: (id): Promise<CanaryResponse> => {
+      if (offline) return Promise.resolve(degradedAnswer);
+      return Promise.resolve(id === "cave-release-canary-run" || flaws.facadeGetFindsMissing === true
+        ? { status: 200, body: { ok: true, automation: { id, status: "PAUSED" } } }
+        : { status: 404, body: { ok: false, error: "not found" } });
+    },
+    runsViaRoute: (id): Promise<CanaryResponse> => {
+      if (offline) return Promise.resolve(degradedAnswer);
+      return Promise.resolve({ status: 200, body: { ok: true, runs: ran ? [{ id: runId, automationId: id, status: "running" }] : [] } });
+    },
+    runLogViaRoute: (): Promise<CanaryResponse> => {
+      if (offline) return Promise.resolve(degradedAnswer);
+      return Promise.resolve(flaws.runLogInvented === true
+        ? { status: 200, body: { ok: true, text: "" } }
+        : { status: 404, body: { ok: false, error: "no log for this run" } });
+    },
+    lastRunsViaRoute: (ids): Promise<CanaryResponse> => {
+      if (offline) return Promise.resolve(degradedAnswer);
+      return Promise.resolve({ status: 200, body: { ok: true, runs: Object.fromEntries(ids.map((id) =>
+        [id, id === "cave-release-canary-run" || flaws.lastRunsInventsMissing === true ? { id: runId } : null])) } });
+    },
+    importViaRoute: (): Promise<CanaryResponse> => Promise.resolve(offline
+      ? degradedAnswer
+      : { status: 200, body: { ok: true, imported: 0, skipped: 0 } }),
     restartDaemon: () => {
       if (flaws.forgetsUpdateOnRestart === true) routine = previous;
       return Promise.resolve();
@@ -302,7 +339,7 @@ const options = { formHour: 15, runCwd: "/tmp/cave-canary-work" };
 
 test("passes against a daemon Cave reports faithfully", async () => {
   assert.deepEqual(await runCaveAutomationsScenario(fakeCave(), options),
-    { mutations: 10, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 });
+    { mutations: 11, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 });
 });
 
 for (const [label, flaws, message] of [
@@ -312,6 +349,7 @@ for (const [label, flaws, message] of [
   ["a revision lost across the restart", { forgetsUpdateOnRestart: true }, /getRoutine after restart: expected the revised routine/u],
   ["a second delete that claims success", { deleteNotIdempotent: true }, /deleteRoutine again: expected false/u],
   ["a checkpoint that rewinds to the start", { checkpointRewinds: true }, /history from the pre-restart checkpoint: expected available history \[2:Definition removed:Revision 3\]/u],
+  ["a history page without its read time", { historyWithoutReadAt: true }, /history export: expected the available page to serialize/u],
   ["a read that falls back when the daemon is gone", { fallsBackWhenStopped: true }, /getRoutine with the daemon stopped: expected CovenAutomationsUnavailableError with degraded=true, but the call succeeded/u],
   ["history that looks available when the daemon is gone", { offlineHistoryLooksAvailable: true }, /history with the daemon stopped: expected 503 unavailable/u],
   ["a create from the form that does not stay paused", { formCreatedActive: true }, /create route: expected the form routine created paused/u],
@@ -334,6 +372,10 @@ for (const [label, flaws, message] of [
   ["a definition that looks available when the daemon is gone", { offlineDefinitionLooksAvailable: true }, /definition with the daemon stopped: expected 503 degraded/u],
   ["an overview that misses the claimed occurrence", { inFlightMisses: true }, /in-flight overview: expected 200/u],
   ["a claimed occurrence reported as running", { inFlightCollapses: true }, /in-flight overview: expected 200/u],
+  ["a facade list that looks available when the daemon is gone", { offlineFacadeListLooksAvailable: true }, /facade list with the daemon stopped: expected 503 degraded/u],
+  ["a facade get that finds an unknown routine", { facadeGetFindsMissing: true }, /facade get of an unknown routine: expected 404/u],
+  ["a last-runs answer that invents a run", { lastRunsInventsMissing: true }, /facade last runs: expected the run routine's newest run and none for the unknown routine/u],
+  ["a run log for a runtime that never started", { runLogInvented: true }, /facade run log: expected no log/u],
   ["an overview that looks available when the daemon is gone", { offlineInFlightLooksAvailable: true }, /the in-flight overview with the daemon stopped: expected 503/u],
 ] as const) {
   test(`fails closed on ${label}`, async () => {

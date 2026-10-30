@@ -19,6 +19,11 @@ export async function waitForDaemonReadiness(input: {
   /** Keep accepting a supervisor winner briefly after the launcher exits. */
   runnerExitGraceMs?: number;
   runnerExited: () => boolean;
+  /**
+   * The launcher never ran (spawn error). Nothing was handed off to the OS,
+   * so there is nothing to keep waiting for: one final probe, then report.
+   */
+  runnerFailed?: () => boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<DaemonReadinessResult> {
@@ -38,7 +43,8 @@ export async function waitForDaemonReadiness(input: {
     if (runnerExited && runnerExitedAt === null) runnerExitedAt = checkedAt;
     const runnerGraceElapsed = runnerExitedAt !== null &&
       checkedAt - runnerExitedAt >= (input.runnerExitGraceMs ?? 0);
-    if (runnerGraceElapsed || elapsedMs >= input.timeoutMs) {
+    const runnerFailed = input.runnerFailed?.() === true;
+    if (runnerFailed || runnerGraceElapsed || elapsedMs >= input.timeoutMs) {
       // A final probe closes the race where a foreground runner publishes its
       // socket just after the previous request, or exits after daemonizing.
       attempts += 1;

@@ -22,6 +22,7 @@ export type OpenCovenToolDisplayStatus = {
   outdated: boolean;
   compatible: boolean;
   packageVerified?: boolean;
+  discoveryError?: string | null;
   latestCheck?: LatestCheckDisplay | null;
 };
 
@@ -60,6 +61,7 @@ export function latestCheckText(tool: OpenCovenToolDisplayStatus, stale = false)
 }
 
 export function toolStatusText(tool: OpenCovenToolDisplayStatus, stale = false): string {
+  if (tool.discoveryError === "lookup-failed") return "Couldn't check installation";
   if (!tool.installed) return "Not found";
   if (tool.packageVerified === false) return "Unexpected executable";
   if (!tool.current) return "Version probe failed";

@@ -7,11 +7,13 @@ import {
   type DaemonResponse,
   type DaemonTarget,
 } from "../coven-daemon.ts";
+import type { DaemonLifecycle } from "../daemon-lifecycle.ts";
 import {
   classifyDaemonFailureAvailability,
   type DaemonAvailability,
 } from "../daemon-status-classification.ts";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "./daemon-health-request.ts";
+import { observeDaemonLifecycle, type DaemonLifecycleProbeInput } from "./daemon-lifecycle-owner.ts";
 import { classifyHubFailure } from "./daemon-probe.ts";
 
 const CACHE_TTL_MS = 1_000;
@@ -27,6 +29,8 @@ export type DaemonConnectionSnapshot = {
   checkedAt: string;
   target: DaemonConnectionTargetSummary;
   reason?: string;
+  /** The owner's projected lifecycle state for this probe (#6298). */
+  lifecycle: DaemonLifecycle;
 };
 
 type DaemonConnectionSnapshotReadOptions = { fresh?: boolean };
@@ -43,6 +47,7 @@ type CreateDaemonConnectionSnapshotBrokerDependencies = {
     request: Pick<DaemonRequest, "path" | "timeoutMs" | "retryTransportFailure">,
   ) => Promise<DaemonResponse<unknown>>;
   now?: () => number;
+  observeLifecycle?: (input: DaemonLifecycleProbeInput) => DaemonLifecycle;
 };
 
 type CacheEntry = {
@@ -98,6 +103,7 @@ function buildSnapshot(
   target: DaemonTarget,
   checkedAtMs: number,
   fields: Pick<DaemonConnectionSnapshot, "running" | "availability"> & { reason?: string },
+  observeLifecycle: (input: DaemonLifecycleProbeInput) => DaemonLifecycle,
 ): DaemonConnectionSnapshot {
   return {
     running: fields.running,
@@ -105,6 +111,15 @@ function buildSnapshot(
     checkedAt: new Date(checkedAtMs).toISOString(),
     target: daemonConnectionTargetSummary(target),
     ...(fields.reason ? { reason: fields.reason } : {}),
+    // The snapshot never spawns or inspects a service, so it offers no
+    // ownership evidence; the owner adds the in-flight operation and the
+    // runtime answer the status route last proved.
+    lifecycle: observeLifecycle({
+      targetMode: target.mode,
+      availability: fields.availability,
+      serviceConflict: null,
+      reason: fields.reason ?? null,
+    }),
   };
 }
 
@@ -113,6 +128,7 @@ export function createDaemonConnectionSnapshotBroker(
 ): DaemonConnectionSnapshotBroker {
   const entries = new Map<string, CacheEntry>();
   const now = dependencies.now ?? Date.now;
+  const observeLifecycle = dependencies.observeLifecycle ?? observeDaemonLifecycle;
 
   function entryFor(key: string): CacheEntry {
     const existing = entries.get(key);
@@ -136,7 +152,7 @@ export function createDaemonConnectionSnapshotBroker(
           running: false,
           availability: "misconfigured",
           reason: target.error,
-        }),
+        }, observeLifecycle),
       };
     }
 
@@ -148,7 +164,7 @@ export function createDaemonConnectionSnapshotBroker(
         snapshot: buildSnapshot(target, completedAt, {
           running: true,
           availability: "online",
-        }),
+        }, observeLifecycle),
       };
     }
     return {
@@ -157,7 +173,7 @@ export function createDaemonConnectionSnapshotBroker(
         running: false,
         availability: failureAvailability(target, response),
         reason: failureReason(target, response),
-      }),
+      }, observeLifecycle),
     };
   }
 
@@ -217,6 +233,7 @@ export function createDaemonConnectionSnapshotBroker(
 const daemonConnectionSnapshotBroker = createDaemonConnectionSnapshotBroker({
   loadConfig,
   callTarget: callDaemonTarget,
+  observeLifecycle: observeDaemonLifecycle,
 });
 
 export function loadDaemonConnectionSnapshot(

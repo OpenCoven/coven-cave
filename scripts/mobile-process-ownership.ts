@@ -189,14 +189,29 @@ export function parseLinuxProcessInfo(stat: string, bootId: string): ProcessInfo
   };
 }
 
+/**
+ * A task the kernel is tearing down: a zombie, a dead task, or one whose
+ * signal handlers are already released. do_task_stat (fs/proc/array.c)
+ * starts with `pgid = -1, sid = -1` and fills them only while it can lock
+ * those handlers, so a task being reaped reads `X 0 -1 -1` (#6232). Its
+ * identity is gone, not malformed.
+ */
+function linuxTaskIsExiting(stat: string): boolean {
+  const commandEnd = stat.lastIndexOf(")");
+  if (commandEnd < 0) return false;
+  const [state, , processGroupId, sessionId] = stat.slice(commandEnd + 1).trim().split(/\s+/);
+  return state === "Z" || state === "X" || processGroupId === "-1" || sessionId === "-1";
+}
+
 export function parseLinuxProcessInfoForScan(
   stat: string,
   bootId: string,
 ): ProcessInfo | null {
+  if (linuxTaskIsExiting(stat)) return null;
   const commandEnd = stat.lastIndexOf(")");
   if (commandEnd >= 0) {
     const fields = stat.slice(commandEnd + 1).trim().split(/\s+/);
-    if (fields[0] === "Z" || fields[2] === "0" || fields[3] === "0") return null;
+    if (fields[2] === "0" || fields[3] === "0") return null;
   }
   return parseLinuxProcessInfo(stat, bootId);
 }
@@ -208,11 +223,15 @@ function linuxProcessInfo(
 ): ProcessInfo | null {
   try {
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    return forScan
-      ? parseLinuxProcessInfoForScan(stat, bootId)
-      : parseLinuxProcessInfo(stat, bootId);
+    if (forScan) return parseLinuxProcessInfoForScan(stat, bootId);
+    // A direct read can land mid-exit too; that is the same disappearance
+    // as ENOENT/ESRCH below, while any other malformed stat stays an error.
+    return linuxTaskIsExiting(stat) ? null : parseLinuxProcessInfo(stat, bootId);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    // A process can disappear after procfs open, while its stat is being read.
+    // Linux reports ESRCH at that boundary rather than ENOENT from open.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ESRCH") return null;
     throw error;
   }
 }

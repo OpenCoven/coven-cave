@@ -3,8 +3,10 @@ import test from "node:test";
 import { adapterManifestScaffoldForHarness, canonicalHarnessId, isTrustedChatHarness } from "./harness-adapters.ts";
 import {
   LOCAL_CODEX_BACKENDS,
+  LOCAL_CODEX_REFUSAL_CODES,
   isCodexFamilyHarness,
   isLocalCodexHarness,
+  isLocalCodexRefusalCode,
   localCodexAdapterManifest,
   localCodexBackendInfo,
   localCodexConfigArgs,
@@ -25,6 +27,14 @@ test("the local harnesses are Codex for transport and resume, and nothing else i
   assert.equal(localCodexBackendInfo("toString"), null, "prototype keys are not backends");
   assert.equal(canonicalHarnessId("codex-ollama"), "codex-ollama", "the shared `codex` binary does not collapse the id");
   assert.ok(isTrustedChatHarness("codex-lmstudio"));
+});
+
+test("only a listed local refusal counts as fully explained by its message (#6095)", () => {
+  for (const code of LOCAL_CODEX_REFUSAL_CODES) assert.equal(isLocalCodexRefusalCode(code), true, code);
+  assert.ok(LOCAL_CODEX_REFUSAL_CODES.includes("local_server_unreachable"));
+  for (const code of ["chat_run_active", "project_access_denied", "harness_usage_limit", "local_server", "LOCAL_SERVER_UNREACHABLE", "toString", "", null, undefined, 409, ["local_server_unreachable"]]) {
+    assert.equal(isLocalCodexRefusalCode(code), false, String(code));
+  }
 });
 
 test("model ids are namespaced by backend and launch as the server's own name", () => {

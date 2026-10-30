@@ -27,6 +27,12 @@ import {
 } from "@/lib/daemon-automation-pref";
 import { createDaemonStatusRequestGate } from "@/lib/daemon-desktop-auto-start";
 import {
+  daemonDiagnosticsExportFilename,
+  parseDaemonDiagnosticsBundle,
+  serializeDaemonDiagnosticsBundle,
+} from "@/lib/daemon-diagnostics-export";
+import { describeDaemonLifecycle, isDaemonLifecycleState } from "@/lib/daemon-lifecycle";
+import {
   describeDaemonAvailability,
   type DaemonAvailability,
 } from "@/lib/daemon-status-classification";
@@ -43,6 +49,8 @@ type DaemonStatus = {
   daemon?: { pid: number; startedAt: string; socket: string };
   /** launchd's daemon job is not the one serving (#5730). */
   serviceConflict?: { label: string };
+  /** The server's projected lifecycle state (#6298); older routes omit it. */
+  lifecycle?: { state: string; reason?: string };
   executors?: Array<{
     url: string;
     healthUrl: string;
@@ -268,6 +276,9 @@ export function DaemonSection({
   const [savingTravel, setSavingTravel] = useState(false);
   const [travelError, setTravelError] = useState<string | null>(null);
   const [copiedInfo, setCopiedInfo] = useState<"socket" | "workspace" | null>(null);
+  const [exporting, setExporting] = useState<"download" | "copy" | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
 
   const refreshCtlRef = useRef<AbortController | null>(null);
   const devicesCtlRef = useRef<AbortController | null>(null);
@@ -275,6 +286,7 @@ export function DaemonSection({
   const probeRequestGateRef = useRef(createDaemonStatusRequestGate());
   const suggestionAppliedRef = useRef(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const diagnosticsCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectionBusy = probing || savingConnection;
 
   const invalidateProbe = useCallback(() => {
@@ -361,6 +373,7 @@ export function DaemonSection({
   useEffect(() => () => {
     probeCtlRef.current?.abort();
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    if (diagnosticsCopyTimerRef.current) clearTimeout(diagnosticsCopyTimerRef.current);
   }, []);
 
   const loadDevices = useCallback(() => {
@@ -576,6 +589,62 @@ export function DaemonSection({
     }
   };
 
+  // #6298 slice 4: export the bounded, redacted diagnostics bundle. The
+  // server builds and redacts it; here it is only validated, named and
+  // handed to the person. Download is the primary path; copy covers webviews
+  // that have no download sink.
+  const fetchDiagnosticsBundle = async () => {
+    const res = await fetch("/api/daemon/diagnostics", { cache: "no-store" });
+    if (!res.ok) throw new Error(`diagnostics unavailable (${res.status})`);
+    const parsed = parseDaemonDiagnosticsBundle(await res.json());
+    if (!parsed.ok) throw new Error(`diagnostics response was not a bundle (${parsed.reason})`);
+    return parsed;
+  };
+
+  const exportDiagnostics = async () => {
+    setExporting("download");
+    setExportError(null);
+    try {
+      const parsed = await fetchDiagnosticsBundle();
+      const blob = new Blob([serializeDaemonDiagnosticsBundle(parsed.bundle)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = daemonDiagnosticsExportFilename(parsed.generatedAt);
+      link.click();
+      // Revoking on the next frame rather than immediately: Safari cancels an
+      // in-flight download when the object URL disappears from under it.
+      requestAnimationFrame(() => URL.revokeObjectURL(url));
+      announce("Daemon diagnostics exported.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "could not export diagnostics";
+      setExportError(message);
+      announce(`Couldn't export diagnostics: ${message}`, "assertive");
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const copyDiagnostics = async () => {
+    setExporting("copy");
+    setExportError(null);
+    try {
+      const parsed = await fetchDiagnosticsBundle();
+      const copied = await copyText(serializeDaemonDiagnosticsBundle(parsed.bundle));
+      if (!copied) throw new Error("clipboard unavailable");
+      setCopiedDiagnostics(true);
+      announce("Daemon diagnostics copied.");
+      if (diagnosticsCopyTimerRef.current) clearTimeout(diagnosticsCopyTimerRef.current);
+      diagnosticsCopyTimerRef.current = setTimeout(() => setCopiedDiagnostics(false), 1600);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "could not copy diagnostics";
+      setExportError(message);
+      announce(`Couldn't copy diagnostics: ${message}`, "assertive");
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const setManualOffline = async (manualOffline: boolean) => {
     setSavingTravel(true);
     setTravelError(null);
@@ -615,12 +684,18 @@ export function DaemonSection({
     running: status?.running === true,
     availability: status?.availability,
   });
+  // The lifecycle projection can say more than availability (starting,
+  // reconnecting, runtime missing, running outside the service). Online-ness
+  // still comes from the fail-closed availability proof alone.
+  const lifecyclePresentation = isDaemonLifecycleState(status?.lifecycle?.state)
+    ? describeDaemonLifecycle({ state: status.lifecycle.state })
+    : availabilityPresentation;
   const daemonOnline = !manualOffline && availabilityPresentation.tone === "success";
   const statusTone: StatusTone = loading
     ? "neutral"
     : restarting || starting || manualOffline
       ? "warning"
-      : availabilityPresentation.tone;
+      : lifecyclePresentation.tone;
   const stateLabel = loading
     ? "Checking…"
     : restarting
@@ -629,7 +704,7 @@ export function DaemonSection({
         ? "Starting…"
         : manualOffline
           ? "Offline (manual)"
-          : availabilityPresentation.label;
+          : lifecyclePresentation.label;
   const statusFailureLead =
     status?.target?.mode === "hub" && status.availability === "unreachable"
       ? "Configured but unreachable"
@@ -847,6 +922,32 @@ export function DaemonSection({
           ) : null}
           {startError ? <p className="settings-daemon-inline-error" role="alert">{startError}</p> : null}
           {travelError ? <p className="settings-daemon-inline-error" role="alert">{travelError}</p> : null}
+          <div className="settings-daemon-diagnostics">
+            <p>
+              Bounded lifecycle events and what Cave believed about the daemon at export time;
+              no credentials, paths, command output, or conversation content.
+            </p>
+            <div className="settings-daemon-diagnostics-actions">
+              <Button
+                variant="secondary"
+                size="xs"
+                leadingIcon="ph:download-simple"
+                loading={exporting === "download"}
+                disabled={exporting !== null}
+                onClick={() => void exportDiagnostics()}
+              >
+                Export diagnostics
+              </Button>
+              <IconButton
+                size="xs"
+                icon={copiedDiagnostics ? "ph:check" : "ph:copy"}
+                aria-label="Copy diagnostics"
+                disabled={exporting !== null}
+                onClick={() => void copyDiagnostics()}
+              />
+            </div>
+          </div>
+          {exportError ? <p className="settings-daemon-inline-error" role="alert">{exportError}</p> : null}
         </div>
         {statusLoadError ? (
           <ErrorState

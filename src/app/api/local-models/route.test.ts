@@ -65,7 +65,7 @@ try {
   const ollama = status.backends[0];
   assert.equal(ollama.source, "settings");
   assert.equal(ollama.endpoint, "http://127.0.0.1:11500");
-  assert.deepEqual(ollama.server, { state: "running", version: "0.21.0", models: [{ name: "qwen3:8b", tools: true, contextLength: 40960 }] },
+  assert.deepEqual(ollama.server, { state: "running", version: "0.21.0", models: [{ name: "qwen3:8b", tools: true, contextLength: 40960, lmLink: null, cloud: null }], deviceCheck: "not-needed" },
     "the reply re-reads the server at its new address");
   assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { version: 1, endpoints: { ollama: "http://127.0.0.1:11500" }, allowRemote: false });
 

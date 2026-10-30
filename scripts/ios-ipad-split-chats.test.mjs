@@ -62,10 +62,23 @@ assert.match(src, /\.navigationSplitViewStyle\(\.balanced\)/, "should use the ba
 
 // cave-bgmg: wide-but-compact windows (non-Max iPhone landscape) promote to a
 // regular size class so the splits engage instead of one sparse full-width
-// column; narrow windows keep the inherited class untouched.
+// column. #6193: narrower windows the system calls regular (iPhone Duo's inner
+// display upright, 669pt) are demoted to compact so they stack instead of
+// floating the list over an empty detail; compact windows stay as they are.
 const appRoot = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 assert.match(appRoot, /struct WideSplitEnabler<Content: View>: View/, "the app root defines the wide-window size-class promoter");
-assert.match(appRoot, /geo\.size\.width >= 700 \? \.regular : inherited/, "≥700pt promotes to regular; narrower keeps the inherited class");
+assert.match(
+  appRoot,
+  /SplitWidth\.sizeClass\(forWidth: geo\.size\.width, inherited: inherited\)/,
+  "the promoter sizes the class from the window width",
+);
+assert.match(appRoot, /static let minimum: CGFloat = 700/, "two real columns need 700pt");
+assert.match(appRoot, /if width >= minimum \{ return \.regular \}/, "≥700pt promotes to regular");
+assert.match(
+  appRoot,
+  /return inherited == \.regular \? \.compact : inherited/,
+  "narrower regular windows stack; narrower compact windows keep the inherited class",
+);
 assert.match(
   appRoot,
   /WideSplitEnabler \{[\s\S]*ZStack \{[\s\S]*RootView\(\)/,

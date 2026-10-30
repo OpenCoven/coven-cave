@@ -2,6 +2,12 @@
 
 import { pathToFileURL } from "node:url";
 
+// Attribution policy (AGENTS.md "Crediting Contributors", decision #6068):
+// human credit is a numeric GitHub no-reply Co-authored-by trailer; AI models,
+// vendors and harnesses are never credited; a coven familiar is recorded by its
+// Coven-Familiar provenance trailer, which is carried onto main once per
+// familiar. Coven-Harness and Coven-Session stay in the PR commits.
+
 const HUMAN_EMAIL_RE = /^([0-9]+)\+([A-Za-z0-9-]+)@users\.noreply\.github\.com$/;
 const CO_AUTHOR_PREFIX_RE = /^\s*Co-authored-by:/i;
 const CO_AUTHOR_RE = /^\s*Co-authored-by:\s+(.+?)\s+<([^<>]+)>\s*$/i;
@@ -11,6 +17,9 @@ const AI_IDENTITY_RE =
   /(?:^|[^a-z0-9])(copilot|claude|chatgpt|gpt(?:-[0-9][a-z0-9.-]*)?|openai|anthropic|codex|cursor|aider|devin|gemini|grok|xai|llama|metaai|mistral|qwen|deepseek|kimi|codeium|windsurf|cody)(?:[^a-z0-9]|$)/i;
 const AI_FOOTER_RE =
   /(?:generated|authored|written|assisted|made|powered)\s+(?:with|by).*?(?:copilot|claude|chatgpt|gpt(?:-[0-9][a-z0-9.-]*)?|openai|anthropic|codex|cursor|aider|devin|gemini|grok|xai|llama|metaai|mistral|qwen|deepseek|kimi|codeium|windsurf|cody)/i;
+const COVEN_FAMILIAR_PREFIX_RE = /^\s*Coven-Familiar:/i;
+const COVEN_FAMILIAR_RE = /^\s*Coven-Familiar:\s*([a-z0-9][a-z0-9-]*)\s*$/i;
+const COVEN_PROVENANCE_DROP_RE = /^\s*Coven-(?:Harness|Session):/i;
 
 function fail(message) {
   throw new Error(`pr-squash-message: ${message}`);
@@ -42,9 +51,22 @@ function parseCoAuthor(line) {
   };
 }
 
-function cleanBody(body, humanTrailers) {
+function parseFamiliar(line) {
+  if (!COVEN_FAMILIAR_PREFIX_RE.test(line)) return null;
+  const match = COVEN_FAMILIAR_RE.exec(line);
+  if (!match) fail(`malformed Coven-Familiar trailer: ${line.trim()}`);
+  return match[1].toLowerCase();
+}
+
+function cleanBody(body, humanTrailers, familiars) {
   const kept = [];
   for (const line of String(body ?? "").replace(/\r\n?/g, "\n").split("\n")) {
+    const familiar = parseFamiliar(line);
+    if (familiar) {
+      familiars.add(familiar);
+      continue;
+    }
+    if (COVEN_PROVENANCE_DROP_RE.test(line)) continue;
     const coAuthor = parseCoAuthor(line);
     if (coAuthor?.kind === "human") {
       humanTrailers.set(coAuthor.emailKey, coAuthor.trailer);
@@ -65,13 +87,17 @@ export function prepareSquashMessage(input) {
   if (!subject) fail("pull request title is required");
 
   const humanTrailers = new Map();
-  const body = cleanBody(input.body, humanTrailers);
+  const familiars = new Set();
+  const body = cleanBody(input.body, humanTrailers, familiars);
   const commits = Array.isArray(input.commits) ? input.commits : [];
   for (const commit of commits) {
-    cleanBody(commit?.messageBody, humanTrailers);
+    cleanBody(commit?.messageBody, humanTrailers, familiars);
   }
 
-  const trailers = [...humanTrailers.values()];
+  const trailers = [
+    ...humanTrailers.values(),
+    ...[...familiars].map((familiar) => `Coven-Familiar: ${familiar}`),
+  ];
   return {
     subject,
     body: [body, trailers.join("\n")].filter(Boolean).join("\n\n"),

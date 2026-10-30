@@ -133,11 +133,16 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-          cache: pnpm
+          # No pnpm cache: this job executes the release ref it checked out,
+          # and a cache written here would be restored on main (#6290).
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
+      # Inside the official Playwright image for the installed version, as PR
+      # CI does (#6191): it carries both engines and their system packages, so
+      # a stalled apt mirror can no longer cancel a release shard (#6290). The
+      # pull is bounded and retried.
+      - run: bash scripts/playwright-ci-image.sh pull
+      - run: bash scripts/playwright-ci-image.sh run pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
 
   e2e-agentic:
     name: Validate candidate E2E (agentic)
@@ -156,19 +161,25 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-          cache: pnpm
+          # No pnpm cache: this job executes the release ref it checked out,
+          # and a cache written here would be restored on main (#6290).
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+      # Inside the official Playwright image for the installed version, as PR
+      # CI does (#6191): it carries both engines and their system packages, so
+      # a stalled apt mirror can no longer cancel a release shard (#6290). The
+      # pull is bounded and retried.
+      - run: bash scripts/playwright-ci-image.sh pull
+      - run: bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
 
   runtime:
     name: Validate candidate runtime (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # 90, not 60: on macos-15 this job builds three times (two Client v1
-    # fixtures, then the sidecar bundle, which keeps Next's TypeScript pass),
-    # and that pass now takes ~33 min there (#6036). Lower it when that's fixed.
-    timeout-minutes: 90
+    # On macos-15 this job builds three times: two Client v1 fixtures, then the
+    # sidecar bundle, which keeps the TypeScript pass. Since #6217 that pass runs
+    # before compiling and takes about 1-1.5 min there instead of 17-35 (#6036).
+    # Recent macOS runs took 33-50 min before it; 60 leaves a third in reserve.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -334,6 +345,33 @@ jobs:
           $testSummary = $testOutput -join "`n"
           if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
             throw 'Sidecar descendant cleanup filter did not run exactly one test.'
+          }
+
+      - name: Test Windows per-port relaunch window discovery
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib windows_instance_activation::native::tests::native_window_discovery_requires_port_marker_and_owner -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Per-port window discovery filter did not run exactly one test.'
+          }
+
+      - name: Test Windows fatal-dialog helper lifecycle
+        shell: pwsh
+        run: |
+          cargo build --manifest-path src-tauri/Cargo.toml --locked --bin app
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:COVEN_STARTUP_DIALOG_TEST_EXE = (Resolve-Path src-tauri/target/debug/app.exe).Path
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib startup_failure_dialog::native_tests::helper_survives_failed_host_and_does_not_retain_port_claim -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Fatal-dialog lifecycle filter did not run exactly one test.'
           }
 
       - name: Test Windows upgrade diagnostics fixture

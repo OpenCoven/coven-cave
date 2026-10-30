@@ -1,6 +1,6 @@
 # Cave Mobile Recovery Contract
 
-Status: proposed executable contract
+Status: historical. Written for #5051, implemented by #5056 and extended by #5270. Current behavior lives in `src/lib/mobile-handoff.ts`, `scripts/mobile-recovery.sh`, and [`mobile-tailscale.md`](../mobile-tailscale.md); the R7 state names and the raw `tailscale serve --bg` command below were never adopted (checked 2026-10-20, #6111).
 
 ## Purpose
 

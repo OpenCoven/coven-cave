@@ -144,7 +144,7 @@ export function useComposerContextActions(config: ComposerContextProps) {
   const canAddProject = Boolean(config.createProject || config.createProjectOrThrow);
 
   const runtimeName = runtimeDisplayName(config.runtime);
-  const modelLabel = runtimeModelLabel(config.modelValue, config.modelOptions) ?? "Runtime default (unresolved)";
+  const modelLabel = runtimeModelLabel(config.modelValue, config.modelOptions) ?? "Runtime default (not reported yet)";
   const controlChips = useMemo(
     () => composerControlChips(config.modelCapabilities ?? []),
     [config.modelCapabilities],

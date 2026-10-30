@@ -436,8 +436,14 @@ assert.match(nativeRunner, /if \(unitSuite\) \{\s*delete target\.OnlyTestIdentif
   "full-suite mode must not retain the transport-only selector");
 assert.match(nativeRunner, /target\.EnvironmentVariables = \{[\s\S]*CAVE_NATIVE_ACTIVITY_FIXTURE: JSON\.stringify/,
   "the XCTest plan supplies the real TCP fixture configuration");
-assert.match(nativeRunner, /if \(!unitSuite\) \{\s*const uiTarget/,
+assert.match(nativeRunner, /if \(!unitSuite && !transportOnly\) \{\s*const uiTarget/,
   "routine CI leaves the separate native UI gate opt-in");
+assert.match(nativeRunner, /const transportOnly = args\.includes\('--transport-only'\)/,
+  "local consecutive-pass diagnosis may select the existing real TCP scenario alone");
+assert.ok(!testRun.includes("--transport-only"),
+  "the transport-only diagnostic selector must not replace full native CI coverage");
+assert.match(nativeRunner, /selectedModes > 1/,
+  "transport-only, full-suite, and live-UI modes cannot be combined");
 assert.ok(runScripts.some((run) => run.includes("pnpm build") && run.includes("installPinnedRelease")),
   "CI prepares a production server and the existing integrity-verified pinned CLI");
 // The fixture build may skip Next's own TypeScript pass (the typecheck job
@@ -456,8 +462,10 @@ assert.deepEqual(skipSites, ["ios: Prepare the native TCP fixture"],
 const nextConfig = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
 assert.match(nextConfig, /const skipBuildTypecheck = process\.env\.COVEN_CAVE_SKIP_BUILD_TYPECHECK === "1";/,
   "the skip is opt-in by an exact env value");
-assert.match(nextConfig, /typescript: \{ ignoreBuildErrors: skipBuildTypecheck \}/,
-  "next.config ties ignoreBuildErrors to that opt-in only");
+assert.match(nextConfig, /const typecheckedBeforeCompile =\s+process\.env\.COVEN_CAVE_TYPECHECKED_BEFORE_COMPILE === "1";/,
+  "the wrapper's already-checked marker is an exact env value (#6036)");
+assert.match(nextConfig, /ignoreBuildErrors: skipBuildTypecheck \|\| typecheckedBeforeCompile,/,
+  "next.config skips Next's pass only for that opt-in or a build whose pass already ran before compiling (#6036)");
 assert.match(nativeRunner, /await run\('native-transport', 'xcodebuild', \['test-without-building'/,
   "the fixture actually runs XCTest instead of only compiling it");
 

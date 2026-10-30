@@ -1,8 +1,8 @@
 # Daemon connectivity reliability
 
-Status: active reliability program (`cave-58eoq`)
+Status: the `cave-58eoq` program's tracked work has merged (#4485, #4495, #4497, #4498, #4489/#4496/#4500/#4506, #4509, #4528); the residual risks below are owned by #6119, #6298 and #6303 where an owner is named.
 
-Last updated: 2026-08-10
+Last updated: 2026-10-20 (status lines reconciled with `main`, #6111)
 
 Implementation note: Windows supervision shipped in PR #4485 and authenticated
 native readiness shipped in PR #4495.
@@ -42,7 +42,7 @@ configured remote hub and perform daemon health and API requests.
 
 | Boundary | Existing proof | Remaining requirement |
 | --- | --- | --- |
-| Rust shell -> Node sidecar | Exact owned-child ready log plus a bounded sidecar-token-authenticated API handshake that verifies service identity, native protocol v1, exact app version, bundle mode, and API dependency readiness | Extend the same correlation ID through later daemon and CLI work |
+| Rust shell -> Node sidecar | Exact owned-child ready log plus a bounded sidecar-token-authenticated API handshake that verifies service identity, native protocol v1, exact app version, bundle mode, and API dependency readiness | Keep new daemon and CLI spawn paths on the correlation ID that #4498 threads through daemon starts and requests |
 | Webview -> Node sidecar | Per-launch token passed in startup URL and enforced by the sidecar bridge | Correlated handshake evidence and bounded recovery transcript |
 | Mobile/tailnet -> Node sidecar | Separate persisted access token and request classification | Continue validating forwarded-peer assumptions and token lifecycle |
 | Next routes -> local daemon | Socket/named-pipe request with bounded timeout; health document and compatibility checks in status/start paths | Endpoint ownership/permission evidence and one shared handshake contract |
@@ -97,23 +97,23 @@ Steps 5 and 8 remain separate layers by design: step 5 now proves the owned
 Node sidecar and its application API are authentic, compatible, and initialized
 before navigation; step 8 proves the downstream Coven daemon or remote hub is
 healthy and compatible. The shell no longer navigates on listening-only
-evidence. Full cross-layer correlation remains `cave-58eoq.3`.
+evidence. Cross-layer correlation shipped in PR #4498 (`cave-58eoq.3`).
 
 ## Ranked issue inventory
 
 | Rank | Severity | State | User impact | Root cause and evidence | Fix and coverage |
 | --- | --- | --- | --- | --- | --- |
-| 1 | High | Fixed in this branch | A slow probe for an old hub URL could overwrite a newer choice and auto-save the wrong connection | `settings-daemon.tsx` had no abort/generation guard and saved current React state rather than the probed snapshot | Abort superseded probes, reject stale generations, then persist the exact URL/executor snapshot without reusing the probe signal; source contract tests pin cancellation, generation, and snapshot binding |
-| 2 | High | Fixed in this branch | Any local process could open the packaged sidecar's PTY WebSocket without the per-launch token and spawn or adopt a shell as the app user | The upgrade gate treated direct loopback as identity; allowlisted-tailnet handling also trusted forgeable forwarding headers as a PTY credential | Require the sidecar token even on loopback whenever it is configured, permit only cryptographically authenticated credentials to relax the PTY source gate, preserve tokenless development explicitly, and pin the decision matrix plus generated-server parity |
-| 3 | High | Fixed in this branch | An inherited non-loopback `HOSTNAME` could expose tokenless development APIs to remote callers who spoofed a loopback `Host` and omitted source headers | The listener trusted ambient `HOSTNAME`, while the final tokenless proxy path treated client-controlled authority as sufficient after host/CSRF checks | Restrict bind selection to validated loopback aliases, default invalid ambient values to `127.0.0.1`, and require the custom server's verified local-peer stamp or verified remote ingress before tokenless API access |
-| 4 | High | Fixed in this branch | Remote HTTP hubs could receive bearer credentials in plaintext, and ad-hoc HTTPS probes could forward the process-wide hub token to a caller-selected authority | Node and iOS attached stored credentials based on target mode/transport but did not consistently require secure transport plus exact credential origin; the probe route reused global custody for arbitrary URLs | Refuse remote plaintext bearer transport before networking, bind iOS credentials to exact normalized origins shared by HTTPS/WSS, probe sibling authorities without credentials, and limit ad-hoc Node probes to tokens embedded by the caller in that exact URL |
+| 1 | High | Shipped in PR #4497 | A slow probe for an old hub URL could overwrite a newer choice and auto-save the wrong connection | `settings-daemon.tsx` had no abort/generation guard and saved current React state rather than the probed snapshot | Abort superseded probes, reject stale generations, then persist the exact URL/executor snapshot without reusing the probe signal; source contract tests pin cancellation, generation, and snapshot binding |
+| 2 | High | Shipped in PR #4497 | Any local process could open the packaged sidecar's PTY WebSocket without the per-launch token and spawn or adopt a shell as the app user | The upgrade gate treated direct loopback as identity; allowlisted-tailnet handling also trusted forgeable forwarding headers as a PTY credential | Require the sidecar token even on loopback whenever it is configured, permit only cryptographically authenticated credentials to relax the PTY source gate, preserve tokenless development explicitly, and pin the decision matrix plus generated-server parity |
+| 3 | High | Shipped in PR #4497 | An inherited non-loopback `HOSTNAME` could expose tokenless development APIs to remote callers who spoofed a loopback `Host` and omitted source headers | The listener trusted ambient `HOSTNAME`, while the final tokenless proxy path treated client-controlled authority as sufficient after host/CSRF checks | Restrict bind selection to validated loopback aliases, default invalid ambient values to `127.0.0.1`, and require the custom server's verified local-peer stamp or verified remote ingress before tokenless API access |
+| 4 | High | Shipped in PR #4497 | Remote HTTP hubs could receive bearer credentials in plaintext, and ad-hoc HTTPS probes could forward the process-wide hub token to a caller-selected authority | Node and iOS attached stored credentials based on target mode/transport but did not consistently require secure transport plus exact credential origin; the probe route reused global custody for arbitrary URLs | Refuse remote plaintext bearer transport before networking, bind iOS credentials to exact normalized origins shared by HTTPS/WSS, probe sibling authorities without credentials, and limit ad-hoc Node probes to tokens embedded by the caller in that exact URL |
 | 5 | High | Shipped in PR #4485: `cave-58eoq.1` | A packaged Windows sidecar that dies after startup previously remained dead until a later UI/manual recovery path acted | Windows had startup ownership but no post-ready observer | Windows now launches the shared bounded supervisor beside `SidecarStartupControl`; automatic/manual startup share atomic ownership, budget resets only after a finished startup with an observed live child, shutdown stops supervision first, and failed/cancelled/navigation-failed workers synchronously release the owned process job |
 | 6 | High | Shipped in PR #4495: `cave-58eoq.2` | The window previously could open onto a sidecar that was listening but incompatible or only partially initialized | Rust readiness proved child log + TCP only | Native GUI and background-daemon startup now require the same bounded sidecar-token-authenticated identity/protocol/version/bundle/dependency handshake before navigation, publication, or retained daemon state |
-| 7 | Medium | Fixed in this branch | Incompatible, unauthorized, unhealthy, unreachable, misconfigured, and status-unavailable responses appeared as generic “Offline” | Settings ignored the route's machine-readable `availability`; the shared type omitted the route's `incompatible` value | Complete the shared taxonomy, fail closed on contradictory fields, render distinct labels/tones, and expose sanitized reason text |
-| 8 | Medium | Open: `cave-58eoq.3` | Support cannot follow one startup/recovery across Rust, sidecar, daemon requests, and CLI children | Logs are component-local and no shared correlation/diagnostic-bundle contract was found | Add correlation IDs, structured lifecycle events, bounded retention, and a redacted export manifest |
+| 7 | Medium | Shipped in PR #4497 | Incompatible, unauthorized, unhealthy, unreachable, misconfigured, and status-unavailable responses appeared as generic “Offline” | Settings ignored the route's machine-readable `availability`; the shared type omitted the route's `incompatible` value | Complete the shared taxonomy, fail closed on contradictory fields, render distinct labels/tones, and expose sanitized reason text |
+| 8 | Medium | Shipped in PR #4498: `cave-58eoq.3` | Support cannot follow one startup/recovery across Rust, sidecar, daemon requests, and CLI children | Logs were component-local and no shared correlation/diagnostic-bundle contract was found | Correlation IDs, bounded structured lifecycle events, and a redacted bundle at `GET /api/daemon/diagnostics`; Settings → Daemon exports it (#6298, slice 4) |
 | 9 | Medium | Shipped in PR #4496: `cave-58eoq.4` | Green happy-path tests can miss races, stale endpoints, hangs, resets, and orphaned children | The bounded harness covers delayed readiness, crashes, hangs, stale ownership, permission ambiguity, version skew, duplicate starts, cancellation, sleep/wake, stale completions, unusual paths, and repeated lifecycle cleanup | Routine PR conformance runs these assertions on Ubuntu when path selection enables the conformance lane; full-validation and release platform validation run the same harness on Ubuntu, Windows, and macOS |
-| 10 | Medium | Implemented in this branch: `cave-58eoq.5` | Startup/recovery improvements could not be compared rigorously | No shared definitions or retained distributions for authenticated time-to-ready and recovery success | Local privacy-safe metrics and reproducible baseline/fault runs establish the measurement contract and budgets |
-| 11 | Medium | Open: `cave-58eoq.6` | An unreviewed CLI/socket path could inherit secrets, hang, overrun output, or mis-handle unusual paths | The high-impact PTY, remote tokenless-development, and bearer-transport bypasses are closed, but the remaining spawn and endpoint touch-set has not been proven exhaustive | Audit every remaining spawn/socket boundary and pin environment, quoting, timeout, size, cancellation, permission, and compatibility contracts |
+| 10 | Medium | Shipped in PR #4509: `cave-58eoq.5` | Startup/recovery improvements could not be compared rigorously | No shared definitions or retained distributions for authenticated time-to-ready and recovery success | Local privacy-safe metrics and reproducible baseline/fault runs establish the measurement contract and budgets |
+| 11 | Medium | Shipped in PR #4528: `cave-58eoq.6`; exhaustiveness unproven, owned by #6303 | An unreviewed CLI/socket path could inherit secrets, hang, overrun output, or mis-handle unusual paths | The high-impact PTY, remote tokenless-development, and bearer-transport bypasses are closed, but the remaining spawn and endpoint touch-set has not been proven exhaustive | Audit every remaining spawn/socket boundary and pin environment, quoting, timeout, size, cancellation, permission, and compatibility contracts |
 
 ## Lifecycle and connection state machine
 
@@ -145,6 +145,112 @@ Illegal transitions:
 - `Incompatible`/`PermissionDenied` -> blind retry loop.
 - Mutation timeout -> automatic duplicate mutation.
 
+### Projected lifecycle state (#6298, slices 1 and 2)
+
+`src/lib/daemon-lifecycle.ts` is the pure projection from recorded evidence
+to one state, and `src/lib/server/daemon-lifecycle-owner.ts` is the one
+process-global record it reads: the start or recovery mutation in flight
+(recorded by `runLocalDaemonStart` for its whole duration), whether this
+process has observed a ready daemon, and the cached answer to "does the
+local Coven runtime exist" (probed at most once per 30 s, and only by the
+status route for an offline local target, so hubs never spawn anything).
+`/api/daemon/status` and `/api/daemon/connection` both publish the result as
+`lifecycle: { state, generation, observedAt, evidence, reason? }`, and the
+Settings daemon card prefers that label over the availability fallback.
+
+| Projected state | Target-table state | Evidence required |
+| --- | --- | --- |
+| `missing` | `NotInstalled` | Local target offline and the runtime probe returned no version |
+| `stopped` | `Stopped` | Target offline; runtime present or not yet probed (never guessed missing) |
+| `starting` | `Starting`/`WaitingForEndpoint` | A start operation in flight and no ready instance observed before |
+| `recovering` | `Recovering` | An automatic recovery in flight, or any start after a ready instance |
+| `stopping` | `Stopping` | A restart is stopping the displaced daemon before the service relaunches it; wins over a still-answering endpoint |
+| `ready` | `Ready` | Health probe succeeded, compatibility passed, no service conflict |
+| `foreign-owned` | `Ready` with a `Degraded` note | Health succeeded but the system service does not own the daemon (#5730) |
+| `unreachable` | `Failed` (transport) | Probe got no answer and the local target did not report "daemon offline" |
+| `unauthorized` | `PermissionDenied` (hub) | Hub answered 401/403 |
+| `incompatible` | `Incompatible` | Compatibility assessment failed, or Cave home is on an incompatible layout |
+| `unhealthy` | `Failed` (endpoint) | Endpoint answered but not healthy, and no operation is in flight |
+| `misconfigured` | `Stopped` (no target) | Selected hub configuration is missing or invalid |
+| `unknown` | none | Cave home status could not be read; the daemon was not checked |
+
+Ordering is fixed: configuration and compatibility failures win over health,
+a deliberate stop wins over a still-answering endpoint, confirmed health wins
+over a start or recovery in flight (so `ready` is never downgraded to
+`starting` by a stale operation record), and an in-flight operation wins over
+an offline or unhealthy probe (a daemon still booting answers unhealthy).
+Every observation carries a monotonic generation; `mergeDaemonLifecycle`
+keeps the newer one, so a slower, older probe cannot overwrite a newer state.
+`Handshaking` and `Degraded` are not projected: the handshake is folded into
+`starting`, and capability degradation is still reported per surface.
+
+The client reads the projection too. `classifyDaemonStatusPoll` returns
+`transitioning` for a local `starting`, `recovering` or `stopping` state, and
+every consumer treats that as neither offline nor failure: the Workspace keeps
+its current banners, the desktop auto-start coordinator does not start or
+revive, the familiar liveness verdict is `degraded` (no revive), the
+connection supervisor keeps the 5 s cadence, and no reliability failure class
+is recorded. The tests are `daemon-status-classification.test.ts`,
+`workspace-daemon-connection.test.ts`, `daemon-desktop-auto-start.test.ts`,
+`familiar-liveness.test.ts`, `daemon-connection-supervisor.test.ts` and
+`daemon-reliability.test.ts`.
+
+### One mutation owner (#6298, slice 2)
+
+`src/lib/server/daemon-mutation-owner.ts` admits every start, automatic
+recovery and restart before anything spawns, kicks launchd or stops a daemon;
+`startLocalDaemonOperation` routes through it and the bounded restart lane
+(`RuntimeStartupCoordinator`) runs inside it. Adopt is the owner's existing
+pre-state reconciliation: a healthy daemon is reported `alreadyRunning`
+without a spawn, with `serviceConflict` when the system service does not own
+it (`foreign-owned`), and an incompatible daemon is refused as
+`runtime_incompatible`; neither is retried by the owner or by the client's
+automatic recovery (`runWorkspaceDaemonStart` reports `failed`, and the
+coordinator only revives on a definitive `offline`). Stop is the restart
+hand-back's stop step, projected as `stopping` while it runs.
+
+| Situation | Owner decision | Result code | Test |
+| --- | --- | --- | --- |
+| Start or recovery while any mutation runs | Join: every one of them wants a running daemon | The in-flight result | `daemon-mutation-owner.behavior.test.ts` |
+| Restart while a start or recovery runs | Refuse by name; joining would report "restarted" for a daemon nobody restarted | `mutation_in_flight` (409) | same |
+| Restart while a restart runs | Join | The in-flight result | same |
+| Same kind within 30 s of a `readiness_timeout` | Reconcile: health proves the late finish (`alreadyRunning`), otherwise refuse with the time left; never replay a stop-and-kick | `duplicate_after_timeout` (409) | same |
+| Different kind after a timeout, or after the window | Admit | normal | same |
+| Mutation throws | Lane released; recorded as `unexpected-error`, not a timeout | rethrown | same |
+| Healthy daemon the service does not own | Adopt, report conflict, no spawn or kick | `ok` + `serviceConflict` | `daemon-start.test.ts` (#5730 cases) |
+| Incompatible daemon | Refuse, no spawn, no retry | `runtime_incompatible` (409) | `daemon-start.test.ts` |
+| Restart hand-back | `stopping` during the stop, then kickstart | `ok`, `launchMode: "service"` | `daemon-start.test.ts` |
+
+Deferred to the fault-matrix slice: the real-process receipt for revive after
+a post-ready kill, and `Stopping` as a user-initiated action (no stop route or
+control exists; stop is only the restart hand-back today).
+
+## Fault matrix (#6298, slice 3)
+
+Every supported fault names its detection, its owner, the safe action, the
+retry/backoff/deadline/escalation policy, the postcondition that proves the
+action worked, and the deterministic test that enters it. Rows that involve
+a real process also cite the real-process probe operation whose receipt is
+recorded in `docs/performance/daemon-lifecycle.md`. Rows this host cannot
+prove are listed as unverified, not omitted.
+
+| Fault | Detection | Owner | Safe action | Retry / backoff / deadline / escalation | Verified postcondition | Deterministic test | Real-process receipt |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Missing or corrupt binary | Spawn error (`ENOENT`, `EACCES`, `ENOEXEC`) on the launcher | Mutation owner → `runLocalDaemonStart` | Report `spawn_failed` with the install diagnostic; no retry | Readiness ends after one final probe (`runnerFailed`), not after the deadline; the restart lane counts the failure toward its 3-in-60 s throttle | Result named within two probes; nothing to clean up | `daemon-start.test.ts` "a missing binary is a named spawn failure…", "a corrupt or non-executable binary…" | none (no process is created) |
+| Stale or occupied socket | `inspectDaemonAddress` connects before a start; the launcher's own bind error afterwards | Mutation owner | Refuse `address_in_use` by name when something answers; a stale file never reads as occupied, so a start reclaims it | No automatic retry against a held address (`runWorkspaceDaemonStart` defers); a departed owner's endpoint is free at once | A held address is never raced; a stale endpoint is rebound by the next start | `daemon-endpoint-faults.test.ts` "a duplicate launch against a held address is refused, not raced", "the endpoint of a departed owner is free once its socket is gone", "a leftover file at the endpoint never reads as occupied"; `daemon-start.test.ts` "an already-bound address is refused by name…" | probe `revive-after-kill` (stale socket recorded, then rebound) |
+| Child exits before ready | Launcher `close` before health | Mutation owner → readiness loop | Final probe, then terminate the owned tree; report `runner_exited` or the launcher's own `address_in_use` cause | Bounded supervisor grace, then cleanup; failure counts toward the restart throttle | No escaped descendant survives an unsuccessful launch | `daemon-start.test.ts` "an exited but unhealthy launcher is cleaned up before it is reported", "an occupied-address launcher failure is named…" | none (fake child) |
+| Child hangs before ready | Health never succeeds within `startTimeoutMs` | Mutation owner → readiness loop | Terminate the owned tree; report `readiness_timeout` | 8 s default deadline (60/90 s native); a duplicate of the same kind inside 30 s reconciles through health or is refused | Owned tree gone; a late-ready daemon settles the mutation instead of being replayed | `daemon-fault-harness.test.ts` "readiness gives up on a permanently hung daemon instead of spinning"; `daemon-start.test.ts` "a readiness timeout terminates the Windows launch tree"; `daemon-mutation-owner.behavior.test.ts` "a duplicate of a timed-out mutation is refused…" | none |
+| Child dies after ready | Health stops answering; status projects `stopped` | Lifecycle owner (projection) → desktop auto-start coordinator → mutation owner (`recovery`) | Automatic recovery when the preference allows; otherwise the Start banner | Liveness burst of 4 with 15 s base backoff, 5 min ceiling, 15 min cooldown then refill; recovery joins any mutation already running | A new instance answers with a new pid; data intact | `daemon-fault-harness.test.ts` "a daemon that dies mid-session stops answering rather than resetting forever"; `daemon-desktop-auto-start.test.ts` "a daemon that dies mid-session is restarted"; `daemon-lifecycle.test.ts` offline → `stopped` | probe `revive-after-kill` |
+| Endpoint recreated | Socket released and rebound by a new instance | Connection supervisor (generation guard) and snapshot broker (1 s TTL, generation) | Accept only the latest probe; a restart reports the new pid | Churn never leaks sockets; an older completion never overwrites a newer cache entry | Probes agree with the endpoint's real state; no connection left behind | `daemon-endpoint-churn.test.ts` "concurrent probes during churn never disagree…", "churn leaves no connection behind…"; `daemon-connection-snapshot.test.ts` "fresh probes outrank older pending work…" | probe `restart` (new pid, marker intact) |
+| Unauthorized | Hub answers 401/403 | Status route classification → lifecycle `unauthorized` | Show Authorization required; never restart for a credential | No mutation retry; GET polling continues on the failure cadence | Local 401/403 is `unhealthy`, hub is `unauthorized`; liveness verdict `degraded` | `daemon-fault-harness.test.ts` "401 and 403 classify as unauthorized on a hub, unhealthy locally"; `daemon-lifecycle.test.ts` "hub rejects credentials" | none (hub) |
+| Incompatible protocol or runtime | `assessDaemonStartupCompatibility` on the health document | Mutation owner and status route → lifecycle `incompatible` | Refuse `runtime_incompatible`; adopt an independent release line only when its API is supported | Never retried blindly: automatic recovery reports `failed`, the coordinator revives only on a definitive `offline` | Status says `incompatible` with the diagnostic; no spawn | `daemon-endpoint-faults.test.ts` "an unsupported API version is refused rather than adopted"; `daemon-start.test.ts` "a daemon runtime on an independent release line is adopted after launch"; `daemon-lifecycle.test.ts` "incompatibility is never retried blindly, even mid-start" | probe `ready()` validates compatibility on every sample |
+| Unhealthy health | Endpoint answers but `ok` is false or the body is not a health document | Snapshot broker and status route → lifecycle `unhealthy` | Show Unhealthy; a start in flight owns the window as `starting` | Failure cadence 5/10/20/30 s with jitter; no mutation retry | `running` is never derived from a 200 alone | `daemon-connection-snapshot.test.ts` "classifies local and hub outcomes…"; `daemon-status-classification.test.ts` contradictory evidence cases | none |
+| Foreign owner | Health succeeds while launchd's job is not running (#5730) | Mutation owner (`alreadyRunning` + `serviceConflict`) → lifecycle `foreign-owned` | Report, offer Restart as the hand-back; no spawn, no kick | No automatic retry; the hand-back is `stopping` then kickstart | Service owns the daemon after Restart | `daemon-start.test.ts` "a healthy daemon serving while its service is not running is reported as a conflict", "restart hands a displaced daemon back…", "the restart hand-back projects stopping…" | unverified on this host without a launchd job for the synthetic home |
+| Clock jump (sleep/wake stand-in) | A timestamp from the future: `now < settledAt`, `now < lastAttemptAt`, `now < checkedAt` | Mutation owner, liveness policy, lifecycle owner; the supervisor's timers use `performance.now()` | Re-stamp the window to now | A refusal, wait or cooldown is at most one window after the jump; cached runtime evidence stamped in the future is re-probed | Recovery resumes one window after the jump, not when the clock catches up | `daemon-mutation-owner.behavior.test.ts` "a backwards clock jump after a timeout refuses for at most one window…"; `familiar-liveness.test.ts` backwards-jump block; `daemon-lifecycle-owner.behavior.test.ts` "a backwards clock jump makes runtime evidence stale…" | unverified: physical sleep/wake is not reproducible here |
+| Concurrent recovery | Second mutation request while one runs | Mutation owner | Start and recovery join; restart is refused by name | No duplicate spawn; the joined result is the one outcome | One ready pid under concurrent starts | `daemon-mutation-owner.behavior.test.ts` "a start, recovery or restart that arrives during a compatible mutation joins it", "a restart never joins a start or recovery…" | probe `concurrent-start` (three starts, one pid) |
+| Migrated or large profile | not detected by any automated path | unowned | n/a | n/a | n/a | none | unverified: no migrated-profile fixture exists; the maintainer's own profile readiness timeout stays with #6119 |
+| Windows named-pipe faults | Shared native liveness poll and `SidecarStartupControl` | Native Windows supervision (#4485) | Bounded refillable recovery | As documented in the FMEA | n/a on this host | `windows-startup.yml` PR lane | unverified: release-host crash injection remains required |
+
 ## Failure-mode and effects analysis
 
 | Failure mode | Detection | Current effect | Safe recovery | Residual risk |
@@ -156,21 +262,24 @@ Illegal transitions:
 | Child hangs before ready | Condition timeout | Fails after 60/90 seconds | Cancel or retry; preserve bounded output tail | Timeout budget is not yet measured by platform |
 | Child dies after ready, macOS/Linux | Native liveness poll | Bounded refillable revive and webview re-navigation | Automatic | Full end-to-end revive test is still missing |
 | Child dies after ready, Windows | Shared native liveness poll using `SidecarStartupControl` and the owned process job | Bounded refillable recovery without concurrent startup | Automatic | Windows release-host crash injection remains required |
-| Stale hub probe | Superseding input/mode/device choice | Previously could repaint/save old endpoint | Abort + generation guard + exact snapshot | Fixed in this branch |
+| Stale hub probe | Superseding input/mode/device choice | Previously could repaint/save old endpoint | Abort + generation guard + exact snapshot | Shipped in PR #4497 |
 | Hub unauthorized | Authenticated HTTP response 401/403 | Previously generic Offline | Show Authorization required and reason | One-click credential repair remains future work |
 | Hub unreachable | Transport failure, no HTTP answer | Configured target unavailable | Bounded GET retry; travel/replay policy | Network classification still needs correlated timing |
 | Sidecar readiness unauthorized/malformed | Authenticated native readiness returns non-200, malformed HTTP/chunks/JSON, or exceeds 64 KiB | Native startup refuses navigation and preserves a bounded output/error chain | Retry exact owned startup; do not adopt the endpoint | Shipped in PR #4495 |
-| Daemon unhealthy | Endpoint answers but health is invalid/non-2xx | No verified daemon-running state | Retry health or restart exact owner | Sidecar readiness is now proven separately; downstream daemon correlation remains open |
+| Daemon unhealthy | Endpoint answers but health is invalid/non-2xx | No verified daemon-running state | Retry health or restart exact owner | Sidecar readiness is proven separately; daemon requests carry the #4498 correlation ID |
 | Runtime/API mismatch | Native sidecar handshake plus downstream daemon health compatibility check | Native adoption or daemon status refuses the incompatible layer | Update/repair then restart | Implemented sidecar check is exact-version by design for one packaged artifact |
 | Cave state lock/permission busy | Structured status-unavailable/incompatible response | Status cannot be confirmed | Automatic later poll; show Status unavailable | Needs OS error evidence in diagnostics |
 | Socket/pipe missing | Transport error normalization | Local daemon classified offline | Bounded start policy | Endpoint ownership/ACL audit remains open |
 | Response reset/partial body | Response error handler | Request resolves as transport failure | GET may retry once; mutations do not | Cross-component partial-write tests remain open |
 | Oversized response | `maxResponseBytes` where supplied | Request fails with size-limit diagnostic | No retry unless caller chooses | Call-site coverage of limits remains open |
 | App exits during startup | Cleanup guard, cancellation, process job/watchdog | Owned tree is stopped/reaped | Relaunch cleanly | Cross-platform stress coverage remains open |
+| Concurrent start/restart requests | Mutation owner admission (`daemon-mutation-owner.ts`) | Start and recovery join the running mutation; restart is refused by name | None needed; the client polls at the healthy cadence until the owner settles | Only this Next process is coordinated; a second Cave process is the duplicate-GUI row |
+| Duplicate mutation after a timeout | Owner remembers the last `readiness_timeout` for 30 s | Same kind reconciles through health or is refused with the time left | Wait out the window, or Retry after health answers | A service that takes longer than the window to come up is still kicked again on the next request |
+| Foreign-owned instance | Health succeeds while launchd's job is not running (#5730) | Reported `foreign-owned`/`serviceConflict`; no spawn, no automatic retry | Settings Restart hands the daemon back to the service | Ownership is inferred from the service's running state, not from the serving PID |
 
 ## Warning truthfulness audit
 
-| Diagnostic | Before | Contract after this branch |
+| Diagnostic | Before | Contract after PR #4497 |
 | --- | --- | --- |
 | Checking… | Accurate while a status request is pending | Unchanged |
 | Running | Derived from `running` only | Requires `running` plus `online` or a legacy payload with no availability field; contradictory payloads fail closed as Unhealthy |
@@ -206,6 +315,42 @@ repair results. It must exclude credentials, query tokens, private keys,
 personal paths, conversation content, and unrelated environment variables.
 Local diagnostics and opt-in telemetry remain separate systems.
 
+### In-app export (#6298, slice 4)
+
+The daemon status card in Settings → Daemon has **Export diagnostics** and a
+copy action. Both read `GET /api/daemon/diagnostics` with `cache: no-store`
+and hand the person the same serialized bundle: the export saves it as
+`coven-cave-daemon-diagnostics-<generatedAt>.json`, named by the bundle's own
+generation instant; the copy places it on the clipboard for webviews that
+have no download sink. The shared contract lives in
+`src/lib/daemon-diagnostics-export.ts`.
+
+- **Only the redacted bundle is accepted.** `parseDaemonDiagnosticsBundle`
+  refuses anything whose manifest is not
+  `coven-cave-daemon-diagnostics` schema 1 with a readable `generatedAt` and
+  an `events` array. An error page or a future schema is reported inline and
+  never saved under the diagnostics name.
+- **Exporting runs no probe.** The bundle carries a `lifecycle` block with the
+  lifecycle operation in progress and the mutation owner's in-flight and
+  last-settled records (kinds, codes and instants from slices 1 and 2,
+  sanitized like every other token; an unreadable instant exports as `null`,
+  never as the export time). It is read from the owners' own bookkeeping, so
+  the export cannot change the state it describes.
+- **Retention is the route's.** The bundle holds at most
+  `DAEMON_DIAGNOSTIC_MAX_EVENTS` (256) events from the current sidecar
+  process (`manifest.retention.scope`), plus aggregate event-plane counters.
+  The native recorder's `daemon-reliability-v1.json` is a separate store and
+  is not included.
+- **Privacy is unchanged.** The control states the rule where the person
+  decides to send the file: no credentials, paths, command output, or
+  conversation content. The manifest's `excluded` list is authoritative, and
+  `daemon-diagnostics.test.ts` pins that secrets and personal paths do not
+  survive export.
+
+Tests: `daemon-diagnostics-export.test.ts` (contract),
+`daemon-diagnostics.test.ts` (lifecycle block and route pins),
+`settings-daemon-diagnostics-export.test.ts` (control pins).
+
 ## User recovery matrix
 
 | Verified condition | Automatic action | Primary user action | Fallback |
@@ -223,7 +368,7 @@ Local diagnostics and opt-in telemetry remain separate systems.
 
 ## Validation and measurements
 
-Current branch:
+Coverage PR #4497 added or extended:
 
 - `daemon-status-classification.test.ts`: complete availability-presentation
   taxonomy, legacy compatibility, and contradictory-evidence fail-closed cases.
@@ -259,11 +404,11 @@ Completed follow-up subsets:
 
 The attempted native startup measurement encountered an already-running GUI
 and active development origin. It is recorded as contention, not as startup
-success or failure, and no unrelated process was terminated. This branch adds
+success or failure, and no unrelated process was terminated. PR #4509 added
 the reproducible authenticated time-to-ready and recovery-rate measurement
-contract tracked by `cave-58eoq.5`.
+contract (`cave-58eoq.5`).
 
-Behavioral delta in this branch:
+Behavioral delta in PR #4497:
 
 - Before: any completed probe could publish; after: only the latest generation.
 - Before: auto-save mixed the probed URL with mutable current state; after: the
@@ -277,20 +422,68 @@ Behavioral delta in this branch:
   origin, while speculative iOS discovery probes remain credential-free.
 
 No claim is made yet that native startup time or cross-platform recovery rate
-improved; those require the open supervision, handshake, fault, and measurement
-work.
+improved; that needs representative per-platform baselines collected with the
+shipped measurement contract.
 
 ## Residual risk register
 
 | Risk | Owner |
 | --- | --- |
 | Windows post-ready supervision and cross-platform fault injection are shipped; release-host validation remains a release gate | Release platform validation |
-| No cross-component correlation/export contract | `cave-58eoq.3` |
-| Routine pull-request fault coverage is path-gated; documentation-only changes do not run the bounded harness | Explicit coverage boundary in `cave-5tpxy` |
-| Exhaustive remaining CLI spawn and socket/pipe security proof is incomplete after closing the PTY and remote tokenless-development authentication bypasses | `cave-58eoq.6` |
+| The in-app diagnostics export (#6298, slice 4) covers the sidecar's bounded event ring and owner state; the native recorder's `daemon-reliability-v1.json` is not in the bundle | Accepted boundary; the bundle names its scope in `manifest.retention.scope` |
+| Routine pull-request fault coverage is path-gated; documentation-only changes do not run the bounded harness | Accepted coverage boundary (#4896, closed; recorded in #5199) |
+| Migrated/large-profile readiness has no fixture and no automated detection; the maintainer's own profile produced a readiness timeout the empty-profile probe does not explain | #6119 retains it; a fixture needs a consented copy of a real profile |
+| Exhaustive CLI spawn and socket/pipe security proof is incomplete; #4528 pinned the harness, Terminal, SSH-probe and installer boundaries | #6303 (decided under #6298 slice 5: a cross-cutting boundary audit, not a lifecycle slice) |
 | Direct loopback is intentionally sufficient for prompt-free browser REST and PTY access; this does not distinguish OS users on shared machines | Accepted product tradeoff in `cave-99eon` |
 | One-click repairs are not yet implemented for every classified failure | Follow from the issue whose evidence identifies the repair boundary |
 | Hardware-only Windows installer/Defender and macOS signing/quarantine behavior still require release-host validation | Release validation checklist |
+
+## Maintenance and rollback (#6298)
+
+The daemon lifecycle track landed as four squash commits on `main`, each
+independently revertable through a pull request. Nothing in the track
+persists state: the lifecycle owner, the mutation owner, and the diagnostic
+event ring live in process-global memory of the sidecar, so a rollback has
+no data or migration step and takes effect on the next sidecar start.
+
+| Slice | Merge commit | Owns | Revert note |
+| --- | --- | --- | --- |
+| 1 Projection (#6299) | 475d61157 | `src/lib/daemon-lifecycle.ts`, `src/lib/server/daemon-lifecycle-owner.ts`, the `lifecycle` field on `GET /api/daemon/status` | Clients treat a missing `lifecycle` as the pre-slice status payload (`classifyDaemonStatusPoll` falls back to `availability`). Revert last. |
+| 2 Mutation owner (#6301) | 122da80a3 | `src/lib/server/daemon-mutation-owner.ts`, admission in `startLocalDaemonOperation`, the `mutation_in_flight` and `duplicate_after_timeout` refusals, the `transitioning` poll result | Reverting restores the earlier single-promise coalescing in `daemon-start.ts`. The coordinator's deferral set loses the two codes with it. Depends on slice 1's types. |
+| 3 Fault matrix (#6302) | 9b802dca7 | `runnerFailed` in `daemon-readiness.ts`, backwards-clock re-stamps in the two owners and `familiar-liveness.ts`, `revive-after-kill` in the probe | Reverting reintroduces the readiness-deadline wait on spawn failure and the frozen windows after a backwards clock jump; the fault-matrix table rows that cite these tests must be marked unverified again. Depends on slice 2. |
+| 4 Diagnostics export (#6304) | see the PR | `src/lib/daemon-diagnostics-export.ts`, the export row in `settings-daemon.tsx`, the `lifecycle` block in the bundle | The client parser requires only `manifest` and `events`, so the bundle's `lifecycle` block can be removed without touching the control. Reverting the whole slice returns the residual-risk row to "unowned". Depends on both owners' snapshot functions. |
+
+Revert in reverse order (4, 3, 2, 1). Reverting a lower slice while a higher
+one remains does not compile.
+
+Maintenance rules:
+
+- **Adding a lifecycle state or transition.** Change the ordered rules in
+  `daemon-lifecycle.ts`, add the failing-first case to
+  `daemon-lifecycle.test.ts`, add the label to `describeDaemonLifecycle`, and
+  teach every exhaustive consumer (`workspace.tsx`, the supervisor, the
+  reliability recorder, `familiar-liveness.ts`). The typecheck names each one.
+- **Adding a fault-matrix row.** The row is not done until it names a
+  deterministic test and, where a real process is involved, a probe receipt.
+  A row this host cannot run is listed as unverified, never omitted.
+- **Re-taking probe receipts.** Run
+  `node --experimental-strip-types scripts/daemon-lifecycle-probe.mjs <coven-binary> 5`
+  against isolated synthetic homes only; record the exact commit, binary
+  digest, host, sample size and any retained failed sample in
+  `docs/performance/daemon-lifecycle.md`. A receipt from a dirty tree or an
+  earlier head is not evidence for the current head.
+- **Changing admission or timeouts.** `DAEMON_MUTATION_TIMEOUT_WINDOW_MS`
+  and the readiness budget are the only two knobs; both have a backwards-clock
+  test that must keep passing. Do not add a second coalescing layer in a
+  route; every start, restart and recovery goes through `runDaemonMutation`.
+- **Changing the diagnostics bundle.** Bump `manifest.schemaVersion` and the
+  client's `DAEMON_DIAGNOSTICS_BUNDLE_SCHEMA_VERSION` together, extend the
+  redaction pins in `daemon-diagnostics.test.ts`, and keep the export free of
+  probes.
+- **Monitoring after a change.** `pnpm main:health` for the oldest failing
+  commit, the Windows startup lane for pipe-side regressions (#6303 owns the
+  pipe contracts), and the native recorder's `daemon-reliability-v1.json`,
+  which this track did not change.
 
 ## Daemon fault-injection CI coverage decision
 
@@ -447,6 +640,6 @@ transport readiness remains eligible and therefore lowers the rate.
 
 An operation with no authenticated successes fails its latency check. Do not
 raise a budget from deterministic data alone. Collect representative,
-privacy-safe local records on each supported platform after authenticated
-native readiness lands, then compare the same benchmark output before and after
+privacy-safe local records on each supported platform now that authenticated
+native readiness has shipped (#4495), then compare the same benchmark output before and after
 a change.

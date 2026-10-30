@@ -13,10 +13,11 @@ const FRONTEND_PATH =
 const RUST_PATH =
   /^(?:src-tauri\/|Cargo\.(?:toml|lock)$|rust-toolchain|scripts\/rust-doctest-ci\.test\.mjs|\.github\/workflows\/(?:ci|full-validation)\.yml$)/;
 const ROOT_RUNTIME_PATH = /^[^/]+\.(?:[cm]?[jt]s|tsx?)$/;
-// `install-playwright-ci.sh` is E2E's own setup (#5722): editing it must run
-// the jobs that execute it, as the iOS gate's scripts run the iOS build.
+// `playwright-ci-image.sh` (#6191) and `install-playwright-ci.sh` (#5722) are
+// E2E's own setup: editing either must run the jobs that execute it, as the
+// iOS gate's scripts run the iOS build.
 const E2E_PATH =
-  /^(?:src\/(?:app|components|lib|styles)\/|tests\/|server\.(?:mjs|ts)$|playwright\.config|package\.json$|pnpm-lock\.yaml$|scripts\/install-playwright-ci(?:\.sh|\.test\.mjs)$)/;
+  /^(?:src\/(?:app|components|lib|styles)\/|tests\/|server\.(?:mjs|ts)$|playwright\.config|package\.json$|pnpm-lock\.yaml$|scripts\/(?:install-playwright-ci|playwright-ci-image)(?:\.sh|\.test\.mjs)$)/;
 // `ios-select-simulator.mjs` and `ios-xctest-summary.mjs` are listed because
 // they ARE the iOS gate: one chooses the destination the suite runs against,
 // the other is the sole verdict on whether it ran (cave-ac372). Without them

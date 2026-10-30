@@ -272,8 +272,9 @@ export async function PATCH(req: Request) {
   if (sessionId && !isSafeConversationSessionId(sessionId)) {
     return jsonError("invalid session id", 400);
   }
-  // Runtime selection carries no model: the handoff below deliberately resets
-  // the previous runtime's intent to the target runtime's default.
+  // A runtime handoff carries no model: the composer's runtime pick sends only
+  // the familiar, session and target runtime, and the handoff below replaces
+  // whatever model the previous runtime had with the target's default (#6098).
   if (scope !== "runtime-handoff" && !clearModel && !model) return jsonError("invalid model", 400);
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
@@ -287,6 +288,10 @@ export async function PATCH(req: Request) {
   const sessionConversation = (scope === "session" || scope === "runtime-handoff") && sessionId
     ? await loadConversation(sessionId)
     : null;
+  // A session write needs an existing conversation. A handoff does not: a chat
+  // shown straight from the daemon has no Cave transcript yet, and the handoff
+  // branch below persists its boundary record. Either way, a conversation
+  // owned by another familiar is refused here.
   if (sessionId && (
     (scope === "session" && !sessionConversation) ||
     (sessionConversation && sessionConversation.familiarId !== familiarId)
@@ -300,6 +305,8 @@ export async function PATCH(req: Request) {
         binding.harness,
     )
     : canonicalHarnessId(binding.harness);
+  // The handoff never applies a request model, so there is nothing to validate
+  // against the target runtime; the next explicit pick goes through "session".
   if (scope !== "runtime-handoff" && model && !isModelAllowedByRuntime(modelValidationHarness, model)) {
     return jsonError("model is not allowed by this runtime", 400);
   }

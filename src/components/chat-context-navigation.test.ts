@@ -45,8 +45,10 @@ assert.match(sidebar, /if \(!selectMode\) hoverPrefetchConversation\(sessionId\)
 assert.match(sidebar, /onPointerLeave: cancelHoverPrefetch,[\s\S]*?onPointerDown: prefetch,[\s\S]*?onFocus: prefetch,[\s\S]*?onBlur: cancelHoverPrefetch/);
 assert.match(sidebar, /if \(selectMode\) cancelHoverPrefetch\(\);\s*return cancelHoverPrefetch;/,
   "selection transitions and unmount cancel pending hover intent");
-assert.equal((sidebar.match(/\{\.\.\.prefetchHandlers\}/g) ?? []).length, 2,
-  "both actual thread buttons, including pinned rows, receive prefetch handlers");
+// Pinned and ordinary rows now share ThreadRow. Their actual event behavior is
+// exercised for both placements in chat-sidebar-wiring.behavior.test.ts.
+assert.match(sidebar, /function ThreadRow\([\s\S]*?\{\.\.\.prefetchHandlers\}/,
+  "the shared thread button receives prefetch handlers");
 assert.match(sidebar, /if \(selectMode\) return;\s*if \(e\.key === "Enter" && e\.altKey && onOpenInSplit\)/,
   "keyboard split navigation remains unchanged outside select mode");
 // #5584: the inline card's Switch takes the same eligibility-gated path as

@@ -14,6 +14,7 @@ import {
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
+import { localRuntimeEvidence, observeDaemonLifecycle } from "@/lib/server/daemon-lifecycle-owner";
 import { executorStatusesForConfig } from "@/lib/executor-status";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "@/lib/server/daemon-health-request";
 import { assessDaemonStartupCompatibility, type DaemonStartupHealth } from "@/lib/daemon-startup-contract";
@@ -70,18 +71,33 @@ function isCaveHomeStatusFailure(error: unknown): boolean {
   return error instanceof Error && error.message.startsWith("Cave home reconciliation failed");
 }
 
+const CAVE_HOME_BUSY_REASON = "Cave home is temporarily busy; status will retry automatically";
+
 function caveHomeStatusUnavailable(error?: unknown) {
+  // Config never loaded, so the target is unknown; neither state depends on it.
   if (isCaveConfigCompatibilityError(error)) {
     return {
       running: false,
       availability: "incompatible",
       reason: error.message,
+      lifecycle: observeDaemonLifecycle({
+        targetMode: "unknown",
+        availability: "incompatible",
+        serviceConflict: null,
+        reason: error.message,
+      }),
     };
   }
   return {
     running: false,
     availability: "status-unavailable",
-    reason: "Cave home is temporarily busy; status will retry automatically",
+    reason: CAVE_HOME_BUSY_REASON,
+    lifecycle: observeDaemonLifecycle({
+      targetMode: "unknown",
+      availability: "status-unavailable",
+      serviceConflict: null,
+      reason: CAVE_HOME_BUSY_REASON,
+    }),
   };
 }
 
@@ -140,6 +156,12 @@ export async function GET(request: Request) {
       running: false,
       availability: "misconfigured",
       reason: target.error,
+      lifecycle: observeDaemonLifecycle({
+        targetMode: target.mode,
+        availability: "misconfigured",
+        serviceConflict: null,
+        reason: target.error,
+      }),
       checkedAt,
       target: targetSummary(target),
       executors: executorStatuses,
@@ -175,10 +197,23 @@ export async function GET(request: Request) {
   });
   const root = covenWorkspaceRoot();
   if (!daemonHealthy || (compatibility && !compatibility.ok)) {
+    const availability = compatibility && !compatibility.ok ? "incompatible" : failureAvailability(target, res);
+    const reason = compatibility && !compatibility.ok ? compatibility.diagnostic : failureReason(target, res);
+    // `missing` needs proof that the runtime itself is absent; only an offline
+    // local target earns that probe, and the owner caches the answer (#6298).
+    if (target.mode === "local" && availability === "offline") {
+      await localRuntimeEvidence({ probe: installedCovenVersion });
+    }
     return respond({
       running: false,
-      availability: compatibility && !compatibility.ok ? "incompatible" : failureAvailability(target, res),
-      reason: compatibility && !compatibility.ok ? compatibility.diagnostic : failureReason(target, res),
+      availability,
+      reason,
+      lifecycle: observeDaemonLifecycle({
+        targetMode: target.mode,
+        availability,
+        serviceConflict: null,
+        reason,
+      }),
       checkedAt,
       target: targetSummary(target),
       executors: executorStatuses,
@@ -202,6 +237,12 @@ export async function GET(request: Request) {
   return respond({
     running: true,
     availability: "online",
+    lifecycle: observeDaemonLifecycle({
+      targetMode: target.mode,
+      availability: "online",
+      serviceConflict,
+      reason: null,
+    }),
     checkedAt,
     apiVersion: health.apiVersion,
     covenVersion: displayCovenVersion({

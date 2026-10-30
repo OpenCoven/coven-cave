@@ -2149,7 +2149,7 @@ export function createResearchResourceStore(
     throw new ResearchResourceStoreError("unsafe-path", "Research Resource store root must be absolute");
   }
   const root = path.resolve(
-    options.root ?? path.join(/* turbopackIgnore: true */ caveHome(), "research-resources"),
+    /* turbopackIgnore: true */ options.root ?? path.join(/* turbopackIgnore: true */ caveHome(), "research-resources"),
   );
 
   const withMutationLock = async <T>(operation: (layout: StoreLayout) => Promise<T>): Promise<T> => {

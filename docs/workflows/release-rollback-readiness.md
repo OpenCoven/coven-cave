@@ -31,7 +31,7 @@ population, but not the only one:
 
 | Still happens when the gate fails | Blocked when the gate fails |
 | --- | --- |
-| Successful `build` legs create the GitHub Release and upload their installers | `updater-manifest` publishes `latest.json` |
+| `release-object` creates the GitHub Release, and successful `build` legs upload their installers | `updater-manifest` publishes `latest.json` |
 | `checksums` publishes `SHA256SUMS` when every required desktop build succeeds | in-app auto-update to the new version — and, until you act, in-app auto-update at all (see below) |
 | `homebrew` bumps the tap after `checksums` succeeds | |
 | `release-ios-build` archives and uploads to App Store Connect, so the build reaches TestFlight | |
@@ -43,9 +43,9 @@ on its own — if the new release must not reach anyone, delete its assets or
 unpublish it by hand as well, and note that the iOS build has already left for
 App Store Connect and is withdrawn there, not here.
 
-⚠️ **It also means auto-update is DOWN, not held.** `build` creates the release
-published and not a prerelease, so GitHub makes it `latest` the moment it
-exists — and the updater endpoint is the alias
+⚠️ **It also means auto-update is DOWN, not held.** `release-object` creates
+the release published but not latest, and the first `build` leg to upload makes
+it `latest` (#6248) — and the updater endpoint is the alias
 `releases/latest/download/latest.json` (`src-tauri/tauri.conf.json`). With
 `updater-manifest` withheld there is no `latest.json` on that release, so every
 install's update check 404s rather than quietly staying where it is. That is
@@ -74,8 +74,9 @@ can still contain macOS and Linux installers, but has no MSI or `SHA256SUMS`.
 The `partial-release-notes` job writes install links from the assets actually
 attached to that tag. It must say that Windows is unavailable on that release;
 never link to a guessed MSI name. The release marked latest and the README
-install table must also point Windows users to a verified earlier MSI. For the
-current incident, that is [v0.5.7](https://github.com/OpenCoven/coven-cave/releases/tag/v0.5.7).
+install table must also point Windows users to a verified earlier MSI. During
+the v0.5.8–v0.5.12 incident (#5851, closed 2026-10-14), that was
+[v0.5.7](https://github.com/OpenCoven/coven-cave/releases/tag/v0.5.7).
 
 After a new release publishes, check its public page in the same shape
 as v0.5.7: direct links for each published DMG, AppImage, and MSI;
@@ -84,16 +85,19 @@ links with `gh api repos/OpenCoven/coven-cave/releases/tags/<tag> --jq
 '.assets[].name'`. An asset listed in prose but absent from the API is a
 release-page defect, even if the build job was green.
 
-For [#5851](https://github.com/OpenCoven/coven-cave/issues/5851), follow the
-[release and candidate sequence](branching.md#release-and-testflight) for a new
-version from clean `main`. The Windows MSI path uses the v0.5.7 build, budget,
-upload, updater signature, and attestation sequence. This MSI is **not
-Authenticode-signed**; do not describe it as code-signed. Check the new MSI's
-checksum entry, `latest.json`, updater signature, and public release page
-before directing downloads to it. The rollback gate selects v0.5.7, the
-newest older release with the required assets, and verifies its manifest.
-The incomplete v0.5.8 through v0.5.12 tags do not need to be replayed. The
-current `latest` alias intentionally points to v0.5.8 meanwhile.
+[#5851](https://github.com/OpenCoven/coven-cave/issues/5851) closed on
+2026-10-14. v0.5.13 and v0.5.14 publish the MSI, `SHA256SUMS` and
+`latest.json`, and v0.5.14 is marked latest; the incomplete v0.5.8 through
+v0.5.12 tags were not replayed. A new version still follows the
+[release and candidate sequence](branching.md#release-and-testflight) from clean
+`main`, and its Windows MSI path uses the v0.5.7 build, budget, upload, updater
+signature, and attestation sequence. Every MSI through v0.5.18 is **not
+Authenticode-signed**; do not describe it as code-signed. Once the
+[Windows signing gate](windows-msi-signing.md) is on `main`, a Windows leg
+without all five signing inputs fails before its build and publishes no MSI.
+Check the new MSI's checksum entry, `latest.json`, updater signature, and
+public release page before directing downloads to it. The rollback gate selects the newest older release with the
+required assets and verifies its manifest.
 
 ## What it checks
 
@@ -169,8 +173,9 @@ The gate also reads the baseline tag's `package.json` and checks three pins
 against `BUNDLED_DEPENDENCY_FLOORS` in `scripts/bundled-dependency-floor.mjs`:
 `dependencies.next`, `dependencies.sharp` and `pnpm.overrides.sharp`. Those are
 the patched minimums recorded on
-[#5339](https://github.com/OpenCoven/coven-cave/issues/5339), currently Next
-16.3.3 and sharp 0.35.4. Patched releases pin all three exactly, and every
+[#5339](https://github.com/OpenCoven/coven-cave/issues/5339) and raised since,
+currently Next 16.4.1 ([#6264](https://github.com/OpenCoven/coven-cave/issues/6264))
+and sharp 0.35.4. Patched releases pin all three exactly, and every
 published tag's pins match its lockfile, so the pin names what the release
 bundles. A range, a prerelease or a missing pin is not clear, and neither is a
 tag with no `package.json`.
@@ -187,7 +192,7 @@ problem in four places:
 - an annotation:
 
   ```text
-  ::warning::Rollback baseline v0.4.1 is below the bundled-dependency floor (dependencies.next 16.3.1 is below the patched minimum 16.3.3 (GHSA-p293-qw3h-jr36 and GHSA-2xp9-vwfh-vxw4, #5339); dependencies.sharp 0.35.3 is below the patched minimum 0.35.4 (libheif 1.23.2 for GHSA-g89c-p67h-r497 via sharp-libvips 1.3.3, #5339); pnpm.overrides.sharp 0.35.3 is below the patched minimum 0.35.4 (libheif 1.23.2 for GHSA-g89c-p67h-r497 via sharp-libvips 1.3.3, #5339)); do not roll back to it — patch forward instead.
+  ::warning::Rollback baseline v0.5.17 is below the bundled-dependency floor (dependencies.next 16.3.8 is below the patched minimum 16.4.1 (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr and GHSA-p3m5-59mp-jv5r, #6264)); do not roll back to it — patch forward instead.
   ```
 
 - the verdict's `baselineFloor`, which `scripts/release-rollout.mjs` reads.
@@ -277,4 +282,5 @@ so neither step below is a remedy. Ship a patch-forward version instead.
    rather than waiting for an auto-update that is not coming.
 
 3. **Leave the bad release published**, just no longer latest, so its assets
-   stay available for post-mortem.
+   stay available for post-mortem. Rerunning its build legs does not make it
+   latest again: a leg promotes the release only while it has no assets.

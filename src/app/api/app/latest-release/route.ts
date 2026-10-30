@@ -42,6 +42,7 @@ export async function GET() {
     }
     const data = (await res.json()) as {
       tag_name?: string;
+      body?: unknown;
       html_url?: string;
       assets?: ReleaseAsset[];
     };
@@ -51,6 +52,7 @@ export async function GET() {
       latest,
       available: latest ? isUpdateAvailable(latest, APP_VERSION) : false,
       url: data.html_url || RELEASE_PAGE,
+      ...(typeof data.body === "string" && data.body.trim() ? { notes: data.body } : {}),
       downloads: resolveDownloadUrls(data.assets ?? []),
     };
     cache = { at: now, body };

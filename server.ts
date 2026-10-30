@@ -41,6 +41,7 @@ import {
   createEventBroker,
   summarizeEventPlaneDiagnostics,
 } from "./src/lib/server/cave-event-broker.ts";
+import { ownStartupWorkerShutdown, coordinateStartupWorkerShutdown } from "./src/lib/server/startup-worker-shutdown.ts";
 import type { CaveEventPlanePublisher } from "./src/lib/server/cave-event-plane-publisher.ts";
 import type { ClientV1DiscoveryPublication } from "./src/lib/server/client-v1/status.ts";
 import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts";
@@ -1213,17 +1214,35 @@ function terminatePtySessions(): void {
   sessions.clear();
 }
 
-// Packaged Unix sidecars receive stdin as a private pipe whose write end is
-// owned only by the Tauri GUI. EOF therefore identifies the exact parent
-// lifetime without polling a reusable PID. The sidecar is also launched as
-// its own process-group leader, so one signal removes the root and ordinary
-// descendants; node-pty sessions are asked to stop explicitly because a PTY
-// may create a separate session/process group.
-async function terminatePackagedUnixSidecarTree(): Promise<void> {
+// Packaged sidecars receive stdin as a private pipe whose write end is owned
+// only by the Tauri GUI (a Unix pipe plus process group, or the handle the
+// Windows gated launcher inherits into Node). EOF therefore identifies the
+// exact parent lifetime without polling a reusable PID, and a deliberate quit
+// closes the same pipe so normal and abrupt teardown share one path. Startup
+// workers drain beside direct-run teardown inside that one lease: the deadline
+// reports unfinished work and never cancels or replays it. The native parent
+// keeps its kernel fallback (Unix kill after two seconds, Windows Job
+// termination after a shorter drain window), so this budget stays beneath it.
+const PACKAGED_WINDOWS_CHILD_SHUTDOWN_BUDGET_MS = 400;
+async function terminatePackagedSidecarTree(): Promise<void> {
+  const budgetMs = process.platform === "win32"
+    ? PACKAGED_WINDOWS_CHILD_SHUTDOWN_BUDGET_MS
+    : PACKAGED_CHILD_SHUTDOWN_BUDGET_MS;
   // PTYs may own sessions/groups outside the server group. Stop them before
   // awaiting any JavaScript cleanup, and repeat in finally so an exception or
   // hung persistence path can never skip this OS boundary.
   terminatePtySessions();
+  let exitCode = 0;
+  // The HTTP listener dies with the process on this path; only the workers
+  // need an observed drain here.
+  const workerDrain = coordinateStartupWorkerShutdown(() => Promise.resolve(), { deadlineMs: budgetMs })
+    .then(result => {
+      const unfinished = Object.values(result.workers).some(outcome => outcome.status !== "drained");
+      if (unfinished) {
+        exitCode = 1;
+        console.warn("[startup-workers] Worker drain did not finish inside the native parent lease:", result);
+      }
+    });
   try {
     const terminateDirectRuns = globalThis.__covenCaveTerminateCopilotFlowRuns;
     if (terminateDirectRuns) {
@@ -1232,7 +1251,7 @@ async function terminatePackagedUnixSidecarTree(): Promise<void> {
         new Promise<never>((_resolve, reject) => {
           const timer = setTimeout(
             () => reject(new Error("direct Copilot shutdown exceeded its native parent lease")),
-            PACKAGED_CHILD_SHUTDOWN_BUDGET_MS,
+            budgetMs,
           );
           timer.unref?.();
         }),
@@ -1242,10 +1261,18 @@ async function terminatePackagedUnixSidecarTree(): Promise<void> {
     // Direct runs are each owned by a native supervisor whose stdin closes when
     // this server dies. Report the failed graceful proof, then let that exact
     // EOF/Job boundary finish cleanup instead of waiting past Tauri's lease.
+    exitCode = 1;
     console.error("[cave] direct Copilot process-tree shutdown could not be proved", error);
   } finally {
+    await workerDrain;
     cleanupStandaloneClientV1Discovery();
     terminatePtySessions();
+    if (process.platform === "win32") {
+      // The Job Object owns descendants; a plain exit lets the native parent
+      // observe the drained child before its own fallback fires.
+      process.exit(exitCode);
+      return;
+    }
     try {
       process.kill(-process.pid, "SIGKILL");
     } catch {
@@ -1254,15 +1281,12 @@ async function terminatePackagedUnixSidecarTree(): Promise<void> {
   }
 }
 
-if (
-  process.platform !== "win32" &&
-  process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof"
-) {
+if (process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof") {
   let parentShutdownStarted = false;
   const onParentShutdown = () => {
     if (parentShutdownStarted) return;
     parentShutdownStarted = true;
-    void terminatePackagedUnixSidecarTree();
+    void terminatePackagedSidecarTree();
   };
   process.stdin.once("end", onParentShutdown);
   process.stdin.once("error", onParentShutdown);
@@ -2228,6 +2252,7 @@ const dev = process.env.NODE_ENV !== "production";
 const hostname = loopbackHostname();
 const port = cavePort();
 
+ownStartupWorkerShutdown();
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 // src/instrumentation.ts starts background services explicitly; routes load on demand.
@@ -2293,9 +2318,11 @@ function handleEventUpgrade(
   eventWss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
     const handlers = broker.attach(ws);
     const remote = !isDirectLoopbackRequest(req);
+    const releaseRemote = remote ? deviceAccess.holdRemoteConnection() : null;
     if (remote) remoteEventClients.add(ws);
     const closed = () => {
       remoteEventClients.delete(ws);
+      releaseRemote?.();
       handlers.closed();
     };
     ws.on("message", (data: RawData, isBinary: boolean) => handlers.message(data, isBinary));
@@ -2333,6 +2360,27 @@ const deviceAccess = createDeviceAccessGateway({
     for (const client of remoteEventClients) client.terminate();
   },
 });
+
+let closeHttpForShutdown: (() => Promise<void>) | undefined;
+let httpShutdownStarted = false;
+function shutdownHttpServer(): void {
+  if (httpShutdownStarted) return;
+  httpShutdownStarted = true;
+  cleanupStandaloneClientV1Discovery();
+  terminatePtySessions();
+  eventBroker?.shutdown();
+  void coordinateStartupWorkerShutdown(closeHttpForShutdown ?? (() => Promise.resolve())).then(result => {
+    const complete = [result.http, ...Object.values(result.workers)].every(outcome => outcome.status === "drained");
+    if (!complete) console.warn("[startup-workers] Incomplete shutdown:", result);
+    process.exit(complete ? 0 : 1);
+  }, error => {
+    console.error("[startup-workers] Shutdown failed:", error);
+    process.exit(1);
+  });
+}
+
+process.on("SIGINT", shutdownHttpServer);
+process.on("SIGTERM", shutdownHttpServer);
 
 await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
@@ -2481,10 +2529,16 @@ server.on("upgrade", async (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
     if (!isDirectLoopbackRequest(req)) {
       remotePtyClients.add(ws);
-      ws.once("close", () => { remotePtyClients.delete(ws); });
+      const releaseRemote = deviceAccess.holdRemoteConnection();
+      ws.once("close", () => { remotePtyClients.delete(ws); releaseRemote(); });
     }
     handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor);
   });
+});
+
+closeHttpForShutdown = () => new Promise<void>((resolve, reject) => {
+  if (!server.listening) { resolve(); return; }
+  server.close(error => { if (error) reject(error); else resolve(); });
 });
 
 // Keep idle HTTP/1.1 connections open longer than clients hold them for
@@ -2545,7 +2599,7 @@ function reportClientV1DiscoveryUnavailable(error: unknown): void {
   console.error("[cave] ────────────────────────────────────────────────────");
 }
 
-server.listen(port, hostname, () => {
+if (!httpShutdownStarted) server.listen(port, hostname, () => {
   try {
     publishStandaloneClientV1DiscoveryRecord(loopbackHttpEndpoint(hostname, port));
   } catch (error) {
@@ -2566,23 +2620,7 @@ server.listen(port, hostname, () => {
   void warmHarnessSpawnPath();
 });
 
-let httpShutdownStarted = false;
-function shutdownHttpServer(): void {
-  if (httpShutdownStarted) return;
-  httpShutdownStarted = true;
-  cleanupStandaloneClientV1Discovery();
-  terminatePtySessions();
-  eventBroker?.shutdown();
-  const timer = setTimeout(() => process.exit(1), 2_000);
-  timer.unref?.();
-  server.close(() => {
-    clearTimeout(timer);
-    process.exit(0);
-  });
-}
 
-process.once("SIGINT", shutdownHttpServer);
-process.once("SIGTERM", shutdownHttpServer);
 
 // Prime the tailnet allowlist immediately, then keep it fresh. unref() so the
 // poll never holds the process open on its own.

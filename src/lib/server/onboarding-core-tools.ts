@@ -308,16 +308,21 @@ export async function ensureOnboardingCoreTools(
             ? "application_data_not_writable"
             : result.code;
       inspection = await dependencies.inspect();
-      return stageFailure({
-        code,
-        inspection,
-        applicationData,
-        installer: lastInstaller,
-      });
+      // A fresh runtime can outlive a transient post-install probe failure.
+      // Reuse the verified inspection; never replay the installer or suppress
+      // integrity, filesystem, cancellation or other installation failures.
+      if (code !== "verification_failed" || !inspection.runtimeReady) {
+        return stageFailure({
+          code,
+          inspection,
+          applicationData,
+          installer: lastInstaller,
+        });
+      }
+    } else {
+      await onProgress("Checking Cave’s private Node.js and npm runtime…");
+      inspection = await dependencies.inspect();
     }
-
-    await onProgress("Checking Cave’s private Node.js and npm runtime…");
-    inspection = await dependencies.inspect();
   }
 
   if (!inspection.coreToolsReady) {

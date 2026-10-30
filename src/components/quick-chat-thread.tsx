@@ -9,6 +9,7 @@ import { ResearchRunInlineCard } from "@/components/research-run-surface";
 import { ResponseRunDetails } from "@/components/response-run-details";
 import { SkillRunSummary } from "@/components/skill-stage-card";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
+import { UiBlockReadable } from "@/components/ui-block-readable";
 import { Button } from "@/components/ui/button";
 import { shouldUseEmptySuccessfulFallback } from "@/lib/chat-assistant-output";
 import { copyText } from "@/lib/clipboard";
@@ -107,6 +108,9 @@ function QuickChatBubble({
                 text={piece.text}
               />
             );
+          }
+          if (piece.kind === "ui") {
+            return <UiBlockReadable key={`ui-${index}`} lines={piece.lines} />;
           }
           if (piece.kind === "action") {
             return (

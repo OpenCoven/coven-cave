@@ -158,6 +158,46 @@ describe("LocalModelsSection", () => {
     expect(textContent(renderer.root)).toContain(refusal);
   });
 
+  it("marks LM Link models and says when chats offer them (#6094)", async () => {
+    const running = (deviceCheck) => ({
+      state: "running", version: null, deviceCheck,
+      models: [
+        { name: "qwen/qwen3.8-27b", tools: true, contextLength: 262144, lmLink: { deviceName: "studio-mac.local" } },
+        { name: "qwen3-8b", tools: true, contextLength: 40960, lmLink: null },
+      ],
+    });
+    const off = await render(vi.fn(async () => reply(statusOf([backend({}), lmstudio({ server: running("checked") })]))));
+    const models = off.root.findAll((node) => node.props?.className === "settings-local-models__model").map(textContent);
+    expect(models).toEqual([
+      "qwen/qwen3.8-27b262,144-token contextLM Link · studio-mac.localTool support",
+      "qwen3-8b40,960-token contextTool support",
+    ]);
+    expect(textContent(off.root)).toContain("Models marked LM Link run on another computer. Chats don't offer them while servers on other computers are off.");
+    expect(textContent(off.root)).not.toContain("couldn't check");
+
+    const on = await render(vi.fn(async () => reply(statusOf([backend({}), lmstudio({ server: running("checked") })], { allowRemote: { value: true, source: "settings" } }))));
+    expect(textContent(on.root)).toContain("Chats offer them because servers on other computers are allowed.");
+
+    const unchecked = await render(vi.fn(async () => reply(statusOf([backend({}), lmstudio({
+      server: { state: "running", version: null, deviceCheck: "unavailable", models: [{ name: "qwen3-8b", tools: true, contextLength: 40960, lmLink: null }] },
+    })]))));
+    expect(textContent(unchecked.root)).toContain("Cave couldn't check which computer each model runs on, because LM Studio's lms command didn't answer.");
+    expect(textContent(unchecked.root)).not.toContain("Models marked LM Link");
+  });
+
+  it("marks Ollama cloud models as not offered and leaves them out of the count", async () => {
+    const renderer = await render(vi.fn(async () => reply(statusOf([backend({
+      server: { state: "running", version: "0.40.6", deviceCheck: "not-needed", models: [
+        { name: "gpt-oss:20b-cloud", tools: true, contextLength: 131072, lmLink: null, cloud: { host: "ollama.com" } },
+        { name: "qwen3:8b", tools: true, contextLength: 40960, lmLink: null, cloud: null },
+      ] },
+    }), lmstudio()]))));
+    const models = renderer.root.findAll((node) => node.props?.className === "settings-local-models__model").map(textContent);
+    expect(models[0]).toBe("gpt-oss:20b-cloud131,072-token contextCloud · ollama.com · not offeredTool support");
+    expect(statusLines(renderer)[0]).toContain("1 model with tool support");
+    expect(textContent(renderer.root)).toContain("Cloud models run on Ollama's service, not on this computer, so chats never offer them.");
+  });
+
   it("offers a retry when the status can't be read", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(reply({ ok: false, error: "boom" }, 500))

@@ -35,7 +35,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const user: PromptOption[] = [];
-  await scanPromptsDir(path.join(covenHome(), "prompts"), "user", user);
+  await scanPromptsDir(path.join(/* turbopackIgnore: true */ covenHome(), "prompts"), "user", user);
 
   const packs: PromptOption[] = [];
   try {
@@ -45,7 +45,7 @@ export async function GET() {
     const installed = Object.keys(cfg.marketplace.installed).filter((id) => /^[\w.-]+$/.test(id));
     await Promise.all(
       installed.map(async (id) =>
-        await marketplacePluginHasDirectory(id, "prompts") && scanPromptsDir(path.join(await ensureMarketplacePlugin(id), "prompts"), `pack:${id}`, packs),
+        await marketplacePluginHasDirectory(id, "prompts") && scanPromptsDir(path.join(/* turbopackIgnore: true */ await ensureMarketplacePlugin(id), "prompts"), `pack:${id}`, packs),
       ),
     );
   } catch {
@@ -56,7 +56,7 @@ export async function GET() {
 }
 
 function userPromptsDir(): string {
-  return path.join(covenHome(), "prompts");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "prompts");
 }
 
 type SavePromptBody = {
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
   // path.basename is the CodeQL-recognized js/path-injection sanitizer; the
   // slug regex above already forbids any separator, so this is a no-op on
   // valid input and defense-in-depth against a future looser id source.
-  const file = path.join(dir, `${path.basename(id)}.md`);
+  const file = path.join(/* turbopackIgnore: true */ dir, `${path.basename(id)}.md`);
   if (raw.overwrite !== true) {
     try {
       await stat(file);
@@ -156,7 +156,7 @@ export async function DELETE(req: Request) {
   }
   try {
     // path.basename is the recognized path-injection sanitizer (see POST).
-    await unlink(path.join(userPromptsDir(), `${path.basename(id)}.md`));
+    await unlink(path.join(/* turbopackIgnore: true */ userPromptsDir(), `${path.basename(id)}.md`));
   } catch {
     return NextResponse.json({ ok: false, error: "template not found" }, { status: 404 });
   }

@@ -59,14 +59,29 @@ export async function register() {
   } catch (error) {
     console.warn("[instrumentation] X mission runtime sweep could not start:", error);
   }
-  const mod = await import("@/lib/inbox-scheduler");
-  mod.startScheduler();
+  const shutdown = await import("@/lib/server/startup-worker-shutdown");
+  const inbox = await import("@/lib/inbox-scheduler");
+  if (shutdown.registerStartupWorker("inbox-reminders", inbox.stopScheduler)) {
+    void inbox.startScheduler().catch(error => {
+      console.warn("[instrumentation] inbox reminders failed to start:", error);
+    });
+  }
   const scheduledChat = await import("@/lib/server/scheduled-chat-scheduler");
-  scheduledChat.startScheduledChatScheduler();
+  if (shutdown.registerStartupWorker("scheduled-chat", scheduledChat.stopScheduledChatScheduler)) {
+    void scheduledChat.startScheduledChatScheduler().catch(error => {
+      console.warn("[instrumentation] scheduled chat failed to start:", error);
+    });
+  }
   const watcher = await import("@/lib/github-watcher");
-  watcher.startGithubWatcher();
+  void watcher.startGithubWatcher().catch((error) => {
+    console.warn("[instrumentation] GitHub watcher failed to start:", error);
+  });
   const backupSync = await import("@/lib/server/backup-sync");
-  backupSync.startBackupSyncScheduler();
+  if (shutdown.registerStartupWorker("backup-sync", () => backupSync.stopBackupSyncScheduler({ pushOnQuit: true }))) {
+    void backupSync.startBackupSyncScheduler().catch(error => {
+      console.warn("[instrumentation] backup sync failed to start:", error);
+    });
+  }
   try {
     // The event plane's server-side watchers (#5843). They start only when
     // the plane is switched on with COVEN_CAVE_EVENT_PLANE_ENABLED=1; with it

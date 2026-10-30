@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 // Exercise the real request and persistence boundaries without touching the
-// operator's config, conversations, credentials, or native sessions.
+// operator's config, conversations, credentials, or native sessions (#6098).
 const home = await mkdtemp(path.join(tmpdir(), "cave-model-handoff-"));
 const previous = { COVEN_HOME: process.env.COVEN_HOME, COVEN_CAVE_HOME: process.env.COVEN_CAVE_HOME };
 process.env.COVEN_HOME = home;
@@ -20,6 +20,9 @@ try {
   const patch = (body) => PATCH(new Request("http://localhost/api/chat/model-state", {
     method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
   }));
+  // The composer's runtime pick sends exactly these fields and no model
+  // (chat-view.tsx): the handoff resets the chat to the target runtime's
+  // default, so there is no model to send.
   const handoff = (sessionId, extra = {}) => patch({
     familiarId: "opal", sessionId, scope: "runtime-handoff", runtime: "codex", ...extra,
   });
@@ -43,9 +46,9 @@ try {
     assert.equal(saved.modelIntent.model, "");
   });
 
-  await test("daemon-only handoff creates a fresh-session boundary", async () => {
+  await test("daemon-only handoff without a model creates a fresh-session boundary", async () => {
     await recordSessionFamiliar("daemon-chat", "opal");
-    const response = await handoff("daemon-chat", { model: "" });
+    const response = await handoff("daemon-chat");
     assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
     const saved = await loadConversation("daemon-chat");
     assert.equal(saved.familiarId, "opal");
@@ -53,11 +56,18 @@ try {
     assert.equal(saved.modelIntent.model, "");
   });
 
+  await test("a handoff ignores any model it carries: the target runtime's default is the whole point", async () => {
+    await seed("model-carrying-chat");
+    const response = await handoff("model-carrying-chat", { model: "claude-opus-4-6" });
+    assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+    assert.equal((await loadConversation("model-carrying-chat")).modelIntent.model, "");
+  });
+
   await test("handoffs cannot claim another familiar's persisted or daemon-only chat", async () => {
     await seed("foreign-chat", "ruby");
     await recordSessionFamiliar("foreign-daemon", "ruby");
     for (const sessionId of ["foreign-chat", "foreign-daemon"]) {
-      assert.equal((await handoff(sessionId, { model: "" })).status, 404);
+      assert.equal((await handoff(sessionId)).status, 404);
     }
     assert.equal((await loadConversation("foreign-chat")).pendingRuntimeHandoff, undefined);
     assert.equal(await loadConversation("foreign-daemon"), null);
@@ -71,9 +81,9 @@ try {
   });
 
   await test("handoffs still require a session and the configured target runtime", async () => {
-    assert.equal((await handoff(undefined, { model: "" })).status, 400);
-    assert.equal((await handoff("persisted-chat", { model: "", runtime: "claude" })).status, 409);
-    assert.equal((await handoff("persisted-chat", { model: "", runtime: "invalid" })).status, 400);
+    assert.equal((await handoff(undefined)).status, 400);
+    assert.equal((await handoff("persisted-chat", { runtime: "claude" })).status, 409);
+    assert.equal((await handoff("persisted-chat", { runtime: "invalid" })).status, 400);
   });
 } finally {
   for (const [key, value] of Object.entries(previous)) {

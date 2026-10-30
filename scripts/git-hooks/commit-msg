@@ -4,6 +4,11 @@
 # Co-authored-by trailers are contributor credit. The repository requires a
 # GitHub-linked numeric no-reply identity so credit reaches the person rather
 # than a local machine, AI model, vendor, or coding harness address.
+#
+# Coven-Familiar, Coven-Harness and Coven-Session trailers are provenance, not
+# credit, and pass unchanged. A familiar never appears as a Co-authored-by
+# line here; <id>@opencoven.ai is rejected like any other non-GitHub address
+# (decision: #6068).
 set -euo pipefail
 
 message_file=${1:-}

@@ -159,6 +159,7 @@ const contracts: RouteContract[] = [
   { route: "/coven-automation-lifecycle", methods: ["GET"], kind: "json" },
   { route: "/coven-automation-occurrences", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
+  { route: "/research-automation-import", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/import", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -317,7 +318,6 @@ const contracts: RouteContract[] = [
   { route: "/projects/icon", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/projects/seed", methods: ["POST"], kind: "json" },
   { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/prompt/enhance", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/profile/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", readsJson: true, invalidJson: "guarded" },
   { route: "/profile", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/prompts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -1018,7 +1018,9 @@ for (const contract of contracts) {
     }
     const bridge = readFileSync(path.join(root, 'src/lib/server/research-package.ts'), 'utf8');
     assert.match(bridge, /if \(!capability\.enabled\) return researchUnavailable\(capability\)/);
-    assert.ok(bridge.indexOf('if (forbidden) return forbidden') < bridge.indexOf('const runtime = await load()'));
+    const authorization = bridge.indexOf('if (forbidden) return forbidden');
+    const runtimeLoad = bridge.indexOf('const result = await loadCompatibleRuntime(load)');
+    assert.ok(authorization >= 0 && runtimeLoad > authorization);
     continue;
   }
   assert.equal(usesJsonResponse(effectiveSource), true, `${contract.route} must return an explicit Response/NextResponse`);

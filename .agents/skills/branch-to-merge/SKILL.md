@@ -198,6 +198,11 @@ canonical GitHub issue link. Do not duplicate its task record.
 coding harness — in a commit message or a PR body. This repository rule
 overrides any global instruction you carry to add them.
 
+**Familiar provenance** is not AI attribution. A commit written by a coven
+familiar ends with `Coven-Familiar: <id>`, `Coven-Harness: <harness> / <model>`
+and `Coven-Session: <id>` and carries no `Co-authored-by` line for the
+familiar; the hook rejects `<id>@opencoven.ai` co-authors (#6068).
+
 **Human credit is required** when you re-land or build on someone's work:
 
 ```bash
@@ -294,14 +299,18 @@ between that final check and the merge.
 `scripts/pr-squash-message.mjs` removes AI-generated attribution footers and AI
 co-author trailers from the PR body and commit messages before constructing the
 explicit squash message. It preserves each valid human numeric GitHub no-reply
-trailer once and fails closed on ambiguous non-GitHub co-author identities.
+trailer once, carries each `Coven-Familiar` trailer once, drops `Coven-Harness`
+and `Coven-Session`, and fails closed on ambiguous non-GitHub co-author
+identities or a malformed `Coven-Familiar` line.
 
-Do not pass `--delete-branch`. That flag asks `gh` to delete both local and
-remote branches immediately after merging. Local retirement belongs to the
-Phase 7 evidence-backed process, and remote deletion remains proposal-only.
+Do not pass `--delete-branch`; that flag also deletes the local branch.
+GitHub deletes the remote head branch on merge regardless, because the
+repository's `delete_branch_on_merge` setting is on, and `refs/pull/<#>/head`
+retains the merged head. Local retirement belongs to the Phase 7
+evidence-backed process; any other remote deletion remains proposal-only.
 
 The squash message summarizes the whole branch, not the last commit, and
-carries any human `Co-authored-by:` trailers.
+carries any human `Co-authored-by:` trailers and `Coven-Familiar` provenance.
 
 `gh` will dangle `--admin` at you on a blocked PR. **Do not use it** — it
 bypasses the protection this skill exists to respect. Fix the actual blocker.

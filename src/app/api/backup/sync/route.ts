@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   clearBackupSyncPassphrase,
   getBackupSyncOverview,
+  loadBackupSyncConfig,
   setBackupSyncPassphrase,
   updateBackupSyncConfig,
   type BackupSyncConfig,
@@ -34,6 +35,9 @@ export async function PUT(req: Request) {
   if (!parsed.ok) return parsed.response;
   const body = parsed.body;
   try {
+    // Refuse unreadable or unsupported state before changing its credential,
+    // including passphrase-only requests that do not update configuration.
+    await loadBackupSyncConfig();
     // The passphrase lands in the local encrypted vault only — it is never
     // stored in config nor echoed back in any response.
     if (typeof body.passphrase === "string" && body.passphrase) {

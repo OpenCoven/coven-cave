@@ -79,3 +79,73 @@ test("refuses malformed co-author lines instead of carrying them forward", () =>
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /malformed Co-authored-by trailer/i);
 });
+
+test("carries Coven-Familiar provenance from commits once and drops the harness and session lines", () => {
+  const result = prepareMessage({
+    title: "Reconcile familiar provenance",
+    body: [
+      "Refs #6068",
+      "",
+      "Coven-Familiar: cody",
+      "Coven-Harness: claude / claude-opus-5-5",
+      "Coven-Session: 9354681b-f005-40eb-84c6-313798c6590e",
+    ].join("\n"),
+    commits: [
+      {
+        messageHeadline: "feat: part one",
+        messageBody: [
+          "Refs #5930",
+          "",
+          "Co-authored-by: Jane Doe <12345+jane-doe@users.noreply.github.com>",
+          "Coven-Familiar: Cody",
+          "Coven-Harness: claude / claude-opus-5-5",
+          "Coven-Session: 9354681b-f005-40eb-84c6-313798c6590e",
+        ].join("\n"),
+      },
+      {
+        messageHeadline: "feat: part two",
+        messageBody: [
+          "Coven-Familiar: nova",
+          "Coven-Harness: codex / gpt-5-codex",
+          "Coven-Session: 7c1d2e3f",
+        ].join("\n"),
+      },
+    ],
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const message = JSON.parse(result.stdout);
+  assert.equal(
+    message.body,
+    [
+      "Refs #6068",
+      "",
+      "Co-authored-by: Jane Doe <12345+jane-doe@users.noreply.github.com>",
+      "Coven-Familiar: cody",
+      "Coven-Familiar: nova",
+    ].join("\n"),
+  );
+  assert.doesNotMatch(message.body, /Coven-Harness|Coven-Session|claude|codex|gpt/i);
+});
+
+test("refuses a malformed Coven-Familiar trailer instead of guessing the familiar", () => {
+  const result = prepareMessage({
+    title: "Reconcile familiar provenance",
+    body: "Refs #6068",
+    commits: [{ messageBody: "Coven-Familiar: Cody <cody@opencoven.ai>" }],
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /malformed Coven-Familiar trailer/i);
+});
+
+test("still refuses a familiar address as a co-author", () => {
+  const result = prepareMessage({
+    title: "Reconcile familiar provenance",
+    body: "Refs #6068",
+    commits: [{ messageBody: "Co-Authored-By: Nova <nova@opencoven.ai>\nCoven-Familiar: nova" }],
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /numeric GitHub no-reply identity/i);
+});

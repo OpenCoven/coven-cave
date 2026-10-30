@@ -192,7 +192,7 @@ assert.equal(
 );
 assert.equal(
   agenticE2e.run,
-  "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+  "bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
   "the enabled journeys run in a separate desktop server with only their necessary flags",
 );
 const bundleRun = ciWorkflow.jobs["frontend-bundle"].steps.at(-1)?.run;
@@ -404,6 +404,7 @@ assert.deepEqual(
     "release-web-validation",
     "release-platform-validation",
     "release-windows-native",
+    "release-object",
   ],
   "artifact builds wait for release validation without depending on TestFlight publication",
 );

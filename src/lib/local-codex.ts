@@ -147,11 +147,48 @@ export function localCodexAdapterManifest(info: LocalCodexBackendInfo): { adapte
   };
 }
 
+/**
+ * Every way /api/chat/send refuses a local session before anything runs
+ * (#6095). Each message is Cave's own copy plus the server address or the
+ * model name, so the chat error banner already shows the whole reason.
+ */
+export const LOCAL_CODEX_REFUSAL_CODES = [
+  "local_codex_remote_host",
+  "local_endpoint_invalid",
+  "local_server_unreachable",
+  "local_server_invalid",
+  "local_model_unselected",
+  "local_model_missing",
+  "local_model_no_tools",
+  "local_model_other_computer",
+  "local_model_cloud",
+] as const;
+export type LocalCodexRefusalCode = typeof LOCAL_CODEX_REFUSAL_CODES[number];
+
+export function isLocalCodexRefusalCode(code: unknown): code is LocalCodexRefusalCode {
+  return typeof code === "string" && (LOCAL_CODEX_REFUSAL_CODES as readonly string[]).includes(code);
+}
+
 /** Where an endpoint or the remote-server permission came from. */
 export type LocalSettingSource = "default" | "settings" | "environment";
 
 /** One model as Settings → Local models shows it. */
-export type LocalModelSummary = { name: string; tools: boolean; contextLength: number | null };
+export type LocalModelSummary = {
+  name: string;
+  tools: boolean;
+  contextLength: number | null;
+  /** Served from another computer through LM Studio's LM Link (#6094), with that computer's name when known. */
+  lmLink: { deviceName: string | null } | null;
+  /** An Ollama cloud model, which runs on `host`. Local runtimes never offer it. */
+  cloud: { host: string } | null;
+};
+
+/**
+ * Whether Cave could tell which computer each model runs on. Only LM Studio
+ * on this computer needs the check: its LM Link can serve other computers'
+ * models through the local server.
+ */
+export type LocalModelDeviceCheck = "not-needed" | "checked" | "unavailable";
 
 /** What Settings → Local models shows for one backend (GET /api/local-models). */
 export type LocalModelsBackendStatus = {
@@ -169,7 +206,7 @@ export type LocalModelsBackendStatus = {
   /** The address saved in Settings, even when the environment overrides it. */
   savedEndpoint: string | null;
   server:
-    | { state: "running"; version: string | null; models: LocalModelSummary[] }
+    | { state: "running"; version: string | null; models: LocalModelSummary[]; deviceCheck: LocalModelDeviceCheck }
     | { state: "stopped" }
     | { state: "unexpected" }
     | { state: "invalid-address"; reason: string };
