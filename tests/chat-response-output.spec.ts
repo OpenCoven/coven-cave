@@ -184,10 +184,14 @@ test("completed assistant responses render editorial Markdown and accessible con
   await expect(prose.locator("strong")).toContainText("bold");
   await expect(prose.locator("em")).toContainText("italics");
 
-  const width = await bubble.locator(".cave-response-frame").evaluate(
-    (element) => element.getBoundingClientRect().width,
+  // Under the default "Full" reading width the reply fills its bubble (#6318).
+  const { frameWidth, bubbleWidth } = await bubble.locator(".cave-response-frame").evaluate(
+    (element) => ({
+      frameWidth: element.getBoundingClientRect().width,
+      bubbleWidth: element.closest(".cave-bubble-assistant")!.getBoundingClientRect().width,
+    }),
   );
-  expect(width).toBeLessThanOrEqual(768);
+  expect(Math.abs(frameWidth - bubbleWidth)).toBeLessThanOrEqual(1);
 
   await bubble.hover();
   await expect(
