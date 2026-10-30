@@ -171,6 +171,11 @@ test("Workspace applies connection polls through the existing classifier-driven 
   );
   assert.match(
     applyPoll,
+    /if \(result\.kind === "unavailable"\) \{\s*daemonHealthyStreakRef\.current = 0;\s*daemonUnavailableStreakRef\.current \+= 1;[\s\S]*?if \(daemonUnavailableStreakRef\.current >= 2\) \{\s*setDaemonStatusUnavailable\(result\.reason\);\s*\}\s*return;\s*\}\s*daemonUnavailableStreakRef\.current = 0;/,
+    "a single slow or failed status read must not paint the banner; any other answer resets the streak",
+  );
+  assert.match(
+    applyPoll,
     /if \(result\.kind === "offline"\) \{[\s\S]*daemonHealthyStreakRef\.current = 0[\s\S]*setDaemonRunning\(false\)[\s\S]*setDaemonOffline\(true\)[\s\S]*return;/,
     "definitive local offline polls should still drive the Start daemon banner path",
   );
