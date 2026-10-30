@@ -331,6 +331,7 @@ export const SUITES = {
     "src/components/chat-ui-block.test.tsx",
     "src/lib/coven-marker-directive.test.ts",
     "src/lib/connectors.test.ts",
+    "src/lib/server/gh-login-status.test.ts",
     "src/lib/citations-directive.test.ts",
     "src/lib/github-item-url.test.ts",
     "src/lib/github-sub-tags.test.ts",

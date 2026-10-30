@@ -309,7 +309,8 @@ import {
   isSshRuntime,
 } from "@/lib/familiar-runtime";
 import { resolveRequestedRuntime, sshHostRegistry } from "@/lib/chat-hosts";
-import { parseConnectorIds, prepareTurnConnectors } from "@/lib/connectors";
+import { hasGitHubTokenInEnv, parseConnectorIds, prepareTurnConnectors } from "@/lib/connectors";
+import { hasGhStoredLogin } from "@/lib/server/gh-login-status";
 import {
   parseCostUsd,
   parseStreamJsonUsage,
@@ -2736,10 +2737,19 @@ async function postAdmittedChat(
   // Connectors use credentials already granted to this familiar's spawn
   // env. Only a local launch has that env; ssh hosts, the Hermes API, and
   // OpenClaw report the connector unavailable rather than pretend it is on.
-  const turnConnectors = prepareTurnConnectors(
-    parseConnectorIds(body.connectors),
-    !sshRuntime && localRuntimePlan ? localRuntimePlan.env : null,
-  );
+  // With no GitHub token in that env, the desktop's stored gh login counts
+  // (#5845); only `gh auth status` is asked, no token is read or injected.
+  const requestedConnectors = parseConnectorIds(body.connectors);
+  const connectorEnv = !sshRuntime && localRuntimePlan ? localRuntimePlan.env : null;
+  const githubStoredLogin =
+    connectorEnv !== null &&
+    requestedConnectors.includes("github") &&
+    !hasGitHubTokenInEnv(connectorEnv)
+      ? await hasGhStoredLogin(connectorEnv)
+      : false;
+  const turnConnectors = prepareTurnConnectors(requestedConnectors, connectorEnv, {
+    githubStoredLogin,
+  });
   const grokCapabilities = grokDirect
     ? await probeReadyLocalRuntimeCapability({
         plan: localRuntimePlan,

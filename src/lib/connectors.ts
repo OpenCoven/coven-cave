@@ -7,9 +7,14 @@
  * A turn only names which connectors the user turned on; this module checks
  * the turn's real env, exposes an already-present credential under the name
  * the tool reads (gh reads GH_TOKEN), and tells the familiar what it can use.
- * It never widens scope: nothing here reads the Vault. A gh keyring login is
- * deliberately not consulted: GitHub is reported available only when a token
- * is in this familiar's env, because reading the keyring would widen scope.
+ * It never widens scope: nothing here reads the Vault.
+ *
+ * GitHub is also available when the desktop's `gh` CLI already has a stored
+ * (keyring) login that this familiar's spawn env reaches — Val's 2026-10-09
+ * decision on #5845. The caller learns that from `gh auth status`
+ * (src/lib/server/gh-login-status.ts) and passes it in as
+ * `githubStoredLogin`; no token is read or injected for that case, because
+ * `gh` in the harness finds the same login through HOME on its own.
  */
 import { GITHUB_HARNESS_TOKEN_ENV_KEYS } from "./github-token-env";
 
@@ -48,6 +53,19 @@ function firstToken(env: NodeJS.ProcessEnv, keys: readonly string[]): string | u
   return undefined;
 }
 
+/** Whether `env` already carries a GitHub token the harness can use. */
+export function hasGitHubTokenInEnv(env: NodeJS.ProcessEnv): boolean {
+  return firstToken(env, GITHUB_HARNESS_TOKEN_ENV_KEYS) !== undefined;
+}
+
+export type TurnConnectorOptions = {
+  /**
+   * The desktop `gh` CLI has a stored login reachable from `env` (from
+   * `gh auth status`). Consulted only when no GitHub token is in `env`.
+   */
+  githubStoredLogin?: boolean;
+};
+
 /**
  * Report which requested connectors this turn can really use, and expose an
  * already-present credential under the name its tool reads. `env` is the
@@ -57,6 +75,7 @@ function firstToken(env: NodeJS.ProcessEnv, keys: readonly string[]): string | u
 export function prepareTurnConnectors(
   requested: readonly ConnectorId[],
   env: NodeJS.ProcessEnv | null,
+  options: TurnConnectorOptions = {},
 ): TurnConnector[] {
   return requested.map((id) => {
     if (!env) return { id, available: false };
@@ -65,7 +84,8 @@ export function prepareTurnConnectors(
         // Precedence deliberately takes the first key in GITHUB_HARNESS_TOKEN_ENV_KEYS
         // (the familiar's Vault-scoped GITHUB_PAT first) and never overrides an explicit GH_TOKEN.
         const token = firstToken(env, GITHUB_HARNESS_TOKEN_ENV_KEYS);
-        if (!token) return { id, available: false };
+        // No token in the env: a stored gh login still counts, with the env untouched.
+        if (!token) return { id, available: options.githubStoredLogin === true };
         if (!env.GH_TOKEN?.trim()) env.GH_TOKEN = token;
         return { id, available: true };
       }
@@ -85,7 +105,7 @@ export function prepareTurnConnectors(
 
 const AVAILABLE_GUIDANCE: Record<ConnectorId, string> = {
   github:
-    "GitHub — on. The gh CLI is signed in for this turn through GH_TOKEN. Use gh (gh issue, gh pr, gh run, gh api) to look things up. Ask before any write such as a comment, review, merge, close, or push unless the user asked for that exact action. When a reply centers on one issue, pull request, commit, or run, include its coven:github card marker.",
+    "GitHub — on. The gh CLI is signed in for this turn. Use gh (gh issue, gh pr, gh run, gh api) to look things up. Ask before any write such as a comment, review, merge, close, or push unless the user asked for that exact action. When a reply centers on one issue, pull request, commit, or run, include its coven:github card marker.",
   asana:
     "Asana — on. A personal access token is in the ASANA_PAT environment variable. Call the Asana REST API at https://app.asana.com/api/1.0 with the header Authorization: Bearer $ASANA_PAT, referencing the variable rather than its value. Ask before creating, assigning, or completing a task unless the user asked for that exact action. Link each task by its https://app.asana.com URL.",
 };

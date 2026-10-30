@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   buildConnectorsDirective,
+  hasGitHubTokenInEnv,
   parseConnectorIds,
   prepareTurnConnectors,
 } from "./connectors.ts";
@@ -47,6 +48,36 @@ assert.deepEqual(parseConnectorIds(undefined), []);
   assert.deepEqual(env, {}, "an unavailable connector leaves the env untouched");
 }
 
+// GitHub via the desktop's stored gh login (#5845): available, env untouched.
+{
+  const env = { HOME: "/home/familiar" };
+  assert.deepEqual(
+    prepareTurnConnectors(["github"], env, { githubStoredLogin: true }),
+    [{ id: "github", available: true }],
+  );
+  assert.deepEqual(env, { HOME: "/home/familiar" }, "no token is written for a stored login");
+}
+{
+  const env = {};
+  assert.deepEqual(
+    prepareTurnConnectors(["github"], env, { githubStoredLogin: false }),
+    [{ id: "github", available: false }],
+  );
+}
+{
+  const env = { GITHUB_PAT: "ghp_scoped" };
+  prepareTurnConnectors(["github"], env, { githubStoredLogin: true });
+  assert.equal(env.GH_TOKEN, "ghp_scoped", "a token in the env still wins over the stored login");
+}
+assert.deepEqual(
+  prepareTurnConnectors(["github"], null, { githubStoredLogin: true }),
+  [{ id: "github", available: false }],
+  "a non-local runtime never reports the desktop login",
+);
+assert.equal(hasGitHubTokenInEnv({ GITHUB_TOKEN: "t" }), true);
+assert.equal(hasGitHubTokenInEnv({ GH_TOKEN: "  " }), false);
+assert.equal(hasGitHubTokenInEnv({}), false);
+
 // Asana: a launcher ASANA_ACCESS_TOKEN is exposed under the one name the prompt uses.
 {
   const env = { ASANA_ACCESS_TOKEN: "asana_test_value" };
@@ -75,7 +106,7 @@ const block = buildConnectorsDirective([
   { id: "asana", available: false },
 ]);
 assert.match(block, /^<connectors>\n/);
-assert.match(block, /GitHub — on\. The gh CLI is signed in for this turn through GH_TOKEN\./);
+assert.match(block, /GitHub — on\. The gh CLI is signed in for this turn\./);
 assert.match(block, /Asana — requested, but no Asana credential reached you on this turn\./);
 assert.match(block, /Never ask the user to paste a token\./);
 assert.match(block, /Never print, echo, or write a token value anywhere/);
