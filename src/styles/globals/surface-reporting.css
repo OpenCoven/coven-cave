@@ -255,8 +255,6 @@
 .growth-surface--standalone {
   height: auto;
   min-height: calc(100vh - 57px);
-  max-width: 1220px;
-  margin: 0 auto;
   background: transparent;
 }
 .growth-hero { margin-bottom: 18px; }

@@ -54,8 +54,8 @@ assert.match(
 assert.doesNotMatch(css, /\.cave-composer-mode-switch|\.cave-composer-mode-option/, "retired access switch CSS should stay removed");
 assert.match(
   activityCss,
-  /--cave-chat-measure:\s*64rem;/,
-  "the transcript keeps its wide reading measure",
+  /--cave-chat-measure:\s*calc\(100% - 2 \* var\(--cave-chat-gutter\)\);/,
+  "the transcript's reading measure is the full pane less the spine gutter",
 );
 assert.doesNotMatch(activityCss, /--cave-composer-measure/, "the retired narrow composer measure stays removed");
 assert.match(
