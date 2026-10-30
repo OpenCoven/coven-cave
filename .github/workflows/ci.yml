@@ -100,6 +100,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm check:tests-wired
+      # #6303: registration is not proof. Unreviewed contracts must fail this gate.
+      - name: Process and endpoint boundary contracts
+        run: node scripts/process-boundary-inventory.mjs --require-proof scripts/process-boundary-inventory.json
       # Each suite must report its own result even when an earlier step failed:
       # a test:app failure used to silently skip test:api and test:mobile, so a
       # skipped suite and a passed one looked identical (cave-t8p1a).

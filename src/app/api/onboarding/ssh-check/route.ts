@@ -1,8 +1,12 @@
 import { warmHarnessSpawnPath } from "@/lib/harness-spawn-env";
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
-import { stripAnsi } from "@/lib/ansi";
 import { covenSpawnEnv } from "@/lib/coven-bin";
+import {
+  BoundedProcessOutput,
+  safeProcessErrorMessage,
+  terminateProcessTree,
+} from "@/lib/process-execution";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,6 +23,7 @@ export const runtime = "nodejs";
 const SAFE_SSH_HOST_RE = /^[A-Za-z0-9._:-]+$/;
 
 const SSH_TIMEOUT_MS = 15_000;
+const MAX_PROBE_OUTPUT_BYTES = 8_192;
 
 /** Marker scoping the parse to our own probe output, not banner noise. */
 const PROBE_MARKER = "__coven_cave_ssh_probe__";
@@ -64,50 +69,82 @@ export async function POST(req: Request) {
   ];
 
   return new Promise<Response>((resolve) => {
-    const child = spawn("ssh", args, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: covenSpawnEnv(),
-    });
-    let out = "";
-    let err = "";
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (err += d.toString()));
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
+    const spawnFailure = (error: unknown) => NextResponse.json(
+      {
+        ok: false,
+        reachable: false,
+        error: safeProcessErrorMessage(error, "SSH"),
+        hint: "Install an OpenSSH client (macOS/Linux ship one; Windows: Settings > Apps > Optional features > OpenSSH Client).",
+      },
+      { status: 500 },
+    );
+    if (req.signal.aborted) {
       resolve(
         NextResponse.json(
-          {
-            ok: false,
-            reachable: false,
-            error: `ssh did not respond within ${SSH_TIMEOUT_MS / 1000}s`,
-            hint: `Check the host name and your network, or run \`ssh ${host}\` in a terminal to see what it is waiting on.`,
-          },
-          { status: 504 },
+          { ok: false, reachable: false, error: "SSH check cancelled" },
+          { status: 499 },
         ),
       );
-    }, SSH_TIMEOUT_MS);
-    child.on("error", (e) => {
+      return;
+    }
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn("ssh", args, {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: covenSpawnEnv(),
+        shell: false,
+        detached: process.platform !== "win32",
+      });
+    } catch (error) {
+      resolve(spawnFailure(error));
+      return;
+    }
+    // stdout is a structured remote executable path. Preserve valid Nix hashes;
+    // user-facing error output is separately redacted across chunk boundaries.
+    const out = new BoundedProcessOutput(MAX_PROBE_OUTPUT_BYTES, { redact: false });
+    const err = new BoundedProcessOutput(MAX_PROBE_OUTPUT_BYTES);
+    let settled = false;
+    let stopping = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (response: Response) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      resolve(
-        NextResponse.json(
-          {
-            ok: false,
-            reachable: false,
-            error: `ssh could not start: ${e.message}`,
-            hint: "Install an OpenSSH client (macOS/Linux ship one; Windows: Settings > Apps > Optional features > OpenSSH Client).",
-          },
-          { status: 500 },
-        ),
-      );
+      req.signal.removeEventListener("abort", onAbort);
+      resolve(response);
+    };
+    const stop = (cancelled: boolean) => {
+      if (settled || stopping) return;
+      stopping = true;
+      clearTimeout(timer);
+      const complete = (cleanupComplete: boolean) => finish(NextResponse.json(
+        {
+          ok: false,
+          reachable: false,
+          cleanupComplete,
+          error: cancelled ? "SSH check cancelled" : `ssh did not respond within ${SSH_TIMEOUT_MS / 1000}s`,
+          ...(!cancelled ? { hint: `Check the host name and your network, or run \`ssh ${host}\` in a terminal to see what it is waiting on.` } : {}),
+        },
+        { status: cancelled ? 499 : 504 },
+      ));
+      void terminateProcessTree(child).then(complete, () => complete(false));
+    };
+    const onAbort = () => stop(true);
+    timer = setTimeout(() => stop(false), SSH_TIMEOUT_MS);
+    req.signal.addEventListener("abort", onAbort, { once: true });
+    child.stdout?.on("data", (data: Buffer) => { out.append(data); });
+    child.stderr?.on("data", (data: Buffer) => { err.append(data); });
+    child.on("error", (error) => {
+      if (!stopping) finish(spawnFailure(error));
     });
     child.on("close", (code) => {
-      clearTimeout(timer);
-      const stdout = stripAnsi(out);
-      const stderr = stripAnsi(err).slice(-2000);
+      if (stopping || settled) return;
+      const stdout = out.text();
+      const stderr = err.text();
       const reachable = code === 0 && stdout.includes(PROBE_MARKER);
       if (!reachable) {
-        resolve(
+        finish(
           NextResponse.json(
             {
               ok: false,
@@ -130,7 +167,7 @@ export async function POST(req: Request) {
           .map((line) => line.trim())
           .find((line) => line.length > 0) ?? "no-coven";
       const covenPath = covenLine === "no-coven" ? null : covenLine;
-      resolve(
+      finish(
         NextResponse.json({
           ok: true,
           reachable: true,
@@ -143,5 +180,7 @@ export async function POST(req: Request) {
         }),
       );
     });
+    // Cover cancellation between the early check and listener registration.
+    if (req.signal.aborted) onAbort();
   });
 }

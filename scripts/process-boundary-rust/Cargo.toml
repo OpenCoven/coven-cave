@@ -1,0 +1,10 @@
+[package]
+name = "cave-process-boundary-rust"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+proc-macro2 = { version = "=1.0.106", features = ["span-locations"] }
+serde_json = "=1.0.150"
+syn = { version = "=2.0.117", features = ["full", "visit"] }

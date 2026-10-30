@@ -4,6 +4,8 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'src/lib/daemon-socket-occupancy.ts'
+      - 'src/lib/daemon-socket-occupancy.platform.test.ts'
       - 'src-tauri/**'
       - 'scripts/sidecar-runtime-budget.json'
       - '.github/workflows/windows-startup.yml'
@@ -24,6 +26,23 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: Exercise real named-pipe occupancy without taking over its owner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = @(& node --experimental-strip-types --test --test-reporter=tap src/lib/daemon-socket-occupancy.platform.test.ts 2>&1)
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) { throw 'Named-pipe occupancy contracts failed.' }
+          $report = $output -join "`n"
+          foreach ($summary in @('tests 3', 'pass 3', 'fail 0', 'cancelled 0', 'skipped 0')) {
+            if ($report -notmatch ('(?m)^# ' + [regex]::Escape($summary) + '\s*$')) {
+              throw "Missing exact non-skipped test summary: $summary"
+            }
+          }
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
