@@ -170,7 +170,7 @@ export function AutomationOccurrences({
   const detailController = useRef<AbortController | null>(null);
   const rereadButton = useRef<HTMLButtonElement | null>(null);
   const olderButton = useRef<HTMLButtonElement | null>(null);
-  const focusAfterOlder = useRef<HTMLButtonElement | null>(null);
+  const focusAfterRead = useRef<HTMLButtonElement | null>(null);
   const openIdRef = useRef<string | null>(null);
   openIdRef.current = openId;
   const base = `/api/coven-automations/${encodeURIComponent(automationId)}/occurrences`;
@@ -199,6 +199,10 @@ export function AutomationOccurrences({
   }, [base]);
 
   const refresh = useCallback(async (startAgain = false) => {
+    const source = [rereadButton.current, olderButton.current].find(
+      (button) => button !== null && button.ownerDocument.activeElement === button,
+    );
+    if (source) focusAfterRead.current = source;
     const request = ++pageRequest.current;
     controller.current?.abort();
     olderController.current?.abort();
@@ -251,7 +255,7 @@ export function AutomationOccurrences({
     // Refs also serialize clicks that arrive before React commits the disabled state.
     if (!cursor || controller.current || olderController.current) return;
     const source = olderButton.current;
-    const ownedFocus = source !== null && source.ownerDocument.activeElement === source;
+    if (source?.ownerDocument.activeElement === source) focusAfterRead.current = source;
     const current = new AbortController();
     olderController.current = current;
     setOlderLoading(true);
@@ -262,7 +266,6 @@ export function AutomationOccurrences({
       if (current.signal.aborted || olderController.current !== current) return;
       if (result.kind === "available" && res.ok) {
         if (result.nextCursor === cursor) { setOlderFailure("stalled"); return; }
-        if (result.nextCursor === null && ownedFocus) focusAfterOlder.current = source;
         // Both pages are independently bounded by the shared response parser.
         setOlder({ readAt: result.readAt, occurrences: result.occurrences, nextCursor: result.nextCursor });
       } else {
@@ -306,14 +309,15 @@ export function AutomationOccurrences({
   const busy = loading || olderLoading;
   useEffect(() => {
     if (busy) return;
-    const source = focusAfterOlder.current;
-    focusAfterOlder.current = null;
-    if (!source || nextCursor !== null) return;
+    const source = focusAfterRead.current;
+    focusAfterRead.current = null;
+    if (!source) return;
     const document = source.ownerDocument;
     // A removed/disabled button may fall back to body. Never take focus from
     // a field the person deliberately selected while the read was pending.
     if (document.activeElement === source || document.activeElement === document.body) {
-      rereadButton.current?.focus({ preventScroll: true });
+      const target = source === rereadButton.current || nextCursor === null ? rereadButton.current : olderButton.current;
+      target?.focus({ preventScroll: true });
     }
   }, [busy, nextCursor]);
 

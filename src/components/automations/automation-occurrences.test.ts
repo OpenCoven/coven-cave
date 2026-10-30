@@ -297,3 +297,47 @@ for (const [destination, expectedCalls, name] of [
     }
   });
 }
+
+for (const [action, automatic] of [["Show older", false], ["Re-read now", false], ["Show older", true], ["Re-read now", true]]) {
+  for (const movedToField of [false, true]) {
+    test(`${automatic ? "automatic refresh of " : ""}${action} ${movedToField ? "preserves a user-selected field" : "repairs disabled-button focus"}`, async () => {
+      const original = globalThis.fetch;
+      const pending = deferred();
+      let initial = true;
+      globalThis.fetch = async () => {
+        if (initial) { initial = false; return answer({ ...pageAnswer, nextCursor: "page-2" }); }
+        return pending.promise;
+      };
+      const ownerDocument = { body: {}, activeElement: null };
+      const nodes = Object.fromEntries(["Show older", "Re-read now"].map((label) => [label, {
+        ownerDocument, focus() { ownerDocument.activeElement = this; },
+      }]));
+      const field = {};
+      const { element } = mount();
+      let renderer;
+      try {
+        await act(async () => {
+          renderer = create(element(), { createNodeMock: (node) => {
+            if (node.type !== "button") return null;
+            if (node.props.children.includes("Retry")) return nodes["Re-read now"];
+            return Object.entries(nodes).find(([label]) => node.props.children.includes(label))?.[1] ?? null;
+          } });
+        });
+        ownerDocument.activeElement = nodes[action];
+        await act(async () => {
+          if (automatic) renderer.update(element({ refreshNonce: 1 }));
+          else button(renderer, new RegExp(action)).props.onClick();
+        });
+        assert.equal(button(renderer, new RegExp(action)).props.disabled, true);
+        // A real browser blurs a newly disabled control; selecting a field is intentional.
+        ownerDocument.activeElement = movedToField ? field : ownerDocument.body;
+        await act(async () => { pending.resolve(answer({ ...pageAnswer, nextCursor: "page-3" })); });
+        assert.equal(button(renderer, new RegExp(action)).props.disabled, false);
+        assert.equal(ownerDocument.activeElement, movedToField ? field : nodes[action]);
+      } finally {
+        await act(async () => { pending.resolve(answer(pageAnswer)); renderer?.unmount(); });
+        globalThis.fetch = original;
+      }
+    });
+  }
+}
