@@ -2481,6 +2481,19 @@ final class AppModel {
             return
         }
 
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-long-rich-chat-scroll") {
+            isConnectingPreview = true
+            configureLongChatScrollPreview(
+                id: "ui-preview-long-rich-chat-scroll",
+                title: "Long Rich Scroll Chat",
+                delayedHistory: false,
+                richHistory: true
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-delayed-long-chat-scroll") {
             isConnectingPreview = true
             configureLongChatScrollPreview(
@@ -2731,10 +2744,11 @@ final class AppModel {
         connectionState = .connected
     }
 
-    private func configureLongChatScrollPreview(id: String, title: String, delayedHistory: Bool) {
+    private func configureLongChatScrollPreview(id: String, title: String, delayedHistory: Bool,
+                                                richHistory: Bool = false) {
         configureEmptyChatPreview()
         let projectRoot = projects.first?.root
-        let messages = delayedHistory ? [] : Self.longChatScrollPreviewMessages()
+        let messages = delayedHistory ? [] : Self.longChatScrollPreviewMessages(richHistory: richHistory)
         let thread = ChatThread(
             id: id,
             title: title,
@@ -2767,10 +2781,33 @@ final class AppModel {
         Date(timeIntervalSince1970: 1_786_000_000 + 9 * 60)
     }
 
-    private static func longChatScrollPreviewMessages() -> [DisplayMessage] {
+    /// A history reply whose rendered height differs widely from its lazy row
+    /// estimate, as real replies do: a line, prose, a code block or a table.
+    private static func richHistoryPreviewReply(_ index: Int) -> String {
+        switch index % 8 {
+        case 0:
+            return "Short answer \(index)."
+        case 2:
+            let lines = (1...28).map { "    let step\($0) = stage(\($0), of: \(index))" }
+            return "### Code reply \(index)\n\n```swift\nfunc run\(index)() {\n\(lines.joined(separator: "\n"))\n}\n```\n\nThat is the whole change."
+        case 4:
+            let rows = (1...14).map { "| Check \($0) | Pass | \(index * $0) ms |" }
+            return "### Table reply \(index)\n\n| Check | State | Time |\n| --- | --- | --- |\n\(rows.joined(separator: "\n"))"
+        case 6:
+            return "### Long reply \(index)\n\n" + Array(
+                repeating: "A long history paragraph whose rendered height is far from its placeholder estimate, so the lazy stack re-measures it as the reader scrolls past.",
+                count: 12
+            ).joined(separator: "\n\n")
+        default:
+            return "### Scroll fixture reply \(index)\n\n- A short list.\n- With two items."
+        }
+    }
+
+    private static func longChatScrollPreviewMessages(richHistory: Bool = false) -> [DisplayMessage] {
         let base = Date(timeIntervalSince1970: 1_786_000_000)
+        let historyCount = richHistory ? 79 : 17
         var messages: [DisplayMessage] = []
-        messages.reserveCapacity(19)
+        messages.reserveCapacity(historyCount + 2)
         messages.append(
             DisplayMessage(
                 id: "scroll-top-marker",
@@ -2780,7 +2817,7 @@ final class AppModel {
                 createdAt: base
             )
         )
-        for index in 1...17 {
+        for index in 1...historyCount {
             let created = base.addingTimeInterval(Double(index) * 60)
             if index.isMultiple(of: 2) {
                 messages.append(
@@ -2788,7 +2825,7 @@ final class AppModel {
                         id: "scroll-assistant-\(index)",
                         role: .assistant,
                         familiarId: "nyx",
-                        text: """
+                        text: richHistory ? richHistoryPreviewReply(index) : """
                         ### Scroll fixture reply \(index)
 
                         This reply has enough markdown to settle after the native row appears.
@@ -2828,7 +2865,7 @@ final class AppModel {
 
                 [Scroll fixture link](https://example.com/scroll-fixture)
                 """,
-                createdAt: base.addingTimeInterval(18 * 60)
+                createdAt: base.addingTimeInterval(Double(historyCount + 1) * 60)
             )
         )
         return messages

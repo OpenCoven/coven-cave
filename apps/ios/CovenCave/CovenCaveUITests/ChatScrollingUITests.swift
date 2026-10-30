@@ -1,3 +1,4 @@
+import Vision
 import XCTest
 
 final class ChatScrollingUITests: XCTestCase {
@@ -124,5 +125,99 @@ final class ChatScrollingUITests: XCTestCase {
 
             _ = waitForLatest(app, timeout: 8)
         }
+    }
+
+    /// Whether the end of the newest reply is drawn on screen, read from a
+    /// screenshot. Accessibility frames follow SwiftUI's layout, and that
+    /// layout reported the end in view while the transcript drew the middle
+    /// of the reply, or nothing at all (#6090).
+    private func latestEndDrawn(_ app: XCUIApplication) -> Bool {
+        guard let image = app.screenshot().image.cgImage else { return false }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        try? VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).contains {
+            $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("bottom marker") == true
+        }
+    }
+
+    private func waitForLatestEndDrawn(_ app: XCUIApplication, timeout: TimeInterval) -> Bool {
+        let drawn = XCTNSPredicateExpectation(
+            predicate: NSPredicate { [unowned self] _, _ in latestEndDrawn(app) }, object: nil
+        )
+        return XCTWaiter.wait(for: [drawn], timeout: timeout) == .completed
+    }
+
+    private func assertLatestEndStaysDrawn(_ app: XCUIApplication, _ message: String) {
+        let lost = XCTNSPredicateExpectation(
+            predicate: NSPredicate { [unowned self] _, _ in !latestEndDrawn(app) }, object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [lost], timeout: 6), .timedOut, message)
+    }
+
+    private func launchRichHistory() -> XCUIApplication {
+        let app = launch(
+            ["--ui-preview-long-rich-chat-scroll"],
+            openThread: "ui-preview-long-rich-chat-scroll"
+        )
+        XCTAssertTrue(app.navigationBars["Long Rich Scroll Chat"].waitForExistence(timeout: 15))
+        return app
+    }
+
+    /// Opening a long chat of real replies rests on the end of the newest
+    /// reply, not partway up it (#6090).
+    @MainActor
+    func testRichHistoryOpensOnTheEndOfTheLatestReply() {
+        let app = launchRichHistory()
+        XCTAssertTrue(waitForLatestEndDrawn(app, timeout: 15), "the end of the latest reply is drawn")
+        assertLatestEndStaysDrawn(app, "the transcript rests on the end of the latest reply")
+    }
+
+    /// A reader who scrolls back down to the newest reply by hand lands on it
+    /// and stays there (#6090). History of real replies re-measures as it
+    /// scrolls past, which must never push the reader back up.
+    @MainActor
+    func testScrollingBackDownStaysOnLatestReply() {
+        let app = launchRichHistory()
+        XCTAssertTrue(waitForLatestEndDrawn(app, timeout: 15), "the end of the latest reply is drawn")
+
+        let scrollView = app.scrollViews["Chat transcript"].firstMatch
+        for _ in 0..<12 { scrollView.swipeDown() }
+        XCTAssertFalse(latestEndDrawn(app), "the reader scrolled up into the history")
+
+        // History rows below the reader can finish rendering after they pass,
+        // so the way back may be longer than the way up.
+        var swipes = 0
+        while !latestEndDrawn(app), swipes < 40 {
+            scrollView.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(latestEndDrawn(app), "scrolling back down reaches the end of the latest reply")
+        assertLatestEndStaysDrawn(app, "the latest reply stays readable once the reader reaches it")
+
+        // The keyboard resizes the transcript. A history row the reader passed
+        // on the way down must not become the place it returns to.
+        let composer = app.textFields["Message"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        composer.tap()
+        assertLatestEndStaysDrawn(app, "focusing the composer keeps the latest reply in view")
+    }
+
+    /// The jump control lands on the end of the newest reply from deep in
+    /// re-measured history, and the reply stays there (#6090).
+    @MainActor
+    func testJumpToLatestFromRichHistoryStaysOnLatestReply() {
+        let app = launchRichHistory()
+        XCTAssertTrue(waitForLatestEndDrawn(app, timeout: 15), "the end of the latest reply is drawn")
+
+        let scrollView = app.scrollViews["Chat transcript"].firstMatch
+        for _ in 0..<12 { scrollView.swipeDown() }
+        XCTAssertFalse(latestEndDrawn(app), "the reader scrolled up into the history")
+
+        let jump = app.buttons["Scroll to latest"].firstMatch
+        XCTAssertTrue(jump.waitForExistence(timeout: 5), "jump control appears in the history")
+        jump.tap()
+        XCTAssertTrue(waitForLatestEndDrawn(app, timeout: 8), "the jump lands on the end of the latest reply")
+        assertLatestEndStaysDrawn(app, "the latest reply stays readable after the jump")
     }
 }
