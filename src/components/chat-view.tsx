@@ -420,6 +420,7 @@ import { startSpan } from "@/lib/perf/marks";
 import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 import { markStartupSettled } from "@/lib/startup-gate";
 import { sharedJsonFetch } from "@/lib/shared-json-fetch";
+import { createPointerPressTracker, type PointerPressTracker } from "@/lib/pointer-press";
 
 /** How long an identical usage-meter request is shared across re-runs (#5668). */
 const USAGE_PLAN_REUSE_MS = 10_000;
@@ -3912,6 +3913,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // anywhere in the composer dock (Tab to Send or a chip, a tap on Tools), so
   // the phone composer never collapses under the control being used.
   const [composerEngaged, setComposerEngaged] = useState(false);
+  // #5840: leaving the composer rests it only once the press that moved focus
+  // has been released, so the control being tapped stays under the finger.
+  const pointerPressRef = useRef<PointerPressTracker | null>(null);
+  const cancelComposerRestRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const tracker = createPointerPressTracker(window);
+    pointerPressRef.current = tracker;
+    return () => {
+      cancelComposerRestRef.current?.();
+      cancelComposerRestRef.current = null;
+      tracker.dispose();
+      pointerPressRef.current = null;
+    };
+  }, []);
+  const engageComposer = useCallback(() => {
+    cancelComposerRestRef.current?.();
+    cancelComposerRestRef.current = null;
+    setComposerEngaged(true);
+  }, []);
+  const restComposerAfterPress = useCallback((dock: Element) => {
+    cancelComposerRestRef.current?.();
+    const rest = () => {
+      cancelComposerRestRef.current = null;
+      if (!dock.contains(document.activeElement)) setComposerEngaged(false);
+    };
+    const tracker = pointerPressRef.current;
+    if (tracker) cancelComposerRestRef.current = tracker.afterPress(rest);
+    else rest();
+  }, []);
   const keyboardOffset =
     typeof window !== "undefined" && vv.height > 0
       ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
@@ -8046,7 +8076,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 // moving into its rows is still the composer being used, so
                 // the phone's rest state must not hide the chip it hangs from.
                 if (next instanceof Element && next.closest(".ui-popover-portal")) return;
-                if (!dock.contains(next)) setComposerEngaged(false);
+                if (!dock.contains(next)) restComposerAfterPress(dock);
               }}
             >
               <div className="cave-composer-edge-actions">
@@ -8146,7 +8176,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
               <textarea
                 ref={inputRef}
-                onFocus={() => setComposerEngaged(true)}
+                onFocus={engageComposer}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
