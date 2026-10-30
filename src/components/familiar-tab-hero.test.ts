@@ -115,12 +115,14 @@ test("header stays put; the section owns the scrolling", () => {
   assert.match(css, /\.familiar-tab__section \{[^}]*overflow-y: auto/, "each section scrolls as one region");
 });
 
-test("the chat surface gives the tab a wide canvas and threads presence", () => {
+test("the chat surface gives the tab the full pane and threads presence", () => {
   assert.match(
     chatSurface,
-    /scope === "familiar"[\s\S]*?max-w-7xl[\s\S]*?<ChatFamiliarView[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?daemonRunning=\{daemonRunning\}[\s\S]*?onStartChat=\{startFamiliarHeroChat\}/,
-    "Familiar tab hosts the scope-aware view in a max-w-7xl column with daemonRunning threaded",
+    /scope === "familiar"[\s\S]*?<div className="h-full w-full min-w-0">\s*<ChatFamiliarView[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?daemonRunning=\{daemonRunning\}[\s\S]*?onStartChat=\{startFamiliarHeroChat\}/,
+    "Familiar tab hosts the scope-aware view across the full pane with daemonRunning threaded",
   );
+  const familiarBranch = chatSurface.slice(chatSurface.indexOf('scope === "familiar"'), chatSurface.indexOf("<ChatFamiliarView"));
+  assert.doesNotMatch(familiarBranch, /max-w-|justify-center/, "the Familiar tab is not a centered, width-capped column");
 });
 
 test("tokens only — the hero introduces no hex colors or novel palette", () => {
