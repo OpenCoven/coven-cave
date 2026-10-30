@@ -29,8 +29,8 @@ assert.match(
 );
 assert.match(
   css,
-  /\.home-hearth-card \{[\s\S]{0,600}?max-width: min\(900px, 100%\)/,
-  "the card is capped at 900px wide (minimal pass — borderless, transparent wrapper)",
+  /\.home-hearth-card \{[\s\S]{0,600}?max-width: var\(--hc-content-max\)/,
+  "the card fills the Home content width (borderless, transparent wrapper)",
 );
 assert.match(
   css,

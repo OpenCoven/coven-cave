@@ -64,8 +64,6 @@
 
 .dr-shell {
   width: 100%;
-  max-width: 1060px;
-  margin: 0 auto;
   padding: clamp(28px, 4vw, 56px) clamp(20px, 5vw, 64px) 96px;
 }
 
