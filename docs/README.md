@@ -52,6 +52,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`windows-sidecar-recovery.md`](windows-sidecar-recovery.md) — loaded-shell recovery, native Retry and Windows qualification limits
 - [`windows-update-preparation.md`](windows-update-preparation.md) — download, verify, and install as three distinct phases
 - [`windows-upgrade-benchmark.md`](windows-upgrade-benchmark.md) — what `scripts/windows-upgrade-diagnostics.ps1` captures
+- [`workflows/windows-msi-signing.md`](workflows/windows-msi-signing.md) — SSL.com eSigner setup, the five signing inputs, and the release gate that publishes only the Authenticode-verified MSI (#5739)
 - [`performance/daemon-lifecycle.md`](performance/daemon-lifecycle.md) — the opt-in real-daemon lifecycle probe and its 2026-10-20 diagnostic observation (#6120)
 - [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the daemon connectivity launch flow, readiness checks, fault coverage, and measurement contract; the `cave-58eoq` program's tracked work all merged (#4485–#4528); #6298 owns the lifecycle, fault-matrix and diagnostics-export follow-ups and #6303 the boundary proof
 
