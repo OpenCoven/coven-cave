@@ -1447,25 +1447,26 @@ export function Workspace() {
     if (result.kind === "running") {
       setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "running" }));
     }
-    setDaemonStatusResolved(true);
-    if (result.kind === "auth-expired") {
-      daemonHealthyStreakRef.current = 0;
-      daemonUnavailableStreakRef.current = 0;
-      setDaemonOffline(false);
-      setDaemonStatusUnavailable("access check failed");
-      return;
-    }
     if (result.kind === "unavailable") {
       daemonHealthyStreakRef.current = 0;
       daemonUnavailableStreakRef.current += 1;
       // The supervisor retries a failed read within ~5s, so a lasting problem
       // still surfaces quickly while a one-off blip never paints the banner.
-      if (daemonUnavailableStreakRef.current >= 2) {
-        setDaemonStatusUnavailable(result.reason);
-      }
+      // A tolerated read also leaves the boot state unresolved: resolving it
+      // without a notice would read as "offline" before any answer (#5781).
+      if (daemonUnavailableStreakRef.current < 2) return;
+      setDaemonStatusResolved(true);
+      setDaemonStatusUnavailable(result.reason);
       return;
     }
     daemonUnavailableStreakRef.current = 0;
+    setDaemonStatusResolved(true);
+    if (result.kind === "auth-expired") {
+      daemonHealthyStreakRef.current = 0;
+      setDaemonOffline(false);
+      setDaemonStatusUnavailable("access check failed");
+      return;
+    }
 
     if (result.kind === "transitioning") {
       // The server owns a start, recovery or stop right now (#6298). That is
