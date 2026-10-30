@@ -141,7 +141,7 @@ execution owner. An optional domain must define what disabling it does to
 admitted jobs, including recovery after restart, before exposing that operation.
 The automations domain is the first with that definition: the switch is read
 when a worker starts, so a changed setting takes effect at the next server
-start, and the disabled-domain idle server owns only the heap monitor's timer.
+start, and the disabled-domain idle server owns only the heap monitor's timer. Device-access revalidation runs only while a remote connection is live ([device access](device-access.md#policy-availability)), so that timer is absent from an idle server.
 
 ### Startup-worker maintenance and shutdown reports
 

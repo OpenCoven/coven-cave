@@ -20,6 +20,14 @@ refusals remain in force. Policy-read failures from an initialized store are
 still reported and retried, allowing recovery without treating them as legacy
 authorization.
 
+Background revalidation runs once a second only while a remote connection is
+live: an approved device request, a legacy remote response, or a remote
+terminal or event-plane WebSocket. It destroys revoked or failed sessions,
+closes legacy traffic when managed access turns on, and closes everything when
+the policy cannot be read. With no remote connection there is nothing for it
+to close, and every new request or upgrade reads the policy itself, so an idle
+server runs no device-access timer (#6119).
+
 Unrelated direct-loopback application requests and upgrades remain available.
 Local device management and mobile invite issuance still require a loaded
 policy, so they cannot mistake unavailable managed state for legacy mode.
