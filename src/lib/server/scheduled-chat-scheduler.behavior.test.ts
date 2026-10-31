@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { registerAllStartupWorkersExcept } from "./startup-worker-shutdown-fixtures.ts";
 
 const store = vi.hoisted(() => ({ tick: vi.fn() }));
 vi.mock("./scheduled-chat-store.ts", () => ({
@@ -112,11 +113,8 @@ test("production compilation starts no timer or scheduled pass", async () => {
 test("a request finishing after coordinated shutdown cannot restart scheduled work", async () => {
   await scheduler.startScheduledChatScheduler();
   const shutdown = await import("./startup-worker-shutdown");
-  shutdown.registerStartupWorker("inbox-reminders", async () => undefined);
+  registerAllStartupWorkersExcept("scheduled-chat");
   shutdown.registerStartupWorker("scheduled-chat", scheduler.stopScheduledChatScheduler);
-  shutdown.registerStartupWorker("backup-sync", async () => undefined);
-  shutdown.registerStartupWorker("research", async () => undefined);
-  shutdown.registerStartupWorker("github-watcher", async () => undefined);
   await shutdown.coordinateStartupWorkerShutdown(async () => undefined);
   await scheduler.startScheduledChatScheduler();
   await vi.advanceTimersByTimeAsync(30_000);
