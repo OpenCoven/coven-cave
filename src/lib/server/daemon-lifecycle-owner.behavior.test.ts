@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 import {
   beginDaemonLifecycleOperation,
+  beginDaemonLifecycleObservation,
   daemonLifecycleOperation,
   localRuntimeEvidence,
   observeDaemonLifecycle,
@@ -135,4 +136,16 @@ test("a backwards clock jump makes runtime evidence stale rather than cached ind
   assert.equal(await localRuntimeEvidence({ probe, now: () => 40_000 }), "present");
   assert.equal(probes, 2, "an answer stamped in the future is not trusted");
   assert.equal(observeDaemonLifecycle(probeInput(), { now: () => 40_000 }).evidence.runtime, "present");
+});
+
+test("a late probe retains its start order and cannot update remembered readiness", () => {
+  const older = beginDaemonLifecycleObservation();
+  const newer = beginDaemonLifecycleObservation();
+  const current = newer(probeInput());
+  const stale = older(probeInput({ availability: "online", reason: null }));
+  assert.ok(stale.generation < current.generation);
+  const operation = beginDaemonLifecycleOperation("start");
+  assert.equal(observeDaemonLifecycle(probeInput()).state, "starting",
+    "stale ready evidence cannot turn a first start into recovery");
+  operation.end();
 });

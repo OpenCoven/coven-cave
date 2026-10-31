@@ -132,16 +132,23 @@ export type DaemonLifecycleProbeInput = Pick<
   "targetMode" | "availability" | "serviceConflict" | "reason"
 >;
 
+/** Reserve an observation before starting asynchronous probe work. */
+export function beginDaemonLifecycleObservation(): (input: DaemonLifecycleProbeInput) => DaemonLifecycle {
+  const generation = ++owner().generation;
+  return (input) => observeDaemonLifecycle(input, { generation });
+}
+
 /**
- * Project the lifecycle for one probe result and record what it proves. The
- * generation is assigned here so every observation this process emits can be
- * ordered, and a ready daemon is remembered so a later start reads as recovery.
+ * Project the lifecycle for one probe result and record what it proves.
+ * Asynchronous callers reserve a generation before probing. Completion keeps
+ * that order, and superseded probes cannot change remembered readiness.
  */
 export function observeDaemonLifecycle(
   input: DaemonLifecycleProbeInput,
-  options: { now?: () => number } = {},
+  options: { now?: () => number; generation?: number } = {},
 ): DaemonLifecycle {
   const state = owner();
+  const generation = options.generation ?? ++state.generation;
   const now = (options.now ?? Date.now)();
   const local = input.targetMode === "local";
   const evidence: DaemonLifecycleEvidence = {
@@ -154,11 +161,10 @@ export function observeDaemonLifecycle(
     reason: input.reason ?? null,
   };
   const projection = projectDaemonLifecycle(evidence);
-  if (projection.state === "ready" && local) state.lastReadyAt = now;
-  state.generation += 1;
+  if (generation === state.generation && projection.state === "ready" && local) state.lastReadyAt = now;
   return {
     ...projection,
-    generation: state.generation,
+    generation,
     observedAt: new Date(now).toISOString(),
   };
 }

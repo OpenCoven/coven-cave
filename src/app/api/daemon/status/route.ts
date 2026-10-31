@@ -14,7 +14,7 @@ import {
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
-import { localRuntimeEvidence, observeDaemonLifecycle } from "@/lib/server/daemon-lifecycle-owner";
+import { localRuntimeEvidence, beginDaemonLifecycleObservation } from "@/lib/server/daemon-lifecycle-owner";
 import { executorStatusesForConfig } from "@/lib/executor-status";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "@/lib/server/daemon-health-request";
 import { assessDaemonStartupCompatibility, type DaemonStartupHealth } from "@/lib/daemon-startup-contract";
@@ -73,7 +73,10 @@ function isCaveHomeStatusFailure(error: unknown): boolean {
 
 const CAVE_HOME_BUSY_REASON = "Cave home is temporarily busy; status will retry automatically";
 
-function caveHomeStatusUnavailable(error?: unknown) {
+function caveHomeStatusUnavailable(
+  observeDaemonLifecycle: ReturnType<typeof beginDaemonLifecycleObservation>,
+  error?: unknown,
+) {
   // Config never loaded, so the target is unknown; neither state depends on it.
   if (isCaveConfigCompatibilityError(error)) {
     return {
@@ -129,6 +132,7 @@ export async function GET(request: Request) {
       research: { sessionLaunchPolicy },
     });
   }
+  const observeDaemonLifecycle = beginDaemonLifecycleObservation();
   let snapshot: Awaited<ReturnType<typeof loadDaemonStatusSnapshot>>;
   try {
     snapshot = await loadDaemonStatusSnapshot();
@@ -138,7 +142,7 @@ export async function GET(request: Request) {
       ? String((error as NodeJS.ErrnoException).code ?? "")
       : "reconciliation";
     console.warn("[daemon-status] Cave home status snapshot unavailable", { code });
-    return respond(caveHomeStatusUnavailable(error));
+    return respond(caveHomeStatusUnavailable(observeDaemonLifecycle, error));
   }
   const { config } = snapshot;
   const target = daemonTargetForConfig(config);
