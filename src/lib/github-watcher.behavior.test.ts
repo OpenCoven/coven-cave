@@ -5,7 +5,8 @@ import path from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { configureGithubWatcher, startGithubWatcher, stopGithubWatcher, tickGithubWatcher } from "./github-watcher";
 import { withinDeadline } from "./async-deadline";
-import { coordinateStartupWorkerShutdown, registerStartupWorker, STARTUP_WORKERS } from "./server/startup-worker-shutdown";
+import { coordinateStartupWorkerShutdown } from "./server/startup-worker-shutdown";
+import { registerAllStartupWorkersExcept } from "./server/startup-worker-shutdown-fixtures";
 
 const fixtures = vi.hoisted(() => ({
   subscriptions: vi.fn(), patch: vi.fn(), token: vi.fn(), cursor: vi.fn(),
@@ -54,13 +55,6 @@ afterEach(async () => {
   delete globalThis.__githubWatcher;
   delete (globalThis as { __caveStartupWorkerShutdown?: unknown }).__caveStartupWorkerShutdown;
 });
-
-/** The other owners drain at once, so the coordinator reports the watcher alone. */
-function registerOtherWorkers() {
-  for (const name of STARTUP_WORKERS) {
-    if (name !== "github-watcher") registerStartupWorker(name, async () => undefined);
-  }
-}
 
 test.each(["disabled", "no repositories", "no events"])("%s startup owns no polling timer", async (reason) => {
   const subs = await fixtures.subscriptions();
@@ -516,7 +510,7 @@ test("coordinated shutdown drains an admitted notification write before reportin
   await startGithubWatcher();
   await vi.advanceTimersByTimeAsync(0);
   expect(fixtures.create).toHaveBeenCalledOnce();
-  registerOtherWorkers();
+  registerAllStartupWorkersExcept("github-watcher");
   let finished = false;
   const closing = coordinateStartupWorkerShutdown(async () => undefined).then(result => { finished = true; return result; });
   await vi.advanceTimersByTimeAsync(1_000);
@@ -541,7 +535,7 @@ test("a read in flight at coordinated shutdown is cancelled without writing a cu
   await startGithubWatcher();
   await vi.advanceTimersByTimeAsync(0);
   expect(fetcher).toHaveBeenCalledOnce();
-  registerOtherWorkers();
+  registerAllStartupWorkersExcept("github-watcher");
   const result = await coordinateStartupWorkerShutdown(async () => undefined);
   expect(result.workers["github-watcher"].status).toBe("drained");
   expect(fixtures.create).not.toHaveBeenCalled();
@@ -559,7 +553,7 @@ test("a write that outlives the shutdown deadline is reported pending, never can
   await startGithubWatcher();
   await vi.advanceTimersByTimeAsync(0);
   expect(fixtures.create).toHaveBeenCalledOnce();
-  registerOtherWorkers();
+  registerAllStartupWorkersExcept("github-watcher");
   const closing = coordinateStartupWorkerShutdown(async () => undefined, { deadlineMs: 100 });
   await vi.advanceTimersByTimeAsync(100);
   const result = await closing;
@@ -572,7 +566,7 @@ test("a write that outlives the shutdown deadline is reported pending, never can
 });
 
 test("a start or settings change after shutdown began saves settings but owns no timer and reads nothing", async () => {
-  registerOtherWorkers();
+  registerAllStartupWorkersExcept("github-watcher");
   const closing = coordinateStartupWorkerShutdown(async () => undefined, { deadlineMs: 10 });
   await vi.advanceTimersByTimeAsync(10);
   await closing;
