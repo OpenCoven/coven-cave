@@ -261,6 +261,7 @@ export const SUITES = {
     "scripts/cave-performance-report.test.mjs",
     "scripts/chat-stream-performance.test.mjs",
     "scripts/shell-boot-performance.test.mjs",
+    "scripts/native-harness-teardown.test.mjs",
     "scripts/ios-performance-trace.test.mjs",
     "scripts/daemon-reliability-benchmark.test.mjs",
     "scripts/daemon-lifecycle-probe.test.mjs",

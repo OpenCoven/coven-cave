@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startCave, stopCave, freePort } from './client-v1-conformance.mjs';
+import { removeFixtureRoot } from './native-harness-teardown.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 async function sourceFingerprint() {
@@ -540,8 +541,18 @@ try {
   }
   runReport.noDaemonState = !unexpectedDaemonState;
   if (!unexpectedDaemonState && runReport.serverStopped !== false && runReport.daemonStopped !== false) {
-    await rm(root, { recursive: true, force: true });
-    runReport.fixtureRootRemoved = true;
+    // A late write under the Cave state directory after the acknowledged stops
+    // once threw ENOTEMPTY out of this finally and lost result.json for a run
+    // whose suite had passed (#6340). Retry; if the write persists, preserve
+    // the root, record what was written, and fail the run with that evidence.
+    const removal = await removeFixtureRoot(root);
+    runReport.fixtureRootRemoved = removal.removed;
+    if (!removal.removed) {
+      runReport.preservedRoot = root;
+      runReport.teardownLateWrite = { code: removal.code, path: removal.path, entries: removal.entries };
+      runReport.passed = false;
+      process.exitCode = 1;
+    }
   } else {
     runReport.preservedRoot = root;
     runReport.passed = false;
