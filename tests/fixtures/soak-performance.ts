@@ -50,7 +50,14 @@ export const SOAK_PERFORMANCE_PROFILE = Object.freeze({
   composerName: "Chat message",
   // Dwell on each mode so its effects, timers and fetches run before the next.
   dwellMs: 1_500,
+  /** Fixed post-warm-up snapshots for retaining-path comparisons (#6353). */
+  heapSnapshotMinutes: Object.freeze([15, 45]),
 });
+
+/** Snapshot slots not yet captured; shared with the browser sampler. */
+export function dueSoakHeapSnapshots(index: number, captured: readonly number[]): number[] {
+  return SOAK_PERFORMANCE_PROFILE.heapSnapshotMinutes.filter(minute => minute <= index && !captured.includes(minute));
+}
 
 export type SoakMode = typeof SOAK_PERFORMANCE_PROFILE.modes[number];
 
@@ -63,6 +70,8 @@ export type SoakSample = {
   cycles: number;
   /** Page errors seen so far (cumulative). */
   pageErrors: number;
+  /** Application console errors, including render failures caught by React boundaries. */
+  consoleErrors: number;
   /** Non-origin requests aborted so far (cumulative). */
   externalBlocked: number;
   /** The page's document is the one the run started with (no reload). */
@@ -164,7 +173,11 @@ export function allowedMissedSoakSlots(minutes: number): number {
   return Math.floor(expectedSoakSamples(minutes) * SOAK_PERFORMANCE_PROFILE.missedSlotTolerance);
 }
 
-export function evaluateSoakPerformance(input: unknown, minutes: number): SoakVerdict {
+export function evaluateSoakPerformance(
+  input: unknown,
+  minutes: number,
+  observed?: { pageErrors: number; consoleErrors: number; completed?: boolean; heapSnapshotMinutes?: readonly number[] },
+): SoakVerdict {
   const failures: string[] = [];
   const verdict: SoakVerdict = {
     pass: false, failures, minutes, expectedSamples: 0, sampleCount: 0, missedSlots: 0,
@@ -192,6 +205,7 @@ export function evaluateSoakPerformance(input: unknown, minutes: number): SoakVe
   let fdPresent = 0;
   let fdAbsent = 0;
   samples.forEach((sample, position) => {
+    if (!Number.isInteger(sample?.consoleErrors) || sample.consoleErrors < 0) failures.push(`sample ${position} has no valid console error count`);
     if (!Number.isInteger(sample?.index) || sample.index <= lastIndex) failures.push(`sample ${position} carries slot ${String(sample?.index)} after slot ${lastIndex}`);
     else lastIndex = sample.index;
     if (!Number.isFinite(sample?.atMs) || sample.atMs <= lastAt) failures.push(`sample ${position} is not later than the previous one`);
@@ -231,8 +245,25 @@ export function evaluateSoakPerformance(input: unknown, minutes: number): SoakVe
     }
     if (!verdict.cycles) failures.push("no cycle completed");
     if (Number.isInteger(last?.pageErrors) && last.pageErrors > 0) failures.push(`${last.pageErrors} page error(s) during the run`);
+    if (Number.isInteger(last?.consoleErrors) && last.consoleErrors > 0) failures.push(`${last.consoleErrors} console error(s) during the run`);
     const pids = new Set(samples.map((sample) => sample?.server?.pid));
     if (pids.size > 1) failures.push(`the server pid changed during the run (${[...pids].join(", ")})`);
+  }
+  // The final mode switch and context teardown can report an error after the
+  // last scheduled sample. They must not leave a successful saved verdict.
+  if (observed) {
+    for (const [key, label] of [["pageErrors", "page"], ["consoleErrors", "console"]] as const) {
+      const count = observed[key];
+      const sampled = samples.at(-1)?.[key] ?? 0;
+      if (!Number.isInteger(count) || count < sampled || count < 0) failures.push(`invalid observed ${label} error count`);
+      else if (count > sampled) failures.push(`${count} ${label} error(s) including after the last sample`);
+    }
+  }
+  if (observed?.completed !== undefined) {
+    if (!observed.completed) failures.push("the workload did not complete");
+    for (const minute of SOAK_PERFORMANCE_PROFILE.heapSnapshotMinutes.filter(minute => minute <= minutes)) {
+      if (!observed.heapSnapshotMinutes?.includes(minute)) failures.push(`missing heap snapshot scheduled for minute ${minute}`);
+    }
   }
   if (failures.length > 0) return verdict;
 

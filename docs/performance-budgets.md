@@ -282,42 +282,15 @@ and a 40-minute job.
 
 ## Production soak lane
 
-Run `pnpm performance:soak [--minutes N]` (default 120, at most 300) from a
-worktree with its own installed dependencies and no local dotenv files. It
-builds production code and runs only `tests/soak-performance.spec.ts` through
-the same allowlisted launcher environment and synthetic state root as the
-stream and shell gates. One page in one primed context stays alive for the
-requested minutes and switches between the Home modes `chat`, `board`,
-`inbox`, `code`, `journal` and `canvas` **in place**, through the shell's own
-`cave:navigate-mode` event, returning to an interactive Home composer each
-cycle. The document is never reloaded: a token set on the first document is
-checked at every sample, so the page series describe what that one document
-retained across every switch, not a page loaded within the last minute. Each
-switch must produce the mode's announced page title, so a closed room or a
-chunk that failed to load cannot count as a visit.
+Run `pnpm performance:soak [--minutes N]` (default 120, at most 300) from a worktree with its own installed dependencies and no local dotenv files. It builds production code and runs only `tests/soak-performance.spec.ts` through the same allowlisted launcher environment and synthetic state root as the stream and shell gates. One page in one primed context stays alive for the requested minutes and switches between the Home modes `chat`, `board`, `inbox`, `code`, `journal` and `canvas` **in place**, through the shell's own `cave:navigate-mode` event, returning to an interactive Home composer each cycle. The document is never reloaded: a token set on the first document is checked at every sample, so the page series describe what that one document retained across every switch, not a page loaded within the last minute. Each switch must produce the mode's announced page title, so a closed room or a chunk that failed to load cannot count as a visit. The journal entry pane must also render its Reflection heading; the shell heading alone survives a caught room crash.
 
-Samples are taken at wall-clock slots, one per minute from the start, after a
-forced garbage collection: the server process tree (resident set of the
-listening process and every descendant, the root's own share, the process
-count, and the listening process's open descriptors where the host exposes
-them), the page (retained JS heap, DOM nodes, listeners, documents, frames)
-and the bytes under the synthetic state root. A slot that passes while a
-switch or a sample is running is recorded as missed rather than back-filled;
-the verdict tolerates five percent of the expected slots and reports the
-count. The verdict in `artifacts/soak-performance/<id>/soak.json` reports each
-series' first, last and maximum values and its least-squares growth per hour
-over the final two thirds of that series. **It grades no ceiling:** the
-catalogue has no soak budgets yet, and the numbers are the maintainer's to
-choose from this evidence. The verdict fails closed on an incomplete run (too
-many missed slots, a short duration, a missing series, a descriptor count that
-disappears mid-run, a page error, a reloaded document, a changed server pid,
-or a cycle that did not come back to the composer), so a crash never reads as
-"no growth".
+Samples are taken at wall-clock slots, one per minute from the start, after a forced garbage collection: the server process tree (resident set of the listening process and every descendant, the root's own share, the process count, and the listening process's open descriptors where the host exposes them), the page (retained JS heap, DOM nodes, listeners, documents, frames) and the bytes under the synthetic state root. A slot that passes while a switch or a sample is running is recorded as missed rather than back-filled; the verdict tolerates five percent of the expected slots and reports the count. The verdict in `artifacts/soak-performance/<id>/soak.json` reports each series' first, last and maximum values and its least-squares growth per hour over the final two thirds of that series. **It grades no ceiling:** the catalogue has no soak budgets yet, and the numbers are the maintainer's to choose from this evidence. The verdict fails closed on an incomplete run (too many missed slots, a short duration, a missing series, a descriptor count that disappears mid-run, a page error, an application console error, a reloaded document, a changed server pid, or a cycle that did not come back to the composer), so a crash never reads as "no growth". Observed errors after the final scheduled sample also invalidate the saved verdict.
 
-The workflow's `soak_minutes` input runs the lane as its own job (360-minute
-cap: the longest soak, the 35-minute Playwright allowance for the build, and
-setup and upload); blank or `0` skips it, so the schedule never pays for it.
-See [#6347](https://github.com/OpenCoven/coven-cave/issues/6347).
+Application console errors are counted separately from browser-generated diagnostics with no JavaScript arguments, such as deliberately rejected fixture mutations and the mock EventSource response. Both have bounded message lists in the report, and `errorCounts` preserves their totals. No console entries are cleared to improve a heap measurement. The journal fixture follows the real API's list, entry and stats response shapes, including a complete empty entry record; returning only `{ok: true}` for an entry fabricates a render failure that React catches and logs without a `pageerror` event.
+
+For retaining-path comparisons, runs reaching minutes 15 and 45 save `minute-15.heapsnapshot` and `minute-45.heapsnapshot` under the invocation directory and list them in `heapSnapshots`, with the actual sample index and capture time. A skipped target slot is captured at the next sample. Required captures and a completed workload are part of the final verdict, so a partial snapshot or failed final screenshot cannot leave a passing report. These fixed post-warm-up captures keep the mode cycle, dwell time, sampling slots and growth calculation unchanged. Analyze them with `node scripts/analyze-heapsnapshot.mjs <snapshot>`, and preserve the invocation, build ID, raw samples and snapshot hashes with any before/after conclusion. A passing synthetic web soak does not establish native desktop, real-daemon or iOS acceptance.
+
+The workflow's `soak_minutes` input runs the lane as its own job (360-minute cap: the longest soak, the 35-minute Playwright allowance for the build, and setup and upload); blank or `0` skips it, so the schedule never pays for it. See [#6347](https://github.com/OpenCoven/coven-cave/issues/6347) and [#6353](https://github.com/OpenCoven/coven-cave/issues/6353).
 
 ## Missing measurements fail closed
 

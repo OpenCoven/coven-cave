@@ -9,7 +9,7 @@ import {
 } from "./run-soak-performance.mjs";
 import { buildShellInvocation } from "./run-shell-performance.mjs";
 import {
-  allowedMissedSoakSlots, evaluateSoakPerformance, expectedSoakSamples, SOAK_PERFORMANCE_PROFILE, SOAK_SERIES,
+  allowedMissedSoakSlots, dueSoakHeapSnapshots, evaluateSoakPerformance, expectedSoakSamples, SOAK_PERFORMANCE_PROFILE, SOAK_SERIES,
 } from "../tests/fixtures/soak-performance.ts";
 
 const interval = SOAK_PERFORMANCE_PROFILE.sampleIntervalMs;
@@ -18,7 +18,7 @@ function samples(minutes, { rssGrowthPerSample = 0, heap = 20_000_000 } = {}) {
   const count = expectedSoakSamples(minutes);
   return Array.from({ length: count }, (_, index) => ({
     index, atMs: index * interval + (index === count - 1 ? 5 : 0),
-    cycles: index * 3, pageErrors: 0, externalBlocked: 0, documentRetained: true,
+    cycles: index * 3, pageErrors: 0, consoleErrors: 0, externalBlocked: 0, documentRetained: true,
     server: { pid: 4242, rssBytes: 260_000_000 + index * rssGrowthPerSample, rootRssBytes: 200_000_000 + index * rssGrowthPerSample, processes: 2, fdCount: 40 },
     page: { jsHeapUsedBytes: heap, jsHeapTotalBytes: heap * 2, domNodes: 3_000, jsEventListeners: 400, documents: 1, frames: 1 },
     stateBytes: 10_000,
@@ -103,6 +103,37 @@ test("a complete steady run passes and reports every series with its growth per 
   assert.equal(growing.series.serverProcesses.maximum, 2);
 });
 
+test("caught render errors invalidate a soak even when pageerror stays silent", () => {
+  const run = samples(5).map(sample => ({ ...sample, consoleErrors: 0 }));
+  run[run.length - 1].consoleErrors = 1;
+  const verdict = evaluateSoakPerformance(run, 5);
+  assert.equal(verdict.pass, false, "a React boundary logs caught render errors without emitting pageerror");
+  assert.ok(verdict.failures.some(failure => /console error/.test(failure)), verdict.failures.join("; "));
+});
+
+test("errors observed after the last wall-clock sample still invalidate the verdict", () => {
+  const verdict = evaluateSoakPerformance(samples(5), 5, { pageErrors: 0, consoleErrors: 1 });
+  assert.equal(verdict.pass, false);
+  assert.ok(verdict.failures.some(failure => /console error/.test(failure)));
+});
+
+test("heap captures catch up when the exact target slot was missed", () => {
+  assert.deepEqual(dueSoakHeapSnapshots(16, []), [15]);
+  assert.deepEqual(dueSoakHeapSnapshots(46, [15]), [45]);
+  assert.deepEqual(dueSoakHeapSnapshots(46, [15, 45]), []);
+});
+
+test("complete samples cannot pass when the workload or required heap captures failed", () => {
+  const complete = { pageErrors: 0, consoleErrors: 0, completed: true, heapSnapshotMinutes: [15, 45] };
+  assert.equal(evaluateSoakPerformance(samples(45), 45, complete).pass, true);
+  const failedCapture = evaluateSoakPerformance(samples(45), 45, { ...complete, heapSnapshotMinutes: [15] });
+  assert.equal(failedCapture.pass, false);
+  assert.ok(failedCapture.failures.some(failure => /snapshot.*45/.test(failure)));
+  const interrupted = evaluateSoakPerformance(samples(45), 45, { ...complete, completed: false });
+  assert.equal(interrupted.pass, false);
+  assert.ok(interrupted.failures.some(failure => /workload.*complete/.test(failure)));
+});
+
 test("missed wall-clock slots are reported and tolerated only within the profile's fraction", () => {
   assert.equal(allowedMissedSoakSlots(120), 6, "121 slots at 5 percent");
   assert.equal(allowedMissedSoakSlots(2), 0, "a two-minute smoke may miss nothing");
@@ -130,6 +161,7 @@ test("an incomplete run fails closed instead of reading as no growth", () => {
     ["non-monotonic time", s => { s[2].atMs = s[1].atMs; return s; }],
     ["repeated slot", s => { s[3].index = 2; return s; }],
     ["no cycles", s => s.map(x => ({ ...x, cycles: 0 }))],
+    ["missing console error count", s => { delete s[1].consoleErrors; return s; }],
     ["page error", s => { s[s.length - 1].pageErrors = 1; return s; }],
     ["reloaded document", s => { s[4].documentRetained = false; return s; }],
     ["pid changed", s => { s[4].server = { ...s[4].server, pid: 1 }; return s; }],
