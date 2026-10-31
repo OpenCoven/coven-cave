@@ -13,6 +13,7 @@ import {
   PERFORMANCE_BUDGETS,
 } from "../src/lib/performance-budgets.ts";
 import { measureEventPlaneWorkload } from "./event-plane-workload.mjs";
+import { researchPackageConfig } from "./research-package-config.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 /**
@@ -297,6 +298,13 @@ export function buildPerformanceReport({
     lane: LANE,
     generatedAt: metadata.generatedAt,
     runtime: metadata.runtime,
+    // The measured configuration (#6338): the rooms the build shows and
+    // whether the optional Research package was installed. Older reports
+    // and tests that do not say are read as the default, installed build.
+    configuration: {
+      rooms: metadata.configuration?.rooms ?? "all",
+      researchPackageInstalled: metadata.configuration?.researchPackageInstalled ?? true,
+    },
     baseline: baselineReport
       ? {
           sha: baselineReport.sha,
@@ -586,6 +594,10 @@ async function main() {
         node: process.version,
         platform: process.platform,
         arch: process.arch,
+      },
+      configuration: {
+        rooms: process.env.CAVE_STREAM_ROOMS?.trim().toLowerCase() || "all",
+        researchPackageInstalled: researchPackageConfig(projectRoot).available,
       },
     },
     baselineReport,

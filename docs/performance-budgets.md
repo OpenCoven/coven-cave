@@ -138,6 +138,20 @@ errors, retries or missing evidence. The CLI still exits unsuccessfully.
 Reports, invocation/build/browser/machine metadata and initial screenshots live
 under `artifacts/stream-performance/<invocation-id>/`, alongside Playwright's
 JSON result and, for a verified workflow control, `control-verification.json`.
+
+`CAVE_STREAM_ROOMS` chooses the room visibility the measured build is compiled
+with (#6338). Blank is the lane default, `all`, the same build the ordinary
+suite tests; `none` names no registered room, so every optional room is absent.
+The runner validates the value, passes it to the build as
+`NEXT_PUBLIC_CAVE_ROOMS`, and records it in `invocation.json` together with
+whether the optional Research package was installed when the build was
+compiled; `pnpm performance:report` records the same two facts under
+`configuration`. The workflow's `rooms_absent` input builds that configuration
+on the runner: it removes `@opencoven/research` after install, sets the rooms
+to `none` for both jobs, and names the evidence `rooms-absent-…`, which the
+baseline restore step skips, so an absent run never becomes the scheduled
+lane's comparison point. The workload, trials and ceilings are the same in both
+configurations; the pair is comparable only at one commit on one runner class.
 Failed runs retain their
 samples; the workflow uploads evidence even when the gate fails. The launcher
 removes ambient credential and Node injection variables, retains browser-cache
