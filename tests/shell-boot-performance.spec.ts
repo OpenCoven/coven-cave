@@ -70,6 +70,12 @@ async function routeShell(context: BrowserContext, baseURL: string, mode: ShellB
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
     localStorage.setItem("cave:shell:nav-open", "1");
+    // The composer persists its draft on a debounce (use-composer-draft). A
+    // previous trial's keystroke that got flushed before its page closed would
+    // otherwise be restored here and the next keystroke would read "kk". Every
+    // trial boots the shell with an empty composer, which is what the budget
+    // describes.
+    localStorage.removeItem("cave:home-composer-draft:v1");
   });
   await context.routeWebSocket(() => true, (socket) => socket.close());
   // Registered first so it runs last: API routes below take precedence.
@@ -119,6 +125,7 @@ for (const mode of profile.modes) {
     const limitMs = shellBootLimitMs(mode);
     const samples: Array<ShellBootSample & {
       error?: string; cleanup?: boolean; frames?: number; readyStateAtInteractive?: string | null;
+      priorValue?: string;
       ttfbMs?: number; domContentLoadedMs?: number; loadMs?: number; stallMs?: number;
     }> = [];
     const report = {
@@ -192,9 +199,11 @@ for (const mode of profile.modes) {
           await page.goto(profile.route, { waitUntil: "commit" });
           await page.waitForFunction(() => window.__caveShellBoot?.interactiveMs != null, undefined, { timeout: 60_000 });
           const composer = composerOf(page);
+          const prior = await composer.inputValue();
           await composer.click();
           await page.keyboard.type(profile.keystroke);
           const typed = await composer.inputValue();
+          sample.priorValue = prior;
           const observed = await page.evaluate((composerName) => {
             const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
             const textarea = document.querySelector<HTMLTextAreaElement>(
@@ -210,7 +219,7 @@ for (const mode of profile.modes) {
           }, profile.composerName);
           if (observed.interactiveMs === null) throw new Error("No interactive frame recorded");
           Object.assign(sample, {
-            hydrated: observed.hydrated, typedMatches: typed === profile.keystroke,
+            hydrated: observed.hydrated, typedMatches: prior === "" && typed === profile.keystroke,
             daemonPolls: counters.daemonPolls, externalBlocked: counters.externalBlocked,
             interactiveMs: observed.interactiveMs, frames: observed.frames,
             readyStateAtInteractive: observed.readyStateAtInteractive,
