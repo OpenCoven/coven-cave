@@ -38,6 +38,43 @@ test("the stream ceiling delegates to the browser gate without grading list-run 
   assert.equal(report.enforcedCount, 0);
 });
 
+test("the shell ceilings delegate to the shell boot browser gate and keep their approved values", () => {
+  const entries = PERFORMANCE_BUDGETS.filter((entry) => entry.surface === "shell" && entry.unit === "ms");
+  assert.deepEqual(
+    entries.map((entry) => [entry.id, entry.limit, entry.gate, entry.source]),
+    [
+      ["shell.warm-boot.p95-ms", 3_000, "browser-performance", "tests/shell-boot-performance.spec.ts"],
+      ["shell.offline-boot.p95-ms", 5_000, "browser-performance", "tests/shell-boot-performance.spec.ts"],
+    ],
+  );
+  const report = evaluatePerformanceBudgets(entries.map((entry) => ({ id: entry.id, value: 1 })), entries);
+  assert.ok(report.results.every((result) => result.verdict === "delegated" && result.value === null));
+  assert.equal(report.enforcedCount, 0);
+  assert.equal(report.pendingCount, 0);
+});
+
+test("every browser-performance source is a Playwright spec that exists and reads its ceiling from here", async () => {
+  // A delegated source is the only tie between the catalogue and the gate that
+  // enforces it. The spec has to exist, and it has to import the catalogue
+  // (directly or through its fixture) so the number cannot be restated there.
+  const delegated = PERFORMANCE_BUDGETS.filter((entry) => entry.gate === "browser-performance");
+  assert.ok(delegated.length >= 3, "the stream and both shell ceilings delegate to browser gates");
+  for (const entry of delegated) {
+    assert.match(entry.source, /^tests\/[\w.-]+\.spec\.ts$/, `${entry.id}: source must name one Playwright spec`);
+    const spec = await readFile(new URL(`../../${entry.source}`, import.meta.url), "utf8");
+    const fixtureImport = /from "\.\/fixtures\/([\w-]+)"/.exec(spec);
+    assert.ok(fixtureImport, `${entry.id}: ${entry.source} imports no tests/fixtures module`);
+    const fixture = await readFile(new URL(`../../tests/fixtures/${fixtureImport[1]}.ts`, import.meta.url), "utf8");
+    assert.match(fixture, /PERFORMANCE_BUDGETS/, `${entry.id}: its fixture must read the catalogue`);
+    // Either the literal id or the shell fixture's per-mode template.
+    const template = entry.id.replace(/^shell\.(?:warm|offline)-/, "shell.${mode}-");
+    assert.ok(
+      fixture.includes(entry.id) || fixture.includes(template),
+      `${entry.id}: its fixture must look up this id`,
+    );
+  }
+});
+
 test("every surface named by the hardening plan carries at least one budget", () => {
   for (const surface of PERFORMANCE_BUDGET_SURFACES) {
     assert.ok(

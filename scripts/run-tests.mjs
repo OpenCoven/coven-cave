@@ -260,6 +260,7 @@ export const SUITES = {
     "scripts/bundle-budget.test.mjs",
     "scripts/cave-performance-report.test.mjs",
     "scripts/chat-stream-performance.test.mjs",
+    "scripts/shell-boot-performance.test.mjs",
     "scripts/ios-performance-trace.test.mjs",
     "scripts/daemon-reliability-benchmark.test.mjs",
     "scripts/daemon-lifecycle-probe.test.mjs",
@@ -2225,6 +2226,7 @@ const STRIP_TYPES_MJS = new Set([
   // imports ../src/lib/performance-budgets.ts through cave-performance-report.mjs
   "scripts/cave-performance-report.test.mjs",
   "scripts/chat-stream-performance.test.mjs",
+  "scripts/shell-boot-performance.test.mjs",
   "scripts/release-macos-signing.test.mjs",
   "scripts/tweet-thread-protocol-drift.test.mjs",
   // imports the TypeScript Client v1 HPKE test codec

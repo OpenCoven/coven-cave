@@ -162,6 +162,7 @@ test("markdown includes comparison and reliability evidence", () => {
   assert.match(markdown, /deterministic daemon startup, reconnect, and recovery contract/);
   assert.match(markdown, /Enforced by separate gates:/);
   assert.match(markdown, /enforced by `tests\/chat-stream-performance\.spec\.ts`/);
+  assert.match(markdown, /enforced by `tests\/shell-boot-performance\.spec\.ts`/);
 });
 
 test("failed daemon reliability contract fails the report summary", () => {

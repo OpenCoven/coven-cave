@@ -30,6 +30,11 @@ on:
         required: false
         default: false
         type: boolean
+      shell_control:
+        description: Verify that injected boot stalls fail only the shell boot budgets
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -80,6 +85,43 @@ jobs:
         with:
           name: ${{ inputs.rooms_absent && 'rooms-absent-' || '' }}cave-stream-performance-${{ github.sha }}-${{ github.run_id }}
           path: artifacts/stream-performance
+          if-no-files-found: error
+          retention-days: 90
+
+  shell:
+    name: Production shell boot budgets
+    runs-on: ubuntu-24.04
+    # Two modes of up to 15 minutes each after the production build; the
+    # Playwright global timeout for this gate is 35 minutes.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/install-playwright-ci.sh chromium
+      - name: Measure warm and offline shell boot to interactive
+        if: ${{ !inputs.shell_control }}
+        run: pnpm performance:shell
+      - name: Verify the deliberate shell boot budget failure
+        if: ${{ inputs.shell_control }}
+        run: |
+          set +e
+          pnpm performance:shell --control
+          control_exit=$?
+          set -e
+          node scripts/verify-shell-control.mjs "$control_exit"
+      - name: Preserve shell boot evidence including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cave-shell-performance-${{ github.sha }}-${{ github.run_id }}
+          path: artifacts/shell-performance
           if-no-files-found: error
           retention-days: 90
 
