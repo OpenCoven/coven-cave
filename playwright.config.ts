@@ -198,6 +198,12 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      name: "automations-webkit",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /automations-occurrence-reader\.spec\.ts/,
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
       name: "voice-webkit",
       dependencies: ["preferences-iphone-13"],
       testMatch: /voice-call\.spec\.ts/,
