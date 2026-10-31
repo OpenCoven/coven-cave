@@ -487,6 +487,8 @@ export const SUITES = {
     "src/lib/server/research-resource-recovery.test.ts",
     "src/lib/server/research-maintenance-boundary.test.ts",
     "src/lib/server/research-package.test.ts",
+    "src/lib/server/research-activation.test.ts",
+    "src/app/api/research/capability/route.test.ts",
     "src/lib/server/research-automation-boundary.test.ts",
     "src/lib/server/research-automation-import.test.ts",
     "src/lib/server/saved-links-route.test.ts",
@@ -2239,6 +2241,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // The Research capability route reaches the activation owner through @/lib (#6332).
+  "src/app/api/research/capability/route.test.ts",
   // Real PATCH /api/chat/model-state requests against a scratch home (#6098).
   "src/app/api/chat/model-state/route-handoff.integration.test.ts",
   "src/lib/server/automation-consumer-routes.test.ts",

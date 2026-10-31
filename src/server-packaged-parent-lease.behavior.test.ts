@@ -62,6 +62,7 @@ test("parent EOF drains workers beside direct-run teardown and kills the Unix gr
   const stop = vi.fn(() => worker.promise);
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", stop);
   const lease = packagedLease("darwin", terminateDirectRuns);
   expect(lease.stdin.resume).toHaveBeenCalledOnce();
@@ -91,6 +92,7 @@ test("a worker that outlives the parent lease is reported, never replayed, and t
   const stop = vi.fn(() => held.promise);
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", stop);
   const lease = packagedLease("darwin", vi.fn(async () => undefined));
 
@@ -111,6 +113,7 @@ test("a worker that outlives the parent lease is reported, never replayed, and t
 test("an unproved direct-run tree keeps its fail-closed report while workers drained", async () => {
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const lease = packagedLease("darwin", vi.fn(() => new Promise<void>(() => undefined)));
 
@@ -131,6 +134,7 @@ test("on Windows the same lease drains workers and ends with a normal exit for t
   const terminateDirectRuns = vi.fn(async () => undefined);
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", stop);
   const lease = packagedLease("win32", terminateDirectRuns);
   expect(lease.stdin.resume).toHaveBeenCalledOnce();
@@ -154,6 +158,7 @@ test("on Windows an unfinished drain exits unsuccessfully at the lease without c
   const stop = vi.fn(async () => { await held.promise; completed = true; });
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", stop);
   const lease = packagedLease("win32");
 
@@ -190,6 +195,7 @@ test("a reminder delivery that outlives the parent lease is reported, never repl
   const stop = vi.fn(async () => { await held.promise; completed = true; });
   registerStartupWorker("inbox-reminders", stop);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const lease = packagedLease("darwin", vi.fn(async () => undefined));
 
@@ -215,6 +221,7 @@ test("on Windows the reminder worker drains inside the same 400 ms lease window"
   const stop = vi.fn(() => worker.promise);
   registerStartupWorker("inbox-reminders", stop);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const lease = packagedLease("win32", vi.fn(async () => undefined));
 
@@ -231,6 +238,7 @@ for (const [platform, deadline] of [["darwin", 1_200], ["win32", 400]] as const)
   test(`${platform} reports an unavailable worker when the parent lease expires during startup`, async () => {
     registerStartupWorker("inbox-reminders", async () => undefined);
     registerStartupWorker("scheduled-chat", async () => undefined);
+    registerStartupWorker("research", async () => undefined);
     const lease = packagedLease(platform);
     lease.stdin.emit("end");
     await vi.advanceTimersByTimeAsync(deadline);
@@ -240,6 +248,7 @@ for (const [platform, deadline] of [["darwin", 1_200], ["win32", 400]] as const)
         "inbox-reminders": { status: "drained" },
         "scheduled-chat": { status: "drained" },
         "backup-sync": { status: "unavailable" },
+        research: { status: "drained" },
       } }),
     );
     if (platform === "win32") expect(lease.process.exit).toHaveBeenCalledExactlyOnceWith(1);

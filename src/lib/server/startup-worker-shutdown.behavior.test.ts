@@ -25,6 +25,7 @@ test("separate module instances share the custom coordinator and registered owne
   shutdown.registerStartupWorker("inbox-reminders", async () => undefined);
   const stop = vi.fn().mockResolvedValue(undefined);
   expect(other.registerStartupWorker("scheduled-chat", stop)).toBe(true);
+  shutdown.registerStartupWorker("research", async () => undefined);
   shutdown.registerStartupWorker("backup-sync", async () => undefined);
   const result = await shutdown.coordinateStartupWorkerShutdown(async () => undefined);
   expect(stop).toHaveBeenCalledOnce();
@@ -36,6 +37,7 @@ test("HTTP close and worker drains start together; HTTP close cannot truncate a 
   const stop = vi.fn(() => held.promise);
   shutdown.registerStartupWorker("inbox-reminders", async () => undefined);
   shutdown.registerStartupWorker("scheduled-chat", async () => undefined);
+  shutdown.registerStartupWorker("research", async () => undefined);
   shutdown.registerStartupWorker("backup-sync", stop);
   const close = vi.fn().mockResolvedValue(undefined);
   let finished = false;
@@ -57,6 +59,7 @@ test("deadline reports pending work without cancelling or replaying it", async (
   const stop = vi.fn(async () => { await held.promise; completed = true; });
   shutdown.registerStartupWorker("inbox-reminders", async () => undefined);
   shutdown.registerStartupWorker("scheduled-chat", async () => undefined);
+  shutdown.registerStartupWorker("research", async () => undefined);
   shutdown.registerStartupWorker("backup-sync", stop);
   const close = vi.fn().mockResolvedValue(undefined);
   const pending = shutdown.coordinateStartupWorkerShutdown(close);
@@ -87,6 +90,7 @@ test("failed callbacks and an unavailable owner remain distinct", async () => {
 test("a worker registered during shutdown drains and cannot start afterward", async () => {
   shutdown.registerStartupWorker("inbox-reminders", async () => undefined);
   shutdown.registerStartupWorker("scheduled-chat", async () => undefined);
+  shutdown.registerStartupWorker("research", async () => undefined);
   const pending = shutdown.coordinateStartupWorkerShutdown(async () => undefined);
   await vi.advanceTimersByTimeAsync(100);
   const stop = vi.fn().mockResolvedValue(undefined);
@@ -100,6 +104,7 @@ test("a slow HTTP close is reported honestly after workers drain", async () => {
   const held = gate();
   shutdown.registerStartupWorker("inbox-reminders", async () => undefined);
   shutdown.registerStartupWorker("scheduled-chat", async () => undefined);
+  shutdown.registerStartupWorker("research", async () => undefined);
   shutdown.registerStartupWorker("backup-sync", async () => undefined);
   const pending = shutdown.coordinateStartupWorkerShutdown(() => held.promise);
   await vi.advanceTimersByTimeAsync(3_000);
@@ -111,6 +116,7 @@ test("a packaged parent lease observes with its own shorter deadline, and the fi
   const held = gate();
   shutdown.registerStartupWorker("inbox-reminders", async () => undefined);
   shutdown.registerStartupWorker("scheduled-chat", async () => undefined);
+  shutdown.registerStartupWorker("research", async () => undefined);
   shutdown.registerStartupWorker("backup-sync", () => held.promise);
   const pending = shutdown.coordinateStartupWorkerShutdown(async () => undefined, { deadlineMs: 400 });
   expect(shutdown.coordinateStartupWorkerShutdown(async () => undefined, { deadlineMs: 3_000 })).toBe(pending);
@@ -128,6 +134,7 @@ test("the reminder worker drains beside the others and a slow delivery is report
   const stopReminders = vi.fn(() => held.promise);
   shutdown.registerStartupWorker("inbox-reminders", stopReminders);
   shutdown.registerStartupWorker("scheduled-chat", async () => undefined);
+  shutdown.registerStartupWorker("research", async () => undefined);
   shutdown.registerStartupWorker("backup-sync", async () => undefined);
   const pending = shutdown.coordinateStartupWorkerShutdown(async () => undefined);
   expect(stopReminders).toHaveBeenCalledOnce();

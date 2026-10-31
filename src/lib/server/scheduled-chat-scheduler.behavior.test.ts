@@ -115,6 +115,7 @@ test("a request finishing after coordinated shutdown cannot restart scheduled wo
   shutdown.registerStartupWorker("inbox-reminders", async () => undefined);
   shutdown.registerStartupWorker("scheduled-chat", scheduler.stopScheduledChatScheduler);
   shutdown.registerStartupWorker("backup-sync", async () => undefined);
+  shutdown.registerStartupWorker("research", async () => undefined);
   await shutdown.coordinateStartupWorkerShutdown(async () => undefined);
   await scheduler.startScheduledChatScheduler();
   await vi.advanceTimersByTimeAsync(30_000);

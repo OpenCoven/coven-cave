@@ -90,7 +90,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 - [`chat-github-integration.md`](chat-github-integration.md) — the shipped GitHub integration and its turn-marker protocol
 - [`chat-image-carousel.md`](chat-image-carousel.md) — image carousel markers, reusing the protocol above
 - [`chat-proposal-review-card.md`](chat-proposal-review-card.md) — proposal-review receipt marker and evidence-only card (#5520)
-- [`research-host-contract.md`](research-host-contract.md) — explicit core adapters and shared saved links for the optional Research package
+- [`research-host-contract.md`](research-host-contract.md) — explicit core adapters and shared saved links for the optional Research package, plus the activation owner and hot-disable teardown contract (#6332)
 - [`research-core-boundary.md`](research-core-boundary.md) — the optional Research boundary and the shared contracts core keeps; shipped in #6025 and enforced by `research-core-boundary.test.ts` and `research-maintenance-boundary.test.ts`
 - [`research-run-surface.md`](research-run-surface.md) — durable ResearchMission projections across Chat, Quick Chat, and Research Desk
 - [`execution-analytics.md`](execution-analytics.md) — model- and harness-level analytics: the three model identities, why harness version is never recorded, coverage as the honesty layer, and what the aggregate discards

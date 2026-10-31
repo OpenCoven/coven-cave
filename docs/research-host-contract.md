@@ -47,5 +47,54 @@ unchanged. The host does not retry or replay a mutation whose outcome may be
 unknown. Media and stream credentials retain their existing route/method scope.
 
 This boundary does not cancel a never-settling module import, repair packages,
-hot-disable workers, or establish general worker containment. Those lifecycle
-operations require separate implementation and evidence under #6119.
+or establish general worker containment.
+
+## Activation and hot disable
+
+Cave owns one process-local activation owner for the runtime
+([`research-activation.ts`](../src/lib/server/research-activation.ts), #6332)
+with the states `inactive`, `starting`, `active`, `stopping` and `disabled`.
+Installation is fixed at build time and `COVEN_RESEARCH_ENABLED` is read per
+request; the owner is the third gate, the one that can change while the server
+runs. Instrumentation starts it once; concurrent starts join that one start,
+and a start that fails leaves the owner `inactive` so a deliberate retry may
+try again.
+
+`POST /api/research/capability` with `{ "active": false }` disables Research
+now, behind the ordinary local-request guard. Admission closes first and
+synchronously: every Research route and the optional GitHub snapshot refuse
+with the existing 503 `research-disabled` before any implementation loads, and
+`GET /api/research/capability` reports `enabled: false` with the activation
+state, so the Research Desk shows its disabled state without a restart. Only
+then does the owner ask the loaded package to stop. The retained outcome is:
+
+| Outcome | Meaning |
+| --- | --- |
+| `inactive` | No runtime had been started; nothing to stop. |
+| `drained` | The package's `stopResearchRuntime` completed. |
+| `unsupported` | The package exports no `stopResearchRuntime`. Admitted media jobs continue until Cave restarts; their generation records stay durable and Cave neither cancels nor replays them. |
+| `failed` | `stopResearchRuntime` rejected. Admission stays closed; the outcome is retained, not retried. |
+
+A stop that arrives during a start waits for that start and then stops what it
+started; a stop that lands before the package start fences it, so nothing is
+started and nothing needs stopping. `{ "active": true }` reactivates one owner.
+The build and environment gates keep their own codes (`research-not-installed`,
+`research-disabled`); a refused activation does not move the owner.
+
+`stopResearchRuntime` is optional under host contract 2. The shipped package
+(`@opencoven/research` 0.2.0) does not export it, so its outcome today is
+`unsupported`. Adding the export is the package owner's change: it must clear
+the per-familiar runner leases, cancel retry timers and the active-job
+cancellation monitors, and abort or kill in-flight render children without
+rewriting their durable generation records. A later host contract can require
+it.
+
+Process shutdown registers Research with the
+[startup-worker coordinator](../src/lib/server/startup-worker-shutdown.ts) as
+a fourth worker. It drains beside inbox reminders, scheduled chat and backup
+sync under the unchanged deadlines. `drained` there means the registered stop
+completed: admission closed and the package's stop, when it has one, finished.
+With a package that has no stop the quit is not failed for that limitation;
+the server log records once that its media jobs were not drained, and the
+process ends them. A package stop that rejects is reported `failed`. Research
+cannot start after coordinated shutdown has begun.

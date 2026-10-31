@@ -37,3 +37,10 @@ existing scoped native-media ticket and validated run-stream GET credentials;
 other endpoints retain the ordinary local-request guard. Handler-level HTTP
 contracts live with Research, while Cave checks route inventory, exact dispatch,
 authorization before loading, and absent/disabled responses.
+
+Activation is Cave's as well. One process-local owner starts the runtime once,
+drains it at process shutdown beside the other startup workers, and can disable
+it while the server runs: admission closes before the package stops, and the
+stop outcome is retained. The package-side stop is optional under host
+contract 2 and absent from the shipped 0.2.0 package. See the
+[host contract](research-host-contract.md#activation-and-hot-disable) (#6332).

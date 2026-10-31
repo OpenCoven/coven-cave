@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import { resolveResearchCapability } from '../research-capability.ts';
 import { dispatchResearchRequest, fetchOptionalGithubRepoView, startOptionalResearch } from './research-package.ts';
+
+// The activation owner is process-global (#6332); each case starts from an inactive one.
+beforeEach(() => {
+  delete (globalThis as { __caveResearchActivation?: unknown }).__caveResearchActivation;
+});
 
 for (const [name, capability] of [
   ['absent', resolveResearchCapability(false)],

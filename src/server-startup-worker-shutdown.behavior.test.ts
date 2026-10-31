@@ -34,6 +34,7 @@ test("the custom server waits for the quit drain even after HTTP closes", async 
   const held = new Promise<void>(resolve => { finish = resolve; });
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", () => held);
   const server = serverShutdown();
   server.shutdown();
@@ -49,6 +50,7 @@ test("the custom server waits for the quit drain even after HTTP closes", async 
 test("the custom server exits unsuccessfully when the shared deadline leaves work pending", async () => {
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", () => new Promise<void>(() => undefined));
   const server = serverShutdown();
   server.shutdown();
@@ -68,6 +70,7 @@ test("signals own shutdown before Next preparation can start workers", () => {
 test("a shutdown during preparation drains registered workers without an HTTP listener", async () => {
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const server = serverShutdown(false);
   server.shutdown();
@@ -81,6 +84,7 @@ test("the custom server waits for an admitted reminder delivery even after HTTP 
   const held = new Promise<void>(resolve => { finish = resolve; });
   registerStartupWorker("inbox-reminders", () => held);
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const server = serverShutdown();
   server.shutdown();
@@ -95,6 +99,7 @@ test("the custom server waits for an admitted reminder delivery even after HTTP 
 test("a reminder delivery that outlives the shared deadline is reported, not cancelled", async () => {
   registerStartupWorker("inbox-reminders", () => new Promise<void>(() => undefined));
   registerStartupWorker("scheduled-chat", async () => undefined);
+  registerStartupWorker("research", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const server = serverShutdown();
   server.shutdown();

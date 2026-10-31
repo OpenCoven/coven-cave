@@ -23,11 +23,17 @@ export async function register() {
   } catch (error) {
     console.warn("[instrumentation] Research Resource restore recovery could not start:", error);
   }
+  const shutdown = await import("@/lib/server/startup-worker-shutdown");
   try {
+    // The optional Research runtime has one activation owner (#6332): it
+    // drains beside the other startup workers, and a hot disable over the
+    // capability route closes admission before anything loads.
     const research = await import("@/lib/server/research-package");
-    void research.startOptionalResearch().catch((error) => {
-      console.warn("[instrumentation] research media jobs failed to start:", error);
-    });
+    if (shutdown.registerStartupWorker("research", research.stopOptionalResearchForShutdown)) {
+      void research.startOptionalResearch().catch((error) => {
+        console.warn("[instrumentation] research media jobs failed to start:", error);
+      });
+    }
   } catch (error) {
     console.warn("[instrumentation] research media jobs could not start:", error);
   }
@@ -59,7 +65,6 @@ export async function register() {
   } catch (error) {
     console.warn("[instrumentation] X mission runtime sweep could not start:", error);
   }
-  const shutdown = await import("@/lib/server/startup-worker-shutdown");
   const inbox = await import("@/lib/inbox-scheduler");
   if (shutdown.registerStartupWorker("inbox-reminders", inbox.stopScheduler)) {
     void inbox.startScheduler().catch(error => {
