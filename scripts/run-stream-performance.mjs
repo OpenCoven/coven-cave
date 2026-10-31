@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { researchPackageConfig } from "./research-package-config.mjs";
 
 const require = createRequire(import.meta.url);
 const environmentKeys = [
@@ -19,7 +20,23 @@ export function parseStreamArguments(args) {
   throw new Error("Usage: pnpm performance:stream [--control]; the workload cannot be overridden");
 }
 
-export function buildStreamInvocation({ sourceEnv, stateRoot, artifactRoot, control }) {
+/**
+ * The room visibility the measured build is compiled with (#6338). Blank means
+ * the lane's default, `all`, which the ordinary suite also uses. Any other
+ * value is passed to the build verbatim as `NEXT_PUBLIC_CAVE_ROOMS`; `none`
+ * names no registered room, so every optional room is absent. The workload
+ * itself cannot be changed by this setting.
+ */
+export function parseStreamRooms(raw) {
+  const rooms = (raw ?? "").trim().toLowerCase();
+  if (rooms === "") return null;
+  if (!/^[a-z0-9*-]+(,[a-z0-9*-]+)*$/.test(rooms)) {
+    throw new Error(`CAVE_STREAM_ROOMS must be blank, all, none or comma-separated room ids; got ${JSON.stringify(raw)}`);
+  }
+  return rooms;
+}
+
+export function buildStreamInvocation({ sourceEnv, stateRoot, artifactRoot, control, rooms = null }) {
   const env = Object.fromEntries(environmentKeys
     .filter(key => typeof sourceEnv[key] === "string")
     .map(key => [key, sourceEnv[key]]));
@@ -31,6 +48,7 @@ export function buildStreamInvocation({ sourceEnv, stateRoot, artifactRoot, cont
     PLAYWRIGHT_JSON_OUTPUT_FILE: path.join(artifactRoot, "playwright.json"),
     NEXT_TELEMETRY_DISABLED: "1",
   });
+  if (rooms !== null) env.CAVE_STREAM_ROOMS = rooms;
   return {
     cli: require.resolve("@playwright/test/cli"),
     args: ["test", "tests/chat-stream-performance.spec.ts", "--project=desktop",
@@ -50,6 +68,7 @@ export function assertIsolatedStreamBuild(root) {
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
   const { control } = parseStreamArguments(process.argv.slice(2));
+  const rooms = parseStreamRooms(process.env.CAVE_STREAM_ROOMS);
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   assertIsolatedStreamBuild(root);
   process.chdir(root);
@@ -65,8 +84,11 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     node: process.version, platform: process.platform, arch: process.arch,
     osRelease: os.release(), cpu: os.cpus()[0]?.model, cpuCount: os.cpus().length,
     totalMemoryBytes: os.totalmem(), stateRoot,
+    // The measured configuration: which rooms the build shows and whether the
+    // optional Research package was installed when it was compiled (#6338).
+    rooms: rooms ?? "all", researchPackageInstalled: researchPackageConfig(root).available,
   }, null, 2));
-  const invocation = buildStreamInvocation({ sourceEnv: process.env, stateRoot, artifactRoot, control });
+  const invocation = buildStreamInvocation({ sourceEnv: process.env, stateRoot, artifactRoot, control, rooms });
   // Keep the CLI in this process so Playwright owns browsers and webServer,
   // including its normal timeout and signal handling.
   for (const key of Object.keys(process.env)) delete process.env[key];

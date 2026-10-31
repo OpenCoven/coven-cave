@@ -269,7 +269,9 @@ export default defineConfig({
       COVEN_CAVE_E2E: "1",
       // The existing suite covers every registered room, as next dev did.
       // Keep that explicit in fixture builds; released apps keep their allowlist.
-      NEXT_PUBLIC_CAVE_ROOMS: "all",
+      // Only the stream benchmark may measure another visibility (#6338); its
+      // runner validates CAVE_STREAM_ROOMS and records it with the evidence.
+      NEXT_PUBLIC_CAVE_ROOMS: (streamPerformance && process.env.CAVE_STREAM_ROOMS) || "all",
       // Local dev-mode E2E only; the CI production server has no compiler.
       // Full Turbopack eviction only runs after a filesystem-cache snapshot.
       // Next 16.3's own eviction fixture removes the minimum active window and
