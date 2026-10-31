@@ -1442,6 +1442,7 @@ export const SUITES = {
     "src/lib/env-local-bundle.test.ts",
     "src/lib/cave-board-schedule.test.ts",
     "src/lib/cave-board-orchestration.test.ts",
+    "src/lib/cave-board-schema-version.test.ts",
     "src/lib/enrich-steps-orchestration.test.ts",
     "src/lib/board-agentic-enhance.test.ts",
     "src/lib/cave-board-model-override.test.ts",
@@ -2373,6 +2374,7 @@ const ALIAS_LOADER = new Set([
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/cave-board-orchestration.test.ts",
+  "src/lib/cave-board-schema-version.test.ts",
   "src/lib/enrich-steps-orchestration.test.ts",
   "src/lib/board-agentic-enhance.test.ts",
   "src/app/api/board/orchestration-route.test.ts",
@@ -2565,6 +2567,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-attachments.test.ts",
   "src/lib/cave-board-schedule.test.ts",
   "src/lib/cave-board-orchestration.test.ts",
+  "src/lib/cave-board-schema-version.test.ts",
   "src/lib/cave-board-model-override.test.ts",
   "src/lib/cave-board-review-reason.test.ts",
   "src/lib/salem/pathfinder-feedback.test.ts",
