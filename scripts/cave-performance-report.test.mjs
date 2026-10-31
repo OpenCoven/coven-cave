@@ -194,7 +194,8 @@ test("a run inside every budget reports a passing budget verdict", () => {
   assert.equal(report.summary.budgetBreachCount, 0);
   assert.equal(report.summary.budgetUnmeasuredCount, 0);
   assert.equal(report.summary.status, "pass");
-  assert.ok(report.budgets.pendingCount > 0, "pending budgets stay visible in the report");
+  assert.equal(report.budgets.pendingCount, 0,
+    "every catalogue ceiling has a gate since #6346; a new pending entry must change this deliberately");
 });
 
 test("a breached budget fails the report even with no baseline to regress against", () => {
@@ -399,7 +400,7 @@ test("the benchmark reports a swept dimension, and only a genuinely swept one", 
   );
 });
 
-test("markdown renders the budget table with limits and pending surfaces", () => {
+test("markdown renders the budget table with limits and delegated surfaces", () => {
   const markdown = renderPerformanceReportMarkdown(
     buildPerformanceReport({
       conversation: conversation(),
@@ -411,6 +412,8 @@ test("markdown renders the budget table with limits and pending surfaces", () =>
   assert.match(markdown, /## Production budgets/);
   assert.match(markdown, /Budget verdict: \*\*PASS\*\*/);
   assert.match(markdown, /Warm shell boot to interactive p95/);
+  assert.match(markdown, /coven doctor wall clock p95/);
+  assert.match(markdown, /enforced by `tests\/doctor-exec-performance\.spec\.ts`/);
   assert.match(markdown, /must not read as a clean run/);
 });
 

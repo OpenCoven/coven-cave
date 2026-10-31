@@ -46,7 +46,7 @@ export type PerformanceBudgetSurface = typeof PERFORMANCE_BUDGET_SURFACES[number
  *   file/list report delegates without pretending it measured that workload.
  * - `pending` — the value is approved and recorded, but no fixture produces the
  *   measurement yet. Reported on every run so the gap stays visible instead of
- *   reading as a pass.
+ *   reading as a pass. None remain since #6346; a new one is a deliberate act.
  */
 export const PERFORMANCE_BUDGET_GATES = [
   "performance-report",
@@ -109,6 +109,14 @@ export type PerformanceBudget = {
    */
   limit: number | null;
   gate: PerformanceBudgetGate;
+  /**
+   * A repository constant this ceiling must equal, in the same resolvable
+   * `<file> (<CONSTANT>)` form, for an entry whose enforcing gate is not the
+   * file that owns the number. `cli.doctor.p95-ms` is the exec route's own
+   * timeout and is measured by a spec (#6346); this keeps the two from
+   * drifting the way the 900 KB / 2800 KB pair did.
+   */
+  derivedFrom?: string;
   /**
    * The fixture, gate, or issue that owns this number.
    *
@@ -490,11 +498,13 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     unit: "ms",
     direction: "lower-is-better",
     limit: 6_000,
-    gate: "pending",
+    gate: "browser-performance",
     // Not an independently approved number: it is the exec route's own timeout,
     // so a `coven doctor` slower than this is already a failed request rather
-    // than a slow one. Recorded in resolvable form so the two cannot drift.
-    source: "src/app/api/coven/exec/route.ts (EXEC_TIMEOUT_MS)",
+    // than a slow one. Measured through that route by the doctor gate (#6346);
+    // `derivedFrom` keeps the ceiling pinned to the constant.
+    source: "tests/doctor-exec-performance.spec.ts",
+    derivedFrom: "src/app/api/coven/exec/route.ts (EXEC_TIMEOUT_MS)",
   },
 ];
 

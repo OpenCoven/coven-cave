@@ -29,15 +29,18 @@ const PORT = resolvePort("e2e", process.env);
 // `playwright test` cannot opt into them.
 const streamPerformance = process.env.CAVE_STREAM_PERFORMANCE === "1";
 const shellPerformance = process.env.CAVE_SHELL_PERFORMANCE === "1";
+const doctorPerformance = process.env.CAVE_DOCTOR_PERFORMANCE === "1";
 const soakPerformance = process.env.CAVE_SOAK_PERFORMANCE === "1";
-const browserPerformance = streamPerformance || shellPerformance || soakPerformance;
+const browserPerformance = streamPerformance || shellPerformance || doctorPerformance || soakPerformance;
 const performanceStateRoot = streamPerformance
   ? process.env.CAVE_STREAM_STATE_ROOT
   : shellPerformance
     ? process.env.CAVE_SHELL_STATE_ROOT
-    : process.env.CAVE_SOAK_STATE_ROOT;
+    : doctorPerformance
+      ? process.env.CAVE_DOCTOR_STATE_ROOT
+      : process.env.CAVE_SOAK_STATE_ROOT;
 if (browserPerformance && (!performanceStateRoot || !isAbsolute(performanceStateRoot) || !existsSync(performanceStateRoot))) {
-  throw new Error("Run the browser performance gates with pnpm performance:stream, pnpm performance:shell or pnpm performance:soak for isolated state");
+  throw new Error("Run the browser performance gates with pnpm performance:stream, pnpm performance:shell, pnpm performance:doctor or pnpm performance:soak for isolated state");
 }
 // The soak lane's duration is its only input (#6347); the launcher validated it.
 const soakMinutes = soakPerformance ? Number(process.env.CAVE_SOAK_MINUTES) : 0;
@@ -113,12 +116,15 @@ writeFileSync(E2E_QUEUE_PROJECT_PATH, JSON.stringify({ version: 1, projectId: "e
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
-  // The shell gate runs two modes of up to 15 minutes each after the build;
-  // the stream gate's two patterns fit its original 20 minutes.
-  // The soak lane runs for its requested minutes after the build (#6347).
+  // The global timeout covers the production build (the server readiness
+  // budget is 20 minutes) plus the measurement. The shell gate runs two modes
+  // of up to 15 minutes each; the doctor gate's worst case is 100 trials at
+  // the 6 s ceiling plus the route's termination grace (about 12 minutes); the
+  // stream gate's two patterns fit its original 20 minutes; the soak lane runs
+  // for its requested minutes after the build (#6347).
   globalTimeout: soakPerformance
     ? (soakMinutes + 35) * 60_000
-    : shellPerformance ? 35 * 60_000 : streamPerformance ? 20 * 60_000 : undefined,
+    : shellPerformance || doctorPerformance ? 35 * 60_000 : streamPerformance ? 20 * 60_000 : undefined,
   forbidOnly: !!process.env.CI,
   // Retry once everywhere: the dev server compiles routes on first hit, so under
   // parallel load a cold route can exceed a test's timeout on the first try and

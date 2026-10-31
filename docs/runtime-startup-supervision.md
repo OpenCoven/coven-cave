@@ -150,12 +150,12 @@ after shutdown began drains and cannot start. Reading the report is described in
 | `scheduled-chat` | One unreferenced 15-second timer, one pass in flight, production-build guard; admitted claims keep their state across stop (#6209) | the same automations switch |
 | `backup-sync` | A 15-minute unreferenced tick only while configured enabled, one pass at a time, a bounded quit push when the coordinator asks (#6209) | backup settings; disabled owns no timer |
 | `research` | The optional runtime's activation owner (#6332): started once, concurrent starts join, hot-disabled through `POST /api/research/capability` with admission closed before the package is asked to stop. The shipped package has no stop, so the server log records once at shutdown that its media jobs were not drained | `COVEN_RESEARCH_ENABLED`, the build-time install, and the activation owner; see the [host contract](research-host-contract.md#activation-and-hot-disable) |
+| `github-watcher` | One unreferenced 60-second timer only for enabled subscriptions with repositories and events, one read in flight; the drain clears the timer, cancels the read and waits for an admitted inbox or cursor write, which is reported `pending` past the deadline, never cancelled or replayed (#6350). Every activation registers the drain, so the subscriptions route's module-load start and a settings change after shutdown began own no timer | subscription settings and the token; disabled, empty or no-event settings own no timer |
 
-Two more loops are not startup workers but share the same rule that a
-disabled or idle feature owns no timer: the GitHub watcher polls only for
-enabled subscriptions with repositories and events, and device-access
-revalidation runs once a second only while a remote connection is live
-(#6311, [device access](device-access.md#policy-availability)). An idle
+One more loop is not a startup worker but shares the same rule that a
+disabled or idle feature owns no timer: device-access revalidation runs once a
+second only while a remote connection is live (#6311,
+[device access](device-access.md#policy-availability)). An idle
 production server with automations and backup disabled owns only the heap
 monitor's five-minute timer; that is the disabled-domain idle baseline recorded
 on #6119.

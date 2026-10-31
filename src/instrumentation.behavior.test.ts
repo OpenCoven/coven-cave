@@ -78,6 +78,9 @@ test("registers the actual worker stops before startup and retains quit snapshot
   expect(result.workers["scheduled-chat"].status).toBe("drained");
   expect(result.workers["backup-sync"].status).toBe("drained");
   expect(result.workers.research.status).toBe("drained");
+  // The watcher registers its own drain on activation (#6350); the mocked
+  // start registers nothing, so its slot is the coordinator's "no owner" row.
+  expect(result.workers["github-watcher"].status).toBe("unavailable");
 });
 
 test("shutdown during registration fences services that have not started", async () => {
@@ -92,6 +95,9 @@ test("shutdown during registration fences services that have not started", async
   expect(jobs.stopScheduled).toHaveBeenCalledOnce();
   expect(jobs.stopBackup).toHaveBeenCalledOnce();
   expect(jobs.backup).not.toHaveBeenCalled();
+  // The watcher is started unconditionally; it fences itself on activation
+  // (github-watcher.behavior.test.ts covers the fence and the drain).
+  expect(jobs.github).toHaveBeenCalledOnce();
   // Research registered and started before the race, so it drains like reminders.
   expect(jobs.stopResearch).toHaveBeenCalledOnce();
   expect(jobs.media).toHaveBeenCalledOnce();

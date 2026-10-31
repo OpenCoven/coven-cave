@@ -1,6 +1,11 @@
 // Shared by the custom server and Next's separately bundled worker modules.
 // Retain stop promises after the observation deadline: timeout is not drain.
-const WORKERS = ["inbox-reminders", "scheduled-chat", "backup-sync", "research"] as const;
+// `github-watcher` joined in #6350: it owns no timer without enabled
+// subscriptions, but a tick in flight at shutdown writes inbox items and
+// cursors, and `process.exit` must not cut that admitted work.
+const WORKERS = ["inbox-reminders", "scheduled-chat", "backup-sync", "research", "github-watcher"] as const;
+/** The fixed worker set, for tests that register every owner but the one under test. */
+export const STARTUP_WORKERS: readonly Worker[] = WORKERS;
 type Worker = typeof WORKERS[number];
 export type ShutdownOutcome = {
   status: "unavailable" | "pending" | "drained" | "failed";
