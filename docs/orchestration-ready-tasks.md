@@ -10,9 +10,10 @@ task shape. Read it before writing anything that creates, blocks, unblocks, or
 dispatches a task.
 
 Status: the canonical fields, mutator enforcement, lifecycle blockers, primary
-blocker promotion, and promotion audit are implemented. Board and Chart Room
-editing surfaces, Enhance proposals, and overlay retirement remain phased work;
-do not invent a competing task shape while those surfaces migrate.
+blocker promotion, and promotion audit are implemented, and the Chart Room's
+legacy dependency overlay is retired (#6258). Board editing surfaces and
+Enhance proposals remain phased work; do not invent a competing task shape
+while those surfaces migrate.
 
 ## The one rule
 
@@ -148,6 +149,13 @@ Readiness is derived on read; nothing stores it:
 
 Tasks blocked before this contract existed stay readable and derive `incomplete`
 with concrete repair recommendations. They are a cleanup queue, not an error.
+
+The board file carries a schema version (`BOARD_SCHEMA_VERSION`, now 2) so
+repairs can tell a task that never had blockers from one that predates the
+field. Reading a version 1 board marks each card that has no `dependencies`
+array `predatesDependencies: true`, and the next save writes version 2 with
+the marker kept. Only `loadBoard` sets it. The first mutator write that names
+the card's dependencies clears it, and no patch can set it.
 
 ## Coven alignment
 

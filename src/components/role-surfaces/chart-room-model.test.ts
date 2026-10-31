@@ -16,17 +16,13 @@ import {
   cyclicStepIds,
   filterSteps,
   flowLayout,
-  forgetStep,
   ganttRows,
   gateParent,
   graphLayout,
   laneOrder,
   lockedSteps,
   nextStage,
-  normalizeOverlay,
-  overlayImportPlan,
   routeSet,
-  setDependency,
   sortSteps,
   stageIndex,
   stepCycles,
@@ -168,7 +164,6 @@ test("stepState ranks a question owed above a late date", () => {
 test("toChartSteps reads the card's canonical task dependencies as edges", () => {
   const steps = toChartSteps(
     [card("a"), card("b", { dependencies: [taskDep("a", { origin: "human" })] })] as never,
-    { dependsOn: {} },
     "2026-07-31",
   );
   const b = steps.find((s) => s.id === "b");
@@ -179,26 +174,25 @@ test("toChartSteps reads the card's canonical task dependencies as edges", () =>
   assert.deepEqual(steps.find((s) => s.id === "a")?.needs, []);
 });
 
-test("toChartSteps unions a surviving overlay edge with canonical ones, deduped", () => {
+// The overlay is retired (#6258): an edge it imported is a canonical
+// system-origin record and reads like any other, beside a human one.
+test("toChartSteps keeps imported edges as canonical records beside human ones", () => {
   const steps = toChartSteps(
-    [card("a"), card("b"), card("c", { dependencies: [taskDep("a")] })] as never,
-    { dependsOn: { c: "b", b: "a" } },
+    [
+      card("a"),
+      card("b"),
+      card("c", {
+        dependencies: [
+          taskDep("a", { origin: "human" }),
+          taskDep("b", { origin: "system", evidence: "Imported from the Chart Room dependency overlay" }),
+        ],
+      }),
+    ] as never,
     "2026-07-31",
   );
   const c = steps.find((s) => s.id === "c");
-  assert.deepEqual(c?.needs, ["a", "b"], "canonical first, then the surviving overlay edge");
-  assert.equal(c?.edges.find((edge) => edge.needs === "b")?.origin, "overlay");
-  const b = steps.find((s) => s.id === "b");
-  assert.deepEqual(b?.needs, ["a"]);
-  // The overlay edge duplicating a canonical one collapses to the canonical record.
-  const dedup = toChartSteps(
-    [card("a"), card("b", { dependencies: [taskDep("a", { origin: "human" })] })] as never,
-    { dependsOn: { b: "a" } },
-    "2026-07-31",
-  );
-  const merged = dedup.find((s) => s.id === "b");
-  assert.equal(merged?.edges.length, 1);
-  assert.equal(merged?.edges[0].origin, "human");
+  assert.deepEqual(c?.needs, ["a", "b"]);
+  assert.deepEqual(c?.edges.map((edge) => edge.origin), ["human", "system"]);
 });
 
 test("toChartSteps marks the primary blocker and its pin", () => {
@@ -212,7 +206,6 @@ test("toChartSteps marks the primary blocker and its pin", () => {
         primaryBlockerPinned: true,
       }),
     ] as never,
-    { dependsOn: {} },
     "2026-07-31",
   );
   const c = steps.find((s) => s.id === "c");
@@ -228,7 +221,6 @@ test("toChartSteps marks the primary blocker and its pin", () => {
 test("toChartSteps drops self-edges and edges to cards that are gone", () => {
   const steps = toChartSteps(
     [card("a", { dependencies: [taskDep("a"), taskDep("ghost")] })] as never,
-    { dependsOn: { a: "ghost" } },
     "2026-07-31",
   );
   assert.deepEqual(steps[0].needs, []);
@@ -245,7 +237,6 @@ test("an external-only blocker is a terminal chip, never a graph edge", () => {
       }),
       card("b", { dependencies: [taskDep("a")] }),
     ] as never,
-    { dependsOn: {} },
     "2026-07-31",
   );
   const a = steps.find((s) => s.id === "a");
@@ -258,55 +249,6 @@ test("an external-only blocker is a terminal chip, never a graph edge", () => {
   assert.equal(depth.b, 1);
   const { rows } = ganttRows(steps);
   assert.equal(rows.find((row) => row.step.id === "a")?.linkAt, null);
-});
-
-// ── The legacy overlay ───────────────────────────────────────────────────────
-
-test("normalizeOverlay prunes self-edges and edges to cards that are gone", () => {
-  const overlay = normalizeOverlay({ dependsOn: { a: "b", b: "b", c: "ghost", ghost: "a" } }, ["a", "b", "c"]);
-  assert.deepEqual(overlay.dependsOn, { a: "b" });
-});
-
-test("setDependency refuses a self-edge and clears on null", () => {
-  assert.deepEqual(setDependency({ dependsOn: {} }, "a", "a").dependsOn, {});
-  assert.deepEqual(setDependency({ dependsOn: { a: "b" } }, "a", null).dependsOn, {});
-  assert.deepEqual(setDependency({ dependsOn: {} }, "a", "b").dependsOn, { a: "b" });
-});
-
-test("forgetStep cuts edges in both directions", () => {
-  const overlay = forgetStep({ dependsOn: { a: "b", c: "b", b: "d" } }, "b");
-  assert.deepEqual(overlay.dependsOn, {});
-});
-
-// Acceptance test 7 (migration step 2): two divergent overlay maps import to a
-// deterministic merged set; no canonical edge is dropped; a re-run is a no-op.
-test("overlayImportPlan merges divergent maps deterministically and never overwrites", () => {
-  const cards = [card("a"), card("b"), card("c", { dependencies: [taskDep("a", { origin: "human" })] })];
-  // Two navigators hold divergent maps; each import contributes only what the
-  // card does not already carry, so the union is order-independent.
-  const fromDeviceOne = overlayImportPlan(cards as never, { dependsOn: { b: "a", c: "b" } });
-  const fromDeviceTwo = overlayImportPlan(cards as never, { dependsOn: { c: "b", b: "a" } });
-  assert.deepEqual(fromDeviceOne, [
-    { stepId: "b", needs: "a" },
-    { stepId: "c", needs: "b" },
-  ]);
-  assert.deepEqual(fromDeviceTwo, fromDeviceOne, "the plan is deterministic regardless of map order");
-  // The canonical human edge c→a is untouched: the plan only ever adds.
-  assert.equal(fromDeviceOne.some((entry) => entry.stepId === "c" && entry.needs === "a"), false);
-  // Once the import lands (the edges are canonical), a second run plans nothing.
-  const imported = [
-    card("a"),
-    card("b", { dependencies: [taskDep("a")] }),
-    card("c", { dependencies: [taskDep("a", { origin: "human" }), taskDep("b")] }),
-  ];
-  assert.deepEqual(overlayImportPlan(imported as never, { dependsOn: { b: "a", c: "b" } }), []);
-});
-
-test("overlayImportPlan skips self-edges and edges to cards that are gone", () => {
-  assert.deepEqual(
-    overlayImportPlan([card("a")] as never, { dependsOn: { a: "a", ghost: "a", a2: "ghost" } }),
-    [],
-  );
 });
 
 // ── Graph walks ──────────────────────────────────────────────────────────────

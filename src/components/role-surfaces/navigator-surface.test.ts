@@ -7,6 +7,7 @@ import { COURSE_LANES, chartRoomStatus } from "./navigator-charts.ts";
 const read = (name: string) => readFileSync(new URL(name, import.meta.url), "utf8");
 
 const surface = read("./navigator-surface.tsx");
+const model = read("./chart-room-model.ts");
 const band = read("./chart-room-band.tsx");
 const decisions = read("./chart-room-decisions.tsx");
 const orchestration = read("./chart-room-orchestration.tsx");
@@ -38,7 +39,7 @@ test("every lens reads one real board", () => {
     surface,
     /useLatestAsyncData<Card\[\]>\(\{[\s\S]*?scopeKey: familiarId[\s\S]*?load: fetchBoard[\s\S]*?errorMessage: "Couldn't load the board\."/,
   );
-  assert.match(surface, /toChartSteps\(cards \?\? \[\], overlay, today\)/);
+  assert.match(surface, /toChartSteps\(cards \?\? \[\], today\)/);
 });
 
 test("moves, renames, reassignments, answers, adds and removals are real writes", () => {
@@ -51,38 +52,31 @@ test("moves, renames, reassignments, answers, adds and removals are real writes"
   assert.match(surface, /publishBoardChanged\(\)/);
 });
 
-test("dependency edits write canonical card fields while the legacy overlay is import-and-prune only", () => {
-  // Dependencies are canonical on the card (`Card.dependencies`), so the board
-  // write carries that field and nothing else. The overlay survives only as a
-  // legacy read-side store the room may import from or cut, never as a
-  // client-invented `dependsOn` the rest of the Cave could not honour.
-  assert.match(surface, /overlay: ChartOverlay/);
-  assert.match(surface, /normalizeOverlay\(state\.overlay, liveIds\)/);
-  assert.match(surface, /overlayImportPlan\(cards, overlay\)/);
-  // The import merges server-side under the board lock (#6258): a stale
-  // snapshot can neither drop another writer's edge nor duplicate an import.
-  assert.match(surface, /body: JSON\.stringify\(\{ ops: \{ dependencyOps: additions \} \}\)/);
-  assert.doesNotMatch(surface, /dependencies: \[\.\.\.existing, \.\.\.additions\]/);
-  // Human link, cut and undo are ops resolved against the current card too
-  // (#6286): no Chart Room edit sends a whole dependency array any more.
+test("dependency edits write canonical card fields and the retired overlay is never read", () => {
+  // Dependencies are canonical on the card (`Card.dependencies`). The old
+  // per-familiar `dependsOn` overlay was imported for one release and is no
+  // longer read, imported, pruned or offered for reset (#6258).
+  for (const retired of [
+    /\bChartOverlay\b/,
+    /normalizeOverlay|overlayImportPlan|forgetStep|setDependency/,
+    /state\.overlay|patch\(\{ overlay/,
+    /\bdependsOn\b/,
+    /Clear legacy links/,
+  ]) {
+    assert.doesNotMatch(surface, retired);
+  }
+  // Human link, cut and undo are ops resolved against the current card
+  // (#6286): no Chart Room edit sends a whole dependency array.
   assert.match(surface, /\{ ops: \{ dependencyOps: \[addition\] \} \}/);
   assert.match(surface, /origin: "human",/);
   assert.match(surface, /\{ ops: \{ dependencyOps: \[\{ op: "removeTask", taskId: parentId \}\] \} \}/);
   assert.match(surface, /\{ ops: \{ dependencyOps: entry\.undo \} \}/);
   assert.doesNotMatch(surface, /\{ dependencies: (?:kept|\[\.\.\.existing|entry\.dependencies)/);
-  assert.match(surface, /setDependency\(overlay, stepId, null\)/);
-  assert.doesNotMatch(surface, /setDependency\(overlay, stepId, parentId\)/);
-  assert.doesNotMatch(surface, /body: JSON\.stringify\(\{[^}]*\bdependsOn\b/);
-  assert.match(
-    surface,
-    /Discard the legacy overlay's surviving links — canonical dependencies on the cards are untouched/,
-    "the reset control says what it does and does not touch",
-  );
 });
 
-test("a dangling edge is pruned on read, not left to draw at nothing", () => {
-  assert.match(surface, /const overlay = useMemo\(\(\) => normalizeOverlay\(/);
-  assert.match(surface, /forgetStep\(overlay, id\)/, "deleting a card cuts its edges both ways");
+test("the room keeps no dependency store of its own", () => {
+  assert.doesNotMatch(model, /\bdependsOn\b\s*:/, "the model has no legacy edge map");
+  assert.doesNotMatch(model, /"overlay"/, "no edge origin outside the canonical record");
 });
 
 // ── No invented data ─────────────────────────────────────────────────────────
