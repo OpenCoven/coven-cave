@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page, type Route } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -6,6 +6,7 @@ import {
   ONBOARDING_BOOTSTRAP_BOUNDARIES,
   type OnboardingBootstrapState,
 } from "../src/lib/onboarding-bootstrap";
+import { HOME_DRAFT_KEY } from "../src/lib/use-composer-draft";
 import {
   daemonConnectionPayload, evaluateShellBootPerformance, shellBootControlStallMs, shellBootLimitMs,
   SHELL_BOOT_PERFORMANCE_PROFILE as profile,
@@ -55,18 +56,27 @@ const sessions = [{
   attention: { state: "none", since: null, reason: null },
 }];
 
-type Counters = { daemonPolls: number; externalBlocked: number };
+type Counters = { daemonPolls: number; daemonRunning: boolean | null; externalBlocked: number };
+
+function freshCounters(): Counters {
+  return { daemonPolls: 0, daemonRunning: null, externalBlocked: 0 };
+}
 
 /**
  * One context per mode: seeded as an already-onboarded workspace, every live
  * mutation refused, every non-origin request aborted, the daemon poll fixed to
  * the mode's state. Counters are swapped per trial by the caller.
+ *
+ * Request interception disables Chromium's HTTP cache for the whole context,
+ * so every trial re-fetches the shell's assets over loopback. "Primed" means
+ * the production server and the browser process have already served and run
+ * Home once; it does not mean a warm HTTP cache. The report says so.
  */
 async function routeShell(context: BrowserContext, baseURL: string, mode: ShellBootMode, counters: () => Counters) {
   await context.addCookies([
     { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
   ]);
-  await context.addInitScript(() => {
+  await context.addInitScript((draftKey) => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
     localStorage.setItem("cave:shell:nav-open", "1");
@@ -75,19 +85,26 @@ async function routeShell(context: BrowserContext, baseURL: string, mode: ShellB
     // otherwise be restored here and the next keystroke would read "kk". Every
     // trial boots the shell with an empty composer, which is what the budget
     // describes.
-    localStorage.removeItem("cave:home-composer-draft:v1");
-  });
+    localStorage.removeItem(draftKey);
+  }, HOME_DRAFT_KEY);
   await context.routeWebSocket(() => true, (socket) => socket.close());
-  // Registered first so it runs last: API routes below take precedence.
-  await context.route("**/*", (route) => {
-    if (new URL(route.request().url()).origin === baseURL) return route.continue();
+  const blockExternal = (route: Route) => {
     counters().externalBlocked += 1;
     return route.abort();
-  });
+  };
+  // Registered first so it runs last: API routes below take precedence.
+  await context.route("**/*", (route) =>
+    new URL(route.request().url()).origin === baseURL ? route.continue() : blockExternal(route));
   const daemon = daemonConnectionPayload(mode);
   await context.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    // The glob is not origin-scoped; a third-party host with /api/ in its path
+    // is still external and must be blocked and counted, not answered.
+    if (url.origin !== baseURL) {
+      await blockExternal(route);
+      return;
+    }
     if (request.method() !== "GET") {
       await route.fulfill({ status: 403, json: { ok: false, error: "Fixture forbids live mutations" } });
       return;
@@ -101,7 +118,13 @@ async function routeShell(context: BrowserContext, baseURL: string, mode: ShellB
     else if (url.pathname === "/api/projects") payload = { ok: true, projects };
     else if (url.pathname === "/api/sessions/list") payload = { ok: true, sessions };
     else if (url.pathname === "/api/queue/project") payload = { ok: true, projectId: "alpha", project: projects[0] };
-    else if (url.pathname === "/api/daemon/connection") { counters().daemonPolls += 1; payload = daemon; }
+    else if (url.pathname === "/api/daemon/connection") {
+      // Record what was actually served, so the sample's daemon state is an
+      // observation of this trial rather than a restatement of the mode.
+      counters().daemonPolls += 1;
+      counters().daemonRunning = daemon.running;
+      payload = daemon;
+    }
     else if (url.pathname === "/api/memory") payload = { ok: true, entries: [] };
     else if (url.pathname === "/api/board") payload = { ok: true, cards: [] };
     else if (url.pathname === "/api/inbox") payload = { ok: true, items: [] };
@@ -136,7 +159,8 @@ for (const mode of profile.modes) {
         "is neither readOnly nor disabled, confirmed by a keystroke landing in its value. Not Lighthouse TTI or INP.",
       limitations: [
         "Production web renderer served by the built standalone server on loopback with synthetic API data",
-        "One primed browser context per mode: HTTP cache warm, each trial a fresh page and JS execution",
+        "One primed browser context per mode (server and browser process have run Home once); each trial is a fresh page",
+        "Request interception disables Chromium's HTTP cache, so every trial re-fetches the shell's assets over loopback; this is not a warm-cache reload",
         mode === "offline"
           ? "Offline means the daemon poll reports the local daemon offline and non-origin requests are aborted; the local server is reachable"
           : "Warm means the daemon poll reports a running local daemon; non-origin requests are aborted in both modes",
@@ -149,24 +173,28 @@ for (const mode of profile.modes) {
       report.verdict = evaluateShellBootPerformance(mode, samples);
       writeFileSync(output, JSON.stringify(report, null, 2));
     };
-    let counters: Counters = { daemonPolls: 0, externalBlocked: 0 };
+    let counters: Counters = freshCounters();
     const context = await browser.newContext({
       baseURL, extraHTTPHeaders, viewport: profile.viewport, serviceWorkers: "block",
     });
     try {
       await routeShell(context, baseURL, mode, () => counters);
-      // Prime: the first load of this context is the cold path and is not graded.
+      // Prime: the first load of this context is the cold path and is not
+      // graded. Wait for the same interactive state the trials measure and for
+      // the first daemon poll, so trial 0 pays no first-time work the primer
+      // was meant to absorb.
       const primer = await context.newPage();
       await primer.goto(profile.route);
-      await expect(composerOf(primer)).toBeVisible({ timeout: 60_000 });
+      await expect(composerOf(primer)).toBeEditable({ timeout: 60_000 });
+      await expect.poll(() => counters.daemonPolls, { timeout: 30_000 }).toBeGreaterThan(0);
       await primer.close();
 
       for (let index = 0; index < profile.trials; index++) {
-        counters = { daemonPolls: 0, externalBlocked: 0 };
+        counters = freshCounters();
         const stallMs = control && index < profile.controlTrials ? shellBootControlStallMs(mode) : 0;
         const sample: typeof samples[number] = {
           index, mode, complete: false, hydrated: false, typedMatches: false,
-          daemonPolls: 0, daemonRunning: mode === "warm", externalBlocked: 0, interactiveMs: NaN, stallMs,
+          daemonPolls: 0, daemonRunning: false, externalBlocked: 0, interactiveMs: NaN, stallMs,
         };
         samples.push(sample);
         const page = await context.newPage();
@@ -204,6 +232,10 @@ for (const mode of profile.modes) {
           await page.keyboard.type(profile.keystroke);
           const typed = await composer.inputValue();
           sample.priorValue = prior;
+          // The supervisor's first poll is asynchronous and may land after the
+          // interactive frame and the keystroke; it is a validity condition, not
+          // part of the timing, so wait for it before reading the counters.
+          await expect.poll(() => counters.daemonPolls, { timeout: 30_000 }).toBeGreaterThan(0);
           const observed = await page.evaluate((composerName) => {
             const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
             const textarea = document.querySelector<HTMLTextAreaElement>(
@@ -220,7 +252,8 @@ for (const mode of profile.modes) {
           if (observed.interactiveMs === null) throw new Error("No interactive frame recorded");
           Object.assign(sample, {
             hydrated: observed.hydrated, typedMatches: prior === "" && typed === profile.keystroke,
-            daemonPolls: counters.daemonPolls, externalBlocked: counters.externalBlocked,
+            daemonPolls: counters.daemonPolls, daemonRunning: counters.daemonRunning === true,
+            externalBlocked: counters.externalBlocked,
             interactiveMs: observed.interactiveMs, frames: observed.frames,
             readyStateAtInteractive: observed.readyStateAtInteractive,
             ttfbMs: observed.ttfbMs ?? undefined, domContentLoadedMs: observed.domContentLoadedMs ?? undefined,

@@ -8,11 +8,13 @@ import { PERFORMANCE_BUDGETS } from "../../src/lib/performance-budgets.ts";
  * answering: the textarea exists, hydration effects have run (`readOnly` has
  * flipped to false), it is not disabled, and a real key lands in its value.
  *
- * Warm: the production server and the browser context have already served and
- * loaded Home once, then each measured trial opens a fresh page in that primed
- * context. Offline: the same primed context, but every request outside the
- * local server origin is aborted and the daemon poll says the local daemon is
- * offline. The shell still has to reach the composer.
+ * Warm: the production server and the browser process have already served and
+ * run Home once, then each measured trial opens a fresh page in that primed
+ * context with the daemon poll reporting a running local daemon. Offline: the
+ * same priming, but the daemon poll says the local daemon is offline. In both
+ * modes every request outside the local server origin is aborted, and because
+ * request interception disables Chromium's HTTP cache, every trial re-fetches
+ * the shell's assets over loopback: "primed" is not "cache warm".
  */
 export const SHELL_BOOT_PERFORMANCE_PROFILE = Object.freeze({
   trials: 100,

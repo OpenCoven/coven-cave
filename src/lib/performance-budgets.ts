@@ -140,7 +140,7 @@ export type PerformanceBudget = {
  * one that stayed prose: `cli.doctor.p95-ms` read "matches EXEC_TIMEOUT_MS in
  * src/app/api/coven/exec/route.ts" — a claim about a specific constant, with
  * nothing to notice when that constant moved. Prose is fine for a number no
- * code owns yet (a shell-boot deadline nothing measures), but the moment an
+ * code owns yet (the shell-boot deadlines were that until #6333), but the moment an
  * entry names a file in this repository it has to say so in a form a test can
  * resolve, and `performance-budgets.test.ts` refuses any source that names a
  * repository file without using this one.

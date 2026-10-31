@@ -89,8 +89,9 @@ shell deadlines were `pending` from the catalogue's first commit (#4788) until
 the [shell boot gate](#production-shell-boot-gate) below (#6333) measured them.
 
 **A `pending` source may be prose only when no code in this repository owns the
-number.** The shell deadlines qualify: nothing declares them, so the
-source names the issue that does. `cli.doctor.p95-ms` did not — it is the exec
+number.** The shell deadlines qualified while nothing measured them: their
+source named the bead that owned the gap, until #6333 gave them a spec.
+`cli.doctor.p95-ms` did not qualify — it is the exec
 route's own request timeout, and it shipped as the prose "matches
 `EXEC_TIMEOUT_MS` in `src/app/api/coven/exec/route.ts`", a claim about a
 specific constant with no gate to notice when that constant moved. That is the
@@ -174,16 +175,28 @@ Each mode opens 100 fresh pages in one primed browser context:
 
 | mode | primed context | daemon poll served | non-origin requests | ceiling |
 | --- | --- | --- | --- | ---: |
-| warm | Home loaded once first, HTTP cache warm | `running: true`, local target | aborted | 3,000 ms p95 |
+| warm | server and browser process have run Home once | `running: true`, local target | aborted | 3,000 ms p95 |
 | offline | same priming | `running: false`, `availability: "offline"`, local target | aborted | 5,000 ms p95 |
 
-"Offline" is the local daemon being down and no external network; the local
-production server is reachable, as it is in the packaged app. The two daemon
-payloads are the exact shapes `classifyDaemonStatusPoll` reads as `running`
-and `offline`, and the helper suite pins that, so the gate cannot drift into
-measuring the `unavailable` banner instead. Each trial also records the daemon
-poll count, blocked external requests, TTFB, DOMContentLoaded and load timings
-for diagnosis; only the interactive frame is graded.
+**Primed is not cache-warm.** Request interception, which the fixture needs to
+serve synthetic API data and abort external traffic, disables Chromium's HTTP
+cache for the whole context, so every trial re-fetches the shell's assets over
+loopback. The number graded is therefore a repeated boot against a warm server
+with a cold browser cache, which is more pessimistic than a real reload and is
+stated in each report's `limitations`. "Offline" is the local daemon being down
+and no external network; the local production server is reachable, as it is in
+the packaged app. The two daemon payloads are the exact shapes
+`classifyDaemonStatusPoll` reads as `running` and `offline`, and the helper
+suite pins that, so the gate cannot drift into measuring the `unavailable`
+banner instead. The route handler records what it actually served, the spec
+waits for that poll before closing a trial, and the composer's prior value must
+be empty (the persisted draft is cleared before every boot). Each trial also
+records blocked external requests, TTFB, DOMContentLoaded and load timings for
+diagnosis; only the interactive frame is graded.
+
+The shell gate gets a 35-minute Playwright global timeout and a 40-minute job,
+sized as two modes of up to 15 minutes each plus the production build; the
+stream gate keeps its 20 minutes.
 
 For each mode separately, the nearest-rank p95 of 100 trials must be at most
 the catalogue ceiling. The median, maximum and every raw trial stay visible.

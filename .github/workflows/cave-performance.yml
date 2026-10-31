@@ -78,7 +78,9 @@ jobs:
   shell:
     name: Production shell boot budgets
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # Two modes of up to 15 minutes each after the production build; the
+    # Playwright global timeout for this gate is 35 minutes.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
