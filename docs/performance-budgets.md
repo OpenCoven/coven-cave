@@ -82,11 +82,13 @@ mean guessing which `scripts/*.mjs` constants are budgets, which is a heuristic
 and not a gate. Adding a build-time budget means adding it to the catalogue and
 to the test's gate list.
 
-`pending` entries are the honest half. The `coven doctor` deadline is an
-approved number with no harness behind it yet; it appears in every report so
-the gap stays visible instead of being mistaken for coverage. The warm/offline
+`pending` entries are the honest half, and none remain. The warm/offline
 shell deadlines were `pending` from the catalogue's first commit (#4788) until
-the [shell boot gate](#production-shell-boot-gate) below (#6333) measured them.
+the [shell boot gate](#production-shell-boot-gate) below (#6333) measured them;
+the `coven doctor` deadline followed with the
+[doctor gate](#production-doctor-gate) (#6346). A new `pending` entry is a
+deliberate act: the report test asserts the count is zero, so adding one means
+changing that assertion in the same change and saying why.
 
 **A `pending` source may be prose only when no code in this repository owns the
 number.** The shell deadlines qualified while nothing measured them: their
@@ -94,7 +96,9 @@ source named the bead that owned the gap, until #6333 gave them a spec.
 `cli.doctor.p95-ms` did not qualify — it is the exec
 route's own request timeout, and it shipped as the prose "matches
 `EXEC_TIMEOUT_MS` in `src/app/api/coven/exec/route.ts`", a claim about a
-specific constant with no gate to notice when that constant moved. That is the
+specific constant with no gate to notice when that constant moved. Now that a
+spec measures it, the same pin lives in the entry's `derivedFrom` and the unit
+suite still resolves it. That is the
 900 KB / 2800 KB drift class exactly, one gate short of being caught. Any source
 naming a repository file now takes the same resolvable `<file> (<CONSTANT>)`
 form as a `postbuild` entry, the unit suite reads the declaration and asserts
@@ -230,6 +234,42 @@ Reports, invocation/build/browser/machine metadata and first-trial screenshots
 live under `artifacts/shell-performance/<invocation-id>/`. Failed runs retain
 their samples; the workflow uploads evidence even when the gate fails.
 See [#6333](https://github.com/OpenCoven/coven-cave/issues/6333).
+
+## Production doctor gate
+
+`cli.doctor.p95-ms` is enforced by `tests/doctor-exec-performance.spec.ts`
+through `pnpm performance:doctor` (#6346). The ceiling is the exec route's own
+`EXEC_TIMEOUT_MS`, so the gate measures what a chat `/doctor` pays: the wall
+clock of `POST /api/coven/exec {"command":"doctor"}` against the built
+standalone server, from request start to parsed JSON body, 100 sequential
+requests after one untimed prime, nearest-rank p95.
+
+| what runs | where | evidence per trial | ceiling |
+| --- | --- | --- | ---: |
+| the pinned released CLI named by `COVEN_BIN` | isolated synthetic home, no engine, no daemon | status, correlation id, `ok`, exit code, output byte counts, wall clock | 6,000 ms p95 |
+
+**The CLI is chosen, not discovered.** The launcher refuses to run without an
+absolute, existing `COVEN_BIN`; the workflow installs the same signed, pinned
+release the iOS lane and the automations canary drive and records its reported
+version in the invocation. In that home `doctor` reports and exits 1 (no
+engine); the budget grades the clock and the exit code is recorded so the
+measured state is explicit.
+
+**What counts as evidence.** A trial is graded only when the route answered
+with the CLI's own completion (HTTP 200, an integer exit code, some output) or
+with its own ceiling (HTTP 504 timeout, which is a latency failure by
+construction). A spawn failure answers 500 in milliseconds and must never read
+as a fast doctor; a missing correlation id or an empty reply is a harness
+fault. Any such trial fails the verdict closed. Output text is not retained
+because `doctor` prints local install paths; byte counts are.
+
+**Positive control.** `--control` wraps the binary in a generated script that
+sleeps past the ceiling while a marker file exists; the spec sets the marker for
+the first six trials, the route's timeout fires, and `verify-doctor-control`
+accepts only a latency-only failure on the exact clean head, through the same
+shared verifier as the stream and shell gates.
+
+The doctor gate gets a 25-minute Playwright global timeout and a 30-minute job.
 
 ## Missing measurements fail closed
 
