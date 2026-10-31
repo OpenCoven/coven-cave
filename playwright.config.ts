@@ -24,13 +24,20 @@ import { resolvePort } from "./scripts/ports.mjs";
 // need a daemon should mock /api/*).
 
 const PORT = resolvePort("e2e", process.env);
+// The browser performance gates (stream, shell boot) always run the production
+// server against an isolated state root their launcher created; a bare
+// `playwright test` cannot opt into them.
 const streamPerformance = process.env.CAVE_STREAM_PERFORMANCE === "1";
-const streamStateRoot = process.env.CAVE_STREAM_STATE_ROOT;
-if (streamPerformance && (!streamStateRoot || !isAbsolute(streamStateRoot) || !existsSync(streamStateRoot))) {
-  throw new Error("Run the stream benchmark with pnpm performance:stream for isolated state");
+const shellPerformance = process.env.CAVE_SHELL_PERFORMANCE === "1";
+const browserPerformance = streamPerformance || shellPerformance;
+const performanceStateRoot = streamPerformance
+  ? process.env.CAVE_STREAM_STATE_ROOT
+  : process.env.CAVE_SHELL_STATE_ROOT;
+if (browserPerformance && (!performanceStateRoot || !isAbsolute(performanceStateRoot) || !existsSync(performanceStateRoot))) {
+  throw new Error("Run the browser performance gates with pnpm performance:stream or pnpm performance:shell for isolated state");
 }
-const fixtureTmpRoot = streamPerformance ? streamStateRoot! : tmpdir();
-const productionE2E = !!process.env.CI || streamPerformance;
+const fixtureTmpRoot = browserPerformance ? performanceStateRoot! : tmpdir();
+const productionE2E = !!process.env.CI || browserPerformance;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_RUN_ID = randomUUID();
 const E2E_PROJECTS_PATH = join(fixtureTmpRoot, `cave-e2e-projects-${E2E_RUN_ID}.json`);
@@ -101,7 +108,7 @@ writeFileSync(E2E_QUEUE_PROJECT_PATH, JSON.stringify({ version: 1, projectId: "e
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
-  globalTimeout: streamPerformance ? 20 * 60_000 : undefined,
+  globalTimeout: browserPerformance ? 20 * 60_000 : undefined,
   forbidOnly: !!process.env.CI,
   // Retry once everywhere: the dev server compiles routes on first hit, so under
   // parallel load a cold route can exceed a test's timeout on the first try and
@@ -255,7 +262,7 @@ export default defineConfig({
     // to an arbitrary server that may be using the developer's real ~/.coven.
     reuseExistingServer: false,
     env: {
-      ...(streamPerformance ? {
+      ...(browserPerformance ? {
         HOME: join(fixtureTmpRoot, "home"),
         USERPROFILE: join(fixtureTmpRoot, "home"),
         XDG_CONFIG_HOME: join(fixtureTmpRoot, "config"),

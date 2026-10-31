@@ -180,7 +180,10 @@ The program's current baseline is recorded in
 The production build measured initial Home JavaScript 1,699 KB, root CSS 594 KB
 against a 640 KB budget, and a 202,649,611-byte standalone artifact. The five
 HTTP launch samples measured server response readiness, not first usable
-interaction. The real-daemon lifecycle samples in
+interaction; the [shell boot gate](performance-budgets.md#production-shell-boot-gate)
+(#6333) now measures warm and daemon-offline boot to an interactive Home
+composer against the two approved shell ceilings, on a synthetic workspace
+over loopback. The real-daemon lifecycle samples in
 [#6120](https://github.com/OpenCoven/coven-cave/issues/6120) use empty synthetic
 homes; they do not establish migrated-profile or packaged-native recovery.
 Keep each receipt's exact source/binary/probe provenance.

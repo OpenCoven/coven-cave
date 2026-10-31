@@ -21,7 +21,7 @@ entry is treated:
 | --- | --- | --- |
 | `performance-report` | Evaluated by `scripts/cave-performance-report.mjs` against the metrics that run produced. | Yes |
 | `postbuild` | Already enforced by a build-time gate; recorded here for completeness and deliberately not re-evaluated. | No — its own gate fails the build |
-| `browser-performance` | Enforced by the isolated production stream browser run. The file/list report delegates to that run. | No — the browser gate fails its own run |
+| `browser-performance` | Enforced by an isolated production browser run (the stream gate or the shell boot gate). The file/list report delegates to that run. | No — the browser gate fails its own run |
 | `pending` | Value approved and recorded, but no fixture produces the measurement yet. | No — but it is printed on every run |
 
 `postbuild` entries are not re-checked on purpose. Two gates over one number
@@ -82,10 +82,11 @@ mean guessing which `scripts/*.mjs` constants are budgets, which is a heuristic
 and not a gate. Adding a build-time budget means adding it to the catalogue and
 to the test's gate list.
 
-`pending` entries are the honest half. The warm/offline shell deadlines and the
-`coven doctor` deadline are approved numbers
-with no harness behind them yet; they appear in every report so the gap stays
-visible instead of being mistaken for coverage.
+`pending` entries are the honest half. The `coven doctor` deadline is an
+approved number with no harness behind it yet; it appears in every report so
+the gap stays visible instead of being mistaken for coverage. The warm/offline
+shell deadlines were `pending` from the catalogue's first commit (#4788) until
+the [shell boot gate](#production-shell-boot-gate) below (#6333) measured them.
 
 **A `pending` source may be prose only when no code in this repository owns the
 number.** The shell deadlines qualify: nothing declares them, so the
@@ -152,6 +153,56 @@ work from provider, daemon, network and persistence latency. Route interception
 disables HTTP caching; fresh contexts share the built server and browser process,
 so this is not a cold-launch benchmark. Native and real-daemon evidence remain
 separate. See [#6137](https://github.com/OpenCoven/coven-cave/issues/6137).
+
+## Production shell boot gate
+
+Run `pnpm performance:shell` from a worktree with its own installed dependencies
+and no local dotenv files. It builds production code and runs only
+`tests/shell-boot-performance.spec.ts`, with one Chromium worker and no retries,
+through the same allowlisted launcher environment and synthetic state root as
+the stream gate. The performance workflow runs it as its own job on Ubuntu 24.04.
+
+**Interactive means the Home composer accepts a keystroke, not that the server
+answered.** A probe installed before any page script polls each animation frame
+for the composer textarea; the interactive frame is the first in which it exists
+and is neither `readOnly` nor `disabled`. `readOnly` is released by a React
+effect, so the frame also proves hydration ran. The spec then clicks the
+composer, types one key and requires that key to be its value. Page errors, a
+missing daemon poll, a rejected keystroke or a missing frame fail the trial.
+
+Each mode opens 100 fresh pages in one primed browser context:
+
+| mode | primed context | daemon poll served | non-origin requests | ceiling |
+| --- | --- | --- | --- | ---: |
+| warm | Home loaded once first, HTTP cache warm | `running: true`, local target | aborted | 3,000 ms p95 |
+| offline | same priming | `running: false`, `availability: "offline"`, local target | aborted | 5,000 ms p95 |
+
+"Offline" is the local daemon being down and no external network; the local
+production server is reachable, as it is in the packaged app. The two daemon
+payloads are the exact shapes `classifyDaemonStatusPoll` reads as `running`
+and `offline`, and the helper suite pins that, so the gate cannot drift into
+measuring the `unavailable` banner instead. Each trial also records the daemon
+poll count, blocked external requests, TTFB, DOMContentLoaded and load timings
+for diagnosis; only the interactive frame is graded.
+
+For each mode separately, the nearest-rank p95 of 100 trials must be at most
+the catalogue ceiling. The median, maximum and every raw trial stay visible.
+Unknown modes, missing or duplicated trials, a poll that does not match the
+mode, or any incomplete trial fail closed. This is a regression gate on a fixed
+synthetic workspace served over loopback, not a cold-launch, native-shell,
+Tauri-sidecar or real-profile measurement; those remain separate evidence
+under #6119.
+
+`pnpm performance:shell --control` busy-waits the main thread for the ceiling
+plus 500 ms before any page script in six trials per mode, which must fail the
+same p95 gate with complete samples. The workflow's `shell_control` input runs
+that deliberate failure and `scripts/verify-shell-control.mjs` checks the CLI
+exit, complete raw samples, clean expected head and Playwright results.
+
+Reports, invocation/build/browser/machine metadata and first-trial screenshots
+live under `artifacts/shell-performance/<invocation-id>/`. Failed runs retain
+their samples; the workflow uploads evidence even when the gate fails.
+See [#6333](https://github.com/OpenCoven/coven-cave/issues/6333).
 
 ## Missing measurements fail closed
 

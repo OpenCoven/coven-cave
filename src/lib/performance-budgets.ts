@@ -460,8 +460,8 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     unit: "ms",
     direction: "lower-is-better",
     limit: 3_000,
-    gate: "pending",
-    source: "cave-o8gc4: warm/offline shell timing harness is not built yet",
+    gate: "browser-performance",
+    source: "tests/shell-boot-performance.spec.ts",
   },
   {
     id: "shell.offline-boot.p95-ms",
@@ -470,8 +470,8 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     unit: "ms",
     direction: "lower-is-better",
     limit: 5_000,
-    gate: "pending",
-    source: "cave-o8gc4: warm/offline shell timing harness is not built yet",
+    gate: "browser-performance",
+    source: "tests/shell-boot-performance.spec.ts",
   },
   {
     id: "stream.10k-event.input-blocking-p95-ms",
