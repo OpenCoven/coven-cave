@@ -91,7 +91,11 @@ export function isDoctorExecEvidence(candidate: unknown, command: DoctorExecComm
   if (!isCount(sample.stdoutBytes) || !isCount(sample.stderrBytes)) return false;
   if (typeof sample.wallMs !== "number" || !Number.isFinite(sample.wallMs) || sample.wallMs < 0) return false;
   if (sample.timedOut) {
-    return sample.status === 504 && sample.ok === false && sample.exitCode === null;
+    // The route's ceiling fired. That is a latency failure by construction
+    // only if the clock agrees; a 504 that arrived quickly is a route fault
+    // and must not enter the distribution as a fast doctor.
+    return sample.status === 504 && sample.ok === false && sample.exitCode === null &&
+      sample.wallMs >= doctorExecLimitMs(command);
   }
   return sample.status === 200 &&
     typeof sample.exitCode === "number" && Number.isInteger(sample.exitCode) &&

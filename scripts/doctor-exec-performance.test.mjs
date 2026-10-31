@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  buildDoctorInvocation, controlWrapperSource, parseDoctorArguments, resolveCovenBinary,
+  buildDoctorInvocation, launcherSource, parseDoctorArguments, resolveCovenBinary,
 } from "./run-doctor-performance.mjs";
 import { buildShellInvocation } from "./run-shell-performance.mjs";
 import {
@@ -14,7 +14,7 @@ import {
   isDoctorExecEvidence,
   DOCTOR_EXEC_PERFORMANCE_PROFILE,
 } from "../tests/fixtures/doctor-exec-performance.ts";
-import { PERFORMANCE_BUDGETS } from "../src/lib/performance-budgets.ts";
+import { PERFORMANCE_BUDGETS, budgetSourceDerivation } from "../src/lib/performance-budgets.ts";
 import { verifyDoctorControl } from "./verify-doctor-control.mjs";
 
 function samples(wallMs = 100, command = "doctor") {
@@ -29,13 +29,13 @@ test("the ceiling is the catalogue's doctor deadline, which is pinned to the exe
   assert.equal(doctorExecLimitMs("doctor"), budget.limit);
   assert.equal(budget.gate, "browser-performance");
   assert.equal(budget.source, "tests/doctor-exec-performance.spec.ts");
-  assert.equal(budget.derivedFrom, "src/app/api/coven/exec/route.ts (EXEC_TIMEOUT_MS)");
-  const route = readFileSync(new URL("../src/app/api/coven/exec/route.ts", import.meta.url), "utf8");
-  const declared = /const EXEC_TIMEOUT_MS = ([0-9_]+);/.exec(route);
-  assert.ok(declared, "the exec route declares EXEC_TIMEOUT_MS");
-  assert.equal(doctorExecLimitMs("doctor"), Number(declared[1].replaceAll("_", "")));
-  assert.equal(doctorExecLimitMs("doctor"), 6_000);
-  assert.equal(doctorExecControlStallMs("doctor"), 6_500);
+  // The catalogue suite resolves this derivation against the route source and
+  // asserts the limit equals the constant; this test only pins that the entry
+  // still carries a resolvable pin, so that check keeps applying to it.
+  assert.deepEqual(budgetSourceDerivation(budget.derivedFrom),
+    { file: "src/app/api/coven/exec/route.ts", symbol: "EXEC_TIMEOUT_MS" });
+  assert.equal(doctorExecControlStallMs("doctor"),
+    doctorExecLimitMs("doctor") + DOCTOR_EXEC_PERFORMANCE_PROFILE.controlStallMarginMs);
 });
 
 test("100 complete trials at the ceiling pass with the measured percentiles", () => {
@@ -67,6 +67,13 @@ test("a route timeout is evidence of the ceiling firing, graded by its wall cloc
   const result = evaluateDoctorExecPerformance("doctor", input);
   assert.equal(result.pass, false);
   assert.equal(result.p95Ms, 6_020);
+  // A 504 that arrived before the ceiling is a route fault, not a slow doctor,
+  // and must not enter the distribution.
+  assert.equal(isDoctorExecEvidence({ ...timedOut, wallMs: 5_999 }, "doctor"), false);
+  assert.equal(isDoctorExecEvidence({ ...timedOut, wallMs: 6_000 }, "doctor"), true);
+  const fast504 = samples(10);
+  fast504[0] = { ...timedOut, index: 0, wallMs: 300 };
+  assert.equal(evaluateDoctorExecPerformance("doctor", fast504).p95Ms, null);
   // A CLI that could not be spawned answers 500 in a few milliseconds; that
   // must never read as a fast doctor.
   const spawnFailure = { ...samples()[0], status: 500, ok: false, exitCode: null, stdoutBytes: 0, wallMs: 4 };
@@ -173,18 +180,20 @@ test("the doctor invocation strips credentials like the other gates and passes o
   assert.equal(control.env.CAVE_DOCTOR_CONTROL_MARKER, "/synthetic/state/stall");
   assert.equal(control.env.COVEN_BIN, "/synthetic/state/wrapper.js");
   assert.throws(() => buildDoctorInvocation({ ...base, control: false, covenBin: "coven" }));
+  assert.equal(buildDoctorInvocation({ ...base, control: false, controlMarker: "/ignored" }).env.CAVE_DOCTOR_CONTROL_MARKER, undefined);
 });
 
-test("the control wrapper stalls past the ceiling only while the marker exists, then runs the real CLI", () => {
-  const source = controlWrapperSource({ realBinary: "/pinned/coven.js", marker: "/state/stall", stallMs: 6_500 });
-  assert.ok(source.startsWith("#!/usr/bin/env node\n"), "executable as COVEN_BIN");
-  assert.match(source, /const MARKER = "\/state\/stall";/);
-  assert.match(source, /const STALL_MS = 6500;/);
-  assert.match(source, /if \(existsSync\(MARKER\)\) Atomics\.wait/);
-  assert.match(source, /spawnSync\(process\.execPath, \[REAL, \.\.\.process\.argv\.slice\(2\)\]/, "a .js binary runs under node");
-  assert.match(source, /process\.exit\(result\.status \?\? 1\)/, "the real exit code is preserved");
-  const native = controlWrapperSource({ realBinary: "/pinned/coven", marker: "/state/stall", stallMs: 6_500 });
-  assert.match(native, /spawnSync\(REAL, process\.argv\.slice\(2\)/);
+test("the launcher execs the pinned CLI under this Node and stalls only with a marker present", () => {
+  const clean = launcherSource({ realBinary: "/pinned/coven.js" });
+  assert.ok(clean.startsWith("#!/bin/sh\n"), "executable as COVEN_BIN without depending on PATH for node");
+  assert.ok(clean.includes(`exec '${process.execPath}' '/pinned/coven.js' "$@"`), "a .js binary runs under the launcher's own Node");
+  assert.doesNotMatch(clean, /sleep|\[ -e/, "no stall outside the control");
+  const control = launcherSource({ realBinary: "/pinned/coven.js", marker: "/state/it's.stall", stallMs: 6_500 });
+  assert.ok(control.includes("[ -e '/state/it'\\''s.stall' ] && sleep 6.500\n"), "stall gated on the marker, quoted");
+  assert.ok(control.includes(`exec '${process.execPath}' '/pinned/coven.js' "$@"`), "the same launch as the clean gate");
+  const native = launcherSource({ realBinary: "/pinned/coven" });
+  assert.ok(native.includes(`exec '/pinned/coven' "$@"`), "a native binary runs directly");
+  assert.ok(!native.includes(process.execPath));
 });
 
 const controlHead = "a".repeat(40);

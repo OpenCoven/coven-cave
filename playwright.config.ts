@@ -111,10 +111,12 @@ writeFileSync(E2E_QUEUE_PROJECT_PATH, JSON.stringify({ version: 1, projectId: "e
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
-  // The shell gate runs two modes of up to 15 minutes each after the build;
-  // the doctor gate's 100 requests of at most the 6 s ceiling fit 25; the
+  // The global timeout covers the production build (the server readiness
+  // budget is 20 minutes) plus the measurement. The shell gate runs two modes
+  // of up to 15 minutes each; the doctor gate's worst case is 100 trials at
+  // the 6 s ceiling plus the route's termination grace (about 12 minutes); the
   // stream gate's two patterns fit its original 20 minutes.
-  globalTimeout: shellPerformance ? 35 * 60_000 : doctorPerformance ? 25 * 60_000 : streamPerformance ? 20 * 60_000 : undefined,
+  globalTimeout: shellPerformance || doctorPerformance ? 35 * 60_000 : streamPerformance ? 20 * 60_000 : undefined,
   forbidOnly: !!process.env.CI,
   // Retry once everywhere: the dev server compiles routes on first hit, so under
   // parallel load a cold route can exceed a test's timeout on the first try and

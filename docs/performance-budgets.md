@@ -248,10 +248,16 @@ requests after one untimed prime, nearest-rank p95.
 | --- | --- | --- | ---: |
 | the pinned released CLI named by `COVEN_BIN` | isolated synthetic home, no engine, no daemon | status, correlation id, `ok`, exit code, output byte counts, wall clock | 6,000 ms p95 |
 
-**The CLI is chosen, not discovered.** The launcher refuses to run without an
-absolute, existing `COVEN_BIN`; the workflow installs the same signed, pinned
-release the iOS lane and the automations canary drive and records its reported
-version in the invocation. In that home `doctor` reports and exits 1 (no
+**The CLI is chosen, not discovered.** `pnpm performance:doctor` refuses to
+run without an absolute, existing `COVEN_BIN`; the workflow installs the same
+signed, pinned release the iOS lane and the automations canary drive and
+records its reported version in the invocation. The server does not spawn that
+file directly: it spawns a generated `sh` launcher that `exec`s the pinned CLI
+under the launcher's own Node, the canary's rule for `.js` binaries. The exec
+route's augmented spawn PATH puts managed install directories first, so a
+shebang-launched `coven.js` could otherwise run under a different Node than
+the workflow set up. Both modes share that launch path, and its cost (one `sh`
+exec) is in every trial. In that home `doctor` reports and exits 1 (no
 engine); the budget grades the clock and the exit code is recorded so the
 measured state is explicit.
 
@@ -263,13 +269,16 @@ as a fast doctor; a missing correlation id or an empty reply is a harness
 fault. Any such trial fails the verdict closed. Output text is not retained
 because `doctor` prints local install paths; byte counts are.
 
-**Positive control.** `--control` wraps the binary in a generated script that
-sleeps past the ceiling while a marker file exists; the spec sets the marker for
-the first six trials, the route's timeout fires, and `verify-doctor-control`
-accepts only a latency-only failure on the exact clean head, through the same
-shared verifier as the stream and shell gates.
+**Positive control.** `--control` gives the same launcher a marker file to
+watch: while it exists the launcher sleeps past the ceiling before the `exec`.
+The spec sets the marker for the first six trials, the route's timeout fires,
+and `verify-doctor-control` accepts only a latency-only failure on the exact
+clean head, through the same shared verifier as the stream and shell gates. A
+timeout counts as evidence only when its wall clock is at or past the ceiling;
+a fast 504 is a route fault and fails the verdict closed.
 
-The doctor gate gets a 25-minute Playwright global timeout and a 30-minute job.
+The doctor gate gets a 35-minute Playwright global timeout (build included)
+and a 40-minute job.
 
 ## Missing measurements fail closed
 

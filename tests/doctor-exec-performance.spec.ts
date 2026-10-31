@@ -45,7 +45,7 @@ for (const command of profile.commands) {
         "sequential, after one untimed prime. The ceiling is the route's own EXEC_TIMEOUT_MS.",
       limitations: [
         "Production standalone server on loopback with an isolated synthetic home: no engine, no daemon, no real profile",
-        "The pinned released CLI the invocation records is what runs; its doctor reports and exits 1 in that home",
+        "The pinned released CLI the invocation records is what runs, through a generated sh launcher that pins it to the launcher's Node; its doctor reports and exits 1 in that home",
         "Measured through Playwright's request fixture in the same process as the test, not from a browser or the chat UI",
         "Output text is not retained (it names local paths); only byte counts and the exit code are",
       ],

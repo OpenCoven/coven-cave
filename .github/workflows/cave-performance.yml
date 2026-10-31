@@ -133,9 +133,9 @@ jobs:
   doctor:
     name: Production coven doctor budget
     runs-on: ubuntu-24.04
-    # One hundred sequential requests of at most the 6 s ceiling after the
-    # production build; the Playwright global timeout for this gate is 25 minutes.
-    timeout-minutes: 30
+    # The production build plus one hundred sequential requests of at most the
+    # 6 s ceiling; the Playwright global timeout for this gate is 35 minutes.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -146,7 +146,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: bash scripts/install-playwright-ci.sh chromium
+      # No browser install: the spec drives the route with Playwright's request
+      # fixture and never launches one.
       - name: Install the pinned Coven CLI the route will spawn
         # The same signed, pinned release the iOS lane and the automations
         # canary drive; the gate refuses to measure whatever is on PATH.
