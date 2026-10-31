@@ -42,7 +42,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`event-plane-operations.md`](event-plane-operations.md) — the invalidation WebSocket: switches, rollout modes, what each platform pauses, security, recovery and diagnostics
 - [`device-access.md`](device-access.md) — opt-in tailnet allowlists, desktop-managed browser/iOS pairing, durable grants, revocation, and audit
 - [`cross-environment.md`](cross-environment.md) — neutral defaults across Linux, macOS, and Windows, plus the per-OS deltas and the suite that enforces them
-- [`runtime-startup-supervision.md`](runtime-startup-supervision.md) — why a reachable socket is transport availability, not runtime readiness
+- [`runtime-startup-supervision.md`](runtime-startup-supervision.md) — how Cave supervises the daemon and its own startup workers: the readiness contract, the projected lifecycle states, the one mutation owner, where the fault matrix and diagnostics live, and the startup-worker coordinator with its switches; pinned to the code by `scripts/runtime-startup-supervision-doc.test.mjs` (#6334)
 - [`model-catalog-pipeline.md`](model-catalog-pipeline.md) — the declarative source, generator, and validation workflow for harness model catalogs and context metadata
 - [`first-run-setup-diagnostics.md`](first-run-setup-diagnostics.md) — server-classified failure codes for the first-run bootstrap
 - [`settings-persistence.md`](settings-persistence.md) — why the desktop shell cannot use origin-keyed browser storage as its authoritative store
