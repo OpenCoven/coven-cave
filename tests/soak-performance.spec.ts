@@ -1,16 +1,18 @@
 import { expect, test, type BrowserContext, type Page, type Route } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   createOnboardingBootstrapState,
   ONBOARDING_BOOTSTRAP_BOUNDARIES,
   type OnboardingBootstrapState,
 } from "../src/lib/onboarding-bootstrap";
+import type { JournalMemoryStats } from "../src/lib/journal-memory-stats";
+import type { JournalRecord } from "../src/lib/server/journal-store";
 import { HOME_DRAFT_KEY } from "../src/lib/use-composer-draft";
 import { directoryBytes } from "../scripts/worktree-hygiene.mjs";
 import {
-  evaluateSoakPerformance, expectedSoakSamples,
+  dueSoakHeapSnapshots, evaluateSoakPerformance, expectedSoakSamples,
   SOAK_PERFORMANCE_PROFILE as profile,
   type SoakMode, type SoakSample,
 } from "./fixtures/soak-performance";
@@ -72,6 +74,16 @@ async function routeSoak(context: BrowserContext, baseURL: string, counters: Cou
     else if (url.pathname === "/api/daemon/connection") {
       counters.daemonPolls += 1;
       payload = { ok: true, running: true, availability: "online", targetMode: "local" };
+    }
+    else if (url.pathname === "/api/journal") {
+      const date = url.searchParams.get("date");
+      if (!date) payload = { ok: true, days: [] };
+      else if (url.searchParams.has("stats")) payload = {
+        ok: true, date, stats: { covenOrigin: 0, externalRuntimes: 0, runtimeMemory: 0 } satisfies JournalMemoryStats, context: "", sources: [],
+      };
+      else payload = { ok: true, ...({
+        date, exists: false, entry: { reflectedBy: null, generatedAt: null, reflection: "" }, modified: null, source: null,
+      } satisfies JournalRecord) };
     }
     else if (url.pathname === "/api/memory") payload = { ok: true, entries: [] };
     else if (url.pathname === "/api/board") payload = { ok: true, cards: [] };
@@ -144,7 +156,10 @@ test("the production shell holds steady resource counts over a sustained soak", 
     invocation: JSON.parse(readFileSync(path.join(artifactRoot, "invocation.json"), "utf8")),
     buildId: readFileSync(path.join(process.cwd(), ".next/BUILD_ID"), "utf8").trim(),
     browser: browser.version(), profile, minutes, expectedSamples: expectedSoakSamples(minutes),
-    server: { pid: 0 }, samples, modeVisits, modeErrors, pageErrorMessages: [] as string[],
+    errorCounts: { pageErrors: 0, consoleErrors: 0, browserDiagnostics: 0 },
+    completed: false, runError: null as string | null,
+    heapSnapshots: [] as { minute: number; sampleIndex: number; atMs: number; file: string }[],
+    server: { pid: 0 }, samples, modeVisits, modeErrors, pageErrorMessages: [] as string[], consoleErrorMessages: [] as string[], browserErrorMessages: [] as string[],
     measurement: "Once a minute at wall-clock slots, after a forced garbage collection: resident set of the server process tree, " +
       "open descriptors of the listening process, page retained JS heap, DOM nodes, listeners, documents and frames on the " +
       "retained document, and bytes under the synthetic state root. The verdict is the least-squares growth per hour over " +
@@ -159,12 +174,18 @@ test("the production shell holds steady resource counts over a sustained soak", 
   };
   const output = path.join(artifactRoot, "soak.json");
   const save = () => {
-    report.verdict = evaluateSoakPerformance(samples, minutes);
+    report.errorCounts = { pageErrors, consoleErrors, browserDiagnostics };
+    report.verdict = evaluateSoakPerformance(samples, minutes, {
+      pageErrors, consoleErrors, completed: report.completed,
+      heapSnapshotMinutes: report.heapSnapshots.map(snapshot => snapshot.minute),
+    });
     writeFileSync(output, JSON.stringify(report, null, 2));
   };
   const counters: Counters = { daemonPolls: 0, externalBlocked: 0, apiRequests: 0 };
   const context = await browser.newContext({ baseURL, extraHTTPHeaders, viewport: profile.viewport, serviceWorkers: "block" });
   let pageErrors = 0;
+  let consoleErrors = 0;
+  let browserDiagnostics = 0;
   let cycles = 0;
   try {
     await routeSoak(context, baseURL, counters);
@@ -174,6 +195,19 @@ test("the production shell holds steady resource counts over a sustained soak", 
       pageErrors += 1;
       modeErrors[currentMode] = (modeErrors[currentMode] ?? 0) + 1;
       if (report.pageErrorMessages.length < 20) report.pageErrorMessages.push(`${currentMode}: ${error.message.slice(0, 300)}`);
+    });
+    page.on("console", (message) => {
+      if (message.type() !== "error") return;
+      // Browser-generated diagnostics (including the fixture's deliberate
+      // 403s) have no JS arguments. Keep them separately; application calls to
+      // console.error include React boundary failures and invalidate the run.
+      if (message.args().length === 0) {
+        browserDiagnostics += 1;
+        if (report.browserErrorMessages.length < 20) report.browserErrorMessages.push(`${currentMode}: ${message.text().slice(0, 500)}`);
+        return;
+      }
+      consoleErrors += 1;
+      if (report.consoleErrorMessages.length < 20) report.consoleErrorMessages.push(`${currentMode}: ${message.text().slice(0, 500)}`);
     });
     const cdp = await context.newCDPSession(page);
     await cdp.send("Performance.enable");
@@ -198,6 +232,11 @@ test("the production shell holds steady resource counts over a sustained soak", 
       // failed to load never produces the mode's title. A surface may render
       // its own heading with the same title, so any match proves the mount.
       await expect(pageTitle().first()).toBeAttached({ timeout: 30_000 });
+      if (mode === "journal") {
+        // The shell heading survives a caught room crash. Prove the entry
+        // pane rendered instead of counting the boundary fallback as a visit.
+        await expect(page.getByRole("heading", { name: "Reflection", exact: true })).toBeVisible();
+      }
       modeVisits[mode] = (modeVisits[mode] ?? 0) + 1;
     };
     const start = Date.now();
@@ -207,7 +246,7 @@ test("the production shell holds steady resource counts over a sustained soak", 
       const metric = (name: string) => metrics.find((entry) => entry.name === name)?.value ?? NaN;
       const tree = serverProcessTree(pid);
       samples.push({
-        index, atMs: Date.now() - start, cycles, pageErrors, externalBlocked: counters.externalBlocked,
+        index, atMs: Date.now() - start, cycles, pageErrors, consoleErrors, externalBlocked: counters.externalBlocked,
         documentRetained: (await documentRetained()) === documentToken,
         server: { pid, ...tree, fdCount: serverFdCount(pid) },
         page: {
@@ -218,6 +257,22 @@ test("the production shell holds steady resource counts over a sustained soak", 
         stateBytes: directoryBytes(stateRoot),
       });
       save();
+      // Fixed snapshots attribute retained growth without changing the cycle,
+      // sampling slots, GC policy or growth calculation.
+      for (const minute of dueSoakHeapSnapshots(index, report.heapSnapshots.map(snapshot => snapshot.minute))) {
+        const snapshotPath = path.join(artifactRoot, `minute-${minute}.heapsnapshot`);
+        writeFileSync(snapshotPath, "");
+        const chunk = ({ chunk }: { chunk: string }) => appendFileSync(snapshotPath, chunk);
+        cdp.on("HeapProfiler.addHeapSnapshotChunk", chunk);
+        try {
+          await cdp.send("HeapProfiler.takeHeapSnapshot", { reportProgress: false });
+        } finally {
+          cdp.off("HeapProfiler.addHeapSnapshotChunk", chunk);
+        }
+        report.heapSnapshots.push({ minute, sampleIndex: index, atMs: Date.now() - start, file: path.basename(snapshotPath) });
+        save();
+        console.log(`Heap snapshot: ${snapshotPath}`);
+      }
     };
     // Slots are wall-clock positions from the start; a slot that passed while
     // a switch or a sample was running is recorded as missed, never clustered.
@@ -244,6 +299,10 @@ test("the production shell holds steady resource counts over a sustained soak", 
     await expect(composerOf(page)).toBeEditable({ timeout: 60_000 });
     await sampleDueSlot();
     await page.screenshot({ path: path.join(artifactRoot, "last.png") });
+    report.completed = true;
+  } catch (error) {
+    report.runError = error instanceof Error ? error.message : String(error);
+    throw error;
   } finally {
     await context.close().catch(() => {});
     save();
