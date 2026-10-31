@@ -3,6 +3,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -380,6 +381,25 @@ function budgetRow(result) {
   return `| ${result.budget.surface} | ${result.budget.label} | ${value} | ${formatBudgetLimit(result)} | ${headroom} | ${result.verdict} |`;
 }
 
+/**
+ * One line naming the host the report job ran on. A report written before
+ * #6341 carries only node/platform/arch and is described as such, never as
+ * a host it did not record.
+ */
+export function describeReportHost(runtime) {
+  const parts = [`${runtime?.platform ?? "unknown"}/${runtime?.arch ?? "unknown"}`, `Node ${runtime?.node ?? "unknown"}`];
+  if (typeof runtime?.cpu === "string" && runtime.cpu.length > 0) {
+    const cores = Number.isInteger(runtime.cpuCount) ? ` × ${runtime.cpuCount}` : "";
+    parts.push(`${runtime.cpu.trim()}${cores}`);
+  } else {
+    parts.push("CPU model not recorded");
+  }
+  if (Number.isFinite(runtime?.totalMemoryBytes)) {
+    parts.push(`${(runtime.totalMemoryBytes / 1024 ** 3).toFixed(1)} GiB`);
+  }
+  return parts.join(", ");
+}
+
 export function renderPerformanceReportMarkdown(report) {
   const rows = report.metrics.map((entry) => {
     const baseline = entry.comparison
@@ -422,6 +442,7 @@ ${eventPlaneTopics.map((topic) => `| ${topic} | ${eventPlane.invalidationsByTopi
 - Commit: \`${report.sha}\`
 - Run: \`${report.runId}\` (attempt ${report.runAttempt})
 - Generated: ${report.generatedAt}
+- Host: ${describeReportHost(report.runtime)}
 - Metrics: ${report.summary.metricCount}
 - History points: ${report.summary.historyPoints}
 - Regressions: ${report.summary.regressionCount}
@@ -594,6 +615,12 @@ async function main() {
         node: process.version,
         platform: process.platform,
         arch: process.arch,
+        // The host the report job ran on (#6341). Hosted runners differ in
+        // CPU model between runs, and two runs at one commit have differed
+        // 2× on every list metric; the artifact must say which host it was.
+        cpu: os.cpus()[0]?.model ?? null,
+        cpuCount: os.cpus().length,
+        totalMemoryBytes: os.totalmem(),
       },
       configuration: {
         rooms: process.env.CAVE_STREAM_ROOMS?.trim().toLowerCase() || "all",

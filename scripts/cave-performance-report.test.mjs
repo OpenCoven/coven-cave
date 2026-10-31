@@ -13,6 +13,7 @@ import {
   buildPerformanceReport,
   renderPerformanceReportMarkdown,
   writePerformanceReport,
+  describeReportHost,
 } from "./cave-performance-report.mjs";
 import { enforcedFixtureProfiles } from "../src/lib/performance-budgets.ts";
 import { measureEventPlaneWorkload } from "./event-plane-workload.mjs";
@@ -500,6 +501,29 @@ test("the report names its measured configuration and the workflow can produce t
   assert.match(restore.run, /startswith\("cave-performance-"\)/);
   assert.match(restore.run, /--limit 10/);
   assert.match(restore.run, /for candidate in/);
+});
+
+test("the report names the host the report job ran on, and an older baseline still compares (#6341)", () => {
+  const host = {
+    node: "v24.22.1", platform: "linux", arch: "x64",
+    cpu: "INTEL(R) XEON(R) PLATINUM 8573C  ", cpuCount: 4, totalMemoryBytes: 16759304192,
+  };
+  const older = buildPerformanceReport({
+    conversation: conversation(), reliability: reliability(), budgetCatalogue: [],
+    metadata: metadata({ sha: "b".repeat(40), runId: "16" }),
+  });
+  const current = buildPerformanceReport({
+    conversation: conversation(), reliability: reliability(), budgetCatalogue: [],
+    metadata: metadata({ runtime: host }), baselineReport: older,
+  });
+  assert.deepEqual(current.runtime, host, "the host fields travel with the report as recorded");
+  assert.equal(current.baseline.sha, "b".repeat(40), "a baseline without host fields is still compared");
+  assert.equal(current.summary.historyPoints, 2);
+  const line = (report) => renderPerformanceReportMarkdown(report).split("\n").find((l) => l.startsWith("- Host: "));
+  assert.equal(line(current), "- Host: linux/x64, Node v24.22.1, INTEL(R) XEON(R) PLATINUM 8573C × 4, 15.6 GiB");
+  assert.equal(line(older), "- Host: linux/x64, Node v24.0.0, CPU model not recorded",
+    "a report that did not record its host says so instead of guessing");
+  assert.equal(describeReportHost(undefined), "unknown/unknown, Node unknown, CPU model not recorded");
 });
 
 test("the report carries the event plane's aggregate counters (#5862)", () => {
