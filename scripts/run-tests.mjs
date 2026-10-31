@@ -262,6 +262,7 @@ export const SUITES = {
     "scripts/chat-stream-performance.test.mjs",
     "scripts/shell-boot-performance.test.mjs",
     "scripts/doctor-exec-performance.test.mjs",
+    "scripts/soak-performance.test.mjs",
     "scripts/native-harness-teardown.test.mjs",
     "scripts/ios-performance-trace.test.mjs",
     "scripts/daemon-reliability-benchmark.test.mjs",
@@ -2230,6 +2231,7 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/chat-stream-performance.test.mjs",
   "scripts/shell-boot-performance.test.mjs",
   "scripts/doctor-exec-performance.test.mjs",
+  "scripts/soak-performance.test.mjs",
   "scripts/release-macos-signing.test.mjs",
   "scripts/tweet-thread-protocol-drift.test.mjs",
   // imports the TypeScript Client v1 HPKE test codec

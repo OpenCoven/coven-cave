@@ -4,6 +4,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { resolvePort } from "./scripts/ports.mjs";
+import { SOAK_PERFORMANCE_PROFILE } from "./tests/fixtures/soak-performance.ts";
 
 // Playwright config — three viewport projects so the same specs in
 // tests/mobile/ run against desktop AND two real mobile presets.
@@ -30,14 +31,24 @@ const PORT = resolvePort("e2e", process.env);
 const streamPerformance = process.env.CAVE_STREAM_PERFORMANCE === "1";
 const shellPerformance = process.env.CAVE_SHELL_PERFORMANCE === "1";
 const doctorPerformance = process.env.CAVE_DOCTOR_PERFORMANCE === "1";
-const browserPerformance = streamPerformance || shellPerformance || doctorPerformance;
+const soakPerformance = process.env.CAVE_SOAK_PERFORMANCE === "1";
+const browserPerformance = streamPerformance || shellPerformance || doctorPerformance || soakPerformance;
 const performanceStateRoot = streamPerformance
   ? process.env.CAVE_STREAM_STATE_ROOT
   : shellPerformance
     ? process.env.CAVE_SHELL_STATE_ROOT
-    : process.env.CAVE_DOCTOR_STATE_ROOT;
+    : doctorPerformance
+      ? process.env.CAVE_DOCTOR_STATE_ROOT
+      : process.env.CAVE_SOAK_STATE_ROOT;
 if (browserPerformance && (!performanceStateRoot || !isAbsolute(performanceStateRoot) || !existsSync(performanceStateRoot))) {
-  throw new Error("Run the browser performance gates with pnpm performance:stream, pnpm performance:shell or pnpm performance:doctor for isolated state");
+  throw new Error("Run the browser performance gates with pnpm performance:stream, pnpm performance:shell, pnpm performance:doctor or pnpm performance:soak for isolated state");
+}
+// The soak lane's duration is its only input (#6347). The launcher validates
+// it; a direct spec invocation is refused here rather than after the build.
+const soakMinutes = soakPerformance ? Number(process.env.CAVE_SOAK_MINUTES) : 0;
+if (soakPerformance && (!Number.isInteger(soakMinutes)
+  || soakMinutes < SOAK_PERFORMANCE_PROFILE.minimumMinutes || soakMinutes > SOAK_PERFORMANCE_PROFILE.maximumMinutes)) {
+  throw new Error(`Run the soak lane with pnpm performance:soak [--minutes N]; CAVE_SOAK_MINUTES must be an integer from ${SOAK_PERFORMANCE_PROFILE.minimumMinutes} to ${SOAK_PERFORMANCE_PROFILE.maximumMinutes}`);
 }
 const fixtureTmpRoot = browserPerformance ? performanceStateRoot! : tmpdir();
 const productionE2E = !!process.env.CI || browserPerformance;
@@ -115,8 +126,11 @@ export default defineConfig({
   // budget is 20 minutes) plus the measurement. The shell gate runs two modes
   // of up to 15 minutes each; the doctor gate's worst case is 100 trials at
   // the 6 s ceiling plus the route's termination grace (about 12 minutes); the
-  // stream gate's two patterns fit its original 20 minutes.
-  globalTimeout: shellPerformance || doctorPerformance ? 35 * 60_000 : streamPerformance ? 20 * 60_000 : undefined,
+  // stream gate's two patterns fit its original 20 minutes; the soak lane runs
+  // for its requested minutes after the build (#6347).
+  globalTimeout: soakPerformance
+    ? (soakMinutes + 35) * 60_000
+    : shellPerformance || doctorPerformance ? 35 * 60_000 : streamPerformance ? 20 * 60_000 : undefined,
   forbidOnly: !!process.env.CI,
   // Retry once everywhere: the dev server compiles routes on first hit, so under
   // parallel load a cold route can exceed a test's timeout on the first try and

@@ -30,6 +30,11 @@ on:
         required: false
         default: false
         type: boolean
+      soak_minutes:
+        description: Run the production soak lane for this many minutes (blank or 0 skips it; 1 to 300). Its evidence is a growth baseline, never a graded budget
+        required: false
+        default: ""
+        type: string
       shell_control:
         description: Verify that injected boot stalls fail only the shell boot budgets
         required: false
@@ -178,6 +183,38 @@ jobs:
         with:
           name: cave-doctor-performance-${{ github.sha }}-${{ github.run_id }}
           path: artifacts/doctor-performance
+          if-no-files-found: error
+          retention-days: 90
+
+  soak:
+    name: Production soak baseline
+    runs-on: ubuntu-24.04
+    if: ${{ inputs.soak_minutes != '' && inputs.soak_minutes != '0' }}
+    # Up to 300 minutes of soak plus the 35-minute Playwright allowance for
+    # the production build, then checkout, install, browser install and the
+    # evidence upload (#6347).
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/install-playwright-ci.sh chromium
+      - name: Soak the production shell and sample resource growth
+        env:
+          SOAK_MINUTES: ${{ inputs.soak_minutes }}
+        run: pnpm performance:soak --minutes "$SOAK_MINUTES"
+      - name: Preserve soak evidence including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cave-soak-performance-${{ github.sha }}-${{ github.run_id }}
+          path: artifacts/soak-performance
           if-no-files-found: error
           retention-days: 90
 
