@@ -2,6 +2,14 @@
 
 Verification snapshot for the Research extraction candidate. Delivery tracking: [#5997](https://github.com/OpenCoven/coven-cave/issues/5997).
 
+**Historical.** Every number below belongs to the 2026-10-15 extraction
+candidate and its build inputs. The current proof of absence, disablement and
+reinstallation on `main` is #6312 / PR #6313, and the current size and
+performance baselines are the measurement receipts on
+[#6119](https://github.com/OpenCoven/coven-cave/issues/6119); the
+[core boundary](research-core-boundary.md) names them. Do not cite this report
+for the present build.
+
 The measurements below compare pre-removal Cave commit
 `022a2408b3e628465c81e839f4419f8378691f9f` with the uncommitted extraction
 candidate based on `fec9f7c42ce663beb16793b63ad34987b7b2ee9c`, using Research

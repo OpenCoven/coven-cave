@@ -465,6 +465,44 @@ test("the workflow benchmarks the fixture the enforced budgets were seeded again
   assert.equal(workflow.on.workflow_dispatch.inputs.iterations.default, "");
 });
 
+test("the report names its measured configuration and the workflow can produce the absent one (#6338)", async () => {
+  const implied = buildPerformanceReport({
+    conversation: conversation(), reliability: reliability(), metadata: metadata(), budgetCatalogue: [],
+  });
+  assert.deepEqual(implied.configuration, { rooms: "all", researchPackageInstalled: true },
+    "a report that does not say is the default, installed build");
+  const absent = buildPerformanceReport({
+    conversation: conversation(), reliability: reliability(), budgetCatalogue: [],
+    metadata: metadata({ configuration: { rooms: "none", researchPackageInstalled: false } }),
+  });
+  assert.deepEqual(absent.configuration, { rooms: "none", researchPackageInstalled: false });
+
+  const workflow = parse(
+    await readFile(new URL("../.github/workflows/cave-performance.yml", import.meta.url), "utf8"),
+  );
+  assert.equal(workflow.on.workflow_dispatch.inputs.rooms_absent.default, false);
+  const absentRooms = "${{ inputs.rooms_absent && 'none' || '' }}";
+  for (const job of ["stream", "report"]) {
+    assert.equal(workflow.jobs[job].env.CAVE_STREAM_ROOMS, absentRooms, `${job} builds the chosen visibility`);
+    const steps = workflow.jobs[job].steps;
+    const install = steps.findIndex((step) => step.run === "pnpm install --frozen-lockfile");
+    const removal = steps.findIndex((step) => /Remove the optional Research package/.test(step.name ?? ""));
+    assert.ok(install >= 0 && removal === install + 1, `${job} removes the package right after install`);
+    assert.equal(steps[removal].if, "${{ inputs.rooms_absent }}");
+    assert.match(steps[removal].run, /rm -rf node_modules\/@opencoven\/research/);
+    assert.match(steps[removal].run, /test ! -e node_modules\/@opencoven\/research/);
+    const upload = steps.find((step) => /upload-artifact/.test(step.uses ?? ""));
+    assert.ok(upload.with.name.startsWith("${{ inputs.rooms_absent && 'rooms-absent-' || '' }}cave-"),
+      `${job} evidence says when it is the absent configuration`);
+  }
+  // The absent artifact is not a baseline: the restore step only accepts
+  // default-named report artifacts and keeps looking past runs without one.
+  const restore = workflow.jobs.report.steps.find((step) => step.name === "Restore previous report");
+  assert.match(restore.run, /startswith\("cave-performance-"\)/);
+  assert.match(restore.run, /--limit 10/);
+  assert.match(restore.run, /for candidate in/);
+});
+
 test("the report carries the event plane's aggregate counters (#5862)", () => {
   const eventPlane = measureEventPlaneWorkload();
   assert.deepEqual(eventPlane.invalidationsByTopic, { sessions: 50, board: 50, runs: 0, familiars: 50, daemon: 50 });

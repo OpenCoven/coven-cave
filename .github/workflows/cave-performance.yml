@@ -25,6 +25,11 @@ on:
         required: false
         default: false
         type: boolean
+      rooms_absent:
+        description: Measure the all-optional-rooms-absent configuration (NEXT_PUBLIC_CAVE_ROOMS=none with the Research package removed after install); its evidence is named rooms-absent and never becomes the scheduled baseline
+        required: false
+        default: false
+        type: boolean
       shell_control:
         description: Verify that injected boot stalls fail only the shell boot budgets
         required: false
@@ -44,6 +49,9 @@ jobs:
     name: Production stream budget
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    env:
+      # Blank keeps the lane's default build (every room, Research installed).
+      CAVE_STREAM_ROOMS: ${{ inputs.rooms_absent && 'none' || '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -54,6 +62,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Remove the optional Research package (rooms-absent configuration)
+        if: ${{ inputs.rooms_absent }}
+        run: |
+          rm -rf node_modules/@opencoven/research
+          test ! -e node_modules/@opencoven/research
       - run: bash scripts/install-playwright-ci.sh chromium
       - name: Measure the fixed production stream workload
         if: ${{ !inputs.stream_control }}
@@ -70,7 +83,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: cave-stream-performance-${{ github.sha }}-${{ github.run_id }}
+          name: ${{ inputs.rooms_absent && 'rooms-absent-' || '' }}cave-stream-performance-${{ github.sha }}-${{ github.run_id }}
           path: artifacts/stream-performance
           if-no-files-found: error
           retention-days: 90
@@ -122,6 +135,7 @@ jobs:
       # rather than coercing it to zero.
       CAVE_BENCH_ITERATIONS: ${{ inputs.iterations }}
       CAVE_BENCH_PROFILE: ${{ inputs.profile || 'phase-6-list-10k' }}
+      CAVE_STREAM_ROOMS: ${{ inputs.rooms_absent && 'none' || '' }}
       REPORT_ROOT: artifacts/cave-performance
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -137,6 +151,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Remove the optional Research package (rooms-absent configuration)
+        if: ${{ inputs.rooms_absent }}
+        run: |
+          rm -rf node_modules/@opencoven/research
+          test ! -e node_modules/@opencoven/research
+
       - name: Restore previous report
         id: baseline
         env:
@@ -144,24 +164,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          previous_run_id="$(gh run list \
+          # The newest successful run that produced a default-configuration
+          # report. A rooms-absent dispatch names its artifact differently and
+          # is skipped here, so it never becomes the scheduled lane's baseline.
+          previous_run_id=""
+          artifact_id=""
+          for candidate in $(gh run list \
             --repo "$GITHUB_REPOSITORY" \
             --workflow cave-performance.yml \
             --branch main \
             --status success \
-            --limit 1 \
+            --limit 10 \
             --json databaseId \
-            --jq '.[0].databaseId // empty')"
+            --jq '.[].databaseId'); do
+            artifact_id="$(gh api \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$candidate/artifacts" \
+              --jq '[.artifacts[] | select(.name | startswith("cave-performance-"))] | sort_by(.created_at) | last | .id // empty')"
+            if [ -n "$artifact_id" ]; then
+              previous_run_id="$candidate"
+              break
+            fi
+            echo "Run $candidate has no default-configuration performance artifact; skipping."
+          done
           if [ -z "$previous_run_id" ]; then
-            echo "No previous successful performance run found."
-            exit 0
-          fi
-
-          artifact_id="$(gh api \
-            "repos/$GITHUB_REPOSITORY/actions/runs/$previous_run_id/artifacts" \
-            --jq '[.artifacts[] | select(.name | startswith("cave-performance-"))] | sort_by(.created_at) | last | .id // empty')"
-          if [ -z "$artifact_id" ]; then
-            echo "Previous run $previous_run_id has no performance artifact."
+            echo "No previous successful performance run with a default-configuration report found."
             exit 0
           fi
 
@@ -205,7 +231,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: cave-performance-${{ github.sha }}-${{ github.run_id }}
+          name: ${{ inputs.rooms_absent && 'rooms-absent-' || '' }}cave-performance-${{ github.sha }}-${{ github.run_id }}
           path: artifacts/cave-performance
           if-no-files-found: error
           retention-days: 90
