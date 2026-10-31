@@ -77,11 +77,18 @@ export async function register() {
       console.warn("[instrumentation] scheduled chat failed to start:", error);
     });
   }
-  const watcher = await import("@/lib/github-watcher");
-  if (shutdown.registerStartupWorker("github-watcher", watcher.stopGithubWatcher)) {
+  try {
+    // The watcher is its own admission point (#6350): every activation
+    // registers `stopGithubWatcher` as the `github-watcher` drain and owns no
+    // timer once shutdown began, so the subscriptions route's module-load
+    // start shares this drain. Wrapped like Research: a failed optional
+    // feature must not stop backup from registering.
+    const watcher = await import("@/lib/github-watcher");
     void watcher.startGithubWatcher().catch((error) => {
       console.warn("[instrumentation] GitHub watcher failed to start:", error);
     });
+  } catch (error) {
+    console.warn("[instrumentation] GitHub watcher could not start:", error);
   }
   const backupSync = await import("@/lib/server/backup-sync");
   if (shutdown.registerStartupWorker("backup-sync", () => backupSync.stopBackupSyncScheduler({ pushOnQuit: true }))) {

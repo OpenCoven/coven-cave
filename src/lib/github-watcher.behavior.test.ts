@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { configureGithubWatcher, startGithubWatcher, stopGithubWatcher, tickGithubWatcher } from "./github-watcher";
 import { withinDeadline } from "./async-deadline";
-import { coordinateStartupWorkerShutdown, registerStartupWorker } from "./server/startup-worker-shutdown";
+import { coordinateStartupWorkerShutdown, registerStartupWorker, STARTUP_WORKERS } from "./server/startup-worker-shutdown";
 
 const fixtures = vi.hoisted(() => ({
   subscriptions: vi.fn(), patch: vi.fn(), token: vi.fn(), cursor: vi.fn(),
@@ -57,8 +57,8 @@ afterEach(async () => {
 
 /** The other owners drain at once, so the coordinator reports the watcher alone. */
 function registerOtherWorkers() {
-  for (const name of ["inbox-reminders", "scheduled-chat", "backup-sync", "research"] as const) {
-    registerStartupWorker(name, async () => undefined);
+  for (const name of STARTUP_WORKERS) {
+    if (name !== "github-watcher") registerStartupWorker(name, async () => undefined);
   }
 }
 
@@ -588,4 +588,9 @@ test("a start or settings change after shutdown began saves settings but owns no
   await vi.advanceTimersByTimeAsync(60_000);
   expect(fetcher).not.toHaveBeenCalled();
   expect(vi.getTimerCount()).toBe(0);
+  // The fenced activation leaves the owner suspended: a direct tick after the
+  // drain reads nothing and writes nothing.
+  await tickGithubWatcher();
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(fixtures.cursor).not.toHaveBeenCalled();
 });

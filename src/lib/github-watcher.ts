@@ -218,10 +218,16 @@ export async function tickGithubWatcher(): Promise<void> {
 }
 
 function activate(state: WatcherState, subs: GithubSubscriptions | null): void {
+  // Register the drain before anything else. False means shutdown already
+  // began: the coordinator then invokes `stopGithubWatcher` synchronously, which
+  // only queues behind `state.transition` (the transition running this very
+  // call), so it cannot re-enter or deadlock here. Stay suspended so a later
+  // `tickGithubWatcher` admits nothing either; the slow read retry included.
+  if (!registerStartupWorker("github-watcher", stopGithubWatcher)) {
+    state.suspended = true;
+    return;
+  }
   state.suspended = false;
-  // False means shutdown already began: the coordinator drains this owner
-  // and nothing new is admitted, including the slow read retry.
-  if (!registerStartupWorker("github-watcher", stopGithubWatcher)) return;
   if (subs && !eligible(subs)) return;
   // Unknown settings retain one slow read retry. Only confirmed ineligibility
   // stops polling; never use unavailable data to admit network or write work.
