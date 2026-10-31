@@ -231,6 +231,33 @@ live under `artifacts/shell-performance/<invocation-id>/`. Failed runs retain
 their samples; the workflow uploads evidence even when the gate fails.
 See [#6333](https://github.com/OpenCoven/coven-cave/issues/6333).
 
+## Production soak lane
+
+Run `pnpm performance:soak [--minutes N]` (default 120, at most 300) from a
+worktree with its own installed dependencies and no local dotenv files. It
+builds production code and runs only `tests/soak-performance.spec.ts` through
+the same allowlisted launcher environment and synthetic state root as the
+stream and shell gates. One page in one primed context stays alive for the
+requested minutes, cycling the Home modes `chat`, `board`, `inbox`, `code`,
+`journal` and `canvas` by client navigation and returning to an interactive
+Home composer each cycle.
+
+Once a minute, after a forced garbage collection, the lane samples the server
+process (resident set, open descriptors where the host exposes them), the page
+(retained JS heap, DOM nodes, listeners, documents, frames) and the bytes under
+the synthetic state root. The verdict in `artifacts/soak-performance/<id>/soak.json`
+reports each series' first, last and maximum values and its least-squares
+growth per hour over the final two thirds of the run. **It grades no ceiling:**
+the catalogue has no soak budgets yet, and the numbers are the maintainer's to
+choose from this evidence. The verdict fails closed on an incomplete run (too
+few samples, a short duration, a missing series, a page error, a changed server
+pid, or a cycle that did not come back to the composer), so a crash never reads
+as "no growth".
+
+The workflow's `soak_minutes` input runs the lane as its own job; blank or `0`
+skips it, so the schedule never pays for it. See
+[#6347](https://github.com/OpenCoven/coven-cave/issues/6347).
+
 ## Missing measurements fail closed
 
 An enforced budget whose metric is absent is recorded as `unmeasured`, and an
