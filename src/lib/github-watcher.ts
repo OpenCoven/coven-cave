@@ -2,6 +2,7 @@ import { createItem, loadInbox } from "@/lib/cave-inbox";
 import { broadcastCreated } from "@/lib/inbox-scheduler";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { withinDeadline } from "./async-deadline.ts";
+import { registerStartupWorker } from "./server/startup-worker-shutdown.ts";
 import {
   diffCompletedRuns,
   diffOpenedPrs,
@@ -25,6 +26,13 @@ import {
  *
  * One process-local owner survives hot reloads. Configuration transitions
  * cancel reads and drain admitted persistence before changing subscriptions.
+ *
+ * The owner is also the `github-watcher` startup worker (#6350): every
+ * activation registers `stopGithubWatcher` as its drain, so a coordinated
+ * shutdown clears the timer, cancels the read and waits for an admitted inbox
+ * or cursor write before the process exits, and an activation after shutdown
+ * began owns no timer. Registration is idempotent, so the route's module-load
+ * start and instrumentation share one drain.
  */
 
 const TICK_MS = 60_000;
@@ -211,6 +219,9 @@ export async function tickGithubWatcher(): Promise<void> {
 
 function activate(state: WatcherState, subs: GithubSubscriptions | null): void {
   state.suspended = false;
+  // False means shutdown already began: the coordinator drains this owner
+  // and nothing new is admitted, including the slow read retry.
+  if (!registerStartupWorker("github-watcher", stopGithubWatcher)) return;
   if (subs && !eligible(subs)) return;
   // Unknown settings retain one slow read retry. Only confirmed ineligibility
   // stops polling; never use unavailable data to admit network or write work.

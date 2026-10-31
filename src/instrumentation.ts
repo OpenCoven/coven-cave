@@ -78,9 +78,11 @@ export async function register() {
     });
   }
   const watcher = await import("@/lib/github-watcher");
-  void watcher.startGithubWatcher().catch((error) => {
-    console.warn("[instrumentation] GitHub watcher failed to start:", error);
-  });
+  if (shutdown.registerStartupWorker("github-watcher", watcher.stopGithubWatcher)) {
+    void watcher.startGithubWatcher().catch((error) => {
+      console.warn("[instrumentation] GitHub watcher failed to start:", error);
+    });
+  }
   const backupSync = await import("@/lib/server/backup-sync");
   if (shutdown.registerStartupWorker("backup-sync", () => backupSync.stopBackupSyncScheduler({ pushOnQuit: true }))) {
     void backupSync.startBackupSyncScheduler().catch(error => {
