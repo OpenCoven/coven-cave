@@ -50,7 +50,8 @@ const SESSIONS = [
 const WIDE_MARKDOWN = `Here is the plan.
 
 \`\`\`ts
-const reallyLongIdentifierThatShouldScrollHorizontallyInsideTheCodeBlockAndNotBreakThePageLayoutEvenOnADesktopWideColumn = await reconcileServeRoutes();
+// The reply column fills the pane, so the line must outrun a 2400px window too.
+const reallyLongIdentifierThatShouldScrollHorizontallyInsideTheCodeBlockAndNotBreakThePageLayoutEvenOnADesktopWideColumn${"AndKeepsGoing".repeat(24)} = await reconcileServeRoutes();
 \`\`\`
 
 | Column A | Column B | Column C | Column D | Column E | Column F | Column G |
@@ -304,6 +305,9 @@ test("reading older output retains the same visible composer", async ({ page }) 
 test("the header archive button sends one archive mutation and leaves the session", async ({
   page,
 }) => {
+  // Below 768px the header folds its session actions away; a phone archives
+  // from the chat list row it lands on (chat-list.tsx).
+  test.skip((page.viewportSize()?.width ?? 1280) < 768, "phone header has no session actions");
   await setup(page);
   let archiveRequests = 0;
   await page.route("**/api/sessions/s-response-complete", async (route) => {
@@ -395,8 +399,10 @@ test(`${surface}: reading older output preserves position until unseen content i
   const originalComposer = await composer.elementHandle();
   const live = main.locator(".streaming-turn-response").last();
   const bottomGap = () => transcript.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop);
-  await emit({ kind: "assistant_chunk", text: Array.from({ length: 40 }, (_, i) => `Streaming detail ${i + 1} keeps this response scrollable.`).join("\n\n") + "\n\n" });
-  await expect(live.getByText("Streaming detail 40 keeps this response scrollable.", { exact: true })).toBeVisible();
+  // Enough rows to scroll 600px back even when a 2400px window lays each one
+  // out as a single short line.
+  await emit({ kind: "assistant_chunk", text: Array.from({ length: 120 }, (_, i) => `Streaming detail ${i + 1} keeps this response scrollable.`).join("\n\n") + "\n\n" });
+  await expect(live.getByText("Streaming detail 120 keeps this response scrollable.", { exact: true })).toBeVisible();
   await expect.poll(bottomGap).toBeLessThanOrEqual(4);
   await transcript.hover();
   await page.mouse.wheel(0, -600);

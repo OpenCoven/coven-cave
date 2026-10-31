@@ -111,7 +111,7 @@ assert.match(
 // not disengage the composer, or the rest state hides the chip it hangs from.
 assert.match(
   chatView,
-  /if \(next instanceof Element && next\.closest\("\.ui-popover-portal"\)\) return;\s*\n\s*if \(!dock\.contains\(next\)\) setComposerEngaged\(false\);/,
+  /if \(next instanceof Element && next\.closest\("\.ui-popover-portal"\)\) return;\s*\n\s*if \(!dock\.contains\(next\)\) restComposerAfterPress\(dock\);/,
   "a blur into .ui-popover-portal keeps the composer engaged",
 );
 
