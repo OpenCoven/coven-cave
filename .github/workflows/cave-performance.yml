@@ -35,6 +35,11 @@ on:
         required: false
         default: false
         type: boolean
+      doctor_control:
+        description: Verify that an injected CLI stall fails only the coven doctor budget
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -122,6 +127,57 @@ jobs:
         with:
           name: cave-shell-performance-${{ github.sha }}-${{ github.run_id }}
           path: artifacts/shell-performance
+          if-no-files-found: error
+          retention-days: 90
+
+  doctor:
+    name: Production coven doctor budget
+    runs-on: ubuntu-24.04
+    # The production build plus one hundred sequential requests of at most the
+    # 6 s ceiling; the Playwright global timeout for this gate is 35 minutes.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # No browser install: the spec drives the route with Playwright's request
+      # fixture and never launches one.
+      - name: Install the pinned Coven CLI the route will spawn
+        # The same signed, pinned release the iOS lane and the automations
+        # canary drive; the gate refuses to measure whatever is on PATH.
+        run: |
+          node --experimental-strip-types --input-type=module <<'NODE'
+          import { mkdirSync, appendFileSync } from 'node:fs';
+          import path from 'node:path';
+          import { installPinnedRelease } from './scripts/coven-automations-release-canary.ts';
+          const prefix = path.join(process.env.RUNNER_TEMP, 'doctor-coven');
+          mkdirSync(prefix);
+          const binary = installPinnedRelease(prefix);
+          appendFileSync(process.env.GITHUB_ENV, `COVEN_BIN=${binary}\n`);
+          NODE
+      - name: Measure coven doctor through the exec route
+        if: ${{ !inputs.doctor_control }}
+        run: pnpm performance:doctor
+      - name: Verify the deliberate coven doctor budget failure
+        if: ${{ inputs.doctor_control }}
+        run: |
+          set +e
+          pnpm performance:doctor --control
+          control_exit=$?
+          set -e
+          node scripts/verify-doctor-control.mjs "$control_exit"
+      - name: Preserve doctor evidence including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cave-doctor-performance-${{ github.sha }}-${{ github.run_id }}
+          path: artifacts/doctor-performance
           if-no-files-found: error
           retention-days: 90
 

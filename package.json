@@ -57,6 +57,7 @@
     "performance:report": "node --experimental-strip-types scripts/cave-performance-report.mjs",
     "performance:stream": "node scripts/run-stream-performance.mjs",
     "performance:shell": "node scripts/run-shell-performance.mjs",
+    "performance:doctor": "node scripts/run-doctor-performance.mjs",
     "ios:performance:capture": "node scripts/ios-performance-capture.mjs",
     "test:performance-report": "node --test scripts/cave-performance-report.test.mjs",
     "analyze:bundle": "next experimental-analyze --output",
