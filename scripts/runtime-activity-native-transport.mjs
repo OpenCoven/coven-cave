@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startCave, stopCave, freePort } from './client-v1-conformance.mjs';
-import { removeFixtureRoot } from './native-harness-teardown.mjs';
+import { lateWriteRecord, removeFixtureRoot } from './native-harness-teardown.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 async function sourceFingerprint() {
@@ -531,7 +531,16 @@ try {
     } catch { runReport.daemonStopped = false; }
     if (!runReport.daemonStopped) { runReport.passed = false; process.exitCode = 1; }
   }
-  if (fixturePlan) await rm(fixturePlan, { force: true });
+  // Nothing below may throw out of this finally: a crash here loses
+  // result.json for a run whose suite may have passed (#6340).
+  if (fixturePlan) {
+    try { await rm(fixturePlan, { force: true }); }
+    catch (error) {
+      runReport.fixturePlanRemoved = false;
+      runReport.failure ??= `fixture plan not removed: ${error?.code ?? 'UNKNOWN'} ${fixturePlan}`;
+      runReport.passed = false; process.exitCode = 1;
+    }
+  }
   // Preserve unexpected state rather than removing a home that a detached
   // process might still own, including a failed daemon shutdown.
   let unexpectedDaemonState = false;
@@ -549,7 +558,8 @@ try {
     runReport.fixtureRootRemoved = removal.removed;
     if (!removal.removed) {
       runReport.preservedRoot = root;
-      runReport.teardownLateWrite = { code: removal.code, path: removal.path, entries: removal.entries };
+      runReport.teardownLateWrite = lateWriteRecord(removal);
+      runReport.failure ??= `fixture root not removed: ${removal.code} at ${removal.path}`;
       runReport.passed = false;
       process.exitCode = 1;
     }
@@ -558,8 +568,13 @@ try {
     runReport.passed = false;
     process.exitCode = 1;
   }
-  runReport.candidate.sourceAfter = await sourceFingerprint();
-  runReport.sourceUnchanged = runReport.candidate.sourceBefore === runReport.candidate.sourceAfter;
+  try {
+    runReport.candidate.sourceAfter = await sourceFingerprint();
+    runReport.sourceUnchanged = runReport.candidate.sourceBefore === runReport.candidate.sourceAfter;
+  } catch (error) {
+    runReport.sourceUnchanged = false;
+    runReport.failure ??= `source fingerprint after the run failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
   if (!runReport.sourceUnchanged) { runReport.passed = false; process.exitCode = 1; }
   runReport.finishedAt = new Date().toISOString();
   await writeFile(path.join(evidence, 'result.json'), JSON.stringify(runReport, null, 2) + '\n');
