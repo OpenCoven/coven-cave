@@ -527,6 +527,23 @@ test("the report names the host the report job ran on, and an older baseline sti
   assert.equal(describeReportHost(undefined), "unknown/unknown, Node unknown, CPU model not recorded");
 });
 
+test("the benchmark drains the summary index write before it removes its home (#6344)", async () => {
+  // The index write is scheduled on an unreferenced timer after each cold
+  // scan; a teardown that removes the home first races it and fails a complete
+  // measurement with ENOTEMPTY. Pin the order and the tolerant removal.
+  const source = await readFile(new URL("./conversation-list-benchmark.mjs", import.meta.url), "utf8");
+  const finallyAt = source.lastIndexOf("} finally {");
+  assert.ok(finallyAt > 0, "the benchmark tears down in a finally block");
+  const teardown = source.slice(finallyAt);
+  const flushAt = teardown.indexOf("await flushConversationSummaryIndex()");
+  const removeAt = teardown.indexOf("await rm(benchHome");
+  assert.ok(flushAt >= 0, "teardown flushes the summary index");
+  assert.ok(removeAt > flushAt, "the flush completes before the home is removed");
+  assert.match(teardown.slice(removeAt), /maxRetries: 3, retryDelay: 100/, "removal tolerates a transient ENOTEMPTY");
+  assert.match(source, /flushConversationSummaryIndex,[\s\S]{0,200}\} = await import\("\.\.\/src\/lib\/cave-conversations\.ts"\);\n\ntry \{/,
+    "the seam is imported outside the try so the finally can reach it");
+});
+
 test("the report carries the event plane's aggregate counters (#5862)", () => {
   const eventPlane = measureEventPlaneWorkload();
   assert.deepEqual(eventPlane.invalidationsByTopic, { sessions: 50, board: 50, runs: 0, familiars: 50, daemon: 50 });
