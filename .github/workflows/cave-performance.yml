@@ -190,8 +190,10 @@ jobs:
     name: Production soak baseline
     runs-on: ubuntu-24.04
     if: ${{ inputs.soak_minutes != '' && inputs.soak_minutes != '0' }}
-    # Up to 300 minutes of soak after the production build (#6347).
-    timeout-minutes: 340
+    # Up to 300 minutes of soak plus the 35-minute Playwright allowance for
+    # the production build, then checkout, install, browser install and the
+    # evidence upload (#6347).
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

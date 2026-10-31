@@ -4,6 +4,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { resolvePort } from "./scripts/ports.mjs";
+import { SOAK_PERFORMANCE_PROFILE } from "./tests/fixtures/soak-performance.ts";
 
 // Playwright config — three viewport projects so the same specs in
 // tests/mobile/ run against desktop AND two real mobile presets.
@@ -42,8 +43,13 @@ const performanceStateRoot = streamPerformance
 if (browserPerformance && (!performanceStateRoot || !isAbsolute(performanceStateRoot) || !existsSync(performanceStateRoot))) {
   throw new Error("Run the browser performance gates with pnpm performance:stream, pnpm performance:shell, pnpm performance:doctor or pnpm performance:soak for isolated state");
 }
-// The soak lane's duration is its only input (#6347); the launcher validated it.
+// The soak lane's duration is its only input (#6347). The launcher validates
+// it; a direct spec invocation is refused here rather than after the build.
 const soakMinutes = soakPerformance ? Number(process.env.CAVE_SOAK_MINUTES) : 0;
+if (soakPerformance && (!Number.isInteger(soakMinutes)
+  || soakMinutes < SOAK_PERFORMANCE_PROFILE.minimumMinutes || soakMinutes > SOAK_PERFORMANCE_PROFILE.maximumMinutes)) {
+  throw new Error(`Run the soak lane with pnpm performance:soak [--minutes N]; CAVE_SOAK_MINUTES must be an integer from ${SOAK_PERFORMANCE_PROFILE.minimumMinutes} to ${SOAK_PERFORMANCE_PROFILE.maximumMinutes}`);
+}
 const fixtureTmpRoot = browserPerformance ? performanceStateRoot! : tmpdir();
 const productionE2E = !!process.env.CI || browserPerformance;
 const BASE_URL = `http://127.0.0.1:${PORT}`;

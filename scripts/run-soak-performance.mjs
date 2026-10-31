@@ -11,10 +11,12 @@ import {
   launchPlaywright,
   prepareBrowserPerformanceInvocation,
 } from "./browser-performance-launch.mjs";
+import { SOAK_PERFORMANCE_PROFILE } from "../tests/fixtures/soak-performance.ts";
 
-export const SOAK_DEFAULT_MINUTES = 120;
-export const SOAK_MINIMUM_MINUTES = 1;
-export const SOAK_MAXIMUM_MINUTES = 300;
+// The fixture profile owns the bounds; the launcher only parses against them.
+export const SOAK_DEFAULT_MINUTES = SOAK_PERFORMANCE_PROFILE.defaultMinutes;
+export const SOAK_MINIMUM_MINUTES = SOAK_PERFORMANCE_PROFILE.minimumMinutes;
+export const SOAK_MAXIMUM_MINUTES = SOAK_PERFORMANCE_PROFILE.maximumMinutes;
 
 export function parseSoakArguments(args) {
   if (args.length === 0) return { minutes: SOAK_DEFAULT_MINUTES };

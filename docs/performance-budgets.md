@@ -287,25 +287,37 @@ worktree with its own installed dependencies and no local dotenv files. It
 builds production code and runs only `tests/soak-performance.spec.ts` through
 the same allowlisted launcher environment and synthetic state root as the
 stream and shell gates. One page in one primed context stays alive for the
-requested minutes, cycling the Home modes `chat`, `board`, `inbox`, `code`,
-`journal` and `canvas` by client navigation and returning to an interactive
-Home composer each cycle.
+requested minutes and switches between the Home modes `chat`, `board`,
+`inbox`, `code`, `journal` and `canvas` **in place**, through the shell's own
+`cave:navigate-mode` event, returning to an interactive Home composer each
+cycle. The document is never reloaded: a token set on the first document is
+checked at every sample, so the page series describe what that one document
+retained across every switch, not a page loaded within the last minute. Each
+switch must produce the mode's announced page title, so a closed room or a
+chunk that failed to load cannot count as a visit.
 
-Once a minute, after a forced garbage collection, the lane samples the server
-process (resident set, open descriptors where the host exposes them), the page
-(retained JS heap, DOM nodes, listeners, documents, frames) and the bytes under
-the synthetic state root. The verdict in `artifacts/soak-performance/<id>/soak.json`
-reports each series' first, last and maximum values and its least-squares
-growth per hour over the final two thirds of the run. **It grades no ceiling:**
-the catalogue has no soak budgets yet, and the numbers are the maintainer's to
+Samples are taken at wall-clock slots, one per minute from the start, after a
+forced garbage collection: the server process tree (resident set of the
+listening process and every descendant, the root's own share, the process
+count, and the listening process's open descriptors where the host exposes
+them), the page (retained JS heap, DOM nodes, listeners, documents, frames)
+and the bytes under the synthetic state root. A slot that passes while a
+switch or a sample is running is recorded as missed rather than back-filled;
+the verdict tolerates five percent of the expected slots and reports the
+count. The verdict in `artifacts/soak-performance/<id>/soak.json` reports each
+series' first, last and maximum values and its least-squares growth per hour
+over the final two thirds of that series. **It grades no ceiling:** the
+catalogue has no soak budgets yet, and the numbers are the maintainer's to
 choose from this evidence. The verdict fails closed on an incomplete run (too
-few samples, a short duration, a missing series, a page error, a changed server
-pid, or a cycle that did not come back to the composer), so a crash never reads
-as "no growth".
+many missed slots, a short duration, a missing series, a descriptor count that
+disappears mid-run, a page error, a reloaded document, a changed server pid,
+or a cycle that did not come back to the composer), so a crash never reads as
+"no growth".
 
-The workflow's `soak_minutes` input runs the lane as its own job; blank or `0`
-skips it, so the schedule never pays for it. See
-[#6347](https://github.com/OpenCoven/coven-cave/issues/6347).
+The workflow's `soak_minutes` input runs the lane as its own job (360-minute
+cap: the longest soak, the 35-minute Playwright allowance for the build, and
+setup and upload); blank or `0` skips it, so the schedule never pays for it.
+See [#6347](https://github.com/OpenCoven/coven-cave/issues/6347).
 
 ## Missing measurements fail closed
 

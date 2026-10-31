@@ -1,6 +1,6 @@
 import { expect, test, type BrowserContext, type Page, type Route } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   createOnboardingBootstrapState,
@@ -8,17 +8,20 @@ import {
   type OnboardingBootstrapState,
 } from "../src/lib/onboarding-bootstrap";
 import { HOME_DRAFT_KEY } from "../src/lib/use-composer-draft";
+import { directoryBytes } from "../scripts/worktree-hygiene.mjs";
 import {
   evaluateSoakPerformance, expectedSoakSamples,
   SOAK_PERFORMANCE_PROFILE as profile,
-  type SoakSample,
+  type SoakMode, type SoakSample,
 } from "./fixtures/soak-performance";
 
 // Production soak (#6347, under #6119). One page stays alive for the requested
-// minutes, cycling through Home modes; once a minute the lane forces a GC and
-// samples the server process, the page and the synthetic state root. The
-// verdict reports growth per hour and fails closed on an incomplete run. It
-// grades no ceiling: the catalogue has no soak budgets yet.
+// minutes, switching between Home modes in place through the shell's own
+// navigation event so the document is never reloaded; once a minute, at
+// wall-clock slots, the lane forces a GC and samples the server process tree,
+// the page and the synthetic state root. The verdict reports growth per hour
+// and fails closed on an incomplete run. It grades no ceiling: the catalogue
+// has no soak budgets yet.
 
 test.skip(process.env.CAVE_SOAK_PERFORMANCE !== "1", "Run pnpm performance:soak");
 
@@ -89,12 +92,6 @@ function listeningPid(port: number): number {
   return pids[0];
 }
 
-function serverRssBytes(pid: number): number {
-  const kb = Number(execFileSync("ps", ["-o", "rss=", "-p", String(pid)], { encoding: "utf8" }).trim());
-  if (!Number.isFinite(kb) || kb <= 0) throw new Error(`no resident set for pid ${pid}`);
-  return kb * 1024;
-}
-
 function serverFdCount(pid: number): number | null {
   try {
     if (process.platform === "linux") return readdirSync(`/proc/${pid}/fd`).length;
@@ -103,17 +100,32 @@ function serverFdCount(pid: number): number | null {
   } catch { return null; }
 }
 
-function directoryBytes(root: string): number {
-  let total = 0;
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.isFile()) total += statSync(full).size;
-    }
-  };
-  walk(root);
-  return total;
+/**
+ * Resident set of the listening process and every descendant (a worker or a
+ * forked renderer leaking would otherwise be invisible), with the root's own
+ * share and the tree size so the report names what it covers.
+ */
+function serverProcessTree(rootPid: number): { rssBytes: number; rootRssBytes: number; processes: number } {
+  const out = execFileSync("ps", ["-axo", "pid=,ppid=,rss="], { encoding: "utf8" });
+  const children = new Map<number, number[]>();
+  const rss = new Map<number, number>();
+  for (const line of out.trim().split("\n")) {
+    const [pid, ppid, kb] = line.trim().split(/\s+/).map(Number);
+    if (!Number.isInteger(pid) || !Number.isInteger(ppid) || !Number.isFinite(kb)) continue;
+    rss.set(pid, kb * 1024);
+    children.set(ppid, [...(children.get(ppid) ?? []), pid]);
+  }
+  if (!rss.has(rootPid)) throw new Error(`Server pid ${rootPid} is not running`);
+  let rssBytes = 0;
+  let processes = 0;
+  const stack = [rootPid];
+  while (stack.length > 0) {
+    const pid = stack.pop()!;
+    rssBytes += rss.get(pid) ?? 0;
+    processes += 1;
+    stack.push(...(children.get(pid) ?? []));
+  }
+  return { rssBytes, rootRssBytes: rss.get(rootPid)!, processes };
 }
 
 test("the production shell holds steady resource counts over a sustained soak", async ({ browser, baseURL, extraHTTPHeaders }, testInfo) => {
@@ -127,17 +139,19 @@ test("the production shell holds steady resource counts over a sustained soak", 
   const port = Number(new URL(baseURL).port);
   const samples: SoakSample[] = [];
   const modeErrors: Record<string, number> = {};
+  const modeVisits: Record<string, number> = {};
   const report = {
     invocation: JSON.parse(readFileSync(path.join(artifactRoot, "invocation.json"), "utf8")),
     buildId: readFileSync(path.join(process.cwd(), ".next/BUILD_ID"), "utf8").trim(),
     browser: browser.version(), profile, minutes, expectedSamples: expectedSoakSamples(minutes),
-    server: { pid: 0 }, samples, modeErrors, pageErrorMessages: [] as string[],
-    measurement: "Once a minute after a forced garbage collection: server resident set and open descriptors, " +
-      "page retained JS heap, DOM nodes, listeners, documents and frames, and bytes under the synthetic state root. " +
-      "The verdict is the least-squares growth per hour over the final two thirds of samples; no ceiling is graded.",
+    server: { pid: 0 }, samples, modeVisits, modeErrors, pageErrorMessages: [] as string[],
+    measurement: "Once a minute at wall-clock slots, after a forced garbage collection: resident set of the server process tree, " +
+      "open descriptors of the listening process, page retained JS heap, DOM nodes, listeners, documents and frames on the " +
+      "retained document, and bytes under the synthetic state root. The verdict is the least-squares growth per hour over " +
+      "the final two thirds of each series; no ceiling is graded.",
     limitations: [
       "Production web renderer served by the built standalone server on loopback with synthetic API data",
-      "One page in one primed context cycling Home modes by client navigation; no stream turn, no daemon, no provider",
+      "One page in one primed context switching Home modes in place through the shell's navigate-mode event; no stream turn, no daemon, no provider",
       "Request interception disables Chromium's HTTP cache and aborts every non-origin request",
       "Native shell, Tauri sidecar, real daemon, real profile and iOS are excluded",
     ],
@@ -167,16 +181,35 @@ test("the production shell holds steady resource counts over a sustained soak", 
     await page.goto(profile.homeRoute);
     await expect(composerOf(page)).toBeEditable({ timeout: 60_000 });
     await expect.poll(() => counters.daemonPolls, { timeout: 30_000 }).toBeGreaterThan(0);
+    // The document token proves every later sample was taken on this document:
+    // an in-page mode switch keeps it, any reload or navigation loses it.
+    const documentToken = `soak-${Date.now()}`;
+    await page.evaluate((token) => { (window as unknown as { __soakDocument?: string }).__soakDocument = token; }, documentToken);
+    const documentRetained = () => page.evaluate(() => (window as unknown as { __soakDocument?: string }).__soakDocument);
     const pid = listeningPid(port);
     report.server.pid = pid;
+    const pageTitle = () => page.getByRole("heading", { level: 1, name: profile.modeTitles[currentMode as SoakMode | "home"], exact: true });
+    const switchMode = async (mode: SoakMode | "home") => {
+      currentMode = mode;
+      await page.evaluate(([event, target]) => {
+        window.dispatchEvent(new CustomEvent(event, { detail: { mode: target } }));
+      }, [profile.navigateEvent, mode] as const);
+      // The shell announces the mounted page; a closed room or a chunk that
+      // failed to load never produces the mode's title. A surface may render
+      // its own heading with the same title, so any match proves the mount.
+      await expect(pageTitle().first()).toBeAttached({ timeout: 30_000 });
+      modeVisits[mode] = (modeVisits[mode] ?? 0) + 1;
+    };
     const start = Date.now();
-    const sample = async () => {
+    const sample = async (index: number) => {
       await cdp.send("HeapProfiler.collectGarbage");
       const { metrics } = await cdp.send("Performance.getMetrics");
       const metric = (name: string) => metrics.find((entry) => entry.name === name)?.value ?? NaN;
+      const tree = serverProcessTree(pid);
       samples.push({
-        index: samples.length, atMs: Date.now() - start, cycles, pageErrors, externalBlocked: counters.externalBlocked,
-        server: { pid, rssBytes: serverRssBytes(pid), fdCount: serverFdCount(pid) },
+        index, atMs: Date.now() - start, cycles, pageErrors, externalBlocked: counters.externalBlocked,
+        documentRetained: (await documentRetained()) === documentToken,
+        server: { pid, ...tree, fdCount: serverFdCount(pid) },
         page: {
           jsHeapUsedBytes: metric("JSHeapUsedSize"), jsHeapTotalBytes: metric("JSHeapTotalSize"),
           domNodes: metric("Nodes"), jsEventListeners: metric("JSEventListeners"),
@@ -186,27 +219,30 @@ test("the production shell holds steady resource counts over a sustained soak", 
       });
       save();
     };
-    await sample();
+    // Slots are wall-clock positions from the start; a slot that passed while
+    // a switch or a sample was running is recorded as missed, never clustered.
+    const sampleDueSlot = async () => {
+      const due = Math.floor((Date.now() - start) / profile.sampleIntervalMs);
+      const taken = samples.length > 0 ? samples[samples.length - 1].index : -1;
+      if (due > taken) await sample(due);
+    };
+    await sampleDueSlot();
     await page.screenshot({ path: path.join(artifactRoot, "first.png") });
     const deadline = start + minutes * 60_000;
-    let nextSampleAt = start + profile.sampleIntervalMs;
     while (Date.now() < deadline) {
       for (const mode of profile.modes) {
-        currentMode = mode;
-        await page.goto(`/?mode=${mode}`, { waitUntil: "load" });
+        await switchMode(mode);
         await page.waitForTimeout(profile.dwellMs);
-        if (Date.now() >= nextSampleAt) { await sample(); nextSampleAt += profile.sampleIntervalMs; }
+        await sampleDueSlot();
       }
-      currentMode = "home";
-      await page.goto(profile.homeRoute, { waitUntil: "load" });
+      await switchMode("home");
       await expect(composerOf(page)).toBeEditable({ timeout: 60_000 });
       cycles += 1;
-      if (Date.now() >= nextSampleAt) { await sample(); nextSampleAt += profile.sampleIntervalMs; }
+      await sampleDueSlot();
     }
-    currentMode = "home";
-    await page.goto(profile.homeRoute, { waitUntil: "load" });
+    await switchMode("home");
     await expect(composerOf(page)).toBeEditable({ timeout: 60_000 });
-    while (samples.length < expectedSoakSamples(minutes)) await sample();
+    await sampleDueSlot();
     await page.screenshot({ path: path.join(artifactRoot, "last.png") });
   } finally {
     await context.close().catch(() => {});
