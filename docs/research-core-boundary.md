@@ -14,6 +14,19 @@ The retained core contracts are:
 
 Acceptance requires: core launches with Research absent; ordinary chat, Flow, GitHub, security, and backup tests pass in that configuration; enabling Research restores existing missions/resources without migration loss; startup and idle work are measured before claiming a lag reduction. Removing the speculative surface warmup and blanket route preload is the immediate responsiveness change in #5993.
 
+Current proof (2026-10-30, #6334): absence, startup disablement and
+reinstallation were re-proved on one commit with one persistent synthetic home
+in [#6312](https://github.com/OpenCoven/coven-cave/issues/6312) (PR #6313).
+Absent and disabled refuse with 503 `research-not-installed` or
+`research-disabled`, start no Research timer, and exit 0 on SIGTERM; a link
+stored before removal returns after reinstall; the absent standalone output is
+about 13 MiB and 1,146 files smaller. Build-time detection reads only the
+project's own `node_modules`, so a parent checkout cannot make a nested
+worktree look installed. The hot-disable teardown contract is #6332. The
+startup and idle measurements that would support a lag claim are the #6119
+baselines, not the historical
+[extraction report](research-extraction-verification.md).
+
 
 ## Persistence retained by the optional package boundary
 
