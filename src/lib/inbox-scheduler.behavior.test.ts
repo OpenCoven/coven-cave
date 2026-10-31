@@ -150,6 +150,7 @@ test("a request finishing after coordinated shutdown cannot restart reminders", 
   shutdown.registerStartupWorker("scheduled-chat", async () => undefined);
   shutdown.registerStartupWorker("backup-sync", async () => undefined);
   shutdown.registerStartupWorker("research", async () => undefined);
+  shutdown.registerStartupWorker("github-watcher", async () => undefined);
   const result = await shutdown.coordinateStartupWorkerShutdown(async () => undefined);
   expect(result.workers["inbox-reminders"].status).toBe("drained");
   await scheduler.startScheduler();

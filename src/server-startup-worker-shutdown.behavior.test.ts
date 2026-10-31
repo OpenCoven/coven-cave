@@ -35,6 +35,7 @@ test("the custom server waits for the quit drain even after HTTP closes", async 
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("research", async () => undefined);
+  registerStartupWorker("github-watcher", async () => undefined);
   registerStartupWorker("backup-sync", () => held);
   const server = serverShutdown();
   server.shutdown();
@@ -51,6 +52,7 @@ test("the custom server exits unsuccessfully when the shared deadline leaves wor
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("research", async () => undefined);
+  registerStartupWorker("github-watcher", async () => undefined);
   registerStartupWorker("backup-sync", () => new Promise<void>(() => undefined));
   const server = serverShutdown();
   server.shutdown();
@@ -71,6 +73,7 @@ test("a shutdown during preparation drains registered workers without an HTTP li
   registerStartupWorker("inbox-reminders", async () => undefined);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("research", async () => undefined);
+  registerStartupWorker("github-watcher", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const server = serverShutdown(false);
   server.shutdown();
@@ -85,6 +88,7 @@ test("the custom server waits for an admitted reminder delivery even after HTTP 
   registerStartupWorker("inbox-reminders", () => held);
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("research", async () => undefined);
+  registerStartupWorker("github-watcher", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const server = serverShutdown();
   server.shutdown();
@@ -100,6 +104,7 @@ test("a reminder delivery that outlives the shared deadline is reported, not can
   registerStartupWorker("inbox-reminders", () => new Promise<void>(() => undefined));
   registerStartupWorker("scheduled-chat", async () => undefined);
   registerStartupWorker("research", async () => undefined);
+  registerStartupWorker("github-watcher", async () => undefined);
   registerStartupWorker("backup-sync", async () => undefined);
   const server = serverShutdown();
   server.shutdown();
