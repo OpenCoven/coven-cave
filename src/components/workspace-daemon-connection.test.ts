@@ -171,6 +171,19 @@ test("Workspace applies connection polls through the existing classifier-driven 
   );
   assert.match(
     applyPoll,
+    /if \(result\.kind === "unavailable"\) \{\s*daemonHealthyStreakRef\.current = 0;\s*daemonUnavailableStreakRef\.current \+= 1;[\s\S]*?if \(daemonUnavailableStreakRef\.current < 2\) return;\s*setDaemonStatusResolved\(true\);\s*setDaemonStatusUnavailable\(result\.reason\);\s*return;\s*\}\s*daemonUnavailableStreakRef\.current = 0;\s*setDaemonStatusResolved\(true\);/,
+    "a single slow or failed status read must not paint the banner; any other answer resets the streak",
+  );
+  // #5781: resolving the boot state on a tolerated read, with no notice set,
+  // would let the header read "workbench offline" before any answer arrived.
+  const firstResolve = applyPoll.indexOf("setDaemonStatusResolved(true)");
+  const toleratedReturn = applyPoll.indexOf("if (daemonUnavailableStreakRef.current < 2) return;");
+  assert.ok(
+    toleratedReturn >= 0 && toleratedReturn < firstResolve,
+    "a tolerated unavailable read returns before the boot state resolves",
+  );
+  assert.match(
+    applyPoll,
     /if \(result\.kind === "offline"\) \{[\s\S]*daemonHealthyStreakRef\.current = 0[\s\S]*setDaemonRunning\(false\)[\s\S]*setDaemonOffline\(true\)[\s\S]*return;/,
     "definitive local offline polls should still drive the Start daemon banner path",
   );
