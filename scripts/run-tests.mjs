@@ -1055,6 +1055,8 @@ export const SUITES = {
     "src/components/familiar-analytics-navigation.test.ts",
     "src/lib/profile-card.test.ts",
     "src/components/profile-card.test.ts",
+    "src/lib/canonical-model-id.test.ts",
+    "src/components/familiar-count-agreement.test.ts",
     "src/components/analytics-page-shell.test.ts",
     "src/lib/server/familiar-self-reports.test.ts",
     "src/lib/server/milestones-ledger.test.ts",
@@ -2620,6 +2622,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/mission-defs.test.ts",
   // familiars-view-stats now imports ritualStreak from "@/lib/familiar-renown".
   "src/components/familiars-view-stats.test.ts",
+  // issue 6357: imports the analytics, roster and profile-card models via "@/lib/…".
+  "src/components/familiar-count-agreement.test.ts",
   "src/lib/session-pulse.test.ts",
   "src/lib/weave-map.test.ts",
   "src/components/familiar-analytics-view.test.ts",

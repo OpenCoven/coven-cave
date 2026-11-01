@@ -29,6 +29,7 @@ function stats(overrides: Partial<FamiliarCardStats> = {}): FamiliarCardStats {
     lastSessionAt: daysAgo(1),
     sessionsTotal: 4,
     sessionsLast7d: 4,
+    sessionsLast90d: 4,
     hasActiveSession: true,
     streakDays: 0,
     activity: new Array(14).fill(0),

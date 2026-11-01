@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { COUNT_DEFINITIONS, COUNT_LABELS, memoryCountDisplay } from "@/lib/familiar-counts";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 // Shared relative-time formatter, imported as `age` so the call sites read the
@@ -45,6 +46,7 @@ export function emptyStats(
     lastSessionAt: null,
     sessionsTotal: 0,
     sessionsLast7d: 0,
+    sessionsLast90d: 0,
     hasActiveSession: false,
     streakDays: 0,
     activity: new Array<number>(ACTIVITY_DAYS).fill(0),
@@ -172,20 +174,28 @@ export function FamiliarRosterCard({
         ) : null}
 
         <span className="familiars-view__statband mt-3">
-          <span className="familiars-view__stat">
-            <span className="familiars-view__stat-label">sessions</span>
-            <span className="familiars-view__stat-value">{compactCount(stats.sessionsTotal)}</span>
+          <span className="familiars-view__stat" title={COUNT_DEFINITIONS.recentSessions}>
+            <span className="familiars-view__stat-label">{COUNT_LABELS.recentSessions}</span>
+            <span className="familiars-view__stat-value">{compactCount(stats.sessionsLast90d)}</span>
           </span>
           <span className="familiars-view__stat">
             <span className="familiars-view__stat-label">this week</span>
             <span className="familiars-view__stat-value">{compactCount(stats.sessionsLast7d)}</span>
           </span>
-          <span className="familiars-view__stat">
-            <span className="familiars-view__stat-label">memories</span>
-            <span className="familiars-view__stat-value">
-              {stats.memoryAvailability === "ready"
-                ? compactCount(stats.memoryCount)
-                : "—"}
+          <span
+            className="familiars-view__stat"
+            title={stats.memoryAvailability === "ready"
+              ? COUNT_DEFINITIONS.memories
+              : "Workspace memory could not be read, so the count is unknown."}
+          >
+            <span className="familiars-view__stat-label">{COUNT_LABELS.memories}</span>
+            <span
+              className={`familiars-view__stat-value${stats.memoryAvailability === "ready" ? "" : " familiars-view__stat-value--unavailable"}`}
+            >
+              {memoryCountDisplay(
+                stats.memoryAvailability === "ready" ? stats.memoryCount : null,
+                compactCount,
+              ).value}
             </span>
           </span>
           <span className="familiars-view__stat" title={streakTitle}>

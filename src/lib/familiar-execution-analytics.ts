@@ -1,5 +1,6 @@
 import type { ModelControlFamily, ModelControlValues } from "./model-control-capabilities.ts";
 import type { SessionOrigin } from "./types.ts";
+import { canonicalModelId } from "./canonical-model-id.ts";
 
 export const EXECUTION_ATTEMPT_SCHEMA_VERSION = 1 as const;
 export const EXECUTION_ATTEMPT_LEDGER_VERSION = 1 as const;
@@ -140,6 +141,10 @@ export type FamiliarExecutionSlice = {
   costUsd?: number;
   toolCalls: number;
   toolFailures: number;
+  /** Model slices only: providers seen for this canonical model, sorted. */
+  providers?: string[];
+  /** Model slices only: every raw spelling folded into this row, sorted. */
+  rawIds?: string[];
 };
 
 export type FamiliarExecutionCoverage = KnownDenominator & {
@@ -649,6 +654,33 @@ function slices(
     .sort((a, b) => b.attempts - a.attempts || a.key.localeCompare(b.key));
 }
 
+function rawModelId(attempt: ExecutionAttemptSnapshotV1): string | undefined {
+  return attempt.confirmedModel ?? attempt.forwardedModel ?? attempt.requestedModel;
+}
+
+/**
+ * One row per real model: spellings fold through `canonicalModelId`, the
+ * provider becomes its own field, and the raw strings stay for tooltips.
+ */
+function modelSlices(attempts: ExecutionAttemptSnapshotV1[]): FamiliarExecutionSlice[] {
+  const providers = new Map<string, Set<string>>();
+  const rawIds = new Map<string, Set<string>>();
+  const rows = slices(attempts, (attempt) => {
+    const raw = rawModelId(attempt);
+    if (!raw?.trim()) return undefined;
+    const { id, provider } = canonicalModelId(raw);
+    if (!id) return undefined;
+    if (provider) (providers.get(id) ?? providers.set(id, new Set()).get(id)!).add(provider);
+    (rawIds.get(id) ?? rawIds.set(id, new Set()).get(id)!).add(raw);
+    return id;
+  });
+  return rows.map((row) => ({
+    ...row,
+    providers: [...(providers.get(row.key) ?? [])].sort(),
+    rawIds: [...(rawIds.get(row.key) ?? [])].sort(),
+  }));
+}
+
 function aggregateWindow(
   attempts: ExecutionAttemptSnapshotV1[],
 ): FamiliarExecutionAnalyticsWindow {
@@ -689,12 +721,7 @@ function aggregateWindow(
     ...(totalCost !== undefined ? { costUsd: totalCost } : {}),
     toolCalls,
     toolFailures: toolStatuses.get("error") ?? 0,
-    models: slices(
-      attempts,
-      (attempt) => attempt.confirmedModel ??
-        attempt.forwardedModel ??
-        attempt.requestedModel,
-    ),
+    models: modelSlices(attempts),
     harnesses: slices(
       attempts,
       (attempt) => attempt.harnessId

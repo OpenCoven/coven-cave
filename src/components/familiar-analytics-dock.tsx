@@ -1,6 +1,7 @@
 "use client";
 
 import { memo } from "react";
+import { COUNT_DEFINITIONS, COUNT_LABELS } from "@/lib/familiar-counts";
 import type { FamiliarAnalyticsModel } from "@/components/familiar-analytics-data";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -106,8 +107,11 @@ export const TrustRing = memo(function TrustRing({
  */
 const RenownCard = memo(function RenownCard({
   progression,
+  onOpen,
 }: {
   progression: FamiliarAnalyticsModel["progression"];
+  /** Opens the breakdown: what earns points, the ladder, and where this familiar sits. */
+  onOpen: () => void;
 }) {
   if (!progression) return null;
   const { memoryAvailability, renown, streakDays } = progression;
@@ -136,6 +140,15 @@ const RenownCard = memo(function RenownCard({
           <b>{memoryReady ? renown.score : "—"}</b>
           <span>/{ceiling}</span>
         </span>
+        <button
+          type="button"
+          className="fa-icon-btn fa-icon-btn--xs focus-ring"
+          onClick={onOpen}
+          title="How renown is computed"
+          aria-label="How renown is computed"
+        >
+          <Icon name="ph:arrows-out-simple" width={11} aria-hidden />
+        </button>
       </div>
       {/* One computed value — the progress fraction — carried into CSS once as
           a custom property. The fill, its sheen and the quarter ticks are all
@@ -187,13 +200,13 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
   actions,
   contractReport,
   activeProperty,
-  contractDetail,
   onPickProperty,
   collapsed,
   onToggleCollapsed,
   onRefresh,
   refreshing,
   onOpenTrust,
+  onOpenRenown,
   onOpenSignals,
   onOpenModel,
   onAction,
@@ -208,14 +221,13 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
   actions: DockAction[];
   contractReport: ContractReport | null;
   activeProperty: FamiliarProperty | null;
-  /** Evidence for {@link activeProperty}; null until a property is selected. */
-  contractDetail: ContractPropertyDetail | null;
   onPickProperty: (property: FamiliarProperty) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onRefresh?: () => void;
   refreshing: boolean;
   onOpenTrust: () => void;
+  onOpenRenown: () => void;
   onOpenSignals: () => void;
   onOpenModel: () => void;
   onAction: (request: SelfHealRequest) => void;
@@ -225,7 +237,6 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
 }) {
   const familiarName = model.familiar?.display_name ?? model.familiarId;
   const familiarRole = model.familiar?.role || model.familiar?.harness || "Familiar";
-  const sessionsTotal = model.recentSessions.length;
   const streakDays = model.progression?.streakDays ?? 0;
   const lastActive = model.growthReport?.lastActiveAt ?? model.recentSessions[0]?.updated_at ?? null;
   // The dock's one plain-language sentence about this familiar — the same
@@ -379,9 +390,13 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
           </span>
         </div>
         <div className="fa-identity__stats">
-          <span title="Sessions on record for this familiar">
-            <b>{sessionsTotal}</b>
-            <span>sessions</span>
+          <span title={COUNT_DEFINITIONS.recentSessions}>
+            <b>{model.sessionCounts.recent}</b>
+            <span>{COUNT_LABELS.recentSessions}</span>
+          </span>
+          <span title={COUNT_DEFINITIONS.allTimeSessions}>
+            <b>{model.sessionCounts.allTime}</b>
+            <span>{COUNT_LABELS.allTimeSessions}</span>
           </span>
           <span title={streakDays > 0 ? `${streakDays}-day ritual streak` : "A session today starts a streak"}>
             <b className="fa-identity__streak">
@@ -397,7 +412,7 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
         </div>
       </section>
 
-      <RenownCard progression={model.progression} />
+      <RenownCard progression={model.progression} onOpen={onOpenRenown} />
 
       <button
         type="button"
@@ -525,28 +540,9 @@ export const FamiliarAnalyticsDock = memo(function FamiliarAnalyticsDock({
                 </li>
               ))}
             </ul>
-            {contractDetail ? (
-              <div
-                className={`fa-contract-detail${contractDetail.pass ? " is-pass" : " is-fail"}`}
-              >
-                <div className="fa-contract-detail__head">
-                  <Icon
-                    name={contractDetail.pass ? "ph:check-circle-bold" : "ph:warning-circle"}
-                    width={13}
-                    aria-hidden
-                  />
-                  <b>{contractDetail.property}</b>
-                  <span className="fa-contract-detail__status">
-                    {contractDetail.pass ? "SATISFIED" : "FAILING"}
-                  </span>
-                </div>
-                <p className="fa-contract-detail__body">{contractDetail.body.join(" ")}</p>
-              </div>
-            ) : (
-              <p className="fa-contract-card__hint">
-                Select a property for the evidence behind its verdict.
-              </p>
-            )}
+            <p className="fa-contract-card__hint">
+              Select a property for the evidence behind its verdict.
+            </p>
             {/* A failing contract means this familiar is operating as an agent,
                 not a familiar. Mirror the Studio Contract tab: one click opens
                 a chat seeded with the rehabilitation brief. */}
