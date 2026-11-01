@@ -11,6 +11,7 @@ import {
   covenHelpSupportsAdapterList,
   covenRunSupportsModelFlag,
   covenRunSupportsAddDirFlag,
+  covenRunSupportsWriteScopeFlag,
   isBindableRuntimeChoice,
   isHostOnlyHarness,
   isSummonableLocalHarness,
@@ -20,6 +21,11 @@ import {
   canonicalHarnessId,
   runtimeDisplayLabel,
 } from "./harness-adapters.ts";
+
+assert.equal(covenRunSupportsWriteScopeFlag("--permission <MODE> full read-only --add-dir <DIR>"), false,
+  "legacy Full or add-dir support does not establish scoped-write support");
+assert.equal(covenRunSupportsWriteScopeFlag("  --write-scope <FILE> Explicit Claude scoped-write v1 authority document"), true);
+assert.equal(covenRunSupportsWriteScopeFlag("--write-scope-unsafe"), false);
 
 // Model-parity gating probe: forwarding `--model` must stay off until the
 // installed `coven run` advertises the flag.

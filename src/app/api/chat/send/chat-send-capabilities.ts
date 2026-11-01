@@ -13,6 +13,7 @@ import {
   covenRunSupportsAddDirFlag,
   covenRunSupportsModelFlag,
   covenRunSupportsPermissionFlag,
+  covenRunSupportsWriteScopeFlag,
   covenRunSupportsSpeedFlag,
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
@@ -27,6 +28,7 @@ import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 
 let modelFlagProbe: Promise<HelpProbeOutcome> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
+let writeScopeFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let speedFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
@@ -705,6 +707,16 @@ export function covenRunSupportsPermission(): Promise<boolean> {
     command,
     [...fixedArgs, "run", "--help"],
     covenRunSupportsPermissionFlag,
+    covenWrapperSpawnEnv(harnessSpawnEnv()),
+  ));
+}
+
+export function covenRunSupportsWriteScope(): Promise<boolean> {
+  let launch;
+  try { launch = covenLaunchCommand(); } catch { return Promise.resolve(false); }
+  const { command, fixedArgs } = launch;
+  return (writeScopeFlagProbe ??= probeHelp(
+    command, [...fixedArgs, "run", "--help"], covenRunSupportsWriteScopeFlag,
     covenWrapperSpawnEnv(harnessSpawnEnv()),
   ));
 }

@@ -41,7 +41,7 @@ if (name === "codex" && args.includes("--help")) {
   process.exit(0);
 }
 if (args.includes("--help")) {
-  console.log(name === "opencode" ? "  --format <format>  Output format: text, json\\n  --model <model> Model to use\\n  --session <id> Session to continue" : "--model --add-dir --permission");
+  console.log(name === "opencode" ? "  --format <format>  Output format: text, json\\n  --model <model> Model to use\\n  --session <id> Session to continue" : "--model --add-dir --permission --write-scope");
   process.exit(0);
 }
 if (name === "coven" && args[0] !== "run") { console.log("[]"); process.exit(0); }

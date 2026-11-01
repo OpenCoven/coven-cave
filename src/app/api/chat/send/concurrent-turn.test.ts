@@ -32,7 +32,7 @@ for (const name of ["coven", "claude"]) {
 const { appendFileSync } = require("node:fs");
 const args = process.argv.slice(2);
 if (args.includes("--version")) { console.log("1.0.0"); process.exit(0); }
-if (args.includes("--help")) { console.log("--model --add-dir --permission"); process.exit(0); }
+if (args.includes("--help")) { console.log("--model --add-dir --permission --write-scope"); process.exit(0); }
 if (${JSON.stringify(name)} === "coven" && args[0] !== "run") { console.log("[]"); process.exit(0); }
 appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ name: ${JSON.stringify(name)}, args }) + "\\n");
 console.log(JSON.stringify({ type: "system", session_id: "native-1" }));
