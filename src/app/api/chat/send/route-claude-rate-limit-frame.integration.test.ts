@@ -109,6 +109,7 @@ const FRAMES = [
 
 const shim = [
   "const frames = " + JSON.stringify(FRAMES) + ";",
+  "if (process.argv.includes('--help')) { console.log('--write-scope --model --permission --add-dir'); process.exit(0); }",
   "if (process.env.CLAUDE_TOOL_TEST_MODE === 'unknown-model') frames.find((frame) => frame.message?.id === 'msg_01Second').message.model = 'unknown';",
   "if (process.env.CLAUDE_TOOL_TEST_MODE?.startsWith('invalid-model:')) frames.find((frame) => frame.message?.id === 'msg_01Second').message.model = JSON.parse(process.env.CLAUDE_TOOL_TEST_MODE.slice(14));",
   "if (process.argv[2] === 'run' && process.argv[3] === 'claude') {",

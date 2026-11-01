@@ -52,6 +52,7 @@ const shim = [
   "  }",
   "  process.exit(1);",
   "}",
+  "if (process.argv.includes('--help')) console.log('--write-scope <FILE> --permission <MODE> --add-dir <DIR>');",
   "process.exit(0);",
 ].join("\n");
 const shimScript = path.join(covenBinDir, "coven.js");

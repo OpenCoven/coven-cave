@@ -39,7 +39,7 @@ async function shim(name, source) {
 await shim("coven", `
 const fs = require('node:fs');
 const args = process.argv.slice(2);
-if (args.includes('--help')) { console.log(${JSON.stringify(process.env.META_RUN_NO_PERMISSION ? '--model --stream-json' : '--permission --model --stream-json')}); process.exit(0); }
+if (args.includes('--help')) { console.log(${JSON.stringify(process.env.META_RUN_NO_PERMISSION ? '--model --stream-json' : '--permission --write-scope --model --stream-json')}); process.exit(0); }
 if (args[0] !== 'run') process.exit(0);
 fs.appendFileSync(${JSON.stringify(capture)}, JSON.stringify(args) + '\\n');
 const id = require('node:crypto').randomUUID();

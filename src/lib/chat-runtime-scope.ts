@@ -44,6 +44,8 @@ export type RuntimeScope =
 
 export type RuntimeAccessFingerprintInput = {
   primaryRoot: string;
+  permissionMode?: "read" | "full";
+  readOnlyResourceRoots?: readonly string[];
   grantedProjectRoots: readonly string[];
   projectRootAccess?: Readonly<Record<string, ProjectAccessLevel>>;
   additionalRoots?: readonly string[];
@@ -74,8 +76,11 @@ export function buildRuntimeAccessFingerprint(input: RuntimeAccessFingerprintInp
     roots.set(canonical, input.projectRootAccess?.[root] ?? "write");
   }
   return JSON.stringify({
-    version: 1,
+    version: 2,
     primaryRoot,
+    permissionMode: input.permissionMode === "read" ? "read" : "full",
+    readOnlyResourceRoots: [...new Set((input.readOnlyResourceRoots ?? [])
+      .map(canonicalFingerprintRoot).filter(Boolean))].sort(),
     roots: [...roots.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([root, access]) => ({ root, access })),
@@ -125,12 +130,15 @@ function isInsideRoot(root: string, candidate: string): boolean {
 export function runtimeGrantDirs(input: {
   spawnRoot: string;
   grantedProjectRoots: readonly string[];
+  projectRootAccess?: Readonly<Record<string, ProjectAccessLevel>>;
   familiarWorkspace?: string;
 }): string[] {
   const seen = new Set([realpathNativeOrResolve(input.spawnRoot)]);
   const dirs: string[] = [];
   for (const candidate of [
-    ...input.grantedProjectRoots,
+    ...input.grantedProjectRoots.filter((root) =>
+      !input.projectRootAccess || input.projectRootAccess[root] === "write"
+    ),
     ...(input.familiarWorkspace ? [input.familiarWorkspace] : []),
   ]) {
     const root = candidate.trim();

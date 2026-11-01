@@ -63,7 +63,7 @@ if (name === "opencode" && args.includes("--help")) {
   console.log("  --format <format>  Output format: text, json\\n  --model <model> Model to use\\n  --session <id> Session to continue");
   process.exit(0);
 }
-if (args.includes("--help")) { console.log("--model --add-dir --permission"); process.exit(0); }
+if (args.includes("--help")) { console.log("--model --add-dir --permission --write-scope"); process.exit(0); }
 if (name === "coven" && args[0] === "adapter" && args[1] === "list") {
   console.log(JSON.stringify([{ id: "codex", executable: "codex", available: true }, { id: "claude", executable: "claude", available: true }]));
   process.exit(0);
