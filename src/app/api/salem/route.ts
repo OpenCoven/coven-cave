@@ -342,7 +342,13 @@ async function getDocsChunks(): Promise<{ chunks: DocChunk[]; error: string | nu
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const raw = await res.text();
-    docsCache = parseChunks(raw);
+    const chunks = parseChunks(raw);
+    // A 200 whose body parses to no chunks (empty, torn, not the corpus) is
+    // a failed fetch, not a fresh corpus. Caching it would answer every ask
+    // with "the docs fetch failed" for the whole hour after docs.opencoven.ai
+    // recovered (#6359).
+    if (chunks.length === 0) throw new Error("empty corpus");
+    docsCache = chunks;
     docsFetchedAt = now;
     docsFetchError = null;
     return { chunks: docsCache, error: null };

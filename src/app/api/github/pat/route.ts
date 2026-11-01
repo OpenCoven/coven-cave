@@ -33,6 +33,7 @@ export const runtime = "nodejs";
 const PAT_KEY = "GITHUB_PAT";
 const LOGIN_KEY = "GITHUB_USERNAME";
 const GITHUB_USERNAME_PATTERN = /^[A-Za-z0-9-]{1,39}$/;
+const VALIDATE_TIMEOUT_MS = 10_000;
 
 function isValidGitHubUsername(username: string): boolean {
   return (
@@ -65,7 +66,16 @@ function mutationError(error: unknown) {
   );
 }
 
-async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null; network?: boolean }> {
+type PatValidation = {
+  valid: boolean;
+  login: string | null;
+  /** GitHub was unreachable. */
+  network?: boolean;
+  /** GitHub answered but could not judge the token (an outage or a rate limit). */
+  unavailable?: number;
+};
+
+async function validatePat(pat: string): Promise<PatValidation> {
   try {
     const res = await fetch("https://api.github.com/user", {
       headers: {
@@ -74,10 +84,17 @@ async function validatePat(pat: string): Promise<{ valid: boolean; login: string
         "X-GitHub-Api-Version": "2022-11-28",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(VALIDATE_TIMEOUT_MS),
     });
-    if (!res.ok) return { valid: false, login: null };
+    // Only GitHub's own verdict on the credential rejects it. A primary rate
+    // limit also arrives as 403, with the remaining budget at zero, and says
+    // nothing about the token — the same way a 5xx or a 429 says nothing
+    // (#6359, the HTTP-shaped sibling of cave-cjgg's offline case).
+    const rateLimited = res.status === 429 || (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0");
+    if (!rateLimited && (res.status === 401 || res.status === 403)) return { valid: false, login: null };
+    if (!res.ok) return { valid: false, login: null, unavailable: res.status };
     const data = await res.json().catch(() => null);
-    return { valid: true, login: data?.login ?? null };
+    return { valid: true, login: typeof data?.login === "string" ? data.login : null };
   } catch {
     // GitHub unreachable — NOT evidence the token is bad. Telling an offline
     // user their good token "is invalid" sent them token-regenerating for a
@@ -133,6 +150,12 @@ export async function POST(req: NextRequest) {
       if (result.network) {
         return NextResponse.json(
           { ok: false, error: "Couldn't reach GitHub to verify the token — check your connection and try again." },
+          { status: 503 },
+        );
+      }
+      if (result.unavailable) {
+        return NextResponse.json(
+          { ok: false, error: `GitHub couldn't verify the token right now (HTTP ${result.unavailable}) — try again in a moment.` },
           { status: 503 },
         );
       }

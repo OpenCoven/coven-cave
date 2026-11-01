@@ -30,6 +30,7 @@ export const runtime = "nodejs";
 
 const PAT_KEY = "ASANA_PAT";
 const USER_KEY = "ASANA_USER";
+const VALIDATE_TIMEOUT_MS = 10_000;
 
 function applyEnvUpdates(updates: Record<string, string | null>): void {
   const envPath = envLocalPath();
@@ -48,16 +49,31 @@ function mutationError(error: unknown) {
   );
 }
 
-async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null; network?: boolean }> {
+type PatValidation = {
+  valid: boolean;
+  login: string | null;
+  /** Asana was unreachable. */
+  network?: boolean;
+  /** Asana answered but could not judge the token (an outage or a rate limit). */
+  unavailable?: number;
+};
+
+async function validatePat(pat: string): Promise<PatValidation> {
   try {
     const res = await fetch("https://app.asana.com/api/1.0/users/me", {
       headers: { Authorization: `Bearer ${pat}`, Accept: "application/json" },
       cache: "no-store",
+      signal: AbortSignal.timeout(VALIDATE_TIMEOUT_MS),
     });
-    if (!res.ok) return { valid: false, login: null };
+    // Only Asana's own verdict on the credential rejects it. A 5xx or a 429
+    // says nothing about the token, the same way an unreachable host says
+    // nothing (#6359, mirroring /api/github/pat).
+    if (res.status === 401 || res.status === 403) return { valid: false, login: null };
+    if (!res.ok) return { valid: false, login: null, unavailable: res.status };
     const data = await res.json().catch(() => null);
-    const me = data?.data as { name?: string; email?: string } | undefined;
-    return { valid: true, login: me?.name ?? me?.email ?? null };
+    const me = data?.data as { name?: unknown; email?: unknown } | undefined;
+    const login = typeof me?.name === "string" ? me.name : typeof me?.email === "string" ? me.email : null;
+    return { valid: true, login };
   } catch {
     // Asana unreachable — not evidence the token is bad (cave-d6zq).
     return { valid: false, login: null, network: true };
@@ -86,6 +102,12 @@ export async function POST(req: NextRequest) {
     if (result.network) {
       return NextResponse.json(
         { ok: false, error: "Couldn't reach Asana to verify the token — check your connection and try again." },
+        { status: 503 },
+      );
+    }
+    if (result.unavailable) {
+      return NextResponse.json(
+        { ok: false, error: `Asana couldn't verify the token right now (HTTP ${result.unavailable}) — try again in a moment.` },
         { status: 503 },
       );
     }
