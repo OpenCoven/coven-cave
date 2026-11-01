@@ -1,3 +1,4 @@
+import { isFamiliarConversation, recentSessionCount } from "@/lib/familiar-counts";
 import { ritualStreak } from "@/lib/familiar-renown";
 import type { Familiar, SessionRow } from "@/lib/types";
 
@@ -20,6 +21,8 @@ export type FamiliarCardStats = {
   /** Every non-archived session attributed to the familiar. */
   sessionsTotal: number;
   sessionsLast7d: number;
+  /** `COUNT_LABELS.recentSessions`: the shared 90-day definition (issue 6357). */
+  sessionsLast90d: number;
   hasActiveSession: boolean;
   /**
    * Ritual streak — consecutive UTC days with at least one session, ending
@@ -97,7 +100,7 @@ export function buildFamiliarCardStats(args: {
         lastSessionMs = ms;
         lastSessionAt = startedAt;
       }
-      if (ms > sevenCutoff) sessionsLast7d += 1;
+      if (ms > sevenCutoff && isFamiliarConversation(session)) sessionsLast7d += 1;
       if (ms > activeCutoff) hasActiveSession = true;
       const dayIndex = Math.floor(ms / DAY_MS);
       activeDays.add(dayIndex);
@@ -126,6 +129,7 @@ export function buildFamiliarCardStats(args: {
       lastSessionAt,
       sessionsTotal: sessions.length,
       sessionsLast7d,
+      sessionsLast90d: recentSessionCount(sessions, familiar.id, now),
       hasActiveSession,
       streakDays: ritualStreak(activeDays, todayIndex),
       activity,

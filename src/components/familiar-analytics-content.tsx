@@ -10,6 +10,8 @@ import type {
 import type { FeedbackSliceStat, MessageFeedbackRollup } from "@/lib/message-feedback-rollup";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { COUNT_DEFINITIONS, COUNT_LABELS } from "@/lib/familiar-counts";
+import { RENOWN_TIERS } from "@/lib/familiar-renown";
 import { Modal } from "@/components/ui/modal";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
@@ -939,6 +941,29 @@ const COVERAGE_LABELS: Record<string, string> = {
   quality: "Quality signal",
 };
 
+/** Why a telemetry field is missing on some attempts (issue 6357 Fix 3). */
+const COVERAGE_GAP_REASONS: Record<string, string> = {
+  harnessVersion: "the harness did not report its version",
+  confirmedModel: "the harness did not confirm which model answered",
+  usage: "the harness did not report token usage",
+  cost: "the provider did not report a cost",
+  duration: "the run ended before a duration was recorded",
+  firstOutput: "no first-output time was recorded",
+  tools: "the harness did not report tool activity",
+  quality: "no quality signal was recorded",
+};
+
+/** Below this many attempts a success rate is too thin to compare rows on. */
+const LOW_SAMPLE_ATTEMPTS = 5;
+
+/** Green only when healthy, yellow for caution, red for a real problem. */
+function successTone(rate: number | null | undefined): "good" | "warn" | "bad" | "neutral" {
+  if (typeof rate !== "number") return "neutral";
+  if (rate >= 0.9) return "good";
+  if (rate >= 0.7) return "warn";
+  return "bad";
+}
+
 function formatRuntimePercent(value: number | null | undefined): string {
   return typeof value === "number" ? `${Math.round(value * 100)}%` : "Unreported";
 }
@@ -959,19 +984,31 @@ function RuntimeSliceList({ label, slices }: { label: string; slices: FamiliarEx
         {slices.map((slice) => {
           const pct = typeof slice.successRate === "number" ? Math.round(slice.successRate * 100) : 0;
           const name = slice.label ?? slice.key;
+          const lowSample = slice.attempts < LOW_SAMPLE_ATTEMPTS;
+          const provider = slice.providers?.length ? slice.providers.join(", ") : null;
+          const spellings = slice.rawIds && slice.rawIds.length > 0
+            ? `Reported as: ${slice.rawIds.join(", ")}`
+            : slice.key;
           return (
-            <li key={slice.key} className="fa-feedback-row fa-runtime-row">
-              <span className="fa-feedback-row__name" title={slice.key}>{name}</span>
-              <span className="fa-feedback-row__bar" aria-hidden>
+            <li
+              key={slice.key}
+              className={`fa-feedback-row fa-runtime-row${lowSample ? " fa-runtime-row--thin" : ""}`}
+            >
+              <span className="fa-feedback-row__name" title={spellings}>
+                {name}
+                {provider ? <small className="fa-runtime-row__provider">{provider}</small> : null}
+              </span>
+              <span className="fa-feedback-row__bar fa-runtime-row__bar" aria-hidden>
                 <i style={{ width: `${pct}%` }} />
               </span>
               <span className="fa-runtime-row__detail">
                 {slice.attempts} attempt{slice.attempts === 1 ? "" : "s"} ·{" "}
                 {formatRuntimePercent(slice.successRate)} success ·{" "}
                 {formatRuntimeDuration(slice.medianDurationMs)}
+                {lowSample ? " · small sample" : ""}
               </span>
               <span className="sr-only">
-                {`${name}: ${slice.attempts} attempts, ${formatRuntimePercent(slice.successRate)} success, median duration ${formatRuntimeDuration(slice.medianDurationMs)}`}
+                {`${name}${provider ? ` via ${provider}` : ""}: ${slice.attempts} attempts, ${formatRuntimePercent(slice.successRate)} success, median duration ${formatRuntimeDuration(slice.medianDurationMs)}${lowSample ? ", small sample" : ""}`}
               </span>
             </li>
           );
@@ -990,13 +1027,21 @@ function RuntimeCoverage({ window }: { window: FamiliarExecutionAnalyticsWindow 
     <div className="fa-feedback-group">
       <h3 className="fa-feedback-group__label">Telemetry coverage</h3>
       <ul className="fa-runtime-coverage">
-        {coverage.map(([key, value]) => (
-          <li key={key}>
-            <span>{COVERAGE_LABELS[key] ?? key}</span>
-            <b>{Math.round(value.ratio * 100)}%</b>
-            <small>{value.known} of {value.total}</small>
-          </li>
-        ))}
+        {coverage.map(([key, value]) => {
+          const missing = value.total - value.known;
+          return (
+            <li key={key}>
+              <span>{COVERAGE_LABELS[key] ?? key}</span>
+              <b>{Math.round(value.ratio * 100)}%</b>
+              <small>{value.known} of {value.total} attempts reported</small>
+              {missing > 0 ? (
+                <small className="fa-runtime-coverage__gap">
+                  {missing} missing: {COVERAGE_GAP_REASONS[key] ?? "the field was not reported"}
+                </small>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -1096,22 +1141,22 @@ function RuntimePerformanceSection({
   return (
     <div className="fa-runtime-performance">
       <div className="fa-foot-panel__stats">
-        <span className="fa-pulse-stat fa-pulse-stat--accent">
+        <span className="fa-pulse-stat fa-pulse-stat--neutral" title={COUNT_DEFINITIONS.runtimeAttempts}>
           <b>{window.attempts}</b>
-          <span>Attempts</span>
+          <span>{COUNT_LABELS.runtimeAttempts}</span>
           <small>{window.completed} completed</small>
         </span>
-        <span className="fa-pulse-stat fa-pulse-stat--good">
+        <span className={`fa-pulse-stat fa-pulse-stat--${successTone(window.successRate)}`}>
           <b>{formatRuntimePercent(window.successRate)}</b>
           <span>Success</span>
           <small>{window.failed} failed · {window.cancelled} cancelled</small>
         </span>
-        <span className="fa-pulse-stat fa-pulse-stat--accent">
+        <span className="fa-pulse-stat fa-pulse-stat--neutral">
           <b>{formatRuntimeDuration(window.medianDurationMs)}</b>
           <span>Median duration</span>
           <small>p95 {formatRuntimeDuration(window.p95DurationMs)}</small>
         </span>
-        <span className="fa-pulse-stat fa-pulse-stat--warn">
+        <span className="fa-pulse-stat fa-pulse-stat--neutral">
           <b>{typeof window.totalTokens === "number" ? formatTokens(window.totalTokens) ?? window.totalTokens : "Unreported"}</b>
           <span>Tokens</span>
           <small>{typeof window.costUsd === "number" ? formatCost(window.costUsd) ?? "Reported" : "cost unreported"}</small>
@@ -1629,8 +1674,9 @@ function contractPropertyDetail(
 
 /**
  * The contract, expanded: the five properties on the left, the selected one's
- * evidence on the right. Anchored to the dock so the reader keeps the column
- * it was launched from, and Esc collapses it back.
+ * evidence on the right. The only contract detail surface (issue 6357): it opens in
+ * the same dialog shell as the Trust breakdown, and the dock no longer renders
+ * a second inline detail beside it.
  */
 function ContractPanel({
   report,
@@ -1647,35 +1693,31 @@ function ContractPanel({
   onClose: () => void;
   criticalCount: number;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(true, ref, { onEscape: onClose });
   const passCount = report.properties.filter((property) => property.pass).length;
   const active = activeProperty
     ? report.properties.find((property) => property.property === activeProperty) ?? null
     : null;
   const detail = active ? contractPropertyDetail(active.property, active.pass, report) : null;
   return (
-    <div
-      ref={ref}
-      className="fa-contract-panel"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Contract compliance detail"
-      tabIndex={-1}
+    <Modal
+      open
+      onClose={onClose}
+      wide
+      ariaLabel="Contract compliance detail"
+      breadcrumb={["Contract", `${passCount} of ${report.properties.length} properties pass`]}
     >
+    <div className="fa-contract-panel fa-contract-panel--modal">
       <div className="fa-contract-panel__head">
-        <span className="fa-band-crest fa-band-crest--warn" aria-hidden>
+        <span className={`fa-band-crest fa-band-crest--${report.pass ? "neutral" : "warn"}`} aria-hidden>
           <Icon name="ph:file-text" width={14} />
         </span>
         <b>Contract compliance</b>
         <span className={`fa-band-count${report.pass ? "" : " is-warn"}`}>
           {passCount}/{report.properties.length} · {report.pass ? "passing" : "needs review"}
         </span>
-        <span className="fa-band-hint">the five properties every familiar must declare</span>
-        <button type="button" className="fa-ghost-btn focus-ring" onClick={onClose} title="Collapse · Esc">
-          <Icon name="ph:arrows-in-simple" width={12} aria-hidden />
-          Collapse
-        </button>
+        <span className="fa-band-hint">
+          the five properties every familiar must declare · the score is how many pass
+        </span>
       </div>
       <div className="fa-contract-panel__body">
         <div className="fa-contract-panel__list">
@@ -1730,7 +1772,10 @@ function ContractPanel({
                 </span>
                 <span>
                   <span className="fa-modal-facts__label">Open requests</span>
-                  <b className="fa-modal-facts__value fa-modal-facts__value--crit">
+                  {/* Red only behind a real problem: zero critical reads muted (issue 6357). */}
+                  <b
+                    className={`fa-modal-facts__value${criticalCount > 0 ? " fa-modal-facts__value--crit" : " fa-modal-facts__value--zero"}`}
+                  >
                     {criticalCount} critical
                   </b>
                 </span>
@@ -1753,6 +1798,7 @@ function ContractPanel({
         </div>
       </div>
     </div>
+    </Modal>
   );
 }
 
@@ -1785,6 +1831,14 @@ function TrustModal({
           <div className="fa-trust-modal">
             <TrustRing confidence={confidence} size="lg" />
             <div className="fa-trust-modal__rows">
+              {/* Column labels, so the signed numbers say what they compare (issue 6357). */}
+              <div className="fa-trust-row fa-trust-row--head" aria-hidden>
+                <span>Metric</span>
+                <span />
+                <span>Score × weight</span>
+                <span>Points</span>
+                <span>vs last period</span>
+              </div>
               {confidence.metrics.map((metric) => {
                 const trend = trendByKey.get(metric.key);
                 const contribution = metric.value * metric.weight;
@@ -1844,6 +1898,91 @@ function TrustModal({
           icon="ph:chart-bar-bold"
           headline="Trust isn't measured yet."
           subtitle="It is computed from thread self-reports — this familiar hasn't filed any."
+        />
+      )}
+    </Modal>
+  );
+}
+
+// ─── Renown ─────────────────────────────────────────────────────────────────
+
+/** How the renown score is computed (issue 6357): the same shape as the Trust
+ *  breakdown — inputs × weights, the sum written out, the ladder with the
+ *  current rung marked, and the distance to the next one. */
+function RenownModal({
+  progression,
+  onClose,
+}: {
+  progression: NonNullable<FamiliarAnalyticsModel["progression"]>;
+  onClose: () => void;
+}) {
+  const { renown, renownInputs, memoryAvailability } = progression;
+  const rows = [
+    { key: "sessions", label: "Unarchived runs, all time (automatic runs included)", value: renownInputs.sessions, weight: 1 },
+    { key: "memories", label: "Workspace memory files", value: renownInputs.memories, weight: 3 },
+  ];
+  return (
+    <Modal open onClose={onClose} wide breadcrumb={["Renown", `How ${memoryAvailability === "ready" ? renown.score : "renown"} is computed`]}>
+      {memoryAvailability === "ready" ? (
+        <>
+          <div className="fa-trust-modal__rows">
+            <div className="fa-trust-row fa-trust-row--head" aria-hidden>
+              <span>Earns points</span>
+              <span />
+              <span>Count × weight</span>
+              <span>Points</span>
+              <span />
+            </div>
+            {rows.map((row) => (
+              <div key={row.key} className="fa-trust-row">
+                <span className="fa-trust-row__label">{row.label}</span>
+                <span className="fa-trust-row__bar" aria-hidden>
+                  <i style={{ width: `${renown.score > 0 ? Math.round((row.value * row.weight * 100) / renown.score) : 0}%` }} />
+                </span>
+                <span className="fa-trust-row__value">{row.value} × {row.weight}</span>
+                <span className="fa-trust-row__contribution">{row.value * row.weight} pts</span>
+                <span />
+              </div>
+            ))}
+            <div className="fa-trust-modal__equation">
+              <span>Sum</span>
+              <b>
+                {rows.map((row) => `${row.value} × ${row.weight}`).join(" + ")}
+                {" = "}{renown.score}
+              </b>
+              <p>
+                A memory weighs three sessions: curating what a familiar keeps is rarer than running it.
+                Renown only accumulates; a quiet week never lowers it.
+              </p>
+            </div>
+          </div>
+          <div className="fa-trust-bands fa-trust-bands--ladder">
+            {RENOWN_TIERS.map((tier, index) => {
+              const nextMin = RENOWN_TIERS[index + 1]?.min;
+              const current = tier.key === renown.tier.key;
+              return (
+                <span key={tier.key} className={`fa-trust-band${current ? " is-current" : ""}`}>
+                  <b>{tier.label}</b>
+                  <span>
+                    {nextMin === undefined ? `${tier.min}+` : `${tier.min}–${nextMin - 1}`}
+                    {current ? " · current" : ""}
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+          <p className="fa-renown-modal__position">
+            {renown.next
+              ? `${renown.score} renown: ${renown.next.remaining} more to reach ${renown.next.tier.label} at ${renown.next.tier.min}.`
+              : `${renown.score} renown: past ${renown.tier.min}, the top rung. The score keeps counting, but there is no higher tier.`}
+          </p>
+        </>
+      ) : (
+        <EmptyState
+          compact
+          icon="ph:trophy-fill"
+          headline="Renown can't be computed."
+          subtitle="It counts workspace memory files, and this familiar's memory could not be read."
         />
       )}
     </Modal>
@@ -1917,6 +2056,7 @@ export function FamiliarAnalyticsContent({
   const [deepDive, setDeepDive] = useState<DeepDive>(null);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [trustOpen, setTrustOpen] = useState(false);
+  const [renownOpen, setRenownOpen] = useState(false);
   const [contractOpen, setContractOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
   const [errorDismissed, setErrorDismissed] = useState(false);
@@ -2008,13 +2148,6 @@ export function FamiliarAnalyticsContent({
     () => threadSignalsAggregate ? buildThreadSignalReviewQueue(threadSignalsAggregate) : [],
     [threadSignalsAggregate],
   );
-  const contractDetail = useMemo(() => {
-    const report = model.contractReport;
-    if (!report || !activeProperty) return null;
-    const property = report.properties.find((entry) => entry.property === activeProperty);
-    if (!property) return null;
-    return contractPropertyDetail(property.property, property.pass, report);
-  }, [activeProperty, model.contractReport]);
   const criticalCount = allHealRequests.filter((request) => request.severity === "crit").length;
 
   // ── Actions ──────────────────────────────────────────────────────────────
@@ -2086,6 +2219,12 @@ export function FamiliarAnalyticsContent({
   const pickProperty = useCallback((property: FamiliarProperty) => {
     setActiveProperty((prev) => (prev === property ? null : property));
   }, []);
+  // From the dock, a property opens the one contract dialog at that property.
+  const openContractAt = useCallback((property: FamiliarProperty) => {
+    setActiveProperty(property);
+    setPulseOpen(false);
+    setContractOpen(true);
+  }, []);
 
   // A full-stage overlay is the top layer: it retires the anchored contract
   // panel and the pulse first, so two focus traps can never be live at once.
@@ -2122,14 +2261,14 @@ export function FamiliarAnalyticsContent({
         healRequestCount={allHealRequests.length}
         actions={nextActions}
         contractReport={model.contractReport}
-        activeProperty={activeProperty}
-        contractDetail={contractDetail}
-        onPickProperty={pickProperty}
+        activeProperty={contractOpen ? activeProperty : null}
+        onPickProperty={openContractAt}
         collapsed={dockCollapsed}
         onToggleCollapsed={() => setDockCollapsed((prev) => !prev)}
         onRefresh={onRefresh}
         refreshing={refreshing}
         onOpenTrust={() => setTrustOpen(true)}
+        onOpenRenown={() => setRenownOpen(true)}
         onOpenSignals={() => openOverlay("signals")}
         onOpenModel={() => openOverlay("model")}
         onAction={openAction}
@@ -2342,8 +2481,7 @@ export function FamiliarAnalyticsContent({
             <Icon name="ph:chart-bar" width={13} aria-hidden />
             <b>Runtime performance</b>
             <span className="fa-band-count">
-              {model.executionAnalytics?.windows[windowId].attempts ?? 0} attempt
-              {(model.executionAnalytics?.windows[windowId].attempts ?? 0) === 1 ? "" : "s"}
+              {model.executionAnalytics?.windows[windowId].attempts ?? 0} {COUNT_LABELS.runtimeAttempts.toLowerCase()}
             </span>
             <Icon name="ph:caret-up" className="fa-foot__caret" width={11} aria-hidden />
           </button>
@@ -2389,22 +2527,22 @@ export function FamiliarAnalyticsContent({
             </div>
             {threadSignalsAggregate ? (
               <div className="fa-foot-panel__stats">
-                <span className="fa-pulse-stat fa-pulse-stat--warn">
+                <span className={`fa-pulse-stat fa-pulse-stat--${threadSignalsAggregate.persistentBlockers.length > 0 ? "bad" : "zero"}`}>
                   <b>{threadSignalsAggregate.persistentBlockers.length}</b>
                   <span>Persistent blockers</span>
                   <small>repeat walls to clear</small>
                 </span>
-                <span className="fa-pulse-stat fa-pulse-stat--bad">
+                <span className={`fa-pulse-stat fa-pulse-stat--${threadSignalsAggregate.skillsNeedingAccess.length > 0 ? "warn" : "zero"}`}>
                   <b>{threadSignalsAggregate.skillsNeedingAccess.length}</b>
                   <span>Skill access</span>
                   <small>install or map</small>
                 </span>
-                <span className="fa-pulse-stat fa-pulse-stat--good">
+                <span className={`fa-pulse-stat fa-pulse-stat--${threadSignalsAggregate.skillsNeedingClarity.length > 0 ? "warn" : "zero"}`}>
                   <b>{threadSignalsAggregate.skillsNeedingClarity.length}</b>
                   <span>Skill clarity</span>
                   <small>definitions to write</small>
                 </span>
-                <span className="fa-pulse-stat fa-pulse-stat--accent">
+                <span className={`fa-pulse-stat fa-pulse-stat--${threadSignalsAggregate.capabilitiesLacking.length > 0 ? "warn" : "zero"}`}>
                   <b>{threadSignalsAggregate.capabilitiesLacking.length}</b>
                   <span>Capability gaps</span>
                   <small>missing tools</small>
@@ -2474,8 +2612,7 @@ export function FamiliarAnalyticsContent({
               <>
                 <h2 className="fa-overlay__title">Runtime performance</h2>
                 <span className="fa-band-count">
-                  {model.executionAnalytics?.windows[windowId].attempts ?? 0} attempt
-                  {(model.executionAnalytics?.windows[windowId].attempts ?? 0) === 1 ? "" : "s"}
+                  {model.executionAnalytics?.windows[windowId].attempts ?? 0} {COUNT_LABELS.runtimeAttempts.toLowerCase()}
                 </span>
                 <span className="fa-band-hint">
                   local metadata only — unreported fields stay absent
@@ -2504,6 +2641,10 @@ export function FamiliarAnalyticsContent({
           />
         ) : null}
       </div>
+
+      {renownOpen && model.progression ? (
+        <RenownModal progression={model.progression} onClose={() => setRenownOpen(false)} />
+      ) : null}
 
       {trustOpen ? (
         <TrustModal
