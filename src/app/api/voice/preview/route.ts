@@ -91,6 +91,15 @@ export async function GET(req: Request) {
   }
 
   const body = await res.arrayBuffer();
+  if (body.byteLength === 0) {
+    // A 2xx with no bytes is not a sample. Caching it would replay silence for
+    // the process lifetime, long after the provider recovered (#6359).
+    return NextResponse.json({
+      ok: false,
+      error: "preview_failed",
+      providerMessage: "empty audio body",
+    }, { status: 502 });
+  }
   cache.set(voice.id, { kind: "audio", body });
   return audioResponse(body);
 }
