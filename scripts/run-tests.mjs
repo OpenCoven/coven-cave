@@ -260,6 +260,10 @@ export const SUITES = {
     "scripts/bundle-budget.test.mjs",
     "scripts/cave-performance-report.test.mjs",
     "scripts/chat-stream-performance.test.mjs",
+    "scripts/shell-boot-performance.test.mjs",
+    "scripts/doctor-exec-performance.test.mjs",
+    "scripts/soak-performance.test.mjs",
+    "scripts/native-harness-teardown.test.mjs",
     "scripts/ios-performance-trace.test.mjs",
     "scripts/daemon-reliability-benchmark.test.mjs",
     "scripts/daemon-lifecycle-probe.test.mjs",
@@ -487,6 +491,8 @@ export const SUITES = {
     "src/lib/server/research-resource-recovery.test.ts",
     "src/lib/server/research-maintenance-boundary.test.ts",
     "src/lib/server/research-package.test.ts",
+    "src/lib/server/research-activation.test.ts",
+    "src/app/api/research/capability/route.test.ts",
     "src/lib/server/research-automation-boundary.test.ts",
     "src/lib/server/research-automation-import.test.ts",
     "src/lib/server/saved-links-route.test.ts",
@@ -1419,6 +1425,7 @@ export const SUITES = {
     "src/components/dead-ui-removal.test.ts",
     "scripts/ui-consistency.test.mjs",
     "scripts/docs-index.test.mjs",
+    "scripts/runtime-startup-supervision-doc.test.mjs",
     "scripts/plan-doc-checkbox-hygiene.test.mjs",
     "src/components/ui/select.test.ts",
     "src/components/ui/select.behavior.test.tsx",
@@ -1442,6 +1449,7 @@ export const SUITES = {
     "src/lib/env-local-bundle.test.ts",
     "src/lib/cave-board-schedule.test.ts",
     "src/lib/cave-board-orchestration.test.ts",
+    "src/lib/cave-board-schema-version.test.ts",
     "src/lib/enrich-steps-orchestration.test.ts",
     "src/lib/board-agentic-enhance.test.ts",
     "src/lib/cave-board-model-override.test.ts",
@@ -2221,6 +2229,9 @@ const STRIP_TYPES_MJS = new Set([
   // imports ../src/lib/performance-budgets.ts through cave-performance-report.mjs
   "scripts/cave-performance-report.test.mjs",
   "scripts/chat-stream-performance.test.mjs",
+  "scripts/shell-boot-performance.test.mjs",
+  "scripts/doctor-exec-performance.test.mjs",
+  "scripts/soak-performance.test.mjs",
   "scripts/release-macos-signing.test.mjs",
   "scripts/tweet-thread-protocol-drift.test.mjs",
   // imports the TypeScript Client v1 HPKE test codec
@@ -2238,6 +2249,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // The Research capability route reaches the activation owner through @/lib (#6332).
+  "src/app/api/research/capability/route.test.ts",
   // Real PATCH /api/chat/model-state requests against a scratch home (#6098).
   "src/app/api/chat/model-state/route-handoff.integration.test.ts",
   "src/lib/server/automation-consumer-routes.test.ts",
@@ -2373,6 +2386,7 @@ const ALIAS_LOADER = new Set([
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/cave-board-orchestration.test.ts",
+  "src/lib/cave-board-schema-version.test.ts",
   "src/lib/enrich-steps-orchestration.test.ts",
   "src/lib/board-agentic-enhance.test.ts",
   "src/app/api/board/orchestration-route.test.ts",
@@ -2565,6 +2579,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-attachments.test.ts",
   "src/lib/cave-board-schedule.test.ts",
   "src/lib/cave-board-orchestration.test.ts",
+  "src/lib/cave-board-schema-version.test.ts",
   "src/lib/cave-board-model-override.test.ts",
   "src/lib/cave-board-review-reason.test.ts",
   "src/lib/salem/pathfinder-feedback.test.ts",

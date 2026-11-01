@@ -87,7 +87,7 @@ are not server authorization or runtime package lifecycle controls.
 
 | ID and room | Data, dependencies and permission boundary | Current evidence and next boundary proof |
 | --- | --- | --- |
-| `researcher-desk` — Research Desk | Optional `@opencoven/research` package; mission/ingestion/media/embedding workers; core storage, credentials, execution admission and privacy/recovery adapters | Existing [core boundary](research-core-boundary.md), [host contract](research-host-contract.md) and [historical extraction report](research-extraction-verification.md). [Dispatch](../src/lib/server/research-package.ts) authorizes before loading and checks host contract version. Absent, disabled and reinstalled builds were re-proved on one commit with one persistent home (#6312): absent and disabled refuse with 503 `research-not-installed` or `research-disabled`, add no Research timer, and exit cleanly on SIGTERM; a link stored before removal returns after reinstall. The absent standalone is about 13 MiB and 1,146 files smaller. Build-time detection reads only the project's own `node_modules`, so a parent checkout cannot make an absent worktree look installed. The host still exposes startup, not a general hot-disable teardown contract. |
+| `researcher-desk` — Research Desk | Optional `@opencoven/research` package; mission/ingestion/media/embedding workers; core storage, credentials, execution admission and privacy/recovery adapters | Existing [core boundary](research-core-boundary.md), [host contract](research-host-contract.md) and [historical extraction report](research-extraction-verification.md). [Dispatch](../src/lib/server/research-package.ts) authorizes before loading and checks host contract version. Absent, disabled and reinstalled builds were re-proved on one commit with one persistent home (#6312): absent and disabled refuse with 503 `research-not-installed` or `research-disabled`, add no Research timer, and exit cleanly on SIGTERM; a link stored before removal returns after reinstall. The absent standalone is about 13 MiB and 1,146 files smaller. Build-time detection reads only the project's own `node_modules`, so a parent checkout cannot make an absent worktree look installed. Hot disable (#6332): `POST /api/research/capability` with `active: false` closes admission before any implementation loads, then asks the loaded package to stop; the shipped 0.2.0 package exports no stop, so the retained outcome is `unsupported` and its admitted media jobs end with the process, their records untouched. Process shutdown drains Research as a fourth startup worker; with the shipped package it closes admission, logs once that no media job was drained, and lets the process end them. Contract: [host contract](research-host-contract.md#activation-and-hot-disable). |
 | `navigator-chart-room` — Chart Room | Board tasks, orchestration dependencies, decisions and execution references; graph/table UI | Lazy UI, not an optional backend. Keep task mutator validation and approvals in core; prove graph/UI teardown and task recovery with the room absent. |
 | `code` — Coding Desk | Workbench, editor/diff, GitHub, files, terminal/session resources and project authority | Lazy workbench behind role/build gates. Preserve `surface:code`, `code` and `github` links. Separate optional editor/review presentation from project authorization and run/PTY ownership; verify native teardown and unavailable navigation. |
 | `scribe-writing-desk` — Writing Desk | [Role-surface state](../src/lib/role-surface-state.ts), local drafts, source material and Knowledge Vault publication | Lazy UI and existing persistence. Prove drafts and published documents remain discoverable/exportable without the desk, and restore editing after reinstall. |
@@ -127,11 +127,11 @@ capability, not approval of its current startup cost.
 | --- | --- | --- |
 | Cave-home migration | Shared readiness promise; shell registration does not await completion | Retain data coordination. Verify interrupted/migrated profiles without private production fixtures. |
 | Research interrupted restore | Chained after migration | Retain while Research is absent, including handle/timer cleanup. |
-| Research runtime | `startOptionalResearch` checks capability before import; host version checked | Existing optional startup boundary. Hot disable/drain and reactivation need separate proof. |
+| Research runtime | One activation owner (#6332): `startOptionalResearch` checks the build and environment gates before import, checks the host version, joins concurrent starts, and registers with [`startup-worker-shutdown`](../src/lib/server/startup-worker-shutdown.ts). `POST /api/research/capability` hot-disables or reactivates it. | Disable closes admission first (503 `research-disabled` before load), then stops the package when it exports `stopResearchRuntime`; the shipped package does not, so the outcome is `unsupported` and admitted media jobs run until restart, never cancelled or replayed by Cave. Reactivation starts one owner. Package-side stop remains the package owner's change. |
 | Expired X cache and Research runtime privacy sweeps | Detached best-effort startup work | Retain required privacy maintenance for existing data even without authoring/ingestion. Bound work and retries. |
 | Inbox reminders | One process-local owner (#6295): a single 15-second timer, an immediate catch-up pass, one pass in flight, synchronous stop admission, and a retained drain promise. Registered with [`startup-worker-shutdown`](../src/lib/server/startup-worker-shutdown.ts) beside scheduled chat and backup sync, so it drains on SIGINT/SIGTERM and on the packaged parent lease under the unchanged deadlines; a delivery that outlives its deadline is reported `pending`, never cancelled or replayed, and the worker cannot restart after coordinated shutdown. Routes call `startScheduler()` at module load; after shutdown that is a no-op. | A slow transaction does not queue more timer passes; success or failure releases admission for the next interval. Reminders remain active independently of room visibility. [`COVEN_CAVE_AUTOMATIONS_ENABLED=0`](../src/lib/server/automations-domain.ts) pauses the domain: no timer, no pass, stored items untouched and still served by their routes; re-enabling delivers what became due once and never re-fires a `fired` record. Cross-process ownership and hung-store escalation remain separate gaps. |
 | Scheduled chat | One process-local owner (#6209): a single unreferenced 15-second timer, one pass in flight, synchronous stop admission, production-build guard. [`startup-worker-shutdown`](../src/lib/server/startup-worker-shutdown.ts) drains it on SIGINT/SIGTERM (three-second observer) and on the packaged parent lease (1,200 ms Unix, 400 ms Windows, beneath the native kill/Job fallback). A drain that outlives its deadline is reported `pending`, never cancelled or replayed, and the worker cannot restart after coordinated shutdown. | Preserves scheduled send admission. The same [automations-domain switch](../src/lib/server/automations-domain.ts) (#6295) owns no timer and admits no pass while disabled; durable claims in the store keep their state, and re-enabling resumes ticking without replaying a claimed send. A Windows normal quit closes the same private stdin pipe as Unix, verified by hosted native tests, not on physical hardware. |
-| GitHub watcher | One process-local owner; enabled subscriptions with repositories/events poll every 60 seconds; unavailable settings retain that slow read retry; token gates requests; cancellable eight-second response/JSON deadline | Settings changes cancel obsolete reads, remove the timer and drain admitted persistence before saving. Confirmed disabled/empty/no-event startup owns no timer; repeated enable/disable keeps one timer and preserves cursors/dedupe. Tests cover ignored cancellation, actual HTTP body closure, atomic-store removal races and recovery from unreadable settings without overwriting them. Already-started filesystem writes are drained, not claimed cancellable; cross-process ownership and hung-write escalation remain separate gaps. |
+| GitHub watcher | One process-local owner; enabled subscriptions with repositories/events poll every 60 seconds; unavailable settings retain that slow read retry; token gates requests; cancellable eight-second response/JSON deadline | Settings changes cancel obsolete reads, remove the timer and drain admitted persistence before saving. Confirmed disabled/empty/no-event startup owns no timer; repeated enable/disable keeps one timer and preserves cursors/dedupe. Tests cover ignored cancellation, actual HTTP body closure, atomic-store removal races and recovery from unreadable settings without overwriting them. Already-started filesystem writes are drained, not claimed cancellable; cross-process ownership and hung-write escalation remain separate gaps. Registered as the `github-watcher` startup worker (#6350): coordinated shutdown clears the timer, cancels the read and drains an admitted notification or cursor write before the process exits, and a start or settings change after shutdown began owns no timer. |
 | Backup sync | One owner (#6209): a 15-minute unreferenced tick only while configured enabled, one pass at a time, and a stop that drains the in-flight pass then makes the bounded quit push (three-second budget) when the coordinator asks; configuration changes wait for the retained drain. Same coordinator and packaged-lease deadlines as scheduled chat; a quit push that outlives the lease is reported, not replayed. | Core recovery is separate from optional remote sync. Disabled configuration owns no timer; the quit push is best effort inside the native deadline and must never be read as a completed sync. |
 | Event-plane daemon/roster/Board watchers | Started when `COVEN_CAVE_EVENT_PLANE_ENABLED` is `1` or `true` (trimmed and case-insensitive) | Existing feature gate. Measure and verify watcher disposal and fallback polling for each client/platform. |
 
@@ -141,7 +141,10 @@ execution owner. An optional domain must define what disabling it does to
 admitted jobs, including recovery after restart, before exposing that operation.
 The automations domain is the first with that definition: the switch is read
 when a worker starts, so a changed setting takes effect at the next server
-start, and the disabled-domain idle server owns only the heap monitor's timer. Device-access revalidation runs only while a remote connection is live ([device access](device-access.md#policy-availability)), so that timer is absent from an idle server.
+start, and the disabled-domain idle server owns only the heap monitor's timer.
+Research is the first with a hot disable (#6332): admission closes at once,
+the package is asked to stop when it can, and the outcome is retained rather
+than retried. Device-access revalidation runs only while a remote connection is live ([device access](device-access.md#policy-availability)), so that timer is absent from an idle server.
 
 ### Startup-worker maintenance and shutdown reports
 
@@ -180,7 +183,10 @@ The program's current baseline is recorded in
 The production build measured initial Home JavaScript 1,699 KB, root CSS 594 KB
 against a 640 KB budget, and a 202,649,611-byte standalone artifact. The five
 HTTP launch samples measured server response readiness, not first usable
-interaction. The real-daemon lifecycle samples in
+interaction; the [shell boot gate](performance-budgets.md#production-shell-boot-gate)
+(#6333) now measures warm and daemon-offline boot to an interactive Home
+composer against the two approved shell ceilings, on a synthetic workspace
+over loopback. The real-daemon lifecycle samples in
 [#6120](https://github.com/OpenCoven/coven-cave/issues/6120) use empty synthetic
 homes; they do not establish migrated-profile or packaged-native recovery.
 Keep each receipt's exact source/binary/probe provenance.
@@ -206,10 +212,49 @@ complexity, substitute UI visibility for lifecycle control, or remove
 diagnostics, accessibility, safety checks or meaningful tests to improve a
 size metric.
 
+### All-optional-rooms-absent baseline (#6338)
+
+Measured 2026-10-31 on `main` `50b8b36a6` plus the #6338 tooling changes
+(provenance recording only; no runtime code), as one pair on one host: the
+default build (every room visible, Research installed) and the absent build
+(`NEXT_PUBLIC_CAVE_ROOMS=none`, `@opencoven/research` removed from the
+project's own `node_modules`). Apple M5 Max, 18 cores, 128 GB, macOS 27.0.0,
+Node 24.22.0, Chromium 151.0.7922.34, `pnpm performance:stream` (10,000-event
+burst and paced streams, 1,000 history turns, 100 trials each) and
+`pnpm performance:report` with the `phase-6-list-10k` fixture. The host carried
+unrelated load (load average 26 to 55 on 18 cores), so these are receipts of
+the pair, not a baseline of record; the hosted pair at one commit on the
+`cave-performance` runner class is the comparable evidence, and #6338 links it.
+
+| Measure | Default (`all`, installed) | Absent (`none`, removed) |
+| --- | ---: | ---: |
+| Burst stream longest long task p95 (max) | 0 ms (234) | 0 ms (0) |
+| Paced stream longest long task p95 (max) | 51 ms (1,097) | 0 ms (105) |
+| 10k list cold metadata scan median | 466.39 ms | 494.81 ms |
+| Conversation read route, warm cache median | 76.37 ms | 70.21 ms |
+| Cold scan share of full parse | 35.66% | 33.73% |
+| Cold scan bytes / warm bytes / cache hit | 43.6 MB / 0 / 100% | same |
+
+Both configurations pass every enforced ceiling with the same workload; the
+report rows were taken 17 s apart at the lower load, and the stream rows an
+hour apart at the higher load, which is why the stream maxima differ far more
+than the medians. The pair does not show an interaction or history cost that
+room visibility or the Research package adds: both are within this host's
+noise. The absent standalone output measured here is 245.0 MiB and 7,816
+files (local output keeps the six-platform `sharp` payload that release
+packaging prunes) with no package-named Research chunk; the default build was not re-measured for size,
+so the matched-commit size delta remains the #6312 figure (about 13 MiB and
+1,146 files). First failure: the report's
+conversation-list benchmark twice exited `ENOTEMPTY` at teardown because the
+conversation summary index writer was still committing its temp file when the
+benchmark removed its home; immediate reruns passed, and the teardown race is
+recorded on #6338 for the benchmark's owner rather than fixed here.
+
 The next implementation decisions should follow reproduced user failures and
 measured costs. The status-read deadline (#6122) and the real lifecycle probe
 (#6120, [daemon lifecycle](performance/daemon-lifecycle.md)) merged on
 2026-10-20; the unresolved background startup failure still needs
-owning-component diagnosis. For modularization, establish a current
-all-optional-rooms-absent baseline and resource-lifetime evidence before selecting
-the next extraction. This inventory does not complete those obligations.
+owning-component diagnosis. For modularization, the
+all-optional-rooms-absent baseline above and the resource-lifetime evidence
+(#6209, #6295, #6311, #6332) now exist on current `main`; select the next
+extraction from a reproduced cost, not from this inventory alone.

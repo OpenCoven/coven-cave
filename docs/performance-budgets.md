@@ -21,7 +21,7 @@ entry is treated:
 | --- | --- | --- |
 | `performance-report` | Evaluated by `scripts/cave-performance-report.mjs` against the metrics that run produced. | Yes |
 | `postbuild` | Already enforced by a build-time gate; recorded here for completeness and deliberately not re-evaluated. | No — its own gate fails the build |
-| `browser-performance` | Enforced by the isolated production stream browser run. The file/list report delegates to that run. | No — the browser gate fails its own run |
+| `browser-performance` | Enforced by an isolated production browser run (the stream gate or the shell boot gate). The file/list report delegates to that run. | No — the browser gate fails its own run |
 | `pending` | Value approved and recorded, but no fixture produces the measurement yet. | No — but it is printed on every run |
 
 `postbuild` entries are not re-checked on purpose. Two gates over one number
@@ -82,17 +82,23 @@ mean guessing which `scripts/*.mjs` constants are budgets, which is a heuristic
 and not a gate. Adding a build-time budget means adding it to the catalogue and
 to the test's gate list.
 
-`pending` entries are the honest half. The warm/offline shell deadlines and the
-`coven doctor` deadline are approved numbers
-with no harness behind them yet; they appear in every report so the gap stays
-visible instead of being mistaken for coverage.
+`pending` entries are the honest half, and none remain. The warm/offline
+shell deadlines were `pending` from the catalogue's first commit (#4788) until
+the [shell boot gate](#production-shell-boot-gate) below (#6333) measured them;
+the `coven doctor` deadline followed with the
+[doctor gate](#production-doctor-gate) (#6346). A new `pending` entry is a
+deliberate act: the report test asserts the count is zero, so adding one means
+changing that assertion in the same change and saying why.
 
 **A `pending` source may be prose only when no code in this repository owns the
-number.** The shell deadlines qualify: nothing declares them, so the
-source names the issue that does. `cli.doctor.p95-ms` did not — it is the exec
+number.** The shell deadlines qualified while nothing measured them: their
+source named the bead that owned the gap, until #6333 gave them a spec.
+`cli.doctor.p95-ms` did not qualify — it is the exec
 route's own request timeout, and it shipped as the prose "matches
 `EXEC_TIMEOUT_MS` in `src/app/api/coven/exec/route.ts`", a claim about a
-specific constant with no gate to notice when that constant moved. That is the
+specific constant with no gate to notice when that constant moved. Now that a
+spec measures it, the same pin lives in the entry's `derivedFrom` and the unit
+suite still resolves it. That is the
 900 KB / 2800 KB drift class exactly, one gate short of being caught. Any source
 naming a repository file now takes the same resolvable `<file> (<CONSTANT>)`
 form as a `postbuild` entry, the unit suite reads the declaration and asserts
@@ -138,6 +144,20 @@ errors, retries or missing evidence. The CLI still exits unsuccessfully.
 Reports, invocation/build/browser/machine metadata and initial screenshots live
 under `artifacts/stream-performance/<invocation-id>/`, alongside Playwright's
 JSON result and, for a verified workflow control, `control-verification.json`.
+
+`CAVE_STREAM_ROOMS` chooses the room visibility the measured build is compiled
+with (#6338). Blank is the lane default, `all`, the same build the ordinary
+suite tests; `none` names no registered room, so every optional room is absent.
+The runner validates the value, passes it to the build as
+`NEXT_PUBLIC_CAVE_ROOMS`, and records it in `invocation.json` together with
+whether the optional Research package was installed when the build was
+compiled; `pnpm performance:report` records the same two facts under
+`configuration`. The workflow's `rooms_absent` input builds that configuration
+on the runner: it removes `@opencoven/research` after install, sets the rooms
+to `none` for both jobs, and names the evidence `rooms-absent-…`, which the
+baseline restore step skips, so an absent run never becomes the scheduled
+lane's comparison point. The workload, trials and ceilings are the same in both
+configurations; the pair is comparable only at one commit on one runner class.
 Failed runs retain their
 samples; the workflow uploads evidence even when the gate fails. The launcher
 removes ambient credential and Node injection variables, retains browser-cache
@@ -152,6 +172,152 @@ work from provider, daemon, network and persistence latency. Route interception
 disables HTTP caching; fresh contexts share the built server and browser process,
 so this is not a cold-launch benchmark. Native and real-daemon evidence remain
 separate. See [#6137](https://github.com/OpenCoven/coven-cave/issues/6137).
+
+## Production shell boot gate
+
+Run `pnpm performance:shell` from a worktree with its own installed dependencies
+and no local dotenv files. It builds production code and runs only
+`tests/shell-boot-performance.spec.ts`, with one Chromium worker and no retries,
+through the same allowlisted launcher environment and synthetic state root as
+the stream gate. The performance workflow runs it as its own job on Ubuntu 24.04.
+
+**Interactive means the Home composer accepts a keystroke, not that the server
+answered.** A probe installed before any page script polls each animation frame
+for the composer textarea; the interactive frame is the first in which it exists
+and is neither `readOnly` nor `disabled`. `readOnly` is released by a React
+effect, so the frame also proves hydration ran. The spec then clicks the
+composer, types one key and requires that key to be its value. Page errors, a
+missing daemon poll, a rejected keystroke or a missing frame fail the trial.
+
+Each mode opens 100 fresh pages in one primed browser context:
+
+| mode | primed context | daemon poll served | non-origin requests | ceiling |
+| --- | --- | --- | --- | ---: |
+| warm | server and browser process have run Home once | `running: true`, local target | aborted | 3,000 ms p95 |
+| offline | same priming | `running: false`, `availability: "offline"`, local target | aborted | 5,000 ms p95 |
+
+**Primed is not cache-warm.** Request interception, which the fixture needs to
+serve synthetic API data and abort external traffic, disables Chromium's HTTP
+cache for the whole context, so every trial re-fetches the shell's assets over
+loopback. The number graded is therefore a repeated boot against a warm server
+with a cold browser cache, which is more pessimistic than a real reload and is
+stated in each report's `limitations`. "Offline" is the local daemon being down
+and no external network; the local production server is reachable, as it is in
+the packaged app. The two daemon payloads are the exact shapes
+`classifyDaemonStatusPoll` reads as `running` and `offline`, and the helper
+suite pins that, so the gate cannot drift into measuring the `unavailable`
+banner instead. The route handler records what it actually served, the spec
+waits for that poll before closing a trial, and the composer's prior value must
+be empty (the persisted draft is cleared before every boot). Each trial also
+records blocked external requests, TTFB, DOMContentLoaded and load timings for
+diagnosis; only the interactive frame is graded.
+
+The shell gate gets a 35-minute Playwright global timeout and a 40-minute job,
+sized as two modes of up to 15 minutes each plus the production build; the
+stream gate keeps its 20 minutes.
+
+For each mode separately, the nearest-rank p95 of 100 trials must be at most
+the catalogue ceiling. The median, maximum and every raw trial stay visible.
+Unknown modes, missing or duplicated trials, a poll that does not match the
+mode, or any incomplete trial fail closed. This is a regression gate on a fixed
+synthetic workspace served over loopback, not a cold-launch, native-shell,
+Tauri-sidecar or real-profile measurement; those remain separate evidence
+under #6119.
+
+`pnpm performance:shell --control` busy-waits the main thread for the ceiling
+plus 500 ms before any page script in six trials per mode, which must fail the
+same p95 gate with complete samples. The workflow's `shell_control` input runs
+that deliberate failure and `scripts/verify-shell-control.mjs` checks the CLI
+exit, complete raw samples, clean expected head and Playwright results.
+
+Reports, invocation/build/browser/machine metadata and first-trial screenshots
+live under `artifacts/shell-performance/<invocation-id>/`. Failed runs retain
+their samples; the workflow uploads evidence even when the gate fails.
+See [#6333](https://github.com/OpenCoven/coven-cave/issues/6333).
+
+## Production doctor gate
+
+`cli.doctor.p95-ms` is enforced by `tests/doctor-exec-performance.spec.ts`
+through `pnpm performance:doctor` (#6346). The ceiling is the exec route's own
+`EXEC_TIMEOUT_MS`, so the gate measures what a chat `/doctor` pays: the wall
+clock of `POST /api/coven/exec {"command":"doctor"}` against the built
+standalone server, from request start to parsed JSON body, 100 sequential
+requests after one untimed prime, nearest-rank p95.
+
+| what runs | where | evidence per trial | ceiling |
+| --- | --- | --- | ---: |
+| the pinned released CLI named by `COVEN_BIN` | isolated synthetic home, no engine, no daemon | status, correlation id, `ok`, exit code, output byte counts, wall clock | 6,000 ms p95 |
+
+**The CLI is chosen, not discovered.** `pnpm performance:doctor` refuses to
+run without an absolute, existing `COVEN_BIN`; the workflow installs the same
+signed, pinned release the iOS lane and the automations canary drive and
+records its reported version in the invocation. The server does not spawn that
+file directly: it spawns a generated `sh` launcher that `exec`s the pinned CLI
+under the launcher's own Node, the canary's rule for `.js` binaries. The exec
+route's augmented spawn PATH puts managed install directories first, so a
+shebang-launched `coven.js` could otherwise run under a different Node than
+the workflow set up. Both modes share that launch path, and its cost (one `sh`
+exec) is in every trial. In that home `doctor` reports and exits 1 (no
+engine); the budget grades the clock and the exit code is recorded so the
+measured state is explicit.
+
+**What counts as evidence.** A trial is graded only when the route answered
+with the CLI's own completion (HTTP 200, an integer exit code, some output) or
+with its own ceiling (HTTP 504 timeout, which is a latency failure by
+construction). A spawn failure answers 500 in milliseconds and must never read
+as a fast doctor; a missing correlation id or an empty reply is a harness
+fault. Any such trial fails the verdict closed. Output text is not retained
+because `doctor` prints local install paths; byte counts are.
+
+**Positive control.** `--control` gives the same launcher a marker file to
+watch: while it exists the launcher sleeps past the ceiling before the `exec`.
+The spec sets the marker for the first six trials, the route's timeout fires,
+and `verify-doctor-control` accepts only a latency-only failure on the exact
+clean head, through the same shared verifier as the stream and shell gates. A
+timeout counts as evidence only when its wall clock is at or past the ceiling;
+a fast 504 is a route fault and fails the verdict closed.
+
+The doctor gate gets a 35-minute Playwright global timeout (build included)
+and a 40-minute job.
+
+## Production soak lane
+
+Run `pnpm performance:soak [--minutes N]` (default 120, at most 300) from a
+worktree with its own installed dependencies and no local dotenv files. It
+builds production code and runs only `tests/soak-performance.spec.ts` through
+the same allowlisted launcher environment and synthetic state root as the
+stream and shell gates. One page in one primed context stays alive for the
+requested minutes and switches between the Home modes `chat`, `board`,
+`inbox`, `code`, `journal` and `canvas` **in place**, through the shell's own
+`cave:navigate-mode` event, returning to an interactive Home composer each
+cycle. The document is never reloaded: a token set on the first document is
+checked at every sample, so the page series describe what that one document
+retained across every switch, not a page loaded within the last minute. Each
+switch must produce the mode's announced page title, so a closed room or a
+chunk that failed to load cannot count as a visit.
+
+Samples are taken at wall-clock slots, one per minute from the start, after a
+forced garbage collection: the server process tree (resident set of the
+listening process and every descendant, the root's own share, the process
+count, and the listening process's open descriptors where the host exposes
+them), the page (retained JS heap, DOM nodes, listeners, documents, frames)
+and the bytes under the synthetic state root. A slot that passes while a
+switch or a sample is running is recorded as missed rather than back-filled;
+the verdict tolerates five percent of the expected slots and reports the
+count. The verdict in `artifacts/soak-performance/<id>/soak.json` reports each
+series' first, last and maximum values and its least-squares growth per hour
+over the final two thirds of that series. **It grades no ceiling:** the
+catalogue has no soak budgets yet, and the numbers are the maintainer's to
+choose from this evidence. The verdict fails closed on an incomplete run (too
+many missed slots, a short duration, a missing series, a descriptor count that
+disappears mid-run, a page error, a reloaded document, a changed server pid,
+or a cycle that did not come back to the composer), so a crash never reads as
+"no growth".
+
+The workflow's `soak_minutes` input runs the lane as its own job (360-minute
+cap: the longest soak, the 35-minute Playwright allowance for the build, and
+setup and upload); blank or `0` skips it, so the schedule never pays for it.
+See [#6347](https://github.com/OpenCoven/coven-cave/issues/6347).
 
 ## Missing measurements fail closed
 

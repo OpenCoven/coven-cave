@@ -41,6 +41,32 @@ test("CI builds before serving and a failed build cannot launch a stale server",
   }
 });
 
+test("only the stream benchmark may build another room visibility (#6338)", async () => {
+  const previous = { ...process.env };
+  const stateRoot = mkdtempSync(path.join(tmpdir(), "cave-stream-rooms-"));
+  let stream;
+  let ordinary;
+  try {
+    process.env.CI = "true";
+    process.env.CAVE_STREAM_ROOMS = "none";
+    delete process.env.CAVE_STREAM_PERFORMANCE;
+    ordinary = (await import("../playwright.config.ts?ordinary-rooms-test")).default;
+    process.env.CAVE_STREAM_PERFORMANCE = "1";
+    process.env.CAVE_STREAM_STATE_ROOT = stateRoot;
+    stream = (await import("../playwright.config.ts?stream-rooms-test")).default;
+  } finally {
+    for (const key of ["CI", "CAVE_STREAM_ROOMS", "CAVE_STREAM_PERFORMANCE", "CAVE_STREAM_STATE_ROOT"]) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
+  assert.equal(ordinary.webServer.env.NEXT_PUBLIC_CAVE_ROOMS, "all",
+    "the E2E suite keeps every registered room whatever the benchmark setting says");
+  assert.equal(stream.webServer.env.NEXT_PUBLIC_CAVE_ROOMS, "none");
+  assert.equal(stream.webServer.env.COVEN_RESEARCH_ENABLED, "0");
+});
+
 test("the production fixture serves this build's assets with isolated runtime settings", () => {
   const root = mkdtempSync(path.join(tmpdir(), "cave-production-e2e-"));
   try {

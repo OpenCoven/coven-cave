@@ -25,6 +25,26 @@ on:
         required: false
         default: false
         type: boolean
+      rooms_absent:
+        description: Measure the all-optional-rooms-absent configuration (NEXT_PUBLIC_CAVE_ROOMS=none with the Research package removed after install); its evidence is named rooms-absent and never becomes the scheduled baseline
+        required: false
+        default: false
+        type: boolean
+      soak_minutes:
+        description: Run the production soak lane for this many minutes (blank or 0 skips it; 1 to 300). Its evidence is a growth baseline, never a graded budget
+        required: false
+        default: ""
+        type: string
+      shell_control:
+        description: Verify that injected boot stalls fail only the shell boot budgets
+        required: false
+        default: false
+        type: boolean
+      doctor_control:
+        description: Verify that an injected CLI stall fails only the coven doctor budget
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -39,6 +59,9 @@ jobs:
     name: Production stream budget
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    env:
+      # Blank keeps the lane's default build (every room, Research installed).
+      CAVE_STREAM_ROOMS: ${{ inputs.rooms_absent && 'none' || '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -49,6 +72,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Remove the optional Research package (rooms-absent configuration)
+        if: ${{ inputs.rooms_absent }}
+        run: |
+          rm -rf node_modules/@opencoven/research
+          test ! -e node_modules/@opencoven/research
       - run: bash scripts/install-playwright-ci.sh chromium
       - name: Measure the fixed production stream workload
         if: ${{ !inputs.stream_control }}
@@ -65,8 +93,128 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: cave-stream-performance-${{ github.sha }}-${{ github.run_id }}
+          name: ${{ inputs.rooms_absent && 'rooms-absent-' || '' }}cave-stream-performance-${{ github.sha }}-${{ github.run_id }}
           path: artifacts/stream-performance
+          if-no-files-found: error
+          retention-days: 90
+
+  shell:
+    name: Production shell boot budgets
+    runs-on: ubuntu-24.04
+    # Two modes of up to 15 minutes each after the production build; the
+    # Playwright global timeout for this gate is 35 minutes.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/install-playwright-ci.sh chromium
+      - name: Measure warm and offline shell boot to interactive
+        if: ${{ !inputs.shell_control }}
+        run: pnpm performance:shell
+      - name: Verify the deliberate shell boot budget failure
+        if: ${{ inputs.shell_control }}
+        run: |
+          set +e
+          pnpm performance:shell --control
+          control_exit=$?
+          set -e
+          node scripts/verify-shell-control.mjs "$control_exit"
+      - name: Preserve shell boot evidence including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cave-shell-performance-${{ github.sha }}-${{ github.run_id }}
+          path: artifacts/shell-performance
+          if-no-files-found: error
+          retention-days: 90
+
+  doctor:
+    name: Production coven doctor budget
+    runs-on: ubuntu-24.04
+    # The production build plus one hundred sequential requests of at most the
+    # 6 s ceiling; the Playwright global timeout for this gate is 35 minutes.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # No browser install: the spec drives the route with Playwright's request
+      # fixture and never launches one.
+      - name: Install the pinned Coven CLI the route will spawn
+        # The same signed, pinned release the iOS lane and the automations
+        # canary drive; the gate refuses to measure whatever is on PATH.
+        run: |
+          node --experimental-strip-types --input-type=module <<'NODE'
+          import { mkdirSync, appendFileSync } from 'node:fs';
+          import path from 'node:path';
+          import { installPinnedRelease } from './scripts/coven-automations-release-canary.ts';
+          const prefix = path.join(process.env.RUNNER_TEMP, 'doctor-coven');
+          mkdirSync(prefix);
+          const binary = installPinnedRelease(prefix);
+          appendFileSync(process.env.GITHUB_ENV, `COVEN_BIN=${binary}\n`);
+          NODE
+      - name: Measure coven doctor through the exec route
+        if: ${{ !inputs.doctor_control }}
+        run: pnpm performance:doctor
+      - name: Verify the deliberate coven doctor budget failure
+        if: ${{ inputs.doctor_control }}
+        run: |
+          set +e
+          pnpm performance:doctor --control
+          control_exit=$?
+          set -e
+          node scripts/verify-doctor-control.mjs "$control_exit"
+      - name: Preserve doctor evidence including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cave-doctor-performance-${{ github.sha }}-${{ github.run_id }}
+          path: artifacts/doctor-performance
+          if-no-files-found: error
+          retention-days: 90
+
+  soak:
+    name: Production soak baseline
+    runs-on: ubuntu-24.04
+    if: ${{ inputs.soak_minutes != '' && inputs.soak_minutes != '0' }}
+    # Up to 300 minutes of soak plus the 35-minute Playwright allowance for
+    # the production build, then checkout, install, browser install and the
+    # evidence upload (#6347).
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/install-playwright-ci.sh chromium
+      - name: Soak the production shell and sample resource growth
+        env:
+          SOAK_MINUTES: ${{ inputs.soak_minutes }}
+        run: pnpm performance:soak --minutes "$SOAK_MINUTES"
+      - name: Preserve soak evidence including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cave-soak-performance-${{ github.sha }}-${{ github.run_id }}
+          path: artifacts/soak-performance
           if-no-files-found: error
           retention-days: 90
 
@@ -80,6 +228,7 @@ jobs:
       # rather than coercing it to zero.
       CAVE_BENCH_ITERATIONS: ${{ inputs.iterations }}
       CAVE_BENCH_PROFILE: ${{ inputs.profile || 'phase-6-list-10k' }}
+      CAVE_STREAM_ROOMS: ${{ inputs.rooms_absent && 'none' || '' }}
       REPORT_ROOT: artifacts/cave-performance
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -95,6 +244,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Remove the optional Research package (rooms-absent configuration)
+        if: ${{ inputs.rooms_absent }}
+        run: |
+          rm -rf node_modules/@opencoven/research
+          test ! -e node_modules/@opencoven/research
+
       - name: Restore previous report
         id: baseline
         env:
@@ -102,24 +257,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          previous_run_id="$(gh run list \
+          # The newest successful run that produced a default-configuration
+          # report. A rooms-absent dispatch names its artifact differently and
+          # is skipped here, so it never becomes the scheduled lane's baseline.
+          previous_run_id=""
+          artifact_id=""
+          for candidate in $(gh run list \
             --repo "$GITHUB_REPOSITORY" \
             --workflow cave-performance.yml \
             --branch main \
             --status success \
-            --limit 1 \
+            --limit 10 \
             --json databaseId \
-            --jq '.[0].databaseId // empty')"
+            --jq '.[].databaseId'); do
+            artifact_id="$(gh api \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$candidate/artifacts" \
+              --jq '[.artifacts[] | select(.name | startswith("cave-performance-"))] | sort_by(.created_at) | last | .id // empty')"
+            if [ -n "$artifact_id" ]; then
+              previous_run_id="$candidate"
+              break
+            fi
+            echo "Run $candidate has no default-configuration performance artifact; skipping."
+          done
           if [ -z "$previous_run_id" ]; then
-            echo "No previous successful performance run found."
-            exit 0
-          fi
-
-          artifact_id="$(gh api \
-            "repos/$GITHUB_REPOSITORY/actions/runs/$previous_run_id/artifacts" \
-            --jq '[.artifacts[] | select(.name | startswith("cave-performance-"))] | sort_by(.created_at) | last | .id // empty')"
-          if [ -z "$artifact_id" ]; then
-            echo "Previous run $previous_run_id has no performance artifact."
+            echo "No previous successful performance run with a default-configuration report found."
             exit 0
           fi
 
@@ -163,7 +324,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: cave-performance-${{ github.sha }}-${{ github.run_id }}
+          name: ${{ inputs.rooms_absent && 'rooms-absent-' || '' }}cave-performance-${{ github.sha }}-${{ github.run_id }}
           path: artifacts/cave-performance
           if-no-files-found: error
           retention-days: 90

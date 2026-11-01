@@ -42,7 +42,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`event-plane-operations.md`](event-plane-operations.md) — the invalidation WebSocket: switches, rollout modes, what each platform pauses, security, recovery and diagnostics
 - [`device-access.md`](device-access.md) — opt-in tailnet allowlists, desktop-managed browser/iOS pairing, durable grants, revocation, and audit
 - [`cross-environment.md`](cross-environment.md) — neutral defaults across Linux, macOS, and Windows, plus the per-OS deltas and the suite that enforces them
-- [`runtime-startup-supervision.md`](runtime-startup-supervision.md) — why a reachable socket is transport availability, not runtime readiness
+- [`runtime-startup-supervision.md`](runtime-startup-supervision.md) — how Cave supervises the daemon and its own startup workers: the readiness contract, the projected lifecycle states, the one mutation owner, where the fault matrix and diagnostics live, and the startup-worker coordinator with its switches; pinned to the code by `scripts/runtime-startup-supervision-doc.test.mjs` (#6334)
 - [`model-catalog-pipeline.md`](model-catalog-pipeline.md) — the declarative source, generator, and validation workflow for harness model catalogs and context metadata
 - [`first-run-setup-diagnostics.md`](first-run-setup-diagnostics.md) — server-classified failure codes for the first-run bootstrap
 - [`settings-persistence.md`](settings-persistence.md) — why the desktop shell cannot use origin-keyed browser storage as its authoritative store
@@ -90,7 +90,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 - [`chat-github-integration.md`](chat-github-integration.md) — the shipped GitHub integration and its turn-marker protocol
 - [`chat-image-carousel.md`](chat-image-carousel.md) — image carousel markers, reusing the protocol above
 - [`chat-proposal-review-card.md`](chat-proposal-review-card.md) — proposal-review receipt marker and evidence-only card (#5520)
-- [`research-host-contract.md`](research-host-contract.md) — explicit core adapters and shared saved links for the optional Research package
+- [`research-host-contract.md`](research-host-contract.md) — explicit core adapters and shared saved links for the optional Research package, plus the activation owner and hot-disable teardown contract (#6332)
 - [`research-core-boundary.md`](research-core-boundary.md) — the optional Research boundary and the shared contracts core keeps; shipped in #6025 and enforced by `research-core-boundary.test.ts` and `research-maintenance-boundary.test.ts`
 - [`research-run-surface.md`](research-run-surface.md) — durable ResearchMission projections across Chat, Quick Chat, and Research Desk
 - [`execution-analytics.md`](execution-analytics.md) — model- and harness-level analytics: the three model identities, why harness version is never recorded, coverage as the honesty layer, and what the aggregate discards

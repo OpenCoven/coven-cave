@@ -179,7 +179,8 @@ function remoteExact(root, branch, head) {
   return { ok: true, retained: false, reason: `exact head ${head.slice(0, 12)} is absent from origin branch and tags` };
 }
 
-function directoryBytes(root) {
+/** Bytes under a tree, symlinks skipped; entries that vanish mid-walk are ignored (the soak lane samples a live state root, #6347). */
+export function directoryBytes(root) {
   let total = 0;
   const stack = [root];
   while (stack.length) {

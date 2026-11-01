@@ -561,7 +561,8 @@ export async function runCaveAutomationsScenario(
   return { mutations: 11, historyEntries: 3, historyPages: 3, lifecycleCommands: 4, occurrences: 1, attempts: 1, feedEvents: 6 };
 }
 
-function covenCommand(coven: string): [string, string[]] {
+/** How a pinned release binary is launched: a `.js` entry runs under this process's own Node. */
+export function covenCommand(coven: string): [string, string[]] {
   return /\.[cm]?js$/u.test(coven) ? [process.execPath, [coven]] : [coven, []];
 }
 

@@ -5,6 +5,8 @@ import path from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { configureGithubWatcher, startGithubWatcher, stopGithubWatcher, tickGithubWatcher } from "./github-watcher";
 import { withinDeadline } from "./async-deadline";
+import { coordinateStartupWorkerShutdown } from "./server/startup-worker-shutdown";
+import { registerAllStartupWorkersExcept } from "./server/startup-worker-shutdown-fixtures";
 
 const fixtures = vi.hoisted(() => ({
   subscriptions: vi.fn(), patch: vi.fn(), token: vi.fn(), cursor: vi.fn(),
@@ -27,6 +29,7 @@ const nativeFetch = globalThis.fetch;
 beforeEach(() => {
   vi.useFakeTimers();
   delete globalThis.__githubWatcher;
+  delete (globalThis as { __caveStartupWorkerShutdown?: unknown }).__caveStartupWorkerShutdown;
   fixtures.subscriptions.mockResolvedValue({
     enabled: true, repos: ["fixture/first", "fixture/second"],
     events: { prOpened: true, ciCompleted: false },
@@ -50,6 +53,7 @@ afterEach(async () => {
   if (vi.isFakeTimers()) vi.clearAllTimers();
   vi.useRealTimers();
   delete globalThis.__githubWatcher;
+  delete (globalThis as { __caveStartupWorkerShutdown?: unknown }).__caveStartupWorkerShutdown;
 });
 
 test.each(["disabled", "no repositories", "no events"])("%s startup owns no polling timer", async (reason) => {
@@ -493,4 +497,94 @@ test("stopping the watcher closes a real pending HTTP body and its timer", async
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
+});
+
+test("coordinated shutdown drains an admitted notification write before reporting the watcher drained", async () => {
+  const subs = await fixtures.subscriptions();
+  subs.repos = ["fixture/first"];
+  let finish!: () => void;
+  const writing = new Promise<void>(resolve => { finish = resolve; });
+  fixtures.create.mockImplementationOnce(async (input) => { await writing; return input; });
+  const fetcher = vi.fn().mockImplementation(async () => Response.json([pr]));
+  vi.stubGlobal("fetch", fetcher);
+  await startGithubWatcher();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fixtures.create).toHaveBeenCalledOnce();
+  registerAllStartupWorkersExcept("github-watcher");
+  let finished = false;
+  const closing = coordinateStartupWorkerShutdown(async () => undefined).then(result => { finished = true; return result; });
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(finished).toBe(false);
+  expect(fixtures.broadcast).not.toHaveBeenCalled();
+  finish();
+  const result = await closing;
+  expect(result.workers["github-watcher"].status).toBe("drained");
+  // The admitted item is delivered; the cancelled poll does not advance its cursor.
+  expect(fixtures.broadcast).toHaveBeenCalledOnce();
+  expect(fixtures.cursor).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+test("a read in flight at coordinated shutdown is cancelled without writing a cursor or notification", async () => {
+  const fetcher = vi.fn((_input: string, options: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    options.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+  }));
+  vi.stubGlobal("fetch", fetcher);
+  await startGithubWatcher();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetcher).toHaveBeenCalledOnce();
+  registerAllStartupWorkersExcept("github-watcher");
+  const result = await coordinateStartupWorkerShutdown(async () => undefined);
+  expect(result.workers["github-watcher"].status).toBe("drained");
+  expect(fixtures.create).not.toHaveBeenCalled();
+  expect(fixtures.cursor).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test("a write that outlives the shutdown deadline is reported pending, never cancelled or replayed", async () => {
+  const subs = await fixtures.subscriptions();
+  subs.repos = ["fixture/first"];
+  let finish!: () => void;
+  const writing = new Promise<void>(resolve => { finish = resolve; });
+  fixtures.create.mockImplementationOnce(async (input) => { await writing; return input; });
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json([pr])));
+  await startGithubWatcher();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fixtures.create).toHaveBeenCalledOnce();
+  registerAllStartupWorkersExcept("github-watcher");
+  const closing = coordinateStartupWorkerShutdown(async () => undefined, { deadlineMs: 100 });
+  await vi.advanceTimersByTimeAsync(100);
+  const result = await closing;
+  expect(result.workers["github-watcher"].status).toBe("pending");
+  expect(fixtures.broadcast).not.toHaveBeenCalled();
+  finish();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fixtures.broadcast).toHaveBeenCalledOnce();
+  expect(fixtures.create).toHaveBeenCalledOnce();
+});
+
+test("a start or settings change after shutdown began saves settings but owns no timer and reads nothing", async () => {
+  registerAllStartupWorkersExcept("github-watcher");
+  const closing = coordinateStartupWorkerShutdown(async () => undefined, { deadlineMs: 10 });
+  await vi.advanceTimersByTimeAsync(10);
+  await closing;
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  await startGithubWatcher();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+  const saved = await configureGithubWatcher({ enabled: true });
+  expect(saved.enabled).toBe(true);
+  expect(fixtures.patch).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+  // The fenced activation leaves the owner suspended: a direct tick after the
+  // drain reads nothing and writes nothing.
+  await tickGithubWatcher();
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(fixtures.cursor).not.toHaveBeenCalled();
 });
