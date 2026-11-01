@@ -23,7 +23,7 @@ export function buildClaudeWriteScope(input: {
 }): ClaudeWriteScope {
   if (input.primaryAccess === "read") throw new Error("This project's grant is read-only. Use Read-only mode or request write access.");
   if (input.primaryAccess !== "write") throw new Error("Explicit primary-root write access is required.");
-  const canonical = (root: string) => realpathSync.native(root);
+  const canonical = (root: string) => realpathSync.native(/* turbopackIgnore: true */ root);
   const primaryRoot = canonical(input.primaryRoot);
   const writable = new Set([primaryRoot]);
   const readable = new Set<string>();
@@ -43,14 +43,14 @@ export function buildClaudeWriteScope(input: {
 
 /** Allocate only after stream admission; keep this file out of project roots. */
 export function prepareClaudeWriteScopeFile(scope: ClaudeWriteScope) {
-  const directory = path.join(tmpdir(), `cave-claude-write-scope-${randomUUID()}`);
-  const filePath = path.join(directory, "scope.json");
+  const directory = path.join(/* turbopackIgnore: true */ tmpdir(), `cave-claude-write-scope-${randomUUID()}`);
+  const filePath = path.join(/* turbopackIgnore: true */ directory, "scope.json");
   let identity: { dev: number; ino: number } | undefined;
   return {
     path: filePath,
     async create() {
-      await mkdir(directory, { mode: 0o700 });
-      const file = await open(filePath, "wx", 0o600);
+      await mkdir(/* turbopackIgnore: true */ directory, { mode: 0o700 });
+      const file = await open(/* turbopackIgnore: true */ filePath, "wx", 0o600);
       try {
         await file.writeFile(JSON.stringify(scope));
         const metadata = await file.stat();
@@ -59,12 +59,12 @@ export function prepareClaudeWriteScopeFile(scope: ClaudeWriteScope) {
     },
     async dispose() {
       if (!identity) return;
-      const metadata = await lstat(filePath);
+      const metadata = await lstat(/* turbopackIgnore: true */ filePath);
       if (!metadata.isFile() || metadata.dev !== identity.dev || metadata.ino !== identity.ino) {
         throw new Error("Scope file identity changed; retained for inspection.");
       }
-      await unlink(filePath);
-      await rmdir(directory);
+      await unlink(/* turbopackIgnore: true */ filePath);
+      await rmdir(/* turbopackIgnore: true */ directory);
       identity = undefined;
     },
   };
