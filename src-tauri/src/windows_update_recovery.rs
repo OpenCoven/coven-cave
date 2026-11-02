@@ -485,10 +485,8 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn disarm_reports_whether_the_pre_exit_teardown_already_ran() {
-        let dir = std::env::temp_dir().join(format!(
-            "cave-install-teardown-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("cave-install-teardown-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let watch = std::sync::Arc::new(UpdateInstallWatch::new(&dir, dir.join("msi.log")));
         assert_eq!(watch.disarm(), InstallTeardown::Intact);
