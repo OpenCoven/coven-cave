@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { transformSync } from "esbuild";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { registerAllStartupWorkersExcept } from "./lib/server/startup-worker-shutdown-fixtures";
 import { coordinateStartupWorkerShutdown, registerStartupWorker } from "./lib/server/startup-worker-shutdown";
 
 beforeEach(() => {
@@ -32,10 +33,7 @@ function serverShutdown(ready = true) {
 test("the custom server waits for the quit drain even after HTTP closes", async () => {
   let finish!: () => void;
   const held = new Promise<void>(resolve => { finish = resolve; });
-  registerStartupWorker("inbox-reminders", async () => undefined);
-  registerStartupWorker("scheduled-chat", async () => undefined);
-  registerStartupWorker("research", async () => undefined);
-  registerStartupWorker("github-watcher", async () => undefined);
+  registerAllStartupWorkersExcept("backup-sync");
   registerStartupWorker("backup-sync", () => held);
   const server = serverShutdown();
   server.shutdown();
@@ -49,10 +47,7 @@ test("the custom server waits for the quit drain even after HTTP closes", async 
 });
 
 test("the custom server exits unsuccessfully when the shared deadline leaves work pending", async () => {
-  registerStartupWorker("inbox-reminders", async () => undefined);
-  registerStartupWorker("scheduled-chat", async () => undefined);
-  registerStartupWorker("research", async () => undefined);
-  registerStartupWorker("github-watcher", async () => undefined);
+  registerAllStartupWorkersExcept("backup-sync");
   registerStartupWorker("backup-sync", () => new Promise<void>(() => undefined));
   const server = serverShutdown();
   server.shutdown();
@@ -70,11 +65,7 @@ test("signals own shutdown before Next preparation can start workers", () => {
 });
 
 test("a shutdown during preparation drains registered workers without an HTTP listener", async () => {
-  registerStartupWorker("inbox-reminders", async () => undefined);
-  registerStartupWorker("scheduled-chat", async () => undefined);
-  registerStartupWorker("research", async () => undefined);
-  registerStartupWorker("github-watcher", async () => undefined);
-  registerStartupWorker("backup-sync", async () => undefined);
+  registerAllStartupWorkersExcept();
   const server = serverShutdown(false);
   server.shutdown();
   await vi.advanceTimersByTimeAsync(0);
@@ -86,10 +77,7 @@ test("the custom server waits for an admitted reminder delivery even after HTTP 
   let finish!: () => void;
   const held = new Promise<void>(resolve => { finish = resolve; });
   registerStartupWorker("inbox-reminders", () => held);
-  registerStartupWorker("scheduled-chat", async () => undefined);
-  registerStartupWorker("research", async () => undefined);
-  registerStartupWorker("github-watcher", async () => undefined);
-  registerStartupWorker("backup-sync", async () => undefined);
+  registerAllStartupWorkersExcept("inbox-reminders");
   const server = serverShutdown();
   server.shutdown();
   expect(server.close).toHaveBeenCalledOnce();
@@ -102,10 +90,7 @@ test("the custom server waits for an admitted reminder delivery even after HTTP 
 
 test("a reminder delivery that outlives the shared deadline is reported, not cancelled", async () => {
   registerStartupWorker("inbox-reminders", () => new Promise<void>(() => undefined));
-  registerStartupWorker("scheduled-chat", async () => undefined);
-  registerStartupWorker("research", async () => undefined);
-  registerStartupWorker("github-watcher", async () => undefined);
-  registerStartupWorker("backup-sync", async () => undefined);
+  registerAllStartupWorkersExcept("inbox-reminders");
   const server = serverShutdown();
   server.shutdown();
   await vi.advanceTimersByTimeAsync(3_000);

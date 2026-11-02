@@ -35,7 +35,7 @@ const shim = `
 const { appendFileSync, readFileSync } = require("node:fs");
 const args = process.argv.slice(2);
 if (args[0] === "run" && args[1] === "--help") {
-  process.stdout.write("--model <model> --permission <permission> --add-dir <path>");
+  process.stdout.write("--model <model> --permission <permission> --add-dir <path> --write-scope <file>");
 } else if (args[0] === "run" && args[1] === "claude") {
   const prompt = args[args.indexOf("--") + 1];
   const block = prompt.split("Referenced files (open with the Read tool):\\n")[1] || "";

@@ -23,6 +23,18 @@ await mkdir(outside, { recursive: true });
 const filePath = path.join(home, "not-a-dir.txt");
 await writeFile(filePath, "not a directory");
 
+// #6356: an accessible read-only directory must not become a writable
+// --add-dir authority merely because it is visible in the boundary preamble.
+assert.deepEqual(
+  runtimeGrantDirs({
+    spawnRoot: repo,
+    grantedProjectRoots: [outside, nested],
+    projectRootAccess: { [outside]: "read", [nested]: "write" },
+  }),
+  [nested],
+  "only explicit writable project roots are forwarded to the harness",
+);
+
 await assert.rejects(
   () => resolveLocalRuntimeCwd(undefined, { homeDir: home }),
   (error) =>
@@ -54,6 +66,16 @@ assert.equal(
     additionalRoots: [skills],
   });
   assert.equal(first, reordered, "equivalent grant sets have one stable fingerprint");
+  assert.notEqual(
+    buildRuntimeAccessFingerprint({ primaryRoot: repo, grantedProjectRoots: [], permissionMode: "read" }),
+    buildRuntimeAccessFingerprint({ primaryRoot: repo, grantedProjectRoots: [], permissionMode: "full" }),
+    "changing the permission mode must replace stale native session authority",
+  );
+  assert.notEqual(
+    buildRuntimeAccessFingerprint({ primaryRoot: repo, grantedProjectRoots: [], readOnlyResourceRoots: [] }),
+    buildRuntimeAccessFingerprint({ primaryRoot: repo, grantedProjectRoots: [], readOnlyResourceRoots: [skills] }),
+    "a change to protected runtime resources must invalidate native authority",
+  );
   assert.notEqual(
     first,
     buildRuntimeAccessFingerprint({
@@ -269,6 +291,20 @@ assert.equal(
     "the spawn root is excluded by canonical identity; other grants keep their registered spelling",
   );
   assert.deepEqual(
+    runtimeGrantDirs({
+      spawnRoot: spawn,
+      grantedProjectRoots: [extra, aliasExtra, workspace],
+      projectRootAccess: { [extra]: "read", [aliasExtra]: "write" },
+    }),
+    [aliasExtra],
+    "a writable alias remains writable while read-only and unknown grants are excluded",
+  );
+  assert.deepEqual(
+    runtimeGrantDirs({ spawnRoot: spawn, grantedProjectRoots: [extra], projectRootAccess: {} }),
+    [],
+    "a missing level in an explicit access map must not create write authority",
+  );
+  assert.deepEqual(
     runtimeGrantDirs({ spawnRoot: spawn, grantedProjectRoots: [elsewhereLink] }),
     [elsewhereLink],
     "a symlinked grant that names another directory is still forwarded",
@@ -323,13 +359,12 @@ assert.equal(
     "a directory granted write under any spelling is not described as read-only",
   );
 
-  // Decision recorded on #6216: the persisted runtime access fingerprint keeps
-  // comparing spellings, so existing native sessions are not forced to
-  // refresh. Only the preamble above dedupes by directory.
+  // Preserve #6216's spelling comparison. Version 2 deliberately refreshes
+  // legacy sessions once to bind permission mode and protected resources.
   assert.equal(
     buildRuntimeAccessFingerprint({ primaryRoot: spawn, grantedProjectRoots: [aliasSpawn] }),
-    JSON.stringify({ version: 1, primaryRoot: spawn, roots: [{ root: aliasSpawn, access: "write" }] }),
-    "the persisted fingerprint format is unchanged",
+    JSON.stringify({ version: 2, primaryRoot: spawn, permissionMode: "full", readOnlyResourceRoots: [], roots: [{ root: aliasSpawn, access: "write" }] }),
+    "the new fingerprint preserves registered spellings while binding authority",
   );
 
   // CI runs on case-sensitive Linux, where the case-variant check above is
