@@ -2254,6 +2254,8 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // imports the one-shot runner, which reaches cave-config through @/ (#6374)
+  "src/lib/server/coven-oneshot-workspace.test.ts",
   // The Research capability route reaches the activation owner through @/lib (#6332).
   "src/app/api/research/capability/route.test.ts",
   // Real PATCH /api/chat/model-state requests against a scratch home (#6098).

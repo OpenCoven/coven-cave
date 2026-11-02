@@ -48,21 +48,21 @@ export async function resolveFamiliarWorkspace(
   familiarId: string,
 ): Promise<string | undefined> {
   if (!SAFE_ID.test(familiarId)) return undefined;
-  const root = await realDirectory(familiarWorkspacesRoot());
-  if (!root) return undefined;
-
+  // The owner chose this path in familiars.toml, so it may sit outside the
+  // familiars root, as the chat-send resolver also allows.
   const declared = (await readFamiliarWorkspaces()).get(familiarId);
   if (declared) {
     const resolvedDeclared = await realDirectory(declared);
-    if (resolvedDeclared) {
-      const relativeDeclared = path.relative(root, resolvedDeclared);
-      if (relativeDeclared !== "" && !relativeDeclared.startsWith("..") && !path.isAbsolute(relativeDeclared)) {
-        return resolvedDeclared;
-      }
-    }
+    if (resolvedDeclared) return resolvedDeclared;
   }
-
-  const candidate = await realDirectory(path.join(/* turbopackIgnore: true */ root, familiarId));
+  const root = await realDirectory(familiarWorkspacesRoot());
+  if (!root) return undefined;
+  // Lexical containment before the filesystem sees the id, then real-path
+  // containment, because a symlink inside the root can still point out of it.
+  const lexical = path.resolve(/* turbopackIgnore: true */ root, familiarId);
+  const lexicalRelative = path.relative(root, lexical);
+  if (lexicalRelative.startsWith("..") || path.isAbsolute(lexicalRelative)) return undefined;
+  const candidate = await realDirectory(lexical);
   if (!candidate) return undefined;
   const relative = path.relative(root, candidate);
   if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
