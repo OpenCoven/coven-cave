@@ -2,14 +2,14 @@
 //
 // One write, one upstream call. The contract under anomaly is "ok: false with
 // a status GitHub's own answer earns": a 403 passes through, everything else
-// is a 502, and a 200 the route cannot read is reported as a failure too.
-// The one soft spot the matrix pins rather than hides: a well-formed body of
-// the wrong shape is accepted as a posted comment with an empty id.
+// is a 502. A 2xx that is unreadable or carries no comment id is an ambiguous
+// write: the comment may exist, so the caller is told to check before
+// retrying rather than shown an empty-id success (#6368).
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-comment-anomalies");
@@ -96,19 +96,10 @@ test("POST /api/github/comment across upstream anomalies", async (t) => {
         expectErrorStatus(502)(outcome, anomaly);
         assert.equal((outcome.body as { error: string }).error, "fetch failed");
       },
-      // A 200 the route cannot read is reported as a GitHub error, status and all.
-      "malformed-json": githubError(200),
-      "empty-body": githubError(200),
-      "schema-drift": (outcome) => {
-        // Pinned, not endorsed: a well-formed body of the wrong shape is taken
-        // as a posted comment whose id is unknown.
-        assert.equal(outcome.status, 200);
-        const body = outcome.body as { ok: boolean; comment: { id: string; author: unknown; body: string } };
-        assert.equal(body.ok, true);
-        assert.equal(body.comment.id, "");
-        assert.equal(body.comment.author, null);
-        assert.equal(body.comment.body, "Looks good.", "the local text stands in for the echo");
-      },
+      // A 2xx the route cannot confirm is an ambiguous write (#6368).
+      "malformed-json": expectAmbiguousWrite,
+      "empty-body": expectAmbiguousWrite,
+      "schema-drift": expectAmbiguousWrite,
     },
   });
 });

@@ -68,14 +68,7 @@ test("validateGithubToken across upstream anomalies", async (t) => {
       network: unreachable,
       "malformed-json": validWithoutLogin,
       "empty-body": validWithoutLogin,
-      "schema-drift": (outcome) => {
-        // The token is valid; GitHub's drifted body carries a non-string
-        // `login`, which the validator passes through untyped (see the
-        // report: src/lib/secret-validators.ts:25 does not check the type).
-        assert.equal(verdict(outcome).ok, true);
-        assert.notEqual(verdict(outcome).login, "octocat");
-        assert.equal(verdict(outcome).error, undefined);
-      },
+      "schema-drift": validWithoutLogin,
     },
   });
 });

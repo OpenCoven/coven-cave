@@ -17,6 +17,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isRecord, positiveInteger } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -142,8 +143,12 @@ export async function POST(req: Request) {
       cache: "no-store",
       body: JSON.stringify({ content }),
     });
-    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    // 200 (already reacted) and 201 (created) are both the desired end state.
+    const raw: unknown = await res.json().catch(() => null);
+    // 200 (already reacted) and 201 (created) are both the desired end state,
+    // but only an answer carrying the reaction's id confirms it — and DELETE
+    // needs that id to undo it (#6368).
+    if (res.ok && !(isRecord(raw) && positiveInteger(raw.id))) return ambiguousWrite("GitHub", "reaction");
+    const data = isRecord(raw) ? raw : null;
     if (!res.ok || !data) {
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
       return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
@@ -151,7 +156,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       reaction: {
-        id: typeof data.id === "number" ? data.id : null,
+        id: positiveInteger(data.id) as number,
         content: typeof data.content === "string" ? data.content : content,
       },
     });

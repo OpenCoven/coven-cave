@@ -3,13 +3,13 @@
 // Same two shapes as merge. With a reviewed head the PR is read first and an
 // unreadable PR means no verdict is submitted. Without a head the review
 // POST itself is driven through the matrix: GitHub's own message passes
-// through, a 403 keeps its status, and — pinned rather than endorsed — a
-// drifted 200 is accepted as a submitted review with an empty id.
+// through, a 403 keeps its status, and a 2xx without a review id is an
+// ambiguous write: the review may have been submitted (#6368).
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-review-anomalies");
@@ -110,13 +110,9 @@ test("POST /api/github/review without a head across upstream anomalies", async (
       "rate-limit": failsWith(502, "API rate limit exceeded"),
       timeout: timesOut,
       network: failsWith(502, "fetch failed"),
-      "malformed-json": failsWith(502, "github error (200)"),
-      "empty-body": failsWith(502, "github error (200)"),
-      "schema-drift": (outcome) => {
-        // Pinned, not endorsed: a drifted 200 is a submitted review with no id.
-        assert.equal(outcome.status, 200);
-        assert.deepEqual(outcome.body, { ok: true, review: { id: "", state: "APPROVE", url: null } });
-      },
+      "malformed-json": expectAmbiguousWrite,
+      "empty-body": expectAmbiguousWrite,
+      "schema-drift": expectAmbiguousWrite,
     },
   });
 });

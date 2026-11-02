@@ -30,6 +30,7 @@ import {
 import { resolveGitHubToken } from "@/lib/github-token";
 import { summarizeChecks, type CheckSummary } from "@/lib/github-checks";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { login as loginField } from "@/lib/server/upstream-answer";
 import { resolveSecret } from "@/lib/vault";
 
 export const dynamic = "force-dynamic";
@@ -329,7 +330,18 @@ export async function GET() {
           responseMessage: githubResponseMessage(data),
         });
       }
-      login = data?.login ?? login;
+      // Only a string login may reach the search queries below. A 2xx without
+      // one is GitHub failing to identify the account, not a missing
+      // GITHUB_USERNAME, so it is reported as such (#6368).
+      const reported = loginField(data?.login);
+      if (res.ok && !reported) {
+        identityFailure = {
+          message: "GitHub answered without identifying the configured account.",
+          rateLimited: false,
+          retryAfterSeconds: null,
+        };
+      }
+      login = reported ?? login;
       if (rateRemaining >= 0) rateInfo = { remaining: rateRemaining, limit: rateLimit };
     } catch {
       identityFailure = {

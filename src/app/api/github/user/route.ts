@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { login as loginField, upstreamDrift } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -86,11 +87,15 @@ export async function GET(req: Request) {
     }
 
     const d = data as Record<string, unknown>;
+    // The profile is of the login GitHub reports; without one it is not a
+    // profile at all (#6368).
+    const profileLogin = loginField(d.login);
+    if (!profileLogin) return upstreamDrift("GitHub", "a login");
     const blog = str(d.blog);
     const twitter = str(d.twitter_username);
     const profile: Profile = {
       ok: true,
-      login: String(d.login ?? login),
+      login: profileLogin,
       name: str(d.name),
       avatarUrl: str(d.avatar_url),
       htmlUrl: str(d.html_url),

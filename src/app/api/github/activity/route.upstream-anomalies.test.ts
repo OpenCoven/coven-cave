@@ -5,8 +5,9 @@
 // Identity decides the shape of everything after it, so the matrix (which
 // degrades every call alike) is really the identity contract: an outage is a
 // 502, a rate limit is a 429 carrying Retry-After, a revoked PAT is a 200 with
-// `patInvalid`, and an unreadable identity body falls through to the
-// "no_user" 401 that blames configuration. Every call goes through
+// `patInvalid`, and an identity body without a string login is a 502 saying
+// GitHub did not identify the account, never the "no_user" 401 that blames
+// configuration (#6368). Every call goes through
 // upstreamFetch and so carries a deadline; the enrichment pool adds its own
 // abort signal, and a check outage there costs a row its pip, never the list.
 import assert from "node:assert/strict";
@@ -144,29 +145,12 @@ test("GET /api/github/activity across upstream anomalies", async (t) => {
       },
       timeout: identityDown("Couldn't reach GitHub to identify the configured account."),
       network: identityDown("Couldn't reach GitHub to identify the configured account."),
-      // An unreadable identity body on a 200 leaves no login and no recorded
-      // failure, so the route falls through to its "set GITHUB_USERNAME" 401.
-      "malformed-json": (outcome, anomaly) => {
-        expectErrorStatus(401)(outcome, anomaly);
-        assert.equal((outcome.body as Activity).error, "no_user");
-      },
-      "empty-body": (outcome, anomaly) => {
-        expectErrorStatus(401)(outcome, anomaly);
-        assert.equal((outcome.body as Activity).error, "no_user");
-      },
-      "schema-drift": (outcome) => {
-        // The drifted identity carries a `login` that is not a string; the
-        // route proceeds with it, every search fails its shape check, and the
-        // answer is an authed, empty, all-collections-failed 200.
-        assert.equal(outcome.status, 200);
-        const body = outcome.body as Activity;
-        assert.equal(body.ok, true);
-        assert.equal(body.authed, true);
-        assert.deepEqual(body.items, []);
-        assert.deepEqual(body.organizations, []);
-        assert.equal(body.collections?.authored.status, "failed");
-        assert.equal(body.collections?.assignedIssues.status, "failed");
-      },
+      // A 2xx identity body without a string login is GitHub failing to
+      // identify the account, never "set GITHUB_USERNAME" and never a search
+      // run with a non-string login (#6368).
+      "malformed-json": identityDown("GitHub answered without identifying the configured account."),
+      "empty-body": identityDown("GitHub answered without identifying the configured account."),
+      "schema-drift": identityDown("GitHub answered without identifying the configured account."),
     },
   });
 });

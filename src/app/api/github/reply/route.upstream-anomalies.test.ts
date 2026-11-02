@@ -2,13 +2,13 @@
 //
 // The review-thread twin of /api/github/comment: one write to GitHub's
 // review-comment replies endpoint. A 403 passes through, every other failure
-// is a 502 with "github error (N)", an unreadable 200 is a failure too, and a
-// drifted 200 is accepted as a reply with an empty id (pinned, not endorsed).
+// is a 502 with "github error (N)", and a 2xx that is unreadable or carries
+// no reply id is an ambiguous write: the reply may exist (#6368).
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-reply-anomalies");
@@ -90,16 +90,9 @@ test("POST /api/github/reply across upstream anomalies", async (t) => {
         expectErrorStatus(502)(outcome, anomaly);
         assert.equal((outcome.body as { error: string }).error, "fetch failed");
       },
-      "malformed-json": githubError(200),
-      "empty-body": githubError(200),
-      "schema-drift": (outcome) => {
-        assert.equal(outcome.status, 200);
-        const body = outcome.body as { ok: boolean; comment: { id: string; author: unknown; body: string } };
-        assert.equal(body.ok, true);
-        assert.equal(body.comment.id, "");
-        assert.equal(body.comment.author, null);
-        assert.equal(body.comment.body, "Done in the next push.");
-      },
+      "malformed-json": expectAmbiguousWrite,
+      "empty-body": expectAmbiguousWrite,
+      "schema-drift": expectAmbiguousWrite,
     },
   });
 });

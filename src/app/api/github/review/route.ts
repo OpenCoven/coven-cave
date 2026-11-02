@@ -16,6 +16,7 @@ import { parseGitHubDiffRevision, validateGitHubReviewBody } from "@/lib/github-
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isRecord, resourceId } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -83,7 +84,11 @@ export async function POST(req: Request) {
       cache: "no-store",
       body: JSON.stringify({ event, ...(text ? { body: text } : {}), ...(headSha ? { commit_id: headSha } : {}) }),
     });
-    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    const raw: unknown = await res.json().catch(() => null);
+    // GitHub accepted the review; an answer without a review id leaves it
+    // unconfirmed, and a blind retry could submit it twice (#6368).
+    if (res.ok && !(isRecord(raw) && resourceId(raw.id))) return ambiguousWrite("GitHub", "review");
+    const data = isRecord(raw) ? raw : null;
     if (!res.ok || !data) {
       // Surface GitHub's own message verbatim (e.g. "Can not approve your own
       // pull request") — the card renders it as the actionable error.
@@ -93,8 +98,8 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       review: {
-        id: String(data.id ?? ""),
-        state: String(data.state ?? event),
+        id: resourceId(data.id) as string,
+        state: typeof data.state === "string" && data.state ? data.state : event,
         url: typeof data.html_url === "string" ? data.html_url : null,
       },
     });
