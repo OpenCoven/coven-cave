@@ -25,6 +25,12 @@ In-repo callers that address the facade by URL: `automations-view`, `cron-detail
 
 Out-of-repo callers are **unknown**: scripts, bookmarks, other OpenCoven clients and third-party integrations may call these local endpoints. Absence from this repository is not evidence that none exist.
 
+## External-caller support policy
+
+The owner approved this compatibility policy on 2026-11-02 UTC; the decision is recorded on [#5217](https://github.com/OpenCoven/coven-cave/issues/5217#issuecomment-6561406701).
+
+Existing local facade routes remain supported through announced typed successor mappings and at least one full Cave release cycle. Retire a route only after zero observed local use and all existing contract, supported-client migration and exact-release successor-canary gates pass. Preserve deep links and the explicit source-preserving import path. Unknown out-of-repo callers remain unknown; this policy does not infer their absence or authorize route removal now.
+
 ## Versioned schedule
 
 Each stage needs a Cave release in which its entry gate held at that release's exact commit. A stage never starts from a source-only or canary-only result.
@@ -38,6 +44,6 @@ Each stage needs a Cave release in which its entry gate held at that release's e
 
 - Every supported client has migrated, as shown by the inventory test and canary markers above.
 - Upstream contracts are released and pinned: coven#857 (Runtime Authority), coven#858 (certification) and sdk#80 (SDK client seam). Until they are, typed successors cannot carry authority, approval or receipt semantics that the facade does not already have.
-- The external-caller question has an owner decision: either a documented support policy for local API consumers, or explicit acceptance that out-of-repo callers break at retirement.
+- The approved external-caller support policy above applies: retain compatibility through announced successors and at least one full release cycle, and require zero observed local use before retirement. The contract, client-migration and canary gates remain mandatory.
 
 Concept renaming from "Codex automation" to "Coven automation" or "routine" follows stage 3. It is user-visible copy work, tracked separately.
