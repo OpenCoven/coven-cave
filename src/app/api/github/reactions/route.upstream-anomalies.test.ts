@@ -2,15 +2,15 @@
 //
 // GET reads the tally and, with a token, the viewer's login in parallel; a
 // 401 or 403 keeps its status and everything else is a 502, an unreadable or
-// drifted 200 included. POST passes GitHub's own message through and accepts
-// a drifted 200 as a reaction with no id (pinned: the client then has no
-// handle to DELETE). DELETE treats 204 and 404 alike as "gone" and never
+// drifted 200 included. POST passes GitHub's own message through; a 2xx
+// without the reaction's id is an ambiguous write, never a success the client
+// cannot undo (#6368). DELETE treats 204 and 404 alike as "gone" and never
 // reads a success body, so a torn 200 is still "deleted".
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-reactions-anomalies");
@@ -125,14 +125,9 @@ test("POST /api/github/reactions across upstream anomalies", async (t) => {
       "rate-limit": failsWith(502, "API rate limit exceeded"),
       timeout: timesOut,
       network: failsWith(502, "fetch failed"),
-      "malformed-json": failsWith(502, "github error (200)"),
-      "empty-body": failsWith(502, "github error (200)"),
-      "schema-drift": (outcome) => {
-        // Pinned, not endorsed: the reaction is reported added with no id, so
-        // the client cannot remove it until the next GET.
-        assert.equal(outcome.status, 200);
-        assert.deepEqual(outcome.body, { ok: true, reaction: { id: null, content: "+1" } });
-      },
+      "malformed-json": expectAmbiguousWrite,
+      "empty-body": expectAmbiguousWrite,
+      "schema-drift": expectAmbiguousWrite,
     },
   });
 });

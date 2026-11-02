@@ -20,6 +20,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isRecord, positiveInteger } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,9 +46,12 @@ function ghHeaders(token: string): Record<string, string> {
   };
 }
 
+/** The issue GitHub reported, or null when its number drifted (#6368). */
 function issuePayload(d: Record<string, unknown>) {
+  const number = positiveInteger(d.number);
+  if (number === null) return null;
   return {
-    number: Number(d.number ?? 0),
+    number,
     title: String(d.title ?? ""),
     state: String(d.state ?? "open"),
     htmlUrl: typeof d.html_url === "string" ? d.html_url : null,
@@ -127,13 +131,18 @@ export async function POST(req: Request) {
       body: JSON.stringify({ title, body: text, ...(labels.length ? { labels } : {}) }),
     });
     const data = await res.json().catch(() => null);
+    // GitHub accepted the write; an unreadable answer leaves the issue's
+    // existence unknown, so say so rather than invite a duplicate.
+    if (res.ok && !isRecord(data)) return ambiguousWrite("GitHub", "new issue");
     if (!res.ok || !data || typeof data !== "object") {
       return NextResponse.json(
         { ok: false, error: `github error (${res.status})` },
         { status: res.status === 403 || res.status === 404 ? res.status : 502 },
       );
     }
-    return NextResponse.json({ ok: true, issue: issuePayload(data as Record<string, unknown>) });
+    const issue = issuePayload(data as Record<string, unknown>);
+    if (!issue) return ambiguousWrite("GitHub", "new issue");
+    return NextResponse.json({ ok: true, issue });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to create issue" },
@@ -195,6 +204,7 @@ export async function PATCH(req: Request) {
       }),
     });
     const data = await res.json().catch(() => null);
+    if (res.ok && !isRecord(data)) return ambiguousWrite("GitHub", "issue update");
     if (!res.ok || !data || typeof data !== "object") {
       // Pass GitHub's own reason through verbatim, like the merge and review
       // routes: on a 422 it names the offending assignee login or label, and
@@ -209,9 +219,11 @@ export async function PATCH(req: Request) {
       );
     }
     const d = data as Record<string, unknown>;
+    const issue = issuePayload(d);
+    if (!issue) return ambiguousWrite("GitHub", "issue update");
     return NextResponse.json({
       ok: true,
-      issue: issuePayload(d),
+      issue,
       // Echo back only what was asked for, read off GitHub's response rather
       // than the request, so the card renders what actually landed.
       ...(assignees ? { assignees: loginList(d.assignees) } : {}),

@@ -4,13 +4,16 @@
 // a 502 (403 and 404 pass through); PATCH forwards GitHub's own `message` so
 // a 422 names the offending label. Neither verb caches; both go through upstreamFetch,
 // which bounds the call and never retries a write.
-// The soft spot both share: a drifted 200 body is reported as a successful
-// write of issue #0, since any object is accepted as the written issue.
+// A 2xx GitHub accepted but whose body is torn, empty or drifted (no issue
+// number) is an ambiguous write: the issue may exist, so the route says
+// "check before trying again" instead of claiming issue #0 or inviting a
+// duplicate (#6368).
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import {
+  expectAmbiguousWrite,
   expectErrorStatus,
   runUpstreamAnomalyMatrix,
   type DegradedExpectation,
@@ -103,13 +106,9 @@ test("POST /api/github/issue across upstream anomalies", async (t) => {
       "rate-limit": errorMessage(502, "github error (429)"),
       timeout: unreachable,
       network,
-      "malformed-json": errorMessage(502, "github error (200)"),
-      "empty-body": errorMessage(502, "github error (200)"),
-      "schema-drift": (outcome) => {
-        // Any object is taken as the created issue: number 0, no title.
-        assert.equal(outcome.status, 200);
-        assert.deepEqual(outcome.body, { ok: true, issue: { number: 0, title: "", state: "open", htmlUrl: null } });
-      },
+      "malformed-json": expectAmbiguousWrite,
+      "empty-body": expectAmbiguousWrite,
+      "schema-drift": expectAmbiguousWrite,
     },
   });
 });
@@ -137,12 +136,9 @@ test("PATCH /api/github/issue across upstream anomalies", async (t) => {
       "rate-limit": errorMessage(502, "API rate limit exceeded"),
       timeout: unreachable,
       network,
-      "malformed-json": errorMessage(502, "github error (200)"),
-      "empty-body": errorMessage(502, "github error (200)"),
-      "schema-drift": (outcome) => {
-        assert.equal(outcome.status, 200);
-        assert.deepEqual(outcome.body, { ok: true, issue: { number: 0, title: "", state: "open", htmlUrl: null }, labels: [] });
-      },
+      "malformed-json": expectAmbiguousWrite,
+      "empty-body": expectAmbiguousWrite,
+      "schema-drift": expectAmbiguousWrite,
     },
   });
 });

@@ -45,7 +45,7 @@ let serving: Array<{ number: number; title: string; mergedAt: string }> = [
   { number: 6350, title: "Drain the GitHub watcher", mergedAt: mergedAt(14) },
 ];
 
-harness.healthy("github", (request) => {
+const healthyGitHub = (request: Request) => {
   const url = new URL(request.url);
   assert.equal(request.headers.get("authorization"), `Bearer ${TOKEN}`);
   if (url.pathname === "/user") return Response.json({ login: "octocat" });
@@ -73,7 +73,8 @@ harness.healthy("github", (request) => {
     });
   }
   return Response.json({ message: "Not Found" }, { status: 404 });
-});
+};
+harness.healthy("github", healthyGitHub);
 
 const expected = () =>
   [...serving]
@@ -168,6 +169,25 @@ test("a revoked token still answers through the configured username", async () =
   assert.ok(search, "identity failed, so the search fell back to GITHUB_USERNAME");
   assert.match(decodeURIComponent(search.url), /author:fallback-login/);
   harness.heal("github");
+});
+
+test("a drifted identity never reaches the search as a login; the configured username does (#6368)", async () => {
+  const otherDay = new Date(2026, 0, 18, 12, 0, 0);
+  const queries: string[] = [];
+  harness.healthy("github", (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/user") return Response.json({ login: 42 });
+    queries.push(url.searchParams.get("q") ?? "");
+    return Response.json({ total_count: 0, items: [] });
+  });
+  try {
+    await fetchMergedPrsForDay(otherDay);
+    assert.equal(queries.length, 1, "the search still runs");
+    assert.match(queries[0], /author:fallback-login/);
+    assert.doesNotMatch(queries[0], /author:42/);
+  } finally {
+    harness.healthy("github", healthyGitHub);
+  }
 });
 
 test("every GitHub call carries a deadline", () => {
