@@ -127,6 +127,11 @@ const TOOLS: Tool[] = [
   { title: "Attach a file reference", icon: "ph:paperclip", wrap: ["![", "](url)"] },
 ];
 
+/** GitHub may have acted: the route said so, or the connection to Cave dropped (#6369). */
+export function isUncertainWrite(status: number, data: Record<string, unknown> | null): boolean {
+  return data?.code === "ambiguous-write" || status === 0;
+}
+
 async function postJson(url: string, body: unknown): Promise<{ ok: boolean; status: number; data: Record<string, unknown> | null }> {
   try {
     const res = await fetch(url, {
@@ -179,7 +184,9 @@ export function GitHubCardComposer({
   const [labels, setLabels] = useState<string[]>(item.labels.map((l) => l.name));
   const [pick, setPick] = useState<"" | "people" | "labels">("");
   const [nudge, setNudge] = useState<"" | "arm" | "body">("");
-  const [failure, setFailure] = useState<{ code: string; message: string } | null>(null);
+  // `uncertain`: GitHub may have done this before the failure (#6369), so
+  // the panel offers a refresh to check instead of a blind re-send.
+  const [failure, setFailure] = useState<{ code: string; message: string; uncertain?: boolean } | null>(null);
   const [merged, setMerged] = useState<{ sha: string | null; branchDeleted: boolean } | null>(null);
   const [restored, setRestored] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -447,7 +454,7 @@ export function GitHubCardComposer({
     const { ok, status, data } = await postJson("/api/github/rerun", { repo, number, failedOnly });
     setBusy(null);
     if (!ok) {
-      setFailure({ code: String(status), message: (data?.error as string) ?? "re-run failed" });
+      setFailure({ code: String(status), message: (data?.error as string) ?? "re-run failed", uncertain: isUncertainWrite(status, data) });
       setPhase("error");
       return;
     }
@@ -460,7 +467,7 @@ export function GitHubCardComposer({
     const { ok, status, data } = await postJson("/api/github/resolve-thread", { threadId, resolved: true });
     setBusy(null);
     if (!ok) {
-      setFailure({ code: String(status), message: (data?.error as string) ?? "resolve failed" });
+      setFailure({ code: String(status), message: (data?.error as string) ?? "resolve failed", uncertain: isUncertainWrite(status, data) });
       setPhase("error");
       return;
     }
@@ -556,7 +563,7 @@ export function GitHubCardComposer({
         ...(delBranch && item.pull?.headRef ? { deleteBranch: true } : {}),
       });
       if (!ok) {
-        setFailure({ code: String(status), message: (data?.error as string) ?? "merge failed" });
+        setFailure({ code: String(status), message: (data?.error as string) ?? "merge failed", uncertain: isUncertainWrite(status, data) });
         setPhase("error");
         return;
       }
@@ -593,7 +600,11 @@ export function GitHubCardComposer({
           });
 
     if (!result.ok) {
-      setFailure({ code: String(result.status), message: (result.data?.error as string) ?? "send failed" });
+      setFailure({
+        code: String(result.status),
+        message: (result.data?.error as string) ?? "send failed",
+        uncertain: isUncertainWrite(result.status, result.data),
+      });
       setPhase("error");
       return;
     }
@@ -848,8 +859,21 @@ export function GitHubCardComposer({
           </span>
           <span className="ghc-status__msg">
             <span className="ghc-status__code">{failure.code}</span> {failure.message}
+            {failure.uncertain ? " This may have gone through. Refresh to check before sending again." : null}
           </span>
-          {mode !== "comment" ? (
+          {failure.uncertain ? (
+            <button
+              type="button"
+              className="ghc-mini focus-ring"
+              onClick={() => {
+                setFailure(null);
+                setPhase("open");
+                onMutated();
+              }}
+            >
+              Refresh to check
+            </button>
+          ) : mode !== "comment" ? (
             <button type="button" className="ghc-mini focus-ring" onClick={() => void send(true)}>
               Send as comment instead
             </button>

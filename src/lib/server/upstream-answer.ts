@@ -15,6 +15,8 @@
  *   not to retry blindly, which could post the same thing twice. This is the
  *   route-level twin of `x-client.ts`'s `ambiguous-write`.
  */
+import { UpstreamCooldownError } from "./upstream-fetch.ts";
+
 export type UpstreamAnswerCode = "upstream-drift" | "ambiguous-write";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -68,4 +70,55 @@ export function ambiguousWrite(upstream: string, action: string) {
     },
     { status: 502 },
   );
+}
+
+// ── Writes that may or may not have landed (#6369) ──────────────────────────
+
+/**
+ * Transport failures that happen before a request reaches the upstream: the
+ * connection never opened, or the name never resolved. Anything else (a
+ * deadline mid-request, a reset, a torn response) may have arrived after the
+ * upstream acted.
+ */
+const NEVER_SENT_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET_CONNECT",
+]);
+
+function errorCode(error: unknown): string | null {
+  if (!isRecord(error) && !(error instanceof Error)) return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : null;
+}
+
+/** True only when the write provably never reached the upstream. */
+export function writeNeverSent(error: unknown): boolean {
+  if (error instanceof UpstreamCooldownError) return true;
+  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined;
+  const code = errorCode(error) ?? errorCode(cause);
+  return code !== null && NEVER_SENT_CODES.has(code);
+}
+
+/**
+ * The answer for a write that threw. A write that provably never left is a
+ * plain failure the caller may retry; any other transport failure leaves the
+ * outcome unknown, so it is an ambiguous write and must not be retried blindly
+ * (model: x-client.ts, which treats a write's transport failure the same way).
+ */
+export function writeThrew(upstream: string, action: string, error: unknown, fallback: string): Response {
+  if (writeNeverSent(error)) {
+    return Response.json({ ok: false, error: error instanceof Error ? error.message : fallback }, { status: 502 });
+  }
+  return ambiguousWrite(upstream, action);
+}
+
+/**
+ * A 5xx answer to a write: the upstream may have acted before it failed, so
+ * the outcome is unknown (x-client.ts treats a write's 5xx the same way).
+ */
+export function isAmbiguousWriteStatus(status: number): boolean {
+  return status >= 500;
 }

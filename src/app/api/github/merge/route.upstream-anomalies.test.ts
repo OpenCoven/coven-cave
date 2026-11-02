@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-merge-anomalies");
@@ -115,15 +115,15 @@ test("POST /api/github/merge without a head (legacy caller) across upstream anom
       assert.deepEqual(harness.calls("github").map((call) => call.method), ["PUT"], "no head, no revision read");
     },
     degraded: {
-      "http-500": failsWith(502, "Internal Server Error"),
-      "http-502": failsWith(502, "github error (502)"),
+      "http-500": expectAmbiguousWrite,
+      "http-502": expectAmbiguousWrite,
       "auth-revoked": failsWith(502, "Bad credentials"),
       "rate-limit": failsWith(502, "API rate limit exceeded"),
-      timeout: timesOut,
+      timeout: expectAmbiguousWrite,
       network: failsWith(502, "fetch failed"),
       // Merging needs GitHub's own `merged: true`; a 200 without it is refused.
-      "malformed-json": failsWith(502, "github error (200)"),
-      "empty-body": failsWith(502, "github error (200)"),
+      "malformed-json": expectAmbiguousWrite,
+      "empty-body": expectAmbiguousWrite,
       "schema-drift": failsWith(502, "github error (200)"),
     },
   });
@@ -167,13 +167,32 @@ test("a 404 on the ref delete is 'already gone', the requested end state", async
   }
 });
 
-test("a stalled socket on the merge PUT itself is a plain failure (a retry re-sends the merge)", async () => {
-  // Unlike the branch tidy, the PUT has no "may have landed" answer; GitHub's
-  // sha guard and its own idempotence are the only protection against a retry.
-  harness.inject("github", { kind: "timeout" });
-  const body = await (await merge({ headSha: HEAD })).json();
+test("a write that may have reached GitHub is outcome-unknown, never a plain retryable failure (#6369)", async () => {
+  // The legacy no-head path sends the PUT directly, so the anomaly hits the
+  // write itself rather than the revision read before it.
+  // A stalled socket after the request left, or a reset mid-flight, may come
+  // after GitHub acted. The answer says so, so a retry cannot silently post twice.
+  for (const anomaly of [
+    { kind: "timeout" },
+    { kind: "http", status: 503, body: { message: "Service Unavailable" } },
+  ] as const) {
+    harness.inject("github", anomaly);
+    const response = await merge();
+    assert.equal(response.status, 502);
+    const body = await response.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "ambiguous-write");
+    assert.equal(body.dispatched, true);
+    harness.heal("github");
+  }
+});
+
+test("a merge whose connection never opened is a plain failure the caller may retry (#6369)", async () => {
+  harness.inject("github", { kind: "network" });
+  const body = await (await merge()).json();
   assert.equal(body.ok, false);
-  assert.doesNotMatch(JSON.stringify(body), /unknown|may have/i);
+  assert.notEqual(body.code, "ambiguous-write");
+  assert.notEqual(body.dispatched, true);
   harness.heal("github");
 });
 

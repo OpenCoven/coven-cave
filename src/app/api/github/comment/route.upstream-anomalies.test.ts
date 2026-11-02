@@ -83,15 +83,12 @@ test("POST /api/github/comment across upstream anomalies", async (t) => {
       assert.equal(call.body, JSON.stringify({ body: "Looks good." }), "the trimmed body is what is posted");
     },
     degraded: {
-      "http-500": githubError(500),
-      "http-502": githubError(502),
+      "http-500": expectAmbiguousWrite,
+      "http-502": expectAmbiguousWrite,
       // Only a 403 passes through; a revoked token is a generic 502 here.
       "auth-revoked": githubError(401),
       "rate-limit": githubError(429),
-      timeout: (outcome, anomaly) => {
-        expectErrorStatus(502)(outcome, anomaly);
-        assert.match((outcome.body as { error: string }).error, /timeout/i);
-      },
+      timeout: expectAmbiguousWrite,
       network: (outcome, anomaly) => {
         expectErrorStatus(502)(outcome, anomaly);
         assert.equal((outcome.body as { error: string }).error, "fetch failed");
@@ -113,16 +110,30 @@ test("a 403 from GitHub is passed through as the caller's own 403", async () => 
   assert.equal((await post()).status, 200);
 });
 
-test("a failure after the comment was sent is an ok:false the caller may retry (no unknown-outcome state)", async () => {
-  // The route has no "may have succeeded" answer: a 5xx or a stalled socket
-  // after the POST left the box is reported exactly like a refusal, so a user
-  // retry can post the comment twice. Pinned here so a change is deliberate.
-  harness.inject("github", { kind: "timeout" });
-  const response = await post();
-  assert.equal(response.status, 502);
-  const body = await response.json();
+test("a write that may have reached GitHub is outcome-unknown, never a plain retryable failure (#6369)", async () => {
+  // A stalled socket after the request left, or a reset mid-flight, may come
+  // after GitHub acted. The answer says so, so a retry cannot silently post twice.
+  for (const anomaly of [
+    { kind: "timeout" },
+    { kind: "http", status: 503, body: { message: "Service Unavailable" } },
+  ] as const) {
+    harness.inject("github", anomaly);
+    const response = await post();
+    assert.equal(response.status, 502);
+    const body = await response.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "ambiguous-write");
+    assert.equal(body.dispatched, true);
+    harness.heal("github");
+  }
+});
+
+test("a comment whose connection never opened is a plain failure the caller may retry (#6369)", async () => {
+  harness.inject("github", { kind: "network" });
+  const body = await (await post()).json();
   assert.equal(body.ok, false);
-  assert.doesNotMatch(JSON.stringify(body), /unknown|may have/i);
+  assert.notEqual(body.code, "ambiguous-write");
+  assert.notEqual(body.dispatched, true);
   harness.heal("github");
 });
 

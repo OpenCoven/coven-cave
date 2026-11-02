@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isAmbiguousWriteStatus, writeThrew } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -63,19 +64,30 @@ export async function POST(req: Request) {
 
   try {
     // repo passed REPO_RE and workflow passed WORKFLOW_RE — safe to interpolate.
-    const res = await upstreamFetch("github", `${GH}/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-      body: JSON.stringify({ ref, ...(inputs ? { inputs } : {}) }),
-    });
-    // Success is 204 No Content.
-    if (res.status !== 204) {
+    let res: Response;
+    try {
+      res = await upstreamFetch("github", `${GH}/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        body: JSON.stringify({ ref, ...(inputs ? { inputs } : {}) }),
+      });
+    } catch (e) {
+      // The request may have reached GitHub before this failed; only a
+      // write that provably never left is a plain, retryable failure (#6369).
+      return writeThrew("GitHub", "workflow dispatch", e, "failed to dispatch workflow");
+    }
+    // A 5xx after GitHub received the write leaves its outcome unknown (#6369).
+    if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", "workflow dispatch");
+    // Any 2xx is GitHub accepting the dispatch: 204 classically, or 200 with
+    // run details. The body is not needed, so a torn 2xx is still accepted
+    // rather than reported as a failure that invites a second dispatch.
+    if (!res.ok) {
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
       return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });

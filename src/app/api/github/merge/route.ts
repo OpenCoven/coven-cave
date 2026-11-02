@@ -29,6 +29,7 @@ import { parseGitHubDiffRevision } from "@/lib/github-review";
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 import { branchPrCache } from "@/lib/branch-pr-context";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, writeThrew } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -101,14 +102,25 @@ export async function POST(req: Request) {
   try {
     await assertCurrentGitHubRevision(repo, number, token, headSha, reviewedRevision);
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}/merge`, {
-      method: "PUT",
-      headers: ghHeaders(token),
-      cache: "no-store",
-      // GitHub atomically refuses a head that changed after confirmation.
-      body: JSON.stringify({ merge_method: method, ...(headSha ? { sha: headSha } : {}) }),
-    });
+    let res: Response;
+    try {
+      res = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}/merge`, {
+        method: "PUT",
+        headers: ghHeaders(token),
+        cache: "no-store",
+        // GitHub atomically refuses a head that changed after confirmation.
+        body: JSON.stringify({ merge_method: method, ...(headSha ? { sha: headSha } : {}) }),
+      });
+    } catch (e) {
+      // The request may have reached GitHub before this failed; only a
+      // write that provably never left is a plain, retryable failure (#6369).
+      return writeThrew("GitHub", "merge", e, "failed to merge");
+    }
+    // A 5xx after GitHub received the write leaves its outcome unknown (#6369).
+    if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", "merge");
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    // GitHub accepted the merge request; an unreadable answer leaves it unconfirmed.
+    if (res.ok && !isRecord(data)) return ambiguousWrite("GitHub", "merge");
     if (!res.ok || !data || data.merged !== true) {
       // 405/409 carry GitHub's protection/mergeability reason — pass verbatim.
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;

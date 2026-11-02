@@ -25,4 +25,7 @@ assert.doesNotMatch(source, /:\s*token\b/, "dispatch route must not return token
 console.log("github-dispatch-route.test.ts OK");
 assert.match(source, /const WORKFLOW_RE = /, "workflow name/id validated before path interpolation");
 assert.match(source, /const REF_RE = /, "ref validated");
-assert.match(source, /res\.status !== 204/, "dispatch success is 204 No Content");
+// Any 2xx accepts the dispatch (204, or 200 with run details); a torn 2xx
+// body must not become a failure that invites a second dispatch (#6369).
+assert.match(source, /if \(!res\.ok\) \{/, "dispatch success is any 2xx");
+assert.match(source, /isAmbiguousWriteStatus\(res\.status\)\) return ambiguousWrite\("GitHub", "workflow dispatch"\)/, "a 5xx dispatch is outcome-unknown");

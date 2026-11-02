@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-rerun-anomalies");
@@ -59,14 +59,11 @@ test("POST /api/github/rerun across upstream anomalies", async (t) => {
     invoke: rerun,
     healthy: rerunRequested,
     degraded: {
-      "http-500": failsWith(502, "Internal Server Error"),
-      "http-502": failsWith(502, "github error (502)"),
+      "http-500": expectAmbiguousWrite,
+      "http-502": expectAmbiguousWrite,
       "auth-revoked": failsWith(502, "Bad credentials"),
       "rate-limit": failsWith(502, "API rate limit exceeded"),
-      timeout: (outcome, anomaly) => {
-        expectErrorStatus(502)(outcome, anomaly);
-        assert.match((outcome.body as { error: string }).error, /timeout/i);
-      },
+      timeout: expectAmbiguousWrite,
       network: failsWith(502, "fetch failed"),
       // Success is the status alone: the body is never read on a 2xx.
       "malformed-json": rerunRequested,
