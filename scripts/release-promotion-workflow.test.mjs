@@ -1122,4 +1122,33 @@ test("the release concurrency group keys the release, not the trigger", async ()
   assert.equal(release.concurrency["cancel-in-progress"], false);
 });
 
+test("release jobs that hold secrets restore no shared cache", async () => {
+  // A cache entry is only as trustworthy as every run that can save to its
+  // scope. Jobs that sign, notarize or publish must not depend on that, so
+  // they install from the registry and build from source (#6367).
+  const release = await workflow("release.yml");
+  const secretJobs = Object.entries(release.jobs).filter(([, job]) =>
+    /\$\{\{\s*secrets\./.test(JSON.stringify(job)),
+  );
+  const names = secretJobs.map(([name]) => name);
+  for (const required of ["build", "release-ios-build"]) {
+    assert.ok(names.includes(required), `${required} is recognised as a secret-holding job`);
+  }
+  for (const [name, job] of secretJobs) {
+    for (const step of job.steps ?? []) {
+      const uses = String(step.uses ?? "");
+      assert.ok(
+        !/^(actions\/cache(\/restore)?|swatinem\/rust-cache)@/i.test(uses),
+        `${name} must not restore a cache (${uses})`,
+      );
+      if (uses.startsWith("actions/setup-node@")) {
+        assert.equal(step.with?.cache, undefined, `${name} keeps no setup-node package cache`);
+      }
+      if (uses.startsWith("pnpm/action-setup@")) {
+        assert.notEqual(step.with?.["run_install"], true, `${name} installs explicitly with --frozen-lockfile`);
+      }
+    }
+  }
+});
+
 console.log("release-promotion-workflow.test.mjs: ok");
