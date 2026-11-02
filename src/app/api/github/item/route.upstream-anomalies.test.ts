@@ -16,6 +16,7 @@ import {
   type DegradedExpectation,
 } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
+import { resetUpstreamHealth, setUpstreamClockForTests } from "@/lib/server/upstream-fetch";
 
 const home = isolateCaveHome("github-item-anomalies");
 const TOKEN = "ghp_testonly_never_dispatched_item_0123456789";
@@ -26,6 +27,9 @@ const FRESH_MS = 30_000;
 let now = Date.UTC(2026, 0, 1);
 const realNow = Date.now;
 Date.now = () => now;
+// The upstream ledger keeps its own clock: point it at the same fake one so a
+// host cooldown and the item cache step together.
+setUpstreamClockForTests(() => now);
 const stepPastCache = () => {
   now += FRESH_MS + 1;
 };
@@ -35,8 +39,11 @@ const { GET } = await import("./route.ts");
 test.after(() => {
   harness.restore();
   Date.now = realNow;
+  setUpstreamClockForTests(null);
   home.cleanup();
 });
+// A forced outage in one test must not leave the host cooling for the next.
+test.beforeEach(() => resetUpstreamHealth("github"));
 
 const HEAD = "a".repeat(40);
 const BASE = "b".repeat(40);
@@ -134,6 +141,7 @@ test("GET /api/github/item across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     beforeEach: stepPastCache,
     invoke: read,
     healthy: (outcome) => {
@@ -172,7 +180,7 @@ test("a failure is never held: the next call after GitHub heals is live, no cloc
   harness.inject("github", { kind: "http", status: 503, body: { message: "down" } });
   harness.reset();
   assert.equal((await read()).status, 502);
-  assert.equal(harness.calls("github").length, 1);
+  assert.equal(harness.calls("github").length, 2, "one ask: the 503 was retried once inside upstreamFetch, then answered");
 
   harness.heal("github");
   harness.reset();

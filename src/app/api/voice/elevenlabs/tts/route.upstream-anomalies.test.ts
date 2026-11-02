@@ -8,7 +8,8 @@
 // stalled socket or dead network is `elevenlabs_unreachable`. The key never
 // appears in any answer, the upstream call is bounded by the caller's own
 // signal plus a 30 s timeout, and the proxy re-asks ElevenLabs the moment it
-// is back.
+// is back. The render goes through upstreamFetch, so the ledger records each
+// anomaly live; a render is a POST and is never retried.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -65,9 +66,15 @@ const speak = (format?: "pcm" | "mp3", signal?: AbortSignal) =>
     }),
   );
 
+/** A render is a POST: one attempt, whatever the answer. */
+const singleAttempt = () => {
+  assert.equal(harness.calls("elevenlabs").length, 1, "a render POST is never retried");
+};
+
 const ttsFailed = (hint: string): DegradedExpectation => (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   assert.deepEqual(outcome.body, { ok: false, error: "elevenlabs_tts_failed", hint });
+  singleAttempt();
 };
 
 const unreachable: DegradedExpectation = (outcome, anomaly) => {
@@ -75,6 +82,7 @@ const unreachable: DegradedExpectation = (outcome, anomaly) => {
   const body = outcome.body as { error: string; hint: string };
   assert.equal(body.error, "elevenlabs_unreachable");
   assert.match(body.hint, /^Couldn't reach ElevenLabs \(/);
+  singleAttempt();
 };
 
 // The proxy relays any 2xx body under its own audio content-type without
@@ -103,6 +111,7 @@ test("POST /api/voice/elevenlabs/tts across upstream anomalies", async (t) => {
       assert.equal(call.hasDeadline, true, "the upstream call is bounded by the caller's signal and a 30 s timeout");
       assert.equal(new URL(call.url).searchParams.get("output_format"), "mp3_44100_128");
     },
+    expectLiveDetection: true,
     degraded: {
       "http-500": ttsFailed("ElevenLabs returned http 500."),
       "http-502": ttsFailed("ElevenLabs returned http 502."),

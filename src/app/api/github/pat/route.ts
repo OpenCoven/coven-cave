@@ -13,6 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
 import {
@@ -77,7 +78,7 @@ type PatValidation = {
 
 async function validatePat(pat: string): Promise<PatValidation> {
   try {
-    const res = await fetch("https://api.github.com/user", {
+    const res = await upstreamFetch("github", "https://api.github.com/user", {
       headers: {
         Authorization: `Bearer ${pat}`,
         Accept: "application/vnd.github+json",
@@ -109,7 +110,7 @@ async function validatePat(pat: string): Promise<PatValidation> {
  *  public view (cave-cjgg). */
 async function usernameExists(username: string): Promise<boolean> {
   try {
-    const res = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}`, {
+    const res = await upstreamFetch("github", `https://api.github.com/users/${encodeURIComponent(username)}`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",

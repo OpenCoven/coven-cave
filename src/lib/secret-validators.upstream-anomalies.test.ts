@@ -10,12 +10,14 @@ import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "./testing/upstream-anomaly-fetch.ts";
 import { runUpstreamAnomalyMatrix, type MatrixOutcome } from "./testing/upstream-anomaly-matrix.ts";
+import { resetUpstreamHealth } from "./server/upstream-fetch.ts";
 import { validateGithubToken, validateSecret, type SecretValidation } from "./secret-validators.ts";
 
 const TOKEN = "ghp_matrixonly_never_dispatched_fedcba9876543210";
 
 // The validator takes an injectable fetch, so the routing fetch is handed in
-// directly and globalThis.fetch stays untouched.
+// directly and globalThis.fetch stays untouched; the validator still routes it
+// through upstreamFetch, so the deadline, retry and ledger apply to it.
 const harness = installUpstreamAnomalyFetch({ install: false });
 
 harness.healthy("github", (request) => {
@@ -49,6 +51,7 @@ test("validateGithubToken across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: () => validateGithubToken(TOKEN, harness.fetch),
     healthy: (outcome) => {
       assert.deepEqual(verdict(outcome), { ok: true, login: "octocat" });
@@ -83,6 +86,8 @@ test("a primary rate limit (403 with no remaining budget) reads as rejected, lik
   harness.inject("github", { kind: "rate-limit", status: 403 });
   assert.deepEqual(await validateGithubToken(TOKEN, harness.fetch), { ok: false, error: "token rejected by GitHub" });
   harness.heal("github");
+  // The primary rate limit opened a 7 s cooldown on the host; treat it as elapsed.
+  resetUpstreamHealth("github");
   assert.deepEqual(await validateGithubToken(TOKEN, harness.fetch), { ok: true, login: "octocat" });
 });
 
@@ -96,11 +101,10 @@ test("validateSecret routes GITHUB_PAT through the same validator and the same f
   harness.assertAllDeclared();
 });
 
-test("the validation call carries no deadline of its own", () => {
-  // Documented, not endorsed: the validator relies on its caller (or the
-  // transport) to bound the request. A stalled socket here would hang until
-  // undici gives up. Recorded in the report for src/lib/secret-validators.ts:14.
+test("the validation call carries a deadline even with an injected fetch", () => {
+  // upstreamFetch bounds every attempt, so a stalled socket ends as a
+  // TimeoutError ("could not reach GitHub") instead of hanging until undici gives up.
   const call = harness.calls("github").at(-1);
   assert.ok(call);
-  assert.equal(call.hasDeadline, false);
+  assert.equal(call.hasDeadline, true);
 });

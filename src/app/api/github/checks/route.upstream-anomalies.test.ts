@@ -16,6 +16,7 @@ import {
   type DegradedExpectation,
 } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
+import { resetUpstreamHealth } from "@/lib/server/upstream-fetch";
 
 const home = isolateCaveHome("github-checks-anomalies");
 const TOKEN = "ghp_testonly_never_dispatched_checks_0123456789";
@@ -28,6 +29,8 @@ test.after(() => {
   harness.restore();
   home.cleanup();
 });
+// A forced outage in one test must not leave the host cooling for the next.
+test.beforeEach(() => resetUpstreamHealth("github"));
 
 const SHA = "a".repeat(40);
 const PULL = "/repos/OpenCoven/coven-cave/pulls/7";
@@ -88,6 +91,7 @@ test("GET /api/github/checks across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: read,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);
@@ -143,6 +147,9 @@ test("both rollup sides down is a 502 naming both statuses", async () => {
   const response = await read();
   assert.equal(response.status, 502);
   assert.deepEqual(await response.json(), { ok: false, error: "github error (500, 502)" });
+  // Two sides, each retried once, opened the host's cooldown: the primitive's
+  // own contract, cleared here so the heal below tests the route alone.
+  resetUpstreamHealth("github");
   harness.healthy("github", github());
   assert.equal((await read()).status, 200);
 });

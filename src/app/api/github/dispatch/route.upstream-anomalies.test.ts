@@ -52,6 +52,7 @@ test("POST /api/github/dispatch across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: dispatch,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);
@@ -92,10 +93,10 @@ test("a stalled socket after the dispatch was sent is a plain failure (a retry m
   harness.heal("github");
 });
 
-test("the dispatch call carries no deadline (finding, not a contract)", async () => {
+test("the dispatch call carries a deadline through upstreamFetch", async () => {
   harness.reset();
   await dispatch();
   const call = harness.calls("github").at(-1);
   assert.ok(call);
-  assert.equal(call.hasDeadline, false);
+  assert.equal(call.hasDeadline, true);
 });

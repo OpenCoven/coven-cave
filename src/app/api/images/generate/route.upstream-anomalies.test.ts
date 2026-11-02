@@ -6,7 +6,9 @@
 // as providerMessage), `provider_empty_image` when a 2xx carried no image. The
 // matrix proves each anomaly lands on the right code for both providers, that
 // neither API key appears in any answer, and that the next request renders
-// again the moment the provider is back.
+// again the moment the provider is back. Both calls go through upstreamFetch:
+// every render carries a deadline, the ledger sees each anomaly live, and a
+// generation POST is never retried (a second render would bill twice).
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -64,16 +66,23 @@ const generate = (model: string) => () =>
     }),
   );
 
+/** A generation is a POST: one attempt, whatever the answer. */
+const singleAttempt = () => {
+  assert.equal(harness.calls().length, 1, "a render POST is never retried");
+};
+
 const generationFailed = (providerMessage: RegExp): DegradedExpectation => (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   const body = outcome.body as { error: string; providerMessage?: string };
   assert.equal(body.error, "provider_generation_failed");
   assert.match(body.providerMessage ?? "", providerMessage, "the status line stands in when the provider sent no message");
+  singleAttempt();
 };
 
 const unreachable: DegradedExpectation = (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   assert.equal((outcome.body as { error: string }).error, "provider_unreachable");
+  singleAttempt();
 };
 
 const emptyImage: DegradedExpectation = (outcome, anomaly) => {
@@ -81,6 +90,7 @@ const emptyImage: DegradedExpectation = (outcome, anomaly) => {
   const body = outcome.body as { error: string; providerMessage?: string };
   assert.equal(body.error, "provider_empty_image", "a 2xx without an image is an empty answer, not a success");
   assert.equal(body.providerMessage, undefined);
+  singleAttempt();
 };
 
 const degraded = {
@@ -118,6 +128,7 @@ test("POST /api/images/generate (OpenAI) across upstream anomalies", async (t) =
       assert.equal(harness.calls("gemini").length, 0, "a pinned OpenAI model never touches Gemini");
     },
     degraded,
+    expectLiveDetection: true,
   });
 });
 
@@ -133,6 +144,7 @@ test("POST /api/images/generate (Gemini) across upstream anomalies", async (t) =
       assert.equal(harness.calls("openai").length, 0, "a pinned Imagen model never touches OpenAI");
     },
     degraded,
+    expectLiveDetection: true,
   });
 });
 

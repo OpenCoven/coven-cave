@@ -63,6 +63,7 @@ test("POST /api/github/comment across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: post,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);
@@ -134,10 +135,10 @@ test("a failure after the comment was sent is an ok:false the caller may retry (
   harness.heal("github");
 });
 
-test("the comment call carries no deadline (finding, not a contract)", async () => {
+test("the comment call carries a deadline through upstreamFetch", async () => {
   harness.reset();
   await post();
   const call = harness.calls("github").at(-1);
   assert.ok(call);
-  assert.equal(call.hasDeadline, false, "update this test when the route gains an AbortSignal");
+  assert.equal(call.hasDeadline, true);
 });

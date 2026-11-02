@@ -24,6 +24,7 @@ import {
   type UpstreamApiEntry,
   type UpstreamApiId,
 } from "../server/upstream-api-registry.ts";
+import { resetUpstreamHealth } from "../server/upstream-fetch.ts";
 
 export type UpstreamAnomaly =
   /** Any HTTP status with an optional body and headers. */
@@ -132,6 +133,11 @@ export type InstallOptions = {
   hangMs?: number;
   /** Set `false` to get the routing fetch without touching `globalThis`. */
   install?: boolean;
+  /** By default every `inject` and `heal` starts a fresh `upstreamFetch`
+   *  ledger episode for that host, so a cooldown opened by one test cannot
+   *  fail the next. `upstream-fetch.test.ts` sets this false to observe the
+   *  cooldown itself. */
+  isolateLedger?: boolean;
 };
 
 const DEFAULT_HANG_MS = 25;
@@ -241,6 +247,8 @@ export function installUpstreamAnomalyFetch(options: InstallOptions = {}): Upstr
   const anomalies = new Map<UpstreamApiId, UpstreamAnomaly>();
   const recorded: UpstreamCall[] = [];
   const previousFetch = globalThis.fetch;
+  const isolateLedger = options.isolateLedger ?? true;
+  if (isolateLedger) resetUpstreamHealth();
 
   const resolveEntry = (host: string): UpstreamApiEntry | null => {
     if (registry === UPSTREAM_APIS) return upstreamApiForHost(host);
@@ -346,10 +354,12 @@ export function installUpstreamAnomalyFetch(options: InstallOptions = {}): Upstr
     inject(id, anomaly) {
       if (anomaly === null) anomalies.delete(id);
       else anomalies.set(id, anomaly);
+      if (isolateLedger) resetUpstreamHealth(id);
     },
     heal(id) {
       if (id === undefined) anomalies.clear();
       else anomalies.delete(id);
+      if (isolateLedger) resetUpstreamHealth(id);
     },
     anomalyFor(id) {
       return anomalies.get(id) ?? null;

@@ -79,6 +79,7 @@ test("GET /api/github/reactions across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: read,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);
@@ -111,6 +112,7 @@ test("POST /api/github/reactions across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: add,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);
@@ -145,6 +147,7 @@ test("DELETE /api/github/reactions across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: remove,
     healthy: gone,
     degraded: {
@@ -193,6 +196,6 @@ test("without a token the tally is readable and nothing is `mine`", async () => 
   }
 });
 
-test("the reaction calls carry no deadline (finding, not a contract)", async () => {
-  assert.ok(harness.calls("github").every((call) => call.hasDeadline === false));
+test("the reaction calls carry a deadline through upstreamFetch", async () => {
+  assert.ok(harness.calls("github").every((call) => call.hasDeadline === true));
 });

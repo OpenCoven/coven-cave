@@ -1,7 +1,7 @@
 // GET /api/github/user under every upstream anomaly (#6359).
 //
-// One public profile read. The route has no cache and no deadline, so the
-// contract is simple: every upstream failure is a 502 with a reason, a
+// One public profile read through upstreamFetch, which bounds the call and
+// heals a single transient fault. The route has no cache, so the contract is simple: every upstream failure is a 502 with a reason, a
 // GitHub 404 is a 404, and the PAT only ever travels as a bearer. The one
 // soft spot the matrix pins is schema drift: a well-formed body of the wrong
 // shape is still rendered as a profile rather than refused.
@@ -69,6 +69,7 @@ test("GET /api/github/user across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: read,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);

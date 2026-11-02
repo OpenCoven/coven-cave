@@ -14,6 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
 import { commitLocalEncryptedSecretBatch } from "@/lib/local-encrypted-vault";
@@ -60,7 +61,7 @@ type PatValidation = {
 
 async function validatePat(pat: string): Promise<PatValidation> {
   try {
-    const res = await fetch("https://app.asana.com/api/1.0/users/me", {
+    const res = await upstreamFetch("asana", "https://app.asana.com/api/1.0/users/me", {
       headers: { Authorization: `Bearer ${pat}`, Accept: "application/json" },
       cache: "no-store",
       signal: AbortSignal.timeout(VALIDATE_TIMEOUT_MS),

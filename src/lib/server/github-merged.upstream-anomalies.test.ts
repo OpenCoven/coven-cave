@@ -150,7 +150,8 @@ test("a failure with no good answer for that day is null, never an error, and is
   harness.inject("github", { kind: "network" });
   harness.reset();
   assert.equal(await fetchMergedPrsForDay(otherDay), null, "another day has no stale items to fall back on");
-  assert.equal(harness.calls("github").length, 2, "identity failed, the username fallback was tried, and the search failed");
+  // Each read meets a dead socket and is retried once by upstreamFetch.
+  assert.equal(harness.calls("github").length, 4, "identity failed, the username fallback was tried, and the search failed");
 
   harness.heal("github");
   harness.reset();

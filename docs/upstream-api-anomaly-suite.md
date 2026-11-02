@@ -24,6 +24,53 @@ Every third-party API the Cave server calls is declared once, in
   again and meets the healthy contract. A failure remembered past the outage
   fails the matrix.
 
+## The live half: `upstreamFetch`
+
+Every registry caller reaches its upstream through
+`src/lib/server/upstream-fetch.ts`, and the relevance scan fails when one
+does not. `upstreamFetch(id, url, init, options)` is a drop-in for `fetch`
+that acts on each answer the moment it arrives:
+
+- every call carries a deadline (10 s by default, merged with the caller's
+  own signal, raised with `timeoutMs` for long downloads and streams), so a
+  stalled socket ends as a `TimeoutError`;
+- an idempotent read that meets a 5xx, a timeout, a dead socket, or a rate
+  limit with a short `Retry-After` is retried once after a jittered wait, so a
+  single bad answer heals inside the call; writes are never retried, and a
+  periodic poller such as the GitHub watcher passes `retries: 0` because its
+  next tick is the retry;
+- a rate limit with a long `Retry-After` (or a GitHub primary rate limit)
+  opens a per-host cooldown in which calls are answered at once with a
+  synthesised 429 carrying the remaining `Retry-After` and the
+  `x-coven-upstream-cooldown` header, so each caller's own rate-limit branch
+  still applies and nothing is sent to a host that asked to be left alone;
+- three timeouts or dead sockets in a row open a short cooldown in which
+  calls throw an `UpstreamCooldownError` (a `TypeError`, so every
+  "unreachable" branch already handles it); a host answering 5xx is
+  reachable, so it is marked degraded but not cut off;
+- both cooldowns are half-open: the first call after the window goes
+  through, and a success closes it instantly;
+- the per-host ledger (`upstreamHealth(id)`, `upstreamHealthSnapshot()`)
+  records anomaly classes, counters and cooldown windows — never a URL,
+  header, body or token — and `GET /api/daemon/diagnostics` publishes it as
+  `upstreams`.
+
+Body anomalies (torn JSON, an empty body, a drifted schema) arrive as a 200,
+so only the caller reading the body can see them; the ledger records status
+and transport anomalies.
+
+A matrix case with `expectLiveDetection: true` also asserts the ledger saw
+each status or transport anomaly as it happened, reads healthy after the
+heal, and that every call carried a deadline. The harness starts a fresh
+ledger episode for a host on every `inject` and `heal`. A unit test that
+drives a caller with its own fake fetch should call `resetUpstreamHealth()`
+per case, so a 429 in one case cannot leave the host cooling for the next.
+
+Two callers stay on plain `fetch` by design, each named with its reason in
+the scan: `src/lib/voice/openai-realtime.ts` and `src/lib/voice/elevenlabs.ts`
+ship to the browser through the voice registry, so the server ledger stays
+out of the client bundle.
+
 ## Adding or changing an upstream call
 
 1. Add the host and the calling file to the matching entry in
@@ -31,26 +78,28 @@ Every third-party API the Cave server calls is declared once, in
    appears only as a link or User-Agent string goes in `LINK_ONLY_HOSTS`
    with its reason. Loopback services carry `loopback: true`; callers that
    fetch an operator-supplied URL carry `userSupplied: true`.
-2. Add `route.upstream-anomalies.test.ts` beside the route (or
+2. Call the upstream through `upstreamFetch(id, url, init)` rather than
+   `fetch`; the scan refuses a raw fetch in a registry caller.
+3. Add `route.upstream-anomalies.test.ts` beside the route (or
    `<module>.upstream-anomalies.test.ts` beside a library module). Copy the
    shape of `src/app/api/github/pat/route.upstream-anomalies.test.ts`:
    isolate the Cave home, set the credential in `process.env`, install the
    harness, import the module, register the healthy handler, run
    `runUpstreamAnomalyMatrix` with per-anomaly expectations derived from the
-   code. Pass `secrets` so the token can never leak. Use `mayThrow` for a
+   code. Pass `secrets` so the token can never leak and
+   `expectLiveDetection: true` so the ledger is checked. Use `mayThrow` for a
    library whose contract is a typed error.
-3. Where the caller caches, stub `Date.now` and step the clock in
+4. Where the caller caches, stub `Date.now` and step the clock in
    `beforeEach`/`beforeHeal` so the healed call is reachable, and add an
    explicit test that a failure is not served past its documented hold.
-4. Wire the file into the `api` suite in `scripts/run-tests.mjs` (and into
+5. Wire the file into the `api` suite in `scripts/run-tests.mjs` (and into
    `ALIAS_LOADER` when it imports anything that resolves `@/`). Run
    `node scripts/check-tests-wired.mjs`.
 
 ## What the matrix does not claim
 
 The harness answers at the fetch boundary. It does not exercise DNS, TLS,
-proxies, or the native daemon, and a `timeout` injected against a caller with
-no deadline rejects at the harness ceiling rather than hanging — the call
-record's `hasDeadline` says whether the caller bounded the request itself.
-The matrix proves graceful degradation and immediate recovery; it does not
-prove retry policy, which each caller documents for itself.
+proxies, or the native daemon. The matrix proves graceful degradation and
+immediate recovery per caller; the retry and cooldown policy is proven once,
+in `upstream-fetch.test.ts`, and the matrix runner treats a cooldown window
+as elapsed before each heal so the two contracts stay separate.

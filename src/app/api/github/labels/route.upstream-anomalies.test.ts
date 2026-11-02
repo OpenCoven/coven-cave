@@ -1,6 +1,6 @@
 // GET /api/github/labels under every upstream anomaly (#6359).
 //
-// One list read with no cache and no deadline. The route forwards GitHub's
+// One list read through upstreamFetch with no cache. The route forwards GitHub's
 // own 401 and 403 (an unauthenticated read of a private repo is a real 401,
 // not a configuration error) and reports everything else as 502. A body that
 // is not an array — torn, empty, or drifted — is refused rather than rendered
@@ -60,6 +60,7 @@ test("GET /api/github/labels across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: read,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);

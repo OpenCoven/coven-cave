@@ -77,6 +77,7 @@ test("POST /api/github/merge with a reviewed head across upstream anomalies", as
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: () => merge({ headSha: HEAD }),
     healthy: (outcome) => {
       merged(outcome);
@@ -97,7 +98,7 @@ test("POST /api/github/merge with a reviewed head across upstream anomalies", as
       "schema-drift": failsWith(502, "Pull request revision is unavailable."),
     },
     beforeHeal: () => {
-      assert.deepEqual(harness.calls("github").map((call) => call.method), ["GET"], "an unreadable PR means no merge is attempted");
+      assert.ok(harness.calls("github").length >= 1 && harness.calls("github").every((call) => call.method === "GET"), "an unreadable PR means no merge is attempted");
     },
   });
 });
@@ -107,6 +108,7 @@ test("POST /api/github/merge without a head (legacy caller) across upstream anom
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: () => merge(),
     healthy: (outcome) => {
       merged(outcome);
@@ -175,7 +177,7 @@ test("a stalled socket on the merge PUT itself is a plain failure (a retry re-se
   harness.heal("github");
 });
 
-test("the merge calls carry no deadline (finding, not a contract)", async () => {
+test("the merge calls carry a deadline through upstreamFetch", async () => {
   assert.ok(harness.calls("github").length >= 1);
-  assert.ok(harness.calls("github").every((call) => call.hasDeadline === false));
+  assert.ok(harness.calls("github").every((call) => call.hasDeadline === true));
 });

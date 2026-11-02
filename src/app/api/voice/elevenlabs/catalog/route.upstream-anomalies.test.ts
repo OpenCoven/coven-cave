@@ -6,13 +6,17 @@
 // a socket failure on either is `elevenlabs_unreachable`; an unreadable or
 // drifted 2xx body is an empty catalog rather than an error. The key never
 // appears in any of them, both calls carry a deadline, and the route re-asks
-// ElevenLabs the moment it is back.
+// ElevenLabs the moment it is back. Both reads go through upstreamFetch, so a
+// 5xx, a stalled socket or a dead network is retried once per read (four
+// calls for the pair), while a 429 with a long Retry-After, a 401 and any 2xx
+// are taken at their word (two calls).
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch, type UpstreamHandler } from "../../../../../lib/testing/upstream-anomaly-fetch.ts";
 import { captureOutcome, expectErrorStatus, runUpstreamAnomalyMatrix, type DegradedExpectation, type MatrixOutcome } from "../../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../../lib/testing/scratch-cave-home.ts";
+import { resetUpstreamHealth } from "../../../../../lib/server/upstream-fetch.ts";
 
 const home = isolateCaveHome("elevenlabs-catalog-anomalies");
 const API_KEY = "xi-testonly-elevenlabs-never-dispatched-0123456789abcdef";
@@ -49,11 +53,20 @@ harness.healthy("elevenlabs", catalog);
 
 const read = () => GET();
 
-const catalogFailed = (status: number): DegradedExpectation => (outcome, anomaly) => {
+/** Two parallel reads; a transient fault is retried once on each. */
+const RETRIED_PAIR = 4;
+const TAKEN_AT_WORD_PAIR = 2;
+
+const callCount = (expected: number) => {
+  assert.equal(harness.calls("elevenlabs").length, expected, `expected ${expected} upstream calls for the pair`);
+};
+
+const catalogFailed = (status: number, calls: number): DegradedExpectation => (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   const body = outcome.body as { error: string; hint: string };
   assert.equal(body.error, "elevenlabs_catalog_failed");
   assert.equal(body.hint, `ElevenLabs returned http ${status}.`);
+  callCount(calls);
 };
 
 const unreachable: DegradedExpectation = (outcome, anomaly) => {
@@ -61,11 +74,16 @@ const unreachable: DegradedExpectation = (outcome, anomaly) => {
   const body = outcome.body as { error: string; hint: string };
   assert.equal(body.error, "elevenlabs_unreachable");
   assert.match(body.hint, /^Couldn't reach ElevenLabs \(/);
+  // Promise.all rejects on the first dead socket while the sibling's retry may
+  // still be in flight, so the pair has made three or four attempts by now.
+  const calls = harness.calls("elevenlabs").length;
+  assert.ok(calls === RETRIED_PAIR - 1 || calls === RETRIED_PAIR, `expected 3-4 upstream calls for the pair, got ${calls}`);
 };
 
 const emptyCatalog = (outcome: MatrixOutcome) => {
   assert.equal(outcome.status, 200);
   assert.deepEqual(outcome.body, { ok: true, voices: [], models: [] }, "an unreadable body is an empty catalog, not an error");
+  callCount(TAKEN_AT_WORD_PAIR);
 };
 
 const fullCatalog = (outcome: MatrixOutcome) => {
@@ -90,16 +108,19 @@ test("GET /api/voice/elevenlabs/catalog across upstream anomalies", async (t) =>
     secrets: [API_KEY],
     invoke: read,
     healthy: fullCatalog,
+    expectLiveDetection: true,
     degraded: {
-      "http-500": catalogFailed(500),
-      "http-502": catalogFailed(502),
+      "http-500": catalogFailed(500, RETRIED_PAIR),
+      "http-502": catalogFailed(502, RETRIED_PAIR),
       "auth-revoked": (outcome, anomaly) => {
         expectErrorStatus(502)(outcome, anomaly);
         const body = outcome.body as { error: string; hint: string };
         assert.equal(body.error, "elevenlabs_key_invalid");
         assert.match(body.hint, /ELEVENLABS_API_KEY/);
+        callCount(TAKEN_AT_WORD_PAIR);
       },
-      "rate-limit": catalogFailed(429),
+      // The standard rate limit asks for 7 s: over the retry cap, so no retry.
+      "rate-limit": catalogFailed(429, TAKEN_AT_WORD_PAIR),
       timeout: unreachable,
       network: unreachable,
       "malformed-json": emptyCatalog,
@@ -113,6 +134,12 @@ test("GET /api/voice/elevenlabs/catalog across upstream anomalies", async (t) =>
 async function withOnePathDegraded(pathname: "/v1/voices" | "/v1/models", answer: () => Response, fn: () => Promise<void>) {
   harness.healthy("elevenlabs", (request, call) => (new URL(request.url).pathname === pathname ? answer() : catalog(request, call)));
   try {
+    // A previous case's Retry-After may have left the host cooling; that
+    // window is the primitive's contract, not this route's. A straggling
+    // retry from a rejected Promise.all may also still be landing; let it
+    // settle so it is not counted here.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    resetUpstreamHealth("elevenlabs");
     harness.reset();
     await fn();
   } finally {
@@ -130,7 +157,7 @@ test("when only one of the two parallel calls fails", async (t) => {
         error: "elevenlabs_catalog_failed",
         hint: "ElevenLabs returned http 500.",
       });
-      assert.equal(harness.calls("elevenlabs").length, 2, "both calls were still issued");
+      assert.equal(harness.calls("elevenlabs").length, 3, "both calls were still issued, and the failing read was retried once");
     });
   });
 

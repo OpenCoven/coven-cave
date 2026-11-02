@@ -6,12 +6,15 @@
 // "this voice is not on the TTS endpoint" rejection. A 5xx, a revoked key, a
 // rate limit, a stalled socket, a dead network, or a 2xx with no bytes must
 // stay retryable, so the next request reaches OpenAI again once it is back.
+// The synthesis goes through upstreamFetch: it carries a 30 s deadline, the
+// ledger records each anomaly live, and the POST is never retried.
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import { expectErrorStatus, runUpstreamAnomalyMatrix, type DegradedExpectation } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
+import { resetUpstreamHealth } from "../../../../lib/server/upstream-fetch.ts";
 
 const home = isolateCaveHome("voice-preview-anomalies");
 const API_KEY = "sk-testonly-openai-never-dispatched-0123456789abcdef";
@@ -41,16 +44,23 @@ harness.healthy("openai", async (request) => {
 
 const preview = () => GET(new Request("http://localhost/api/voice/preview?voice=alloy"));
 
+/** The synthesis is a POST: one attempt, whatever the answer. */
+const singleAttempt = () => {
+  assert.equal(harness.calls("openai").length, 1, "a synthesis POST is never retried");
+};
+
 const previewFailed = (providerMessage: string): DegradedExpectation => (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   const body = outcome.body as { error: string; providerMessage: string };
   assert.equal(body.error, "preview_failed");
   assert.equal(body.providerMessage, providerMessage);
+  singleAttempt();
 };
 
 const unreachable: DegradedExpectation = (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   assert.deepEqual(outcome.body, { ok: false, error: "provider_unreachable" });
+  singleAttempt();
 };
 
 // The route reads any 2xx body as audio without consulting the content-type,
@@ -76,7 +86,11 @@ test("GET /api/voice/preview across upstream anomalies", async (t) => {
       assert.equal(outcome.response?.headers.get("cache-control"), "private, max-age=86400");
       const bytes = Buffer.from(await outcome.response!.arrayBuffer());
       assert.ok(bytes.equals(MP3), "the sample is relayed byte for byte");
+      const call = harness.calls("openai").at(-1);
+      assert.ok(call);
+      assert.equal(call.hasDeadline, true, "a synthesis that never answers must not hang the preview");
     },
+    expectLiveDetection: true,
     degraded: {
       "http-500": previewFailed(""),
       "http-502": previewFailed(""),
@@ -171,6 +185,10 @@ test("what the preview cache remembers", async (t) => {
       assert.equal(degraded.upstreamCalls, 1);
 
       harness.heal("openai");
+      // A rate limit put OpenAI in the primitive's cooldown; that window is
+      // upstream-fetch.test.ts's contract. What is proven here is the route's
+      // own cache, so treat the window as elapsed.
+      resetUpstreamHealth("openai");
       const healed = await previewWithoutClearing();
       assert.equal(healed.status, 200, `${name}: still failing after OpenAI healed — the failure was cached`);
       assert.equal(healed.upstreamCalls, 1, `${name}: the healed request never reached OpenAI`);

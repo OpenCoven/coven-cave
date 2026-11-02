@@ -110,7 +110,8 @@ test("a failed fetch is not written into the window: the first call after rss.ap
   harness.inject("x-rss-bridge", { kind: "http", status: 503 });
   harness.reset();
   servesLastGoodItems(await captureJson(read()));
-  assert.equal(harness.calls("x-rss-bridge").length, 1, "the window had expired, so the route asked rss.app");
+  // upstreamFetch retries a failed read once before the route sees it.
+  assert.equal(harness.calls("x-rss-bridge").length, 2, "the window had expired, so the route asked rss.app");
 
   harness.heal("x-rss-bridge");
   harness.reset();

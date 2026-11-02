@@ -16,6 +16,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,7 +46,8 @@ async function listPullCommits(repo: string, numberRaw: string) {
   const token = resolveGitHubToken();
   try {
     // repo passed REPO_RE and number is a validated positive integer.
-    const res = await fetch(
+    const res = await upstreamFetch(
+      "github",
       `${GH}/repos/${repo}/pulls/${number}/commits?per_page=${MAX_COMMITS}`,
       { headers: ghHeaders(token), cache: "no-store" },
     );
@@ -118,7 +120,7 @@ export async function GET(req: Request) {
 
   try {
     // repo passed REPO_RE and sha passed SHA_RE — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/commits/${sha}`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/commits/${sha}`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",

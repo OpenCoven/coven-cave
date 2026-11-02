@@ -2155,6 +2155,7 @@ export const SUITES = {
     "src/lib/server/x-client.upstream-anomalies.test.ts",
     "src/lib/endpoint-validators.upstream-anomalies.test.ts",
     "src/lib/server/managed-node-toolchain.upstream-anomalies.test.ts",
+    "src/lib/server/upstream-fetch.test.ts",
     // #6359 (end)
   ],
   mobile: [

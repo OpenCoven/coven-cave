@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
 import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { summarizeCheckSignals, summarizeChecks, type CheckRun } from "@/lib/github-checks";
 
 /** Pages of 100 check runs read for one head: a thousand runs. */
@@ -60,7 +61,7 @@ async function ghFetch(path: string, token: string | null) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store" });
+  const res = await upstreamFetch("github", `${GH}${path}`, { headers, cache: "no-store" });
   const data = await res.json().catch(() => null);
   return { res, data };
 }

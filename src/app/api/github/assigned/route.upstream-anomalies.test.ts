@@ -17,6 +17,7 @@ import {
   type DegradedExpectation,
 } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
+import { resetUpstreamHealth, setUpstreamClockForTests } from "@/lib/server/upstream-fetch";
 
 const home = isolateCaveHome("github-assigned-anomalies");
 const TOKEN = "ghp_testonly_never_dispatched_assigned_0123456789";
@@ -29,6 +30,9 @@ let now = Date.UTC(2026, 0, 1);
 const realNow = Date.now;
 // The SWR cache binds its clock when the route module loads: stub first.
 Date.now = () => now;
+// The upstream ledger keeps its own clock: point it at the same fake one so a
+// host cooldown and the cache's fresh minute step together.
+setUpstreamClockForTests(() => now);
 const stepPastCache = () => {
   now += STALE_SERVE_MS + 1;
 };
@@ -38,8 +42,11 @@ const { GET } = await import("./route.ts");
 test.after(() => {
   harness.restore();
   Date.now = realNow;
+  setUpstreamClockForTests(null);
   home.cleanup();
 });
+// A forced outage in one test must not leave the host cooling for the next.
+test.beforeEach(() => resetUpstreamHealth("github"));
 
 const item = (id: number, kind: "issues" | "pull", updatedAt: string) => ({
   id,
@@ -104,6 +111,7 @@ test("GET /api/github/assigned across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     beforeEach: stepPastCache,
     invoke: read,
     healthy: (outcome) => {
@@ -158,7 +166,7 @@ test("a failure stands for its fresh minute and no longer", async () => {
   harness.inject("github", { kind: "http", status: 500, body: { message: "down" } });
   harness.reset();
   assert.equal((await read()).status, 502);
-  assert.equal(harness.calls("github").length, 3);
+  assert.equal(harness.calls("github").length, 6, "three sources, each retried once inside upstreamFetch");
 
   harness.heal("github");
   harness.reset();

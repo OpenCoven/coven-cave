@@ -153,7 +153,8 @@ test("a directory failure is not cached: the first listing after skills.sh heals
   harness.inject("skills-directory", { kind: "http", status: 503 });
   harness.reset();
   bundledFallback(await outcomeOf(listSkillDirectoryEntries()));
-  assert.equal(harness.calls("skills-directory").length, 1);
+  // upstreamFetch retries a failed read once before the route sees it.
+  assert.equal(harness.calls("skills-directory").length, 2);
 
   harness.heal("skills-directory");
   harness.reset();

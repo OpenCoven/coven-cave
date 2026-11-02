@@ -135,6 +135,7 @@ test("a poll that fails on PRs still polls completed runs and persists the retai
     return Response.json({ total_count: 0, workflow_runs: [] });
   });
   await tickGithubWatcher();
+  // The watcher passes retries: 0 (its next tick is the retry), so the failing read is not repeated.
   assert.equal(harness.calls("github").length, 2, "one repository's failing read does not skip its other read");
   assert.deepEqual(await snapshot(), lastGood);
 });

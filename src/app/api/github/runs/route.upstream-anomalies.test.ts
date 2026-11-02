@@ -1,7 +1,7 @@
 // GET /api/github/runs under every upstream anomaly (#6359).
 //
-// One read of a repo's recent workflow runs (or one run by id), no cache, no
-// deadline. Every upstream failure is a 502 naming the upstream status; an
+// One read of a repo's recent workflow runs (or one run by id) through
+// upstreamFetch, no cache. Every upstream failure is a 502 naming the upstream status; an
 // unreadable 200 body is a 502 too. A drifted body is the soft spot: a
 // well-formed object without `workflow_runs` renders as "no runs", and in
 // by-id mode the drifted object itself is normalized into a run card.
@@ -84,6 +84,7 @@ test("GET /api/github/runs across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: list,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);

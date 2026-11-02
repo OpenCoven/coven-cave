@@ -6,9 +6,9 @@
 // degrades every call alike) is really the identity contract: an outage is a
 // 502, a rate limit is a 429 carrying Retry-After, a revoked PAT is a 200 with
 // `patInvalid`, and an unreadable identity body falls through to the
-// "no_user" 401 that blames configuration. The enrichment pool is the only
-// stage that carries an abort signal; a check outage there costs a row its
-// pip, never the list.
+// "no_user" 401 that blames configuration. Every call goes through
+// upstreamFetch and so carries a deadline; the enrichment pool adds its own
+// abort signal, and a check outage there costs a row its pip, never the list.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -19,6 +19,7 @@ import {
   type DegradedExpectation,
 } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
+import { resetUpstreamHealth } from "@/lib/server/upstream-fetch";
 
 const home = isolateCaveHome("github-activity-anomalies");
 const TOKEN = "ghp_testonly_never_dispatched_activity_0123456789";
@@ -32,6 +33,9 @@ test.after(() => {
   harness.restore();
   home.cleanup();
 });
+// A forced outage or rate limit in one test must not leave the host cooling
+// for the next.
+test.beforeEach(() => resetUpstreamHealth("github"));
 
 const SHA = "a".repeat(40);
 const RATE = { "x-ratelimit-remaining": "4999", "x-ratelimit-limit": "5000" };
@@ -97,6 +101,7 @@ test("GET /api/github/activity across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: read,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);
@@ -200,10 +205,11 @@ test("a rate limit during search is reported per collection and stops further se
   harness.healthy("github", github());
 });
 
-test("only the check-enrichment calls carry a deadline", async () => {
+test("every GitHub call carries a deadline, the enrichment pool's abort signal included", async () => {
   harness.reset();
   await read();
   const calls = harness.calls("github");
-  const bounded = calls.filter((call) => call.hasDeadline).map((call) => new URL(call.url).pathname);
-  assert.deepEqual(bounded.sort(), [`/repos/OpenCoven/coven-cave/commits/${SHA}/check-runs`, "/repos/OpenCoven/coven-cave/pulls/5"]);
+  assert.ok(calls.length >= 7, "identity, memberships, three searches and the enrichment reads all happened");
+  const unbounded = calls.filter((call) => !call.hasDeadline).map((call) => new URL(call.url).pathname);
+  assert.deepEqual(unbounded, [], "upstreamFetch bounds every stage, not only the pool that passes its own signal");
 });

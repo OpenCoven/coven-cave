@@ -2,7 +2,8 @@
 //
 // Two writes, one upstream call each, both needing a PAT. A failed write is
 // a 502 (403 and 404 pass through); PATCH forwards GitHub's own `message` so
-// a 422 names the offending label. Neither verb caches or passes a deadline.
+// a 422 names the offending label. Neither verb caches; both go through upstreamFetch,
+// which bounds the call and never retries a write.
 // The soft spot both share: a drifted 200 body is reported as a successful
 // write of issue #0, since any object is accepted as the written issue.
 import assert from "node:assert/strict";
@@ -86,6 +87,7 @@ test("POST /api/github/issue across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: create,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);
@@ -117,6 +119,7 @@ test("PATCH /api/github/issue across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: update,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);

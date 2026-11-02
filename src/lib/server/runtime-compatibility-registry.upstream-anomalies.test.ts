@@ -85,7 +85,7 @@ test("a failure is not remembered past the heal: retain under the outage, then t
   harness.inject("github", { kind: "http", status: 503, body: "<html>unavailable</html>", headers: { "content-type": "text/html" } });
   harness.reset();
   assert.equal(await refresh(), null);
-  assert.equal(harness.calls("github").length, 1);
+  assert.equal(harness.calls("github").length, 2, "a 5xx on the read is retried once by upstreamFetch, then retained");
   assert.equal(await cacheText(), lastGoodCache);
 
   servingVersion = "3.0.0";
@@ -109,7 +109,7 @@ test("resolveRuntimeCompatibility serves a fresh last-known-good cache during an
   // null (the caller falls back to its checked-in baseline), not a stale answer.
   const expired = await resolveRuntimeCompatibility("copilot", { cachePath, fetchImpl: harness.fetch, now: new Date(at.getTime() + 61_000) });
   assert.equal(expired, null);
-  assert.equal(harness.calls("github").length, 1);
+  assert.equal(harness.calls("github").length, 2, "a dead socket on the read is retried once, then given up");
   assert.equal(await cacheText(), lastGoodCache, "an expired cache is still not overwritten by a failure");
 
   harness.heal("github");

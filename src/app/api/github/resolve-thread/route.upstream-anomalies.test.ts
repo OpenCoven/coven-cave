@@ -67,6 +67,7 @@ test("POST /api/github/resolve-thread across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: () => resolve(true),
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);
@@ -115,10 +116,10 @@ test("a 403 keeps its status", async () => {
   harness.heal("github");
 });
 
-test("the mutation carries no deadline (finding, not a contract)", async () => {
+test("the mutation carries a deadline through upstreamFetch", async () => {
   harness.reset();
   await resolve();
   const call = harness.calls("github").at(-1);
   assert.ok(call);
-  assert.equal(call.hasDeadline, false);
+  assert.equal(call.hasDeadline, true);
 });

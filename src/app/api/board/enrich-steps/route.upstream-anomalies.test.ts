@@ -131,6 +131,7 @@ test("POST /api/board/enrich-steps across upstream GitHub anomalies", async (t) 
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: enrich,
     healthy: (outcome) => {
       const seen = completed(outcome);
@@ -180,9 +181,9 @@ test("a 404 (deleted or private issue) keeps the stored link rather than erasing
   harness.heal("github");
 });
 
-test("the issue reads carry no deadline (finding, not a contract)", async () => {
+test("the issue reads carry a deadline through upstreamFetch", async () => {
   assert.ok(harness.calls("github").length >= 1);
-  assert.ok(harness.calls("github").every((call) => call.hasDeadline === false));
+  assert.ok(harness.calls("github").every((call) => call.hasDeadline === true));
 });
 
 async function captureStream(): Promise<MatrixOutcome> {

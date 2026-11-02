@@ -1,7 +1,7 @@
 // GET /api/github/commit under every upstream anomaly (#6359).
 //
 // Two modes, one upstream call each: `?sha=` reads a single commit, `?number=`
-// lists a pull request's commits. Neither caches nor passes a deadline.
+// lists a pull request's commits. Neither caches; both go through upstreamFetch.
 // Failures are 502s naming the upstream status. The modes differ on schema
 // drift: the list refuses a non-array, while the single-commit mode renders
 // any object as a commit with the requested sha and an empty message.
@@ -93,6 +93,7 @@ test("GET /api/github/commit?sha= across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: readCommit,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);
@@ -133,6 +134,7 @@ test("GET /api/github/commit?number= across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: listCommits,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);

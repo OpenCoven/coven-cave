@@ -4,7 +4,7 @@
 // base) and then the three-dot comparison between them. The revision read
 // surfaces failure as a typed GitHubRevisionError that the route maps to a
 // status; a torn or empty revision body throws a SyntaxError that the same
-// catch turns into a 502. Nothing is cached and no call carries a deadline.
+// catch turns into a 502. Nothing is cached; both calls go through upstreamFetch.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -75,6 +75,7 @@ test("GET /api/github/diff across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: read,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);

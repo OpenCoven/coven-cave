@@ -117,8 +117,20 @@ async function drive(): Promise<Outcome> {
       await sleep(5);
     }
   } else {
-    // Let the rejected or unusable answer settle through the refresh chain.
-    await sleep(25);
+    // Let the rejected or unusable answer settle through the refresh chain,
+    // including upstreamFetch's one backed-off retry of a read: wait until no
+    // new upstream call has arrived for 300 ms so a retry cannot cross the heal.
+    let seen = harness.calls("github-raw").length;
+    let quietSince = realNow();
+    while (realNow() - quietSince < 300) {
+      assert.ok(realNow() < deadline, "the degraded refresh never settled");
+      await sleep(10);
+      const now = harness.calls("github-raw").length;
+      if (now !== seen) {
+        seen = now;
+        quietSince = realNow();
+      }
+    }
   }
   return { sources, cache: await readCodexSchemaCache(cachePath, verify) };
 }
@@ -154,7 +166,7 @@ test("a failure is not remembered past the heal: retained under the outage, then
   harness.inject("github-raw", { kind: "network" });
   harness.reset();
   const degraded = await drive();
-  assert.equal(harness.calls("github-raw").length, 1);
+  assert.equal(harness.calls("github-raw").length, 2, "the dead-socket read is retried once by upstreamFetch, then given up");
   assert.equal(degraded.cache?.provenance.sequence, lastGoodSequence);
   assert.deepEqual(sourceNames(degraded), ["builtin", "cache"]);
 
@@ -172,11 +184,12 @@ test("a refresh is not admitted inside the cadence, so a failure cannot be retri
   harness.inject("github-raw", { kind: "http", status: 500 });
   harness.reset();
   await drive();
-  assert.equal(harness.calls("github-raw").length, 1);
-  // Same cadence window: no second fetch, failed or not.
+  // One refresh: its read meets a 5xx and upstreamFetch retries it once.
+  assert.equal(harness.calls("github-raw").length, 2);
+  // Same cadence window: no second refresh, failed or not.
   await productionCodexSchemaSources({ cachePath, registryUrl: REGISTRY_URL, verifier: verify, fetchImpl: countingFetch });
   await sleep(10);
-  assert.equal(harness.calls("github-raw").length, 1, "one refresh per cadence window");
+  assert.equal(harness.calls("github-raw").length, 2, "one refresh per cadence window");
   harness.heal("github-raw");
 });
 

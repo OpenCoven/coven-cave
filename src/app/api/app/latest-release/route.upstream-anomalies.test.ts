@@ -80,7 +80,8 @@ test("a failed check is not cached: the next call after GitHub heals is live, no
   harness.reset();
   const degraded = await (await GET()).json();
   assert.equal(degraded.available, false);
-  assert.equal(harness.calls("github").length, 1);
+  // upstreamFetch retries a failed read once before the route sees it.
+  assert.equal(harness.calls("github").length, 2);
 
   harness.heal("github");
   harness.reset();

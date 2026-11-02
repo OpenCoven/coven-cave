@@ -66,6 +66,7 @@ test("POST /api/canvas/github-source across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: () => importFile(),
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);

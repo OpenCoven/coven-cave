@@ -26,6 +26,7 @@ import { parseSafeGitHubUrl, parseSafeHttpUrl } from "../url-safety.ts";
 import { makePin, PIN_CONTENT_MAX, type PinKind, type StitchPin } from "../stitch.ts";
 import { covenKnowledgeRoot } from "./knowledge-vault.ts";
 import { resolveAllowedFileReadPath, resolveAllowedMemoryFilePath } from "./memory-file-paths.ts";
+import { upstreamFetch } from "./upstream-fetch.ts";
 
 export type PinCaptureRequest = {
   kind: PinKind;
@@ -220,11 +221,11 @@ export function githubApiTarget(url: URL): GitHubTarget | null {
 /** Plain fetch for the FIXED GitHub hosts only (no user-controlled hostname —
  *  no rebinding surface). URL pins go through `requestPublicUrl` instead. */
 async function fetchCapped(url: string, accept: string): Promise<Response> {
-  return fetch(url, {
+  const id = new URL(url).host === "raw.githubusercontent.com" ? "github-raw" : "github";
+  return upstreamFetch(id, url, {
     redirect: "manual",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     headers: { accept, "user-agent": "coven-cave-grimoire-stitch" },
-  });
+  }, { timeoutMs: FETCH_TIMEOUT_MS });
 }
 
 async function readBodyCapped(res: Response): Promise<string> {

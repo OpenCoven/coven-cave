@@ -24,8 +24,20 @@ const SCAN_ROOTS = ["src/app/api", "src/lib", "src/proxy.ts", "server.ts"];
 const SKIP_DIRS = new Set(["node_modules", ".next", "fixtures", "openclaw-fixtures", "testing"]);
 const SKIP_FILE = /\.test\.(ts|tsx)$|\.gen\.ts$|\.d\.ts$/;
 const SOURCE_FILE = /\.(ts|tsx)$/;
-/** A fetch-shaped call: the global, an injected implementation, or Node's https client. */
-const FETCHES = /\b(fetch|fetchImpl|fetchFn|fetcher)\s*\(|\bhttps?\.(get|request)\s*\(/;
+/** A fetch-shaped call: the shared primitive, the global, an injected implementation, or Node's https client. */
+const FETCHES = /\b(upstreamFetch|fetch|fetchImpl|fetchFn|fetcher)\s*\(|\bhttps?\.(get|request)\s*\(/;
+/** A raw fetch that bypasses the live primitive. */
+const RAW_FETCH = /(?<![.\w])(fetch|fetchImpl|fetchFn|fetcher)\s*\(/;
+/** Callers allowed to keep a raw fetch, each with the reason. Keep this short. */
+const RAW_FETCH_EXEMPT: Readonly<Record<string, string>> = {
+  "src/lib/server/pin-sources.ts": "the user-URL path goes through https.request behind the public-only resolver; the fixed GitHub hosts use the primitive",
+  "src/app/api/salem/route.ts": "the enhance call goes to Cave's own /api/chat/generate/enhance on the request origin, not to an upstream",
+};
+/** Callers that may not import the server-only primitive at all, each with the reason. */
+const PRIMITIVE_EXEMPT: Readonly<Record<string, string>> = {
+  "src/lib/voice/openai-realtime.ts": "ships to the browser through src/lib/voice/registry.ts, so the server ledger stays out of the client bundle",
+  "src/lib/voice/elevenlabs.ts": "ships to the browser through src/lib/voice/registry.ts, so the server ledger stays out of the client bundle",
+};
 const HOST_RE = /https?:\/\/([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d+)?)/gi;
 /** Hosts that are documentation, fixtures, loopback or reserved names, never an upstream. */
 const NOT_UPSTREAM = /example|\.(invalid|test|lan|local)(:\d+)?$|^localhost(:|$)|^127\.|^0\.0\.0\.0|^\[|w3\.org$|schema\.org$|tailnet|placeholder|attacker|evil/i;
@@ -110,6 +122,30 @@ test("every declared host is still named by one of its callers or host sources",
       const named = texts.some((text) => hostsIn(text).has(host) || text.includes(host));
       if (!named) problems.push(`${entry.id}: ${host} is not named by any caller or hostSource — stale host?`);
     }
+  }
+  assert.deepEqual(problems, []);
+});
+
+test("every registry caller reaches its upstream through upstreamFetch, so detection is live in production", () => {
+  const problems: string[] = [];
+  for (const entry of UPSTREAM_APIS) {
+    for (const file of entry.callers) {
+      const source = sources.get(file);
+      if (source === undefined || file in PRIMITIVE_EXEMPT) continue;
+      if (!/\bupstreamFetch\s*\(/.test(source)) {
+        problems.push(`${entry.id}: ${file} never calls upstreamFetch — route its ${entry.hosts.join("/") || "upstream"} call through src/lib/server/upstream-fetch.ts`);
+        continue;
+      }
+      if (RAW_FETCH.test(source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")) && !(file in RAW_FETCH_EXEMPT)) {
+        problems.push(`${entry.id}: ${file} still has a raw fetch beside upstreamFetch — route it through the primitive or add a RAW_FETCH_EXEMPT reason`);
+      }
+    }
+  }
+  for (const file of [...Object.keys(RAW_FETCH_EXEMPT), ...Object.keys(PRIMITIVE_EXEMPT)]) {
+    assert.ok(sources.has(file), `${file} is exempted but is no longer a scanned file`);
+  }
+  for (const file of Object.keys(PRIMITIVE_EXEMPT)) {
+    assert.doesNotMatch(sources.get(file) ?? "", /\bupstreamFetch\s*\(/, `${file} now uses the primitive: drop its PRIMITIVE_EXEMPT line`);
   }
   assert.deepEqual(problems, []);
 });

@@ -8,6 +8,9 @@
 // carrying the server's own message; a 2xx with no text is `local_llm_empty`
 // and suggests pulling the model. The healthy answer passes the completion
 // text through trimmed, and the proxy re-asks the server the moment it is back.
+// The completion goes through upstreamFetch under the `local-llm` ledger id
+// (keyed by id, so a configured COVEN_LOCAL_LLM_URL still lands there); it is
+// a POST and is never retried.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -49,17 +52,24 @@ const ask = () =>
     }),
   );
 
+/** A completion is a POST: one attempt, whatever the answer. */
+const singleAttempt = () => {
+  assert.equal(harness.calls("local-llm").length, 1, "a completion POST is never retried");
+};
+
 const noLocalServer: DegradedExpectation = (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   const body = outcome.body as { error: string; hint: string };
   assert.equal(body.error, "local_llm_unreachable");
   assert.match(body.hint, /^No OpenAI-compatible server on http:\/\/127\.0\.0\.1:11434 \(/, "the hint names the base it tried");
   assert.match(body.hint, /Start Ollama \(`ollama serve`\) or LM Studio, or set COVEN_LOCAL_LLM_URL\./);
+  singleAttempt();
 };
 
 const serverError = (hint: string): DegradedExpectation => (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   assert.deepEqual(outcome.body, { ok: false, error: "local_llm_error", hint });
+  singleAttempt();
 };
 
 const noText: DegradedExpectation = (outcome, anomaly) => {
@@ -67,6 +77,7 @@ const noText: DegradedExpectation = (outcome, anomaly) => {
   const body = outcome.body as { error: string; hint: string };
   assert.equal(body.error, "local_llm_empty");
   assert.match(body.hint, /The local model \(llama3\.2\) returned no text — is it pulled\? Try `ollama pull llama3\.2`\./);
+  singleAttempt();
 };
 
 test("POST /api/voice/local/chat across upstream anomalies", async (t) => {
@@ -81,6 +92,7 @@ test("POST /api/voice/local/chat across upstream anomalies", async (t) => {
       assert.ok(call);
       assert.equal(call.hasDeadline, true, "a local model that never answers must not hang the voice loop forever");
     },
+    expectLiveDetection: true,
     degraded: {
       "http-500": serverError("local model server returned http 500"),
       "http-502": serverError("local model server returned http 502"),

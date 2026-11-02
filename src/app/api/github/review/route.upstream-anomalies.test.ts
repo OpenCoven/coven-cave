@@ -67,6 +67,7 @@ test("POST /api/github/review with a reviewed head across upstream anomalies", a
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: () => review({ headSha: HEAD }),
     healthy: (outcome) => {
       submitted(outcome);
@@ -86,7 +87,7 @@ test("POST /api/github/review with a reviewed head across upstream anomalies", a
       // Every degraded answer above must also have stopped before the POST.
     },
     beforeHeal: () => {
-      assert.deepEqual(harness.calls("github").map((call) => call.method), ["GET"], "an unreadable PR means no verdict is submitted");
+      assert.ok(harness.calls("github").length >= 1 && harness.calls("github").every((call) => call.method === "GET"), "an unreadable PR means no verdict is submitted");
     },
   });
 });
@@ -96,6 +97,7 @@ test("POST /api/github/review without a head across upstream anomalies", async (
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: () => review(),
     healthy: (outcome) => {
       submitted(outcome);
@@ -151,7 +153,7 @@ test("a stalled socket on the review POST is a plain failure (a retry re-submits
   harness.heal("github");
 });
 
-test("the review calls carry no deadline (finding, not a contract)", async () => {
+test("the review calls carry a deadline through upstreamFetch", async () => {
   assert.ok(harness.calls("github").length >= 1);
-  assert.ok(harness.calls("github").every((call) => call.hasDeadline === false));
+  assert.ok(harness.calls("github").every((call) => call.hasDeadline === true));
 });

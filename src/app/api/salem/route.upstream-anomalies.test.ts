@@ -109,7 +109,8 @@ test("POST /api/salem across upstream anomalies (no familiar: hosted context →
       "http-500": (outcome) => {
         everyHopFailed(outcome);
         assert.match((outcome.body as AskBody).reply, /HTTP 500/);
-        assert.equal(harness.calls("opencoven-docs").length, 3, "context, answer, then the corpus: every hop was tried");
+        // The two hosted POSTs are never retried; the corpus GET is retried once.
+        assert.equal(harness.calls("opencoven-docs").length, 4, "context, answer, then the corpus: every hop was tried");
       },
       "http-502": everyHopFailed,
       "auth-revoked": everyHopFailed,
@@ -198,7 +199,8 @@ test("a failed hourly refresh is retried on the next call, not remembered for an
   const stale = (await (await GET()).json()) as StatusBody;
   assert.equal(stale.docsStatus.error, "HTTP 503");
   assert.equal(stale.docsStatus.loaded, true);
-  assert.equal(harness.calls("opencoven-docs").length, 1);
+  // upstreamFetch retries a failed read once before the route sees it.
+  assert.equal(harness.calls("opencoven-docs").length, 2);
 
   harness.heal("opencoven-docs");
   harness.reset();

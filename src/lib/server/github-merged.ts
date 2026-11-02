@@ -6,6 +6,7 @@
 
 import { resolveGitHubToken } from "@/lib/github-token";
 import { resolveSecret } from "@/lib/vault";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import type { MergedPr } from "@/lib/daily-report-facts";
 
 const GH = "https://api.github.com";
@@ -23,14 +24,13 @@ function slug(date: Date): string {
 }
 
 async function ghJson(path: string, token: string | null): Promise<unknown> {
-  const res = await fetch(`${GH}${path}`, {
+  const res = await upstreamFetch("github", `${GH}${path}`, {
     headers: {
       accept: "application/vnd.github+json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     cache: "no-store",
-  });
+  }, { timeoutMs: FETCH_TIMEOUT_MS });
   if (!res.ok) throw new Error(`github ${res.status}`);
   return res.json();
 }

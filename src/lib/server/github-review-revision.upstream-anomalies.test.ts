@@ -134,9 +134,8 @@ test("assertCurrentGitHubRevision: 409 when the head moved, silent when it match
   harness.assertAllDeclared();
 });
 
-test("the revision read carries no deadline of its own", () => {
-  // Documented, not endorsed: see the report for src/lib/server/github-review-revision.ts:19.
+test("the revision read carries a deadline through upstreamFetch", () => {
   const call = harness.calls("github").at(-1);
   assert.ok(call);
-  assert.equal(call.hasDeadline, false);
+  assert.equal(call.hasDeadline, true);
 });

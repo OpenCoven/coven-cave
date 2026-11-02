@@ -6,7 +6,9 @@
 // provider codes, the key never leaking, and recovery; the tests after it
 // prove the route's own 429 (`rate_limited`, Retry-After, no provider call)
 // cannot be confused with the provider's 429 (502 `provider_generation_failed`,
-// one provider call, no Retry-After).
+// one provider call, no Retry-After). Both providers are called through
+// upstreamFetch, so every render carries a deadline, the ledger records each
+// anomaly live, and a render POST is never retried.
 import assert from "node:assert/strict";
 import test from "node:test";
 import sharp from "sharp";
@@ -19,6 +21,7 @@ import {
   type MatrixOutcome,
 } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
+import { resetUpstreamHealth } from "../../../../lib/server/upstream-fetch.ts";
 
 const home = isolateCaveHome("projects-icon-anomalies");
 const OPENAI_KEY = "sk-testonly-openai-never-dispatched-0123456789abcdef";
@@ -76,21 +79,29 @@ const generate = (model: string) => () =>
     }),
   );
 
+/** A generation is a POST: one attempt, whatever the answer. */
+const singleAttempt = () => {
+  assert.equal(harness.calls().length, 1, "a render POST is never retried");
+};
+
 const generationFailed = (providerMessage: RegExp): DegradedExpectation => (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   const body = outcome.body as { error: string; providerMessage?: string };
   assert.equal(body.error, "provider_generation_failed");
   assert.match(body.providerMessage ?? "", providerMessage);
+  singleAttempt();
 };
 
 const unreachable: DegradedExpectation = (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   assert.equal((outcome.body as { error: string }).error, "provider_unreachable");
+  singleAttempt();
 };
 
 const emptyImage: DegradedExpectation = (outcome, anomaly) => {
   expectErrorStatus(502)(outcome, anomaly);
   assert.equal((outcome.body as { error: string }).error, "provider_empty_image");
+  singleAttempt();
 };
 
 const degraded = {
@@ -127,6 +138,7 @@ test("POST /api/projects/icon (OpenAI) across upstream anomalies", async (t) => 
       assert.equal(harness.calls("gemini").length, 0, "an OpenAI-connected model never touches Gemini");
     },
     degraded,
+    expectLiveDetection: true,
   });
 });
 
@@ -142,6 +154,7 @@ test("POST /api/projects/icon (Gemini) across upstream anomalies", async (t) => 
       assert.equal(harness.calls("openai").length, 0, "a Gemini-connected model never touches OpenAI");
     },
     degraded,
+    expectLiveDetection: true,
   });
 });
 
@@ -185,6 +198,9 @@ test("the route's own cooldown and the provider's rate limit are distinguishable
 
   await t.test("once the provider is back the next fresh-budget request renders", async () => {
     projectIconRateLimiter.reset();
+    // The 30 s Retry-After above put OpenAI in the primitive's cooldown; that
+    // window is upstream-fetch.test.ts's contract. Treat it as elapsed here.
+    resetUpstreamHealth("openai");
     harness.reset();
     const response = await generate("openai/gpt-5.5")();
     assert.equal(response.status, 200);

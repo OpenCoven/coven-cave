@@ -13,6 +13,7 @@ import test from "node:test";
 import { installUpstreamAnomalyFetch, type UpstreamHandler } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import { runUpstreamAnomalyMatrix, type DegradedExpectation } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
+import { resetUpstreamHealth, setUpstreamClockForTests } from "@/lib/server/upstream-fetch";
 
 const home = isolateCaveHome("github-repos-anomalies");
 const TOKEN = "ghp_testonly_never_dispatched_repos_0123456789";
@@ -23,6 +24,9 @@ const TTL_MS = 15 * 60 * 1000;
 let now = Date.UTC(2026, 0, 1);
 const realNow = Date.now;
 Date.now = () => now;
+// The upstream ledger keeps its own clock: point it at the same fake one so a
+// host cooldown and the feed's window step together.
+setUpstreamClockForTests(() => now);
 const stepPastCache = () => {
   now += TTL_MS + 1;
 };
@@ -32,8 +36,11 @@ const { GET } = await import("./route.ts");
 test.after(() => {
   harness.restore();
   Date.now = realNow;
+  setUpstreamClockForTests(null);
   home.cleanup();
 });
+// A forced outage in one test must not leave the host cooling for the next.
+test.beforeEach(() => resetUpstreamHealth("github"));
 
 const github = (failing: { path: string; status: number } | null = null): UpstreamHandler => async (request) => {
   const url = new URL(request.url);
@@ -128,6 +135,7 @@ test("GET /api/github/repos across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     beforeEach: stepPastCache,
     invoke: read,
     healthy: (outcome) => {
@@ -169,8 +177,12 @@ test("a degraded answer is never held: the next call after GitHub heals is live,
   harness.inject("github", { kind: "http", status: 503, body: { message: "down" } });
   harness.reset();
   assert.equal(((await (await read()).json()) as ReposBody).incomplete, true);
-  assert.equal(harness.calls("github").length, 2);
+  assert.equal(harness.calls("github").length, 3, "the REST read was retried once inside upstreamFetch; the GraphQL write was not");
 
+  // Three failures in one ask opened the host's cooldown. That window is the
+  // primitive's own contract (upstream-fetch.test.ts proves it half-opens);
+  // clear it so this test isolates the feed's cache, which must hold nothing.
+  resetUpstreamHealth("github");
   harness.heal("github");
   harness.reset();
   assert.equal(((await (await read()).json()) as ReposBody).incomplete, false);

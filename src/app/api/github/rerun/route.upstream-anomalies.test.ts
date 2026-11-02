@@ -55,6 +55,7 @@ test("POST /api/github/rerun across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: rerun,
     healthy: rerunRequested,
     degraded: {
@@ -97,8 +98,8 @@ test("failedOnly:false targets the full rerun endpoint", async () => {
   assert.equal(response.status, 200);
 });
 
-test("the rerun call carries no deadline (finding, not a contract)", async () => {
+test("the rerun call carries a deadline through upstreamFetch", async () => {
   const call = harness.calls("github").at(-1);
   assert.ok(call);
-  assert.equal(call.hasDeadline, false);
+  assert.equal(call.hasDeadline, true);
 });

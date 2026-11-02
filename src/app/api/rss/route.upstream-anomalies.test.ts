@@ -134,8 +134,9 @@ test("every feed down at once is still a 200 with empty items and every chip off
     assert.deepEqual(body.items, []);
     assert.equal(sourceOk(body, "hn"), false);
     assert.equal(sourceOk(body, "hf"), false);
-    assert.equal(harness.calls("rss-feeds").length, 1);
-    assert.equal(harness.calls("huggingface").length, 1);
+    // upstreamFetch retries a failed read once before the route sees it.
+    assert.equal(harness.calls("rss-feeds").length, 2);
+    assert.equal(harness.calls("huggingface").length, 2);
   } finally {
     harness.heal();
   }
@@ -151,7 +152,8 @@ test("the window holds a degraded answer until ?refresh=1 or expiry (documented,
   harness.inject("rss-feeds", { kind: "http", status: 503 });
   harness.reset();
   hnLostHfKept(await captureJson(read()));
-  assert.equal(harness.calls("rss-feeds").length, 1);
+  // upstreamFetch retries a failed read once before the route sees it.
+  assert.equal(harness.calls("rss-feeds").length, 2);
 
   harness.heal("rss-feeds");
   harness.reset();

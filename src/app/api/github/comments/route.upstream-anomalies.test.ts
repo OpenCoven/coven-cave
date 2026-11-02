@@ -83,6 +83,7 @@ test("GET /api/github/comments across upstream anomalies", async (t) => {
     harness,
     id: "github",
     secrets: [TOKEN],
+    expectLiveDetection: true,
     invoke: read,
     healthy: (outcome) => {
       assert.equal(outcome.status, 200, outcome.text);
@@ -157,7 +158,7 @@ test("an issue read never asks GraphQL and reports complete evidence", async () 
   assert.equal(harness.calls("github").length, 1);
 });
 
-test("the comment reads carry no deadline (finding, not a contract)", async () => {
+test("the comment reads carry a deadline through upstreamFetch", async () => {
   assert.ok(harness.calls("github").length >= 1);
-  assert.ok(harness.calls("github").every((call) => call.hasDeadline === false));
+  assert.ok(harness.calls("github").every((call) => call.hasDeadline === true));
 });

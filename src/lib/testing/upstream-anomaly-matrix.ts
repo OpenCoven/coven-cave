@@ -26,6 +26,7 @@ import {
   type UpstreamAnomalyHarness,
 } from "./upstream-anomaly-fetch.ts";
 import type { UpstreamApiId } from "../server/upstream-api-registry.ts";
+import { resetUpstreamHealth, upstreamHealth } from "../server/upstream-fetch.ts";
 
 export type MatrixOutcome = {
   /** What `invoke` resolved to (undefined when it threw). */
@@ -67,6 +68,9 @@ export type UpstreamMatrixCase = {
   /** The degraded call must have reached the upstream (default true; set
    *  false when a legitimate cache answers without a call). */
   expectUpstreamCall?: boolean;
+  /** The caller goes through `upstreamFetch`, so the live ledger must record
+   *  each anomaly as it happens and read healthy again after the heal. */
+  expectLiveDetection?: boolean;
 };
 
 function describeError(error: unknown): string {
@@ -103,6 +107,15 @@ export async function captureOutcome(invoke: () => Promise<unknown>): Promise<Ma
   return { value, response: null, status: null, text: safeStringify(value), body: value, threw: undefined };
 }
 
+const LIVE_DETECTABLE: ReadonlySet<StandardAnomalyName> = new Set([
+  "http-500",
+  "http-502",
+  "auth-revoked",
+  "rate-limit",
+  "timeout",
+  "network",
+]);
+
 export async function runUpstreamAnomalyMatrix(t: TestContext, matrixCase: UpstreamMatrixCase): Promise<void> {
   const { harness, id } = matrixCase;
   const anomalies = matrixCase.anomalies ?? STANDARD_UPSTREAM_ANOMALIES;
@@ -110,6 +123,7 @@ export async function runUpstreamAnomalyMatrix(t: TestContext, matrixCase: Upstr
 
   await t.test("healthy upstream: the caller answers its contract", async () => {
     await matrixCase.beforeEach?.();
+    resetUpstreamHealth(id);
     harness.heal(id);
     harness.reset();
     const outcome = await captureOutcome(matrixCase.invoke);
@@ -134,8 +148,20 @@ export async function runUpstreamAnomalyMatrix(t: TestContext, matrixCase: Upstr
       }
       const expectation = matrixCase.degraded?.[name] ?? matrixCase.degraded?.default;
       if (expectation) await expectation(degraded, anomaly);
+      // Body anomalies (torn JSON, empty body, drifted schema) arrive as a 200;
+      // only the caller reading the body can see them, so the ledger is held
+      // to status and transport anomalies only.
+      if (matrixCase.expectLiveDetection && LIVE_DETECTABLE.has(name)) {
+        const seen = upstreamHealth(id).lastAnomaly;
+        assert.ok(seen && seen.class !== "none", `${name}: upstreamFetch did not record the anomaly as it happened`);
+      }
 
       await matrixCase.beforeHeal?.(name);
+      // The upstream is back. A rate limit or a failure streak may have put the
+      // host in a cooldown; the window is the live primitive's own contract
+      // (upstream-fetch.test.ts proves it half-opens), so treat it as elapsed
+      // and prove the caller itself holds no failure state of its own.
+      resetUpstreamHealth(id);
       harness.heal(id);
       harness.reset();
       await matrixCase.beforeEach?.();
@@ -147,6 +173,12 @@ export async function runUpstreamAnomalyMatrix(t: TestContext, matrixCase: Upstr
         harness.calls(id).length >= 1,
         `${name}: after the upstream healed the caller never contacted it again — a failure is being remembered past the outage`,
       );
+      if (matrixCase.expectLiveDetection) {
+        const health = upstreamHealth(id);
+        assert.equal(health.state, "healthy", `${name}: the ledger still reports ${health.state} after a healthy call`);
+        assert.equal(health.consecutiveFailures, 0);
+        assert.ok(harness.calls(id).every((call) => call.hasDeadline), `${name}: a call left without a deadline`);
+      }
       harness.assertAllDeclared();
     });
   }
