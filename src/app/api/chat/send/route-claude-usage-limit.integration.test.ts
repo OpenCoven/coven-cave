@@ -75,7 +75,7 @@ const FRAMES = [
 const shim = [
   "const frames = " + JSON.stringify(FRAMES) + ";",
   "if (process.argv[2] === 'run' && process.argv[3] === '--help') {",
-  "  process.stdout.write('  --model <model>  Forward a provider model id\\n');",
+  "  process.stdout.write('  --write-scope <file> --model <model>  Forward a provider model id\\n');",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === 'claude') {",
