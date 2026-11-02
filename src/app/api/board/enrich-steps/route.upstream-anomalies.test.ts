@@ -7,8 +7,8 @@
 // metadata and the only thing that can change a card is the GitHub state.
 // That makes the contract observable from the stream: a healthy GitHub
 // refreshes the linked issue and the card is written (`done`); a degraded
-// GitHub leaves the link untouched and the task is reported as reviewed with
-// nothing to write (`skip: no_task_metadata_parsed`). Nothing ever surfaces
+// GitHub — including a 200 that is not recognisably this issue — leaves the
+// link untouched and the task is reported as reviewed with nothing to write (`skip: no_task_metadata_parsed`). Nothing ever surfaces
 // as `skip: error`, the stream always completes, and the next run after
 // GitHub heals reads it again.
 import assert from "node:assert/strict";
@@ -84,6 +84,7 @@ harness.healthy("github", (request) => {
   if (request.method === "GET" && url.pathname === "/repos/o/r/issues/7") {
     revision += 1;
     return Response.json({
+      number: 7,
       title: `Refreshed title ${revision}`,
       state: "closed",
       state_reason: "completed",
@@ -156,19 +157,9 @@ test("POST /api/board/enrich-steps across upstream GitHub anomalies", async (t) 
         assert.equal(seen.find((event) => event.kind === "done"), undefined, "nothing is written from a degraded read");
         assert.equal(before?.state, "closed", "the last good state is kept, not blanked");
         assert.equal(before?.title, `Refreshed title ${revision}`);
-      },
-      "schema-drift": (outcome) => {
-        // Pinned, not endorsed: a well-formed 200 of the wrong shape passes the
-        // `res.ok && data` check and is folded into the link. Fields the body
-        // lacks keep their stored value — except labels, which are rebuilt
-        // from the missing field and wiped. The write that results is what
-        // makes this a `done`, not a skip.
-        const seen = completed(outcome);
-        assert.ok(seen.some((event) => event.kind === "done" && event.cardId === CARD_ID), outcome.text);
-        const link = savedLink();
-        assert.equal(link?.state, "closed");
-        assert.equal(link?.title, `Refreshed title ${revision}`);
-        assert.deepEqual(link?.labels, [], "a drifted body erases the stored labels (finding)");
+        // A drifted 200 used to rebuild labels from the missing field and
+        // wipe them (#6368); every degraded read now keeps them.
+        assert.deepEqual(before?.labels, ["bug", "p1"], "the stored labels survive a degraded read");
       },
     },
   });

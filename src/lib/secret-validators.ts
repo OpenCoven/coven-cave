@@ -6,6 +6,7 @@
  */
 
 import { upstreamFetch } from "./server/upstream-fetch.ts";
+import { userLogin } from "./server/upstream-answer.ts";
 
 export type SecretValidation = { ok: boolean; login?: string; error?: string };
 type FetchLike = typeof fetch;
@@ -24,7 +25,7 @@ export async function validateGithubToken(value: string, fetchImpl: FetchLike): 
     if (res.status === 401 || res.status === 403) return { ok: false, error: "token rejected by GitHub" };
     if (!res.ok) return { ok: false, error: `GitHub API error (${res.status})` };
     const data = await res.json().catch(() => null);
-    return { ok: true, login: data?.login ?? undefined };
+    return { ok: true, login: userLogin(data) ?? undefined };
   } catch {
     return { ok: false, error: "could not reach GitHub" };
   }

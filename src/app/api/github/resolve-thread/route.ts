@@ -12,6 +12,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isRecord, resourceId } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -54,6 +55,9 @@ export async function POST(req: Request) {
       body: JSON.stringify({ query: mutation, variables: { id: threadId } }),
     });
     const json = await res.json().catch(() => null);
+    // The mutation was sent and GitHub answered 2xx; an unreadable answer
+    // leaves the thread's state unconfirmed (#6368).
+    if (res.ok && !isRecord(json)) return ambiguousWrite("GitHub", resolved ? "resolve" : "unresolve");
     if (!res.ok || json?.errors) {
       const msg = Array.isArray(json?.errors) && json.errors[0]?.message
         ? String(json.errors[0].message)
@@ -63,11 +67,20 @@ export async function POST(req: Request) {
     const thread = resolved
       ? json?.data?.resolveReviewThread?.thread
       : json?.data?.unresolveReviewThread?.thread;
-    return NextResponse.json({
-      ok: true,
-      threadId: String(thread?.id ?? threadId),
-      isResolved: Boolean(thread?.isResolved),
-    });
+    // Success means GitHub reported the thread in the state we asked for.
+    // A missing thread or state is unconfirmed; the opposite state is a
+    // definite "it didn't take" (#6368).
+    const id = isRecord(thread) ? resourceId(thread.id) : null;
+    if (!isRecord(thread) || typeof thread.isResolved !== "boolean" || !id) {
+      return ambiguousWrite("GitHub", resolved ? "resolve" : "unresolve");
+    }
+    if (thread.isResolved !== resolved) {
+      return NextResponse.json(
+        { ok: false, error: `GitHub reports the thread is still ${thread.isResolved ? "resolved" : "unresolved"}` },
+        { status: 502 },
+      );
+    }
+    return NextResponse.json({ ok: true, threadId: id, isResolved: thread.isResolved });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to resolve thread" },

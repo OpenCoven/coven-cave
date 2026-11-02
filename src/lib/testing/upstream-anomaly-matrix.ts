@@ -195,3 +195,27 @@ export function expectErrorStatus(status: number | readonly number[]): DegradedE
     assert.notEqual(body?.ok, true, "a degraded answer must not claim ok: true");
   };
 }
+
+/**
+ * A read whose 2xx body drifted: a 502 with `code: "upstream-drift"`, never
+ * `ok: true` (#6368).
+ */
+export const expectUpstreamDrift: DegradedExpectation = (outcome, anomaly) => {
+  expectErrorStatus(502)(outcome, anomaly);
+  const body = outcome.body as { code?: unknown; dispatched?: unknown };
+  assert.equal(body?.code, "upstream-drift", `expected upstream-drift, got ${outcome.text.slice(0, 200)}`);
+  assert.notEqual(body?.dispatched, true, "a drifted read changed nothing");
+};
+
+/**
+ * A write the upstream accepted (2xx) whose answer does not confirm what
+ * landed: a 502 with `code: "ambiguous-write"` and `dispatched: true`, so the
+ * client checks before retrying instead of posting twice (#6368).
+ */
+export const expectAmbiguousWrite: DegradedExpectation = (outcome, anomaly) => {
+  expectErrorStatus(502)(outcome, anomaly);
+  const body = outcome.body as { code?: unknown; dispatched?: unknown; error?: unknown };
+  assert.equal(body?.code, "ambiguous-write", `expected ambiguous-write, got ${outcome.text.slice(0, 200)}`);
+  assert.equal(body?.dispatched, true);
+  assert.match(String(body?.error), /Check before trying again/);
+};

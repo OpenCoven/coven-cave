@@ -2,15 +2,15 @@
 //
 // The only GraphQL write in the family. Failure is detected by HTTP status
 // or a non-empty `errors` array; a 403 keeps its status, everything else is
-// a 502. The soft spot the matrix pins rather than hides: a 200 whose body is
-// unreadable or of the wrong shape has neither, so it is reported as
-// `ok: true` with `isResolved: false` — the caller asked to resolve and is
-// told it succeeded, with a state that says it did not.
+// a 502. A 2xx whose body is unreadable or names no thread state is an
+// ambiguous write (the mutation was sent; its result is unconfirmed), and a
+// 2xx naming the opposite state is a definite failure. Neither is `ok: true`
+// (#6368).
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-resolve-thread-anomalies");
@@ -56,11 +56,6 @@ const githubError = (upstreamStatus: number) => (outcome: MatrixOutcome) => {
   assert.equal((outcome.body as { error: string }).error, `github error (${upstreamStatus})`);
 };
 
-// Pinned, not endorsed: no status failure and no `errors` key reads as success.
-const claimedResolvedWithoutEvidence = (outcome: MatrixOutcome) => {
-  assert.equal(outcome.status, 200);
-  assert.deepEqual(outcome.body, { ok: true, threadId: THREAD, isResolved: false });
-};
 
 test("POST /api/github/resolve-thread across upstream anomalies", async (t) => {
   await runUpstreamAnomalyMatrix(t, {
@@ -86,9 +81,9 @@ test("POST /api/github/resolve-thread across upstream anomalies", async (t) => {
         expectErrorStatus(502)(outcome, anomaly);
         assert.equal((outcome.body as { error: string }).error, "fetch failed");
       },
-      "malformed-json": claimedResolvedWithoutEvidence,
-      "empty-body": claimedResolvedWithoutEvidence,
-      "schema-drift": claimedResolvedWithoutEvidence,
+      "malformed-json": expectAmbiguousWrite,
+      "empty-body": expectAmbiguousWrite,
+      "schema-drift": expectAmbiguousWrite,
     },
   });
 });
@@ -107,6 +102,18 @@ test("a GraphQL 200 with errors is a failure carrying the first message", async 
   const response = await resolve();
   assert.equal(response.status, 502);
   assert.deepEqual(await response.json(), { ok: false, error: "Could not resolve to a node with the global id" });
+  harness.heal("github");
+});
+
+test("a 2xx naming the opposite state is a definite failure, not success (#6368)", async () => {
+  harness.inject("github", {
+    kind: "http",
+    status: 200,
+    body: { data: { resolveReviewThread: { thread: { id: THREAD, isResolved: false } } } },
+  });
+  const response = await resolve(true);
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { ok: false, error: "GitHub reports the thread is still unresolved" });
   harness.heal("github");
 });
 
