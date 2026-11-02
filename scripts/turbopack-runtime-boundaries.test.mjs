@@ -3,6 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expectedBoundaries = new Map([
+  ["../src/lib/claude-write-scope.ts", [
+    ['realpathSync.native(/* turbopackIgnore: true */ root)', 1],
+    ['path.join(/* turbopackIgnore: true */ tmpdir(), `cave-claude-write-scope-${randomUUID()}`)', 1],
+    ['path.join(/* turbopackIgnore: true */ directory, "scope.json")', 1],
+    ['open(/* turbopackIgnore: true */ filePath, "wx", 0o600)', 1],
+    ['lstat(/* turbopackIgnore: true */ filePath)', 1],
+  ]],
   ["../src/lib/server/journal-command-intent.ts", [
     ['path.join(/* turbopackIgnore: true */ await realpath(/* turbopackIgnore: true */ directory), ".cave-command-intents")', 1],
     ['path.join(/* turbopackIgnore: true */ root, `${digest(adoptionKey)}.json`)', 1],
