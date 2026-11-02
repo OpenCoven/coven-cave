@@ -48,13 +48,20 @@ export async function resolveFamiliarWorkspace(
   familiarId: string,
 ): Promise<string | undefined> {
   if (!SAFE_ID.test(familiarId)) return undefined;
+  const root = await realDirectory(familiarWorkspacesRoot());
+  if (!root) return undefined;
+
   const declared = (await readFamiliarWorkspaces()).get(familiarId);
   if (declared) {
     const resolvedDeclared = await realDirectory(declared);
-    if (resolvedDeclared) return resolvedDeclared;
+    if (resolvedDeclared) {
+      const relativeDeclared = path.relative(root, resolvedDeclared);
+      if (relativeDeclared !== "" && !relativeDeclared.startsWith("..") && !path.isAbsolute(relativeDeclared)) {
+        return resolvedDeclared;
+      }
+    }
   }
-  const root = await realDirectory(familiarWorkspacesRoot());
-  if (!root) return undefined;
+
   const candidate = await realDirectory(path.join(/* turbopackIgnore: true */ root, familiarId));
   if (!candidate) return undefined;
   const relative = path.relative(root, candidate);
