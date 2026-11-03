@@ -338,6 +338,9 @@ struct ChatView: View {
     private func scrollToLatest(_ proxy: ScrollViewProxy, animation: Animation? = nil) {
         guard scrollState.isFollowingLatest, !scrollState.isUserScrolling else { return }
         let target = thread.messages.last?.id ?? "bottom"
+        #if DEBUG
+        ChatScrollTrace.shared.note("scrollToLatest animated=\(animation != nil)")
+        #endif
         if let animation, !reduceMotion {
             withAnimation(animation) { proxy.scrollTo(target, anchor: .bottom) }
         } else {
@@ -1025,6 +1028,9 @@ struct ChatView: View {
         DispatchQueue.main.async {
             guard viewportRecovery.takeRecovery(isUserScrolling: scrollState.isUserScrolling) else { return }
             streamScroll.cancel()
+            #if DEBUG
+            ChatScrollTrace.shared.note("viewportRecovery")
+            #endif
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
@@ -1097,6 +1103,9 @@ struct ChatView: View {
                 .animation(reduceMotion ? nil : .spring(duration: 0.3), value: thread.messages.count)
             }
             .accessibilityIdentifier("Chat transcript")
+            .chatScrollTrace(following: scrollState.isFollowingLatest,
+                             userScrolling: scrollState.isUserScrolling,
+                             atBottom: scrollState.isAtBottom)
             .onScrollGeometryChange(for: ChatViewportGeometry.self) { geometry in
                 ChatViewportGeometry(
                     contentHeight: geometry.contentSize.height,
@@ -1307,6 +1316,9 @@ struct ChatView: View {
                           operatorAvatarSource: app.operatorAvatarSource,
                           familiarAvatarSource: bubbleAvatarSource,
                           onContentHeightChange: {
+                              #if DEBUG
+                              ChatScrollTrace.shared.note("heightChange \(message.id) following=\(scrollState.isFollowingLatest)")
+                              #endif
                               guard scrollState.isFollowingLatest else { return }
                               streamScroll.request { scrollToLatest(proxy) }
                           },

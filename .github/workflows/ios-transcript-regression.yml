@@ -67,6 +67,7 @@ jobs:
             -only-testing:CovenCaveTests/ChatScrollStateTests \
             -only-testing:CovenCaveTests/ChatViewportRecoveryTests \
             -only-testing:CovenCaveUITests/ChatScrollingUITests \
+            -only-testing:CovenCaveUITests/ChatScrollBounceUITests \
             | tee "$RUNNER_TEMP/scroll-debug.log"
       - name: Release shrink and independent no-shrink repeated opens
         if: ${{ !cancelled() }}

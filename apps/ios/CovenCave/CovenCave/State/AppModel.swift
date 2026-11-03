@@ -2481,6 +2481,30 @@ final class AppModel {
             return
         }
 
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-rich-chat-scroll",
+                title: "Rich Scroll Chat",
+                streamsLatest: false
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-streaming-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-rich-streaming-chat-scroll",
+                title: "Rich Streaming Chat",
+                streamsLatest: true
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-delayed-long-chat-scroll") {
             isConnectingPreview = true
             configureLongChatScrollPreview(
@@ -2761,6 +2785,86 @@ final class AppModel {
             }
             self.touch(thread)
         }
+    }
+
+    /// #6090: history whose replies are much taller than the 12-line loading
+    /// placeholder, so rows change height as WebKit measures them while the
+    /// reader scrolls back to the latest reply. Optionally keeps streaming.
+    private func configureRichChatScrollPreview(id: String, title: String, streamsLatest: Bool) {
+        configureEmptyChatPreview()
+        let base = Date(timeIntervalSince1970: 1_786_000_000)
+        var messages: [DisplayMessage] = []
+        for index in 0..<40 {
+            let created = base.addingTimeInterval(Double(index) * 60)
+            if index.isMultiple(of: 2) {
+                messages.append(DisplayMessage(
+                    id: "rich-user-\(index)", role: .user, familiarId: nil,
+                    text: "Operator checkpoint \(index) in the rich scroll fixture",
+                    createdAt: created
+                ))
+            } else {
+                messages.append(DisplayMessage(
+                    id: "rich-assistant-\(index)", role: .assistant, familiarId: "nyx",
+                    text: Self.richChatScrollPreviewReply(index),
+                    createdAt: created
+                ))
+            }
+        }
+        var latest = DisplayMessage(
+            id: "rich-latest", role: .assistant, familiarId: "nyx",
+            text: """
+            ## The latest rich reply
+
+            \(Array(repeating: "This paragraph keeps the newest reply taller than one screen.", count: 8).joined(separator: "\n\n"))
+
+            Latest bottom marker q3k9z
+            """,
+            createdAt: base.addingTimeInterval(40 * 60)
+        )
+        latest.streaming = streamsLatest
+        messages.append(latest)
+
+        let thread = ChatThread(
+            id: id, title: title, familiarIds: ["nyx"],
+            projectRoot: projects.first?.root, messages: messages
+        )
+        thread.updatedAt = latest.createdAt
+        threads = [thread]
+        threadViews[id] = latest.createdAt
+        projectContextDefaults.set(latest.createdAt, forKey: Self.threadViewKey(id))
+
+        guard streamsLatest else { return }
+        Task { @MainActor [weak thread] in
+            for tick in 0..<240 {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let thread, let last = thread.messages.indices.last else { return }
+                thread.messages[last].text += "\n\nStreaming tail line \(tick) tail q3k9z"
+            }
+            guard let thread, let last = thread.messages.indices.last else { return }
+            thread.messages[last].streaming = false
+        }
+    }
+
+    private static func richChatScrollPreviewReply(_ index: Int) -> String {
+        let prose = Array(
+            repeating: "This paragraph is long enough to wrap across several lines on every iPhone width, so the rendered reply is well beyond the twelve lines its loading placeholder shows.",
+            count: 6
+        ).joined(separator: "\n\n")
+        let code = (0..<24).map { "let value\($0) = compute(\($0))" }.joined(separator: "\n")
+        let table = (0..<12).map { "| row \($0) | value \($0 * index) |" }.joined(separator: "\n")
+        return """
+        ### Rich fixture reply \(index)
+
+        \(prose)
+
+        ```swift
+        \(code)
+        ```
+
+        | Name | Value |
+        | --- | --- |
+        \(table)
+        """
     }
 
     private static func longChatScrollPreviewSeenBoundary() -> Date {
