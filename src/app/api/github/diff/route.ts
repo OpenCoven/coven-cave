@@ -23,6 +23,7 @@ import { NextResponse } from "next/server.js";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
 import { GitHubRevisionError, readGitHubPullRevision } from "@/lib/server/github-review-revision";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -81,7 +82,7 @@ export async function GET(req: Request) {
     // both requested endpoints are immutable even if the author pushes again.
     // Commit SHAs resolve across the repository's fork network; unlike an
     // owner:branch ref, this also avoids depending on a fork's current name.
-    const res = await fetch(`${GH}/repos/${repo}/compare/${revision.baseSha}...${revision.headSha}?per_page=1`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/compare/${revision.baseSha}...${revision.headSha}?per_page=1`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",

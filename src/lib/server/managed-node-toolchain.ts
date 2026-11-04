@@ -13,6 +13,7 @@ import {
 } from "../onboarding-prerequisites.ts";
 import { extractSafeTarGz, extractSafeZip } from "./managed-node-archive.ts";
 import { probeOwnedDirectoryWrite } from "./owned-directory-write.ts";
+import { upstreamFetch } from "./upstream-fetch.ts";
 
 const execFileAsync = promisify(execFile);
 const INSTALL_TIMEOUT_MS = 5 * 60_000;
@@ -520,10 +521,10 @@ export async function installManagedNodeToolchain(options: {
     else options.signal?.addEventListener("abort", forwardAbort, { once: true });
     let archive: Buffer;
     try {
-      const response = await fetcher(artifact.url, {
+      const response = await upstreamFetch("nodejs-dist", artifact.url, {
         signal: controller.signal,
         redirect: "follow",
-      });
+      }, { fetchImpl: fetcher, timeoutMs: options.dependencies?.downloadTimeoutMs ?? INSTALL_TIMEOUT_MS });
       if (!response.ok || !isOfficialNodeArtifact(response.url)) {
         throw new Error(
           "Node archive request was redirected outside the approved official source",

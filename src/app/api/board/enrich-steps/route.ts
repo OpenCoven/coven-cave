@@ -24,6 +24,7 @@ import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import { stripAnsi } from "@/lib/ansi";
 import { assistantTextFromStream } from "@/lib/server/coven-stream-text";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import {
   appendEnrichmentProposal,
   assessEnrichmentGates,
@@ -470,7 +471,7 @@ async function fetchGitHubIssueStates(github: CardGitHubLink[]): Promise<CardGit
       continue;
     }
     try {
-      const res = await fetch(`https://api.github.com/repos/${item.repo}/issues/${item.number}`, {
+      const res = await upstreamFetch("github", `https://api.github.com/repos/${item.repo}/issues/${item.number}`, {
         headers,
         cache: "no-store",
       });

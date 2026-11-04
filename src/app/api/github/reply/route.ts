@@ -11,6 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
 
   try {
     // repo, number, and commentId are validated above — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/comments/${commentId}/replies`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}/comments/${commentId}/replies`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

@@ -10,6 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
   try {
     // repo passed REPO_RE and runId is a positive integer — safe to interpolate.
     const path = failedOnly ? "rerun-failed-jobs" : "rerun";
-    const res = await fetch(`${GH}/repos/${repo}/actions/runs/${runId}/${path}`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/actions/runs/${runId}/${path}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

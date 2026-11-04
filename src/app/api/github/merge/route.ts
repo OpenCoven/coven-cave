@@ -28,6 +28,7 @@ import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
 import { parseGitHubDiffRevision } from "@/lib/github-review";
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 import { branchPrCache } from "@/lib/branch-pr-context";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -100,7 +101,7 @@ export async function POST(req: Request) {
   try {
     await assertCurrentGitHubRevision(repo, number, token, headSha, reviewedRevision);
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/merge`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}/merge`, {
       method: "PUT",
       headers: ghHeaders(token),
       cache: "no-store",
@@ -123,7 +124,7 @@ export async function POST(req: Request) {
       try {
         // Ask GitHub which branch this PR merged from, rather than believing the
         // caller. `head.ref` survives the merge, so this is available here.
-        const prRes = await fetch(`${GH}/repos/${repo}/pulls/${number}`, {
+        const prRes = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}`, {
           headers: ghHeaders(token),
           cache: "no-store",
         });
@@ -164,7 +165,7 @@ export async function POST(req: Request) {
         }
         // `ref` is GitHub's own value and passed isSafeBranch — safe to
         // interpolate, and not reachable from the request body.
-        const del = await fetch(`${GH}/repos/${repo}/git/refs/heads/${ref}`, {
+        const del = await upstreamFetch("github", `${GH}/repos/${repo}/git/refs/heads/${ref}`, {
           method: "DELETE",
           headers: ghHeaders(token),
           cache: "no-store",

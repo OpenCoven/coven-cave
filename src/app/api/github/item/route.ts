@@ -27,6 +27,7 @@ import {
   readGitHubItemThroughCache,
   type CachedGitHubItem,
 } from "@/lib/server/github-item-cache";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -119,7 +120,7 @@ async function ghFetch(path: string, token: string | null) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store" });
+  const res = await upstreamFetch("github", `${GH}${path}`, { headers, cache: "no-store" });
   const data = await res.json().catch(() => null);
   return { res, data };
 }

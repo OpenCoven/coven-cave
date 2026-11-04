@@ -19,6 +19,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -119,7 +120,7 @@ export async function POST(req: Request) {
 
   try {
     // repo passed REPO_RE — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/issues`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/issues`, {
       method: "POST",
       headers: ghHeaders(token),
       cache: "no-store",
@@ -183,7 +184,7 @@ export async function PATCH(req: Request) {
 
   try {
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/issues/${number}`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/issues/${number}`, {
       method: "PATCH",
       headers: ghHeaders(token),
       cache: "no-store",

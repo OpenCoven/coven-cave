@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { canonicalLink, cleanText, extractLinks, parseFeed } from "@/lib/rss";
 import { parseTweetRef, type TweetItem } from "@/lib/home-feed";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,7 +31,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const res = await fetch(FEED_URL, {
+    const res = await upstreamFetch("x-rss-bridge", FEED_URL, {
       headers: {
         "User-Agent": "coven-cave/rss (+https://github.com/OpenCoven/coven-cave)",
         Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",

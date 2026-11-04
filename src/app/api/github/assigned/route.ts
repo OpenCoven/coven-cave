@@ -3,6 +3,7 @@ import type { GitHubItem } from "@/lib/github-tasks";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { createSwrCache } from "@/lib/swr-cache";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import {
   failedSource,
   isPartial,
@@ -61,7 +62,7 @@ async function fetchSource<T>(
   parse: (body: T, linkHeader: string | null) => { items: GitHubItem[]; meta: AssignedSourceMeta },
 ): Promise<{ items: GitHubItem[]; meta: AssignedSourceMeta; unauthorized?: boolean }> {
   try {
-    const res = await fetch(url, { headers });
+    const res = await upstreamFetch("github", url, { headers });
     if (res.status === 401) return { items: [], meta: failedSource("HTTP 401"), unauthorized: true };
     if (!res.ok) return { items: [], meta: failedSource(`GitHub API error: HTTP ${res.status}`) };
     const body = (await res.json()) as T;

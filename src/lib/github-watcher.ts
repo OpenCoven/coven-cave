@@ -3,6 +3,7 @@ import { broadcastCreated } from "@/lib/inbox-scheduler";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { withinDeadline } from "./async-deadline.ts";
 import { registerStartupWorker } from "./server/startup-worker-shutdown.ts";
+import { upstreamFetch } from "./server/upstream-fetch.ts";
 import {
   diffCompletedRuns,
   diffOpenedPrs,
@@ -74,7 +75,7 @@ async function ghFetch(path: string, token: string, owner: AbortSignal): Promise
   // Include body consumption: a partial response must not hold the shared
   // tick forever. Only the winning read reaches notification/cursor effects.
   const result = await withinDeadline(async (signal) => {
-    const res = await fetch(`${GH}${path}`, {
+    const res = await upstreamFetch("github", `${GH}${path}`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -82,7 +83,9 @@ async function ghFetch(path: string, token: string, owner: AbortSignal): Promise
       },
       cache: "no-store",
       signal,
-    });
+      // The watcher is a periodic poller: its next tick is the retry, and a
+      // backoff timer here would outlive a coordinated shutdown.
+    }, { retries: 0 });
     if (signal.aborted || !res.ok) {
       void res.body?.cancel().catch(() => undefined);
       return null;
