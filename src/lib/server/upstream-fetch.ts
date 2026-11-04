@@ -255,6 +255,55 @@ export function carriesUpstreamDeadline(signal: AbortSignal | null | undefined):
   return signal != null && deadlineSignals.has(signal);
 }
 
+/** Observe transport failures as callers consume the body, without buffering or retrying it. */
+function observeResponseBody(response: Response, health: UpstreamHostHealth, callerSignal: AbortSignal | null): Response {
+  // Some injected transports intentionally return only the response fields they use.
+  if (!(response instanceof Response) || !response.body) return response;
+  const reader = response.body.getReader();
+  let settled = false;
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          settled = true;
+          controller.close();
+        } else controller.enqueue(chunk.value);
+      } catch (error) {
+        if (!settled) {
+          settled = true;
+          const anomaly = classifyUpstreamError(error);
+          if (!(anomaly === "aborted" && callerSignal?.aborted)) {
+            recordAnomaly(health, anomaly, response.status, null);
+          }
+        }
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      settled = true;
+      return reader.cancel(reason);
+    },
+  });
+  return preserveResponseMetadata(new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  }), response);
+}
+
+function preserveResponseMetadata(target: Response, source: Response): Response {
+  // Constructing a streaming Response otherwise drops native fetch redirect metadata.
+  Object.defineProperties(target, {
+    url: { value: source.url },
+    redirected: { value: source.redirected },
+    type: { value: source.type },
+  });
+  const clone = target.clone.bind(target);
+  Object.defineProperty(target, "clone", { value: () => preserveResponseMetadata(clone(), source) });
+  return target;
+}
+
 export async function upstreamFetch(
   id: UpstreamApiId,
   input: string | URL | Request,
@@ -306,7 +355,7 @@ export async function upstreamFetch(
       // any, is the caller's credential or request, not the upstream.
       if (anomaly === "none") recordSuccess(health);
       else health.lastAnomaly = { class: anomaly, status: response.status, at: clock() };
-      return response;
+      return observeResponseBody(response, health, callerSignal);
     }
 
     if (anomaly === "rate-limited") {
@@ -318,7 +367,7 @@ export async function upstreamFetch(
         continue;
       }
       recordAnomaly(health, anomaly, response.status, retryAfterMs ?? UPSTREAM_FAILURE_COOLDOWN_MS);
-      return response;
+      return observeResponseBody(response, health, callerSignal);
     }
 
     // server-error
@@ -328,6 +377,6 @@ export async function upstreamFetch(
       await wait(BACKOFF_BASE_MS * 2 ** attempt + Math.random() * 50, callerSignal ?? new AbortController().signal);
       continue;
     }
-    return response;
+    return observeResponseBody(response, health, callerSignal);
   }
 }

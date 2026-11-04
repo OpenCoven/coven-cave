@@ -264,3 +264,69 @@ test("provider retry times beyond an hour prevent early dispatch and recover at 
     assert.equal(upstreamHealth("github").state, "healthy");
   }
 });
+
+
+test("a post-header body deadline degrades the live ledger, is not retried, and heals", async () => {
+  let calls = 0;
+  const fetchImpl = (async (_input: unknown, init: RequestInit) => {
+    calls++;
+    return new Response(new ReadableStream({ start(controller) {
+      init.signal!.addEventListener("abort", () => controller.error(init.signal!.reason), { once: true });
+    } }));
+  }) as typeof fetch;
+  const hold = setTimeout(() => {}, 250);
+  try {
+    const response = await upstreamFetch("github", URL_USER, {}, { fetchImpl, timeoutMs: 15 });
+    await assert.rejects(response.text(), { name: "TimeoutError" });
+    assert.equal(calls, 1, "body failures never trigger an automatic second dispatch");
+    assert.equal(upstreamHealth("github").state, "degraded");
+    assert.equal(upstreamHealth("github").lastAnomaly?.class, "timeout");
+    assert.equal(await (await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => Response.json({ login: "healed" }) })).text(), '{"login":"healed"}');
+    assert.equal(upstreamHealth("github").state, "healthy");
+  } finally { clearTimeout(hold); }
+});
+
+test("stream observation preserves metadata, clone behavior, initial bytes and cancellation", async () => {
+  let canceled = false;
+  const source = new Response(new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(new Uint8Array([1, 2])); },
+    cancel() { canceled = true; },
+  }), { status: 206, statusText: "Partial Content", headers: { "content-type": "audio/pcm" } });
+  Object.defineProperties(source, { url: { value: "https://api.github.com/final" }, redirected: { value: true } });
+  const response = await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => source });
+  assert.equal(response.url, source.url);
+  assert.equal(response.redirected, true);
+  assert.equal(response.status, 206);
+  assert.equal(response.statusText, "Partial Content");
+  assert.equal(response.headers.get("content-type"), "audio/pcm");
+  const reader = response.body!.getReader();
+  assert.deepEqual((await reader.read()).value, new Uint8Array([1, 2]));
+  await reader.cancel();
+  assert.equal(canceled, true);
+  assert.equal(upstreamHealth("github").state, "healthy", "consumer cancellation is not an upstream failure");
+  const complete = new Response("audio", { headers: { "content-type": "audio/mpeg" } });
+  Object.defineProperty(complete, "url", { value: "https://api.github.com/final" });
+  const observed = await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => complete });
+  const clone = observed.clone();
+  assert.equal(clone.url, complete.url);
+  assert.equal(await clone.text(), "audio");
+  assert.equal(await observed.text(), "audio");
+});
+
+test("a body reset records no payload and caller cancellation is not provider downtime", async () => {
+  const privateText = "audit-fixture-only-not-a-real-secret";
+  const response = await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => new Response(new ReadableStream({
+    pull(controller) { controller.error(new TypeError(privateText)); },
+  })) });
+  await assert.rejects(response.text());
+  assert.equal(upstreamHealth("github").lastAnomaly?.class, "network");
+  assert.equal(JSON.stringify(upstreamHealthSnapshot()).includes(privateText), false);
+  resetUpstreamHealth();
+  const caller = new AbortController();
+  const canceled = await upstreamFetch("github", URL_USER, { signal: caller.signal }, { fetchImpl: async (_input, init) => new Response(new ReadableStream({
+    start(controller) { init!.signal!.addEventListener("abort", () => controller.error(init!.signal!.reason), { once: true }); },
+  })) });
+  caller.abort(new DOMException("caller left", "AbortError"));
+  await assert.rejects(canceled.text(), { name: "AbortError" });
+  assert.equal(upstreamHealth("github").state, "healthy");
+});

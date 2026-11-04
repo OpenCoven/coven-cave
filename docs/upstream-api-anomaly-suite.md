@@ -55,9 +55,7 @@ that acts on each answer the moment it arrives:
   header, body or token — and `GET /api/daemon/diagnostics` publishes it as
   `upstreams`.
 
-Body anomalies (torn JSON, an empty body, a drifted schema) arrive as a 200,
-so only the caller reading the body can see them; the ledger records status
-and transport anomalies.
+Body-format anomalies (torn JSON, an empty body, a drifted schema) remain the caller's contract. The ledger additionally observes transport errors while a caller consumes a native Response body. A post-header timeout or socket reset marks the host degraded without buffering the stream or dispatching a retry. Consumer cancellation remains distinct from provider downtime.
 
 A matrix case with `expectLiveDetection: true` also asserts the ledger saw
 each status or transport anomaly as it happened, reads healthy after the
@@ -118,3 +116,12 @@ Explicit provider retry windows are retained through their requested expiry, inc
 ## GitHub write response validation
 
 The proposal, composer and Coding Desk PR actions validate Cave's write envelope before displaying its fields or confirming success. `ok` must be boolean; optional `error` and `code` fields must be strings. Invalid envelopes remain unconfirmed instead of exposing malformed values to React or offering an ordinary retry. Rendered component regressions prove that an uncertain card links to GitHub, an uncertain review preserves its draft, and refresh does not resend the write. These fixtures do not prove live GitHub or native-device acceptance.
+
+
+## Retained acceptance regressions
+
+A dispatched GitHub merge requires a boolean `merged` verdict. A readable 200 with a missing or drifted verdict remains `ambiguous-write`; explicit `merged: false` remains a definite refusal. Reviewed-head callers retain the atomic SHA guard, and uncertain answers trigger neither automatic retry nor branch cleanup.
+
+Response-body observation preserves status, headers, redirect URL/type metadata, clone behavior, backpressure and cancellation. It records transport classes without error messages, URLs or credentials. The ledger can observe only the stream errors that consumption exposes; it does not validate JSON/schema or claim completed native playback from headers.
+
+The relevance inventory now parses call expressions independently of inline host literals, including named/renamed Node HTTP imports and simple aliases. Mutation regressions prove that both imported-URL and destructured-request callers fail without registration. Existing internal or separate-contract dynamic calls carry exact argument/count boundaries with reasons. A changed or stale boundary fails; these entries do not grant blanket file exemptions. This source-level inventory is not an interprocedural call-graph proof: indirect callbacks, runtime-computed imports and separately qualified runtime/artifact transports remain explicit coverage limits, not provider-matrix acceptance.

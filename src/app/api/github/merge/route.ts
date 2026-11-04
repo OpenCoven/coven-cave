@@ -120,7 +120,7 @@ export async function POST(req: Request) {
     if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", "merge");
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     // GitHub accepted the merge request; an unreadable answer leaves it unconfirmed.
-    if (res.ok && !isRecord(data)) return ambiguousWrite("GitHub", "merge");
+    if (res.ok && (!isRecord(data) || typeof data.merged !== "boolean")) return ambiguousWrite("GitHub", "merge");
     if (!res.ok || !data || data.merged !== true) {
       // 405/409 carry GitHub's protection/mergeability reason — pass verbatim.
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
