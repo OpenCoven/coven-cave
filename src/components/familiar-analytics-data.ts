@@ -6,6 +6,7 @@ import {
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
 import { deriveRenown, type FamiliarRenown } from "@/lib/familiar-renown";
+import { allTimeSessionCount, recentSessionCount } from "@/lib/familiar-counts";
 import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/thread-confidence";
 import { deriveSignalTrends, type SignalTrends, type ThreadMetricSnapshot } from "@/lib/signal-trends";
 import type { ContractReport } from "@/lib/familiar-contract";
@@ -112,6 +113,8 @@ export type FamiliarAnalyticsModel = {
    */
   progression: {
     renown: FamiliarRenown;
+    /** The renown score's inputs, for its breakdown (issue 6357). */
+    renownInputs: { sessions: number; memories: number };
     streakDays: number;
     memoryAvailability: MemoryAvailability;
   } | null;
@@ -122,6 +125,8 @@ export type FamiliarAnalyticsModel = {
   activityLattice: ActivityLattice;
   /** This familiar's complete session history, newest first, for scoped evidence. */
   recentSessions: SessionRow[];
+  /** Shared count definitions (issue 6357): the same rule the roster and share card use. */
+  sessionCounts: { recent: number; allTime: number };
   errors: string[];
 };
 
@@ -150,6 +155,7 @@ function emptyStats(
     lastSessionAt: null,
     sessionsTotal: 0,
     sessionsLast7d: 0,
+    sessionsLast90d: 0,
     hasActiveSession: false,
     streakDays: 0,
     activity: new Array<number>(ACTIVITY_DAYS).fill(0),
@@ -204,7 +210,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     // The workbench's ALL window and session ledger are complete evidence,
     // including archived sessions. Restricting at the route keeps the larger
     // session response local to the familiar being inspected.
-    fetchResource<SessionsResponse>(`/api/sessions/list?includeArchived=1&familiarId=${encodedId}`, { ok: false, sessions: [] }),
+    fetchResource<SessionsResponse>(`/api/sessions/list?includeArchived=1&classifyFamiliarWorkspace=1&familiarId=${encodedId}`, { ok: false, sessions: [] }),
     fetchResource<FileMemoryResponse>(`/api/memory?familiarId=${encodedId}`, { ok: false, entries: [] }),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
     // The workbench's ALL window and report ledger are complete evidence, not a
@@ -304,12 +310,17 @@ export function buildFamiliarAnalyticsModel(
     progression: familiar
       ? {
           renown: deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount }),
+          renownInputs: { sessions: stats.sessionsTotal, memories: stats.memoryCount },
           streakDays: stats.streakDays,
           memoryAvailability: stats.memoryAvailability,
         }
       : null,
     sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),
     activityLattice: buildActivityLattice(familiarSessions, data.familiarId, now),
+    sessionCounts: {
+      recent: recentSessionCount(familiarSessions, data.familiarId, now),
+      allTime: allTimeSessionCount(familiarSessions, data.familiarId),
+    },
     recentSessions: [...familiarSessions]
       .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)),
     errors: data.errors,

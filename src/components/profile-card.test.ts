@@ -122,16 +122,15 @@ describe("Profile card wiring (cave-ujbr)", () => {
     assert.doesNotMatch(css, /max-width: 1200px/);
   });
 
-  it("reports a familiar's memory as unknown rather than a confirmed zero", async () => {
-    // The canonical vault supplied this count and now lives in the dedicated
-    // memory application. The tile must read "—", not "0": Cave is in no
-    // position to state how many memories a familiar has.
+  it("says a familiar's memory count is unavailable rather than a dash or a zero", async () => {
+    // #6357: the card used to print "—" while the roster showed a count. It now
+    // reads the roster's workspace-memory source; when that read fails the tile
+    // says "unavailable" (never "0", never a bare dash).
     //
-    // The related guarantee this case used to carry still matters — memory
-    // availability never lands in `errors`. That list is what makes ProfileCard
-    // abort a refresh and keep stale data, so an enrichment landing there meant
-    // every refresh off Cave's own host failed permanently over data that had
-    // loaded fine.
+    // Memory availability still never lands in `errors`. That list is what makes
+    // ProfileCard abort a refresh and keep stale data, so an enrichment landing
+    // there meant every refresh off Cave's own host failed permanently over data
+    // that had loaded fine.
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: RequestInfo | URL) => {
       const value = String(url);
@@ -141,7 +140,9 @@ describe("Profile card wiring (cave-ujbr)", () => {
               ok: true,
               familiars: [{ id: "cody", display_name: "Cody", role: "agent" }],
             }
-          : { ok: true, sessions: [] };
+          : value.startsWith("/api/memory")
+            ? { ok: false, error: "memory offline" }
+            : { ok: true, sessions: [] };
       return { ok: true, status: 200, json: async () => body } as Response;
     }) as typeof fetch;
 
@@ -153,8 +154,41 @@ describe("Profile card wiring (cave-ujbr)", () => {
       );
 
       assert.equal(data.memoryAvailability, "unavailable");
-      assert.equal(memoryTile?.value, "—");
+      assert.equal(memoryTile?.value, "unavailable");
       assert.deepEqual(viewModel.errors, []);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("counts the same workspace memory the roster does", async () => {
+    const originalFetch = globalThis.fetch;
+    const requested: string[] = [];
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      const value = String(url);
+      requested.push(value);
+      const body =
+        value === "/api/familiars"
+          ? { ok: true, familiars: [{ id: "cody", display_name: "Cody", role: "agent" }] }
+          : value.startsWith("/api/memory")
+            ? {
+                ok: true,
+                entries: [
+                  { familiarId: "cody", relPath: "a.md", modified: "2026-10-30T00:00:00.000Z" },
+                  { familiarId: "cody", relPath: "b.md", modified: "2026-10-30T00:00:00.000Z" },
+                  { familiarId: "nova", relPath: "c.md", modified: "2026-10-30T00:00:00.000Z" },
+                ],
+              }
+            : { ok: true, sessions: [] };
+      return { ok: true, status: 200, json: async () => body } as Response;
+    }) as typeof fetch;
+
+    try {
+      const data = await loadProfileCardData("familiar", "cody");
+      const viewModel = buildProfileCardViewModel(data);
+      assert.ok(requested.includes("/api/memory?familiarId=cody"));
+      assert.ok(requested.includes("/api/sessions/list?classifyFamiliarWorkspace=1"));
+      assert.equal(viewModel.model.statTiles.find((tile) => tile.label === "memories")?.value, "2");
     } finally {
       globalThis.fetch = originalFetch;
     }
