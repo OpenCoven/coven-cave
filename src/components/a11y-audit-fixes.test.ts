@@ -59,16 +59,7 @@ test("filled action buttons pair the fill with its semantic foreground", async (
     board,
     /\.board-new-card-btn\s*\{[^}]*color:var\(--text-primary\)/,
   );
-  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-  // Both salem accent action states use the paired foreground, not hardcoded #fff.
-  assert.doesNotMatch(
-    css,
-    /\.salem-pf__action--primary\s*\{[^}]*background:\s*var\(--accent-presence\)[^}]*color:\s*#fff/,
-  );
-  assert.match(
-    css,
-    /\.salem-pf__action--primary\s*\{[^}]*color:\s*var\(--accent-presence-foreground\)/,
-  );
+
 });
 
 test("priority pills darken their text in light mode (WCAG contrast)", async () => {

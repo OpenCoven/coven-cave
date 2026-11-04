@@ -31,7 +31,6 @@ const RAW_FETCH = /(?<![.\w])(fetch|fetchImpl|fetchFn|fetcher)\s*\(/;
 /** Callers allowed to keep a raw fetch, each with the reason. Keep this short. */
 const RAW_FETCH_EXEMPT: Readonly<Record<string, string>> = {
   "src/lib/server/pin-sources.ts": "the user-URL path goes through https.request behind the public-only resolver; the fixed GitHub hosts use the primitive",
-  "src/app/api/salem/route.ts": "the enhance call goes to Cave's own /api/chat/generate/enhance on the request origin, not to an upstream",
 };
 /** Callers that may not import the server-only primitive at all, each with the reason. */
 const PRIMITIVE_EXEMPT: Readonly<Record<string, string>> = {

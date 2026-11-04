@@ -75,7 +75,7 @@ assert.doesNotMatch(
 
 assert.deepEqual(
   paletteDestinations().map(({ id }) => id),
-  ["chat", "home", "inbox", "board", "salem", "browser", "canvas", "marketplace", "grimoire"],
+  ["chat", "home", "inbox", "board", "browser", "canvas", "marketplace", "grimoire"],
   "Palette destinations stay policy-driven",
 );
 assert.match(

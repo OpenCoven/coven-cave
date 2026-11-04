@@ -21,7 +21,7 @@ export const runtime = "nodejs";
  * opt out of; and the caller wants ONE response carrying a per-target outcome,
  * which is what the sessions list renders on each row.
  *
- * The internal `fetch("/api/chat/send")` follows `src/app/api/salem/route.ts`,
+ * The internal `fetch("/api/chat/send")` preserves the loopback-only request pattern,
  * which already calls that route server-to-server.
  *
  * ── Deliver and detach ──────────────────────────────────────────────────────
