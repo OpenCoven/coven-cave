@@ -109,7 +109,7 @@ for (const component of [
   "OnboardingOverlay",
   "OpenCovenSubmissionPage",
   "RailInspector",
-  "AskSalemView",
+  "SalemHistoryView",
   "ShortcutsSheet",
 ]) {
   assert.match(

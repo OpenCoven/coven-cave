@@ -174,7 +174,8 @@ import {
   OnboardingOverlay,
   OpenCovenSubmissionPage,
   RailInspector,
-  AskSalemView,
+  SalemChatPanel,
+  SalemHistoryView,
   ShortcutsSheet,
   DashboardSurface,
   SettingsShell,
@@ -4762,7 +4763,20 @@ export function Workspace() {
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
     ) : mode === "salem" ? (
-      <AskSalemView familiars={familiars} activeFamiliarId={activeId} />
+      // A split pane is contextual help (cave:salem-open): the asking panel.
+      // The main surface is what a saved link or restored session lands on: the
+      // saved thread, read locally (#6399).
+      instanceId ? (
+        <SalemChatPanel
+          familiarId={activeId}
+          model={familiars.find((familiar) => familiar.id === activeId)?.model ?? null}
+        />
+      ) : (
+        <SalemHistoryView
+          familiarId={activeId}
+          model={familiars.find((familiar) => familiar.id === activeId)?.model ?? null}
+        />
+      )
     ) : (
       <HomeComposer
         familiars={resolvedFamiliars}

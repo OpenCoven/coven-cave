@@ -185,9 +185,9 @@ export const SalemChatPanel = dynamic(
   { ssr: false, loading: SurfaceFallback },
 );
 
-export const AskSalemView = dynamic(
-  timed("ask-salem", () =>
-    import("@/components/salem/ask-salem-view").then((m) => m.AskSalemView),
+export const SalemHistoryView = dynamic(
+  timed("salem-history", () =>
+    import("@/components/salem/salem-history-view").then((m) => m.SalemHistoryView),
   ),
   { ssr: false, loading: SurfaceFallback },
 );

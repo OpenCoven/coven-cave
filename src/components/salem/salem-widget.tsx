@@ -10,7 +10,16 @@ type Message = { role: "user" | "salem"; text: string };
 
 const GREETING = "I'm Salem, your Coven docs familiar. Yes, the black-cat-in-the-corner thing is intentional. I'm preloaded with Coven docs, tool context, guide skills, and Cave route awareness. Ask me about familiars, plugins, roles, the marketplace, or how Cave works.";
 
-export function SalemChatPanel({ familiarId, model }: { familiarId?: string | null; model?: string | null } = {}) {
+export function SalemChatPanel({
+  familiarId,
+  model,
+  onShowHistory,
+}: {
+  familiarId?: string | null;
+  model?: string | null;
+  /** Set when the host already is the history surface; otherwise the button navigates to it. */
+  onShowHistory?: () => void;
+} = {}) {
   const [messages, setMessages] = useState<Message[]>([
     { role: "salem", text: GREETING },
   ]);
@@ -64,15 +73,19 @@ export function SalemChatPanel({ familiarId, model }: { familiarId?: string | nu
           <button
             type="button"
             className="salem-btn-icon focus-ring"
-            title="Open full view"
-            aria-label="Open Ask Salem full view"
-            onClick={() =>
+            title="Salem history"
+            aria-label="Open Salem history"
+            onClick={() => {
+              if (onShowHistory) {
+                onShowHistory();
+                return;
+              }
               window.dispatchEvent(
                 new CustomEvent("cave:navigate-mode", { detail: { mode: "salem" } }),
-              )
-            }
+              );
+            }}
           >
-            <Icon name="ph:arrows-out-simple" width={14} aria-hidden />
+            <Icon name="ph:clock-counter-clockwise" width={14} aria-hidden />
           </button>
           <Icon name="ph:book-open" width={14} />
         </div>

@@ -51,8 +51,9 @@ export const CANONICAL_WORKSPACE_MODES: readonly CanonicalWorkspaceMode[] = [
   "marketplace",
   "submissions",
   "grimoire",
-  // Ask Salem — a full standalone surface, reachable via the ⌘K palette, Home,
-  // deep links, and cave:navigate-mode; navHidden in the sidebar (no nav row).
+  // Salem history — past Ask Salem answers. The standalone assistant was retired
+  // (#6399); this stays for saved links, restored sessions and the Salem panel's
+  // history button. It has no sidebar or palette row.
   "salem",
 ];
 

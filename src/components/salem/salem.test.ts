@@ -103,14 +103,14 @@ assert.match(
 );
 assert.match(
   workspace,
-  /import \{[\s\S]*AskSalemView[\s\S]*\} from "@\/components\/lazy-surfaces"/,
+  /import \{[\s\S]*SalemHistoryView[\s\S]*\} from "@\/components\/lazy-surfaces"/,
   "workspace should lazy-load the Ask Salem page",
 );
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
 assert.match(
   workspace,
-  /mode === "salem" \? \(\s*<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
-  "workspace renders Ask Salem with the familiar roster and active familiar",
+  /<SalemHistoryView\b/,
+  "workspace renders saved Salem history on the main surface",
 );
 
 // 7. CSS classes present

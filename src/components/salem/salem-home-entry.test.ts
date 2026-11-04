@@ -22,14 +22,14 @@ assert.match(card, /salem-pf__action--save/, "renders a dedicated save button");
 assert.doesNotMatch(widget, /saveCardToBoard|\/api\/board|SalemPathfinderCard/, "rail chat omits dormant Pathfinder save plumbing");
 
 // Sidebar: the Ask Salem entry was removed from the left side panel. The mode
-// exists in the workspace navigation registry but must stay
-// navHidden so it never renders as a sidebar entry — it's summoned via Home,
-// the ⌘K palette, deep links, or the widget's expand button.
+// exists in the workspace navigation registry but must stay navHidden so it
+// never renders as a sidebar entry — it's reached by saved links or the panel's
+// history button (#6399).
 assert.doesNotMatch(sidebar, /label="Ask Salem"/, "sidebar no longer exposes an Ask Salem entry");
 assert.match(
   navigation,
-  /id: "salem", label: "Ask Salem",[^\n]*navHidden: true/,
-  "salem navigation row stays navHidden (palette/deep-link only, no sidebar row)",
+  /id: "salem", label: "Salem history",[^\n]*navHidden: true/,
+  "salem history stays navHidden (deep-link and panel only, no sidebar row)",
 );
 
 // Projects empty state offers Ask Salem.

@@ -260,14 +260,14 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
   },
   salem: {
     id: "salem",
-    title: "Ask Salem",
+    title: "Salem history",
     canonicalId: "salem",
     variant: "default",
     nav: "hidden",
-    palette: "secondary",
+    palette: "hidden",
     statusContext: "contextual",
     split: "contextual",
-    landmark: "Ask Salem",
+    landmark: "Salem history",
   },
 } satisfies Record<WorkspaceMode, WorkspacePageDefinition>);
 
