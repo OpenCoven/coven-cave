@@ -7,6 +7,10 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changed
+
+- Claude familiars in Full access now take their permissions only from Cave's project grants. They can run shell commands and owner-configured MCP tools without `settings.json` allow rules, and the OS sandbox limits shell writes to folders they can write to. This needs a Coven build with the updated `--write-scope` and Claude Code 2.1.318 or later.
+
 ## [0.5.19] - 2026-10-30
 
 > Wide windows filled, account switching from the Runtime menu, and the first Authenticode-signed Windows MSI.

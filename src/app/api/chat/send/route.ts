@@ -211,7 +211,7 @@ import {
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
-import { buildClaudeWriteScope, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
+import { buildClaudeWriteScope, loadClaudeFamiliarMcpServers, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
@@ -3452,7 +3452,7 @@ async function postAdmittedChat(
         primaryRoot: cwd, primaryAccess, grantedProjectRoots,
         projectRootAccess: grantedProjectRootAccess,
         familiarWorkspace: resolvedFamiliarWorkspace, protectedRoots: protectedRuntimeRoots,
-      }));
+      }), await loadClaudeFamiliarMcpServers({ familiarWorkspace: resolvedFamiliarWorkspace }));
     } catch {
       return Response.json({ ok: false, code: "scoped_write_unavailable",
         error: "A granted folder is unavailable. Review project access and retry before writing." }, { status: 409 });
