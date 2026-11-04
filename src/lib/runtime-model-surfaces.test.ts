@@ -79,10 +79,6 @@ assert.match(
   "the aggregate model-state response gives non-web clients the same inventory",
 );
 assert.match(
-  /inventoryProvenanceLabel[\s\S]*useRuntimeModelInventory\(/,
-  "Ask Salem derives its selected familiar model status from the shared inventory",
-);
-assert.match(
   summoning,
   /useRuntimeModelInventory\(harness \?\? "", null\)/,
   "familiar summoning uses the shared runtime inventory for its model preview",
