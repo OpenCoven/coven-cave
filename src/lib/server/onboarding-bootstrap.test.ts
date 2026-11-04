@@ -189,7 +189,10 @@ test("a state-file write failure uses the exact persistence-directory probe", as
 test("daemon failure keeps checked readiness and startup facts through saved state", async () => {
   const result = await ensureDaemon(async () => {}, {
     inspectReady: async () => false,
-    start: async () => ({ ok: false, code: "readiness_timeout", error: "RAW_PRIVATE_SECRET", stdout: "RAW_PRIVATE_SECRET", stderr: "RAW_PRIVATE_SECRET", status: 504, readinessAttempts: 20, elapsedMs: 15000, launchMode: "service" }),
+    start: async (options) => {
+      assert.deepEqual(options, { automatic: true });
+      return { ok: false, code: "readiness_timeout", error: "RAW_PRIVATE_SECRET", stdout: "RAW_PRIVATE_SECRET", stderr: "RAW_PRIVATE_SECRET", status: 504, readinessAttempts: 20, elapsedMs: 15000, launchMode: "service" };
+    },
     inspectTools: async () => ({ runtimeReady: true, coreToolsReady: true, components: { managedNode: "ready", covenCli: "ready" } }),
     inspectDirectory: async () => true,
   });
