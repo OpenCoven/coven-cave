@@ -12,6 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFailureResponse } from "@/lib/server/upstream-answer";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export async function GET(req: Request) {
       // 401 only when GitHub itself says so — a missing PAT is not an error
       // here, since the public API answers for public repos.
       const status = res.status === 401 || res.status === 403 ? res.status : 502;
-      return NextResponse.json({ ok: false, error: `github error (${res.status})` }, { status });
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, status);
     }
 
     const labels: Label[] = (data as Array<Record<string, unknown>>)

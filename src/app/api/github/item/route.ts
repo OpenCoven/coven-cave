@@ -27,7 +27,7 @@ import {
   readGitHubItemThroughCache,
   type CachedGitHubItem,
 } from "@/lib/server/github-item-cache";
-import { positiveInteger } from "@/lib/server/upstream-answer";
+import { positiveInteger, upstreamFailureAnswer } from "@/lib/server/upstream-answer";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
@@ -209,7 +209,7 @@ export async function GET(req: Request) {
   );
   return new NextResponse(result.body, {
     status: result.status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...result.headers },
   });
 }
 
@@ -230,10 +230,8 @@ async function loadItem(
       return jsonResult({ ok: false, error: "not_found" }, 404);
     }
     if (!res.ok || !data || typeof data !== "object") {
-      return jsonResult(
-        { ok: false, error: `github error (${res.status})` },
-        res.status === 403 ? 403 : 502,
-      );
+      const answer = upstreamFailureAnswer(res, "GitHub", `github error (${res.status})`);
+      return { ...jsonResult(answer.body, res.status === 403 ? 403 : 502), headers: answer.headers };
     }
 
     const d = data as Record<string, unknown>;

@@ -17,7 +17,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
-import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, positiveInteger, writeThrew } from "@/lib/server/upstream-answer";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, positiveInteger, writeThrew, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -85,10 +85,7 @@ export async function GET(req: Request) {
     ]);
     const data = await res.json().catch(() => null);
     if (!res.ok || !Array.isArray(data)) {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 401 || res.status === 403 ? res.status : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 401 || res.status === 403 ? res.status : 502);
     }
 
     // Aggregate by content, remembering the id of the viewer's own row: the
@@ -160,7 +157,7 @@ export async function POST(req: Request) {
     const data = isRecord(raw) ? raw : null;
     if (!res.ok || !data) {
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamFailureResponse(res, "GitHub", message, res.status === 403 ? 403 : 502);
     }
     return NextResponse.json({
       ok: true,
@@ -211,7 +208,7 @@ export async function DELETE(req: Request) {
     if (!res.ok && res.status !== 404) {
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamFailureResponse(res, "GitHub", message, res.status === 403 ? 403 : 502);
     }
     return NextResponse.json({ ok: true, deleted: true });
   } catch (e) {

@@ -17,6 +17,8 @@
  */
 import { UpstreamCooldownError } from "./upstream-fetch.ts";
 
+import { classifyUpstreamResponse, parseRetryAfterMs } from "./upstream-fetch.ts";
+
 export type UpstreamAnswerCode = "upstream-drift" | "ambiguous-write";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -121,4 +123,37 @@ export function writeThrew(upstream: string, action: string, error: unknown, fal
  */
 export function isAmbiguousWriteStatus(status: number): boolean {
   return status >= 500;
+}
+
+/**
+ * A failed upstream answer in the route's existing shape and status, naming a
+ * revoked credential or a rate limit precisely (#6371). `patInvalid` is the
+ * reconnect signal the assigned routes already use. A rate limit carries the
+ * wait in the body and as `Retry-After`. Any other failure keeps `error`.
+ */
+export function upstreamFailureAnswer(upstream: Response, name: string, error: string): {
+  body: { ok: false; error: string; patInvalid?: true; rateLimited?: true; retryAfterSeconds?: number };
+  headers: Record<string, string>;
+} {
+  const anomaly = classifyUpstreamResponse(upstream);
+  if (anomaly === "unauthorized") {
+    return {
+      body: { ok: false, error: `${name} rejected the saved token. Reconnect ${name}, then try again.`, patInvalid: true },
+      headers: {},
+    };
+  }
+  if (anomaly !== "rate-limited") return { body: { ok: false, error }, headers: {} };
+  const waitMs = upstream.headers instanceof Headers ? parseRetryAfterMs(upstream.headers, Date.now()) : null;
+  if (waitMs === null) return { body: { ok: false, error: `${name} rate limit reached.`, rateLimited: true }, headers: {} };
+  const retryAfterSeconds = Math.max(1, Math.ceil(waitMs / 1000));
+  return {
+    body: { ok: false, error: `${name} rate limit reached. Try again in ${retryAfterSeconds} seconds.`, rateLimited: true, retryAfterSeconds },
+    headers: { "Retry-After": String(retryAfterSeconds) },
+  };
+}
+
+/** `upstreamFailureAnswer` as the route's JSON response. */
+export function upstreamFailureResponse(upstream: Response, name: string, error: string, status: number): Response {
+  const { body, headers } = upstreamFailureAnswer(upstream, name, error);
+  return Response.json(body, { status, headers });
 }

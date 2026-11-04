@@ -216,3 +216,21 @@ test("a bare response-like object from an injected fetch is classified, not cras
   assert.equal(res.status, 403);
   assert.equal(upstreamHealth("github").lastAnomaly?.class, "forbidden");
 });
+
+test("a long Retry-After is honoured in full, not shortened to the transport cooldown", async () => {
+  resetUpstreamHealth();
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls += 1;
+    return new Response("{}", { status: 429, headers: { "retry-after": "120" } });
+  }) as typeof fetch;
+  const ask = () => upstreamFetch("github", "https://api.github.com/user", {}, { fetchImpl, retries: 0 });
+  await ask();
+  now += 60_001;
+  await ask();
+  assert.equal(calls, 1, "still cooling at 60s: the host asked for 120");
+  now += 60_000;
+  await ask();
+  assert.equal(calls, 2, "the wait is over");
+  resetUpstreamHealth();
+});

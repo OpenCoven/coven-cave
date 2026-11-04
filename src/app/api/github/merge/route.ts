@@ -29,7 +29,7 @@ import { parseGitHubDiffRevision } from "@/lib/github-review";
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 import { branchPrCache } from "@/lib/branch-pr-context";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
-import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, writeThrew } from "@/lib/server/upstream-answer";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, writeThrew, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
     if (!res.ok || !data || data.merged !== true) {
       // 405/409 carry GitHub's protection/mergeability reason — pass verbatim.
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamFailureResponse(res, "GitHub", message, res.status === 403 ? 403 : 502);
     }
     // The branch's PR was cached as open (#5795): the PR tab kept offering
     // Squash merge, and a second click got GitHub's "not mergeable".
@@ -205,8 +205,8 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "failed to merge" },
-      { status: e instanceof GitHubRevisionError ? e.status : 502 },
+      { ok: false, error: e instanceof Error ? e.message : "failed to merge", ...(e instanceof GitHubRevisionError ? e.fields : {}) },
+      { status: e instanceof GitHubRevisionError ? e.status : 502, headers: e instanceof GitHubRevisionError ? e.headers : undefined },
     );
   }
 }

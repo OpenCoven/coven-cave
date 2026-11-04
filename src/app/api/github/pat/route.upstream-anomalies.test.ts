@@ -11,6 +11,7 @@ import test from "node:test";
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
+import { upstreamHealth } from "../../../../lib/server/upstream-fetch.ts";
 
 const home = isolateCaveHome("github-pat-anomalies");
 delete process.env.GITHUB_PAT;
@@ -84,6 +85,15 @@ test("POST /api/github/pat across upstream anomalies", async (t) => {
       "schema-drift": validButAnonymous,
     },
   });
+});
+
+test("a long rate-limit cooldown cannot block connecting a new token, and connecting clears it", async () => {
+  harness.inject("github", { kind: "rate-limit", retryAfterSeconds: 3600 });
+  assert.equal((await connect()).status, 503);
+  assert.equal(upstreamHealth("github").state, "cooling");
+  harness.heal("github");
+  assert.equal((await connect()).status, 200, "the new token is checked live despite the cooldown");
+  assert.notEqual(upstreamHealth("github").state, "cooling");
 });
 
 test("a primary rate limit (403 with no remaining budget) is 'not now', not 'bad token'", async () => {

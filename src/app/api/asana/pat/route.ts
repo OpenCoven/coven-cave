@@ -14,7 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { resetUpstreamHealth, upstreamFetch } from "@/lib/server/upstream-fetch";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
 import { commitLocalEncryptedSecretBatch } from "@/lib/local-encrypted-vault";
@@ -65,7 +65,8 @@ async function validatePat(pat: string): Promise<PatValidation> {
       headers: { Authorization: `Bearer ${pat}`, Accept: "application/json" },
       cache: "no-store",
       signal: AbortSignal.timeout(VALIDATE_TIMEOUT_MS),
-    });
+      // A cooldown belongs to the old token. A new one has its own budget (#6371).
+    }, { honorCooldown: false });
     // Only Asana's own verdict on the credential rejects it. A 5xx or a 429
     // says nothing about the token, the same way an unreachable host says
     // nothing (#6359, mirroring /api/github/pat).
@@ -149,6 +150,7 @@ export async function POST(req: NextRequest) {
   // Inject so the next request resolves the token without a restart.
   process.env[PAT_KEY] = pat;
   if (result.login) process.env[USER_KEY] = result.login;
+  resetUpstreamHealth("asana");
 
   return NextResponse.json({ ok: true, login: result.login, patStoredIn: "encrypted" });
 }

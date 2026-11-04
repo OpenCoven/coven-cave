@@ -64,10 +64,18 @@ test("readGitHubPullRevision across upstream anomalies", async (t) => {
     degraded: {
       "http-500": typedStatus(502, /github error \(500\)/),
       "http-502": typedStatus(502, /github error \(502\)/),
-      // A revoked token is 401 at GitHub; only 403 and 404 pass through, so it
-      // surfaces as a 502 "github error (401)".
-      "auth-revoked": typedStatus(502, /github error \(401\)/),
-      "rate-limit": typedStatus(502, /github error \(429\)/),
+      // Only 403 and 404 pass through as statuses, but a revoked token and a
+      // rate limit stay named on the error for the routes to report (#6371).
+      "auth-revoked": (outcome) => {
+        typedStatus(502, /Reconnect GitHub/)(outcome);
+        assert.deepEqual((outcome.threw as GitHubRevisionError).fields, { patInvalid: true });
+      },
+      "rate-limit": (outcome) => {
+        typedStatus(502, /Try again in 7 seconds/)(outcome);
+        const error = outcome.threw as GitHubRevisionError;
+        assert.deepEqual(error.fields, { rateLimited: true, retryAfterSeconds: 7 });
+        assert.deepEqual(error.headers, { "Retry-After": "7" });
+      },
       timeout: untyped("TimeoutError"),
       network: untyped("TypeError"),
       // An unreadable body, whether torn or stalled, gets the same typed 502.

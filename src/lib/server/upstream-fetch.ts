@@ -93,6 +93,8 @@ export const UPSTREAM_DEFAULT_TIMEOUT_MS = 10_000;
 export const UPSTREAM_COOLDOWN_HEADER = "x-coven-upstream-cooldown";
 export const UPSTREAM_RETRY_AFTER_CAP_MS = 2_000;
 export const UPSTREAM_COOLDOWN_MAX_MS = 60_000;
+/** A host's own stated wait is honoured in full, up to this sanity bound. */
+export const UPSTREAM_RATE_LIMIT_WAIT_MAX_MS = 60 * 60_000;
 export const UPSTREAM_FAILURE_COOLDOWN_MS = 5_000;
 export const UPSTREAM_FAILURES_BEFORE_COOLDOWN = 3;
 const BACKOFF_BASE_MS = 150;
@@ -199,7 +201,8 @@ function recordAnomaly(health: UpstreamHostHealth, anomaly: UpstreamAnomalyClass
   let cooldown = coolForMs;
   if (cooldown === null && health.transportStreak >= UPSTREAM_FAILURES_BEFORE_COOLDOWN) cooldown = UPSTREAM_FAILURE_COOLDOWN_MS;
   if (cooldown !== null && cooldown > 0) {
-    health.coolingUntil = now + Math.min(cooldown, UPSTREAM_COOLDOWN_MAX_MS);
+    const maxWait = anomaly === "rate-limited" ? UPSTREAM_RATE_LIMIT_WAIT_MAX_MS : UPSTREAM_COOLDOWN_MAX_MS;
+    health.coolingUntil = now + Math.min(cooldown, maxWait);
     health.coolingReason = anomaly === "rate-limited" ? "rate-limited" : "unreachable";
     health.state = "cooling";
   }
