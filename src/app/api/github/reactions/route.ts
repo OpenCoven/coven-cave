@@ -17,7 +17,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
-import { ambiguousWrite, isRecord, positiveInteger } from "@/lib/server/upstream-answer";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, positiveInteger, writeThrew } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -137,12 +137,21 @@ export async function POST(req: Request) {
 
   try {
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await upstreamFetch("github", `${GH}/repos/${repo}/issues/${number}/reactions`, {
-      method: "POST",
-      headers: ghHeaders(token),
-      cache: "no-store",
-      body: JSON.stringify({ content }),
-    });
+    let res: Response;
+    try {
+      res = await upstreamFetch("github", `${GH}/repos/${repo}/issues/${number}/reactions`, {
+        method: "POST",
+        headers: ghHeaders(token),
+        cache: "no-store",
+        body: JSON.stringify({ content }),
+      });
+    } catch (e) {
+      // The request may have reached GitHub before this failed; only a
+      // write that provably never left is a plain, retryable failure (#6369).
+      return writeThrew("GitHub", "reaction", e, "failed to add reaction");
+    }
+    // A 5xx after GitHub received the write leaves its outcome unknown (#6369).
+    if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", "reaction");
     const raw: unknown = await res.json().catch(() => null);
     // 200 (already reacted) and 201 (created) are both the desired end state,
     // but only an answer carrying the reaction's id confirms it — and DELETE

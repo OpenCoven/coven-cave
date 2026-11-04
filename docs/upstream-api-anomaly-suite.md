@@ -103,3 +103,7 @@ proxies, or the native daemon. The matrix proves graceful degradation and
 immediate recovery per caller; the retry and cooldown policy is proven once,
 in `upstream-fetch.test.ts`, and the matrix runner treats a cooldown window
 as elapsed before each heal so the two contracts stay separate.
+
+## Unconfirmed GitHub writes
+
+A GitHub write can land before its answer is lost. Routes return `ambiguous-write` unless the request provably never left, and the clients in `src/lib/github-write-answer.ts` treat the same way an unreadable answer from Cave, including a torn 200. In each case the UI asks the user to check on GitHub before sending again and never retries on its own.

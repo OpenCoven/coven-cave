@@ -119,11 +119,11 @@ test("POST /api/github/reactions across upstream anomalies", async (t) => {
       assert.deepEqual(outcome.body, { ok: true, reaction: { id: 14, content: "+1" } });
     },
     degraded: {
-      "http-500": failsWith(502, "Internal Server Error"),
-      "http-502": failsWith(502, "github error (502)"),
+      "http-500": expectAmbiguousWrite,
+      "http-502": expectAmbiguousWrite,
       "auth-revoked": failsWith(502, "Bad credentials"),
       "rate-limit": failsWith(502, "API rate limit exceeded"),
-      timeout: timesOut,
+      timeout: expectAmbiguousWrite,
       network: failsWith(502, "fetch failed"),
       "malformed-json": expectAmbiguousWrite,
       "empty-body": expectAmbiguousWrite,

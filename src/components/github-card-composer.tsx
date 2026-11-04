@@ -24,6 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isUncertainGitHubWrite } from "@/lib/github-write-answer";
 import { Icon, type IconName } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -179,7 +180,9 @@ export function GitHubCardComposer({
   const [labels, setLabels] = useState<string[]>(item.labels.map((l) => l.name));
   const [pick, setPick] = useState<"" | "people" | "labels">("");
   const [nudge, setNudge] = useState<"" | "arm" | "body">("");
-  const [failure, setFailure] = useState<{ code: string; message: string } | null>(null);
+  // `uncertain`: GitHub may have done this before the failure (#6369), so
+  // the panel offers a refresh to check instead of a blind re-send.
+  const [failure, setFailure] = useState<{ code: string; message: string; uncertain?: boolean } | null>(null);
   const [merged, setMerged] = useState<{ sha: string | null; branchDeleted: boolean } | null>(null);
   const [restored, setRestored] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -415,14 +418,18 @@ export function GitHubCardComposer({
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (!res.ok || !data?.ok) {
-        setFailure({ code: String(res.status), message: data?.error ?? "update failed" });
+        setFailure({
+          code: String(res.status),
+          message: data?.error ?? "update failed",
+          uncertain: isUncertainGitHubWrite(res.status, data),
+        });
         setPhase("error");
         return false;
       }
       onMutated();
       return true;
     } catch {
-      setFailure({ code: "0", message: "network error" });
+      setFailure({ code: "0", message: "network error", uncertain: true });
       setPhase("error");
       return false;
     } finally {
@@ -447,7 +454,7 @@ export function GitHubCardComposer({
     const { ok, status, data } = await postJson("/api/github/rerun", { repo, number, failedOnly });
     setBusy(null);
     if (!ok) {
-      setFailure({ code: String(status), message: (data?.error as string) ?? "re-run failed" });
+      setFailure({ code: String(status), message: (data?.error as string) ?? "re-run failed", uncertain: isUncertainGitHubWrite(status, data) });
       setPhase("error");
       return;
     }
@@ -460,7 +467,7 @@ export function GitHubCardComposer({
     const { ok, status, data } = await postJson("/api/github/resolve-thread", { threadId, resolved: true });
     setBusy(null);
     if (!ok) {
-      setFailure({ code: String(status), message: (data?.error as string) ?? "resolve failed" });
+      setFailure({ code: String(status), message: (data?.error as string) ?? "resolve failed", uncertain: isUncertainGitHubWrite(status, data) });
       setPhase("error");
       return;
     }
@@ -556,7 +563,7 @@ export function GitHubCardComposer({
         ...(delBranch && item.pull?.headRef ? { deleteBranch: true } : {}),
       });
       if (!ok) {
-        setFailure({ code: String(status), message: (data?.error as string) ?? "merge failed" });
+        setFailure({ code: String(status), message: (data?.error as string) ?? "merge failed", uncertain: isUncertainGitHubWrite(status, data) });
         setPhase("error");
         return;
       }
@@ -593,7 +600,11 @@ export function GitHubCardComposer({
           });
 
     if (!result.ok) {
-      setFailure({ code: String(result.status), message: (result.data?.error as string) ?? "send failed" });
+      setFailure({
+        code: String(result.status),
+        message: (result.data?.error as string) ?? "send failed",
+        uncertain: isUncertainGitHubWrite(result.status, result.data),
+      });
       setPhase("error");
       return;
     }
@@ -848,8 +859,21 @@ export function GitHubCardComposer({
           </span>
           <span className="ghc-status__msg">
             <span className="ghc-status__code">{failure.code}</span> {failure.message}
+            {failure.uncertain ? " This may have gone through. Refresh to check before sending again." : null}
           </span>
-          {mode !== "comment" ? (
+          {failure.uncertain ? (
+            <button
+              type="button"
+              className="ghc-mini focus-ring"
+              onClick={() => {
+                setFailure(null);
+                setPhase("open");
+                onMutated();
+              }}
+            >
+              Refresh to check
+            </button>
+          ) : mode !== "comment" ? (
             <button type="button" className="ghc-mini focus-ring" onClick={() => void send(true)}>
               Send as comment instead
             </button>

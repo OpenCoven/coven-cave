@@ -155,6 +155,7 @@ export const SUITES = {
     "src/components/chat-view-transcript-memo.test.ts",
     "src/components/streaming-chat-wiring.test.ts",
     "src/components/streaming-turn-response.test.tsx",
+    "src/components/github-action-card.behavior.test.tsx",
     "src/lib/chat-composer-prefs.test.ts",
     "src/lib/composer-markdown-decorations.test.ts",
     "src/lib/composer-markdown-layer.test.ts",
@@ -2161,6 +2162,7 @@ export const SUITES = {
     "src/lib/server/x-client.upstream-anomalies.test.ts",
     "src/lib/endpoint-validators.upstream-anomalies.test.ts",
     "src/lib/server/managed-node-toolchain.upstream-anomalies.test.ts",
+    "src/lib/server/upstream-answer.test.ts",
     "src/lib/server/upstream-fetch.test.ts",
     // #6359 (end)
   ],
@@ -2867,6 +2869,8 @@ const VITEST_TESTS = new Set([
   // rendered JSX for the shared reviewable/all queue scope control
   "src/components/code-review-queue-controls.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
+  // stubs fetch to drive the proposal card's uncertain-write path (#6369)
+  "src/components/github-action-card.behavior.test.tsx",
   "src/components/access-groups-section.behavior.test.tsx",
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",

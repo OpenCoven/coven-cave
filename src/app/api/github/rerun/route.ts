@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isAmbiguousWriteStatus, writeThrew } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,15 +46,24 @@ export async function POST(req: Request) {
   try {
     // repo passed REPO_RE and runId is a positive integer — safe to interpolate.
     const path = failedOnly ? "rerun-failed-jobs" : "rerun";
-    const res = await upstreamFetch("github", `${GH}/repos/${repo}/actions/runs/${runId}/${path}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      cache: "no-store",
-    });
+    let res: Response;
+    try {
+      res = await upstreamFetch("github", `${GH}/repos/${repo}/actions/runs/${runId}/${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        cache: "no-store",
+      });
+    } catch (e) {
+      // The request may have reached GitHub before this failed; only a
+      // write that provably never left is a plain, retryable failure (#6369).
+      return writeThrew("GitHub", "re-run", e, "failed to re-run");
+    }
+    // A 5xx after GitHub received the write leaves its outcome unknown (#6369).
+    if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", "re-run");
     if (!res.ok) {
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;

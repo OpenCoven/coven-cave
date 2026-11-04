@@ -69,14 +69,11 @@ test("POST /api/github/resolve-thread across upstream anomalies", async (t) => {
       assert.deepEqual(outcome.body, { ok: true, threadId: THREAD, isResolved: true });
     },
     degraded: {
-      "http-500": githubError(500),
-      "http-502": githubError(502),
+      "http-500": expectAmbiguousWrite,
+      "http-502": expectAmbiguousWrite,
       "auth-revoked": githubError(401),
       "rate-limit": githubError(429),
-      timeout: (outcome, anomaly) => {
-        expectErrorStatus(502)(outcome, anomaly);
-        assert.match((outcome.body as { error: string }).error, /timeout/i);
-      },
+      timeout: expectAmbiguousWrite,
       network: (outcome, anomaly) => {
         expectErrorStatus(502)(outcome, anomaly);
         assert.equal((outcome.body as { error: string }).error, "fetch failed");

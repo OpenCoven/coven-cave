@@ -16,7 +16,7 @@ import { parseGitHubDiffRevision, validateGitHubReviewBody } from "@/lib/github-
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
-import { ambiguousWrite, isRecord, resourceId } from "@/lib/server/upstream-answer";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, resourceId, writeThrew } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -73,17 +73,26 @@ export async function POST(req: Request) {
   try {
     await assertCurrentGitHubRevision(repo, number, token, headSha, reviewedRevision);
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}/reviews`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-      body: JSON.stringify({ event, ...(text ? { body: text } : {}), ...(headSha ? { commit_id: headSha } : {}) }),
-    });
+    let res: Response;
+    try {
+      res = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}/reviews`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        body: JSON.stringify({ event, ...(text ? { body: text } : {}), ...(headSha ? { commit_id: headSha } : {}) }),
+      });
+    } catch (e) {
+      // The request may have reached GitHub before this failed; only a
+      // write that provably never left is a plain, retryable failure (#6369).
+      return writeThrew("GitHub", "review", e, "failed to submit review");
+    }
+    // A 5xx after GitHub received the write leaves its outcome unknown (#6369).
+    if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", "review");
     const raw: unknown = await res.json().catch(() => null);
     // GitHub accepted the review; an answer without a review id leaves it
     // unconfirmed, and a blind retry could submit it twice (#6368).

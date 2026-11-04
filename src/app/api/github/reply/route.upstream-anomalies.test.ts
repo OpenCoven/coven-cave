@@ -78,14 +78,11 @@ test("POST /api/github/reply across upstream anomalies", async (t) => {
       });
     },
     degraded: {
-      "http-500": githubError(500),
-      "http-502": githubError(502),
+      "http-500": expectAmbiguousWrite,
+      "http-502": expectAmbiguousWrite,
       "auth-revoked": githubError(401),
       "rate-limit": githubError(429),
-      timeout: (outcome, anomaly) => {
-        expectErrorStatus(502)(outcome, anomaly);
-        assert.match((outcome.body as { error: string }).error, /timeout/i);
-      },
+      timeout: expectAmbiguousWrite,
       network: (outcome, anomaly) => {
         expectErrorStatus(502)(outcome, anomaly);
         assert.equal((outcome.body as { error: string }).error, "fetch failed");
@@ -105,11 +102,30 @@ test("a 403 from GitHub is passed through as the caller's own 403", async () => 
   harness.heal("github");
 });
 
-test("a stalled socket after the reply was sent is reported as a plain failure (a retry may double-post)", async () => {
-  harness.inject("github", { kind: "timeout" });
+test("a write that may have reached GitHub is outcome-unknown, never a plain retryable failure (#6369)", async () => {
+  // A stalled socket after the request left, or a reset mid-flight, may come
+  // after GitHub acted. The answer says so, so a retry cannot silently post twice.
+  for (const anomaly of [
+    { kind: "timeout" },
+    { kind: "http", status: 503, body: { message: "Service Unavailable" } },
+  ] as const) {
+    harness.inject("github", anomaly);
+    const response = await reply();
+    assert.equal(response.status, 502);
+    const body = await response.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "ambiguous-write");
+    assert.equal(body.dispatched, true);
+    harness.heal("github");
+  }
+});
+
+test("a reply whose connection never opened is a plain failure the caller may retry (#6369)", async () => {
+  harness.inject("github", { kind: "network" });
   const body = await (await reply()).json();
   assert.equal(body.ok, false);
-  assert.doesNotMatch(JSON.stringify(body), /unknown|may have/i, "no unknown-outcome contract exists; pinned so a change is deliberate");
+  assert.notEqual(body.code, "ambiguous-write");
+  assert.notEqual(body.dispatched, true);
   harness.heal("github");
 });
 
