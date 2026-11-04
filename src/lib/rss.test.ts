@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   parseFeed,
+  isFeedDocument,
   decodeEntities,
   cleanText,
   normalizeDate,
@@ -151,3 +152,12 @@ assert.equal(links[1].title, "Scoped memory & clear protocols", "entities decode
 assert.deepEqual(extractLinks(""), [], "no body → no links");
 
 console.log("rss.test.ts: ok");
+
+for (const valid of [
+  '<rss version="2.0"><channel><title>Empty</title></channel></rss>',
+  '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Empty</title></feed>',
+  '<feed xmlns="http://www.w3.org/2005/Atom"/>',
+]) assert.equal(isFeedDocument(valid), true, valid);
+for (const invalid of ['', '{}', '<html>gateway</html>', '<rss><channel>', '<rss><channel><item></channel></rss>']) {
+  assert.equal(isFeedDocument(invalid), false, invalid);
+}

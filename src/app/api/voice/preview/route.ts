@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server.js";
+import { redactSecretText } from "../../../../lib/secret-redaction.ts";
 import { resolveSecret } from "../../../../lib/vault.ts";
 import { upstreamFetch } from "../../../../lib/server/upstream-fetch.ts";
 import {
@@ -76,7 +77,7 @@ export async function GET(req: Request) {
     let param = "";
     try {
       const json = (await res.json()) as { error?: { message?: string; param?: string } };
-      providerMessage = json.error?.message ?? "";
+      providerMessage = typeof json.error?.message === "string" ? redactSecretText(json.error.message, [apiKey]) : "";
       param = json.error?.param ?? "";
     } catch { /* keep empty */ }
     // Only a voice-parameter rejection means "this voice isn't on the TTS
@@ -91,6 +92,12 @@ export async function GET(req: Request) {
       error: "preview_failed",
       providerMessage,
     }, { status: 502 });
+  }
+
+  const contentType = res.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+  if (contentType !== "audio/mpeg" && contentType !== "audio/mp3") {
+    void res.body?.cancel().catch(() => {});
+    return NextResponse.json({ ok: false, error: "preview_failed", providerMessage: "Expected MP3 audio from OpenAI." }, { status: 502 });
   }
 
   let body: ArrayBuffer;

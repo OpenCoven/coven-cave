@@ -6,12 +6,11 @@
 // fallback fixture and never throw; the SKILL.md preview
 // (raw.githubusercontent.com, `github-raw`) degrades to null. Each has a
 // ten-minute cache, stepped past between matrix calls; the explicit tests at
-// the end pin what each cache remembers about a failure, with two documented
-// findings where an empty or failed answer is held for the TTL.
+// the end require failures to stay retryable without waiting for the TTL.
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { installUpstreamAnomalyFetch } from "../testing/upstream-anomaly-fetch.ts";
+import { STANDARD_UPSTREAM_ANOMALIES, installUpstreamAnomalyFetch } from "../testing/upstream-anomaly-fetch.ts";
 import { runUpstreamAnomalyMatrix, type MatrixOutcome } from "../testing/upstream-anomaly-matrix.ts";
 
 const CACHE_MS = 10 * 60 * 1000;
@@ -119,14 +118,6 @@ const noPreview = (outcome: MatrixOutcome) => {
   assert.equal(outcome.value, null, "an unreadable SKILL.md is no preview, never a throw");
 };
 
-/** A 200 is a preview: the module shows whatever text GitHub served, markdown or not. */
-const previewOfWhateverCameBack = (outcome: MatrixOutcome) => {
-  const preview = outcome.body as { text: string; source: string } | null;
-  assert.ok(preview, "a 2xx body is shown as the preview");
-  assert.equal(preview.source, "github-raw");
-  assert.notEqual(preview.text, SKILL_MD);
-};
-
 test("readRemoteSkillMarkdown (raw.githubusercontent.com) across upstream anomalies", async (t) => {
   await runUpstreamAnomalyMatrix(t, {
     harness,
@@ -141,9 +132,9 @@ test("readRemoteSkillMarkdown (raw.githubusercontent.com) across upstream anomal
       "rate-limit": noPreview,
       timeout: noPreview,
       network: noPreview,
-      "malformed-json": previewOfWhateverCameBack,
-      "empty-body": previewOfWhateverCameBack,
-      "schema-drift": previewOfWhateverCameBack,
+      "malformed-json": noPreview,
+      "empty-body": noPreview,
+      "schema-drift": noPreview,
     },
   });
 });
@@ -177,42 +168,24 @@ test("a search failure is not cached either", async () => {
   assert.equal(harness.calls("skills-directory").length, 1, "a thrown search is not written into the search cache");
 });
 
-test("a search 200 with no skills is cached as an empty result for the TTL (documented, not fixed)", async () => {
-  // Finding: readSkillsShSearchEntries caches whatever parsed, including the
-  // empty list a drifted schema produces, so a bad deploy at skills.sh pins a
-  // query to the fallback for ten minutes after it recovers. The directory
-  // listing beside it only caches non-empty answers. Bounded by the TTL, so
-  // recorded here rather than changed.
+test("a drifted search parse is not cached and heals without a clock step", async () => {
   stepPastCache();
   harness.inject("skills-directory", { kind: "schema-drift" });
-  harness.reset();
   bundledFallback(await outcomeOf(listSkillDirectoryEntries("frontend")));
   harness.heal("skills-directory");
   harness.reset();
-  bundledFallback(await outcomeOf(listSkillDirectoryEntries("frontend")));
-  assert.equal(harness.calls("skills-directory").length, 0, "the empty parse is served from the search cache");
-  stepPastCache();
-  harness.reset();
   assert.equal((await listSkillDirectoryEntries("frontend")).source, "live");
-  assert.equal(harness.calls("skills-directory").length, 1, "past the TTL the search is live again");
+  assert.equal(harness.calls("skills-directory").length, 1);
 });
 
-test("a failed preview is negatively cached for the TTL (documented, not fixed)", async () => {
-  // Finding: readRemoteSkillMarkdown records a null preview for every failed
-  // URL for ten minutes, so a blip at raw.githubusercontent.com hides a
-  // skill's preview until the TTL passes. Bounded; recorded, not changed.
+test("a failed preview heals on the next call without a clock step", async () => {
   stepPastCache();
   harness.inject("github-raw", { kind: "http", status: 500 });
-  harness.reset();
   assert.equal(await readRemoteSkillMarkdown(previewEntry), null);
   harness.heal("github-raw");
   harness.reset();
-  assert.equal(await readRemoteSkillMarkdown(previewEntry), null, "the negative entry answers");
-  assert.equal(harness.calls("github-raw").length, 0);
-  stepPastCache();
-  harness.reset();
   livePreview(await outcomeOf(readRemoteSkillMarkdown(previewEntry)));
-  assert.equal(harness.calls("github-raw").length, 1, "past the TTL the preview is fetched again");
+  assert.equal(harness.calls("github-raw").length, 1);
 });
 
 test("every upstream call carries a deadline", () => {
@@ -223,3 +196,22 @@ async function outcomeOf(pending: Promise<unknown>): Promise<MatrixOutcome> {
   const value = await pending;
   return { value, response: null, status: null, text: JSON.stringify(value), body: value, threw: undefined };
 }
+
+test("every failed search and preview heals without resetting route caches or advancing the clock", async () => {
+  for (const { name, anomaly } of STANDARD_UPSTREAM_ANOMALIES) {
+    stepPastCache();
+    assert.equal((await listSkillDirectoryEntries("find")).source, "live");
+    livePreview(await outcomeOf(readRemoteSkillMarkdown(previewEntry)));
+    stepPastCache();
+    harness.inject("skills-directory", anomaly);
+    harness.inject("github-raw", anomaly);
+    bundledFallback(await outcomeOf(listSkillDirectoryEntries("find")));
+    noPreview(await outcomeOf(readRemoteSkillMarkdown(previewEntry)));
+    harness.heal();
+    harness.reset();
+    assert.equal((await listSkillDirectoryEntries("find")).source, "live", name);
+    livePreview(await outcomeOf(readRemoteSkillMarkdown(previewEntry)));
+    assert.equal(harness.calls("skills-directory").length, 1, name);
+    assert.equal(harness.calls("github-raw").length, 1, name);
+  }
+});

@@ -166,6 +166,22 @@ export function normalizeDate(raw: string | null): string | null {
 
 // ─── Feed parsing ────────────────────────────────────────────────────────────
 
+/** Recognize a complete RSS/Atom envelope before treating an empty parse as healthy.
+ * This is an envelope check, not a general XML validator. */
+export function isFeedDocument(xml: string): boolean {
+  const document = xml.replace(/^\uFEFF/, "").replace(/<\?[\s\S]*?\?>|<!--[\s\S]*?-->/g, "").trim();
+  const rss = /^<rss(?:\s[^>]*)?>[\s\S]*<\/rss>$/i.test(document)
+    && /<channel(?:\s[^>]*)?>(?:[\s\S]*<\/channel>)|<channel(?:\s[^>]*)?\/>/i.test(document);
+  const atom = /^<feed(?:\s[^>]*)?>[\s\S]*<\/feed>$/i.test(document)
+    || /^<feed(?:\s[^>]*)?\/>$/i.test(document);
+  if (!rss && !atom) return false;
+  const structure = document.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, "");
+  const tag = atom ? "entry" : "item";
+  const opens = structure.match(new RegExp(`<${tag}(?:\\s[^>]*)?>`, "gi"))?.length ?? 0;
+  const closes = structure.match(new RegExp(`<\\/${tag}>`, "gi"))?.length ?? 0;
+  return opens === closes;
+}
+
 /** Parse a feed document (RSS 2.0 or Atom) into normalized items. Resilient to
  *  the common shapes; returns an empty item list rather than throwing. */
 export function parseFeed(xml: string): ParsedFeed {
