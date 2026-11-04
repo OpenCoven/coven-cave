@@ -12,7 +12,7 @@ import path from "node:path";
 import { caveHome } from "@/lib/coven-paths";
 import { isFeedbackReason, type FeedbackReason } from "@/lib/message-feedback";
 
-export const MESSAGE_FEEDBACK_PATH = path.join(caveHome(), "message-feedback.json");
+export const MESSAGE_FEEDBACK_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "message-feedback.json");
 
 export type MessageFeedbackVote = "up" | "down";
 

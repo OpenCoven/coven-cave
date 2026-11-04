@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { parse } from "yaml";
 
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
@@ -11,19 +12,19 @@ const depBlocks = ["dependencies", "devDependencies", "optionalDependencies", "p
 
 // Independently released Research: one reviewed URL with locked content integrity.
 // Do not allow arbitrary URL, git, or local-path dependencies.
-const researchPin = "https://github.com/OpenCoven/research/releases/download/v0.1.0/opencoven-research-0.1.0.tgz";
-const researchIntegrity = "sha512-3FkNXEyn7BDNdhAAeKOaELqB5RsncuKUJkBVzaOJMshM4iqjRvxydDu8E6uUrQ3T3n36gcQIPmGxpKiJGgKhIQ==";
+const researchPin = "https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz";
+const researchIntegrity = "sha512-Q1t+fwEODkY3oY92jSlSfdCTQv6yKjnmvS7v8z6DHCTM3RKForiVwGQ7y3ysonCaNBqjlFgdYhNMMIJPf3Mdrg==";
 assert.equal(packageJson.optionalDependencies?.["@opencoven/research"], researchPin);
 
 // The selected SDK is not published. These two reviewed tarballs are immutable
 // source-pinned exceptions, not general permission for file/git dependencies.
 const sdkPins = {
   "@opencoven/sdk-core": ["opencoven-sdk-core-0.0.1.tgz", "5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b"],
-  "@opencoven/coven-client": ["opencoven-coven-client-0.0.1.tgz", "5333c508bfb2e4bf4c5fce8e488a9f343e0894f10bdbac75f69427654a231180"],
+  "@opencoven/coven-client": ["opencoven-coven-client-0.0.1.tgz", "43ea917c8b9930b999373db63c07dd048a2ca1a5e3c1e4817389697821e305ec"],
 };
 const sdkProvenance = JSON.parse(await readFile(new URL("../vendor/opencoven-sdk/provenance.json", import.meta.url), "utf8"));
 assert.equal(sdkProvenance.repository, "https://github.com/OpenCoven/sdk");
-assert.equal(sdkProvenance.revision, "d19fdbe3912c012b3730932d5a03eff10ba3d32d");
+assert.equal(sdkProvenance.revision, "89685543a62008533237478c31ecce565798ddf6");
 assert.equal(sdkProvenance.packages.length, 2);
 for (const [name, [file, digest]] of Object.entries(sdkPins)) {
   const bytes = await readFile(new URL(`../vendor/opencoven-sdk/${file}`, import.meta.url));
@@ -164,4 +165,47 @@ for (const [name, versions] of nativeVersions) {
   );
 }
 
-console.log(`dependency-policy.test.mjs: ok (sharp pinned coherently at ${resolvedSharp})`);
+// Security floors for the dependency families used by Cave (#6139, #6264). Check
+// every resolved copy, not just direct dependencies or override declarations.
+const securityFloors = {
+  "vite": "8.1.6", // GHSA-698v-4r3x-3vcv
+  "dompurify": "3.4.17", // GHSA-6688-9rhm-gjv2, GHSA-p98j-92pf-mc4p, GHSA-c6gr-qvv4-5v3f, GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr
+  "next": "16.4.1", // GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r
+  "@vitest/mocker": "4.1.12", // GHSA-qxg6-89mg-rqv8, GHSA-xp26-3454-mjgp
+  "katex": "0.18.2", // GHSA-238p-pmpm-9mq7
+  "source-map-js": "1.2.2", // GHSA-68fv-2mgg-jv7q
+  "@vue/server-renderer": "3.5.42", // GHSA-g2v6-rqmx-r4w6
+  "prosemirror-view": "1.42.3", // GHSA-c8x8-7fp4-3x9w
+  "brace-expansion": "5.0.12", // GHSA-q2hr-2g5m-vwhr
+};
+function atLeastStable(version, floor) {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) return false;
+  const actual = version.split(".").map(Number);
+  const minimum = floor.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (actual[i] !== minimum[i]) return actual[i] > minimum[i];
+  }
+  return true;
+}
+const vulnerable = Object.keys(lockPackages).map(splitLockKey)
+  .filter(({ name, version }) => securityFloors[name] && !atLeastStable(version, securityFloors[name]));
+const cargoLock = await readFile(new URL("../src-tauri/Cargo.lock", import.meta.url), "utf8");
+for (const entry of cargoLock.split("[[package]]")) {
+  if (!/^name = "rustls"$/m.test(entry)) continue;
+  const version = /^version = "([^"]+)"$/m.exec(entry)?.[1];
+  if (!atLeastStable(version ?? "", "0.23.45")) vulnerable.push({ name: "rustls", version });
+}
+assert.deepEqual(vulnerable, [], "Resolved dependency graph must exclude the vulnerable versions from #6139 and #6264");
+
+// KaTeX's security release crosses the consumers' 0.x ranges. Exercise the
+// actual copies loaded by both consumers, including the advisory's trust gadget.
+const require = createRequire(import.meta.url);
+for (const consumer of ["mermaid", "@milkdown/crepe"]) {
+  const katex = createRequire(require.resolve(consumer))("katex");
+  assert.match(katex.renderToString("c = \\pm\\sqrt{a^2 + b^2}", { throwOnError: true }), /katex-mathml/);
+  const inheritedTrust = Object.create({ trust: true });
+  const output = katex.renderToString("\\href{javascript:alert(1)}{click}", inheritedTrust);
+  assert.doesNotMatch(output, /href=["']javascript:/i, `${consumer} must not inherit trusted rendering`);
+}
+
+console.log(`dependency-policy.test.mjs: ok (sharp pinned coherently at ${resolvedSharp}; security floors satisfied)`);

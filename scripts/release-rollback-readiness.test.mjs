@@ -91,7 +91,7 @@ function manifest(version, overrides = {}) {
  * The baseline tag's package.json as patched releases pin it: `next`, `sharp`
  * and the `sharp` override, each exact and at or above the #5339 floor.
  */
-function pins({ next = "16.3.8", sharp = "0.35.5", override = sharp } = {}) {
+function pins({ next = "16.4.3", sharp = "0.35.5", override = sharp } = {}) {
   return {
     name: "coven-cave",
     dependencies: { next, sharp },
@@ -954,7 +954,7 @@ test("a baseline below the bundled-dependency floor is recorded as unsafe, never
   assert.equal(result.baselineFloor.clear, false);
   assert.deepEqual(result.baselineFloor.versions, { next: "16.3.1", sharp: "0.35.3" });
   const problems = result.baselineFloor.problems.join("\n");
-  assert.match(problems, /dependencies\.next 16\.3\.1 is below the patched minimum 16\.3\.3/);
+  assert.match(problems, /dependencies\.next 16\.3\.1 is below the patched minimum 16\.4\.1/);
   assert.match(problems, /dependencies\.sharp 0\.35\.3 is below the patched minimum 0\.35\.4/);
   assert.match(problems, /pnpm\.overrides\.sharp 0\.35\.3 is below the patched minimum 0\.35\.4/);
 
@@ -970,7 +970,7 @@ test("a baseline below the bundled-dependency floor is recorded as unsafe, never
   const clean = await verify({
     fetchImpl: stubFetch({ releases: [release("0.3.7")], manifest: manifest("0.3.7") }).fetchImpl,
   });
-  assert.deepEqual(clean.baselineFloor, { clear: true, versions: { next: "16.3.8", sharp: "0.35.5" }, problems: [] });
+  assert.deepEqual(clean.baselineFloor, { clear: true, versions: { next: "16.4.3", sharp: "0.35.5" }, problems: [] });
 
   // An override below the floor is caught even when the dependency pin clears
   // it: the override is what pnpm installs.
@@ -1108,7 +1108,7 @@ test("the CLI names a baseline below the floor in its outputs, summary and annot
     assert.equal(outputs.ready, "true", "the job still succeeds, so latest.json still publishes");
     assert.equal(outputs["baseline-tag"], "v0.3.7");
     assert.equal(outputs["baseline-floor-clear"], "false");
-    assert.match(outputs["baseline-floor-problems"], /^dependencies\.next 16\.3\.1 is below the patched minimum 16\.3\.3 \(/);
+    assert.match(outputs["baseline-floor-problems"], /^dependencies\.next 16\.3\.1 is below the patched minimum 16\.4\.1 \(/);
     const summary = readFileSync(summaryPath, "utf8");
     assert.match(summary, /⛔ \*\*Do not roll back to `v0\.3\.7`\.\*\* Its pins are below the bundled-dependency floor \(#5339\)/);
     assert.match(summary, /only remedy is a patch forward/);
@@ -1117,7 +1117,7 @@ test("the CLI names a baseline below the floor in its outputs, summary and annot
     assert.equal(warnings.length, 1);
     assert.match(
       warnings[0],
-      /^::warning::Rollback baseline v0\.3\.7 is below the bundled-dependency floor \(dependencies\.next 16\.3\.1 is below the patched minimum 16\.3\.3 .*\); do not roll back to it — patch forward instead\.$/,
+      /^::warning::Rollback baseline v0\.3\.7 is below the bundled-dependency floor \(dependencies\.next 16\.3\.1 is below the patched minimum 16\.4\.1 .*\); do not roll back to it — patch forward instead\.$/,
     );
   } finally {
     console.warn = realWarn;
@@ -1135,8 +1135,8 @@ test("the runbook's floor section still describes what the gate emits", async ()
   assert.match(doc, /`baseline-floor-problems`/);
   assert.match(doc, /restore-plan` refuses/);
 
-  // The runbook quotes the annotation for v0.4.1, the last pre-patch release,
-  // with its real pins (next 16.3.1, sharp 0.35.3). Produce it the way the
+  // The runbook quotes the annotation for v0.5.17, the last release before the
+  // #6264 floor, with its real pins (next 16.3.8, sharp 0.35.5). Produce it the way the
   // gate would and require the quote to be exact, so a reworded annotation or
   // floor reason cannot leave the runbook quoting the old text.
   const directory = mkdtempSync(path.join(tmpdir(), "rollback-readiness-doc-"));
@@ -1147,7 +1147,7 @@ test("the runbook's floor section still describes what the gate emits", async ()
     const full = Object.fromEntries(
       EXPECTED_ROLLBACK_PLATFORMS.map((platform) => [
         platform,
-        { url: `${DOWNLOAD_HOST}/v0.4.1/CovenCave_0.4.1_amd64.AppImage`, signature: "dW50cnVzdGVk" },
+        { url: `${DOWNLOAD_HOST}/v0.5.17/CovenCave_0.5.17_amd64.AppImage`, signature: "dW50cnVzdGVk" },
       ]),
     );
     await runCli({
@@ -1155,16 +1155,16 @@ test("the runbook's floor section still describes what the gate emits", async ()
       env: {
         GITHUB_REPOSITORY: REPOSITORY,
         GITHUB_TOKEN: "token",
-        RELEASE_TAG: "v0.4.2",
+        RELEASE_TAG: "v0.5.18",
         GITHUB_API_URL: API,
         GITHUB_OUTPUT: path.join(directory, "output"),
         GITHUB_STEP_SUMMARY: path.join(directory, "summary"),
       },
       fetchImpl: stubFetch({
-        releases: [release("0.4.1")],
-        manifest: manifest("0.4.1", { platforms: full }),
-        manifestUrl: manifestUrlFor("0.4.1"),
-        packageJson: pins({ next: "16.3.1", sharp: "0.35.3" }),
+        releases: [release("0.5.17")],
+        manifest: manifest("0.5.17", { platforms: full }),
+        manifestUrl: manifestUrlFor("0.5.17"),
+        packageJson: pins({ next: "16.3.8", sharp: "0.35.5" }),
       }).fetchImpl,
     });
   } finally {
@@ -1241,7 +1241,7 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
     const summaryText = readFileSync(summaryPath, "utf8");
     assert.match(
       summaryText,
-      /Pinned dependencies clear the bundled-dependency floor: next 16\.3\.8 >= 16\.3\.3, sharp 0\.35\.5 >= 0\.35\.4/,
+      /Pinned dependencies clear the bundled-dependency floor: next 16\.4\.3 >= 16\.4\.1, sharp 0\.35\.5 >= 0\.35\.4/,
     );
     assert.match(summaryText, /Rollback readiness verified[\s\S]*v0\.3\.7/);
     // The record has to carry the shortfall, not merely the coverage: this

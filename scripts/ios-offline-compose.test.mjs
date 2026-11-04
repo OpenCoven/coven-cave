@@ -55,8 +55,8 @@ assert.match(
 );
 assert.match(
   thread,
-  /func enqueue\(_ text: String, attachments: \[CaveClient\.ChatAttachment\] = \[\],[\s\S]{0,240}?modelControls: \[String: String\] = \[:\],[\s\S]{0,180}?modelOverrideScope: ChatModelOverrideScope\? = nil\)/,
-  "ChatThread.enqueue persists the offline selected-model control snapshot and scope",
+  /func enqueue\(_ text: String, attachments: \[CaveClient\.ChatAttachment\] = \[\],[\s\S]{0,240}?modelControls: \[String: String\] = \[:\],[\s\S]{0,180}?modelOverrideScope: ChatModelOverrideScope\? = nil,\s*mentionedFiles: \[String\] = \[\]\)/,
+  "ChatThread.enqueue persists the offline selected-model control snapshot and scope, plus the picked @ files (#6104)",
 );
 
 // --- Transport-failure conversion: only when provably unsent ----------------

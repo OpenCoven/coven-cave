@@ -293,11 +293,11 @@ assert.match(source, /const outcome = lifecycleCommandMessage\(result, control\.
 assert.match(source, /await sendLifecycle\(auto\.id, control\.command, control\.expectedRevision\)/, "pause/resume sends the expected revision");
 assert.doesNotMatch(source, /body: JSON\.stringify\(\{ status: newStatus \}\)/, "pause/resume no longer PATCHes the legacy status");
 assert.match(source, /announce\(`Run started for '\$\{auto\.name\}'\.`\)/, "run-now announces");
-assert.match(source, /announce\(`Created cron '\$\{input\.name\}', paused\.`\)/, "create announces, and says the new cron is paused");
+assert.match(source, /announce\(`Created scheduled job '\$\{input\.name\}', paused\.`\)/, "create announces that the new scheduled job is paused");
 assert.match(source, /role="img" aria-label="Paused"/, "status dots carry accessible names");
 assert.match(source, /<section aria-labelledby=\{headingId\}/, "list sections are labelled landmarks with real headings");
 assert.match(source, /<div[\s\S]{0,120}role="tabpanel"[\s\S]{0,120}id=\{`automations-panel-\$\{activeTab\}`\}[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}[\s\S]{0,180}aria-label=\{activeTab === "overview" \? "Rituals overview" : activeTab === "calendar" \? "Rituals calendar" : "Rituals crons"\}/, "the active Rituals panel is a tabpanel with the destination-specific label");
-assert.match(source, /onClose=\{\(\) => setCreateOpen\(false\)\}/, "the create dialog closes through one reset path");
+assert.match(source, /onClose=\{\(\) => \{ setCreateOpen\(false\); focusHeaderAction\(\); \}\}/, "the create dialog closes and restores focus to the header action");
 assert.match(source, /window\.setTimeout\(\(\) => \(newBtnRef\.current \?\? newCronBtnRef\.current\)\?\.focus\(\), 0\)/, "deletes hand focus to whichever header action is mounted instead of dropping it on <body>");
 assert.match(source, /const deleteCodex = useCallback\(\(auto: CodexAutomation\) => \{\s*setSelectedCodex\(null\);\s*focusHeaderAction\(\)/, "cron deletes restore focus via the shared helper (newBtnRef is unmounted on the crons tab)");
 assert.match(source, /ref=\{newCronBtnRef\}/, "the crons-tab New button carries the focus-restore ref");

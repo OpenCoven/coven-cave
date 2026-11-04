@@ -332,7 +332,7 @@ async function initializeLocation(
   configuredRoot: string,
   ownership: ClientV1PathOwnershipOptions | undefined,
 ): Promise<DiscoveryLocation> {
-  const resolvedRoot = resolve(configuredRoot);
+  const resolvedRoot = resolve(/* turbopackIgnore: true */ configuredRoot);
   try {
     const configuredMetadata = await lstat(resolvedRoot);
     if (configuredMetadata.isSymbolicLink()) {
@@ -352,7 +352,7 @@ async function initializeLocation(
   // directory, and the chmod below is the no-op it has always been there.
   await requireOwned(physicalRoot, metadata, "root", ownership);
   await chmod(physicalRoot, 0o700);
-  const path = join(physicalRoot, CLIENT_V1_DISCOVERY_FILE);
+  const path = join(/* turbopackIgnore: true */ physicalRoot, CLIENT_V1_DISCOVERY_FILE);
   await assertRegularTargetOrMissing(path, ownership);
   return { path, root: physicalRoot };
 }
@@ -361,7 +361,7 @@ async function existingLocation(
   configuredRoot: string,
   ownership: ClientV1PathOwnershipOptions | undefined,
 ): Promise<DiscoveryLocation | null> {
-  const resolvedRoot = resolve(configuredRoot);
+  const resolvedRoot = resolve(/* turbopackIgnore: true */ configuredRoot);
   try {
     const configuredMetadata = await lstat(resolvedRoot);
     if (configuredMetadata.isSymbolicLink()) {
@@ -378,7 +378,7 @@ async function existingLocation(
   }
   await requireOwned(physicalRoot, metadata, "root", ownership);
   return {
-    path: join(physicalRoot, CLIENT_V1_DISCOVERY_FILE),
+    path: join(/* turbopackIgnore: true */ physicalRoot, CLIENT_V1_DISCOVERY_FILE),
     root: physicalRoot,
   };
 }
@@ -400,7 +400,7 @@ async function assertLocation(
 }
 
 export function clientV1DiscoveryPath(root = caveHome()): string {
-  return join(root, CLIENT_V1_DISCOVERY_FILE);
+  return join(/* turbopackIgnore: true */ root, CLIENT_V1_DISCOVERY_FILE);
 }
 
 export async function publishClientV1DiscoveryRecord(
@@ -418,7 +418,7 @@ export async function publishClientV1DiscoveryRecord(
     let handle: Awaited<ReturnType<typeof open>> | null = null;
     let ownsTemporaryPath = false;
     try {
-      handle = await open(temporaryPath, "wx", 0o600);
+      handle = await open(/* turbopackIgnore: true */ temporaryPath, "wx", 0o600);
       ownsTemporaryPath = true;
       await handle.writeFile(`${JSON.stringify(record, null, 2)}\n`, "utf8");
       await handle.chmod(0o600);
@@ -426,14 +426,14 @@ export async function publishClientV1DiscoveryRecord(
       await handle.close();
       handle = null;
       await assertLocation(location, options.ownership);
-      await rename(temporaryPath, location.path);
+      await rename(/* turbopackIgnore: true */ temporaryPath, location.path);
       ownsTemporaryPath = false;
       await chmod(location.path, 0o600);
       return { ...record };
     } catch (error) {
       if (handle) await handle.close().catch(() => {});
       if (ownsTemporaryPath) {
-        await rm(temporaryPath, { force: true }).catch(() => {});
+        await rm(/* turbopackIgnore: true */ temporaryPath, { force: true }).catch(() => {});
       }
       throw error;
     }

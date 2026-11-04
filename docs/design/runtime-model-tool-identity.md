@@ -1282,18 +1282,18 @@ Cave/Grok acceptance remain pending; source/binary reproducibility is unproven.
 The following maps all twelve original requirements without replacing them.
 Tests exercise production projection functions and, where named, real route
 handlers against an isolated synthetic provider. They do not qualify every
-runtime adapter, native UI, or authenticated producer receipt. The existing
-acceptance packet remains not-fully-qualified until the producer decision and
-subsequent consumer qualification are recorded.
+runtime adapter, native UI, or authenticated producer receipt. Val recorded the
+producer decision on 2026-10-22 (below): scope-03 is an accepted limitation.
+Consumer, native, runtime and human qualification remain with #5763–#5767.
 
 | Original criterion | Executable evidence |
 | --- | --- |
 | scope-01: typed reasoning and legacy decoding | `src/lib/chat-reasoning-blocks.test.ts`, `src/lib/server/legacy-reasoning-projection.test.ts`, `src/lib/chat-activity-corpus.test.ts` |
 | scope-02: call/attempt/source/time and lifecycle distinctions | `src/lib/chat-tool-provenance.test.ts`, `src/lib/chat-tool-outcomes.test.ts` |
-| scope-03: authoritative binding and receipts | `src/lib/chat-tool-provenance.test.ts` rejects forged authority and preserves unavailable fields; producer decision remains outstanding |
+| scope-03: authoritative binding and receipts | **Accepted limitation** ([decision](https://github.com/OpenCoven/coven-cave/issues/5762#issuecomment-6350863669), 2026-10-22): `binding`, `approval` and `effect` stay `unavailable`. `src/lib/chat-tool-provenance.test.ts` rejects forged authority and preserves the unavailable fields |
 | scope-04: disclosure before live/retained presentation | `src/lib/chat-display-disclosure.test.ts`, `src/app/api/chat/send/route-hermes-disclosure.integration.test.ts` |
 | scope-05: split units and opaque continuation isolation | Hermes route fixture uses seven-byte UTF-8 chunks, split credentials, opaque signatures and conflicting summaries; `src/lib/chat-activity-corpus.test.ts` pins fragmented decoding |
-| scope-06: producer mappings and ownership | This document's producer matrix and Tool outcomes sections; producer decision remains outstanding |
+| scope-06: producer mappings and ownership | This document's producer matrix and Tool outcomes sections; the producer gap is recorded as an upstream dependency on [Coven #1137](https://github.com/OpenCoven/coven/issues/1137) ([decision](https://github.com/OpenCoven/coven-cave/issues/5762#issuecomment-6350863669)) |
 | acceptance-01: validators and unknown versions | `src/lib/chat-tool-provenance.test.ts`, `src/lib/chat-reasoning-blocks.test.ts` |
 | acceptance-02: golden new/legacy, multiple blocks and every lifecycle distinction | `src/lib/chat-activity-corpus.test.ts`, `src/lib/chat-tool-provenance.test.ts` JSON round trips and explicit expected lifecycle labels/timestamps |
 | acceptance-03: forged receipts, tags and caller disclosure | `src/lib/chat-display-disclosure.test.ts`, `src/lib/chat-tool-provenance.test.ts`, Hermes route fixture's forged `<coven:receipt>` output and hidden `<thinking>` markers |
@@ -1311,8 +1311,17 @@ An HFR post-tool observation is not a protected-effect receipt.
 Coven/Threads own authenticated session/familiar revision, approval and effect
 receipts; Psyche owns orchestration; Runtimes owns capability descriptors; SDK
 mirrors accepted contracts. Cave retains `binding`, `approval`, and `effect` as
-`unavailable`. Val must decide whether to accept that limitation or commission
-the producer contract specifying authenticated references and read access.
-No inferred display name, hook payload, marker, or client field fills this gap.
+`unavailable`. No inferred display name, hook payload, marker, or client field
+fills this gap.
 
-The existing cross-repository dependency is [Coven #1137](https://github.com/OpenCoven/coven/issues/1137): trusted familiar identity, authorized sources, a production chat consumer, and receipt reconciliation. Its 2026-10-17 reconciliation records the daemon ledger (#1209) and verified issuer (#1210) as delivered; chat-specific authorized-source resolution, native isolation, and receipt/dispatch consumption remain missing. Its automation counterpart #857 is explicitly not a substitute for chat authority. Val’s decision must reconcile this display contract with that issue; this work does not approve or implement a verifier.
+### Producer decision (2026-10-22)
+
+Val chose **"A: accept unavailable"** ([decision](https://github.com/OpenCoven/coven-cave/issues/5762#issuecomment-6350863669)). Documented-unavailable `binding`,
+`approval` and `effect` references are an accepted limitation of this display
+contract, not producer authority. The parser keeps rejecting every other value.
+Approval and change controls stay unavailable (#5765; golden-09/10 in #6058 and
+#6059). Authenticated chat binding and receipt-read remain future work in
+Coven #1137. Adopting them later requires a new producer contract and consumer
+qualification; this decision does not pre-approve one.
+
+The existing cross-repository dependency is [Coven #1137](https://github.com/OpenCoven/coven/issues/1137): trusted familiar identity, authorized sources, a production chat consumer, and receipt reconciliation. Its 2026-10-17 reconciliation records the daemon ledger (#1209) and verified issuer (#1210) as delivered; chat-specific authorized-source resolution, native isolation, and receipt/dispatch consumption remain missing. Its automation counterpart #857 is explicitly not a substitute for chat authority. Val’s 2026-10-22 decision keeps this display contract at `unavailable` until that issue delivers; this work does not approve or implement a verifier.

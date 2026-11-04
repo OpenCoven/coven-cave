@@ -188,26 +188,25 @@ test.describe("Task Work cockpit fit", () => {
     await openBoard(page, [FRESH_CARD], []);
     await openCockpit(page, "Start work");
 
-    const { body, chat, chatHost, header, reopen, rowRight } = await fit(page);
+    const { body, chat, chatHost, header, rowRight } = await fit(page);
     expect(body).not.toBeNull();
     expect(chat).not.toBeNull();
     // ChatView mounts inside the Group's conversation Panel (cave-6une3 unified
     // both entry paths onto one tree), so its host is the Panel — the body row
-    // minus whatever the collapsed rail strip reserves.
-    const reserved = reopen ? reopen.width : 0;
-    expect(chatHost!.width).toBe(body!.width - reserved);
+    // without a collapsed-rail gutter.
+    expect(chatHost!.width).toBe(body!.width);
     // The chat starts at the body's left edge and ends at the body's right edge
-    // (minus the reopen strip, when it is showing). Before the fix the chat was
+    // without reserving space for the tab. Before the fix the chat was
     // ~1090px inside a ~1900px body — a ~800px dead gutter.
     expect(chat!.left).toBe(body!.left);
-    expect(body!.width - chat!.width).toBe(reserved);
+    expect(body!.width - chat!.width).toBe(0);
     // Nothing is left over on the right.
     expect(rowRight).toBe(body!.right);
     // And the conversation spans the same measure as the full-bleed header.
     expect(body!.width).toBe(header!.width);
   });
 
-  test("the collapsed code rail is a full-height strip on the cockpit's right edge", async ({ page }) => {
+  test("the collapsed Code tab overlays only the cockpit's right edge", async ({ page }) => {
     await openBoard(page, [FRESH_CARD], []);
     await openCockpit(page, "Start work");
 
@@ -215,10 +214,10 @@ test.describe("Task Work cockpit fit", () => {
     expect(reopen, "the repo-linked cockpit shows the collapsed code rail").not.toBeNull();
     // Right edge of the body, not the bottom-left corner.
     expect(reopen!.right).toBe(body!.right);
-    expect(reopen!.top).toBe(body!.top);
-    expect(reopen!.bottom).toBe(body!.bottom);
-    // In flow: it reserves its own width, so the chat ends where it begins.
-    expect(chat!.right).toBe(reopen!.left);
+    expect(reopen!.top).toBeGreaterThan(body!.top);
+    expect(reopen!.bottom).toBeLessThan(body!.bottom);
+    // The chat keeps the full row width beneath the small edge affordance.
+    expect(chat!.right).toBe(body!.right);
   });
 
   test("a resumed work session fills the cockpit too", async ({ page }) => {
@@ -242,9 +241,9 @@ test.describe("Task Work cockpit fit", () => {
     await page.setViewportSize({ width: 900, height: 900 });
     await page.waitForTimeout(300);
 
-    const { body, chat, reopen } = await fit(page);
+    const { body, chat } = await fit(page);
     expect(chat!.left).toBe(body!.left);
-    expect(chat!.right).toBe(reopen ? reopen.left : body!.right);
+    expect(chat!.right).toBe(body!.right);
     // No horizontal overflow off the cockpit.
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);

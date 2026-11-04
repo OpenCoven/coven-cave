@@ -236,3 +236,6 @@ assert.match(
 );
 
 console.log("onboarding-bootstrap-overlay.test.ts: ok");
+
+assert.match(source, /state\.complete \? \([\s\S]{0,260}request\("POST", \{ confirm: true \}\)[\s\S]{0,80}Run setup again/,
+  "completed setup has an explicit recovery action for a later daemon outage");

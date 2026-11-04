@@ -1,5 +1,10 @@
 # Craft UX: one seamless authoring flow
 
+> **Historical (2026-10-20, #6111):** all six checkpoints shipped on
+> 2026-07-15 (see the status ledger). The flow and F1–F12 inventory below
+> describe the drawer before that redesign; [`marketplace.md`](marketplace.md)
+> § Draft Crafts describes it now.
+
 Crafts have a strong data model (deterministic extraction with a provenance
 ledger, verified transactional installs, human-reviewed publication) wearing a
 fragmented UI: two disjoint wizards, a review step that happens *after* commit,
@@ -280,7 +285,9 @@ F10's inline reasons, no new server state stores.
 
 ## Status ledger
 
-All six checkpoints shipped (2026-07-15):
+All six checkpoints shipped (2026-07-15). Since #4030 (2026-07-29) the Crafts
+tab is hidden unless `NEXT_PUBLIC_CAVE_CRAFTS` is enabled; the e2e specs run
+with it on.
 
 | Checkpoint | PR | Landed |
 |---|---|---|
@@ -289,7 +296,7 @@ All six checkpoints shipped (2026-07-15):
 | CP3 · Power layer in-flow | #3193 | Ledger origin/role attribution on screen (F4); seeded Adjust-roles editing (F5); per-familiar selection retention (F9); bounded rename, id stays derived (F12) |
 | CP4 · Close the loop honestly | #3195 | Draft-aware plan + `draftDiagnostics` (F1); sessionStorage arrival watch resumed by drawer + hub, in-flight row, announced arrival (F2); plan-status chip (F8); truthful briefs + `craft-builder` SKILL |
 | CP5 · Dead ends, recovery, a11y | #3202 | Studio-linked teaching empty states + zero-roles dispatch guard (F7); roles-load retry; one-familiar hint (F9); inline install-first reasons (F10); lifecycle strip (F8); announced step transitions |
-| CP6 · Docs + e2e | this PR | `marketplace.md` § Draft Crafts rewritten; e2e specs for the progressive flow + persisted arrival; this ledger |
+| CP6 · Docs + e2e | #3208 | `marketplace.md` § Draft Crafts rewritten; e2e specs for the progressive flow + persisted arrival; this ledger |
 
 **Acceptance criteria check** (from the goal):
 

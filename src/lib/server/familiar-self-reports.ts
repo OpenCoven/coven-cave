@@ -12,6 +12,7 @@ import {
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { isValidFamiliarId } from "./familiar-id";
+import { withProcessIntentLock } from "./process-intent-lock";
 
 export const SELF_REPORT_SESSION_ID_RE = /^[a-z0-9_-]+$/i;
 
@@ -26,24 +27,24 @@ function reportDate(report: ThreadSelfReport): string {
 
 async function reportsDir(familiarId: string): Promise<string> {
   assertFamiliarId(familiarId);
-  return path.join(await familiarWorkspace(familiarId), "self-reports");
+  return path.join(/* turbopackIgnore: true */ await familiarWorkspace(familiarId), "self-reports");
 }
 
 /** Compact per-thread metric snapshots (signal trends) — kept in a
  *  subdirectory so the report reader's *.jsonl glob never sees them. */
 async function metricSnapshotsDir(familiarId: string): Promise<string> {
-  return path.join(await reportsDir(familiarId), "metric-snapshots");
+  return path.join(/* turbopackIgnore: true */ await reportsDir(familiarId), "metric-snapshots");
 }
 
 function sortNewestFirst(a: ThreadSelfReport, b: ThreadSelfReport): number {
   return new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime();
 }
 
-async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
+async function readAllReports(familiarId: string, requireReadable = false): Promise<ThreadSelfReport[]> {
   const dir = await reportsDir(familiarId);
   let files: string[];
   try {
-    files = await readdir(dir);
+    files = await readdir(/* turbopackIgnore: true */ dir);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
@@ -51,11 +52,12 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
 
   const reports: ThreadSelfReport[] = [];
   for (const file of files.filter((name) => name.endsWith(".jsonl")).sort()) {
-    const fullPath = path.join(dir, file);
+    const fullPath = path.join(/* turbopackIgnore: true */ dir, file);
     let raw = "";
     try {
       raw = await readFile(fullPath, "utf8");
-    } catch {
+    } catch (error) {
+      if (requireReadable) throw error;
       continue;
     }
     for (const line of raw.split("\n")) {
@@ -104,32 +106,46 @@ export function redactSelfReport(report: ThreadSelfReport): ThreadSelfReport {
   return { ...redacted, sessionId: report.sessionId };
 }
 
-export async function appendSelfReport(familiarId: string, report: ThreadSelfReport): Promise<void> {
+/** All writers share admission with automatic reports, including manual repeats. */
+export async function appendSelfReport(
+  familiarId: string,
+  report: ThreadSelfReport,
+  options: { onlyIfAbsent?: boolean } = {},
+): Promise<boolean> {
   const dir = await reportsDir(familiarId);
-  await mkdir(dir, { recursive: true });
-  const redacted = redactSelfReport(report);
-  await appendFile(path.join(dir, `${reportDate(redacted)}.jsonl`), `${JSON.stringify(redacted)}\n`, "utf8");
-  // Also persist the compact metric snapshot (signal trends). Additive:
-  // readers backfill from full reports, so a failure here only costs a cache.
-  try {
-    const snapshotDir = await metricSnapshotsDir(familiarId);
-    await mkdir(snapshotDir, { recursive: true });
-    const snapshot = snapshotFromReport(redacted);
-    await appendFile(
-      path.join(snapshotDir, `${reportDate(redacted)}.jsonl`),
-      `${JSON.stringify(snapshot)}\n`,
-      "utf8",
-    );
-  } catch {
-    /* Snapshot persistence is a derived convenience — never fail the report write. */
-  }
+  return withProcessIntentLock({ intentsDirectory: `${dir}.locks`, label: "self reports" }, async () => {
+    if (options.onlyIfAbsent) {
+      // Listing tolerates unreadable historical files; admission cannot treat
+      // an unreadable ledger as evidence that this session has no report.
+      const reports = await readAllReports(familiarId, true);
+      if (reports.some((existing) => existing.sessionId === report.sessionId)) return false;
+    }
+    await mkdir(dir, { recursive: true });
+    const redacted = redactSelfReport(report);
+    await appendFile(path.join(/* turbopackIgnore: true */ dir, `${reportDate(redacted)}.jsonl`), `${JSON.stringify(redacted)}\n`, "utf8");
+    // Also persist the compact metric snapshot (signal trends). Additive:
+    // readers backfill from full reports, so a failure here only costs a cache.
+    try {
+      const snapshotDir = await metricSnapshotsDir(familiarId);
+      await mkdir(snapshotDir, { recursive: true });
+      const snapshot = snapshotFromReport(redacted);
+      await appendFile(
+        path.join(/* turbopackIgnore: true */ snapshotDir, `${reportDate(redacted)}.jsonl`),
+        `${JSON.stringify(snapshot)}\n`,
+        "utf8",
+      );
+    } catch {
+      /* Snapshot persistence is a derived convenience — never fail the report write. */
+    }
+    return true;
+  });
 }
 
 async function readPersistedMetricSnapshots(familiarId: string): Promise<ThreadMetricSnapshot[]> {
   const dir = await metricSnapshotsDir(familiarId);
   let files: string[];
   try {
-    files = await readdir(dir);
+    files = await readdir(/* turbopackIgnore: true */ dir);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
@@ -139,7 +155,7 @@ async function readPersistedMetricSnapshots(familiarId: string): Promise<ThreadM
   for (const file of files.filter((name) => name.endsWith(".jsonl")).sort()) {
     let raw = "";
     try {
-      raw = await readFile(path.join(dir, file), "utf8");
+      raw = await readFile(path.join(/* turbopackIgnore: true */ dir, file), "utf8");
     } catch {
       continue;
     }

@@ -55,13 +55,22 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const readResponse = async (response: Response) => {
+        if (!response.ok) throw new Error("Access groups request failed");
+        return response.json();
+      };
       const [groupRes, projRes, grantRes] = await Promise.all([
-        fetch("/api/access-groups", { cache: "no-store" }).then((r) => r.json()),
-        fetch("/api/projects", { cache: "no-store" }).then((r) => r.json()),
-        fetch("/api/project-grants", { cache: "no-store" }).then((r) => r.json()),
+        fetch("/api/access-groups", { cache: "no-store" }).then(readResponse),
+        fetch("/api/projects", { cache: "no-store" }).then(readResponse),
+        fetch("/api/project-grants", { cache: "no-store" }).then(readResponse),
       ]);
-      setGroups(Array.isArray(groupRes?.accessGroups) ? groupRes.accessGroups : []);
-      setProjects(Array.isArray(projRes?.projects) ? projRes.projects : []);
+      if (groupRes?.ok !== true || !Array.isArray(groupRes.accessGroups)
+        || projRes?.ok !== true || !Array.isArray(projRes.projects)
+        || grantRes?.ok !== true) {
+        throw new Error("Access groups response is invalid");
+      }
+      setGroups(groupRes.accessGroups);
+      setProjects(projRes.projects);
       setSupremeFamiliarId(
         typeof grantRes?.supremeFamiliarId === "string" ? grantRes.supremeFamiliarId : null,
       );
@@ -243,7 +252,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
         description="Give a set of familiars a shared base of projects — each at read or write. A familiar's effective access is the most permissive of its own grants and its groups'."
         meta={groups.length > 0 ? `${groups.length}` : undefined}
       >
-        {groups.length === 0 && (
+        {!error && groups.length === 0 && (
           <EmptyState
             compact
             icon="ph:users-three"

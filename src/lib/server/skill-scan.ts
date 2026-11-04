@@ -67,10 +67,10 @@ export async function resolveRuntimeSkillRoots(
   const home = options.homeDir ?? homedir();
   const candidates = [
     options.covenSkillsRoot ?? path.join(/* turbopackIgnore: true */ caveHome(), "skills"),
-    path.join(home, ".codex", "skills"),
-    path.join(home, ".codex", "plugins", "cache"),
-    path.join(home, ".claude", "skills"),
-    path.join(home, ".agents", "skills"),
+    path.join(/* turbopackIgnore: true */ home, ".codex", "skills"),
+    path.join(/* turbopackIgnore: true */ home, ".codex", "plugins", "cache"),
+    path.join(/* turbopackIgnore: true */ home, ".claude", "skills"),
+    path.join(/* turbopackIgnore: true */ home, ".agents", "skills"),
   ];
   const covered = await Promise.all(
     (options.coveredRoots ?? []).map(async (root) => {
@@ -106,7 +106,7 @@ export async function resolveRuntimeResourceRoots(
 ): Promise<string[]> {
   const roots = await resolveRuntimeSkillRoots(options);
   const home = options.homeDir ?? homedir();
-  const candidates = [path.join(home, ".codex", "generated_images")];
+  const candidates = [path.join(/* turbopackIgnore: true */ home, ".codex", "generated_images")];
   const covered = await Promise.all(
     (options.coveredRoots ?? []).map(async (root) => {
       try {
@@ -243,14 +243,14 @@ export async function dedupeByRealPath(entries: LocalSkillEntry[]): Promise<Loca
 /** The user's own Claude Code skills (~/.claude/skills). */
 export async function scanClaudeUserSkills(): Promise<LocalSkillEntry[]> {
   const out: LocalSkillEntry[] = [];
-  await scanSkillsDir(path.join(homedir(), ".claude", "skills"), "user", out);
+  await scanSkillsDir(path.join(/* turbopackIgnore: true */ homedir(), ".claude", "skills"), "user", out);
   return out;
 }
 
 /** Codex global skills installed by `npx skills add -g -a codex`. */
 export async function scanCodexUserSkills(): Promise<LocalSkillEntry[]> {
   const out: LocalSkillEntry[] = [];
-  await scanSkillsDir(path.join(homedir(), ".codex", "skills"), "codex-user", out);
+  await scanSkillsDir(path.join(/* turbopackIgnore: true */ homedir(), ".codex", "skills"), "codex-user", out);
   return out;
 }
 
@@ -261,7 +261,7 @@ export async function scanCodexUserSkills(): Promise<LocalSkillEntry[]> {
  */
 export async function scanAgentSharedSkills(projectRoot = process.cwd()): Promise<LocalSkillEntry[]> {
   const out: LocalSkillEntry[] = [];
-  await scanSkillsDir(path.join(projectRoot, ".agents", "skills"), "agents-project", out);
-  await scanSkillsDir(path.join(homedir(), ".agents", "skills"), "agents-user", out);
+  await scanSkillsDir(path.join(/* turbopackIgnore: true */ projectRoot, ".agents", "skills"), "agents-project", out);
+  await scanSkillsDir(path.join(/* turbopackIgnore: true */ homedir(), ".agents", "skills"), "agents-user", out);
   return out;
 }

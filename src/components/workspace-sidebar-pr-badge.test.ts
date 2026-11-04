@@ -32,28 +32,12 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /\{prStatus \? null : leadGlyph \? \(/,
+  /prStatus \? null : leadGlyph \? \(/,
   "real PR context suppresses the dot AND the title-heuristic/archive glyph",
 );
 
-// ── Pinned rail rows carry the badge too ─────────────────────────────────────
-// The pinned rail is rendered through the dedicated PinnedThreadRow component
-// (not inlined at the render site), so pin against that function's body
-// rather than the `aria-label="Pinned threads"` JSX, which only contains a
-// `<PinnedThreadRow ... />` reference — see cave-zs85n Task 6 gap-fix notes.
-const pinnedRowFnStart = sidebar.indexOf("function PinnedThreadRow(");
-assert.ok(pinnedRowFnStart > 0, "the PinnedThreadRow component exists");
-const pinnedRowFnBody = sidebar.slice(pinnedRowFnStart, sidebar.indexOf("\n}\n", pinnedRowFnStart));
-assert.match(
-  pinnedRowFnBody,
-  /const prStatus = archived \? null : sessionPrStatus\(session\.pullRequest\);[\s\S]*?<ThreadPrBadge prStatus=\{prStatus\} onOpenUrl=\{onOpenUrl\} \/>/,
-  "pinned rail rows show the PR badge only when the row is not archived",
-);
-assert.match(
-  sidebar,
-  /aria-label="Pinned threads">[\s\S]*?<PinnedThreadRow\b/,
-  "the Pinned section renders rows through the shared PinnedThreadRow component",
-);
+// Pinned rows now use the same ThreadRow and therefore the same PR link.
+assert.match(sidebar, /aria-label="Pinned threads">[\s\S]*?<ThreadRow\b/);
 
 // ── Badge behavior mirrors the chat-list badge ───────────────────────────────
 assert.match(

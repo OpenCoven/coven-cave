@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listRoutineRuns } from "@/lib/server/coven-automations-client";
+import { listRoutineRuns } from "@/lib/server/automation-consumer-reads";
 import { CovenAutomationsUnavailableError } from "@/lib/coven-automations-types";
 import { toAutomationRunRecord } from "@/lib/coven-automations-facade";
 

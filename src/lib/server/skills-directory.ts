@@ -10,6 +10,7 @@ import {
   scanSkillsDir,
   type LocalSkillEntry,
 } from "@/lib/server/skill-scan";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export type SkillDirectoryTrust = {
   official: boolean;
@@ -390,7 +391,7 @@ async function readLiveEntries(): Promise<SkillDirectoryEntry[]> {
   const url = new URL(endpoint);
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
-  const response = await fetch(url, { headers });
+  const response = await upstreamFetch("skills-directory", url, { headers });
   if (!response.ok) return [];
   const parsed = (await response.json()) as { data?: unknown; entries?: unknown };
   const source = parsed?.entries ?? parsed?.data;
@@ -455,7 +456,7 @@ async function readSkillsShEntries(): Promise<SkillDirectoryEntry[]> {
   const now = Date.now();
   if (skillsShCache && skillsShCache.expiresAt > now) return skillsShCache.entries;
   try {
-    const response = await fetch(SKILLS_SH_DIRECTORY_URL, {
+    const response = await upstreamFetch("skills-directory", SKILLS_SH_DIRECTORY_URL, {
       headers: { accept: "text/html" },
       signal: AbortSignal.timeout(8_000),
     });
@@ -481,7 +482,7 @@ async function readSkillsShSearchEntries(query: string): Promise<SkillDirectoryE
   try {
     const url = new URL(SKILLS_SH_SEARCH_URL);
     url.searchParams.set("q", q);
-    const response = await fetch(url, {
+    const response = await upstreamFetch("skills-directory", url, {
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(8_000),
     });
@@ -576,7 +577,7 @@ export async function listSkillDirectoryEntriesWithLocal(query?: string): Promis
 
 async function scanLocalSkillEntries(): Promise<LocalSkillEntry[]> {
   const rawLocals: LocalSkillEntry[] = [];
-  await scanSkillsDir(path.join(covenHome(), "skills"), "global", rawLocals);
+  await scanSkillsDir(path.join(/* turbopackIgnore: true */ covenHome(), "skills"), "global", rawLocals);
   await scanClaudeUserSkills().then((items) => rawLocals.push(...items));
   await scanCodexUserSkills().then((items) => rawLocals.push(...items));
   await scanAgentSharedSkills().then((items) => rawLocals.push(...items));
@@ -666,7 +667,7 @@ export async function readRemoteSkillMarkdown(entry: SkillDirectoryEntry): Promi
       continue;
     }
     try {
-      const response = await fetch(url, {
+      const response = await upstreamFetch("github-raw", url, {
         headers: { accept: "text/plain" },
         signal: AbortSignal.timeout(8_000),
       });

@@ -13,6 +13,26 @@ pub(super) fn configure_unix_sidecar_parent_watchdog(command: &mut Command) {
     command.process_group(0);
 }
 
+/// How long a deliberate Windows quit lets Node drain over the private pipe
+/// before the Job fallback. The close path's authoritative
+/// `WINDOWS_MAIN_CLOSE_EXIT_DEADLINE` (1,200ms) also covers supervisor,
+/// control and PTY cleanup, so this window stays well inside it; Node's own
+/// drain budget on this path is shorter still (`server.ts`).
+#[cfg(all(desktop, target_os = "windows"))]
+pub(super) const WINDOWS_SIDECAR_DRAIN_WINDOW: Duration = Duration::from_millis(600);
+
+#[cfg(all(desktop, target_os = "windows"))]
+pub(super) fn configure_windows_sidecar_parent_watchdog(command: &mut std::process::Command) {
+    // The gated launcher inherits its standard handles into Node, so Node's
+    // stdin becomes a private pipe whose write end only this GUI owns. A
+    // deliberate quit drops it to request Node's own cleanup; an abrupt GUI
+    // exit closes it in the kernel, and KILL_ON_JOB_CLOSE reaps the tree
+    // regardless. No HTTP endpoint or credential is involved.
+    command
+        .stdin(Stdio::piped())
+        .env("COVEN_CAVE_PARENT_WATCHDOG", "stdin-eof");
+}
+
 #[cfg(desktop)]
 pub(super) struct SidecarProcess {
     child: Child,
@@ -111,7 +131,7 @@ pub(super) struct SidecarReadinessRefusal {
 #[cfg(all(desktop, target_os = "windows"))]
 pub(super) const SIDECAR_STARTUP_EVENT: &str = "sidecar-startup-progress";
 
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct SidecarStartupStatus {
@@ -122,7 +142,7 @@ pub(super) struct SidecarStartupStatus {
     pub(super) can_cancel: bool,
 }
 
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 impl SidecarStartupStatus {
     pub(super) fn preparing() -> Self {
         Self {
@@ -185,7 +205,7 @@ impl SidecarStartupStatus {
     }
 }
 
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 pub(super) struct SidecarStartupControl {
     status: Mutex<SidecarStartupStatus>,
     terminal: SidecarStartupTerminalSlot,
@@ -243,11 +263,19 @@ impl SidecarStartupTerminalSlot {
     }
 }
 
-#[cfg(all(desktop, target_os = "windows"))]
+#[cfg(all(desktop, any(target_os = "windows", test)))]
 impl SidecarStartupControl {
     pub(super) fn new() -> Self {
         Self {
-            status: Mutex::new(SidecarStartupStatus::preparing()),
+            // Development can use an external server without ever starting a
+            // packaged worker. Only spawn_sidecar_startup publishes preparing.
+            status: Mutex::new(SidecarStartupStatus {
+                phase: "idle",
+                progress: 0,
+                message: "Local services have not been started by the native host".to_string(),
+                can_retry: false,
+                can_cancel: false,
+            }),
             terminal: SidecarStartupTerminalSlot::default(),
             running: AtomicBool::new(false),
             cancel_requested: AtomicBool::new(false),
@@ -428,8 +456,23 @@ impl SidecarState {
             return Ok(());
         };
         drop(guard);
-        stop_sidecar_child(child)
+        // A failed start is not a quit: keep the immediate kernel cleanup
+        // rather than offering a drain window to a child that never became
+        // the sidecar.
+        terminate_sidecar_child_now(child)
     }
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn terminate_sidecar_child_now(process: SidecarProcess) -> Result<(), String> {
+    // TerminateJobObject is a bounded kernel operation over the full tree;
+    // it does not wait for Node, Coven, pipes, JavaScript, or taskkill.exe.
+    // Dropping the KILL_ON_JOB_CLOSE handle is a second fail-safe and also
+    // covers Task Manager/TerminateProcess, where Rust cleanup never runs.
+    process
+        .job
+        .terminate()
+        .map_err(|error| format!("could not terminate sidecar process job: {error}"))
 }
 
 #[cfg(desktop)]
@@ -445,15 +488,27 @@ pub(super) fn stop_sidecar_child(mut process: SidecarProcess) -> Result<(), Stri
 
     #[cfg(target_os = "windows")]
     {
-        // TerminateJobObject is a bounded kernel operation over the full tree;
-        // it does not wait for Node, Coven, pipes, JavaScript, or taskkill.exe.
-        // Dropping the KILL_ON_JOB_CLOSE handle is a second fail-safe and also
-        // covers Task Manager/TerminateProcess, where Rust cleanup never runs.
-        process
-            .job
-            .terminate()
-            .map_err(|error| format!("could not terminate sidecar process job: {error}"))?;
-        return Ok(());
+        if process.child.stdin.take().is_some() {
+            // Deliberate quit: closing the private pipe asks Node to drain its
+            // startup workers and PTYs itself. The wait is bounded beneath the
+            // close path's hard deadline; the Job fallback below is unchanged.
+            let deadline = Instant::now() + WINDOWS_SIDECAR_DRAIN_WINDOW;
+            loop {
+                if process
+                    .child
+                    .try_wait()
+                    .map_err(|error| format!("could not inspect drained sidecar: {error}"))?
+                    .is_some()
+                {
+                    return Ok(());
+                }
+                if Instant::now() >= deadline {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+        return terminate_sidecar_child_now(process);
     }
 
     #[cfg(not(target_os = "windows"))]

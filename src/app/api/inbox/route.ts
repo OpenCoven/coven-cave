@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import {
   createItem,
   loadInbox,
+  InboxStorageError,
+  type InboxItem,
   type ItemKind,
   type ItemStatus,
   type InboxMedia,
@@ -16,10 +18,23 @@ export const dynamic = "force-dynamic";
 // Guarantee the scheduler is alive even if instrumentation.ts was bypassed.
 startScheduler();
 
+function storageErrorResponse(error: unknown) {
+  if (!(error instanceof InboxStorageError)) throw error;
+  return NextResponse.json(
+    { ok: false, code: error.code, error: error.message },
+    { status: 503 },
+  );
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const filter = url.searchParams.get("status") as ItemStatus | null;
-  const file = await loadInbox();
+  let file;
+  try {
+    file = await loadInbox();
+  } catch (error) {
+    return storageErrorResponse(error);
+  }
   const items = filter
     ? file.items.filter((i) => i.status === filter)
     : file.items;
@@ -59,20 +74,25 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const item = await createItem({
-    kind,
-    title: body.title,
-    body: body.body,
-    fireAt: body.fireAt,
-    recurrence: body.recurrence,
-    whenText: typeof body.whenText === "string" ? body.whenText : null,
-    source: body.source ?? (kind === "agent" ? "agent" : "user"),
-    familiarId: body.familiarId,
-    sessionId: body.sessionId,
-    link: body.link,
-    media: body.media,
-    auto: body.auto,
-  });
+  let item: InboxItem;
+  try {
+    item = await createItem({
+      kind,
+      title: body.title,
+      body: body.body,
+      fireAt: body.fireAt,
+      recurrence: body.recurrence,
+      whenText: typeof body.whenText === "string" ? body.whenText : null,
+      source: body.source ?? (kind === "agent" ? "agent" : "user"),
+      familiarId: body.familiarId,
+      sessionId: body.sessionId,
+      link: body.link,
+      media: body.media,
+      auto: body.auto,
+    });
+  } catch (error) {
+    return storageErrorResponse(error);
+  }
   broadcastCreated(item);
   return NextResponse.json({ ok: true, item });
 }

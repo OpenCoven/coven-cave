@@ -135,8 +135,8 @@ assert.match(
 assert.match(main, /canContinue=\{false\}/, "Main Chat does not claim unsupported continuation");
 assert.match(
   main,
-  /streamingModel\.committedText[\s\S]*copyText\(streamingModel\.committedText\)/,
-  "the unified status owns Copy once committed text exists",
+  /streamingModel\.committedText[\s\S]*copyText\(projectUiBlocksToReadable\(streamingModel\.committedText, \{ streaming: pending \}\)\)/,
+  "the unified status owns Copy once committed text exists, with coven:ui blocks as readable lines (#6060)",
 );
 assert.match(main, /hideCopyAction/, "Main Chat suppresses the duplicate MessageBubble Copy action");
 assert.match(main, /startedAt=\{turn\.createdAt\}/, "Main Chat supplies live elapsed timing");

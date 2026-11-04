@@ -63,10 +63,10 @@ test("npm installers are exact manifest records and Hermes remains manual-only",
   assert.equal(coven.install.kind, "managed-npm");
   if (coven.install.kind === "managed-npm") {
     assert.equal(coven.install.package.packageName, "@opencoven/cli");
-    assert.equal(coven.install.package.version, "0.4.0");
+    assert.equal(coven.install.package.version, "0.4.10");
     assert.equal(
       coven.install.package.integrity,
-      "sha512-pqC5xE5KbF6zUDUh1IorzbNdtFEokXN3QYrEbeenETh4XwTxLVIOq8gFsEhdUwXLYFOb+X09LSbLUUTyiJen2g==",
+      "sha512-3sJy/55/3X9W7paERLmHb/76tIHV4OSXD2HInqOTDEBhLCIaO422VPJQhhmhJNgu7a/mIzJKEODgwcDCKW0UUA==",
     );
   }
   assert.equal(prerequisiteById("runtime-codex").dependsOn?.includes("coven-cli"), true);

@@ -1,9 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { resolvePort } from "./scripts/ports.mjs";
+import { SOAK_PERFORMANCE_PROFILE } from "./tests/fixtures/soak-performance.ts";
 
 // Playwright config — three viewport projects so the same specs in
 // tests/mobile/ run against desktop AND two real mobile presets.
@@ -12,8 +13,10 @@ import { resolvePort } from "./scripts/ports.mjs";
 // viewport, devicePixelRatio, hasTouch, and isMobile all match the
 // real device.
 //
-// The dev server: started via `webServer` so `pnpm test:e2e:mobile`
-// can run without a separate terminal. The port is fixed at the e2e
+// CI builds and serves the production app: a long-lived Turbopack dev graph
+// can abort while restoring evicted tasks (#6114). Local runs retain the dev
+// server for quick iteration. Both are owned by `webServer`, so tests can run
+// without a separate terminal. The port is fixed at the e2e
 // entry of the shared contract (scripts/ports.mjs) so e2e runs collide
 // neither with `pnpm dev` on 3000 nor with a packaged build on 3020.
 //
@@ -22,14 +25,41 @@ import { resolvePort } from "./scripts/ports.mjs";
 // need a daemon should mock /api/*).
 
 const PORT = resolvePort("e2e", process.env);
+// The browser performance gates (stream, shell boot) always run the production
+// server against an isolated state root their launcher created; a bare
+// `playwright test` cannot opt into them.
+const streamPerformance = process.env.CAVE_STREAM_PERFORMANCE === "1";
+const shellPerformance = process.env.CAVE_SHELL_PERFORMANCE === "1";
+const doctorPerformance = process.env.CAVE_DOCTOR_PERFORMANCE === "1";
+const soakPerformance = process.env.CAVE_SOAK_PERFORMANCE === "1";
+const browserPerformance = streamPerformance || shellPerformance || doctorPerformance || soakPerformance;
+const performanceStateRoot = streamPerformance
+  ? process.env.CAVE_STREAM_STATE_ROOT
+  : shellPerformance
+    ? process.env.CAVE_SHELL_STATE_ROOT
+    : doctorPerformance
+      ? process.env.CAVE_DOCTOR_STATE_ROOT
+      : process.env.CAVE_SOAK_STATE_ROOT;
+if (browserPerformance && (!performanceStateRoot || !isAbsolute(performanceStateRoot) || !existsSync(performanceStateRoot))) {
+  throw new Error("Run the browser performance gates with pnpm performance:stream, pnpm performance:shell, pnpm performance:doctor or pnpm performance:soak for isolated state");
+}
+// The soak lane's duration is its only input (#6347). The launcher validates
+// it; a direct spec invocation is refused here rather than after the build.
+const soakMinutes = soakPerformance ? Number(process.env.CAVE_SOAK_MINUTES) : 0;
+if (soakPerformance && (!Number.isInteger(soakMinutes)
+  || soakMinutes < SOAK_PERFORMANCE_PROFILE.minimumMinutes || soakMinutes > SOAK_PERFORMANCE_PROFILE.maximumMinutes)) {
+  throw new Error(`Run the soak lane with pnpm performance:soak [--minutes N]; CAVE_SOAK_MINUTES must be an integer from ${SOAK_PERFORMANCE_PROFILE.minimumMinutes} to ${SOAK_PERFORMANCE_PROFILE.maximumMinutes}`);
+}
+const fixtureTmpRoot = browserPerformance ? performanceStateRoot! : tmpdir();
+const productionE2E = !!process.env.CI || browserPerformance;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_RUN_ID = randomUUID();
-const E2E_PROJECTS_PATH = join(tmpdir(), `cave-e2e-projects-${E2E_RUN_ID}.json`);
-const E2E_QUEUE_PROJECT_PATH = join(tmpdir(), `cave-e2e-queue-project-${E2E_RUN_ID}.json`);
-const E2E_PROJECT_PERMISSIONS_PATH = join(tmpdir(), `cave-e2e-project-permissions-${E2E_RUN_ID}.json`);
-const E2E_COVEN_HOME = join(tmpdir(), `cave-e2e-coven-${E2E_RUN_ID}`);
-const E2E_CAVE_HOME = join(tmpdir(), `cave-e2e-cave-${E2E_RUN_ID}`);
-const E2E_COVEN_SOCKET = join(tmpdir(), `cave-e2e-socket-${E2E_RUN_ID}.sock`);
+const E2E_PROJECTS_PATH = join(fixtureTmpRoot, `cave-e2e-projects-${E2E_RUN_ID}.json`);
+const E2E_QUEUE_PROJECT_PATH = join(fixtureTmpRoot, `cave-e2e-queue-project-${E2E_RUN_ID}.json`);
+const E2E_PROJECT_PERMISSIONS_PATH = join(fixtureTmpRoot, `cave-e2e-project-permissions-${E2E_RUN_ID}.json`);
+const E2E_COVEN_HOME = join(fixtureTmpRoot, `cave-e2e-coven-${E2E_RUN_ID}`);
+const E2E_CAVE_HOME = join(fixtureTmpRoot, `cave-e2e-cave-${E2E_RUN_ID}`);
+const E2E_COVEN_SOCKET = join(fixtureTmpRoot, `cave-e2e-socket-${E2E_RUN_ID}.sock`);
 const E2E_LOCAL_PEER_FIXTURE = "cave-e2e-local-peer-fixture";
 const E2E_MOBILE_ACCESS_FIXTURE = "test-fixture";
 const E2E_AGENTIC_RECOMMENDATIONS =
@@ -92,6 +122,15 @@ writeFileSync(E2E_QUEUE_PROJECT_PATH, JSON.stringify({ version: 1, projectId: "e
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
+  // The global timeout covers the production build (the server readiness
+  // budget is 20 minutes) plus the measurement. The shell gate runs two modes
+  // of up to 15 minutes each; the doctor gate's worst case is 100 trials at
+  // the 6 s ceiling plus the route's termination grace (about 12 minutes); the
+  // stream gate's two patterns fit its original 20 minutes; the soak lane runs
+  // for its requested minutes after the build (#6347).
+  globalTimeout: soakPerformance
+    ? (soakMinutes + 35) * 60_000
+    : shellPerformance || doctorPerformance ? 35 * 60_000 : streamPerformance ? 20 * 60_000 : undefined,
   forbidOnly: !!process.env.CI,
   // Retry once everywhere: the dev server compiles routes on first hit, so under
   // parallel load a cold route can exceed a test's timeout on the first try and
@@ -188,6 +227,12 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      name: "automations-webkit",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /automations-occurrence-reader\.spec\.ts/,
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
       name: "voice-webkit",
       dependencies: ["preferences-iphone-13"],
       testMatch: /voice-call\.spec\.ts/,
@@ -230,17 +275,39 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm exec next dev -H 127.0.0.1 -p ${PORT}`,
+    command: productionE2E
+      ? `pnpm build && node scripts/start-playwright-production.mjs ${PORT}`
+      : `pnpm exec next dev -H 127.0.0.1 -p ${PORT}`,
     url: BASE_URL,
+    stdout: productionE2E ? "pipe" : "ignore",
     // The availability probe waits on the FIRST dev compile of "/", which can
     // run past two minutes on a loaded machine (observed 2m51s cold /
     // 1m51s warm on 2026-07-19); 120s read slow-compile as a dead server.
-    timeout: 240_000,
+    // CI readiness includes the full production build and its budget/trace
+    // gates. This does not increase any browser test or assertion timeout.
+    timeout: productionE2E ? 1_200_000 : 240_000,
     // Preference tests mutate the canonical app-owned store. Never attach them
     // to an arbitrary server that may be using the developer's real ~/.coven.
     reuseExistingServer: false,
     env: {
+      ...(browserPerformance ? {
+        HOME: join(fixtureTmpRoot, "home"),
+        USERPROFILE: join(fixtureTmpRoot, "home"),
+        XDG_CONFIG_HOME: join(fixtureTmpRoot, "config"),
+        XDG_CACHE_HOME: join(fixtureTmpRoot, "cache"),
+        XDG_DATA_HOME: join(fixtureTmpRoot, "data"),
+        COVEN_CAVE_ENV_FILE: join(fixtureTmpRoot, "cave.env"),
+        COVEN_VAULT_FILE: join(fixtureTmpRoot, "vault.yaml"),
+        COVEN_GITHUB_SUBSCRIPTIONS_PATH: join(fixtureTmpRoot, "subscriptions.json"),
+        COVEN_RESEARCH_ENABLED: "0",
+      } : {}),
       COVEN_CAVE_E2E: "1",
+      // The existing suite covers every registered room, as next dev did.
+      // Keep that explicit in fixture builds; released apps keep their allowlist.
+      // Only the stream benchmark may measure another visibility (#6338); its
+      // runner validates CAVE_STREAM_ROOMS and records it with the evidence.
+      NEXT_PUBLIC_CAVE_ROOMS: (streamPerformance && process.env.CAVE_STREAM_ROOMS) || "all",
+      // Local dev-mode E2E only; the CI production server has no compiler.
       // Full Turbopack eviction only runs after a filesystem-cache snapshot.
       // Next 16.3's own eviction fixture removes the minimum active window and
       // shortens the idle checkpoint so a cold multi-surface compile can be
@@ -261,7 +328,7 @@ export default defineConfig({
       // real ~/.coven directory. A per-config UUID prevents concurrent runs or
       // later PID reuse from sharing stale state while remaining stable for
       // every request in this run.
-      COVEN_PREFERENCES_PATH: join(tmpdir(), `cave-e2e-preferences-${E2E_RUN_ID}.json`),
+      COVEN_PREFERENCES_PATH: join(fixtureTmpRoot, `cave-e2e-preferences-${E2E_RUN_ID}.json`),
       // Route every remaining server-side home/socket lookup into this run's
       // synthetic state. Targeted browser routes mock memory payloads, but
       // project dependencies and shell boot probes must also never inspect a
@@ -274,8 +341,8 @@ export default defineConfig({
       CAVE_PROJECTS_PATH_OVERRIDE: E2E_PROJECTS_PATH,
       CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: E2E_PROJECT_PERMISSIONS_PATH,
       CAVE_QUEUE_PROJECT_PATH_OVERRIDE: E2E_QUEUE_PROJECT_PATH,
-      COVEN_BACKDROP_PATH: join(tmpdir(), `cave-e2e-backdrop-${E2E_RUN_ID}.jpg`),
-      COVEN_THEME_PATH: join(tmpdir(), `cave-e2e-theme-${E2E_RUN_ID}.json`),
+      COVEN_BACKDROP_PATH: join(fixtureTmpRoot, `cave-e2e-backdrop-${E2E_RUN_ID}.jpg`),
+      COVEN_THEME_PATH: join(fixtureTmpRoot, `cave-e2e-theme-${E2E_RUN_ID}.json`),
     },
   },
 });

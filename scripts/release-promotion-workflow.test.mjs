@@ -50,7 +50,7 @@ test("PR checks is an always-reporting merge-ref Linux gate during migration", a
   ]);
   assert.doesNotMatch(
     job.steps.map((step) => step.run ?? "").join("\n"),
-    /\bpnpm build\b|\bcargo\b|\bplaywright\b|conformance|sidecar|xcodebuild/i,
+    /\bpnpm build\b|build-with-retry|\bcargo\b|\bplaywright\b|conformance|sidecar|xcodebuild/i,
     "deferred validation must not consume routine PR capacity",
   );
 });
@@ -106,30 +106,41 @@ test("candidate validation requires signed tag provenance and calls every deferr
   assert.deepEqual(full.jobs.frontend.env, {
     NEXT_PUBLIC_CAVE_CRAFTS: "1",
   });
-  assert.match(
-    full.jobs.frontend.steps.find((step) => /\bpnpm build\b/.test(step.run ?? ""))?.run ?? "",
-    /for attempt in 1 2 3; do[\s\S]*pnpm build[\s\S]*rm -rf \.next/,
-    "candidate frontend validation retains the Turbopack retry",
+  assert.ok(
+    full.jobs.frontend.steps.some((step) => step.run === "node scripts/build-with-retry.mjs"),
+    "candidate frontend validation retains the Turbopack retry (scripts/build-with-retry.mjs, #6087)",
   );
   assert.match(
     full.jobs.rust.steps.map((step) => step.run ?? "").join("\n"),
     /cargo check --locked[\s\S]*(?:^|\n)cargo test --locked(?:\n|$)/m,
     "Rust validation includes the library and rustdoc test coverage",
   );
-  const e2eRuns = full.jobs.e2e.steps.map((step) => step.run ?? "").join("\n");
-  assert.match(
-    e2eRuns,
-    /playwright install --with-deps chromium webkit/,
-    "candidate E2E installs both required browser engines",
-  );
-  assert.ok(
-    full.jobs.e2e.steps.some(
-      (step) =>
-        step.run ===
-        "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1",
-    ),
-    "candidate E2E isolates each worker behind its own dev server",
-  );
+  // Release E2E runs inside the official Playwright image, as PR CI does
+  // (#6191): the image carries both engines and their system packages, so a
+  // stalled apt mirror can no longer cancel a release shard (#6290).
+  const releaseForImage = await workflow("release.yml");
+  const imageJobs = [
+    [full.jobs.e2e, "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1"],
+    [full.jobs["e2e-agentic"], "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps"],
+    [releaseForImage.jobs["release-e2e"], "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1"],
+    [releaseForImage.jobs["release-e2e-agentic"], "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps"],
+  ];
+  for (const [job, command] of imageJobs) {
+    const runs = job.steps.map((step) => step.run ?? "");
+    assert.ok(runs.includes("bash scripts/playwright-ci-image.sh pull"), `${job.name} pulls the Playwright image`);
+    assert.ok(runs.includes(`bash scripts/playwright-ci-image.sh run ${command}`), `${job.name} runs its tests in the image`);
+    assert.ok(
+      runs.indexOf("bash scripts/playwright-ci-image.sh pull") < runs.indexOf(`bash scripts/playwright-ci-image.sh run ${command}`),
+      `${job.name} pulls before it runs`,
+    );
+    assert.ok(!runs.some((run) => /playwright install/.test(run)), `${job.name} never installs browsers with apt`);
+    const setupNode = job.steps.find((step) => String(step.uses ?? "").startsWith("actions/setup-node@"));
+    assert.equal(setupNode?.with?.cache, undefined, `${job.name} keeps no pnpm cache, so the ref it executes cannot poison main's cache`);
+  }
+  for (const file of ["full-validation.yml", "release.yml"]) {
+    const text = await readFile(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(text, /playwright install --with-deps/, `${file} no longer installs browsers with apt (#6290)`);
+  }
   assert.equal(full.jobs.e2e.name, "Validate candidate E2E (${{ matrix.shard }}/8)");
   assert.equal(full.jobs.e2e.strategy["fail-fast"], false);
   assert.deepEqual(full.jobs.e2e.strategy.matrix.shard, [1, 2, 3, 4, 5, 6, 7, 8]);
@@ -144,7 +155,7 @@ test("candidate validation requires signed tag provenance and calls every deferr
     agenticE2e.steps.some(
       (step) =>
         step.run ===
-        "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+        "bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
     ),
     "candidate E2E retains flag-enabled agentic coverage in an isolated job",
   );
@@ -217,7 +228,7 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
     releaseE2e.steps.some(
       (step) =>
         step.run ===
-        "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1",
+        "bash scripts/playwright-ci-image.sh run pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1",
     ),
     "final release E2E isolates each worker behind its own dev server",
   );
@@ -229,7 +240,7 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
     releaseAgentic.steps.some(
       (step) =>
         step.run ===
-        "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+        "bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
     ),
   );
   assert.deepEqual(release.jobs["release-web-validation"].needs, [
@@ -260,6 +271,7 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
   );
   for (const publishingJob of [
     "release-ios-build",
+    "release-object",
     "build",
     "checksums",
     "updater-manifest",
@@ -284,7 +296,8 @@ test("release and candidate validation run the Client v1 gates after the web bui
   ];
   for (const [label, job] of jobs) {
     const runs = job.steps.map((step) => step.run ?? "");
-    const build = runs.findIndex((run) => /\bpnpm build\b/.test(run));
+    // The web build runs through the shared flake retry (#6087).
+    const build = runs.findIndex((run) => /\bpnpm build\b/.test(run) || run === "node scripts/build-with-retry.mjs");
     const fixture = runs.findIndex((run) =>
       run.includes("node scripts/export-client-v1-contract.mjs --check"),
     );
@@ -1107,6 +1120,35 @@ test("the release concurrency group keys the release, not the trigger", async ()
   // A run interrupted mid-upload leaves the release holding a partial asset
   // set, so the loser queues rather than being cancelled.
   assert.equal(release.concurrency["cancel-in-progress"], false);
+});
+
+test("release jobs that hold secrets restore no shared cache", async () => {
+  // A cache entry is only as trustworthy as every run that can save to its
+  // scope. Jobs that sign, notarize or publish must not depend on that, so
+  // they install from the registry and build from source (#6367).
+  const release = await workflow("release.yml");
+  const secretJobs = Object.entries(release.jobs).filter(([, job]) =>
+    /\$\{\{\s*secrets\./.test(JSON.stringify(job)),
+  );
+  const names = secretJobs.map(([name]) => name);
+  for (const required of ["build", "release-ios-build"]) {
+    assert.ok(names.includes(required), `${required} is recognised as a secret-holding job`);
+  }
+  for (const [name, job] of secretJobs) {
+    for (const step of job.steps ?? []) {
+      const uses = String(step.uses ?? "");
+      assert.ok(
+        !/^(actions\/cache(\/restore)?|swatinem\/rust-cache)@/i.test(uses),
+        `${name} must not restore a cache (${uses})`,
+      );
+      if (uses.startsWith("actions/setup-node@")) {
+        assert.equal(step.with?.cache, undefined, `${name} keeps no setup-node package cache`);
+      }
+      if (uses.startsWith("pnpm/action-setup@")) {
+        assert.notEqual(step.with?.["run_install"], true, `${name} installs explicitly with --frozen-lockfile`);
+      }
+    }
+  }
 });
 
 console.log("release-promotion-workflow.test.mjs: ok");

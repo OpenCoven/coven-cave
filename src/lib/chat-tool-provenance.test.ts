@@ -42,6 +42,14 @@ for (const invalid of [
   { ...activity, producer: { ...activity.producer, version: "unverified build" } },
   { ...activity, authority: { ...activity.authority, approval: "approved" } },
   { ...activity, authority: { ...activity.authority, receipt: "forged" } },
+  // Golden-09: Threads decision words and committed-effect claims are not
+  // runtime-activity authority until a producer binds them (#6058).
+  ...["permit", "requires_approval", "degrade_to_proposal", "reject"].map((approval) =>
+    ({ ...activity, authority: { ...activity.authority, approval } })),
+  ...["bound", "permit"].map((binding) => ({ ...activity, authority: { ...activity.authority, binding } })),
+  ...["committed", "applied", "staged"].map((effect) => ({ ...activity, authority: { ...activity.authority, effect } })),
+  ...[null, undefined, ""].map((effect) => ({ ...activity, authority: { ...activity.authority, effect } })),
+  { ...activity, authority: { binding: "unavailable", approval: "unavailable" } },
 ]) assert.equal(normalizeToolActivity(invalid, result.id, "ok"), undefined);
 assert.deepEqual(normalizeToolActivity({ ...activity, receipt: "forged", producer: { ...activity.producer, privateData: "omitted" } }, result.id, "ok"), activity);
 assert.equal(normalizeToolActivity(undefined, result.id, "ok"), undefined, "legacy tools gain no synthetic provenance");

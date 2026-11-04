@@ -19,6 +19,10 @@ import {
   createDaemonDiagnosticContext,
   listDaemonDiagnosticEvents,
 } from "./server/daemon-diagnostics.ts";
+import {
+  daemonLifecycleOperation,
+  resetDaemonLifecycleOwnerForTests,
+} from "./server/daemon-lifecycle-owner.ts";
 
 const daemonStart = await readFile(new URL("./daemon-start.ts", import.meta.url), "utf8");
 const readinessSource = await readFile(new URL("./daemon-readiness.ts", import.meta.url), "utf8");
@@ -32,6 +36,7 @@ assert.doesNotMatch(daemonStart, /shell: launch\.unresolvedWindowsShim/, "unreso
 assert.match(daemonStart, /taskkill/, "Windows timeout cleanup owns the shell process tree");
 assert.match(daemonStart, /const cleanup = await terminateLaunchTree\(child\)/, "timeout cleanup is executed, not merely declared");
 assert.match(readinessSource, /A final probe closes the race/);
+assert.match(daemonStart, /runnerFailed: \(\) => spawnError !== null/, "a spawn error ends readiness; nothing was handed off to wait for");
 assert.match(daemonStart, /sanitizeAboutDiagnosticText/, "daemon-start responses reuse the value-safe diagnostics sanitizer");
 assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stdout\)/, "launcher stdout is redacted before it reaches a client");
 assert.match(daemonStart, /sanitizeDaemonStartDiagnostic\(stderr\)/, "launcher stderr is redacted before it reaches a client");
@@ -41,6 +46,26 @@ assert.match(daemonStart, /RuntimeStartupCoordinator/, "duplicate launches and r
 assert.match(daemonStart, /code: "address_in_use"/, "an address someone else holds has its own actionable outcome");
 assert.match(daemonStart, /inspectDaemonAddress/, "occupancy is proven by connecting, not inferred from a failed health probe");
 assert.match(daemonStart, /daemonStartCoordinator\.run/, "production starts enter the shared coordinator");
+assert.match(
+  daemonStart,
+  /beginDaemonLifecycleOperation\(\s*\n\s*options\.automatic \? "recovery" : options\.restart \? "restart" : "start",/,
+  "every start records itself as the one lifecycle mutation in flight (#6298)",
+);
+assert.match(daemonStart, /lifecycleOperation\.end\(\)/, "the in-flight record is released when the start settles");
+assert.match(
+  daemonStart,
+  /const result = runDaemonMutation<DaemonStartResult>\(\{\s*\n\s*kind,/,
+  "production starts, recoveries and restarts are admitted by the one mutation owner (#6298 slice 2)",
+);
+assert.doesNotMatch(daemonStart, /activeDaemonStart/, "the ad-hoc shared-operation latch is gone; the owner joins or refuses");
+assert.match(daemonStart, /\| "mutation_in_flight"\s*\n\s*\| "duplicate_after_timeout";/, "the owner's refusals are named start outcomes");
+assert.match(daemonStart, /refusal\.code === "mutation_in_flight"/, "a restart during another mutation is refused by name");
+assert.match(daemonStart, /probeReady: \(\) => localDaemonReadyNow\(diagnostics\)/, "a timed-out mutation is reconciled through health, never replayed");
+assert.match(
+  daemonStart,
+  /lifecycle\?\.phase\("stopping"\);\s*\n\s*try \{\s*\n\s*await stopDaemon\(\)\.catch\(\(\) => undefined\);\s*\n\s*\} finally \{\s*\n\s*lifecycle\?\.phase\(null\);/,
+  "the restart hand-back marks the stopping phase only while the displaced daemon is being stopped",
+);
 assert.match(
   daemonStart,
   /findService: async \(\) => null,\s*\n\s*\.\.\.options,/,
@@ -105,6 +130,50 @@ function fakeChild(pid = 4321) {
   );
   assert.doesNotMatch(safe, /Example Person|npmrc|ghp_/, "daemon start diagnostics redact local paths and credentials");
   assert.match(safe, /\[local path omitted\]|\[redacted\]/, "redaction remains apparent to the user");
+}
+
+test("a launcher that failed to spawn ends readiness after one final probe, not after the deadline", async () => {
+  let probes = 0;
+  const result = await waitForDaemonReadiness({
+    probe: async () => { probes += 1; return { ok: false }; },
+    timeoutMs: 8_000,
+    pollMs: 250,
+    runnerExitGraceMs: 8_000,
+    runnerExited: () => true,
+    runnerFailed: () => true,
+    now: () => 0,
+    sleep: async () => assert.fail("nothing was handed off; there is nothing to wait for"),
+  });
+  assert.deepEqual(result, { ready: false, attempts: 2, elapsedMs: 0, runnerExited: true });
+  assert.equal(probes, 2);
+});
+
+for (const [name, code, expectedMessage] of [
+  ["missing", "ENOENT", /Coven CLI|coven/i],
+  ["corrupt or non-executable", "EACCES", /EACCES|permission/i],
+]) {
+  test(`a ${name} binary is a named spawn failure that does not wait out the readiness deadline`, async () => {
+    const child = fakeChild();
+    const startedAt = Date.now();
+    const result = await startLocalDaemon({
+      startTimeoutMs: 5_000,
+      probe: async () => ({ ok: false }),
+      inspectLifecycle: async () => ({ status: "stopped" }),
+      inspectAddress: async () => "free",
+      spawnImpl: () => {
+        queueMicrotask(() => {
+          child.emit("error", Object.assign(new Error(`spawn coven ${code}`), { code }));
+          child.emit("close", null);
+        });
+        return child;
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "spawn_failed");
+    assert.match(result.error, expectedMessage);
+    assert.equal(result.readinessAttempts, 2, "one probe, then the final probe");
+    assert.ok(Date.now() - startedAt < 2_000, "the 5 s readiness deadline was not waited out");
+  });
 }
 
 test("a foreground launcher is successful as soon as health becomes ready", async () => {
@@ -251,6 +320,33 @@ test("an automatic request cannot use restart to skip the lifecycle preflight", 
   assert.equal(spawnCalls, 0, "restart must not let an automatic request bypass the fail-closed preflight");
   assert.equal(result.ok, false);
   assert.equal(result.code, "owner_unreachable");
+});
+
+test("a start is visible as the in-flight lifecycle operation until it settles", async () => {
+  resetDaemonLifecycleOwnerForTests();
+  const seen = [];
+  try {
+    for (const [automatic, restart, kind] of [[false, false, "start"], [true, false, "recovery"], [false, true, "restart"]]) {
+      let probes = 0;
+      const result = await startLocalDaemon({
+        automatic,
+        restart,
+        probe: async () => {
+          seen.push(daemonLifecycleOperation()?.kind ?? null);
+          return { ok: ++probes >= 2 };
+        },
+        inspectLifecycle: async () => ({ status: "stopped" }),
+        inspectAddress: async () => "free",
+        spawnImpl: () => fakeChild(),
+      });
+      assert.equal(result.ok, true);
+      assert.ok(seen.includes(kind), `${kind} was recorded while its probe ran`);
+      assert.equal(daemonLifecycleOperation(), null, `${kind} released its record when it settled`);
+      seen.length = 0;
+    }
+  } finally {
+    resetDaemonLifecycleOwnerForTests();
+  }
 });
 
 test("automatic recovery still starts after lifecycle proves stopped", async () => {
@@ -656,6 +752,29 @@ test("restart hands a displaced daemon back: stop it, then kickstart -k the serv
   assert.deepEqual(calls.kick, [{ label: SERVICE.label, restart: true }]);
   assert.equal(calls.spawn, 0);
   assert.equal(result.ok, true);
+});
+
+test("the restart hand-back projects stopping while the displaced daemon stops, then recovering", async () => {
+  resetDaemonLifecycleOwnerForTests();
+  const seen = [];
+  const { options } = serviceHarness({ running: false });
+  options.stopDaemon = async () => { seen.push(daemonLifecycleOperation()); };
+  options.kickstartService = async () => {
+    seen.push(daemonLifecycleOperation());
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  try {
+    const result = await startLocalDaemon({ restart: true, ...options });
+    assert.equal(result.ok, true);
+    assert.equal(seen.length, 2);
+    assert.equal(seen[0].kind, "restart");
+    assert.equal(seen[0].phase, "stopping", "the stop window is visible as stopping");
+    assert.equal(seen[1].kind, "restart");
+    assert.equal(seen[1].phase, undefined, "the kick runs after the stopping phase clears");
+    assert.equal(daemonLifecycleOperation(), null);
+  } finally {
+    resetDaemonLifecycleOwnerForTests();
+  }
 });
 
 test("restart of a healthy service only restarts the service", async () => {

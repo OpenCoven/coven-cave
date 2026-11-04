@@ -9,15 +9,20 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
+import { UpdateReleaseNotes } from "@/components/update-release-notes";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { isTauri, useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useShellBanners } from "@/lib/shell-banners";
-import { openInAppBrowserUrl } from "@/lib/open-external";
+import { openSystemBrowserUrl } from "@/lib/open-external";
 import {
   classifyFallbackReleaseCheck,
+  describeUpdateInstallOutcome,
+  parseUpdateInstallOutcome,
   pickDownloadUrl,
   resolveFallbackAfterNative,
   type FallbackReleaseCheck,
+  type UpdateInstallOutcome,
   type UpdateStatus,
 } from "@/lib/app-update";
 import { relativeTime } from "@/lib/relative-time";
@@ -37,6 +42,7 @@ import { updateCovenCli } from "@/lib/app-update-daemon";
 import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
 
 const BANNER_ID = "update-available";
+const INSTALL_OUTCOME_BANNER_ID = "update-install-outcome";
 const DAEMON_ALIGNMENT_BANNER_ID = "daemon-release-alignment";
 const RELEASES_PAGE = "https://github.com/OpenCoven/coven-cave/releases/latest";
 const DISMISS_KEY = (version: string) => `cave:update:dismissed:${version}`;
@@ -96,13 +102,67 @@ async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
   }
 }
 
+async function isWindowsDesktop(): Promise<boolean> {
+  try {
+    const { platform } = await import("@tauri-apps/plugin-os");
+    return platform() === "windows";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Windows exits inside install() and the MSI relaunches only after a
+ * successful install. Arm the native watcher first so a declined UAC prompt
+ * or failed msiexec relaunches this version with a recorded outcome (#5981).
+ * Arming failure aborts the install rather than risk leaving Cave closed.
+ */
+async function armWindowsInstallRecovery(): Promise<() => Promise<void>> {
+  if (!(await isWindowsDesktop())) return async () => {};
+  const { invoke } = await import("@tauri-apps/api/core");
+  try {
+    await invoke("arm_update_install_recovery");
+  } catch (err) {
+    throw new Error(`couldn't prepare install recovery: ${errorMessage(err, "unknown error")}`);
+  }
+  return async () => {
+    await invoke("disarm_update_install_recovery").catch(() => {});
+  };
+}
+
 /** Install an already downloaded and verified update, then relaunch where supported. */
-async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
-  await update.install();
+export async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
+  const disarmRecovery = await armWindowsInstallRecovery();
+  try {
+    await update.install();
+  } catch (err) {
+    await disarmRecovery();
+    throw err;
+  }
   // Windows exits inside install() and AUTOLAUNCHAPP handles restart. Other
   // desktop platforms return and need an explicit relaunch.
   const { relaunch } = await import("@tauri-apps/plugin-process");
   await relaunch();
+}
+
+/** The recorded outcome of a Windows install that did not complete, if any. */
+async function readWindowsInstallOutcome(): Promise<UpdateInstallOutcome | null> {
+  if (!(await isWindowsDesktop())) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return parseUpdateInstallOutcome(await invoke<unknown>("update_install_outcome"));
+  } catch {
+    return null;
+  }
+}
+
+async function clearWindowsInstallOutcome(): Promise<void> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("clear_update_install_outcome");
+  } catch {
+    /* The record is cleared again when the next install is armed. */
+  }
 }
 
 /**
@@ -189,16 +249,47 @@ async function resolveDownloadUrl(status: UpdateStatus): Promise<string> {
  * canonical GitHub release page so a verification/download failure cannot be
  * turned into a trusted-looking bypass of the signed updater path.
  */
-function openReleasePageInBrowser(): void {
-  openInAppBrowserUrl(RELEASES_PAGE);
+function useUpdateBrowserLink(surface: "settings" | "banner") {
+  const bannerId = `update-browser-handoff-${surface}`;
+  const { pushBanner, dismissBanner } = useShellBanners();
+  const { announce } = useAnnouncer();
+  const active = useRef(true);
+  const attempt = useRef(0);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      attempt.current++;
+      dismissBanner(bannerId);
+    };
+  }, [bannerId, dismissBanner]);
+  return useCallback(async function openUpdateUrl(url: string) {
+    if (!active.current) return;
+    const current = ++attempt.current;
+    // Updater failures must not silently navigate into Cave's embedded Browser.
+    const opened = await openSystemBrowserUrl(url, { fallback: () => {} });
+    if (!active.current || current !== attempt.current) return;
+    if (opened) {
+      dismissBanner(bannerId);
+      announce("Opened in system browser.");
+    } else {
+      pushBanner({
+        id: bannerId,
+        severity: "warning",
+        title: "Couldn't open system browser. Retry or copy the address from Details.",
+        detail: url,
+        cta: { label: "Retry", onClick: () => { void openUpdateUrl(url); } },
+      });
+    }
+  }, [announce, bannerId, dismissBanner, pushBanner]);
 }
 
 type Resolved =
   | { kind: "current"; source: "native" | "release"; checkedAt: string }
   | { kind: "unavailable"; message: string }
   | { kind: "native"; version: string; update: NativeUpdateHandle }
-  | { kind: "native-unavailable"; version: string; url: string; message: string }
-  | { kind: "fallback"; version: string; url: string };
+  | { kind: "native-unavailable"; version: string; url: string; message: string; notes?: string }
+  | { kind: "fallback"; version: string; url: string; notes?: string };
 
 /** Native-first, then fallback. Used by both the banner and the settings row. */
 async function resolveUpdate(owner: symbol): Promise<Resolved> {
@@ -223,11 +314,12 @@ async function resolveUpdate(owner: symbol): Promise<Resolved> {
       return {
         kind: "native-unavailable",
         version: combined.status.latest!,
+        notes: combined.status.notes,
         url,
         message: native.kind === "failed" ? native.message : "Native updater check failed",
       };
     }
-    return { kind: "fallback", version: combined.status.latest!, url };
+    return { kind: "fallback", version: combined.status.latest!, url, notes: combined.status.notes };
   }
   if (combined.kind === "current") {
     return { kind: "current", source: "release", checkedAt: combined.status.checkedAt };
@@ -248,6 +340,8 @@ const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
  * dismissible shell banner. Renders nothing.
  */
 export function UpdateBannerTrigger() {
+  const openUpdateUrl = useUpdateBrowserLink("banner");
+  const openReleasePageInBrowser = useCallback(() => { void openUpdateUrl(RELEASES_PAGE); }, [openUpdateUrl]);
   const isDesktop = useIsTauriDesktop();
   const { pushBanner, dismissBanner } = useShellBanners();
   const owner = useRef(Symbol("update-banner")).current;
@@ -290,6 +384,7 @@ export function UpdateBannerTrigger() {
         pushBanner({
           id: BANNER_ID,
           severity: r.kind === "native-unavailable" ? "warning" : "info",
+          releaseNotes: r.kind === "native" ? r.update.body : r.notes,
           title:
             r.kind === "native-unavailable"
               ? recommendNativeRetry
@@ -303,8 +398,8 @@ export function UpdateBannerTrigger() {
                 : r.kind === "native-unavailable"
                   ? recommendNativeRetry
                     ? "Retry native update"
-                    : "Open release page in Browser"
-                  : "Open installer in Browser",
+                    : "Open release page in system browser"
+                  : "Open installer in system browser",
             onClick: () => {
               if (r.kind === "native") {
                 if (busy) return;
@@ -366,6 +461,7 @@ export function UpdateBannerTrigger() {
                     id: BANNER_ID,
                     severity: "info",
                     title: `Update v${r.version} is verified and ready`,
+                    releaseNotes: r.update.body,
                     cta: {
                       label: "Restart & install",
                       onClick: () => {
@@ -386,7 +482,7 @@ export function UpdateBannerTrigger() {
                             severity: "warning",
                             title: `Update failed (${errorMessage(error, "install failed")})`,
                             cta: {
-                              label: "Open release page in Browser",
+                              label: "Open release page in system browser",
                               onClick: openReleasePageInBrowser,
                             },
                             onDismiss: () => markDismissed(r.version),
@@ -415,7 +511,7 @@ export function UpdateBannerTrigger() {
                     title: reason
                       ? `Update failed (${reason})`
                       : "Update failed",
-                    cta: { label: "Open release page in Browser", onClick: openReleasePageInBrowser },
+                    cta: { label: "Open release page in system browser", onClick: openReleasePageInBrowser },
                     onDismiss: () => markDismissed(r.version),
                   });
                 });
@@ -428,7 +524,7 @@ export function UpdateBannerTrigger() {
                   openReleasePageInBrowser();
                 }
               } else {
-                openInAppBrowserUrl(r.url);
+                void openUpdateUrl(r.url);
               }
             },
           },
@@ -444,6 +540,29 @@ export function UpdateBannerTrigger() {
       if (cancelled || busy) return;
       dismissBanner(BANNER_ID);
       runCheck();
+    });
+    // After a declined or failed Windows install, the watcher relaunched this
+    // version. Explain why, and offer the update again.
+    void readWindowsInstallOutcome().then((outcome) => {
+      if (cancelled || !outcome) return;
+      const { title, detail } = describeUpdateInstallOutcome(outcome);
+      pushBanner({
+        id: INSTALL_OUTCOME_BANNER_ID,
+        severity: "warning",
+        title,
+        detail,
+        cta: {
+          label: "Retry update",
+          onClick: () => {
+            dismissBanner(INSTALL_OUTCOME_BANNER_ID);
+            void clearWindowsInstallOutcome();
+            if (busy) return;
+            dismissBanner(BANNER_ID);
+            runCheck();
+          },
+        },
+        onDismiss: () => { void clearWindowsInstallOutcome(); },
+      });
     });
     runCheck();
     const interval = window.setInterval(runCheck, RECHECK_INTERVAL_MS);
@@ -461,8 +580,9 @@ export function UpdateBannerTrigger() {
       window.clearInterval(interval);
       unsubscribe();
       dismissBanner(BANNER_ID);
+      dismissBanner(INSTALL_OUTCOME_BANNER_ID);
     };
-  }, [isDesktop, pushBanner, dismissBanner]);
+  }, [isDesktop, pushBanner, dismissBanner, openUpdateUrl, openReleasePageInBrowser]);
 
   return null;
 }
@@ -498,6 +618,8 @@ export function UpdateSettingsRow({
   actionRef?: Ref<UpdateSettingsActionHandle>;
   onCheckAvailabilityChange?: (available: boolean) => void;
 } = {}) {
+  const openUpdateUrl = useUpdateBrowserLink("settings");
+  const openReleasePageInBrowser = () => { void openUpdateUrl(RELEASES_PAGE); };
   const [state, setState] = useState<RowState>({ phase: "checking" });
   const mounted = useRef(true);
   const activeCancellation = useRef<CancellationSignal | null>(null);
@@ -747,8 +869,8 @@ export function UpdateSettingsRow({
             Download update
           </Button>
         ) : (
-          <Button variant="primary" size="xs" onClick={() => openInAppBrowserUrl(r.url)} className={accentBtn} leadingIcon="ph:arrow-square-out">
-            Open installer in Browser
+          <Button variant="primary" size="xs" onClick={() => { void openUpdateUrl(r.url); }} className={accentBtn} leadingIcon="ph:arrow-square-out">
+            Open installer in system browser
           </Button>
         )}
       </>
@@ -772,7 +894,7 @@ export function UpdateSettingsRow({
           onClick={openReleasePageInBrowser}
           className={secondaryBtn}
         >
-          Open release page in Browser
+          Open release page in system browser
         </Button>
       </>
     );
@@ -795,7 +917,7 @@ export function UpdateSettingsRow({
           className={accentBtn}
           leadingIcon="ph:arrow-square-out"
         >
-          Open release page in Browser
+          Open release page in system browser
         </Button>
         <Button
           variant="secondary"
@@ -851,8 +973,13 @@ export function UpdateSettingsRow({
   return (
     <div className="settings-about-update-row flex items-center justify-between gap-4 px-4 py-3">
       <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">Updates</span>
-      <div className="settings-about-update-actions flex items-center gap-2">
+      <div className="settings-about-update-actions flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
         {control}
+        {state.phase === "available" || state.phase === "native-unavailable" ? (
+          <UpdateReleaseNotes key={state.r.version} notes={state.r.kind === "native" ? state.r.update.body : state.r.notes} />
+        ) : state.phase === "prepared" ? (
+          <UpdateReleaseNotes key={state.version} notes={state.update.body} />
+        ) : null}
       </div>
     </div>
   );

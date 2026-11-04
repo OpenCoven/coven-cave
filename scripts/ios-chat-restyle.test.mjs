@@ -25,8 +25,12 @@ assert.match(chatView, /"Explain something to me"/);
 assert.doesNotMatch(chatView, /"What tasks need attention\?"|"Work on the next priority"|app\.tasks/,
   "conversation starters do not depend on task dashboards");
 assert.doesNotMatch(chatView, /"Board unavailable"|"Load the live board"|"New Messages"/);
-// The placeholder also says how to reach the menus (#5879).
-assert.match(chatView, /"Write a message… \/ for commands, @ to mention" : "Write a message… \/ for commands"/);
+// The placeholder also says how to reach the menus (#5879), and names `@`
+// only where it opens one: familiars in a group, files in a project chat (#6104).
+assert.match(
+  chatView,
+  /if thread\.isGroup \{ return "Write a message… \/ for commands, @ to mention" \}\s*return fileMentionRoot == nil\s*\? "Write a message… \/ for commands"\s*: "Write a message… \/ for commands, @ for files"/,
+);
 assert.match(chatView, /TextField\(composerPlaceholder, text: \$draft, axis: \.vertical\)[\s\S]{0,60}\.accessibilityLabel\("Message"\)/);
 assert.match(newChat, /Button\(isGroup \? "Create group" : "Start chat"\)/);
 assert.match(newChat, /Button\("Refresh access"\)/);

@@ -532,7 +532,7 @@ export async function writeResearchLinksVerified(
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const temporary = path.join(
-    directory,
+    /* turbopackIgnore: true */ directory,
     `.research-links-${process.pid}-${randomBytes(12).toString("hex")}.tmp`,
   );
   let handle: FileHandle | null = null;

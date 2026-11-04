@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -58,6 +59,106 @@ function report(overrides: Partial<ThreadSelfReport> = {}): ThreadSelfReport {
 }
 
 describe("familiar self-report storage", () => {
+  it("independent processes admit only one automatic report", { timeout: 15_000 }, async () => {
+    const moduleUrl = new URL("./familiar-self-reports.ts", import.meta.url).href;
+    const children = Array.from({ length: 4 }, (_, index) => {
+      const child = spawn(process.execPath, [
+        "--experimental-strip-types", "--import", "./scripts/test-alias-register.mjs",
+        "--input-type=module", "--eval", `
+          import { appendSelfReport } from ${JSON.stringify(moduleUrl)};
+          process.send("ready");
+          process.once("message", async () => {
+            try {
+              const accepted = await appendSelfReport("cody", JSON.parse(process.env.COVEN_TEST_REPORT), { onlyIfAbsent: true });
+              process.stdout.write(JSON.stringify(accepted));
+            } catch (error) { console.error(error); process.exitCode = 1; }
+            finally { process.disconnect(); }
+          });
+        `,
+      ], {
+        env: { ...process.env, COVEN_TEST_REPORT: JSON.stringify(report({ id: `process-${index}` })) },
+        stdio: ["ignore", "pipe", "pipe", "ipc"],
+      });
+      let output = "";
+      let errors = "";
+      assert.ok(child.stdout);
+      assert.ok(child.stderr);
+      child.stdout.on("data", (data) => { output += data; });
+      child.stderr.on("data", (data) => { errors += data; });
+      const ready = new Promise<void>((resolve, reject) => {
+        child.once("message", () => resolve());
+        child.once("error", reject);
+        child.once("exit", () => reject(new Error(`worker exited before readiness: ${errors}`)));
+      });
+      const done = new Promise<boolean>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", (code) => {
+          if (code !== 0) reject(new Error(`worker failed: ${errors}`));
+          else { try { resolve(JSON.parse(output)); } catch (error) { reject(error); } }
+        });
+      });
+      // Attach rejection handlers immediately while the readiness barrier waits.
+      void done.catch(() => {});
+      return { child, ready, done };
+    });
+    try {
+      await Promise.all(children.map(({ ready }) => ready));
+      for (const { child } of children) child.send("go");
+      const results = await Promise.all(children.map(({ done }) => done));
+      assert.equal(results.filter(Boolean).length, 1);
+      assert.equal((await listSelfReports("cody", {})).total, 1);
+      assert.equal((await listMetricSnapshots("cody")).total, 1);
+    } finally {
+      for (const { child } of children) if (child.exitCode === null) child.kill();
+      await Promise.allSettled(children.map(({ done }) => done));
+    }
+  });
+
+  it("a manual write racing automatic admission is always retained", async () => {
+    const [manualAccepted, autoAccepted] = await Promise.all([
+      appendSelfReport("cody", report({ id: "manual-race" })),
+      appendSelfReport("cody", report({ id: "auto-race" }), { onlyIfAbsent: true }),
+    ]);
+    assert.equal(manualAccepted, true);
+    const stored = await listSelfReports("cody", {});
+    assert.ok(stored.reports.some((item) => item.id === "manual-race"));
+    assert.equal(stored.total, autoAccepted ? 2 : 1);
+    assert.equal((await listMetricSnapshots("cody")).total, stored.total);
+  });
+
+  it("automatic admission refuses an unreadable ledger and releases its lock", async () => {
+    await appendSelfReport("cody", report({ sessionId: "other" }));
+    const { familiarWorkspace } = await import("@/lib/coven-paths");
+    const broken = path.join(await familiarWorkspace("cody"), "self-reports", "broken.jsonl");
+    await mkdir(broken);
+    await assert.rejects(appendSelfReport("cody", report(), { onlyIfAbsent: true }));
+    await rm(broken, { recursive: true });
+    assert.equal(await appendSelfReport("cody", report(), { onlyIfAbsent: true }), true);
+  });
+
+  it("automatic admission rejects an existing manual report without writing a snapshot", async () => {
+    await appendSelfReport("cody", report({ id: "manual" }));
+    const accepted = await appendSelfReport("cody", report({ id: "auto" }), { onlyIfAbsent: true });
+    assert.equal(accepted, false);
+    assert.deepEqual((await listSelfReports("cody", {})).reports.map((item) => item.id), ["manual"]);
+    assert.deepEqual((await listMetricSnapshots("cody")).snapshots.map((item) => item.id), ["manual"]);
+  });
+
+  it("simultaneous automatic writes admit exactly one report while manual repeats remain allowed", async () => {
+    const accepted = await Promise.all(Array.from({ length: 8 }, (_, i) =>
+      appendSelfReport("cody", report({ id: `auto-${i}` }), { onlyIfAbsent: true }),
+    ));
+    assert.equal(accepted.filter(Boolean).length, 1);
+    assert.equal((await listSelfReports("cody", {})).total, 1);
+    assert.equal((await listMetricSnapshots("cody")).total, 1);
+    await Promise.all([
+      appendSelfReport("cody", report({ id: "manual-1" })),
+      appendSelfReport("cody", report({ id: "manual-2" })),
+    ]);
+    assert.equal((await listSelfReports("cody", {})).total, 3);
+    assert.equal((await listMetricSnapshots("cody")).total, 3);
+  });
+
   it("appendSelfReport creates the dated JSONL file and appends redacted reports", async () => {
     await appendSelfReport("cody", report({ id: "r1", sessionId: "s1", reportedAt: "2026-06-25T10:00:00.000Z" }));
     await appendSelfReport("cody", report({

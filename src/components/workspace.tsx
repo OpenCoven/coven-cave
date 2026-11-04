@@ -9,6 +9,7 @@ import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { parseGitHubItemUrl } from "@/lib/github-item-url";
 import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
+import { invalidateChatAccess } from "@/lib/chat-access-invalidation";
 import { invalidateConversation, loadConversation } from "@/lib/conversation-cache";
 import {
   mergeDegradedSessionList,
@@ -119,6 +120,7 @@ import {
   type DaemonConnectionPoll,
 } from "@/lib/daemon-connection-supervisor";
 import { createTauriDaemonReliabilityObserver } from "@/lib/daemon-reliability";
+import { subscribeOnboardingBootstrapCompletion } from "@/lib/onboarding-bootstrap-status";
 import { createDaemonTravelReconcileRequester } from "@/lib/daemon-travel-reconcile-client";
 import {
   createDaemonDesktopAutoStartCoordinator,
@@ -1186,6 +1188,9 @@ export function Workspace() {
   const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
   const [daemonRecovery, setDaemonRecovery] = useState(initialDaemonRecoveryPresentation);
   const daemonHealthyStreakRef = useRef(0);
+  // One slow or dropped status read (wake from sleep, a busy server) is not
+  // evidence of a problem. The notice waits for a second consecutive failure.
+  const daemonUnavailableStreakRef = useRef(0);
   const daemonConnectionSupervisorRef = useRef<ReturnType<typeof createDaemonConnectionSupervisor> | null>(null);
   const daemonTravelReconcileRequesterRef = useRef<ReturnType<typeof createDaemonTravelReconcileRequester> | null>(null);
   const startDaemonRef = useRef<({ automatic }?: { automatic?: boolean }) => Promise<void>>(async () => {});
@@ -1442,6 +1447,19 @@ export function Workspace() {
     if (result.kind === "running") {
       setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "running" }));
     }
+    if (result.kind === "unavailable") {
+      daemonHealthyStreakRef.current = 0;
+      daemonUnavailableStreakRef.current += 1;
+      // The supervisor retries a failed read within ~5s, so a lasting problem
+      // still surfaces quickly while a one-off blip never paints the banner.
+      // A tolerated read also leaves the boot state unresolved: resolving it
+      // without a notice would read as "offline" before any answer (#5781).
+      if (daemonUnavailableStreakRef.current < 2) return;
+      setDaemonStatusResolved(true);
+      setDaemonStatusUnavailable(result.reason);
+      return;
+    }
+    daemonUnavailableStreakRef.current = 0;
     setDaemonStatusResolved(true);
     if (result.kind === "auth-expired") {
       daemonHealthyStreakRef.current = 0;
@@ -1449,9 +1467,13 @@ export function Workspace() {
       setDaemonStatusUnavailable("access check failed");
       return;
     }
-    if (result.kind === "unavailable") {
+
+    if (result.kind === "transitioning") {
+      // The server owns a start, recovery or stop right now (#6298). That is
+      // neither offline nor healthy evidence: keep the current banners, clear
+      // any status-unavailable notice, and let the next poll decide.
       daemonHealthyStreakRef.current = 0;
-      setDaemonStatusUnavailable(result.reason);
+      setDaemonStatusUnavailable(null);
       return;
     }
 
@@ -1478,6 +1500,11 @@ export function Workspace() {
     await daemonConnectionSupervisorRef.current?.refresh({ fresh: opts?.fresh === true || opts?.trusted === true });
   }, []);
 
+  const openDaemonSetup = useCallback(() => {
+    onboardingOriginRef.current = "banner";
+    setOnboardingOpen(true);
+  }, []);
+
   const startDaemon = useCallback(async ({ automatic = false }: { automatic?: boolean } = {}) => {
     setDaemonRecovery((current) => daemonRecoveryPresentation(current, {
       type: automatic ? "automatic-start" : "manual-start",
@@ -1493,14 +1520,16 @@ export function Workspace() {
       reportError: (message) => pushBanner({
         id: "daemon-start-error",
         severity: "error",
-        title: `Daemon start failed — ${message}`,
+        title: "Couldn’t start the daemon",
+        detail: `${message} Open setup to check this machine’s installation and connection.`,
+        cta: { label: "Open setup", onClick: openDaemonSetup },
       }),
       refreshStatus: refreshDaemonStatus,
     });
     if (automatic) {
       setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "start-outcome", outcome }));
     }
-  }, [dismissBanner, pushBanner, refreshDaemonStatus]);
+  }, [dismissBanner, pushBanner, refreshDaemonStatus, openDaemonSetup]);
   startDaemonRef.current = startDaemon;
 
   useEffect(() => {
@@ -1550,7 +1579,12 @@ export function Workspace() {
     requester.setActive(!document.hidden);
     document.addEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
     supervisor.start();
+    const unsubscribeSetupCompletion = subscribeOnboardingBootstrapCompletion(() => {
+      // Setup is a reason to verify readiness, not evidence of readiness.
+      void supervisor.refresh({ fresh: true });
+    });
     return () => {
+      unsubscribeSetupCompletion();
       document.removeEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
       requester.stop();
       supervisor.stop();
@@ -1796,16 +1830,15 @@ export function Workspace() {
       pushBanner({
         id: "daemon-offline",
         severity: "warning",
-        title: "Daemon offline — existing sessions visible but new tasks may not start.",
+        title: "Daemon offline — open setup to get connected.",
+        detail: "Existing chats are still available. Setup checks this machine’s installation and helps start the local service.",
         cta: {
-          label: "Start daemon",
-          onClick: () => {
-            void startDaemon();
-          },
+          label: "Open setup",
+          onClick: openDaemonSetup,
         },
       });
     }
-  }, [daemonOffline, daemonStatusResolved, daemonRecovery.quiet, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonOffline, daemonStatusResolved, daemonRecovery.quiet, pushBanner, dismissBanner, openDaemonSetup]);
 
   // A status-service failure, timeout, malformed response, or non-local target
   // problem does not prove the local daemon is stopped. Keep that uncertainty
@@ -2101,7 +2134,10 @@ export function Workspace() {
     // Drop a highlight pointing at a deleted session; the sidebars guard by
     // row lookup anyway, but keep the mirrored state honest.
     setActiveChatSessionId((cur) => (cur && confirmedIds.includes(cur) ? null : cur));
-    for (const sessionId of confirmedIds) invalidateConversation(sessionId);
+    for (const sessionId of confirmedIds) {
+      invalidateConversation(sessionId);
+      invalidateChatAccess({ sessionId, reason: "missing" });
+    }
     void loadSessions();
   }, [loadSessions]);
 

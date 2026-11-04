@@ -60,6 +60,12 @@ async function readWholeThread(page: Page) {
   const transcript = page.locator(".cave-chat-transcript").first();
   const frames = () =>
     page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  // Scroll up the way a reader does. Main Chat releases its follow-pin only
+  // on user input (wheel, touch, keys, a scrollbar grab); a bare scrollTop
+  // write leaves it following, so any late layout re-pins to the bottom.
+  // That is what held scrollTop at 1529 and 1711 on loaded runners (#6236).
+  await transcript.hover();
+  await page.mouse.wheel(0, -200);
   await transcript.evaluate((element) => { element.scrollTop = 0; });
   await expect.poll(() => transcript.evaluate((element) => element.scrollTop)).toBe(0);
   await frames();

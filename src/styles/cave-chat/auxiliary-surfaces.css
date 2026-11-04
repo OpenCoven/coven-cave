@@ -909,35 +909,44 @@
   color: var(--text-muted);
 }
 
-/* A labeled 28px edge keeps Code discoverable without opening over the chat. */
-.workspace-rail-reopen {
+/* The closed Code rail owns only its small edge tab, never a gutter. */
+.chat-surface__content {
   position: relative;
+}
+
+.workspace-rail-reopen {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex: 0 0 calc(var(--space-6) + var(--space-1));
   width: calc(var(--space-6) + var(--space-1));
-  height: 100%;
   padding: 0;
   border: 0;
-  background: var(--bg-panel);
-  color: var(--text-secondary);
+  background: transparent;
+  color: var(--text-muted);
   cursor: pointer;
 }
 .workspace-rail-reopen__tab {
   display: grid;
   flex-shrink: 0;
   width: var(--space-6);
-  gap: var(--space-2);
-  padding: var(--space-3) 0;
+  gap: 0;
+  padding: var(--space-2) 0;
   place-items: center;
   border: 1px solid var(--border-hairline);
   border-right: 0;
   border-radius: var(--radius-control) 0 0 var(--radius-control);
-  background: var(--bg-raised);
-  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--bg-raised) 65%, transparent);
+  color: var(--text-muted);
+  opacity: 0.65;
   transition:
     width var(--duration-fast) var(--ease-decelerate),
+    gap var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard);
@@ -945,9 +954,34 @@
 .workspace-rail-reopen:hover .workspace-rail-reopen__tab,
 .workspace-rail-reopen:focus-visible .workspace-rail-reopen__tab {
   width: calc(var(--space-6) + var(--space-1));
+  gap: var(--space-2);
+  opacity: 1;
   border-color: var(--border-strong);
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+.workspace-rail-reopen__label,
+.workspace-rail-reopen__count {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-height var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+.workspace-rail-reopen:is(:hover, :focus-visible) :is(.workspace-rail-reopen__label, .workspace-rail-reopen__count) {
+  max-height: var(--space-12);
+  opacity: 1;
+}
+@media (hover: none) and (pointer: coarse) {
+  .workspace-rail-reopen__tab {
+    gap: var(--space-2);
+    opacity: 1;
+  }
+  .workspace-rail-reopen :is(.workspace-rail-reopen__label, .workspace-rail-reopen__count) {
+    max-height: var(--space-12);
+    opacity: 1;
+  }
 }
 .workspace-rail-reopen__label {
   writing-mode: vertical-rl;
@@ -960,6 +994,7 @@
   color: var(--color-success);
 }
 .workspace-rail-reopen__tab[data-notifying="true"] {
+  opacity: 1;
   background: color-mix(in oklch, var(--color-success) 14%, var(--bg-raised));
   border-color: color-mix(in oklch, var(--color-success) 38%, var(--border-hairline));
   animation: code-rail-change-nudge calc(var(--duration-slow) * 3) var(--ease-standard) 2;
@@ -985,6 +1020,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .workspace-rail-reopen__tab,
+  .workspace-rail-reopen__label,
+  .workspace-rail-reopen__count,
   .workspace-rail-reopen__tab[data-notifying="true"] {
     animation: none;
     transition: none;

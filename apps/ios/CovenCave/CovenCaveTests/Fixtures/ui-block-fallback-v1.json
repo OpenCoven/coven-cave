@@ -1,0 +1,122 @@
+[
+  {
+    "id": "pricing-calculator",
+    "kind": "complete",
+    "input": "Here is the estimate.\n\n```coven:ui\n<Card title=\"Seat pricing\" subtitle=\"Team plan, billed monthly\">\n  <State name=\"seats\" initial={8} />\n  <State name=\"annual\" initial={false} />\n  <Slider bind=\"seats\" min={1} max={50} label=\"Seats\" />\n  <Toggle bind=\"annual\" label=\"Bill annually (2 months free)\" />\n  <Row gap=\"md\">\n    <Stat label=\"Monthly\" value={annual ? seats * 29 * 10 / 12 : seats * 29} format=\"usd\" />\n    <Stat label=\"Per seat\" value={annual ? 29 * 10 / 12 : 29} format=\"usd\" />\n    <Stat label=\"Yearly\" value={annual ? seats * 29 * 10 : seats * 29 * 12} format=\"usd\" tone=\"accent\" />\n  </Row>\n  <Text tone=\"muted\">{seats} seats at $29 each.{annual ? \" Annual billing applied.\" : \"\"}</Text>\n  <Row gap=\"sm\">\n    <Button set=\"seats\" to={8}>Reset</Button>\n    <Button variant=\"primary\" prefill={\"Upgrade our workspace to \" + seats + \" seats\" + (annual ? \", billed annually.\" : \", billed monthly.\")}>Draft upgrade request</Button>\n  </Row>\n</Card>\n```\n\nAdjust seats any time.",
+    "readable": "Here is the estimate.\n\nSeat pricing\nTeam plan, billed monthly\nSeats: 8\nBill annually (2 months free): off\nMonthly: $232.00\nPer seat: $29.00\nYearly: $2,784.00\n8 seats at $29 each.\n[Reset]\n[Draft upgrade request]\n\nAdjust seats any time."
+  },
+  {
+    "id": "status-table",
+    "kind": "complete",
+    "input": "```coven:ui\n<Card title=\"Service status\" subtitle=\"Last checked 2 minutes ago\">\n  <Row gap=\"sm\">\n    <Badge tone=\"success\">4 healthy</Badge>\n    <Badge tone=\"warning\">1 degraded</Badge>\n    <Badge tone=\"danger\">1 down</Badge>\n  </Row>\n  <Table\n    columns={[\"Service\", \"Status\", \"p95 latency\", \"Uptime\"]}\n    rows={[\n      [\"api\", \"healthy\", \"118 ms\", \"99.98%\"],\n      [\"auth\", \"healthy\", \"64 ms\", \"99.99%\"],\n      [\"search\", \"degraded\", \"842 ms\", \"99.20%\"],\n      [\"billing\", \"healthy\", \"131 ms\", \"99.95%\"],\n      [\"exports\", \"down\", \"n/a\", \"97.10%\"],\n      [\"webhooks\", \"healthy\", \"92 ms\", \"99.97%\"]\n    ]}\n    caption=\"Six services in us-east\"\n  />\n  <Text size=\"sm\" tone=\"muted\">Exports has been down since 09:12. Search latency is rising.</Text>\n</Card>\n```",
+    "readable": "Service status\nLast checked 2 minutes ago\n4 healthy\n1 degraded\n1 down\nService | Status | p95 latency | Uptime\napi | healthy | 118 ms | 99.98%\nauth | healthy | 64 ms | 99.99%\nsearch | degraded | 842 ms | 99.20%\nbilling | healthy | 131 ms | 99.95%\nexports | down | n/a | 97.10%\nwebhooks | healthy | 92 ms | 99.97%\nSix services in us-east\nExports has been down since 09:12. Search latency is rising."
+  },
+  {
+    "id": "mini-dashboard",
+    "kind": "complete",
+    "input": "```coven:ui\n<Stack gap=\"md\">\n  <Heading level={2}>Weekly delivery</Heading>\n  <State name=\"range\" initial=\"This week\" />\n  <Select bind=\"range\" label=\"Range\" options={[\"This week\", \"Last week\"]} />\n  <Row gap=\"md\">\n    <Stat label=\"Merged PRs\" value={range == \"This week\" ? 23 : 17} format=\"number\" />\n    <Stat label=\"Median review\" value={range == \"This week\" ? 3.4 : 5.1} format=\"number\" caption=\"hours\" />\n    <Stat label=\"Failed builds\" value={range == \"This week\" ? 2 : 6} tone={\"danger\"} />\n  </Row>\n  <Progress label=\"Sprint scope done\" value={range == \"This week\" ? 68 : 100} max={100} tone=\"success\" />\n  <BarChart\n    label=\"Merged PRs per day\"\n    data={[\n      { label: \"Mon\", value: range == \"This week\" ? 4 : 2 },\n      { label: \"Tue\", value: range == \"This week\" ? 6 : 3 },\n      { label: \"Wed\", value: range == \"This week\" ? 3 : 5 },\n      { label: \"Thu\", value: range == \"This week\" ? 7 : 4 },\n      { label: \"Fri\", value: range == \"This week\" ? 3 : 3 }\n    ]}\n  />\n</Stack>\n```",
+    "readable": "Weekly delivery\nRange: This week\nMerged PRs: 23\nMedian review: 3.4 hours\nFailed builds: 2\nSprint scope done: 68 of 100\nMerged PRs per day: Mon 4, Tue 6, Wed 3, Thu 7, Fri 3"
+  },
+  {
+    "id": "two-blocks-with-prose",
+    "kind": "complete",
+    "input": "First:\n\n```coven:ui\n<Heading level={3}>Plan A</Heading>\n<Button prefill=\"Pick plan A\">Choose A</Button>\n```\n\nSecond:\n\n```coven:ui\n<Stat label=\"Cost\" value={12} format=\"usd\" caption=\"per month\" />\n```",
+    "readable": "First:\n\nPlan A\n[Choose A]\n\nSecond:\n\nCost: $12.00 per month"
+  },
+  {
+    "id": "release-brief",
+    "kind": "complete",
+    "input": "```coven:ui\n<Card title=\"Release brief\" subtitle=\"Cave 0.6, planned for Friday\">\n  <Callout title=\"Freeze starts Thursday\" tone=\"warning\">\n    <Text>Run <Code>pnpm test:app</Code> before you merge, and <Bold>don't skip <Code>pnpm lint</Code></Bold>.</Text>\n  </Callout>\n  <Grid columns={3} gap=\"sm\">\n    <Stat label=\"Merged\" value={42} />\n    <Stat label=\"Open\" value={7} />\n    <Stat label=\"Blocked\" value={2} tone=\"danger\" />\n  </Grid>\n  <Divider />\n  <Heading level={3}>Ships</Heading>\n  <List items={[\"Native UI blocks\", \"Faster startup\", \"Quieter inbox\"]} />\n  <Heading level={3}>Then</Heading>\n  <List ordered items={[\"Tag the release\", \"Publish the notes\", \"Watch crash reports\"]} />\n</Card>\n```",
+    "readable": "Release brief\nCave 0.6, planned for Friday\nWarning: Freeze starts Thursday\nRun pnpm test:app before you merge, and don't skip pnpm lint.\nMerged: 42\nOpen: 7\nBlocked: 2\nShips\n- Native UI blocks\n- Faster startup\n- Quieter inbox\nThen\n1. Tag the release\n2. Publish the notes\n3. Watch crash reports"
+  },
+  {
+    "id": "delivery-pulse",
+    "kind": "complete",
+    "input": "```coven:ui\n<Card title=\"Delivery pulse\" subtitle=\"Last 7 days\">\n  <Row gap=\"md\">\n    <Stat label=\"Merged PRs\" value={23} trend={12} trendFormat=\"percent\" trendTone=\"success\" />\n    <Stat label=\"Median review\" value={3.4} caption=\"hours\" trend={-0.8} trendTone=\"success\" />\n    <Stat label=\"Failed builds\" value={2} trend={0} />\n  </Row>\n  <Sparkline label=\"Merges per day\" tone=\"accent\" data={[\n    { label: \"Mon\", value: 4 },\n    { label: \"Tue\", value: 6 },\n    { label: \"Wed\", value: 3 },\n    { label: \"Thu\", value: 7 },\n    { label: \"Fri\", value: 3 }\n  ]} />\n  <Donut label=\"Review load\" data={[\n    { label: \"Cody\", value: 9, tone: \"accent\" },\n    { label: \"Nova\", value: 6, tone: \"warning\" },\n    { label: \"Val\", value: 3 }\n  ]} />\n  <Table\n    columns={[\"Service\", \"Status\"]}\n    rows={[\n      [\"api\", { kind: \"badge\", label: \"healthy\", tone: \"success\" }],\n      [\"exports\", { kind: \"badge\", label: \"down\", tone: \"danger\" }],\n      [\"search\", \"n/a\"]\n    ]}\n    caption=\"Service health\"\n  />\n</Card>\n```",
+    "readable": "Delivery pulse\nLast 7 days\nMerged PRs: 23 (12% increase)\nMedian review: 3.4 hours (0.8 decrease)\nFailed builds: 2 (unchanged)\nMerges per day: Mon 4, Tue 6, Wed 3, Thu 7, Fri 3\nReview load: Cody 9 (50%), Nova 6 (33%), Val 3 (17%)\nService | Status\napi | healthy\nexports | down\nsearch | n/a\nService health"
+  },
+  {
+    "id": "release-draft",
+    "kind": "complete",
+    "input": "```coven:ui\n<Card title=\"Release notes draft\">\n  <State name=\"view\" initial=\"Summary\" />\n  <State name=\"headline\" initial=\"Faster startup\" />\n  <Tabs bind=\"view\" label=\"Draft sections\">\n    <Tab value=\"Summary\" label=\"Summary\">\n      <TextInput bind=\"headline\" label=\"Headline\" placeholder=\"One line for the release page\" maxLength={80} />\n      <Text>Headline: {headline}</Text>\n    </Tab>\n    <Tab value=\"Details\" label=\"Details\">\n      <List items={[\"Startup is 40% faster\", \"The inbox is quieter\"]} />\n    </Tab>\n  </Tabs>\n  <Button prefill={\"Release headline: \" + headline}>Draft the announcement</Button>\n</Card>\n```",
+    "readable": "Release notes draft\nDraft sections\nSummary\nHeadline: Faster startup\nHeadline: Faster startup\nDetails\n- Startup is 40% faster\n- The inbox is quieter\n[Draft the announcement]"
+  },
+  {
+    "id": "columns-and-callouts",
+    "kind": "complete",
+    "input": "```coven:ui\n<Columns columns={2}>\n  <Callout tone=\"success\" title=\"Shipped\">\n    <Text>All checks pass.</Text>\n  </Callout>\n  <Callout tone=\"accent\">\n    <Text>An accent callout has no tone word.</Text>\n  </Callout>\n</Columns>\n```",
+    "readable": "Success: Shipped\nAll checks pass.\nAn accent callout has no tone word."
+  },
+  {
+    "id": "unterminated-final-block",
+    "kind": "partial",
+    "input": "Drafting:\n\n```coven:ui\n<Card title=\"Draft\">\n  <Text>First line</Text>",
+    "readable": "Drafting:\n\nDraft\nFirst line\n(This block ended early.)"
+  },
+  {
+    "id": "cut-mid-tag",
+    "kind": "partial",
+    "input": "```coven:ui\n<Stack>\n  <Heading level={2}>Totals</Heading>\n  <Stat label=\"Spend\" val",
+    "readable": "Totals\n(This block ended early.)"
+  },
+  {
+    "id": "malformed-dashboard",
+    "kind": "malformed",
+    "input": "```coven:ui\n<Card title=\"Partly broken\">\n  <State name=\"count\" initial={3} />\n  <Stat label=\"Valid stat\" value={count * 2} />\n  <Marquee values={[1, 2, 3]} />\n  <Badge colour=\"red\">Unknown prop</Badge>\n  <Text style=\"color: red\">Raw style</Text>\n  <Stat label=\"Calls a function\" value={alert(1)} />\n  <Stat label=\"Reads a property\" value={window.location} />\n  <Stat label=\"Undeclared state\" value={missing + 1} />\n  <Text>Still rendered after the failures.</Text>\n</Card>\n```",
+    "readable": "Partly broken\nValid stat: 6\nUnknown prop\nRaw style\nStill rendered after the failures.\n(Some parts of this block couldn't be shown.)"
+  },
+  {
+    "id": "failed-child-text",
+    "kind": "malformed",
+    "input": "```coven:ui\n<Card title=\"Release check\">\n  <State name=\"score\" initial={3} />\n  <State name=\"mood\" initial=\"glow\" />\n  <Text colour=\"red\">Score: {score} of 5 checks pass</Text>\n  <Text tone={mood}>Mood is {mood} today</Text>\n  <Marquee><script>window.__covenUiInjected = true</script>Trend is up</Marquee>\n  <img src=\"x\" onerror=\"window.__covenUiInjected = true\" />\n  <Text size=\"huge\">Shown as {\"<b onclick='window.__covenUiInjected = true'>text</b>\"}</Text>\n  <Badge tone=\"success\">Still rendered</Badge>\n</Card>\n```",
+    "readable": "Release check\nScore: 3 of 5 checks pass\nMood is glow today\nwindow.__covenUiInjected = true\nTrend is up\nShown as <b onclick='window.__covenUiInjected = true'>text</b>\nStill rendered\n(Some parts of this block couldn't be shown.)"
+  },
+  {
+    "id": "json-body-stays-literal",
+    "kind": "malformed",
+    "input": "```coven:ui\n{\"type\": \"Card\", \"title\": \"Not markup\"}\n```",
+    "readable": "```coven:ui\n{\"type\": \"Card\", \"title\": \"Not markup\"}\n```"
+  },
+  {
+    "id": "example-inside-fence",
+    "kind": "nested-literal",
+    "input": "Syntax:\n\n````markdown\n```coven:ui\n<Card title=\"Example\">\n  <Text>Not a live block.</Text>\n</Card>\n```\n````",
+    "readable": "Syntax:\n\n````markdown\n```coven:ui\n<Card title=\"Example\">\n  <Text>Not a live block.</Text>\n</Card>\n```\n````"
+  },
+  {
+    "id": "example-on-list-marker",
+    "kind": "nested-literal",
+    "input": "- ```coven:ui\n  <Card title=\"Example\">\n    <Text>Not a live block.</Text>\n  </Card>\n  ```",
+    "readable": "- ```coven:ui\n  <Card title=\"Example\">\n    <Text>Not a live block.</Text>\n  </Card>\n  ```"
+  },
+  {
+    "id": "example-in-list-fence",
+    "kind": "nested-literal",
+    "input": "- ```\n  ```coven:ui\n  <Card title=\"Example\">\n    <Text>Not a live block.</Text>\n  </Card>\n  ```\n  ```",
+    "readable": "- ```\n  ```coven:ui\n  <Card title=\"Example\">\n    <Text>Not a live block.</Text>\n  </Card>\n  ```\n  ```"
+  },
+  {
+    "id": "example-in-list-continuation",
+    "kind": "nested-literal",
+    "input": "- Use this:\n\n  ```coven:ui\n  <Card title=\"Example\">\n    <Text>Not a live block.</Text>\n  </Card>\n  ```",
+    "readable": "- Use this:\n\n  ```coven:ui\n  <Card title=\"Example\">\n    <Text>Not a live block.</Text>\n  </Card>\n  ```"
+  },
+  {
+    "id": "example-in-tight-list-continuation",
+    "kind": "nested-literal",
+    "input": "1. Use this:\n   ```coven:ui\n   <Card title=\"Example\">\n     <Text>Not a live block.</Text>\n   </Card>\n   ```",
+    "readable": "1. Use this:\n   ```coven:ui\n   <Card title=\"Example\">\n     <Text>Not a live block.</Text>\n   </Card>\n   ```"
+  },
+  {
+    "id": "example-in-quote",
+    "kind": "nested-literal",
+    "input": "> ```coven:ui\n> <Card title=\"Example\">\n>   <Text>Not a live block.</Text>\n> </Card>\n> ```",
+    "readable": "> ```coven:ui\n> <Card title=\"Example\">\n>   <Text>Not a live block.</Text>\n> </Card>\n> ```"
+  },
+  {
+    "id": "example-indented-code",
+    "kind": "nested-literal",
+    "input": "Indented:\n\n    ```coven:ui\n    <Card title=\"Example\">\n      <Text>Not a live block.</Text>\n    </Card>\n    ```",
+    "readable": "Indented:\n\n    ```coven:ui\n    <Card title=\"Example\">\n      <Text>Not a live block.</Text>\n    </Card>\n    ```"
+  }
+]

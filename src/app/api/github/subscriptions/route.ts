@@ -3,16 +3,17 @@ import { isLocalOrigin } from "@/lib/server/local-origin";
 import {
   isValidRepo,
   loadSubscriptions,
-  patchSubscriptions,
   type SubscriptionsPatch,
 } from "@/lib/github-subscriptions";
-import { startGithubWatcher, tickGithubWatcher } from "@/lib/github-watcher";
+import { configureGithubWatcher, startGithubWatcher } from "@/lib/github-watcher";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// Guarantee the watcher is alive even if instrumentation.ts was bypassed.
-startGithubWatcher();
+// Guarantee the watcher is alive even if instrumentation.ts was bypassed. The
+// watcher registers itself as a startup worker, so a load after coordinated
+// shutdown began owns no timer (#6350).
+void startGithubWatcher().catch(() => undefined);
 
 /** Prefs without poll cursors — the client has no use for them. */
 async function publicPrefs() {
@@ -47,9 +48,7 @@ export async function PATCH(req: Request) {
       );
     }
   }
-  const subs = await patchSubscriptions(body);
-  // A prefs change (enable, new repo) should take effect now, not in <=60s.
-  void tickGithubWatcher().catch(() => undefined);
+  const subs = await configureGithubWatcher(body);
   return NextResponse.json({
     ok: true,
     prefs: { enabled: subs.enabled, events: subs.events, repos: subs.repos },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server.js";
 import { resolveSecret } from "../../../../../lib/vault.ts";
+import { upstreamFetch } from "../../../../../lib/server/upstream-fetch.ts";
 import {
   ELEVENLABS_TTS_MAX_CHARS,
   isValidElevenLabsModelId,
@@ -59,7 +60,10 @@ export async function POST(req: Request) {
 
   let res: Response;
   try {
-    res = await fetch(
+    // The caller's own signal rides along; the primitive merges it with the
+    // 30 s render deadline.
+    res = await upstreamFetch(
+      "elevenlabs",
       `${TTS_BASE}/${body.voiceId}/stream?output_format=${outputFormat}`,
       {
         method: "POST",
@@ -68,8 +72,9 @@ export async function POST(req: Request) {
           "content-type": "application/json",
         },
         body: JSON.stringify({ text, model_id: body.modelId }),
-        signal: AbortSignal.any([req.signal, AbortSignal.timeout(30_000)]),
+        signal: req.signal,
       },
+      { timeoutMs: 30_000 },
     );
   } catch (e) {
     return NextResponse.json({

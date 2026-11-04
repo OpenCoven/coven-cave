@@ -112,18 +112,7 @@ assert.match(source, /state: "unavailable"/);
 assert.match(probesSource, /onboardingContinuationDecision\(steps\)/);
 assert.doesNotMatch(source, /readdir\([\s\S]*?\.openclaw[\s\S]*?agents/);
 assert.match(probesSource, /has no installed runtime or OpenClaw agent/);
-assert.match(source, /COVEN_CLI_INSTALL_GUIDANCE/);
-assert.match(source, /openCovenToolReadinessStatuses/);
-assert.match(
-  source,
-  /function checkCovenCli\(\s*tool: OpenCovenToolReadinessStatus \| undefined,\s*pathProbe: ProbeResult<string>,\s*\)/,
-  "Coven CLI readiness distinguishes confirmed absence from unavailable lookup evidence",
-);
-assert.match(
-  source,
-  /if \(!tool\.compatible\)[\s\S]{0,320}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_GUIDANCE/,
-  "startup requires a locally compatible Coven CLI without host npm guidance",
-);
+assert.match(source, /covenCliReadinessStep\(/, "the route uses the behavior-tested CLI readiness classifier");
 assert.doesNotMatch(
   source,
   /openCovenToolStatuses|checkNpmLatestVersion|npm view/,

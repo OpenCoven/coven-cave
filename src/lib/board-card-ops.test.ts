@@ -145,4 +145,65 @@ assert.deepEqual(
   "valid collections still apply when sibling collections are malformed",
 );
 
+// Dependency ops merge an imported task edge into the current card (#6258).
+const withDeps = {
+  ...base,
+  id: "card-1",
+  dependencies: [{
+    id: "d1", kind: "task", label: "Upstream", taskId: "card-2",
+    state: "unresolved", origin: "human", createdAt: NOW,
+  }],
+};
+out = applyCardOps(withDeps, {
+  dependencyOps: [
+    { op: "addTask", taskId: "card-2", label: "Upstream again" },
+    { op: "addTask", taskId: "card-3", label: "  New upstream  ", id: "d2", evidence: "Imported" },
+    { op: "addTask", taskId: "card-3", label: "Duplicate in the same batch" },
+    { op: "addTask", taskId: "card-1", label: "Itself" },
+    { op: "addTask", taskId: "", label: "No target" },
+    { op: "remove", taskId: "card-2" },
+  ],
+}, NOW);
+assert.deepEqual(out.dependencies, [
+  withDeps.dependencies[0],
+  {
+    id: "d2", kind: "task", label: "New upstream", taskId: "card-3",
+    state: "unresolved", origin: "system", createdAt: NOW, evidence: "Imported",
+  },
+], "an edge to an existing upstream, a self-edge, a target-less add and unknown ops change nothing");
+
+// Human cut and undo resolve the primary blocker against the current card (#6286).
+const blocked = {
+  ...base,
+  id: "card-9",
+  dependencies: [
+    { id: "a", kind: "task", label: "A", taskId: "card-a", state: "unresolved", origin: "human", createdAt: NOW },
+    { id: "b", kind: "task", label: "B", taskId: "card-b", state: "resolved", origin: "human", createdAt: NOW },
+    { id: "c", kind: "task", label: "C", taskId: "card-c", state: "unresolved", origin: "system", createdAt: NOW },
+  ],
+  primaryBlockerId: "a",
+  primaryBlockerPinned: true,
+};
+out = applyCardOps(blocked, { dependencyOps: [{ op: "removeTask", taskId: "card-a" }] }, NOW);
+assert.deepEqual(out.dependencies.map((dep) => dep.id), ["b", "c"]);
+assert.equal(out.primaryBlockerId, "c", "a cut primary re-points to the next unresolved edge, skipping resolved ones");
+assert.equal(out.primaryBlockerPinned, false);
+out = applyCardOps(blocked, { dependencyOps: [{ op: "remove", id: "b" }] }, NOW);
+assert.deepEqual(out.dependencies.map((dep) => dep.id), ["a", "c"]);
+assert.equal("primaryBlockerId" in out, false, "removing a non-primary edge leaves the pointer alone");
+out = applyCardOps({ ...blocked, primaryBlockerId: "c", primaryBlockerPinned: false }, {
+  dependencyOps: [{ op: "removeTask", taskId: "card-c" }, { op: "removeTask", taskId: "card-a" }],
+}, NOW);
+assert.equal(out.primaryBlockerId, null, "with no unresolved edge left, the primary clears");
+out = applyCardOps({ ...blocked, dependencies: blocked.dependencies.slice(1), primaryBlockerId: "c", primaryBlockerPinned: false }, {
+  dependencyOps: [
+    { op: "restore", dependencies: [blocked.dependencies[0], blocked.dependencies[2]], primaryBlockerId: "a", primaryBlockerPinned: true },
+    { op: "restore", dependencies: "not a list" },
+    { op: "remove", id: "" },
+  ],
+}, NOW);
+assert.deepEqual(out.dependencies.map((dep) => dep.id), ["b", "c", "a"], "restore re-adds only absent records");
+assert.equal(out.primaryBlockerId, "a", "the restored primary takes back the pointer");
+assert.equal(out.primaryBlockerPinned, true);
+
 console.log("board-card-ops: ok");

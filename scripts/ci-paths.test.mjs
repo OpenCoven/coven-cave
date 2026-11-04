@@ -28,6 +28,10 @@ test("workflow and script changes run their validation lanes", () => {
   assert.equal(classifyCiPaths(["scripts/rust-doctest-ci.test.mjs"]).rust, true);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).frontend, true);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).ios, false);
+  // The teardown helper decides whether the hosted iOS lane's harness passes
+  // or crashes (#6340), so a helper-only change must run that lane.
+  assert.equal(classifyCiPaths(["scripts/native-harness-teardown.mjs"]).ios, true);
+  assert.equal(classifyCiPaths(["scripts/native-harness-teardown.test.mjs"]).ios, true);
 });
 
 test("standalone continuity sources always run the lightweight docs contracts", () => {
@@ -93,11 +97,17 @@ test("PR checks cannot silently skip suites after an earlier failure (cave-t8p1a
   );
 });
 
-test("editing E2E's own browser installer runs E2E (#5722)", () => {
-  for (const file of ["scripts/install-playwright-ci.sh", "scripts/install-playwright-ci.test.mjs"]) {
+test("editing E2E's own browser setup runs E2E (#5722, #6191)", () => {
+  for (const file of [
+    "scripts/install-playwright-ci.sh",
+    "scripts/install-playwright-ci.test.mjs",
+    "scripts/playwright-ci-image.sh",
+    "scripts/playwright-ci-image.test.mjs",
+  ]) {
     assert.equal(classifyCiPaths([file]).e2e, true, `${file} must run E2E validation`);
   }
   assert.equal(classifyCiPaths(["scripts/install-playwright-ci.sh.bak"]).e2e, false);
+  assert.equal(classifyCiPaths(["scripts/playwright-ci-image.sh.bak"]).e2e, false);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).e2e, false);
 });
 

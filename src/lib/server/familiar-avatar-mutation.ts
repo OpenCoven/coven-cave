@@ -68,7 +68,7 @@ export async function writeCanonicalAvatar(
   await assertRealDirectory(dir);
 
   const fileName = `${id}.png`;
-  const destination = path.join(dir, fileName);
+  const destination = path.join(/* turbopackIgnore: true */ dir, fileName);
   try {
     const existing = await lstat(destination);
     if (existing.isSymbolicLink()) {
@@ -81,7 +81,7 @@ export async function writeCanonicalAvatar(
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 
-  const temporary = path.join(dir, `.${fileName}.${process.pid}.${randomUUID()}.tmp`);
+  const temporary = path.join(/* turbopackIgnore: true */ dir, `.${fileName}.${process.pid}.${randomUUID()}.tmp`);
   const file = await open(
     temporary,
     constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | noFollowFlag(),
@@ -123,12 +123,12 @@ export async function removeAvatarFiles(dir: string): Promise<{ removed: boolean
     throw new Error("Avatar path is not a directory.");
   }
 
-  const entries = (await readdir(dir)).filter((name) =>
+  const entries = (await readdir(/* turbopackIgnore: true */ dir)).filter((name) =>
     AVATAR_EXTENSIONS.has(path.extname(name).toLowerCase()),
   );
   const removable: string[] = [];
   for (const name of entries) {
-    const candidate = path.join(dir, name);
+    const candidate = path.join(/* turbopackIgnore: true */ dir, name);
     const entry = await lstat(candidate);
     if (entry.isSymbolicLink()) {
       throw new Error("Avatar file cannot be a symbolic link.");

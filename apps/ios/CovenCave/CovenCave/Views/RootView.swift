@@ -352,10 +352,12 @@ struct ConnectingView: View {
             Spacer()
         }
         .padding(.horizontal, 32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Connecting to your desktop")
         .accessibilityValue(app.connection?.host ?? "")
+        // Fills the screen; a folded hinge moves the status into one pane,
+        // the upper one in tabletop, since there is nothing here to tap.
+        .foldAvoiding(tabletop: .top)
     }
 
     @ViewBuilder

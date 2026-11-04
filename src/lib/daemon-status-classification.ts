@@ -1,3 +1,8 @@
+import {
+  isTransitionalDaemonLifecycleState,
+  type DaemonLifecycleTransitionalState,
+} from "./daemon-lifecycle.ts";
+
 export type DaemonAvailability =
   | "online"
   | "offline"
@@ -83,11 +88,14 @@ type DaemonStatusPayload = {
   availability?: unknown;
   reason?: unknown;
   target?: { mode?: unknown };
+  lifecycle?: { state?: unknown };
 };
 
 export type DaemonStatusPollResult =
   | { kind: "running"; targetMode: "local" | "hub" }
   | { kind: "offline"; targetMode: "local" }
+  /** A start, recovery or stop is in flight on the server (#6298). */
+  | { kind: "transitioning"; state: DaemonLifecycleTransitionalState; targetMode: "local" }
   | { kind: "auth-expired" }
   | { kind: "unavailable"; reason: string };
 
@@ -211,6 +219,13 @@ export function classifyDaemonStatusPoll(input: {
       return { kind: "running", targetMode };
     }
     return { kind: "unavailable", reason: "status service returned an invalid target" };
+  }
+
+  // The server's projected lifecycle outranks a bare offline probe while a
+  // mutation runs: the daemon is neither absent (no second start) nor failed.
+  const lifecycleState = payload.lifecycle?.state;
+  if (payload.target?.mode === "local" && isTransitionalDaemonLifecycleState(lifecycleState)) {
+    return { kind: "transitioning", state: lifecycleState, targetMode: "local" };
   }
 
   const reason = payloadReason(payload);

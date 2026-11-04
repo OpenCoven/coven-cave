@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/workspace-sidebar.css";
+
 import { useEffect, useId, useMemo, useState } from "react";
 import { cancelHoverPrefetch, hoverPrefetchConversation, prefetchConversation } from "@/lib/conversation-cache";
 import { chatBrowseEmptyMessage, effectiveChatBrowseScope, scopeChatBrowseSessions, type ChatBrowseScope } from "@/lib/chat-browse-scope";
@@ -204,7 +206,7 @@ function sessionProjectName(session: SessionRow, project?: { name: string } | nu
 function ThreadSummary({ session, title, project, prStatus, now, attentionLabel, broadcast, confirming = false }: {
   session: SessionRow;
   title: string;
-  project?: { name: string } | null;
+  project?: { name: string; color?: string | null } | null;
   prStatus: SessionPrStatus | null;
   now: number;
   attentionLabel: string | null;
@@ -214,48 +216,53 @@ function ThreadSummary({ session, title, project, prStatus, now, attentionLabel,
   const running = session.status === "running";
   const branch = sessionWorkBranch(session);
   const lastActive = bareTimeAt(session.updated_at || session.created_at, now);
+  // Title first in the DOM so assistive tech reads it first; the head line
+  // (project · time) is ordered above it visually in workspace-sidebar.css.
   return (
     <span className="cnav__thread-copy">
-      <span className="cnav__thread-overline">
-        <span className="cnav__thread-project" title={session.project_root || undefined} aria-hidden={Boolean(project)}>
-          {sessionProjectName(session, project)}
-        </span>
-        {broadcast ? (
-          <span className="cnav__broadcast" data-state={broadcast}>{broadcast === "sent" ? "Sent" : "Failed"}</span>
-        ) : confirming ? null : (
-          <span className="cnav__thread-state">
-            {running ? <span className="cnav__working"><span className="cnav__working-ring" aria-hidden />Working</span> : null}
-            <span className="cnav__time" title={`Last active ${relativeTime(session.updated_at || session.created_at, now)}`}>{lastActive}</span>
-          </span>
-        )}
-      </span>
       <span className="cnav__thread-line">
         <ChatRowTitle
           className="cnav__thread-title"
           title={title}
           displayTitle={stripLeadingTrailingEmoji(session.title || "(untitled chat)")}
+          truncate="end"
         />
+      </span>
+      <span className="cnav__thread-head">
+        <ProjectAvatar
+          name={sessionProjectName(session, project)}
+          root={session.project_root}
+          color={project?.color ?? null}
+          size="sm"
+          className="cnav__thread-avatar"
+        />
+        <span className="cnav__thread-project" title={session.project_root || undefined}>
+          {sessionProjectName(session, project)}
+        </span>
+        {!confirming ? <span className="cnav__time" title={`Last active ${relativeTime(session.updated_at || session.created_at, now)}`}>{lastActive}</span> : null}
       </span>
       <span className="cnav__thread-context">
         {branch ? (
           <span className="cnav__thread-branch" title={`Branch ${branch}`}>
-            <Icon name="ph:git-branch" width={12} aria-hidden />
-            <span>{truncateBranch(branch)}</span>
+            <Icon name="ph:git-branch" width={11} aria-hidden /><span>{truncateBranch(branch)}</span>
           </span>
-        ) : <span className="cnav__thread-context-empty" />}
+        ) : null}
+        {prStatus && session.pullRequest?.number != null ? (
+          <span className="cnav__thread-pr-number" data-pr-state={prStatus.key} aria-hidden>#{session.pullRequest.number}</span>
+        ) : null}
         <span className="cnav__thread-context-end">
-          {prStatus && session.pullRequest?.number != null ? (
-            <span className="cnav__thread-pr-number" data-pr-state={prStatus.key} aria-hidden>
-              #{session.pullRequest.number}
-            </span>
+          {running ? <span className="cnav__working"><span className="cnav__working-ring" aria-hidden />Working</span> : null}
+          {!session.archived_at && ["failed", "paused", "queued"].includes(session.status) ? (
+            <span className="cnav__runtime-state" data-status={session.status}>{session.status === "failed" ? "Failed" : session.status === "paused" ? "Paused" : "Queued"}</span>
           ) : null}
           <span className="cnav__runtime" title={`Runtime: ${runtimeDisplayName(session.harness)}`}>
             <RuntimeLogo runtime={session.harness} size={13} />
             <span className="sr-only">Runtime: {runtimeDisplayName(session.harness)}</span>
           </span>
+          {broadcast ? <span className="cnav__broadcast" data-state={broadcast}>{broadcast === "sent" ? "Sent" : "Failed"}</span> : null}
+          <ThreadAttentionCue label={attentionLabel} />
         </span>
       </span>
-      <ThreadAttentionCue label={attentionLabel} />
     </span>
   );
 }
@@ -457,7 +464,6 @@ function ThreadRow({
             <ProjectAvatar name={project.name} root={project.root} color={project.color} size="sm" />
           </span>
         ) : null}
-        {project ? <span className="sr-only">{`Project ${project.name} `}</span> : null}
         <ThreadSummary session={session} title={title} project={project} prStatus={prStatus} now={now} attentionLabel={attentionLabel} broadcast={broadcast} confirming={confirming} />
       </button>
       {attentionDescription ? (
@@ -507,91 +513,6 @@ function ThreadRow({
           </button>
         </span>
       )}
-    </div>
-  );
-}
-
-type PinnedThreadRowProps = {
-  session: SessionRow;
-  active: boolean;
-  now: number;
-  project?: { name: string } | null;
-  onOpenUrl?: (url: string) => void;
-  onOpen: () => void;
-  onTogglePin: () => void;
-  selectMode: boolean;
-};
-
-// The Pinned rail is deliberately NOT a ThreadRow: it drops the project tile,
-// drag/split, and archive/delete affordances to stay an always-visible
-// shortlist, and its trailing bookmark is a one-click unpin
-// rather than ThreadRow's row-actions overlay. It still shares attention
-// derivation (resolveThreadAttention) and cue rendering (ThreadAttentionCue)
-// with ThreadRow so the two row shapes can't render divergent attention state
-// for the same session — only the surrounding chrome differs. Same rule for
-// the runtime tick/archive semantics below: a pinned session can still be
-// running or failed, so this row reuses ThreadRow's own tick class and
-// archive-glyph derivation rather than re-deriving them — see cave-zs85n
-// Task 6 gap-fix notes.
-function PinnedThreadRow({ session, active, now, project, onOpenUrl, onOpen, onTogglePin, selectMode }: PinnedThreadRowProps) {
-  const attentionDescriptionId = useId();
-  const prefetchHandlers = useThreadPrefetch(session.id, selectMode);
-  const archived = Boolean(session.archived_at);
-  const title = sidebarThreadTitle(session, archived);
-  const prStatus = archived ? null : sessionPrStatus(session.pullRequest);
-  const { state: attentionState, kind: attentionKind, label: attentionLabel, description: attentionDescription } = resolveThreadAttention(
-    session,
-    archived,
-    now,
-  );
-  const leadGlyph = archived ? ("ph:archive" as IconName) : null;
-  return (
-    <div
-      className={`cnav__thread cnav__thread--flat${prStatus ? " cnav__thread--pr" : ""}${active ? " is-active" : ""}${archived ? " is-archived" : ""}`}
-      data-status={session.status}
-      data-attention={attentionState}
-      data-attention-kind={attentionKind ?? undefined}
-    >
-      {/* Chat.dc.html 2a: every row carries a 2px colour tick on its left
-          edge — the session's runtime state, readable down the whole rail
-          without hunting for the dot. Shared with ThreadRow so a pinned row's
-          tick can never diverge from its full-row twin. */}
-      <span className={`cnav__tick ${statusDotClass(session.status)}`} aria-hidden />
-      {/* Same separate attention channel as ThreadRow (cave-zs85n Task 6) —
-          shared markup so the compact rail can't drift into a divergent cue. */}
-      {attentionState !== "none" ? <span className="cnav__attention-tick" aria-hidden /> : null}
-      {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
-      <button
-        type="button"
-        aria-current={active ? "page" : undefined}
-        aria-describedby={attentionDescription ? attentionDescriptionId : undefined}
-        onClick={onOpen}
-        {...prefetchHandlers}
-        className="cnav__thread-main focus-ring"
-      >
-        {prStatus ? null : leadGlyph ? (
-          <Icon name={leadGlyph} width={13} className="cnav__lead" aria-hidden />
-        ) : (
-          <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
-        )}
-        <ThreadSummary session={session} title={title} project={project} prStatus={prStatus} now={now} attentionLabel={attentionLabel} />
-      </button>
-      {attentionDescription ? (
-        <span id={attentionDescriptionId} className="sr-only">{attentionDescription}</span>
-      ) : null}
-      {/* The trailing always-visible bookmark doubles as the pin marker AND a
-          one-click unpin — otherwise the only unpin lives on the (possibly
-          truncated/collapsed) copy of the row further down the rail. */}
-      <button
-        type="button"
-        title="Unpin chat"
-        aria-label={`Unpin ${title}`}
-        aria-pressed
-        onClick={onTogglePin}
-        className="cnav__icon-btn is-on focus-ring"
-      >
-        <Icon name="ph:bookmark-simple-fill" width={12} aria-hidden />
-      </button>
     </div>
   );
 }
@@ -707,7 +628,7 @@ export function SidebarChatsSection({
     () =>
       pinnedIds
         .map((id) => visibleSessions.find((s) => s.id === id))
-        .filter((s): s is SessionRow => Boolean(s)),
+        .filter((s): s is SessionRow => s !== undefined && s.attention.state === "none"),
     [pinnedIds, visibleSessions],
   );
 
@@ -723,10 +644,10 @@ export function SidebarChatsSection({
   // Search filters the single recency-oriented chat list.
   const recentSessions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const rows = hasSearch ? visibleSessions : visibleSessions.filter((session) => !attentionIds.has(session.id));
+    const rows = hasSearch ? visibleSessions : visibleSessions.filter((session) => !attentionIds.has(session.id) && !pinnedIds.includes(session.id));
     if (!q) return rows;
     return rows.filter((s) => sessionRailTitle(s).toLowerCase().includes(q));
-  }, [visibleSessions, query, hasSearch, attentionIds]);
+  }, [visibleSessions, query, hasSearch, attentionIds, pinnedIds]);
 
   // Buckets depend on wall-clock day boundaries, and the sessions poll bails
   // out identity-unchanged when content is identical — so a data refresh alone
@@ -837,14 +758,11 @@ export function SidebarChatsSection({
     // which every e2e run depends on — so dropping these class names would
     // break the suite far outside this component (cave-fh9so).
     <div className="workspace-sidebar chat-sidebar chat-sidebar__embedded cnav">
-        {/* Title row: "Chats" plus the rail's collapse toggle, and nothing
-            else. It replaces the old search row, which also carried the
-            Organize menu. Search and the archived-visibility toggle went with
-            it — the list below is already grouped by attention and recency,
-            and the row is the rail's header, not a toolbar. */}
+        {/* Selection sits beside the collapse control, never nested inside it. */}
         {/* The whole row is the control, mirroring the collapsed spine — the
             icon is decoration inside it, not a nested <button> (which would be
             invalid HTML and would swallow clicks aimed at the row). */}
+        <div className="cnav__header">
         <button
           type="button"
           className="cnav__title-row focus-ring"
@@ -872,6 +790,7 @@ export function SidebarChatsSection({
             <span>Select</span>
           </button>
         ) : null}
+        </div>
         {select.selectMode ? (
           <div className="cnav__select-bar">
             <SelectionToolbar
@@ -963,15 +882,28 @@ export function SidebarChatsSection({
               <ul>
                 {pinnedSessions.map((session) => (
                   <li key={`pin-${session.id}`}>
-                    <PinnedThreadRow
+                    <ThreadRow
                       session={session}
                       project={sessionProjectById.get(session.id) ?? null}
+                      pinned
+                      indent="flat"
+                      confirming={confirmingSessionId === session.id}
+                      deleting={deletingSessionId === session.id}
                       selectMode={select.selectMode}
+                      selected={select.isSelected(session.id)}
+                      onToggleSelect={() => select.toggle(session.id)}
                       active={activeSessionId === session.id}
                       now={now}
                       onOpenUrl={onOpenUrl}
                       onOpen={() => onOpenSession(session)}
+                      onOpenInSplit={onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined}
                       onTogglePin={() => togglePin(session.id)}
+                      onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
+                      archiving={archivingId !== null}
+                      onRequestDelete={() => setConfirmingSessionId(session.id)}
+                      onCancelDelete={() => setConfirmingSessionId(null)}
+                      onConfirmDelete={() => void handleDeleteSession(session)}
+                      broadcast={broadcastState[session.id] ?? null}
                     />
                   </li>
                 ))}

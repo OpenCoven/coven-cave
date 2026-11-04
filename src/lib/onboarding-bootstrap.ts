@@ -239,6 +239,18 @@ export function normalizeResumableBootstrapState(
   };
 }
 
+/** An explicit rerun rechecks every stage; passive resume keeps completed setup idle.
+ * Stage runners verify and preserve existing components before doing any work. */
+export function prepareOnboardingBootstrapRun(
+  state: OnboardingBootstrapState,
+  confirm: boolean,
+): OnboardingBootstrapState | null {
+  if ((!state.confirmed || state.complete) && !confirm) return null;
+  return state.complete
+    ? createOnboardingBootstrapState(true)
+    : normalizeResumableBootstrapState(state);
+}
+
 export async function runOnboardingBootstrapStages(
   initial: OnboardingBootstrapState,
   runners: OnboardingBootstrapRunners,

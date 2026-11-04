@@ -1,16 +1,16 @@
 {
   "note": "Single source of truth for the sidecar runtime file-count budget. Edit fileCount HERE and nowhere else: scripts/sidecar-runtime-closure.mjs reads this file, scripts/sidecar-runtime-smoke.mjs derives from that, and src-tauri/build.rs generates the Rust MAX_FILE_COUNT const from it. Before cave-0ia8h the same number was hand-synced across six places and drifted; sidecar-bundle-deps.test.mjs now fails if a literal reappears.",
   "raising": "Raising this is a deliberate, reviewed act, not a reflex when CI goes red. Set it from the GOVERNING platform measurement (Windows runs a few files above Ubuntu; a budget set from an Ubuntu-only figure has reddened windows-latest more than once) and record that measurement below. The reasoning history lives beside SIDECAR_RUNTIME_BUDGETS in scripts/sidecar-runtime-closure.mjs.",
-  "fileCount": 8884,
+  "fileCount": 9045,
   "measurement": {
-    "on": "2026-10-15",
-    "reference": "v0.5.14-rc.2 / GitHub Actions run 38773009779",
+    "on": "2026-10-25",
+    "reference": "v0.5.15-rc.1 / GitHub Actions run 40147550311",
     "governingPlatform": "windows",
-    "windows": 8734,
+    "windows": 8895,
     "windowsObserved": true,
-    "ubuntu": 8730,
-    "macos": 8726,
-    "macosSource": "Measured locally on macOS arm64 at the same commit (71d779791). The candidate's macOS leg timed out in the Client v1 conformance build (#6005) before assembly.",
+    "ubuntu": 8887,
+    "macos": 8889,
+    "macosSource": "Observed in the same candidate run. A same-machine local assembly on macOS arm64 at the rc.1 tree also gives 8,889, and at v0.5.14 gives the release run's 8,728.",
     "headroom": 150,
     "featureDelta": {
       "fileCount": 139,
@@ -35,35 +35,67 @@
       }
     },
     "releaseDelta": {
-      "fileCount": 1198,
-      "nextTraceFileCount": 4,
-      "tracedPackageCountChanged": false,
       "runtimeKind": "generated-next-output",
       "nativeOrPlatformSubtree": false,
-      "baselineReference": "v0.5.13-rc.1 / GitHub Actions run 38471712437",
-      "baseline": {
-        "windows": 7536,
-        "ubuntu": 7532,
-        "macos": 7528
+      "nextTraceFileCount": 8,
+      "bundledNodeModulesChanged": false,
+      "tracedPackageInputs": {
+        "baseline": {
+          "windows": 26,
+          "ubuntu": 27,
+          "macos": 26
+        },
+        "measured": {
+          "windows": 25,
+          "ubuntu": 25,
+          "macos": 25
+        }
       },
+      "baselineReference": "v0.5.14 / GitHub Actions run 38798337683 (Validate release runtime)",
+      "baseline": {
+        "windows": 8736,
+        "ubuntu": 8732,
+        "macos": 8728
+      },
+      "platformDeltas": {
+        "windows": 159,
+        "ubuntu": 155,
+        "macos": 161
+      },
+      "inventoryPlatform": "macos",
       "inventoryDeltas": {
-        ".next/server/chunks": 1694,
-        ".next/static/chunks": 267,
-        ".next/server/app": 20,
-        ".next/server/instrumentation.js": 1,
-        "marketplace/payloads.json": 1,
-        "marketplace/plugins": -785
+        ".next/server/chunks": 107,
+        ".next/server/app": 40,
+        ".next/static/chunks": 13,
+        "public/marketplace-logos": 1
+      },
+      "routes": {
+        "added": [
+          "api/codex-automations/[id]/definition",
+          "api/coven-automation-lifecycle",
+          "api/coven-automation-occurrences",
+          "api/coven-automations/[id]/feed",
+          "api/coven-automations/[id]/lifecycle",
+          "api/coven-automations/[id]/occurrences",
+          "api/coven-automations/[id]/occurrences/[occurrenceId]",
+          "api/local-models",
+          "api/research-automation-import"
+        ],
+        "removed": [
+          "api/prompt/enhance"
+        ]
       },
       "unpackedBytes": {
         "platform": "macos-arm64",
-        "baseline": 125983670,
-        "measured": 145135525
+        "baseline": 145163168,
+        "measured": 147877332
       },
       "causes": [
-        "#6025 makes Research the optional @opencoven/research package. Turbopack compiles it into server chunks (+1,124 net); none of the package's own files are copied into the closure.",
-        "#5996 moved startup work behind on-demand imports, which Turbopack emits as more, smaller chunks, and extracted the marketplace plugins (-785)."
+        "#5217's Automations oversight (#6048, #6055, #6077, #6081) and the typed automation consumers (#6202, #6212) add seven automation routes and the Research automation import route.",
+        "#6049's local models add api/local-models (#6088, #6092). #6203 removes the scripted api/prompt/enhance route.",
+        "Those eight net routes are the 368 -> 376 Next trace increase, five server app files each (+40), with their server chunks (+107) and client chunks (+13). #6030 adds the OpenCoven marketplace logo."
       ]
     },
-    "headroomRationale": "v0.5.14-rc.2 observed 8,734 files on Windows and 8,730 on Linux; macOS measured 8,726 locally at the same commit. Each is exactly +1,198 over v0.5.13-rc.1. A same-machine inventory diff of the assembled closure accounts for the whole delta: generated Next output (server chunks +1,694, static chunks +267, server app +20, instrumentation +1) and runtime roots (marketplace plugins -785, payload index +1). Traced package names and dependency or native subtrees are unchanged (27 traced packages on Linux), and Next traces moved 364 -> 368. Expanded bytes stay under the 200 MiB ceiling (145.1 MB on macOS). Keep the established 150-file headroom over the observed Windows count."
+    "headroomRationale": "v0.5.15-rc.1 observed 8,895 files on Windows, 8,887 on Linux and 8,889 on macOS: +159, +155 and +161 over the v0.5.14 release run. A same-machine macOS inventory diff accounts for its whole +161: server chunks +107, server app +40, static chunks +13, one marketplace logo. Eight net routes match the 368 -> 376 trace increase. The bundled node_modules set is unchanged on the same machine; only the traced-package input count fell (26-27 -> 25). Expanded bytes stay under the 200 MiB ceiling (147.9 MB on macOS). Keep the established 150-file headroom over the observed Windows count."
   }
 }

@@ -57,11 +57,11 @@ export type JournalSummary = {
 const FAMILIARS_DIR = "familiars";
 
 function journalDir(): string {
-  return path.join(covenHome(), "journal");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "journal");
 }
 
 function familiarsRoot(): string {
-  return path.join(journalDir(), FAMILIARS_DIR);
+  return path.join(/* turbopackIgnore: true */ journalDir(), FAMILIARS_DIR);
 }
 
 function assertInside(dir: string, file: string): void {
@@ -78,7 +78,7 @@ export function isJournalFamiliarId(familiarId: unknown): familiarId is string {
 export function familiarJournalDir(familiarId: string): string {
   if (!isJournalFamiliarId(familiarId)) throw new Error("invalid familiar id");
   const root = familiarsRoot();
-  const dir = path.join(root, path.basename(familiarId));
+  const dir = path.join(/* turbopackIgnore: true */ root, path.basename(familiarId));
   assertInside(root, dir);
   return dir;
 }
@@ -93,7 +93,7 @@ export async function ensureFamiliarJournalDir(familiarId: string): Promise<stri
 function legacyEntryFile(date: string): string {
   if (!isValidNoteDate(date)) throw new Error("invalid journal date");
   const dir = journalDir();
-  const file = path.join(dir, `${path.basename(date)}.md`);
+  const file = path.join(/* turbopackIgnore: true */ dir, `${path.basename(date)}.md`);
   assertInside(dir, file);
   return file;
 }
@@ -101,7 +101,7 @@ function legacyEntryFile(date: string): string {
 function familiarEntryFile(date: string, familiarId: string): string {
   if (!isValidNoteDate(date)) throw new Error("invalid journal date");
   const dir = familiarJournalDir(familiarId);
-  const file = path.join(dir, `${path.basename(date)}.md`);
+  const file = path.join(/* turbopackIgnore: true */ dir, `${path.basename(date)}.md`);
   assertInside(dir, file);
   return file;
 }
@@ -160,7 +160,7 @@ async function unlinkIfPresent(file: string): Promise<boolean> {
 async function listFamiliarDirs(): Promise<string[]> {
   let names: string[];
   try {
-    names = await readdir(familiarsRoot());
+    names = await readdir(/* turbopackIgnore: true */ familiarsRoot());
   } catch (error) {
     if (isMissingPath(error)) return [];
     throw error;
@@ -310,7 +310,7 @@ function toSummary(record: JournalRecord, source: JournalSource): JournalSummary
 export async function listJournalEntries(familiarId?: string | null): Promise<JournalSummary[]> {
   let legacyNames: string[];
   try {
-    legacyNames = await readdir(journalDir());
+    legacyNames = await readdir(/* turbopackIgnore: true */ journalDir());
   } catch (error) {
     if (isMissingPath(error)) return [];
     throw error;
@@ -322,7 +322,7 @@ export async function listJournalEntries(familiarId?: string | null): Promise<Jo
       familiarIds.map(async (id) => {
         let names: string[];
         try {
-          names = await readdir(familiarJournalDir(id));
+          names = await readdir(/* turbopackIgnore: true */ familiarJournalDir(id));
         } catch (error) {
           // A stray non-directory entry under familiars/ is not a journal.
           if (isMissingPath(error) || (error as { code?: unknown })?.code === "ENOTDIR") return [];

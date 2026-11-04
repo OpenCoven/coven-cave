@@ -1,8 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 // The computation moved to @/lib/server/sessions-list (cave-9rwd.1). The route
@@ -99,7 +101,15 @@ const previousEnv = {
   COVEN_SOCKET: process.env.COVEN_SOCKET,
   CAVE_PROJECTS_PATH_OVERRIDE: process.env.CAVE_PROJECTS_PATH_OVERRIDE,
 };
-const scratchRoot = path.join(process.cwd(), `.slrt-${process.pid}`);
+// Outside any Git checkout (#6231): GET's default git enrichment would attribute
+// a linked worktree's branch to the fixtures and start a detached `gh` lookup
+// whose login-shell probe writes under COVEN_HOME after the test moves on.
+const scratchRoot = realpathSync(mkdtempSync(path.join(tmpdir(), "slrt-")));
+assert.throws(
+  () => execFileSync("git", ["-C", scratchRoot, "rev-parse", "--git-dir"], { stdio: "pipe" }),
+  (error) => error.code === "ENOENT" || /not a git repository/.test(String(error.stderr)),
+  "the fixture root must not sit inside a Git checkout",
+);
 const covenHome = path.join(scratchRoot, "h");
 const projectRoot = path.join(scratchRoot, "p");
 const configPath = path.join(covenHome, "cave", "config.json");

@@ -35,11 +35,11 @@ assert.doesNotMatch(source, /CanonicalMemoryRow|row\.excerpt/, "canonical summar
 
 // Edit mode: files (contentPath rows) get an Edit affordance that swaps in the
 // MemoryMdEditor; leaving the row or finishing the session returns to read
-// mode and re-fetches so the reader shows what was saved.
+// mode while dirty editors retain their unsaved input.
 assert.match(source, /<MemoryMdEditor/, "edit mode uses the shared MemoryMdEditor");
 assert.match(source, /visualLifecycleQueueRef=\{visualLifecycleQueueRef\}/, "rapid memory edit remounts share a stable visual lifecycle queue");
-assert.match(source, /editing \? \([\s\S]*?<MemoryMdEditor[\s\S]*?path=\{row\.contentPath\}/, "editor mounts only after a file row is selected");
-assert.match(source, /setEditing\(false\);?\s*\n?\s*\}, \[fetchPath\]\)/, "switching rows ends the edit session");
+assert.match(source, /Object\.values\(editorRows\)\.map[\s\S]*?<MemoryMdEditor[\s\S]*?path=\{path\}/, "retained editors stay keyed to their own file paths");
+assert.match(source, /setEditingPath\(null\);?\s*\n?\s*\}, \[fetchPath\]\)/, "switching rows ends the edit session");
 assert.match(source, /setRefreshToken\(\(current\) => current \+ 1\)/, "leaving edit re-fetches the read view");
 
 // Copy-path + empty state + open-file + expand.

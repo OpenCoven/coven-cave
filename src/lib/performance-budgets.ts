@@ -42,13 +42,16 @@ export type PerformanceBudgetSurface = typeof PERFORMANCE_BUDGET_SURFACES[number
  * - `postbuild` — already enforced by a build-time gate; recorded here so the
  *   catalogue is complete, and deliberately NOT re-evaluated, because two gates
  *   over one number drift apart.
+ * - `browser-performance` — enforced by the production browser fixture; the
+ *   file/list report delegates without pretending it measured that workload.
  * - `pending` — the value is approved and recorded, but no fixture produces the
  *   measurement yet. Reported on every run so the gap stays visible instead of
- *   reading as a pass.
+ *   reading as a pass. None remain since #6346; a new one is a deliberate act.
  */
 export const PERFORMANCE_BUDGET_GATES = [
   "performance-report",
   "postbuild",
+  "browser-performance",
   "pending",
 ] as const;
 export type PerformanceBudgetGate = typeof PERFORMANCE_BUDGET_GATES[number];
@@ -107,6 +110,14 @@ export type PerformanceBudget = {
   limit: number | null;
   gate: PerformanceBudgetGate;
   /**
+   * A repository constant this ceiling must equal, in the same resolvable
+   * `<file> (<CONSTANT>)` form, for an entry whose enforcing gate is not the
+   * file that owns the number. `cli.doctor.p95-ms` is the exec route's own
+   * timeout and is measured by a spec (#6346); this keeps the two from
+   * drifting the way the 900 KB / 2800 KB pair did.
+   */
+  derivedFrom?: string;
+  /**
    * The fixture, gate, or issue that owns this number.
    *
    * Every form is machine-checked, because a `source` nobody verifies is a
@@ -137,7 +148,7 @@ export type PerformanceBudget = {
  * one that stayed prose: `cli.doctor.p95-ms` read "matches EXEC_TIMEOUT_MS in
  * src/app/api/coven/exec/route.ts" — a claim about a specific constant, with
  * nothing to notice when that constant moved. Prose is fine for a number no
- * code owns yet (a shell-boot deadline nothing measures), but the moment an
+ * code owns yet (the shell-boot deadlines were that until #6333), but the moment an
  * entry names a file in this repository it has to say so in a form a test can
  * resolve, and `performance-budgets.test.ts` refuses any source that names a
  * repository file without using this one.
@@ -457,8 +468,8 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     unit: "ms",
     direction: "lower-is-better",
     limit: 3_000,
-    gate: "pending",
-    source: "cave-o8gc4: warm/offline shell timing harness is not built yet",
+    gate: "browser-performance",
+    source: "tests/shell-boot-performance.spec.ts",
   },
   {
     id: "shell.offline-boot.p95-ms",
@@ -467,8 +478,8 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     unit: "ms",
     direction: "lower-is-better",
     limit: 5_000,
-    gate: "pending",
-    source: "cave-o8gc4: warm/offline shell timing harness is not built yet",
+    gate: "browser-performance",
+    source: "tests/shell-boot-performance.spec.ts",
   },
   {
     id: "stream.10k-event.input-blocking-p95-ms",
@@ -477,8 +488,8 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     unit: "ms",
     direction: "lower-is-better",
     limit: 200,
-    gate: "pending",
-    source: "cave-o8gc4: 10k-event stream fixture is not built yet",
+    gate: "browser-performance",
+    source: "tests/chat-stream-performance.spec.ts",
   },
   {
     id: "cli.doctor.p95-ms",
@@ -487,11 +498,13 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     unit: "ms",
     direction: "lower-is-better",
     limit: 6_000,
-    gate: "pending",
+    gate: "browser-performance",
     // Not an independently approved number: it is the exec route's own timeout,
     // so a `coven doctor` slower than this is already a failed request rather
-    // than a slow one. Recorded in resolvable form so the two cannot drift.
-    source: "src/app/api/coven/exec/route.ts (EXEC_TIMEOUT_MS)",
+    // than a slow one. Measured through that route by the doctor gate (#6346);
+    // `derivedFrom` keeps the ceiling pinned to the constant.
+    source: "tests/doctor-exec-performance.spec.ts",
+    derivedFrom: "src/app/api/coven/exec/route.ts (EXEC_TIMEOUT_MS)",
   },
 ];
 
@@ -608,8 +621,9 @@ function headroomOf(budget: PerformanceBudget, value: number, limit: number): {
  * crashed emits no metric, and treating "no measurement" as "no breach" would
  * turn every such outage into a green run. That is the same asymmetry the
  * maintenance gate takes when a plane's entry is missing rather than false.
- * `pending` and `postbuild` entries never fail this evaluation — the first has
- * nothing to measure, and the second is enforced by the gate it names.
+ * `pending` entries have nothing to measure here. `postbuild` and
+ * `browser-performance` are enforced by the gates they name and never receive
+ * a fabricated verdict from this file/list evaluation.
  *
  * A measurement taken at the wrong fixture scale is treated as no measurement,
  * for the same reason. Every enforced limit here is a number about a specific
@@ -644,7 +658,7 @@ export function evaluatePerformanceBudgets(
         note: null,
       };
     }
-    if (budget.gate === "postbuild") {
+    if (budget.gate === "postbuild" || budget.gate === "browser-performance") {
       return {
         budget,
         value: null,

@@ -2,12 +2,14 @@
 
 Status: **canonical active direction**
 
-Last reconciled: 2026-09-12
+Last reconciled: 2026-10-25
 
-This page is the only iOS priority queue. Dated specifications, implementation
-plans, audits, handoff exports, and rebuild notes remain useful historical
-evidence, but they do not authorize new work unless this page links them under
-Current authorities or Current priorities.
+GitHub Issues hold the iOS work queue, as for the rest of the repository (see
+`AGENTS.md`). This page holds the canonical product shape and the standing
+priorities that iOS issues follow. Dated specifications, implementation plans,
+audits, handoff exports, and rebuild notes remain useful historical evidence,
+but they do not authorize new work unless this page links them under Current
+authorities or Current priorities.
 
 ## Current authorities
 
@@ -87,7 +89,8 @@ until intentionally migrated by the active program.
 
 ## Active program
 
-`cave-iusli` owns this chat-only implementation. The maintainer explicitly
+The chat-only implementation shipped in #5379 (2026-09-12). Its retired Bead,
+`cave-iusli`, no longer owns work. The maintainer explicitly
 approved replacing the workspace roadmap, recorded on
 [#5290](https://github.com/OpenCoven/coven-cave/issues/5290#issuecomment-5644986219).
 This supersedes the product expansion in #5290, including project workspaces,
@@ -102,8 +105,9 @@ passing its device baselines, authorization exercises, or release gates.
 
 ## Current priorities
 
-1. Complete the chat-only shell and conversation list on `cave-iusli`, retiring
-   non-chat navigation and external entrypoints rather than hiding them.
+1. Shipped (#5379): the chat-only shell and conversation list retired non-chat
+   navigation and external entrypoints rather than hiding them. Keep them
+   retired.
 2. Preserve reliability, pairing, honest failure states, draft durability,
    queued-target immutability, and exact chat/project authorization contracts.
 3. Use one disposable list projection for local/server deduplication, counts,

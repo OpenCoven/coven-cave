@@ -1,3 +1,4 @@
+import { invalidateChatAccess, subscribeChatAccessInvalidation } from "./chat-access-invalidation.ts";
 import type { ChatReasoningBlock } from "./chat-reasoning-blocks.ts";
 import { settleToolObservations, type ToolStatus } from "./chat-tool-state.ts";
 import type { ToolActivity } from "./chat-activity.ts";
@@ -208,11 +209,20 @@ export type LiveChatGenerationMetadata = {
 // updates, freezing the visible snapshot mid-stream.
 const liveChatRegistry = createLiveGenerationRegistry<Turn, LiveChatGenerationSnapshot>(cloneLiveTurn);
 
+subscribeChatAccessInvalidation((change) => {
+  const aliases = liveChatRegistry.revoke(change.sessionId);
+  if (change.sessionId !== undefined) {
+    for (const sessionId of aliases) {
+      if (sessionId !== change.sessionId) invalidateChatAccess({ ...change, sessionId });
+    }
+  }
+});
+
 export function readLiveChatGeneration(sessionId: string): LiveChatGenerationSnapshot | null {
   return liveChatRegistry.read(sessionId);
 }
 
-export function recordLiveChatGeneration(snapshot: LiveChatGenerationSnapshot): LiveChatGenerationSnapshot {
+export function recordLiveChatGeneration(snapshot: LiveChatGenerationSnapshot): LiveChatGenerationSnapshot | null {
   return liveChatRegistry.record(snapshot);
 }
 
@@ -303,6 +313,10 @@ export function clearLiveChatGeneration(
     }
   }
   liveChatRegistry.clear(sessionId);
+}
+
+export function revokeLiveChatGenerations(sessionId?: string): void {
+  liveChatRegistry.revoke(sessionId);
 }
 
 export function subscribeLiveChatGeneration(

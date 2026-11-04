@@ -13,17 +13,18 @@ const FRONTEND_PATH =
 const RUST_PATH =
   /^(?:src-tauri\/|Cargo\.(?:toml|lock)$|rust-toolchain|scripts\/rust-doctest-ci\.test\.mjs|\.github\/workflows\/(?:ci|full-validation)\.yml$)/;
 const ROOT_RUNTIME_PATH = /^[^/]+\.(?:[cm]?[jt]s|tsx?)$/;
-// `install-playwright-ci.sh` is E2E's own setup (#5722): editing it must run
-// the jobs that execute it, as the iOS gate's scripts run the iOS build.
+// `playwright-ci-image.sh` (#6191) and `install-playwright-ci.sh` (#5722) are
+// E2E's own setup: editing either must run the jobs that execute it, as the
+// iOS gate's scripts run the iOS build.
 const E2E_PATH =
-  /^(?:src\/(?:app|components|lib|styles)\/|tests\/|server\.(?:mjs|ts)$|playwright\.config|package\.json$|pnpm-lock\.yaml$|scripts\/install-playwright-ci(?:\.sh|\.test\.mjs)$)/;
+  /^(?:src\/(?:app|components|lib|styles)\/|tests\/|server\.(?:mjs|ts)$|playwright\.config|package\.json$|pnpm-lock\.yaml$|scripts\/(?:install-playwright-ci|playwright-ci-image)(?:\.sh|\.test\.mjs)$)/;
 // `ios-select-simulator.mjs` and `ios-xctest-summary.mjs` are listed because
 // they ARE the iOS gate: one chooses the destination the suite runs against,
 // the other is the sole verdict on whether it ran (cave-ac372). Without them
 // here, editing the gate's own machinery ran everything except the job that
 // would have exercised it.
 const IOS_PATH =
-  /^(?:apps\/ios\/|fixtures\/coven-automations-release\/package(?:-lock)?\.json$|scripts\/(?:ios-xcodegen\.sh|build-ios-(?:markdown|terminal)\.mjs|ios-(?:select-simulator|xctest-summary)(?:\.test)?\.mjs|ios-build-ci\.test\.mjs|runtime-activity-native-transport\.mjs|client-v1-conformance\.mjs|coven-automations-release-canary\.ts|ci-paths(?:\.test)?\.mjs)$|package\.json$|pnpm-lock\.yaml$|\.github\/workflows\/ci\.yml$)/;
+  /^(?:apps\/ios\/|fixtures\/coven-automations-release\/package(?:-lock)?\.json$|scripts\/(?:ios-xcodegen\.sh|build-ios-(?:markdown|terminal)\.mjs|ios-(?:select-simulator|xctest-summary)(?:\.test)?\.mjs|ios-build-ci\.test\.mjs|runtime-activity-native-transport\.mjs|native-harness-teardown(?:\.test)?\.mjs|client-v1-conformance\.mjs|coven-automations-release-canary\.ts|ci-paths(?:\.test)?\.mjs)$|package\.json$|pnpm-lock\.yaml$|\.github\/workflows\/ci\.yml$)/;
 const CLIENT_V1_PATH =
   /^(?:src\/lib\/server\/client-v1\/|src\/app\/api\/client\/v1\/|src\/app\/api\/api-contracts\.test\.ts$|scripts\/(?:export-client-v1-(?:contract|hpke-vectors)|client-v1-(?:release-smoke|conformance|authority-takeover))(?:\.test)?\.mjs$|docs\/api\/client-v1(?:[./-]|$)|docs\/client-v1(?:[./-]|$)|docs\/workflows\/client-v1-conformance\.md$|\.gitattributes$)/;
 // docs/ is deliberately absent from FRONTEND_PATH — a documentation change

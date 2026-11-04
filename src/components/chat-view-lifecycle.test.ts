@@ -48,7 +48,7 @@ assert.match(
 );
 assert.match(
   source,
-  /function MetaLine[\s\S]*className="cave-chat-meta-line__meta"[^>]*role="status"[^>]*aria-live="polite"/,
+  /function MetaLine[\s\S]*className="cave-chat-meta-line__meta(?: [^"]*)?"[^>]*role="status"[^>]*aria-live="polite"/,
   "…and the meta text is the live region that announces it",
 );
 

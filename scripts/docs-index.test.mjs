@@ -77,6 +77,18 @@ assert.ok(
   "the legacy Beads cleanup proposal must be Historical, not current retirement guidance",
 );
 
+// 5. docs/specs is frozen (#4607). Three files still arrived after the freeze
+//    (#6111), so the count is pinned: a new file fails here and belongs in
+//    superpowers/, and a removed one breaks the path-stability promise.
+const frozenSpecs = readdirSync(path.join(docsDir, "specs")).filter(
+  (name) => name.endsWith(".md") && name !== "README.md",
+);
+assert.equal(
+  frozenSpecs.length,
+  58,
+  `docs/specs holds ${frozenSpecs.length} documents, not 58 — it is frozen: put new specs and plans in docs/superpowers/, and never move or delete a frozen file`,
+);
+
 console.log(
   `docs-index.test.mjs: index ok (${onDisk.length} documents classified, ${linkTargets.length} links resolved)`,
 );

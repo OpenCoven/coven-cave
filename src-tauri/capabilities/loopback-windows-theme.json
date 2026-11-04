@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-windows-theme",
+  "description": "lets trusted main Windows webviews synchronize native decorations with resolved app mode",
+  "platforms": ["windows"],
+  "webviews": ["main"],
+  "remote": {
+    "urls": ["http://localhost:*/*", "http://127.0.0.1:*/*", "http://[\\:\\:1]:*/*"]
+  },
+  "permissions": ["core:window:allow-set-theme"]
+}

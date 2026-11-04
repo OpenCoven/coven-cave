@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatQuickChatAssistantMessage } from "./quick-chat-message-format.ts";
+import { UI_BLOCK_FALLBACK_CASES } from "./ui-block-fallback-fixtures.ts";
 
 test("streaming quick-chat text hides protocol details and keeps live skill status", () => {
   const formatted = formatQuickChatAssistantMessage(
@@ -421,4 +422,38 @@ test("quick-chat keeps later authored results after backticks inside prior marke
   assert.ok(
     formatted.pieces.every((piece) => piece.kind !== "text" || !piece.text.includes("coven:result")),
   );
+});
+
+test("settled quick-chat text shows each coven:ui block as readable text, never raw markup (#6060)", () => {
+  for (const c of UI_BLOCK_FALLBACK_CASES) {
+    const formatted = formatQuickChatAssistantMessage(c.input, false);
+    assert.equal(formatted.copyText, c.readable.trimEnd(), c.id);
+    assert.equal(formatted.visibleProse, c.readable.trimEnd(), c.id);
+    const projected = c.readable !== c.input;
+    assert.equal(formatted.pieces.some((piece) => piece.kind === "ui"), projected, c.id);
+    if (projected) {
+      for (const piece of formatted.pieces) {
+        if (piece.kind === "text") assert.ok(!piece.text.includes("```coven:ui"), c.id);
+      }
+    }
+  }
+});
+
+test("streaming quick-chat text holds coven:ui blocks back until the reply settles", () => {
+  const open = formatQuickChatAssistantMessage('Here it is.\n\n```coven:ui\n<Card title="Draft">\n  <Text>First', true);
+  assert.equal(open.visibleProse, "Here it is.");
+  assert.equal(open.copyText, "Here it is.");
+  assert.ok(!open.pieces.some((piece) => piece.kind === "ui"));
+
+  const closed = formatQuickChatAssistantMessage("Here.\n\n```coven:ui\n<Badge>Hi</Badge>\n```\n\nMore", true);
+  assert.equal(closed.visibleProse, "Here.\n\n\n\nMore");
+  assert.equal(closed.copyText, "Here.\n\n\n\nMore");
+  assert.ok(!closed.visibleProse.includes("coven:ui"));
+
+  const settled = formatQuickChatAssistantMessage("Here.\n\n```coven:ui\n<Badge>Hi</Badge>\n```\n\nMore", false);
+  assert.deepEqual(settled.pieces, [
+    { kind: "text", text: "Here.\n\n" },
+    { kind: "ui", lines: ["Hi"] },
+    { kind: "text", text: "\n\nMore" },
+  ]);
 });

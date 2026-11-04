@@ -118,3 +118,226 @@ test("an empty history says how occurrences appear", async () => {
     assert.match(text(renderer.toJSON()), /Coven has no occurrences for this cron yet/);
   } finally { await act(async () => renderer?.unmount()); globalThis.fetch = original; }
 });
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+const answer = (value) => ({ ok: true, json: async () => value });
+
+test("closing the reader aborts its pending older-page request", async () => {
+  const original = globalThis.fetch;
+  const pending = deferred();
+  let signal;
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes("cursor=")) { signal = options?.signal; return pending.promise; }
+    return answer({ ...pageAnswer, nextCursor: "page-2" });
+  };
+  const { element } = mount();
+  let renderer;
+  try {
+    await act(async () => { renderer = create(element()); });
+    await act(async () => { button(renderer, /Show older/).props.onClick(); });
+    await act(async () => { renderer.unmount(); });
+    assert.equal(signal?.aborted, true, "the read belongs to the open reader");
+  } finally {
+    await act(async () => { pending.resolve(answer({ ...pageAnswer, nextCursor: null })); renderer?.unmount(); });
+    globalThis.fetch = original;
+  }
+});
+
+test("a superseded older response cannot append data or clear a newer refresh failure", async () => {
+  const original = globalThis.fetch;
+  const pending = deferred();
+  let refreshed = false;
+  let signal;
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes("cursor=")) { signal = options?.signal; return pending.promise; }
+    return refreshed ? { ok: false, json: async () => ({ kind: "unavailable" }) } : answer({ ...pageAnswer, nextCursor: "page-2" });
+  };
+  const { element } = mount();
+  let renderer;
+  try {
+    await act(async () => { renderer = create(element()); });
+    await act(async () => { button(renderer, /Show older/).props.onClick(); });
+    refreshed = true;
+    await act(async () => { renderer.update(element({ refreshNonce: 1 })); });
+    // Deliberately complete even if aborted: a transport can already have read the response.
+    await act(async () => { pending.resolve(answer({ ...pageAnswer, occurrences: [{ ...done, state: "cancelled" }], nextCursor: null })); });
+    const shown = text(renderer.toJSON());
+    assert.match(shown, /Couldn't read occurrences/);
+    assert.doesNotMatch(shown, /Scheduled: Cancelled/);
+    assert.equal(button(renderer, /Re-read now/).props.disabled, false);
+    assert.equal(signal?.aborted, true);
+  } finally {
+    await act(async () => { pending.resolve(answer(pageAnswer)); renderer?.unmount(); });
+    globalThis.fetch = original;
+  }
+});
+
+test("two older-page clicks before React commits share one owned request", async () => {
+  const original = globalThis.fetch;
+  const pending = deferred();
+  let olderReads = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("cursor=")) { olderReads += 1; return pending.promise; }
+    return answer({ ...pageAnswer, nextCursor: "page-2" });
+  };
+  const { element } = mount();
+  let renderer;
+  try {
+    await act(async () => { renderer = create(element()); });
+    const showOlder = button(renderer, /Show older/).props.onClick;
+    await act(async () => { showOlder(); showOlder(); });
+    assert.equal(olderReads, 1);
+  } finally {
+    await act(async () => { pending.resolve(answer({ ...pageAnswer, nextCursor: null })); renderer?.unmount(); });
+    globalThis.fetch = original;
+  }
+});
+
+test("paging keeps the newest and one older page and stops following discarded details", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    if (value.endsWith("/occ-old-2")) return answer({ ...detailAnswer, occurrence: { ...occurrence, id: "occ-old-2", runs: [run], runsTruncated: false } });
+    if (value.includes("cursor=page-2")) return answer({ ...pageAnswer, occurrences: [{ ...occurrence, id: "occ-old-2", state: "running" }], nextCursor: "page-3" });
+    if (value.includes("cursor=page-3")) return answer({ ...pageAnswer, occurrences: [{ ...done, id: "occ-old-3", state: "skipped" }], nextCursor: null });
+    return answer({ ...pageAnswer, nextCursor: "page-2" });
+  };
+  const { element, watched } = mount();
+  let renderer;
+  try {
+    await act(async () => { renderer = create(element()); });
+    await act(async () => { button(renderer, /Show older/).props.onClick(); });
+    await act(async () => { button(renderer, /Run now: Running/).props.onClick(); });
+    assert.ok(watched.at(-1).some((stream) => stream.kind === "run"));
+    await act(async () => { button(renderer, /Show older/).props.onClick(); });
+    const shown = text(renderer.toJSON());
+    assert.match(shown, /Scheduled: Skipped/);
+    assert.match(shown, /Run now: Claimed/);
+    assert.doesNotMatch(shown, /Run now: Running/);
+    assert.equal(renderer.root.findAllByType("li").length, 3, "two newest rows plus one older row, not accumulated pages");
+    assert.deepEqual(watched.at(-1), [{ kind: "occurrence", id: occurrence.id }]);
+  } finally { await act(async () => renderer?.unmount()); globalThis.fetch = original; }
+});
+
+test("an older page that repeats its requested cursor is refused without duplicate rows", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => answer({ ...pageAnswer, nextCursor: "page-2" });
+  const { element } = mount();
+  let renderer;
+  try {
+    await act(async () => { renderer = create(element()); });
+    await act(async () => { button(renderer, /Show older/).props.onClick(); });
+    assert.match(text(renderer.toJSON()), /checkpoint didn't advance/);
+    assert.equal(renderer.root.findAllByType("li").length, 2);
+  } finally { await act(async () => renderer?.unmount()); globalThis.fetch = original; }
+});
+
+test("a successful older read does not mark a failed newest-page read as fresh", async () => {
+  const original = globalThis.fetch;
+  let failNewest = false;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("cursor=")) return answer({ ...pageAnswer, occurrences: [{ ...done, id: "occ-older-success", state: "skipped" }], nextCursor: null });
+    return failNewest ? { ok: false, json: async () => ({ kind: "unavailable" }) } : answer({ ...pageAnswer, nextCursor: "page-2" });
+  };
+  const { element } = mount();
+  let renderer;
+  try {
+    await act(async () => { renderer = create(element()); });
+    failNewest = true;
+    await act(async () => { button(renderer, /Re-read now/).props.onClick(); });
+    await act(async () => { button(renderer, /Show older/).props.onClick(); });
+    const shown = text(renderer.toJSON());
+    assert.match(shown, /Scheduled: Skipped/);
+    assert.match(shown, /from the earlier read and may be stale/);
+  } finally { await act(async () => renderer?.unmount()); globalThis.fetch = original; }
+});
+
+for (const [destination, expectedCalls, name] of [
+  ["button", 1, "a final older page returns focus from its removed button to Re-read now"],
+  ["body", 1, "a final older page repairs the browser's fallback to body focus"],
+  ["field", 0, "a final older page does not take focus from a user-selected field"],
+]) {
+  test(name, async () => {
+    const original = globalThis.fetch;
+    const pending = deferred();
+    globalThis.fetch = async (url) => String(url).includes("cursor=")
+      ? pending.promise : answer({ ...pageAnswer, nextCursor: "page-2" });
+    // Only the DOM focus boundary is substituted; real state, reads and effects run.
+    const ownerDocument = { body: {}, activeElement: null };
+    let focusCalls = 0;
+    const rereadNode = { ownerDocument, focus() { focusCalls += 1; ownerDocument.activeElement = this; } };
+    const olderNode = { ownerDocument };
+    const selectedField = {};
+    const { element } = mount();
+    let renderer;
+    try {
+      await act(async () => {
+        renderer = create(element(), { createNodeMock: (node) => {
+          if (node.type !== "button") return null;
+          if (node.props.children.includes("Re-read now") || node.props.children.includes("Retry")) return rereadNode;
+          if (node.props.children.includes("Show older")) return olderNode;
+          return null;
+        } });
+      });
+      ownerDocument.activeElement = olderNode;
+      await act(async () => { button(renderer, /Show older/).props.onClick(); });
+      if (destination === "field") ownerDocument.activeElement = selectedField;
+      if (destination === "body") ownerDocument.activeElement = ownerDocument.body;
+      await act(async () => { pending.resolve(answer({ ...pageAnswer, occurrences: [{ ...done, id: "occ-last-page" }], nextCursor: null })); });
+      assert.equal(button(renderer, /Show older/), undefined);
+      assert.equal(focusCalls, expectedCalls);
+      assert.equal(ownerDocument.activeElement, destination === "field" ? selectedField : rereadNode);
+    } finally {
+      await act(async () => { pending.resolve(answer(pageAnswer)); renderer?.unmount(); });
+      globalThis.fetch = original;
+    }
+  });
+}
+
+for (const [action, automatic] of [["Show older", false], ["Re-read now", false], ["Show older", true], ["Re-read now", true]]) {
+  for (const movedToField of [false, true]) {
+    test(`${automatic ? "automatic refresh of " : ""}${action} ${movedToField ? "preserves a user-selected field" : "repairs disabled-button focus"}`, async () => {
+      const original = globalThis.fetch;
+      const pending = deferred();
+      let initial = true;
+      globalThis.fetch = async () => {
+        if (initial) { initial = false; return answer({ ...pageAnswer, nextCursor: "page-2" }); }
+        return pending.promise;
+      };
+      const ownerDocument = { body: {}, activeElement: null };
+      const nodes = Object.fromEntries(["Show older", "Re-read now"].map((label) => [label, {
+        ownerDocument, focus() { ownerDocument.activeElement = this; },
+      }]));
+      const field = {};
+      const { element } = mount();
+      let renderer;
+      try {
+        await act(async () => {
+          renderer = create(element(), { createNodeMock: (node) => {
+            if (node.type !== "button") return null;
+            if (node.props.children.includes("Retry")) return nodes["Re-read now"];
+            return Object.entries(nodes).find(([label]) => node.props.children.includes(label))?.[1] ?? null;
+          } });
+        });
+        ownerDocument.activeElement = nodes[action];
+        await act(async () => {
+          if (automatic) renderer.update(element({ refreshNonce: 1 }));
+          else button(renderer, new RegExp(action)).props.onClick();
+        });
+        assert.equal(button(renderer, new RegExp(action)).props.disabled, true);
+        // A real browser blurs a newly disabled control; selecting a field is intentional.
+        ownerDocument.activeElement = movedToField ? field : ownerDocument.body;
+        await act(async () => { pending.resolve(answer({ ...pageAnswer, nextCursor: "page-3" })); });
+        assert.equal(button(renderer, new RegExp(action)).props.disabled, false);
+        assert.equal(ownerDocument.activeElement, movedToField ? field : nodes[action]);
+      } finally {
+        await act(async () => { pending.resolve(answer(pageAnswer)); renderer?.unmount(); });
+        globalThis.fetch = original;
+      }
+    });
+  }
+}

@@ -32,7 +32,7 @@ async function writeMobileSeen(now: number): Promise<void> {
 }
 
 export function mobilePairedPath(): string {
-  return path.join(caveHome(), "mobile-paired.json");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "mobile-paired.json");
 }
 
 /** Record that a paired device just authenticated (token refresh succeeded).

@@ -3,10 +3,12 @@ import { test } from "node:test";
 import { createOnboardingBootstrapState, type OnboardingBootstrapState } from "./onboarding-bootstrap.ts";
 import {
   getOnboardingBootstrapStatusSnapshot,
+  fetchOnboardingBootstrapStatus,
   publishOnboardingBootstrapState,
   resetOnboardingBootstrapStatus,
   setOnboardingDialogOpen,
   subscribeOnboardingBootstrapStatus,
+  subscribeOnboardingBootstrapCompletion,
   summarizeOnboardingBootstrap,
 } from "./onboarding-bootstrap-status.ts";
 
@@ -115,4 +117,79 @@ test("the store publishes state and dialog visibility to subscribers", () => {
   );
   assert.equal(getOnboardingBootstrapStatusSnapshot().state, null);
   resetOnboardingBootstrapStatus();
+});
+
+
+test("setup completion notifies once per successful run and never treats failure as readiness", () => {
+  resetOnboardingBootstrapStatus();
+  let completions = 0;
+  const unsubscribe = subscribeOnboardingBootstrapCompletion(() => { completions += 1; });
+  const complete = { ...createOnboardingBootstrapState(true), status: "complete" as const, complete: true, needsSetup: false };
+  publishOnboardingBootstrapState(running("daemon", "Starting…"));
+  publishOnboardingBootstrapState({ ...complete, status: "failed" });
+  publishOnboardingBootstrapState({ ...complete, complete: false });
+  assert.equal(completions, 0, "only successful complete state can request verification");
+  publishOnboardingBootstrapState(complete);
+  publishOnboardingBootstrapState({ ...complete, updatedAt: "2026-10-21T05:00:01Z" });
+  setOnboardingDialogOpen(true);
+  setOnboardingDialogOpen(false);
+  assert.equal(completions, 1, "snapshot copies and dialog changes cannot repeat verification");
+  publishOnboardingBootstrapState(running("daemon", "Starting again…"));
+  publishOnboardingBootstrapState({ ...complete, updatedAt: "2026-10-21T05:00:02Z" });
+  assert.equal(completions, 2, "a subsequent explicit run can reconcile again");
+  unsubscribe();
+  publishOnboardingBootstrapState(running("daemon", "Starting after unmount…"));
+  publishOnboardingBootstrapState(complete);
+  assert.equal(completions, 2, "an unmounted owner cannot issue more verification");
+  resetOnboardingBootstrapStatus();
+});
+
+test("a completion subscriber ignores retained history and consumes the edge before calling back", () => {
+  resetOnboardingBootstrapStatus();
+  const complete = { ...createOnboardingBootstrapState(true), status: "complete" as const, complete: true, needsSetup: false };
+  const finishedAgain = { ...complete, updatedAt: new Date(Date.parse(complete.updatedAt) + 1).toISOString() };
+  publishOnboardingBootstrapState(complete);
+  let completions = 0;
+  const unsubscribe = subscribeOnboardingBootstrapCompletion(() => {
+    completions += 1;
+    if (completions === 1) publishOnboardingBootstrapState({ ...finishedAgain });
+  });
+  publishOnboardingBootstrapState({ ...complete });
+  assert.equal(completions, 0, "mounting beside a finished setup does not replay its completion");
+  publishOnboardingBootstrapState(running("daemon", "Starting…"));
+  publishOnboardingBootstrapState(finishedAgain);
+  assert.equal(completions, 1, "re-entrant publication does not create another completion edge");
+  unsubscribe();
+  resetOnboardingBootstrapStatus();
+});
+
+test("a late running response cannot replay a completion already observed by another reader", async (context) => {
+  resetOnboardingBootstrapStatus();
+  const active = { ...running("daemon", "Starting…"), updatedAt: "2026-10-21T05:00:00Z" };
+  const complete = { ...active, status: "complete" as const, complete: true, needsSetup: false, updatedAt: "2026-10-21T05:00:01Z" };
+  let releaseOldRead!: (response: Response) => void;
+  let read = 0;
+  context.mock.method(globalThis, "fetch", async () => {
+    read += 1;
+    if (read === 1) return new Promise<Response>((resolve) => { releaseOldRead = resolve; });
+    return Response.json({ ok: true, ...complete });
+  });
+  let completions = 0;
+  const unsubscribe = subscribeOnboardingBootstrapCompletion(() => { completions += 1; });
+  try {
+    publishOnboardingBootstrapState(active);
+    const oldDialogRead = fetchOnboardingBootstrapStatus();
+    await fetchOnboardingBootstrapStatus();
+    assert.equal(completions, 1);
+    releaseOldRead(Response.json({ ok: true, ...active }));
+    await oldDialogRead;
+    await fetchOnboardingBootstrapStatus();
+    assert.equal(completions, 1, "one completed run still owns only one health recheck after reordered responses");
+    publishOnboardingBootstrapState({ ...active, updatedAt: "2026-10-21T05:00:02Z" });
+    publishOnboardingBootstrapState({ ...complete, updatedAt: "2026-10-21T05:00:03Z" });
+    assert.equal(completions, 2, "a distinct later completion still reconciles");
+  } finally {
+    unsubscribe();
+    resetOnboardingBootstrapStatus();
+  }
 });

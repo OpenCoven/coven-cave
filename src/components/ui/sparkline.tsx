@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import "@/styles/sparkline.css";
+
 export type SparkPoint = { label: string; value: number | null };
 
 /**

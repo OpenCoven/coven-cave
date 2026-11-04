@@ -1895,7 +1895,7 @@ function StepCovenCli({
     <div className="flex flex-col gap-3">
       <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
         Cave needs one tool — the <strong>Coven CLI</strong> powers everything.
-        Use the main action to install or update it — Cave runs npm installs
+        Use the main action to install, repair or update it — Cave runs npm installs
         one after another so they never collide.
       </p>
       {showManagedNode ? (
@@ -2026,11 +2026,7 @@ function StepCovenCli({
                             ? `Installing… ${formatElapsed(toolJob.elapsedMs)}`
                             : toolBlockedByNpm
                               ? `Waiting for ${npmBusyLabel}`
-: !tool.installed
-  ? "Install"
-  : !tool.compatible
-    ? "Update"
-    : "Install"}
+                              : openCovenToolsPrimaryActionLabel([tool])}
                         </button>
                       ) : null}
                     </div>

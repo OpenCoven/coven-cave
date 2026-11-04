@@ -8,7 +8,7 @@ import { scanPromptsDir } from "../../../lib/server/prompt-scan.ts";
 const routeSrc = await readFile(new URL("./pack-prompts/route.ts", import.meta.url), "utf8");
 assert.match(routeSrc, /resolveCatalogName\(id\)/);
 assert.match(routeSrc, /return NextResponse\.json\(\{ ok: false[\s\S]{0,80}?status: 400/);
-assert.match(routeSrc, /scanPromptsDir\(path\.join\(await ensureMarketplacePlugin\(name\), "prompts"\)/);
+assert.match(routeSrc, /scanPromptsDir\(path\.join\((?:\/\* turbopackIgnore: true \*\/ )?await ensureMarketplacePlugin\(name\), "prompts"\)/);
 assert.match(routeSrc, /status: 503/, "download failures are explicit, not empty successful previews");
 
 const catalog = JSON.parse(await readFile(new URL("../../../../marketplace/catalog.json", import.meta.url), "utf8"));

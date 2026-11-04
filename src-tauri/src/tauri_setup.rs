@@ -174,6 +174,14 @@ fn webview_probe_report(report: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(desktop, target_os = "windows"))]
+    if let Some(code) = startup_failure_dialog::run_fatal_dialog_helper_if_requested() {
+        std::process::exit(code);
+    }
+    #[cfg(all(desktop, target_os = "windows"))]
+    if let Some(code) = windows_update_recovery::run_update_install_watcher_if_requested() {
+        std::process::exit(code);
+    }
     #[cfg(desktop)]
     let context = tauri::generate_context!();
 
@@ -325,6 +333,14 @@ pub fn run() {
             retry_sidecar_startup,
             #[cfg(target_os = "windows")]
             cancel_sidecar_startup,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::arm_update_install_recovery,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::disarm_update_install_recovery,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::update_install_outcome,
+            #[cfg(target_os = "windows")]
+            windows_update_recovery::clear_update_install_outcome,
         ])
         .manage(SidecarState(Arc::clone(&sidecar_process)))
         .manage(Arc::clone(&reachability_runtime))
@@ -342,6 +358,7 @@ pub fn run() {
     #[cfg(desktop)]
     builder
         .setup(move |app| {
+            let setup_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             // Release builds always get `None` here without touching the
             // network, so this costs a packaged launch nothing.
             let dev_server_url = live_dev_server_url(app);
@@ -447,9 +464,9 @@ pub fn run() {
                 let diagnostics_path =
                     app_local_data_dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME);
                 if let Err(error) =
-                    sidecar_diagnostics::reset_native_diagnostics_file(&diagnostics_path)
+                    sidecar_diagnostics::retain_native_diagnostics_file(&diagnostics_path)
                 {
-                    log::warn!("[cave] could not reset native diagnostics for this launch: {error}");
+                    log::warn!("[cave] could not retain native diagnostics for this launch: {error}");
                 }
             }
             // The updater's Windows pre-exit path clears the application
@@ -493,6 +510,19 @@ pub fn run() {
                     std::process::id()
                 ));
                 log::info!("[cave] updater MSI log -> {}", log_path.display());
+                // A declined UAC prompt or failed msiexec must relaunch Cave
+                // instead of leaving it closed (#5981). The guard rides the
+                // same resource-table drop that stops the sidecar.
+                let install_watch = Arc::new(windows_update_recovery::UpdateInstallWatch::new(
+                    &app.path().app_local_data_dir()?,
+                    log_path.clone(),
+                ));
+                let _ = app
+                    .resources_table()
+                    .add(windows_update_recovery::UpdateInstallWatchGuard(Arc::clone(
+                        &install_watch,
+                    )));
+                app.manage(install_watch);
                 updater_builder.installer_args(msi_verbose_log_installer_args(&log_path))
             };
             app.handle().plugin(updater_builder.build())?;
@@ -513,7 +543,7 @@ pub fn run() {
             } else {
                 #[cfg(target_os = "windows")]
                 {
-                    WebviewWindowBuilder::new(
+                    let window = WebviewWindowBuilder::new(
                         app,
                         PRIMARY_MAIN_WINDOW_LABEL,
                         WebviewUrl::App("startup.html".into()),
@@ -521,10 +551,12 @@ pub fn run() {
                         .title("CovenCave")
                         .inner_size(1320.0, 820.0)
                         .min_inner_size(960.0, 600.0)
+                        .visible(false)
                         .resizable(true)
                         .disable_drag_drop_handler()
                         .build()?;
                     register_main_window(app.handle(), PRIMARY_MAIN_WINDOW_LABEL)?;
+                    windows_window_state::initialize(&window)?;
 
                     let startup_control =
                         Arc::clone(app.state::<Arc<SidecarStartupControl>>().inner());
@@ -624,6 +656,10 @@ pub fn run() {
                 // `hidden_title` drops the native "CovenCave" label. The web side
                 // renders the centered Coven identity, reserves room for the
                 // traffic lights, and marks the strip as a deep drag region.
+                #[cfg(target_os = "windows")]
+                {
+                    main_window = main_window.visible(false);
+                }
                 #[cfg(target_os = "macos")]
                 {
                     main_window = main_window
@@ -648,6 +684,8 @@ pub fn run() {
                 match main_window.build() {
                     Ok(window) => {
                         register_main_window(app.handle(), window.label())?;
+                        #[cfg(target_os = "windows")]
+                        windows_window_state::initialize(&window)?;
                         #[cfg(not(target_os = "windows"))]
                         if let Some((started, success_evidence)) =
                             pending_native_startup_terminal.take()
@@ -676,6 +714,9 @@ pub fn run() {
                                 ),
                             );
                         }
+                        #[cfg(target_os = "windows")]
+                        return Err(e.into());
+                        #[cfg(not(target_os = "windows"))]
                         fatal_exit(&format!("failed to build main window: {}", e));
                     }
                 }
@@ -890,8 +931,27 @@ pub fn run() {
             announce_startup_completed();
 
             Ok(())
+            })();
+            #[cfg(target_os = "windows")]
+            if let Err(error) = &setup_result {
+                // Tauri panics on a setup-hook Err before its outer run result
+                // can handle it. Report here, without depending on WebView2.
+                shutdown_owned_processes(app.handle());
+                let path = app.path().app_local_data_dir().ok()
+                    .map(|dir| dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME));
+                let message = sidecar_diagnostics::startup_failure_message(
+                    &format!("CovenCave could not finish startup: {error}"),
+                    path.as_deref(),
+                    &app.package_info().version.to_string(),
+                    "native-setup",
+                );
+                fatal_exit(&message);
+            }
+            setup_result
         })
         .on_window_event(|window, event| {
+            #[cfg(target_os = "windows")]
+            windows_window_state::on_event(window, event);
             if matches!(event, tauri::WindowEvent::Focused(true)) {
                 window
                     .app_handle()
@@ -965,5 +1025,15 @@ pub fn run() {
             }
         })
         .run(context)
-        .expect("error while running tauri application");
+        .unwrap_or_else(|error| {
+            #[cfg(target_os = "windows")]
+            fatal_exit(&sidecar_diagnostics::startup_failure_message(
+                &format!("CovenCave could not start its native application: {error}\n\nReinstall or repair CovenCave and try again."),
+                None,
+                env!("CARGO_PKG_VERSION"),
+                "native-build",
+            ));
+            #[cfg(not(target_os = "windows"))]
+            panic!("error while running tauri application: {error}");
+        });
 }

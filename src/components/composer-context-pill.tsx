@@ -144,7 +144,7 @@ export function useComposerContextActions(config: ComposerContextProps) {
   const canAddProject = Boolean(config.createProject || config.createProjectOrThrow);
 
   const runtimeName = runtimeDisplayName(config.runtime);
-  const modelLabel = runtimeModelLabel(config.modelValue, config.modelOptions) ?? "Runtime default (unresolved)";
+  const modelLabel = runtimeModelLabel(config.modelValue, config.modelOptions) ?? "Runtime default (not reported yet)";
   const controlChips = useMemo(
     () => composerControlChips(config.modelCapabilities ?? []),
     [config.modelCapabilities],
@@ -239,6 +239,8 @@ export function ComposerContextPickers({
         anchorRef={anchorRef}
         placement={context.config.popoverPlacement}
         runtime={context.config.runtime}
+        executionRuntime={context.config.executionRuntime}
+        disabled={context.config.disabled || context.config.modelDisabled}
         onPickRuntime={(runtime) => {
           context.config.onPickRuntime(runtime);
           // A runtime switch completes with a model pick (cave-bfwk): chain
@@ -519,6 +521,8 @@ export function ComposerContextChips(props: ComposerContextProps) {
         anchorRef={runtimeRef}
         placement={context.config.popoverPlacement}
         runtime={context.config.runtime}
+        executionRuntime={context.config.executionRuntime}
+        disabled={context.config.disabled || context.config.modelDisabled}
         onPickRuntime={(runtime) => {
           context.config.onPickRuntime(runtime);
           // The switch completes with a model pick (cave-bfwk): open the

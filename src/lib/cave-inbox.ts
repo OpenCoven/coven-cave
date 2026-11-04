@@ -6,7 +6,7 @@ import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 
-const INBOX_PATH = path.join(caveHome(), "inbox.json");
+const INBOX_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "inbox.json");
 
 export type ItemKind = "reminder" | "agent" | "response-needed" | "daily-summary" | "milestone";
 export type ItemStatus = "pending" | "fired" | "snoozed" | "dismissed" | "done";
@@ -106,21 +106,60 @@ type InboxFile = {
   items: InboxItem[];
 };
 
+const storageErrors = {
+  inbox_invalid: "Inbox data is invalid. Restore a valid inbox.json backup before changing reminders.",
+  inbox_incompatible: "Inbox data was written by a newer version of Cave. Update Cave before changing reminders.",
+  inbox_unavailable: "Inbox data could not be read. Check access to inbox.json, then try again.",
+};
+
+export class InboxStorageError extends Error {
+  readonly code: keyof typeof storageErrors;
+
+  constructor(code: keyof typeof storageErrors, options?: ErrorOptions) {
+    super(storageErrors[code], options);
+    this.name = "InboxStorageError";
+    this.code = code;
+  }
+}
+
 async function ensureDir() {
   await mkdir(path.dirname(INBOX_PATH), { recursive: true });
 }
 
 async function loadInboxUnlocked(): Promise<InboxFile> {
+  let raw: string;
   try {
-    const raw = await readFile(INBOX_PATH, "utf8");
-    const parsed = JSON.parse(raw) as Partial<InboxFile>;
-    return {
-      version: parsed.version ?? 1,
-      items: Array.isArray(parsed.items) ? parsed.items : [],
-    };
-  } catch {
-    return { version: 1, items: [] };
+    raw = await readFile(INBOX_PATH, "utf8");
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") {
+      return { version: 1, items: [] };
+    }
+    throw new InboxStorageError("inbox_unavailable", { cause });
   }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new InboxStorageError("inbox_invalid", { cause });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new InboxStorageError("inbox_invalid");
+  }
+  const file = parsed as Partial<InboxFile>;
+  if (typeof file.version === "number" && Number.isInteger(file.version) && file.version > 1) {
+    throw new InboxStorageError("inbox_incompatible");
+  }
+  if (
+    (file.version !== undefined && file.version !== 1)
+    || !Array.isArray(file.items)
+    || file.items.some((item) => !item || typeof item !== "object" || Array.isArray(item)
+      || typeof item.id !== "string" || !item.id.trim())
+  ) {
+    throw new InboxStorageError("inbox_invalid");
+  }
+  // Retain unknown envelope and item fields when an ordinary mutation saves.
+  return { ...file, version: file.version ?? 1, items: file.items };
 }
 
 async function saveInboxUnlocked(file: InboxFile): Promise<void> {

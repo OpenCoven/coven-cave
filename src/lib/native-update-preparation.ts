@@ -5,6 +5,7 @@ export type NativeDownloadEvent =
 
 export type NativeUpdateHandle = {
   version: string;
+  body?: string;
   available?: boolean;
   download: (onEvent?: (event: NativeDownloadEvent) => void) => Promise<void>;
   install: () => Promise<void>;

@@ -99,7 +99,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /className="cave-chat-meta-line__meta"[^>]*aria-live="polite"/,
+  /className="cave-chat-meta-line__meta(?: [^"]*)?"[^>]*aria-live="polite"/,
   "the live region is narrowed to the meta text span that actually changes",
 );
 // The session header carries NO context controls (cave-zfmqm) — neither the
@@ -136,8 +136,8 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /\.cave-chat-meta-line__meta\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal/,
-  "Exact runtime/model identity wraps instead of hiding the ID behind ellipsis",
+  /\.cave-chat-header-row \.cave-chat-meta-line__meta\s*\{[^}]*white-space:\s*nowrap;[^}]*overflow-x:\s*auto/,
+  "Exact runtime/model identity stays scrollable instead of hiding the ID behind ellipsis",
 );
 
 assert.match(

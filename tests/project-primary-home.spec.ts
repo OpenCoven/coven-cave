@@ -78,6 +78,24 @@ async function seed(page: Page) {
   return familiarProjectRequests;
 }
 
+test("opening navigation during startup keeps New chat reachable after layout restoration", async ({ page }) => {
+  await seed(page);
+  // Widen the startup window so this exercises a real early user action even
+  // on a slow runner. Assertions cover both sides of the delayed restoration.
+  await page.addInitScript(() => {
+    const original = window.setTimeout.bind(window);
+    window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) =>
+      original(handler, delay === 250 ? 2_000 : delay, ...args)) as typeof window.setTimeout;
+  });
+  await page.goto("/?mode=home");
+  await expect(page.locator(".shell-frame")).not.toHaveAttribute("data-settled", "");
+  await page.getByRole("button", { name: "Expand navigation" }).click();
+  const newChat = page.getByRole("button", { name: "New chat" }).first();
+  await expect(newChat).toBeVisible();
+  await expect(page.locator(".shell-frame")).toHaveAttribute("data-settled", "");
+  await expect(newChat).toBeVisible();
+});
+
 test("project scope, aggregate crew, and explicit actor reach one launch", async ({ page }) => {
   const familiarProjectRequests = await seed(page);
   const launchBodies: Record<string, unknown>[] = [];

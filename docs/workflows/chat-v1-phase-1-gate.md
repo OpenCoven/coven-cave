@@ -3,6 +3,11 @@
 Bead `cave-23nmv` / executing child `cave-ob9ue`,
 [#4833](https://github.com/OpenCoven/coven-cave/issues/4833).
 
+**Current disposition:** #4833 closed as completed on 2026-09-09 on the
+September 4 successor evidence recorded in
+[the gate status](../superpowers/plans/2026-08-30-chat-v1-phase-1-gate-status.md).
+The August 23 audit below is historical.
+
 **Verdict, 2026-08-23: NOT PASSED.** Cave's half of the slice is implemented and
 now genuinely guarded. The SDK and Chat halves do not exist, so the *vertical*
 slice this gate names cannot be certified from this repository.

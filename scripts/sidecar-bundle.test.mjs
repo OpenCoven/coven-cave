@@ -4,7 +4,10 @@
 // Verifies that the production sidecar build uses frozen/locked dependency
 // installation — preventing supply-chain attacks via unpinned installs.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 const script = readFileSync(new URL("./sidecar-bundle.sh", import.meta.url), "utf8");
 
@@ -55,5 +58,57 @@ assert.ok(
   Number(heapCeiling[1]) >= 4096,
   `sidecar-bundle.sh heap ceiling must be at least 4096 MB, got ${heapCeiling[1]}`,
 );
+
+// #6225: node-pty 1.1 has no Linux prebuild, and the sidecar's staging install
+// runs with --ignore-scripts, so the Linux binding must be staged from the root
+// install's node-gyp build. Run the real function against fake installs.
+assert.match(
+  script,
+  /fix_node_pty_spawn_helpers "\$PNPM_STAGE\/node_modules"\nstage_node_pty_binding "\$PNPM_STAGE\/node_modules"/,
+  "the node-pty binding must be staged before the sidecar closure is assembled",
+);
+const stageFunction = script.match(/^stage_node_pty_binding\(\) \{\n[\s\S]*?\n\}\n/m)?.[0];
+assert.ok(stageFunction, "sidecar-bundle.sh must define stage_node_pty_binding");
+const target = `${process.platform}-${process.arch}`;
+function stageCase({ stagedPrebuild = false, stagedBuild = false, rootVersion = "1.1.0", rootBuild = true }) {
+  const root = mkdtempSync(path.join(tmpdir(), "cave-node-pty-"));
+  try {
+    const writePkg = (dir, version) => {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "node-pty", version }));
+    };
+    const staged = path.join(root, "stage/node_modules/node-pty");
+    writePkg(staged, "1.1.0");
+    if (stagedPrebuild) {
+      mkdirSync(path.join(staged, "prebuilds", target), { recursive: true });
+      writeFileSync(path.join(staged, "prebuilds", target, "pty.node"), "prebuilt");
+    }
+    if (stagedBuild) {
+      mkdirSync(path.join(staged, "build/Release"), { recursive: true });
+      writeFileSync(path.join(staged, "build/Release/pty.node"), "already-built");
+    }
+    const rootPkg = path.join(root, "node_modules/node-pty");
+    if (rootVersion) writePkg(rootPkg, rootVersion);
+    if (rootVersion && rootBuild) {
+      mkdirSync(path.join(rootPkg, "build/Release"), { recursive: true });
+      writeFileSync(path.join(rootPkg, "build/Release/pty.node"), "root-gyp-build");
+    }
+    const result = spawnSync("bash", ["-c", `set -euo pipefail\nROOT=${JSON.stringify(root)}\n${stageFunction}\nstage_node_pty_binding "$1"`, "bash", path.join(root, "stage/node_modules")], { encoding: "utf8" });
+    const stagedBinding = path.join(staged, "build/Release/pty.node");
+    return { status: result.status, stderr: result.stderr, binding: existsSync(stagedBinding) ? readFileSync(stagedBinding, "utf8") : null };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+assert.deepEqual(stageCase({}), { status: 0, stderr: "", binding: "root-gyp-build" },
+  "without a prebuild for the target, the root install's matching node-gyp build is staged");
+assert.equal(stageCase({ stagedPrebuild: true }).binding, null, "a target prebuild needs nothing staged");
+assert.equal(stageCase({ stagedBuild: true }).binding, "already-built", "an existing staged build is kept");
+for (const missing of [{ rootVersion: "1.0.0" }, { rootBuild: false }, { rootVersion: null }]) {
+  const result = stageCase(missing);
+  assert.equal(result.status, 1, `a missing or mismatched root build must fail the bundle: ${JSON.stringify(missing)}`);
+  assert.match(result.stderr, /has no .* prebuild, and the root install has no matching build\/Release\/pty\.node/);
+  assert.equal(result.binding, null);
+}
 
 console.log("sidecar-bundle security test: ok");

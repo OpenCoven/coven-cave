@@ -27,7 +27,7 @@ export const DEFAULT_FEEDS: FeedSource[] = [
 ];
 
 function feedConfigPath(): string {
-  return path.join(covenHome(), "rss-feeds.json");
+  return path.join(/* turbopackIgnore: true */ covenHome(), "rss-feeds.json");
 }
 
 /** Validate + normalize a single user-supplied feed entry. */

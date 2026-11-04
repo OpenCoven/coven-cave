@@ -26,6 +26,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { headroomOf } from "./budget-headroom.mjs";
+import { BUILD_GATE_EXIT_CODE } from "./build-gate-exit.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nextDir = path.join(root, ".next");
@@ -322,10 +323,14 @@ for (const c of chunks.slice(0, 8)) console.log(`  ${kb(c.bytes)}  ${c.file}`);
 const largest = chunks[0];
 console.log(`  largest: ${kb(largest?.bytes ?? 0)}  (budget: ${kb(MAX_CHUNK_BYTES)})`);
 
+// A measured budget breach fails every retry, so it exits with the build-gate
+// status and CI does not rebuild (#6087). A measurement that could not be taken
+// sets `failed` instead: the output may be incomplete, and a retry may pass.
+let breached = false;
 let failed = false;
 
 if (homeBytes > MAX_HOME_BYTES) {
-  failed = true;
+  breached = true;
   console.error(
     `\n✗ bundle-budget: initial / route JavaScript ${kb(homeBytes).trim()} exceeds budget ` +
       `${kb(MAX_HOME_BYTES).trim()}.\n` +
@@ -373,7 +378,7 @@ try {
     `\nbundle-budget — familiar glyph catalog: ${catalogChunks.map((chunk) => `${kb(chunk.bytes).trim()} ${chunk.file}`).join(", ")}`,
   );
   if (eagerCatalogChunks.length > 0) {
-    failed = true;
+    breached = true;
     console.error(
       `\n✗ bundle-budget: full familiar glyph catalogue is eager in /: ` +
         eagerCatalogChunks.map((chunk) => chunk.file).join(", "),
@@ -387,7 +392,7 @@ try {
 }
 
 if (shellBytes > MAX_SHELL_BYTES) {
-  failed = true;
+  breached = true;
   console.error(
     `\n✗ bundle-budget: always-loaded shell ${kb(shellBytes).trim()} exceeds budget ` +
       `${kb(MAX_SHELL_BYTES).trim()}.\n` +
@@ -398,7 +403,7 @@ if (shellBytes > MAX_SHELL_BYTES) {
 }
 
 if (largest && largest.bytes > MAX_CHUNK_BYTES) {
-  failed = true;
+  breached = true;
   console.error(
     `\n✗ bundle-budget: largest chunk ${largest.file} (${kb(largest.bytes).trim()}) exceeds ` +
       `budget ${kb(MAX_CHUNK_BYTES).trim()}.\n` +
@@ -436,7 +441,7 @@ try {
   headroom("initial / route CSS", homeCss.bytes, MAX_HOME_CSS_BYTES);
 
   if (rootCss.bytes > MAX_ROOT_CSS_BYTES) {
-    failed = true;
+    breached = true;
     console.error(
       `\n✗ bundle-budget: root-layout CSS ${kb(rootCss.bytes).trim()} exceeds budget ` +
         `${kb(MAX_ROOT_CSS_BYTES).trim()}.\n` +
@@ -447,7 +452,7 @@ try {
     );
   }
   if (homeCss.bytes > MAX_HOME_CSS_BYTES) {
-    failed = true;
+    breached = true;
     console.error(
       `\n✗ bundle-budget: initial / route CSS ${kb(homeCss.bytes).trim()} exceeds budget ` +
         `${kb(MAX_HOME_CSS_BYTES).trim()}.\n` +
@@ -461,6 +466,7 @@ try {
   console.error(`\n✗ bundle-budget: could not measure route CSS: ${error.message}`);
 }
 
+if (breached) process.exit(BUILD_GATE_EXIT_CODE);
 if (failed) process.exit(1);
 if (thin.length > 0) {
   console.log(

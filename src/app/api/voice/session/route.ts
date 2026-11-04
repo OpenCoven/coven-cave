@@ -26,7 +26,7 @@ type FamiliarRecord = {
 async function loadFamiliar(id: string): Promise<FamiliarRecord | null> {
   try {
     const raw = await readFile(
-      path.join(caveHome(), "config.json"),
+      path.join(/* turbopackIgnore: true */ caveHome(), "config.json"),
       "utf8",
     );
     const parsed = JSON.parse(raw) as { familiars?: Record<string, FamiliarRecord> };

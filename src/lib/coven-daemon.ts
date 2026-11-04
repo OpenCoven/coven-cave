@@ -275,7 +275,7 @@ function daemonStatusSocket(
   statFile: (filePath: string) => { size: number } | null,
 ): string | null {
   try {
-    const filePath = path.join(covenHome, "daemon.json");
+    const filePath = path.join(/* turbopackIgnore: true */ covenHome, "daemon.json");
     const metadata = statFile(filePath);
     if (!metadata || metadata.size > DAEMON_STATUS_FILE_MAX_BYTES) return null;
     const raw = readFile(filePath, "utf8");
@@ -390,7 +390,7 @@ export function resolveDaemonSocket(options: SocketPathResolverOptions = {}): Da
     // daemon.json is not consulted" path.
     if (configured.kind === "unnamed") {
       return withRefusedSources({
-        socketPath: path.join(covenHome, "coven.sock"),
+        socketPath: path.join(/* turbopackIgnore: true */ covenHome, "coven.sock"),
         source: "canonical-local",
         availability: "unavailable",
       });
@@ -430,14 +430,14 @@ export function resolveDaemonSocket(options: SocketPathResolverOptions = {}): Da
     if (published?.kind === "refused") rememberRefusal("daemon-status-file");
 
     return withRefusedSources({
-      socketPath: path.join(covenHome, "coven.sock"),
+      socketPath: path.join(/* turbopackIgnore: true */ covenHome, "coven.sock"),
       source: "canonical-local",
       availability: "unavailable",
     });
   }
 
   return withRefusedSources({
-    socketPath: path.join(covenHome, "coven.sock"),
+    socketPath: path.join(/* turbopackIgnore: true */ covenHome, "coven.sock"),
     source: "canonical-local",
     availability: "available",
   });

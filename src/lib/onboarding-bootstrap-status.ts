@@ -59,6 +59,23 @@ export function subscribeOnboardingBootstrapStatus(listener: () => void): () => 
   };
 }
 
+/** Observe new successful completions without replaying a retained snapshot. */
+export function subscribeOnboardingBootstrapCompletion(listener: () => void): () => void {
+  const isComplete = () => snapshot.state?.status === "complete" && snapshot.state.complete === true;
+  let wasComplete = isComplete();
+  let lastCompletion = wasComplete ? snapshot.state?.updatedAt : undefined;
+  return subscribeOnboardingBootstrapStatus(() => {
+    const complete = isComplete();
+    const completion = complete ? snapshot.state?.updatedAt : undefined;
+    const becameComplete = complete && !wasComplete && completion !== lastCompletion;
+    // A late running GET cannot replay the same server completion. Consume
+    // its identity before calling listeners, including re-entrant publishers.
+    if (complete) lastCompletion = completion;
+    wasComplete = complete;
+    if (becameComplete) listener();
+  });
+}
+
 /** Test seam: drop every published value. */
 export function resetOnboardingBootstrapStatus(): void {
   snapshot = SERVER_SNAPSHOT;

@@ -61,6 +61,9 @@ export type GrimoireDocReaderProps = {
   /** The raw document (frontmatter allowed); null while it loads. */
   markdown: string | null;
   loadError?: string | null;
+  /** Disable when the host already announces this shared request failure. */
+  errorLive?: boolean;
+  onRetry?: () => void;
   /** Title when the document has neither a frontmatter title nor an H1. */
   fallbackTitle: string;
   kicker?: ReactNode;
@@ -83,6 +86,8 @@ export type GrimoireDocReaderProps = {
 export function GrimoireDocReader({
   markdown,
   loadError = null,
+  errorLive = true,
+  onRetry,
   fallbackTitle,
   kicker,
   meta = [],
@@ -178,10 +183,10 @@ export function GrimoireDocReader({
     : [];
 
   let body: ReactNode;
-  if (loadError) {
+  if (loadError && parsed === null) {
     body = (
       <div className="p-4">
-        <ErrorState compact headline="Couldn't load this document" subtitle={loadError} />
+        <ErrorState compact live={errorLive} headline="Couldn't load this document" subtitle={loadError} actions={onRetry ? <Button size="sm" onClick={onRetry}>Retry</Button> : undefined} />
       </div>
     );
   } else if (parsed === null) {
@@ -244,12 +249,15 @@ export function GrimoireDocReader({
         <div ref={progressRef} className="grimoire-reader__progress-fill" />
       </div>
       {notice}
+      {loadError && parsed !== null ? (
+        <ErrorState compact live={errorLive} headline="Couldn't refresh this document" subtitle={`${loadError} Showing the last loaded version.`} actions={onRetry ? <Button size="sm" onClick={onRetry}>Retry</Button> : undefined} />
+      ) : null}
       <div className="grimoire-reader__body">{body}</div>
     </div>
   );
 }
 
-type SourceReaderProps = Omit<GrimoireDocReaderProps, "markdown" | "loadError">;
+type SourceReaderProps = Omit<GrimoireDocReaderProps, "markdown" | "loadError" | "onRetry">;
 
 /** A memory file in the reader. Follows agent writes while it is the active
  *  tab (the same light `?stat=1` mtime poll the editor uses), keeping the last
@@ -293,7 +301,7 @@ export function MemoryDocReader({
     };
   }, [active, mtimeMs, path]);
 
-  return <GrimoireDocReader {...reader} markdown={text ?? shown} loadError={shown === null ? error : null} />;
+  return <GrimoireDocReader {...reader} markdown={text ?? shown} loadError={error} onRetry={() => setFollowToken((n) => n + 1)} />;
 }
 
 /** A journal reflection in the reader — a familiar's own entry when
@@ -305,14 +313,16 @@ export function JournalDocReader({
   ...reader
 }: SourceReaderProps & { date: string; familiar?: string; refreshToken?: number }) {
   const [state, setState] = useState<{ text: string | null; error: string | null }>({ text: null, error: null });
+  const [retryToken, setRetryToken] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    setState((prev) => ({ ...prev, error: null }));
     void (async () => {
       try {
         const res = await fetch(`/api/journal?${journalEntryQuery(date, familiar)}`, { cache: "no-store" });
         const json = await res.json();
         if (cancelled) return;
-        if (json.ok) setState({ text: json.entry?.reflection ?? "", error: null });
+        if (res.ok && json.ok) setState({ text: json.entry?.reflection ?? "", error: null });
         else setState((prev) => ({ text: prev.text, error: json.error ?? "Failed to load journal entry" }));
       } catch (err) {
         if (!cancelled) {
@@ -326,6 +336,6 @@ export function JournalDocReader({
     return () => {
       cancelled = true;
     };
-  }, [date, familiar, refreshToken]);
-  return <GrimoireDocReader {...reader} markdown={state.text} loadError={state.text === null ? state.error : null} />;
+  }, [date, familiar, refreshToken, retryToken]);
+  return <GrimoireDocReader {...reader} markdown={state.text} loadError={state.error} onRetry={() => setRetryToken((n) => n + 1)} />;
 }

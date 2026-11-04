@@ -212,7 +212,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
  *  pattern from familiar-notes.ts). */
 async function avatarsDirFor(id: string): Promise<string> {
   if (!isValidFamiliarId(id)) throw new Error("invalid familiar id");
-  return path.join(await familiarWorkspace(id), "avatars");
+  return path.join(/* turbopackIgnore: true */ await familiarWorkspace(id), "avatars");
 }
 
 function revisionedAvatarUrl(id: string, revision: number): string {

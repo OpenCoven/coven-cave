@@ -81,6 +81,91 @@ final class AgentActivityTests: XCTestCase {
         }
     }
 
+    func testLifecycleStatesRetainProvenanceWithoutInventingExecution() throws {
+        let cases: [(String, Bool, String)] = [
+            ("approval-requested", false, "1 tool call · 1 requested"),
+            ("cancel-requested", false, "1 tool call · 1 cancellation requested"),
+            ("policy-rejected", true, "1 tool call · 1 rejected"),
+            ("user-rejected", true, "1 tool call · 1 rejected"),
+            ("cancelled", true, "1 tool call · 1 cancelled"),
+        ]
+        for (phase, terminal, label) in cases {
+            var observation = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(provenanceJSON.utf8)) as? [String: Any])
+            observation["phase"] = phase
+            observation["executionObservedAt"] = phase == "cancel-requested" ? 110 : NSNull()
+            observation["terminalObservedAt"] = terminal ? 150 : NSNull()
+            let frame: [String: Any] = ["kind": "tool_use", "id": "t1", "name": "Read", "status": phase, "activity": observation]
+            let event = try XCTUnwrap(StreamEvent.decode(String(decoding: JSONSerialization.data(withJSONObject: frame), as: UTF8.self)))
+            let steps = try XCTUnwrap(ActivityFold.fold([], event: event))
+            XCTAssertEqual(steps[0].status.rawValue, phase)
+            XCTAssertEqual(steps[0].status.isActive, !terminal)
+            XCTAssertEqual(steps[0].status.isKnownOutcome, terminal)
+            XCTAssertEqual(steps.summaryLabel, label)
+            XCTAssertEqual(steps[0].activity?.phase, phase)
+            XCTAssertEqual(try JSONDecoder().decode([ActivityStep].self, from: JSONEncoder().encode(steps)), steps)
+            let settled = ActivityFold.settle(steps, success: true) ?? steps
+            XCTAssertEqual(settled[0].status.rawValue, terminal ? phase : "unknown")
+            XCTAssertEqual(settled[0].activity?.phase, terminal ? phase : nil)
+            let saved = try JSONDecoder().decode(ToolCall.self, from: JSONSerialization.data(withJSONObject: frame))
+            let history = try XCTUnwrap(ActivityFold.steps(fromTools: [saved]))
+            XCTAssertEqual(history[0].status.rawValue, terminal ? phase : "unknown")
+            XCTAssertEqual(history[0].activity?.phase, terminal ? phase : nil)
+            if terminal {
+                for stale in ["requested", "approval-requested", "running", "cancel-requested", "ok", "error"] {
+                    XCTAssertNil(ActivityFold.fold(steps, event: toolEvent(name: "Read", status: stale)), "\(phase) must retain the first terminal observation")
+                }
+            }
+        }
+    }
+
+    func testCancellationRequestAndApprovalCannotRegressOnReplay() throws {
+        let requested = try XCTUnwrap(ActivityFold.fold([], event: toolEvent(status: "requested")))
+        let approval = try XCTUnwrap(ActivityFold.fold(requested, event: toolEvent(status: "approval-requested")))
+        XCTAssertEqual(approval[0].status.rawValue, "approval-requested")
+        XCTAssertNil(ActivityFold.fold(approval, event: toolEvent(status: "requested")))
+        let running = try XCTUnwrap(ActivityFold.fold(approval, event: toolEvent(status: "running")))
+        XCTAssertNil(ActivityFold.fold(running, event: toolEvent(status: "approval-requested")))
+        let cancellation = try XCTUnwrap(ActivityFold.fold(running, event: toolEvent(status: "cancel-requested")))
+        XCTAssertEqual(cancellation[0].status.rawValue, "cancel-requested")
+        for stale in ["requested", "approval-requested", "running"] {
+            XCTAssertNil(ActivityFold.fold(cancellation, event: toolEvent(status: stale)))
+        }
+        let cancelled = try XCTUnwrap(ActivityFold.fold(cancellation, event: toolEvent(status: "cancelled")))
+        XCTAssertEqual(cancelled[0].status.rawValue, "cancelled")
+    }
+
+    func testRepeatedCancellationRequestRefreshesObservationWithoutLosingItsState() throws {
+        var report = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(provenanceJSON.utf8)) as? [String: Any])
+        report["phase"] = "cancel-requested"
+        report["terminalObservedAt"] = NSNull()
+        func event(duration: Int) throws -> StreamEvent {
+            let frame: [String: Any] = ["kind": "tool_use", "id": "t1", "name": "Read", "status": "cancel-requested", "durationMs": duration, "activity": report]
+            return try XCTUnwrap(StreamEvent.decode(String(decoding: JSONSerialization.data(withJSONObject: frame), as: UTF8.self)))
+        }
+        let first = try XCTUnwrap(ActivityFold.fold([], event: event(duration: 20)))
+        report["updatedAt"] = 180
+        report["sequence"] = 3
+        let refreshed = try XCTUnwrap(ActivityFold.fold(first, event: event(duration: 50)))
+        XCTAssertEqual(refreshed[0].status.rawValue, "cancel-requested")
+        XCTAssertEqual(refreshed[0].durationMs, 50)
+        XCTAssertEqual(refreshed[0].activity?.updatedAt, 180)
+        XCTAssertEqual(refreshed[0].activity?.sequence, 3)
+        XCTAssertNil(ActivityFold.fold(refreshed, event: toolEvent(name: "Read", status: "running")))
+    }
+
+    func testApprovalProvenanceRejectsClaimedExecutionAndTerminalTimestamps() throws {
+        var observation = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(provenanceJSON.utf8)) as? [String: Any])
+        observation["phase"] = "approval-requested"
+        observation["executionObservedAt"] = NSNull()
+        observation["terminalObservedAt"] = NSNull()
+        XCTAssertNotNil(ToolActivity.decode(observation, callId: "t1", status: "approval-requested"))
+        observation["executionObservedAt"] = 110
+        XCTAssertNil(ToolActivity.decode(observation, callId: "t1", status: "approval-requested"))
+        observation["executionObservedAt"] = NSNull()
+        observation["terminalObservedAt"] = 150
+        XCTAssertNil(ToolActivity.decode(observation, callId: "t1", status: "approval-requested"))
+    }
+
     func testDisconnectDoesNotCreateProducerProvenance() throws {
         let running = provenanceJSON.replacingOccurrences(of: #""phase":"ok""#, with: #""phase":"running""#)
             .replacingOccurrences(of: #""terminalObservedAt":150"#, with: #""terminalObservedAt":null"#)

@@ -1,0 +1,385 @@
+import assert from "node:assert/strict";
+import { spawn, execFileSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { assessDaemonStartupCompatibility } from "../src/lib/daemon-startup-contract.ts";
+
+const repository = fileURLToPath(new URL("../", import.meta.url));
+const COMMAND_TIMEOUT_MS = 15_000;
+const OUTPUT_LIMIT = 64 * 1024;
+
+export function isolatedEnvironment(root) {
+  return {
+    PATH: "/usr/bin:/bin", LANG: "en_US.UTF-8", TZ: "UTC",
+    HOME: path.join(root, "user"), TMPDIR: path.join(root, "tmp"),
+    XDG_CONFIG_HOME: path.join(root, "user/config"),
+    XDG_DATA_HOME: path.join(root, "user/data"),
+    XDG_CACHE_HOME: path.join(root, "user/cache"),
+    COVEN_HOME: path.join(root, "coven"), COVEN_SOCKET: path.join(root, "coven/coven.sock"),
+  };
+}
+
+function groupAlive(pid) {
+  try { process.kill(-pid, 0); return true; }
+  catch (error) { if (error.code === "ESRCH") return false; throw error; }
+}
+
+function signalGroup(pid, signal) {
+  try { process.kill(-pid, signal); }
+  catch (error) { if (error.code !== "ESRCH") throw error; }
+}
+
+function permissionUncertain(error) {
+  return ["EPERM", "EACCES"].includes(error.code);
+}
+
+// Each owned group carries its unresolved observation error until proven absent.
+async function waitForGroupsToExit(groups, { alive, timeoutMs }) {
+  const deadline = performance.now() + timeoutMs;
+  for (;;) {
+    for (const pid of groups.keys()) {
+      try {
+        if (!alive(pid)) {
+          groups.delete(pid);
+        }
+      } catch (error) {
+        if (!permissionUncertain(error)) throw error;
+        groups.set(pid, error);
+      }
+    }
+    if (groups.size === 0) return true;
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) {
+      const uncertain = [...groups.values()].find(Boolean);
+      if (uncertain) throw uncertain;
+      return false;
+    }
+    // Darwin may return EPERM for an exited, unreaped group. Only a later
+    // definitive absence clears it; permission uncertainty is not success.
+    await delay(Math.min(25, remaining));
+  }
+}
+
+export async function cleanupOwnedGroups(groups, { alive = groupAlive, signal = signalGroup, timeoutMs = 2000 } = {}) {
+  // A launcher exit does not prove that its descendants have exited.
+  for (const termination of ["SIGTERM", "SIGKILL"]) {
+    for (const [pid, uncertain] of groups) {
+      if (uncertain) continue;
+      try {
+        if (alive(pid)) signal(pid, termination);
+        else groups.delete(pid);
+      } catch (error) {
+        if (!permissionUncertain(error)) throw error;
+        groups.set(pid, error);
+      }
+    }
+    if (await waitForGroupsToExit(groups, { alive, timeoutMs })) return true;
+  }
+  return false;
+}
+
+export function runOwnedCommand(binary, args, { cwd, env, groups, signal, timeoutMs = COMMAND_TIMEOUT_MS }) {
+  if (signal?.aborted) return Promise.resolve({ code: null, cancelled: true, durationMs: 0, stdout: "", stderr: "" });
+  return new Promise(resolve => {
+    const started = performance.now();
+    const child = spawn(binary, args, { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    if (child.pid) groups.set(child.pid, null);
+    let stdout = "", stderr = "", bytes = 0, timedOut = false, spawnFailed = false, outputExceeded = false, cancelled = false;
+    let killTimer, settlementTimer, settled = false, terminating = false;
+    const finish = (code, terminationSignal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer); clearTimeout(killTimer); clearTimeout(settlementTimer);
+      signal?.removeEventListener("abort", abort);
+      if (child.pid) {
+        try { if (!groupAlive(child.pid)) groups.delete(child.pid); }
+        catch (error) { groups.set(child.pid, error); }
+      }
+      resolve({ code, signal: terminationSignal, stdout, stderr, timedOut, spawnFailed, outputExceeded, cancelled, durationMs: performance.now() - started });
+    };
+    const terminate = () => {
+      if (terminating) return;
+      terminating = true;
+      // Escaped descendants can retain these pipes after the launcher exits.
+      // Closing captures bounds reporting; it does not claim those descendants
+      // were reclaimed. Group cleanup is checked independently by the caller.
+      child.stdout.destroy(); child.stderr.destroy();
+      const signalOwned = terminationSignal => {
+        if (!child.pid || !groups.has(child.pid) || groups.get(child.pid)) return;
+        try { signalGroup(child.pid, terminationSignal); }
+        catch (error) { groups.set(child.pid, error); }
+      };
+      signalOwned("SIGTERM");
+      killTimer = setTimeout(() => signalOwned("SIGKILL"), 1000);
+      settlementTimer = setTimeout(() => {
+        child.unref();
+        finish(child.exitCode, child.signalCode);
+      }, 2000);
+    };
+    const abort = () => { cancelled = true; terminate(); };
+    const timer = setTimeout(() => { timedOut = true; terminate(); }, timeoutMs);
+    signal?.addEventListener("abort", abort, { once: true });
+    const receive = (chunk, stream) => {
+      bytes += chunk.length;
+      if (bytes > OUTPUT_LIMIT) { outputExceeded = true; terminate(); return; }
+      if (stream === "stdout") stdout += chunk.toString(); else stderr += chunk.toString();
+    };
+    child.stdout.on("data", chunk => receive(chunk, "stdout"));
+    child.stderr.on("data", chunk => receive(chunk, "stderr"));
+    child.on("error", () => { spawnFailed = true; });
+    child.on("close", finish);
+  });
+}
+
+function requireCommand(result) {
+  if (result.cancelled) throw new Error("cancelled");
+  if (result.spawnFailed) throw new Error("spawn_failed");
+  if (result.timedOut) throw new Error("command_timeout");
+  if (result.outputExceeded) throw new Error("command_output_limit");
+  if (result.code !== 0) throw new Error("command_failed");
+  return result.stdout;
+}
+
+function readHealth(socketPath) {
+  return new Promise((resolve, reject) => {
+    const request = http.get({ socketPath, path: "/api/v1/health" }, response => {
+      let bytes = 0;
+      const chunks = [];
+      response.on("data", chunk => {
+        bytes += chunk.length;
+        if (bytes > OUTPUT_LIMIT) response.destroy(new Error("health_output_limit"));
+        else chunks.push(chunk);
+      });
+      response.on("error", reject);
+      response.on("end", () => {
+        if (response.statusCode !== 200) { reject(new Error("health_http_failure")); return; }
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))); }
+        catch { reject(new Error("health_invalid_json")); }
+      });
+    });
+    const timer = setTimeout(() => request.destroy(new Error("health_timeout")), 2000);
+    request.on("error", reject);
+    request.on("close", () => clearTimeout(timer));
+  });
+}
+
+export function validateReadyDaemon(status, health, home) {
+  assert.equal(status?.ok, true, "status_not_ready");
+  assert.equal(status?.status, "running", "status_not_running");
+  assert.ok(Number.isSafeInteger(status.pid) && status.pid > 0, "status_invalid_pid");
+  assert.ok(typeof status.started_at === "string" && status.started_at.length > 0, "status_missing_identity");
+  assert.equal(status.socket, path.join(home, "coven.sock"), "status_wrong_home");
+  assert.equal(assessDaemonStartupCompatibility(health).ok, true, "health_incompatible");
+  assert.equal(health.daemon?.pid, status.pid, "health_wrong_pid");
+  assert.equal(health.daemon?.socket, status.socket, "health_wrong_socket");
+  assert.equal(health.daemon?.startedAt, status.started_at, "health_wrong_start");
+}
+
+export function summarizeSamples(samples) {
+  const operations = {};
+  for (const sample of samples) for (const operation of sample.operations) {
+    const summary = operations[operation.name] ??= { attempts: 0, passed: 0, durationsMs: [] };
+    summary.attempts += 1;
+    summary.passed += Number(operation.pass);
+    summary.durationsMs.push(operation.durationMs);
+  }
+  for (const summary of Object.values(operations)) {
+    const sorted = [...summary.durationsMs].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    summary.medianMs = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    summary.minMs = sorted[0]; summary.maxMs = sorted.at(-1);
+  }
+  const passedSamples = samples.filter(sample => sample.pass && sample.cleanup).length;
+  return { pass: samples.length > 0 && passedSamples === samples.length, sampleCount: samples.length, passedSamples, operations };
+}
+
+// The daemon's own pid came from its status document; a kill observed only by
+// that document is not yet proof it is gone. Poll until status stops saying
+// "running", bounded like every other wait here.
+async function waitForDaemonGone(status, timeoutMs = 2000) {
+  const deadline = performance.now() + timeoutMs;
+  for (;;) {
+    const observed = await status();
+    if (observed.status !== "running") return observed;
+    if (performance.now() >= deadline) throw new Error("daemon_survived_kill");
+    await delay(50);
+  }
+}
+
+async function runSample(binary, index, signal) {
+  // Short paths are necessary for Darwin's Unix socket length bound.
+  const root = realpathSync(mkdtempSync(path.join("/tmp", "cave-life-")));
+  const env = isolatedEnvironment(root);
+  for (const dir of [env.COVEN_HOME, env.HOME, env.TMPDIR]) mkdirSync(dir, { mode: 0o700 });
+  const groups = new Map();
+  const sample = { index, pass: false, cleanup: false, operations: [], fixtureRoot: root };
+  const command = args => runOwnedCommand(binary, args, { cwd: root, env, groups, signal });
+  const status = async () => {
+    const output = requireCommand(await command(["daemon", "status", "--json"]));
+    try { return JSON.parse(output); } catch { throw new Error("status_invalid_json"); }
+  };
+  const ready = async () => {
+    const observed = await status(); // CLI verifies same-user IPC and canonical home.
+    validateReadyDaemon(observed, await readHealth(env.COVEN_SOCKET), env.COVEN_HOME);
+    return observed;
+  };
+  const operation = async (name, action) => {
+    const started = performance.now();
+    try {
+      const result = await action();
+      sample.operations.push({ name, pass: true, durationMs: performance.now() - started });
+      return result;
+    } catch (error) {
+      // Fixed classifications only; never export CLI stderr, paths or payloads.
+      sample.operations.push({ name, pass: false, durationMs: performance.now() - started,
+        failure: error.code === "ERR_ASSERTION" ? "postcondition_failed" : classifyFailure(error) });
+      throw error;
+    }
+  };
+  const marker = path.join(env.COVEN_HOME, "lifecycle-fixture.txt");
+  writeFileSync(marker, "synthetic lifecycle marker\n", { mode: 0o600 });
+  try {
+    const initial = await operation("fresh-start", async () => {
+      assert.equal((await status()).status, "stopped");
+      requireCommand(await command(["daemon", "start"]));
+      return ready();
+    });
+    await operation("already-running", async () => {
+      requireCommand(await command(["daemon", "start"]));
+      assert.deepEqual(await ready(), initial);
+    });
+    await operation("stop-before-concurrency", async () => {
+      requireCommand(await command(["daemon", "stop"]));
+      assert.equal((await status()).status, "stopped");
+    });
+    const concurrent = await operation("concurrent-start", async () => {
+      const attempts = await Promise.all(Array.from({ length: 3 }, () => command(["daemon", "start"])));
+      const current = await ready();
+      for (const attempt of attempts) {
+        const output = requireCommand(attempt);
+        assert.match(output, new RegExp(`running \\(pid ${current.pid}, socket `));
+      }
+      return current;
+    });
+    await operation("restart", async () => {
+      requireCommand(await command(["daemon", "restart"]));
+      const current = await ready();
+      assert.notEqual(current.pid, concurrent.pid);
+      assert.equal(readFileSync(marker, "utf8"), "synthetic lifecycle marker\n");
+    });
+    await operation("revive-after-kill", async () => {
+      // The fault-matrix row "child dies after ready" (#6298): the instance is
+      // killed outright, so its socket file stays behind as a stale endpoint
+      // and nothing cleans up. A start must notice the dead owner, reclaim
+      // the endpoint, and come back with a new instance, data intact.
+      const before = await ready();
+      process.kill(before.pid, "SIGKILL");
+      // Sample the endpoint before any CLI command runs: `daemon status` may
+      // itself reclaim a dead owner's socket, which is evidence of a different
+      // kind (recorded as socketAfterStatus).
+      const staleSocket = existsSync(env.COVEN_SOCKET);
+      const gone = await waitForDaemonGone(status);
+      sample.revive = {
+        killedPid: before.pid,
+        staleSocket,
+        observedAfterKill: gone.status,
+        socketAfterStatus: existsSync(env.COVEN_SOCKET),
+      };
+      requireCommand(await command(["daemon", "start"]));
+      const revived = await ready();
+      assert.notEqual(revived.pid, before.pid);
+      assert.equal(readFileSync(marker, "utf8"), "synthetic lifecycle marker\n");
+      return revived;
+    });
+    await operation("shutdown", async () => {
+      requireCommand(await command(["daemon", "stop"]));
+      assert.equal((await status()).status, "stopped");
+      // Verify endpoint disappearance separately from status rendering.
+      await assert.rejects(readHealth(env.COVEN_SOCKET));
+      assert.equal(await waitForGroupsToExit(groups, { alive: groupAlive, timeoutMs: 2000 }), true);
+    });
+    sample.pass = true;
+  } catch { /* Failed operation is retained; subsequent operations were not exercised. */ }
+  finally {
+    if (!signal?.aborted) await command(["daemon", "stop"]); // Only this synthetic home.
+    try {
+      sample.cleanup = await cleanupOwnedGroups(groups);
+      if (!sample.cleanup) sample.cleanupFailure = "owned_groups_survived";
+    } catch (error) {
+      sample.cleanup = false;
+      sample.cleanupFailure = classifyFailure(error);
+    }
+    sample.pass &&= sample.cleanup;
+  }
+  return sample;
+}
+
+function classifyFailure(error) {
+  if (["EPERM", "EACCES"].includes(error.code)) return "permission_denied";
+  if (["EMFILE", "ENFILE", "ENOMEM", "ENOSPC"].includes(error.code)) return "resource_exhausted";
+  const known = new Set(["cancelled", "spawn_failed", "command_timeout", "command_output_limit", "command_failed",
+    "status_invalid_json", "health_invalid_json", "health_http_failure", "health_output_limit", "health_timeout"]);
+  return known.has(error.message) ? error.message : "probe_failed";
+}
+
+export async function runDaemonLifecycleProbe({ binary, samples = 5, signal }) {
+  const report = { schemaVersion: 1, kind: "real-daemon-cli-lifecycle", runId: randomUUID(),
+    observedAt: new Date().toISOString(), pass: false, requestedSamples: samples, samples: [],
+    machine: { platform: os.platform(), release: os.release(), architecture: os.arch(),
+      cpu: os.cpus()[0]?.model, cpuCount: os.cpus().length, memoryBytes: os.totalmem() },
+    limitations: ["CLI lifecycle smoke, not packaged-app or native-supervisor recovery",
+      "Synthetic empty profiles; no provider, migrated data, durable execution, sleep/wake or soak coverage",
+      "Revive after kill exercises the CLI start path against a stale endpoint, not Cave's automatic recovery",
+      "Median/range include failures; no p95 or population reliability claim",
+      "Fixture directories retained; process cleanup is verified separately"] };
+  if (!["darwin", "linux"].includes(process.platform)) return { ...report, error: "unsupported_platform" };
+  if (!Number.isInteger(samples) || samples < 1 || samples > 100) return { ...report, error: "invalid_sample_count" };
+  if (typeof binary !== "string" || !path.isAbsolute(binary)) return { ...report, error: "absolute_native_binary_required" };
+  try {
+    binary = realpathSync(binary); accessSync(binary, constants.X_OK);
+    report.binarySha256 = createHash("sha256").update(readFileSync(binary)).digest("hex");
+  } catch { return { ...report, error: "binary_unavailable" }; }
+  report.caveCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repository, encoding: "utf8" }).trim();
+  report.caveDirty = execFileSync("git", ["status", "--porcelain"], { cwd: repository, encoding: "utf8" }).trim().length > 0;
+  report.probeSha256 = createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url))).digest("hex");
+  // Version discovery also runs inside a fixture; never invoke it in the user's cwd.
+  const versionRoot = realpathSync(mkdtempSync("/tmp/cave-life-version-"));
+  const versionGroups = new Map();
+  const version = await runOwnedCommand(binary, ["--version"], {
+    cwd: versionRoot, env: isolatedEnvironment(versionRoot), groups: versionGroups, signal,
+  });
+  let versionClean;
+  try { versionClean = await cleanupOwnedGroups(versionGroups); }
+  catch (error) {
+    return { ...report, error: "version_cleanup_failed", cleanupFailure: classifyFailure(error) };
+  }
+  if (signal?.aborted) return { ...report, error: "cancelled" };
+  if (version.code !== 0 || version.timedOut || !versionClean || version.outputExceeded || version.spawnFailed)
+    return { ...report, error: "version_probe_failed" };
+  const match = /^coven v([0-9]+\.[0-9]+\.[0-9]+[^\s]*)/m.exec(version.stdout);
+  if (!match) return { ...report, error: "unrecognized_binary_version" };
+  report.covenVersion = match[1];
+  for (let index = 0; index < samples; index += 1) {
+    if (signal?.aborted) break;
+    try { report.samples.push(await runSample(binary, index, signal)); }
+    catch { report.samples.push({ index, pass: false, cleanup: false, operations: [], error: "fixture_setup_or_cleanup_failed" }); }
+  }
+  return { ...report, ...summarizeSamples(report.samples),
+    ...(signal?.aborted ? { pass: false, error: "cancelled" } : {}) };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const [binary, count] = process.argv.slice(2);
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  process.once("SIGINT", cancel); process.once("SIGTERM", cancel);
+  const report = await runDaemonLifecycleProbe({ binary, samples: count === undefined ? 5 : Number(count), signal: controller.signal });
+  process.removeListener("SIGINT", cancel); process.removeListener("SIGTERM", cancel);
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  process.exitCode = report.pass ? 0 : 1;
+}

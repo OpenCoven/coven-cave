@@ -376,42 +376,35 @@ assert.match(
 // the identity and the actions instead of stacking as two bands under it.
 assert.match(
   source,
-  /<div className="cave-chat-header-row">\s*<MetaLine[\s\S]*?\/>\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)?<div className="cave-chat-header-status">[\s\S]*?<ChatSessionContextRow[\s\S]*?<RunActivityStrip[\s\S]*?<\/div>\s*<div className="cave-chat-session-actions">/,
+  /<div className="cave-chat-header-row">\s*<MetaLine[\s\S]*?<div className="cave-chat-header-status">[\s\S]*?<ChatSessionContextRow[\s\S]*?<RunActivityStrip[\s\S]*?<\/div>\s*<\/MetaLine>\s*<div className="cave-chat-session-actions">/,
   "the title row reads identity · run status · actions",
 );
 assert.equal(source.match(/<ChatSessionContextRow\b/g)?.length, 1, "the stats render once, on the title row");
-// #6008: above the 52rem query the row stays one line and gives space up in
-// order: a long title truncates to a protected floor, then the run status
-// stacks inside its own box. The icon actions never shrink.
+// #6201 follow-up: metadata and activity share the second identity row.
 assert.match(
   styles,
-  /\.cave-chat-header-row\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;/,
-  "the title row stays one line above the 52rem query",
+  /\.cave-chat-header-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns: auto minmax\(0, 1fr\) auto;/,
+  "the title and action cluster share a grid instead of independently wrapping",
 );
 assert.match(
   styles,
-  /@container chat-header \(max-width: 52rem\) \{\s*\.cave-chat-header-row \{\s*flex-wrap: wrap;\s*\}\s*\.cave-chat-header-status \{\s*order: 1;\s*flex: 1 0 100%;/,
-  "on a narrow header the status cluster wraps onto its own line",
+  /\.cave-chat-header-status \{[^}]*flex: 0 1 auto;[^}]*max-width: 60%;[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto;/,
+  "activity shares the metadata row while every metric remains reachable",
 );
 assert.match(
   styles,
-  /\.cave-chat-header-row > \.cave-chat-meta-line \{[^}]*flex: 1 100 auto;[^}]*min-width: min\(100%, 24rem\);/,
-  "the identity gives up space first, but never below the title's protected floor",
+  /\.cave-chat-header-row \.cave-chat-meta-line__meta \{[^}]*white-space: nowrap;[^}]*overflow-x: auto;/,
+  "long runtime details scroll within their single metadata row",
+);
+assert.match(
+  source,
+  /className="cave-chat-meta-line__meta focus-ring-inset"[^>]*tabIndex=\{0\}/,
+  "the metadata scroll region is keyboard reachable with a visible focus ring",
 );
 assert.match(
   styles,
-  /\.cave-chat-header-status \{[^}]*flex: 0 1 auto;[^}]*flex-wrap: wrap;[^}]*justify-content: flex-end;/,
-  "squeezed beside a protected title, the stats and Last run stack inside the status",
-);
-assert.match(
-  styles,
-  /\.cave-chat-header-row > \.cave-chat-session-actions \{\s*flex: none;\s*\}/,
-  "the icon actions keep their width",
-);
-assert.match(
-  styles,
-  /@container chat-header \(max-width: 40rem\) \{\s*\.cave-chat-header-row > \.cave-chat-meta-line \{\s*flex-basis: 100%;/,
-  "in a split pane the identity keeps a full line, so the title stays legible (chat-split-panes.spec)",
+  /\.cave-chat-header-avatar \{[^}]*height: calc\(var\(--space-6\) \+ var\(--space-5\)\);[^}]*border-radius: var\(--radius-control\);/,
+  "the familiar fills two rows with control-radius corners",
 );
 // The runtime's unreported identity reads as ONE muted marker, not two
 // "not reported" phrases; the gaps are named on hover (#5953).
@@ -612,8 +605,8 @@ assert.match(
 );
 assert.match(
   pendingHealthSection,
-  /apply: \(text\) => \{\s*flushPendingStreamHealthEvent\(\);\s*applyAssistantChunk\(text, assistantId, liveGeneration\);\s*\}/,
-  "Health cursor publication shares the assistant chunk coalescer cadence",
+  /apply: \(text\) => \{\s*if \(accessGuard\.revoked\(\)\) return;\s*flushPendingStreamHealthEvent\(\);\s*applyAssistantChunk\(text, assistantId, liveGeneration\);\s*\}/,
+  "Revocation fences the shared health cursor and assistant chunk coalescer cadence",
 );
 
 const applyStreamEventSection =
@@ -677,7 +670,7 @@ assert.match(
   "Dynamic HTTP response text is bounded before stream health stores it",
 );
 const outerSendCatch =
-  source.match(/\} catch \(err\) \{\n      \/\/ Apply any buffered streamed text FIRST[\s\S]*?\n    \} finally \{/)?.[0] ?? "";
+  source.match(/\} catch \(err\) \{\n      if \(accessGuard\.revoked\(\)\) return;\n      \/\/ Apply any buffered streamed text FIRST[\s\S]*?\n    \} finally \{/)?.[0] ?? "";
 assert.match(
   outerSendCatch,
   /const message = conciseStreamError\(err, "send failed"\);[\s\S]*?error: message/,

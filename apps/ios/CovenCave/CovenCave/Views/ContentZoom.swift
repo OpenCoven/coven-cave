@@ -8,7 +8,9 @@ import WebKit
 struct ZoomTarget: Identifiable {
     let id = UUID()
     enum Content {
-        case image(UIImage)
+        /// A decoded image, with the description its message gave it (an
+        /// inline image's alt text) when there is one.
+        case image(UIImage, description: String? = nil)
         case html(String)
         /// A code block: the highlighted `<pre>` HTML for display plus the raw
         /// text so the zoom surface can copy it natively.
@@ -21,6 +23,13 @@ struct ZoomTarget: Identifiable {
     var copyText: String? {
         if case .code(_, let text) = content, !text.isEmpty { return text }
         return nil
+    }
+
+    /// The VoiceOver name for an enlarged image: the description its message
+    /// gave it, or a generic name so VoiceOver never lands on a bare image.
+    static func imageAccessibilityLabel(description: String?) -> String {
+        let trimmed = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "Enlarged image" : trimmed
     }
 }
 
@@ -40,7 +49,9 @@ enum ContentZoom {
     static func present(_ target: ZoomTarget) {
         NotificationCenter.default.post(name: .caveZoomContent, object: target)
     }
-    static func image(_ image: UIImage) { present(ZoomTarget(content: .image(image))) }
+    static func image(_ image: UIImage, description: String? = nil) {
+        present(ZoomTarget(content: .image(image, description: description)))
+    }
     static func html(_ html: String) { present(ZoomTarget(content: .html(html))) }
     static func code(html: String, text: String) {
         present(ZoomTarget(content: .code(html: html, text: text)))
@@ -60,7 +71,8 @@ struct ZoomableContentView: View {
             Color.black.ignoresSafeArea()
             Group {
                 switch target.content {
-                case .image(let image): ZoomableImageView(image: image)
+                case .image(let image, let description):
+                    ZoomableImageView(image: image, description: description)
                 case .html(let html): ZoomableHTMLView(html: html)
                 case .code(let html, _): ZoomableCodeView(html: html)
                 }
@@ -129,6 +141,7 @@ struct ZoomableContentView: View {
 /// Pinch-to-zoom + drag-to-pan + double-tap-to-toggle for a native image.
 private struct ZoomableImageView: View {
     let image: UIImage
+    let description: String?
 
     @State private var scale: CGFloat = 1
     @GestureState private var pinch: CGFloat = 1
@@ -143,6 +156,8 @@ private struct ZoomableImageView: View {
         Image(uiImage: image)
             .resizable()
             .scaledToFit()
+            .accessibilityLabel(ZoomTarget.imageAccessibilityLabel(description: description))
+            .accessibilityIdentifier("Zoomed image")
             .scaleEffect(effectiveScale)
             .offset(x: offset.width + drag.width, y: offset.height + drag.height)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -227,7 +227,7 @@ export function chunkResearchResourceUtf8(
 }
 
 function lexicalIndexPath(): string {
-  return path.join(caveHome(), "research-resources", "index", "research-resources.sqlite");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "research-resources", "index", "research-resources.sqlite");
 }
 
 function assertOwner(metadata: { uid?: number }, label: string): void {
@@ -268,7 +268,7 @@ function ensurePrivateFile(file: string): boolean {
 
 function canonicalRestoreMarker(file: string): string | null {
   return path.basename(file) === "research-resources.sqlite"
-    ? path.join(path.dirname(file), RESEARCH_LEXICAL_RESTORE_MARKER)
+    ? path.join(/* turbopackIgnore: true */ path.dirname(file), RESEARCH_LEXICAL_RESTORE_MARKER)
     : null;
 }
 
@@ -280,7 +280,7 @@ function unavailableDuringRestore(): ResearchResourceLexicalIndexError {
 }
 
 export function closeCanonicalResearchResourceLexicalHandlesForRestore(fileInput: string): void {
-  const file = path.resolve(fileInput);
+  const file = path.resolve(/* turbopackIgnore: true */ fileInput);
   let firstError: unknown;
   for (const controller of [...(canonicalHandleControllers.get(file) ?? [])]) {
     try {
@@ -328,7 +328,7 @@ function purgeResidualFiles(file: string): void {
   let removed = false;
   for (const name of readdirSync(directory).sort()) {
     if (!quarantine.test(name) && !interruptedRebuild.test(name)) continue;
-    const candidate = path.join(directory, name);
+    const candidate = path.join(/* turbopackIgnore: true */ directory, name);
     const metadata = lstatSync(candidate);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
       throw new ResearchResourceLexicalIndexError(
@@ -723,7 +723,7 @@ export async function rebuildResearchResourceLexicalIndex(
   const file = path.resolve(/* turbopackIgnore: true */ options.file ?? lexicalIndexPath());
   ensureDirectory(path.dirname(file));
   const temporary = path.join(
-    path.dirname(file),
+    /* turbopackIgnore: true */ path.dirname(file),
     `.research-lexical-${process.pid}-${randomBytes(12).toString("hex")}.sqlite`,
   );
   let candidate: ResearchResourceLexicalIndex | null = null;

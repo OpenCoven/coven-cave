@@ -62,12 +62,12 @@ export function avatarThumbKey(source: AvatarThumbSource, maxDim: number): strin
 export function avatarThumbDir(): string | null {
   const home = caveHome();
   if (!path.isAbsolute(home)) return null;
-  return path.join(home, "cache", "avatar-thumbs");
+  return path.join(/* turbopackIgnore: true */ home, "cache", "avatar-thumbs");
 }
 
 function thumbPath(dir: string, key: string): string | null {
   if (!/^[0-9a-f]{64}$/.test(key)) return null;
-  return path.join(dir, `${key}.png`);
+  return path.join(/* turbopackIgnore: true */ dir, `${key}.png`);
 }
 
 export async function readAvatarThumb(key: string): Promise<Buffer | null> {
@@ -86,7 +86,7 @@ export async function writeAvatarThumb(key: string, bytes: Uint8Array): Promise<
   const dir = avatarThumbDir();
   const file = dir ? thumbPath(dir, key) : null;
   if (!dir || !file) return;
-  const tmp = path.join(dir, `.${key}.${randomUUID()}.tmp`);
+  const tmp = path.join(/* turbopackIgnore: true */ dir, `.${key}.${randomUUID()}.tmp`);
   try {
     await mkdir(dir, { recursive: true, mode: 0o700 });
     await writeFile(tmp, bytes, { mode: 0o600 });
@@ -99,11 +99,11 @@ export async function writeAvatarThumb(key: string, bytes: Uint8Array): Promise<
 }
 
 async function pruneAvatarThumbs(dir: string): Promise<void> {
-  const names = (await readdir(dir)).filter((name) => /^[0-9a-f]{64}\.png$/.test(name));
+  const names = (await readdir(/* turbopackIgnore: true */ dir)).filter((name) => /^[0-9a-f]{64}\.png$/.test(name));
   if (names.length <= AVATAR_THUMB_MAX_FILES) return;
   const entries = await Promise.all(
     names.map(async (name) => {
-      const full = path.join(dir, name);
+      const full = path.join(/* turbopackIgnore: true */ dir, name);
       try {
         return { full, mtimeMs: (await stat(full)).mtimeMs };
       } catch {

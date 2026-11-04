@@ -10,7 +10,7 @@ import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { COMPATIBILITY_ADAPTERS, isSummonableLocalHarness } from "@/lib/harness-adapters";
+import { COMPATIBILITY_ADAPTERS, isHostOnlyHarness, isSummonableLocalHarness } from "@/lib/harness-adapters";
 import { slugifyFamiliarId } from "@/lib/onboarding-familiars";
 import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import {
@@ -430,7 +430,7 @@ function SummoningRite({
       ? harness !== null
       : vessel === "ssh"
         ? harness !== null &&
-          harness !== "grok" &&
+          !isHostOnlyHarness(harness) &&
           sshHost.trim().length > 0 &&
           sshCwd.trim().length > 0
         : vessel === "openclaw"
@@ -892,21 +892,21 @@ function StageVessel({
     { kind: "openclaw", icon: "ph:robot", title: "An OpenClaw agent", hint: "Bridge an agent you already keep." },
     ...(hermesReady ? [{ kind: "hermes" as const, icon: "ph:brain-bold" as IconName, title: "A Hermes profile", hint: "Bring a saved Hermes mind, skills, and SOUL." }] : []),
   ];
-  // Grok Build is deliberately local-only until Cave has a native remote
-  // launcher. Hide it for SSH rather than letting a selection fall back to an
-  // incompatible `coven run --stream-json` path.
+  // Grok Build and Codex local mode run only on this Cave host. Hide them for
+  // SSH rather than letting a selection fall back to an incompatible
+  // `coven run --stream-json` path or another computer's inference server.
   const installedHarnesses = (harnesses ?? []).filter(
     (h) =>
       h.installed &&
       (vessel !== "local" || h.availability?.state === undefined || h.availability.state === "ready") &&
       (h.availability?.state ?? "ready") === "ready" &&
-      (vessel !== "ssh" || h.id !== "grok"),
+      (vessel !== "ssh" || !isHostOnlyHarness(h.id)),
   );
   const unavailableHarness = (harnesses ?? []).find(
     (h) =>
       h.availability !== undefined &&
       h.availability.state !== "ready" &&
-      (vessel !== "ssh" || h.id !== "grok"),
+      (vessel !== "ssh" || !isHostOnlyHarness(h.id)),
   );
   const unavailableAvailability = unavailableHarness?.availability;
   const unavailableRuntimeMessage = unavailableAvailability && unavailableAvailability.state !== "ready"
@@ -964,9 +964,9 @@ function StageVessel({
                 setVessel(v.kind);
                 setEditingVessel(false);
                 focusAfterChoice(vesselChangeRef);
-                // A previously selected local Grok runtime must not survive a
-                // switch to SSH: native Grok sessions are deliberately local-only.
-                if (v.kind === "ssh" && harness === "grok") setHarness(null);
+                // A previously selected host-only runtime (Grok, Codex local
+                // mode) must not survive a switch to SSH.
+                if (v.kind === "ssh" && harness && isHostOnlyHarness(harness)) setHarness(null);
                 if (v.kind === "hermes") setHarness("hermes");
               }}
               className={`focus-ring summoning-vessel${active ? " summoning-vessel--active" : ""}`}

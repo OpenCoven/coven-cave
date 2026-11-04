@@ -33,13 +33,16 @@ const resultItem = { type: "function_call_output", id: "result-1", call_id: priv
 }) }] };
 const frame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 let providerRequests = 0;
+const providerBodies: string[] = [];
 const server = createServer(async (req, res) => {
   providerRequests += 1;
   const responseId = `hermes-disclosure-${providerRequests}`;
   // The current producer echoes the request without a runtime report. Also
   // exercise the documented report shape independently of that producer gap.
   const runtime = providerRequests === 1 ? { provider: "served-provider", model: "resolved-model-v3", route_source: "model_routes" } : undefined;
-  for await (const _chunk of req) { /* consume request before replying */ }
+  const requestChunks = [];
+  for await (const chunk of req) requestChunks.push(chunk);
+  providerBodies.push(Buffer.concat(requestChunks).toString("utf8"));
   res.writeHead(200, { "content-type": "text/event-stream" });
   const payload = Buffer.from([
     frame("response.created", { response: { id: responseId, model: "requested-alias", runtime: { model: "provisional-model-v2" } } }),
@@ -236,6 +239,21 @@ try {
   assert.equal(echoSaved.tools[2].output, undefined, "an opaque single content block cannot bypass the result decoder either");
   assert.equal(echoSaved.responseMetadata.runtimeIdentity.model, null, "history does not upgrade an echoed request into a report");
   assert.equal(providerRequests, 2, "two explicit turns; neither replay dispatches the provider");
+
+  // golden-02 (#6057): opaque continuation stays with the provider. A follow-up
+  // continues by the saved response id; Cave never replays reasoning text,
+  // signatures or encrypted state it was sent.
+  const followUp = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId: "continuation-send-token", familiarId: "ember", projectRoot: workspace, sessionId: done.sessionId, prompt: "Continue the fixture" }),
+  }));
+  assert.equal(followUp.status, 200);
+  const followUpBody = await followUp.text();
+  assert.equal(providerRequests, 3);
+  const continuation = JSON.parse(providerBodies[2]);
+  assert.equal(continuation.previous_response_id, "hermes-disclosure-1", "the provider's own response id carries the continuation unchanged");
+  assert.doesNotMatch(providerBodies[2], /PRIVATE_|encrypted_content|"signature"|opaque-signature-sentinel/);
+  assert.doesNotMatch(followUpBody, /PRIVATE_(?:RAW|ENCRYPTED|PARTIAL|INTERMEDIATE|CONFLICTING)_REASONING|PRIVATE_REASONING_SIGNATURE/);
   originalConsole.log("route-hermes-disclosure.integration.test.ts: ok");
 } catch (error) {
   originalConsole.error(error);

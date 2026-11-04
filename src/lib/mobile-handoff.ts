@@ -230,7 +230,7 @@ export async function recoverStaleTailscaleServeLease({
 }
 
 export function tailscaleServeLeasePath(home = homedir()): string {
-  return path.join(home, ".coven", "cave", TAILSCALE_SERVE_LEASE_FILE);
+  return path.join(/* turbopackIgnore: true */ home, ".coven", "cave", TAILSCALE_SERVE_LEASE_FILE);
 }
 
 // Rust uses the same record and path. Linking a fully-written unique owner
@@ -992,8 +992,8 @@ type ResolveTailscaleBinOptions = {
 
 const TAILSCALE_APP_DIR = "/Applications/Tailscale.app/Contents/MacOS";
 const DEFAULT_TAILSCALE_PATHS = [
-  path.join(TAILSCALE_APP_DIR, "tailscale"),
-  path.join(TAILSCALE_APP_DIR, "Tailscale"),
+  path.join(/* turbopackIgnore: true */ TAILSCALE_APP_DIR, "tailscale"),
+  path.join(/* turbopackIgnore: true */ TAILSCALE_APP_DIR, "Tailscale"),
   "/opt/homebrew/bin/tailscale",
   "/usr/local/bin/tailscale",
   "/usr/bin/tailscale",
@@ -1040,7 +1040,7 @@ function pathCandidates(pathEnv: string | null | undefined) {
   return pathEnv
     .split(path.delimiter)
     .filter(Boolean)
-    .map((dir) => path.join(dir, "tailscale"));
+    .map((dir) => path.join(/* turbopackIgnore: true */ dir, "tailscale"));
 }
 
 export function resolveTailscaleBin({

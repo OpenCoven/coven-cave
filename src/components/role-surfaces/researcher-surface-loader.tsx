@@ -12,7 +12,7 @@ let pending: Promise<ResearcherComponent> | null = null;
 
 function loadResearcher(): Promise<ResearcherComponent> {
   if (loaded) return Promise.resolve(loaded);
-  pending ??= import("@opencoven/research-client")
+  pending ??= import("@opencoven/research-room")
     .then((module) => (loaded = module.ResearcherSurface))
     .catch((error: unknown) => {
       pending = null;

@@ -90,6 +90,10 @@ struct NotchConfigPatch {
 
 #[cfg(desktop)]
 pub(super) fn coven_tray_icon() -> Image<'static> {
+    #[cfg(target_os = "windows")]
+    { return super::windows_tray::icon(); }
+    #[cfg(not(target_os = "windows"))]
+    {
     // The Coven fox-and-trident mark, pre-rendered from
     // icons/icon-source-1024.png as 36×36 (18pt @2x) white+alpha raw RGBA —
     // regenerate with scripts/generate-tray-icon.py. macOS renders it as a
@@ -99,6 +103,7 @@ pub(super) fn coven_tray_icon() -> Image<'static> {
     const SIZE: u32 = 36;
     const RGBA: &[u8] = include_bytes!("../icons/tray-icon-36.rgba");
     Image::new(RGBA, SIZE, SIZE)
+    }
 }
 
 #[cfg(desktop)]
@@ -124,6 +129,58 @@ pub(super) fn quick_chat_position(app: &tauri::AppHandle) -> (f64, f64) {
         );
     }
     (24.0, 40.0)
+}
+
+// Compile the Windows adapter during native tests on other desktop hosts too.
+#[cfg(all(desktop, any(target_os = "windows", test)))]
+fn place_windows_quick_chat(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+    reopening: bool,
+) -> tauri::Result<()> {
+    use super::window_placement::{fit_quick_chat_client, Rect};
+    // tray-icon returns physical pixels; converting at 1.0 preserves them.
+    let tray = app.tray_by_id("cave-tray")
+        .and_then(|tray| tray.rect().ok().flatten())
+        .map(|rect| {
+            let position = rect.position.to_physical::<i32>(1.0);
+            let size = rect.size.to_physical::<u32>(1.0);
+            Rect { x: position.x, y: position.y, width: size.width, height: size.height }
+        }).filter(|r| r.width > 0 && r.height > 0);
+    let monitor = tray.and_then(|r| app.monitor_from_point(
+        f64::from(r.x) + f64::from(r.width) / 2.0,
+        f64::from(r.y) + f64::from(r.height) / 2.0,
+    ).ok().flatten())
+        .or_else(|| app.cursor_position().ok().and_then(|p|
+            app.monitor_from_point(p.x, p.y).ok().flatten()))
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else { return Ok(()) };
+    let scale = monitor.scale_factor();
+    if !scale.is_finite() || scale <= 0.0 { return Ok(()) }
+    let area = monitor.work_area();
+    let work = Rect { x: area.position.x, y: area.position.y,
+        width: area.size.width, height: area.size.height };
+    let pixels = |logical: f64| (logical * scale).round().max(1.0) as u32;
+    // Retain a user's resize in logical units when moving between DPIs.
+    let desired = if reopening {
+        let logical = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);
+        (pixels(logical.width), pixels(logical.height))
+    } else { (pixels(QUICK_CHAT_WIDTH), pixels(QUICK_CHAT_HEIGHT)) };
+    // A borderless Windows window can still have shadow frame extents. Move
+    // to target DPI before measuring them, then fit the entire outer rectangle.
+    window.set_position(tauri::PhysicalPosition::new(work.x, work.y))?;
+    let outer = window.outer_size()?;
+    let inner = window.inner_size()?;
+    let frame = (outer.width.saturating_sub(inner.width), outer.height.saturating_sub(inner.height));
+    let Some(placement) = fit_quick_chat_client(work, scale, desired, frame, tray) else {
+        return Ok(());
+    };
+    window.set_min_size(Some(tauri::PhysicalSize::new(
+        placement.min_inner_size.0, placement.min_inner_size.1,
+    )))?;
+    window.set_size(tauri::PhysicalSize::new(placement.inner_size.0, placement.inner_size.1))?;
+    window.set_position(tauri::PhysicalPosition::new(placement.outer.x, placement.outer.y))?;
+    Ok(())
 }
 
 /// The token-bearing URL the main window was launched with. The page's
@@ -178,6 +235,10 @@ pub(super) fn show_quick_chat_from_main(app: &tauri::AppHandle) {
 #[cfg(desktop)]
 pub(super) fn show_quick_chat_window(app: &tauri::AppHandle, quick_chat_url: &Url) {
     if let Some(window) = app.get_webview_window(QUICK_CHAT_WINDOW_LABEL) {
+        #[cfg(target_os = "windows")]
+        if let Err(error) = place_windows_quick_chat(app, &window, true) {
+            log::warn!("[cave] quick chat placement unavailable: {}", error);
+        }
         let _ = window.show();
         let _ = window.set_focus();
         return;
@@ -216,8 +277,15 @@ pub(super) fn show_quick_chat_window(app: &tauri::AppHandle, quick_chat_url: &Ur
     #[cfg(target_os = "macos")]
     let builder = builder.transparent(true);
 
+    #[cfg(target_os = "windows")]
+    let builder = builder.visible(false);
+
     match builder.build() {
         Ok(window) => {
+            #[cfg(target_os = "windows")]
+            if let Err(error) = place_windows_quick_chat(app, &window, false) {
+                log::warn!("[cave] quick chat placement unavailable: {}", error);
+            }
             #[cfg(target_os = "macos")]
             {
                 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};

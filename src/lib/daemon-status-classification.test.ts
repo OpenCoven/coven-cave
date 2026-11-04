@@ -262,6 +262,54 @@ assert.deepEqual(
   "an older status route's exact local-offline payload remains compatible",
 );
 
+for (const state of ["starting", "recovering", "stopping"]) {
+  assert.deepEqual(
+    classifyDaemonStatusPoll({
+      responseStatus: 200,
+      responseOk: true,
+      payload: {
+        running: false,
+        availability: "offline",
+        reason: "daemon offline",
+        target: { mode: "local" },
+        lifecycle: { state },
+      },
+    }),
+    { kind: "transitioning", state, targetMode: "local" },
+    `a projected ${state} state is neither offline nor a failure (#6298)`,
+  );
+}
+assert.deepEqual(
+  classifyDaemonStatusPoll({
+    responseStatus: 200,
+    responseOk: true,
+    payload: {
+      running: false,
+      availability: "offline",
+      reason: "daemon offline",
+      target: { mode: "local" },
+      lifecycle: { state: "stopped" },
+    },
+  }),
+  { kind: "offline", targetMode: "local" },
+  "a settled projected state keeps the availability classification",
+);
+assert.equal(
+  classifyDaemonStatusPoll({
+    responseStatus: 200,
+    responseOk: true,
+    payload: {
+      running: false,
+      availability: "unreachable",
+      reason: "hub unreachable",
+      target: { mode: "hub" },
+      lifecycle: { state: "starting" },
+    },
+  }).kind,
+  "unavailable",
+  "only a local target can be mid-mutation; a hub never reports transitioning",
+);
+
 assert.deepEqual(
   classifyDaemonStatusPoll({
     responseStatus: 200,

@@ -14,7 +14,7 @@ export type OpenCovenToolProbe = {
   version: string | null;
   packageName: string | null;
   packagePath: string | null;
-  error?: "version-probe-failed" | "launcher-unreadable";
+  error?: "lookup-failed" | "version-probe-failed" | "launcher-unreadable";
 };
 
 export type OpenCovenToolVerification<TId extends string = string> = {

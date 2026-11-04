@@ -136,4 +136,11 @@ assert.equal(
   "the manual command remains useful even when no automatic action is pending",
 );
 
+for (const state of ["unverified", "version-unreadable"] as const) {
+  const repair = { ...cliBelowFloor, state };
+  assert.deepEqual(openCovenToolActionTargets([repair]), ["coven-cli"]);
+  assert.equal(openCovenToolsPrimaryActionLabel([repair]), "Repair Coven CLI");
+  assert.equal(openCovenToolsInstallCommand([repair]), "npm i -g @opencoven/cli@latest");
+}
+
 console.log("opencoven-tools-install.test.ts: ok");

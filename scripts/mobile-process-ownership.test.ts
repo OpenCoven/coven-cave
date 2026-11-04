@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -123,6 +123,109 @@ test("Linux process-table scanning skips unrelated kernel entries with zero grou
     () => parseLinuxProcessInfo(`2 (kthreadd) ${fields.join(" ")}`, "boot-uuid"),
     /missing identity fields/,
     "strict validation still rejects zero group/session identities",
+  );
+});
+
+test("Linux identity reads treat a process lost after procfs open as absent", () => {
+  // Isolate the syscall seam from the real process tests in this file. Linux
+  // uses a real procfs descriptor opened before exit; macOS supplies the same
+  // documented ESRCH read outcome so this regression also runs locally.
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", `
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs';
+    import { spawn } from 'node:child_process';
+    import { once } from 'node:events';
+    import { syncBuiltinESMExports } from 'node:module';
+    const nativeLinux = process.platform === 'linux';
+    let descriptor;
+    let pid = 424242;
+    if (nativeLinux) {
+      const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
+      await once(child, 'spawn');
+      pid = child.pid;
+      try {
+        descriptor = fs.openSync('/proc/' + pid + '/stat', 'r');
+      } finally {
+        const exited = once(child, 'exit');
+        child.kill('SIGKILL');
+        await exited;
+      }
+      assert.throws(() => fs.readFileSync(descriptor, 'utf8'), { code: 'ESRCH' });
+    }
+    const read = fs.readFileSync;
+    const readdir = fs.readdirSync;
+    let failureCode = 'ESRCH';
+    fs.readFileSync = (path, ...args) => {
+      if (path === '/proc/sys/kernel/random/boot_id') return 'fixture-boot';
+      if (path === '/proc/' + pid + '/stat') {
+        if (descriptor !== undefined && failureCode === 'ESRCH') return read(descriptor, ...args);
+        throw Object.assign(new Error('procfs read: ' + failureCode), { code: failureCode });
+      }
+      return read(path, ...args);
+    };
+    fs.readdirSync = (path, ...args) => path === '/proc' ? [String(pid)] : readdir(path, ...args);
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    syncBuiltinESMExports();
+    const { kernelProcessIdentity, scanProcessTable } = await import(${JSON.stringify(new URL("./mobile-process-ownership.ts", import.meta.url).href)});
+    try {
+      assert.equal(await kernelProcessIdentity(pid), null);
+      assert.deepEqual(await scanProcessTable(), []);
+      failureCode = 'EACCES';
+      await assert.rejects(kernelProcessIdentity(pid), { code: 'EACCES' });
+      await assert.rejects(scanProcessTable(), { code: 'EACCES' });
+    } finally {
+      if (descriptor !== undefined) fs.closeSync(descriptor);
+    }
+  `], { encoding: "utf8", timeout: 10_000 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("Linux identity reads treat a task the kernel is reaping as absent (#6232)", () => {
+  // fs/proc/array.c do_task_stat starts with `pgid = -1, sid = -1` and fills
+  // them only while it can lock the task's signal handlers. A task being
+  // reaped has released them, so its stat reads `X 0 -1 -1`; the same -1
+  // pair can appear before the state letter changes. Both are disappearance,
+  // not malformed identity, and a scan or direct read mid-exit must say so.
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", `
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    const pid = 424243;
+    const tail = '0 -1 4194572 0 0 0 0 0 0 0 0 20 0 1 0 987654 0 0';
+    const stats = {
+      reaped: pid + ' (node) X 0 -1 -1 ' + tail,
+      released: pid + ' (node) S 0 -1 -1 ' + tail,
+    };
+    let current = 'reaped';
+    const read = fs.readFileSync;
+    fs.readFileSync = (path, ...args) => {
+      if (path === '/proc/sys/kernel/random/boot_id') return 'fixture-boot';
+      if (path === '/proc/' + pid + '/stat') return stats[current];
+      return read(path, ...args);
+    };
+    const readdir = fs.readdirSync;
+    fs.readdirSync = (path, ...args) => path === '/proc' ? [String(pid)] : readdir(path, ...args);
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    syncBuiltinESMExports();
+    const { kernelProcessIdentity, scanProcessTable } = await import(${JSON.stringify(new URL("./mobile-process-ownership.ts", import.meta.url).href)});
+    for (const kind of Object.keys(stats)) {
+      current = kind;
+      assert.equal(await kernelProcessIdentity(pid), null, kind);
+      assert.deepEqual(await scanProcessTable(), [], kind);
+    }
+  `], { encoding: "utf8", timeout: 10_000 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("strict Linux identity parsing still rejects the -1 group and session of a reaped task", () => {
+  const fields = [
+    "X", "0", "-1", "-1", "0", "-1", "4194572", "0", "0", "0",
+    "0", "0", "0", "0", "0", "20", "0", "1", "0", "987654",
+  ];
+  assert.throws(
+    () => parseLinuxProcessInfo(`4242 (node) ${fields.join(" ")}`, "boot-uuid"),
+    /missing identity fields/,
+    "only the readers decide a reaped task is gone; the parser never invents an identity",
   );
 });
 
@@ -540,7 +643,7 @@ test("stubborn backend escalation waits for readiness and drains the supervised 
     owner = readProcessOwner(ownerPath);
     assert.ok(owner?.backendRoot);
     const stopped = await stopOwnedProcessTree(ownerPath, { termWaitMs: 80, killWaitMs: 1000 });
-    assert.equal(stopped.kind, "stopped");
+    assert.equal(stopped.kind, "stopped", JSON.stringify(stopped));
     await waitForExit(backendPid);
     await waitForExit(owner.backendRoot.pid);
     await waitForExit(owner.supervisor.pid);

@@ -6,6 +6,7 @@ import { isSupportedCanvasGitHubFile } from "@/lib/canvas-github-import";
 import { parseGitHubFileUrl } from "@/lib/github-repo-link";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { requireTrustedHumanCanvasMutation } from "@/lib/server/trusted-grant-mutation";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,17 +43,16 @@ export async function POST(req: Request) {
     .join("/")}?ref=${encodeURIComponent(parsed.ref)}`;
   const token = resolveGitHubToken();
   try {
-    const response = await fetch(endpoint, {
+    const response = await upstreamFetch("github", endpoint, {
       cache: "no-store",
       redirect: "error",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: {
         Accept: "application/vnd.github.raw+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "coven-cave",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-    });
+    }, { timeoutMs: FETCH_TIMEOUT_MS });
     if (!response.ok) {
       const message =
         response.status === 404

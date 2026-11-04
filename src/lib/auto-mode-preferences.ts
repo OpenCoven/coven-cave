@@ -12,7 +12,7 @@ import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
-const STORE_PATH = path.join(caveHome(), "auto-mode-preferences.json");
+const STORE_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "auto-mode-preferences.json");
 
 /** Entries kept per familiar — enough history for a digest without unbounded growth. */
 const MAX_ENTRIES_PER_FAMILIAR = 50;

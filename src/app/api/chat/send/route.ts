@@ -109,6 +109,8 @@ import {
 } from "@/lib/codex-compatibility";
 import { codexLaunchCommand } from "@/lib/codex-bin";
 import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
+import { isCodexFamilyHarness, isLocalCodexHarness, localCodexBackendInfo, type LocalCodexRefusalCode } from "@/lib/local-codex";
+import { applyLocalCodexSpawnEnv, preflightLocalCodex } from "@/lib/server/local-codex-backends";
 import { codexReasoningForwardable } from "@/lib/server/direct-transport-reasoning-gates";
 import {
   covenRelayedRunError,
@@ -197,7 +199,11 @@ import {
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { resolveInferenceLaunchPlan } from "@/lib/server/inference-launch-plan";
 import { loadProjects } from "@/lib/cave-projects";
-import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-project-access";
+import {
+  chatProjectAccessId,
+  resumeRootIsRegisteredProject,
+  taskWorktreeProjectAccessId,
+} from "@/lib/chat-project-access";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
@@ -205,6 +211,7 @@ import {
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
+import { buildClaudeWriteScope, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
@@ -273,6 +280,7 @@ import {
   buildRuntimeAccessFingerprint,
   buildPromptWithRuntimeScope,
   resolveLocalRuntimeCwd,
+  runtimeGrantDirs,
   type RuntimeScope,
 } from "@/lib/chat-runtime-scope";
 import {
@@ -330,6 +338,7 @@ import {
   covenRunModelFlagOutcome,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
+  covenRunSupportsWriteScope,
   covenRunSupportsSpeed,
   openCodeRunCapabilities,
 } from "./chat-send-capabilities";
@@ -2339,7 +2348,7 @@ async function postAdmittedChat(
   // resume-incapable combination retains the existing filtered
   // `coven run codex` transport unchanged.
   const codexResumeTarget =
-    binding.harness === "codex" &&
+    isCodexFamilyHarness(binding.harness) &&
     body.sessionId &&
     !flowDiscussionStartsFresh &&
     // A handoff never resumes the previous runtime's native session. Without
@@ -2351,7 +2360,7 @@ async function postAdmittedChat(
       ? existingConversation?.harnessSessionId ?? body.sessionId
       : null;
   const codexSpawnEnv =
-    !sshRuntime && binding.harness === "codex" ? harnessSpawnEnv(body.familiarId) : null;
+    !sshRuntime && isCodexFamilyHarness(binding.harness) ? harnessSpawnEnv(body.familiarId) : null;
   const codexDirectLaunch = codexSpawnEnv
     ? (() => {
         try {
@@ -2600,19 +2609,16 @@ async function postAdmittedChat(
   // The workspace exemption assumes a workspace directory is not a registered
   // project. A user can register one whose root lives under the familiar's
   // workspace, so ask the registry rather than trusting containment: a resume
-  // root that resolves to a real project id is gated like any other project
-  // root (cave-g8fqc). `unregistered:<root>` is the fail-closed sentinel and
-  // does NOT count as registered.
-  const resumeProjectAccessId = resumeCwd
-    ? chatProjectAccessId({
+  // root that names a registered project — through any spelling, and even when
+  // two records make its grant ambiguous — is gated like any other project
+  // root (cave-g8fqc, #6210).
+  const resumeCwdIsRegisteredProject = resumeCwd
+    ? resumeRootIsRegisteredProject({
         projects,
         resumeCwd,
         resolvedCwd: resumeCwdResolved ?? resumeCwd,
       })
-    : null;
-  const resumeCwdIsRegisteredProject = Boolean(
-    resumeProjectAccessId && !resumeProjectAccessId.startsWith("unregistered:"),
-  );
+    : false;
   const projectlessLaunch = projectlessGenerationLaunch({
     origin: generationOrigin,
     hasRequestedProjectRoot: Boolean(body.projectRoot),
@@ -2631,6 +2637,7 @@ async function postAdmittedChat(
   // the browser submits the exact CWD persisted on that task card, and only
   // when the symlink-resolved runtime cwd remains inside the task project.
   let authorizedProjectRoot: string;
+  let authorizedProjectId: string | null = null;
   try {
     if (projectlessLaunch.kind === "unavailable") {
       throw new ChatProjectLaunchError(
@@ -2679,6 +2686,7 @@ async function postAdmittedChat(
         },
       );
       authorizedProjectRoot = authorized.root;
+      authorizedProjectId = authorized.projectId;
     }
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
@@ -2927,8 +2935,10 @@ async function postAdmittedChat(
   // so it is forwardable exactly when that transport was selected above with
   // the flag in its probed contract (#5905). The model-state route asks the
   // same routing helpers, so the chips it offers match what lands here.
+  // Reasoning effort is a cloud Codex control; a local model never receives it.
   const codexReasoningForwardingEnabled =
-    codexDirect && codexReasoningForwardable(codexDirectCapabilities, Boolean(codexResumeTarget));
+    codexDirect && !isLocalCodexHarness(binding.harness) &&
+    codexReasoningForwardable(codexDirectCapabilities, Boolean(codexResumeTarget));
   const copilotReasoningForwardingEnabled =
     Boolean(copilotStream) && copilotSupportsReasoningEffort(copilotCapability?.version ?? null);
   const forwardableControlParameters = new Set<string>([
@@ -2981,6 +2991,41 @@ async function postAdmittedChat(
       modelApplicationState: "rejected",
       modelApplicationReason: "The saved model id failed launch-boundary validation.",
     }, { status: 400 });
+  }
+  // Codex local mode (#6049): the server, the model and its tool support are
+  // checked before anything spawns. A session that cannot run locally stops
+  // here with what to do; it never falls back to cloud Codex. Both transports
+  // pin the local provider: `-c` overrides on the direct one, Cave's
+  // scaffolded adapter manifest on `coven run`.
+  let localCodexConfigArgs: string[] | undefined;
+  if (isLocalCodexHarness(binding.harness)) {
+    const info = localCodexBackendInfo(binding.harness)!;
+    if (sshRuntime) {
+      return NextResponse.json({
+        ok: false,
+        code: "local_codex_remote_host" satisfies LocalCodexRefusalCode,
+        error: `${info.label} runs on this computer with its own ${info.product} server. Switch the host to this computer to use it.`,
+      }, { status: 409 });
+    }
+    const preflight = await preflightLocalCodex(binding.harness, cleanModelId(desiredModel));
+    if (preflight && !preflight.ok) {
+      return NextResponse.json({
+        ok: false,
+        code: preflight.code,
+        error: preflight.message,
+        desiredModel,
+        modelApplicationState: "rejected",
+        modelApplicationReason: preflight.message,
+      }, { status: 409 });
+    }
+    // Off the direct transport the turn runs `coven run <harness>` with
+    // Cave's scaffolded manifest; a custom endpoint reaches Codex through
+    // the spawn environment. Continuity there is by replay: Coven cannot
+    // capture an external Codex adapter's thread id for a native resume.
+    if (preflight?.ok) {
+      localCodexConfigArgs = preflight.configArgs;
+      if (localRuntimePlan) applyLocalCodexSpawnEnv(localRuntimePlan.env, preflight, codexDirect ? "direct" : "coven");
+    }
   }
   if (savedModelRejection === "provider-mismatch") {
     // Refused before any process starts: forwarding this id would launch the
@@ -3218,7 +3263,8 @@ async function postAdmittedChat(
   const mentionedFiles = imagesSupported
     ? await resolveMentionedFiles(
         body.mentionedFiles,
-        resolvedFamiliarWorkspace,
+        cwd,
+        body.mentionedFilesRoot,
       )
     : [];
   const dailyMemoryContext = metaRun
@@ -3388,30 +3434,52 @@ async function postAdmittedChat(
         : grokDirect
           ? grokLaunchModel
           : forwardModel) ?? undefined;
+  const claudeScopedWrite = !sshRuntime && binding.harness === "claude" && body.permissionMode !== "read";
+  const claudeWriteScopeSupported = claudeScopedWrite
+    ? ((await probeCovenCapability(covenRunSupportsWriteScope)) ?? false) : false;
+  let writeScopeFile: ReturnType<typeof prepareClaudeWriteScopeFile> | undefined;
+  const protectedRuntimeRoots = claudeScopedWrite ? await resolveRuntimeResourceRoots() : runtimeResourceRoots;
+  if (claudeScopedWrite) {
+    const primaryAccess = authorizedProjectId
+      ? effectiveAccessibleProjects.find(entry => entry.project.id === authorizedProjectId)?.access
+      : projectlessLaunch.kind === "workspace" ? "write" : undefined;
+    if (primaryAccess !== "write") {
+      return Response.json({ ok: false, code: "project_write_access_required",
+        error: "This project's access is read-only. Choose Read-only mode or request write access, then retry." }, { status: 403 });
+    }
+    try {
+      writeScopeFile = prepareClaudeWriteScopeFile(buildClaudeWriteScope({
+        primaryRoot: cwd, primaryAccess, grantedProjectRoots,
+        projectRootAccess: grantedProjectRootAccess,
+        familiarWorkspace: resolvedFamiliarWorkspace, protectedRoots: protectedRuntimeRoots,
+      }));
+    } catch {
+      return Response.json({ ok: false, code: "scoped_write_unavailable",
+        error: "A granted folder is unavailable. Review project access and retry before writing." }, { status: 409 });
+    }
+  }
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
   // Directory grants are writable in full-permission harness modes. Forward
   // only writable project roots and the familiar workspace; runtime skill
   // roots are advertised as read-only and must never be promoted through an
   // `--add-dir` grant. The spawn cwd is already trusted implicitly, so it is
-  // excluded. Generic forwarding remains gated on the `--add-dir` probe and
-  // local runtimes only (SSH runtimes own their remote filesystem).
-  const spawnRoot = cwd;
+  // excluded, by canonical identity (#6210). Generic forwarding remains gated
+  // on the `--add-dir` probe and local runtimes only (SSH runtimes own their
+  // remote filesystem).
   const grantDirs = !sshRuntime
-    ? Array.from(
-        new Set(
-          [
-            ...grantedProjectRoots,
-            ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
-          ]
-            .map((root) => root.trim())
-            .filter((root) => root && root !== spawnRoot),
-        ),
-      )
+    ? runtimeGrantDirs({
+        spawnRoot: cwd,
+        grantedProjectRoots,
+        projectRootAccess: grantedProjectRootAccess,
+        familiarWorkspace: resolvedFamiliarWorkspace,
+      })
     : [];
   const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
   const runtimeAccessFingerprint = buildRuntimeAccessFingerprint({
     primaryRoot: cwd,
+    permissionMode: body.permissionMode === "read" ? "read" : "full",
+    readOnlyResourceRoots: protectedRuntimeRoots,
     grantedProjectRoots,
     projectRootAccess: grantedProjectRootAccess,
     additionalRoots: resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : [],
@@ -3571,6 +3639,8 @@ async function postAdmittedChat(
         // Thinking pick (#5905): `-c model_reasoning_effort=…`, gated on the
         // probed `--config` capability for this launch shape.
         reasoningEffort: forwardReasoning,
+        // Codex local mode: keep this turn on its server, fresh or resumed.
+        localConfigArgs: localCodexConfigArgs,
       });
     }
     const a = ["run", binding.harness, "--stream-json"];
@@ -3579,13 +3649,14 @@ async function postAdmittedChat(
     // Enforce Read-only by mapping to the harness's native sandbox flag via
     // `coven run --permission read-only` (codex --sandbox read-only / claude
     // --permission-mode plan). Gated on the CLI advertising the flag.
-    if (forwardPermission) a.push("--permission", forwardPermission);
+    if (writeScopeFile) a.push("--write-scope", writeScopeFile.path);
+    else if (forwardPermission) a.push("--permission", forwardPermission);
     // The Speed control: `coven run --speed fast|balanced|thorough`, mapped by
     // the daemon onto Claude's `--effort`. Only an explicit, validated pick is
     // forwarded; an unset control leaves the runtime's own default in place.
     if (forwardSpeed) a.push("--speed", forwardSpeed);
     // Trust each granted root at the harness level; repeatable flag.
-    for (const dir of forwardAddDirs) a.push("--add-dir", dir);
+    if (!writeScopeFile) for (const dir of forwardAddDirs) a.push("--add-dir", dir);
     // Inject identity preamble. coven-cli renders this through the best
     // available identity channel for the chosen harness. Without this, the
     // harness answers as its generic CLI identity instead of as the familiar.
@@ -3711,6 +3782,8 @@ async function postAdmittedChat(
   let runHandle!: ChatRunHandle;
   const stream = new ReadableStream<Uint8Array>({
     start: (controller) => startAdmittedChatStream(admission, async () => {
+      try {
+      await writeScopeFile?.create();
       let closed = false;
       const displayProjection = new LegacyReasoningStreamProjection();
       const push = (incoming: StreamEvent) => {
@@ -3766,7 +3839,9 @@ async function postAdmittedChat(
           id === "familiar-contract" ||
           id === "runtime-process" ||
           id === "runtime-launch-diagnostics" ||
-          id === "runtime-grants"
+          id === "runtime-grants" ||
+          id === "runtime-write-denied" ||
+          id === "runtime-write-scope"
         ) {
           persistedCompatibilityDiagnostics.push({
             ...projected,
@@ -3910,7 +3985,7 @@ async function postAdmittedChat(
       // but produced no output") and the banner heuristic ate bare-number
       // answers — so their text passes through verbatim.
       const rawStdoutHarness =
-        binding.harness !== "codex" && binding.harness !== "claude";
+        !isCodexFamilyHarness(binding.harness) && binding.harness !== "claude";
       let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
@@ -3919,6 +3994,9 @@ async function postAdmittedChat(
       // unterminated/malformed OpenCode JSONL frame so a client regression or
       // a tool dumping one huge value cannot retain unbounded route memory.
       const MAX_OPENCODE_JSONL_FRAME_BYTES = 256 * 1024;
+      let claudeWriteDenied = false;
+      let claudeScopeRefused = false;
+      let claudeScopeStderr = "";
       let result: {
         duration_ms?: number;
         is_error?: boolean;
@@ -3950,7 +4028,7 @@ async function postAdmittedChat(
       // through to the generic empty-output/authentication diagnostic.
       let codexAdapterFailure: ReturnType<typeof codexAdapterFailureAvailability> = null;
       const captureCodexAdapterFailure = (text: string) => {
-        if (binding.harness !== "codex" || codexAdapterFailure) return;
+        if (!isCodexFamilyHarness(binding.harness) || codexAdapterFailure) return;
         codexAdapterFailure = codexAdapterFailureAvailability(text);
       };
       // Tracks open tool calls from both hook lines and stream-json
@@ -5002,6 +5080,7 @@ async function postAdmittedChat(
                *  the CLI's failure notice (e.g. a usage limit, #5938). It
                *  feeds the classifiers only and is never rendered. */
               result?: unknown;
+              permission_denials?: unknown;
               text?: string;
               message?: {
                 model?: unknown;
@@ -5028,12 +5107,25 @@ async function postAdmittedChat(
               announceSession(ev.session_id);
             }
             if (ev.type === "result") {
+              if (binding.harness === "claude" && countClaudeWriteDenials(ev) > 0 && !claudeWriteDenied) {
+                claudeWriteDenied = true;
+                const message = "The runtime blocked a file or shell action. Review this familiar's project access, then retry.";
+                pushProgress("runtime-write-denied", "Write blocked by runtime permissions", "error", message);
+                push({ kind: "error", code: "write_permission_denied", message, harness: binding.harness });
+              }
+              const scopeRefusal = writeScopeFile && ev.is_error === true ? claudeWriteScopeRefusal(ev.error) : null;
+              if (scopeRefusal) {
+                claudeScopeRefused = true;
+                launchFailure = scopeRefusal;
+                pushProgress("runtime-write-scope", "Project write access unavailable", "error", scopeRefusal.message);
+                push({ kind: "error", ...scopeRefusal, harness: binding.harness });
+              }
               // The result event also carries token usage and total cost
               // (CHAT-D12-02). Both are optional and defensively validated —
               // harnesses without billing metadata simply omit them.
               result = {
                 duration_ms: ev.duration_ms,
-                is_error: ev.is_error,
+                is_error: ev.is_error || claudeWriteDenied || claudeScopeRefused,
                 usage: parseStreamJsonUsage(ev.usage),
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
@@ -5698,6 +5790,14 @@ async function postAdmittedChat(
                   push({ kind: "error", code: availability.code, message: availability.message });
                   return null;
                 }
+                if (claudeScopedWrite && !claudeWriteScopeSupported) {
+                  launchFailure = { code: "scoped_write_unavailable",
+                    message: "This runtime cannot safely apply project write access. Update Coven and restart Cave, then retry." };
+                  result.is_error = true;
+                  pushProgress("harness-start", "Scoped writes unavailable", "error", launchFailure.message);
+                  push({ kind: "error", ...launchFailure, harness: binding.harness });
+                  return null;
+                }
                 const command = openCodeLaunchCommand
                   ?? {
                     command: localPlan.command,
@@ -5836,6 +5936,17 @@ async function postAdmittedChat(
 
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
+            if (writeScopeFile && !claudeScopeRefused) {
+              claudeScopeStderr = (claudeScopeStderr + text).slice(-8192);
+              const refusal = claudeWriteScopeRefusal(claudeScopeStderr);
+              if (refusal) {
+                claudeScopeRefused = true;
+                launchFailure = refusal;
+                result.is_error = true;
+                pushProgress("runtime-write-scope", "Project write access unavailable", "error", refusal.message);
+                push({ kind: "error", ...refusal, harness: binding.harness });
+              }
+            }
             captureHermesSessionFromStderr(text);
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
             if (!adapterConflict) {
@@ -6811,6 +6922,9 @@ async function postAdmittedChat(
       runBuffer?.finish();
       await sleep(20);
       close();
+      } finally {
+        await writeScopeFile?.dispose().catch(() => console.warn("Could not retire an owned runtime scope file; retained for inspection."));
+      }
     }),
   });
 

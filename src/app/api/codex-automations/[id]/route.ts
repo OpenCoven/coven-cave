@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { covenRoutineRrule, toCodexAutomationPayload } from "@/lib/coven-automations-facade";
 import {
   CovenAutomationRevisionConflictError,
-  deleteRoutine,
-  getRoutine,
-  readRoutineRevision,
-  updateRoutine,
 } from "@/lib/server/coven-automations-client";
+import { getRoutine } from "@/lib/server/automation-consumer-reads";
+import { tombstoneRoutine, reviseRoutineDefinition, parseReviewedAutomationSource, type AutomationDefinitionPatch } from "@/lib/server/automation-consumer-commands";
 import { CovenAutomationsUnavailableError } from "@/lib/coven-automations-types";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
@@ -46,9 +44,10 @@ export async function PATCH(req: Request, { params }: Params) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ ok: false, error: "expected an edit object" }, { status: 422 });
 
   const expectedRevision = expectedRevisionOf(body.expectedRevision);
-  if (expectedRevision === null) {
+  if (expectedRevision === null || expectedRevision === undefined) {
     return NextResponse.json({ ok: false, error: "expectedRevision must be a positive integer" }, { status: 422 });
   }
   // A rule Coven cannot run is refused before anything is read from it.
@@ -58,15 +57,13 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   try {
-    // The revision is read before the body, so a change landing in between
-    // makes the revise a conflict instead of writing a stale body over it.
-    const revision = expectedRevision ?? await readRoutineRevision(id);
-    const current = revision === null ? null : await getRoutine(id);
-    if (!current || revision === null) {
-      return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+    const source = parseReviewedAutomationSource(body.reviewedSource, id, expectedRevision);
+    const allowed = new Set(["name", "prompt", "rrule", "model", "status", "cwds", "tags", "familiars", "expectedRevision", "adoptionKey", "reviewedSource",
+      "reasoning_effort", "execution_environment", "skill_path"]);
+    if (Object.keys(body).some(key => !allowed.has(key)) || ["reasoning_effort", "execution_environment", "skill_path"].some(key => body[key] !== undefined && body[key] !== null && body[key] !== "")) {
+      return NextResponse.json({ ok: false, error: "This scheduled job includes unsupported settings. Remove reasoning, environment or skill overrides before saving." }, { status: 422 });
     }
-
-    const next = { ...current };
+    const next: AutomationDefinitionPatch = {};
     const stringFields = ["name", "prompt", "rrule", "model"] as const;
     for (const field of stringFields) {
       const value =
@@ -104,7 +101,7 @@ export async function PATCH(req: Request, { params }: Params) {
       next.status = body.status as "ACTIVE" | "PAUSED";
     }
 
-    for (const field of ["cwds", "tags"] as const) {
+    for (const field of ["cwds", "tags", "familiars"] as const) {
       const value = body[field];
       if (value === undefined) continue;
       if (
@@ -117,14 +114,19 @@ export async function PATCH(req: Request, { params }: Params) {
         );
       }
       if (field === "cwds") {
-        next.cwd = (value as string[])[0];
+        if (value.length > 1) return NextResponse.json({ ok: false, error: "Only one working directory is supported." }, { status: 422 });
+        next.cwd = (value as string[])[0] ?? "";
+      } else if (field === "familiars") {
+        if (value.length !== 1) return NextResponse.json({ ok: false, error: "Exactly one familiar is required." }, { status: 422 });
+        next.familiarId = (value as string[])[0];
       } else {
         next.tags = value as string[];
       }
     }
 
-    const updated = await updateRoutine(next, undefined, { expectedRevision: revision });
-    return NextResponse.json({ ok: true, automation: toCodexAutomationPayload(updated) });
+    const revision = await reviseRoutineDefinition(source, next, { expectedRevision, adoptionKey: body.adoptionKey as string });
+    const updated = await getRoutine(id);
+    return NextResponse.json({ ok: true, revision, automation: updated ? toCodexAutomationPayload(updated) : null });
   } catch (err) {
     return degradedOrUnknown(err);
   }
@@ -136,19 +138,36 @@ export async function DELETE(req: Request, { params }: Params) {
   }
   const { id } = await params;
   const expectedRevision = expectedRevisionOf(new URL(req.url).searchParams.get("expectedRevision"));
-  if (expectedRevision === null) {
+  if (expectedRevision === null || expectedRevision === undefined) {
     return NextResponse.json({ ok: false, error: "expectedRevision must be a positive integer" }, { status: 422 });
   }
+  const adoptionKey = req.headers.get("Idempotency-Key");
+  if (!adoptionKey || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/.test(adoptionKey)) {
+    return NextResponse.json({ ok: false, error: "a stable adoption key is required" }, { status: 422 });
+  }
   try {
-    const existed = await deleteRoutine(id, undefined, { expectedRevision });
-    if (!existed) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-    return NextResponse.json({ ok: true });
+    const revision = await tombstoneRoutine(id, { expectedRevision, adoptionKey });
+    return NextResponse.json({ ok: true, revision });
   } catch (err) {
     return degradedOrUnknown(err);
   }
 }
 
 function degradedOrUnknown(err: unknown) {
+  const code = err && typeof err === "object" && "code" in err ? err.code : undefined;
+  if (code === "outcome_unknown") {
+    return NextResponse.json({ ok: false, uncertain: true, error: "Coven may have applied this command. Retry the same request with its original adoption key to confirm the outcome." }, { status: 503 });
+  }
+  if (code === "REVISION_CONFLICT") {
+    const currentRevision = err && typeof err === "object" && "currentRevision" in err ? err.currentRevision : null;
+    return NextResponse.json({ ok: false, conflict: true, currentRevision, error: "This automation changed in Coven; review its current revision before trying again." }, { status: 409 });
+  }
+  if (code === "unavailable" || code === "timeout" || code === "capability_unsupported" || code === "unsupported_operation") {
+    return NextResponse.json({ ok: false, degraded: true, error: "Coven cannot serve this automation command." }, { status: 503 });
+  }
+  if (typeof code === "string") {
+    return NextResponse.json({ ok: false, error: `Coven refused this change: ${code}`, code }, { status: 422 });
+  }
   if (err instanceof CovenAutomationRevisionConflictError) {
     return NextResponse.json(
       { ok: false, error: `This automation ${err.message}`, conflict: true, currentRevision: err.currentRevision },

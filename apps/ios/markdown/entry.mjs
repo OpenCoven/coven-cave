@@ -7,6 +7,7 @@
 import { parse } from "@create-markdown/core";
 import { renderAsync } from "@create-markdown/preview";
 import { renderTableReplacements } from "../../../src/lib/markdown-table-cells.ts";
+import { sliceReadableUiBlocks } from "../../../src/lib/ui-block-readable.ts";
 // Keep prose-only WebViews free of syntax engines and language grammars.
 // A failed optional resource leaves readable code plus Copy/Expand controls.
 let highlighterReady = null;
@@ -125,6 +126,21 @@ async function renderMarkdown(md, { streaming = false } = {}) {
   return html;
 }
 
+// A coven:ui block has no native renderer here: it reads as plain lines from
+// the same projection desktop uses (#6060), never as its markup. Lines are
+// escaped text, so nothing in a block links, runs or sends.
+function readableBlockHtml(lines) {
+  return `<div class="ui-block-readable" data-ui-block-readable="">${lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div>`;
+}
+
+async function renderMessage(md, options) {
+  const pieces = sliceReadableUiBlocks(md || "", { streaming: options.streaming });
+  if (pieces.length === 1 && pieces[0].kind === "text") return renderMarkdown(pieces[0].text, options);
+  const parts = await Promise.all(pieces.map((piece) =>
+    piece.kind === "ui" ? readableBlockHtml(piece.lines) : piece.text.trim() ? renderMarkdown(piece.text, options) : ""));
+  return parts.join("");
+}
+
 function classifyInlineTokens(root) {
   root.querySelectorAll("code:not(pre code)").forEach((element) => {
     const text = (element.textContent || "").trim();
@@ -203,7 +219,7 @@ window.caveRender = async (md, opts = {}) => {
   if (!root) return;
   applyStyle(opts);
   try {
-    root.innerHTML = await renderMarkdown(md, { streaming: !!opts.streaming });
+    root.innerHTML = await renderMessage(md, { streaming: !!opts.streaming });
     classifyInlineTokens(root);
   } catch (err) {
     root.textContent = String(md || "");
@@ -277,13 +293,16 @@ document.addEventListener("click", (e) => {
   const tag = target.tagName?.toLowerCase();
   const kind = tag === "table" ? "table" : tag === "img" ? "image" : "diagram";
   // For an <img>, also pass its src so native can decode it into a UIImage and
-  // present the smooth native zoom (pinch/pan/double-tap) instead of a WebView.
+  // present the smooth native zoom (pinch/pan/double-tap) instead of a WebView,
+  // and its alt text so VoiceOver can name the enlarged image.
   const src = kind === "image" ? (target.getAttribute("src") || "") : "";
+  const alt = kind === "image" ? (target.getAttribute("alt") || "") : "";
   window.webkit?.messageHandlers?.cave?.postMessage({
     type: "enlarge",
     kind,
     html: target.outerHTML,
     src,
+    alt,
   });
 });
 

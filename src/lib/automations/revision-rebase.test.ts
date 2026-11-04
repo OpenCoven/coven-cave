@@ -8,6 +8,7 @@ import {
   rebasedPatch,
   reviewRevisionRebase,
   saveWithRevisionCheck,
+  type RevisionSaveSession,
   unresolvedConflicts,
 } from "./revision-rebase.ts";
 
@@ -19,7 +20,7 @@ const base: CodexAutomation = {
 // What the panel sends: every field, with the schedule as the builder writes it.
 const formPatch = (changes: Record<string, unknown> = {}) => ({
   name: base.name, prompt: base.prompt, rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0", model: "",
-  reasoning_effort: "medium", execution_environment: "worktree", tags: base.tags, cwds: base.cwds, skill_path: "", ...changes,
+  tags: base.tags, cwds: base.cwds, ...changes,
 });
 const kinds = (rebase: ReturnType<typeof reviewRevisionRebase>) => Object.fromEntries(rebase.fields.map((entry) => [entry.field, entry.kind]));
 
@@ -84,7 +85,10 @@ function fakeFetch(answers: ((call: Call) => { status: number; json: unknown } |
   }) as typeof fetch;
   return { calls, restore: () => { globalThis.fetch = original; } };
 }
-const snapshot = (automation: CodexAutomation, revision: number) => () => ({ status: 200, json: { ok: true, automation, revision } });
+const snapshot = (automation: CodexAutomation, revision: number) => () => ({ status: 200, json: { ok: true, automation, revision,
+  reviewedSource: { revision, routine: { schemaVersion: 1, id: automation.id, name: automation.name, prompt: automation.prompt,
+    status: automation.status, rrule: "FREQ=DAILY;BYHOUR=9", timezone: "UTC", misfire: "latest", overlap: "forbid", timeoutMinutes: 60,
+    runtime: "coven-code", familiarId: "alba", tags: automation.tags } } } });
 
 test("an unmoved definition is saved at the revision just read", async () => {
   const saved = { ...base, name: "Morning digest" };
@@ -131,7 +135,7 @@ test("an unconfirmed revision, a deleted cron and a lost answer fail without wri
   } finally { fake.restore(); }
   fake = fakeFetch([() => ({ status: 404, json: { ok: false, error: "not found" } })]);
   try {
-    assert.match(String((await saveWithRevisionCheck(base, formPatch()) as { message?: string }).message), /no longer holds this cron/);
+    assert.match(String((await saveWithRevisionCheck(base, formPatch()) as { message?: string }).message), /no longer holds this scheduled job/);
   } finally { fake.restore(); }
   fake = fakeFetch([snapshot(base, 4), () => new TypeError("network")]);
   try {
@@ -146,4 +150,33 @@ test("a malformed definition answer is unavailable, not a review", async () => {
       assert.deepEqual(await readCurrentDefinition("/api/codex-automations/nightly"), { kind: "unavailable" });
     } finally { fake.restore(); }
   }
+});
+
+test("an uncertain save retains the exact reviewed source, revision and key on retry without re-reading", async () => {
+  const session: RevisionSaveSession = {};
+  const fake = fakeFetch([snapshot(base, 4), () => new TypeError("network"), () => ({ status: 200, json: { ok: true, automation: base } })]);
+  try {
+    const first = await saveWithRevisionCheck(base, { name: "Changed" }, session);
+    assert.equal(first.kind, "failed");
+    assert.ok(session.pending);
+    assert.equal((await saveWithRevisionCheck(base, { name: "Changed" }, session)).kind, "saved");
+    assert.deepEqual(fake.calls.map(call => call.method), ["GET", "PATCH", "PATCH"]);
+    assert.deepEqual(fake.calls[2].body, fake.calls[1].body);
+    assert.match(String(fake.calls[1].body?.adoptionKey), /^cave-edit:/);
+    assert.equal((fake.calls[1].body?.reviewedSource as { revision: number }).revision, 4);
+    assert.equal(session.pending, undefined);
+  } finally { fake.restore(); }
+});
+
+test("resolving an older uncertain save does not claim newer edits were saved", async () => {
+  const session: RevisionSaveSession = {};
+  const fake = fakeFetch([snapshot(base, 4), () => ({ status: 503, json: { ok: false, uncertain: true } }),
+    () => ({ status: 200, json: { ok: true, automation: { ...base, name: "First" } } })]);
+  try {
+    await saveWithRevisionCheck(base, { name: "First" }, session);
+    const result = await saveWithRevisionCheck(base, { name: "Second" }, session);
+    assert.equal(result.kind, "resolved");
+    assert.equal(fake.calls[2].body?.name, "First");
+    assert.equal(session.pending, undefined);
+  } finally { fake.restore(); }
 });

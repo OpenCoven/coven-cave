@@ -34,7 +34,7 @@ export async function readFamiliarDailyMemoryStartupContext(
 ): Promise<FamiliarStartupContextFile | null> {
   if (!familiarWorkspace) return null;
   const relativePath = familiarDailyMemoryRelativePath(options.now);
-  const absolutePath = path.join(familiarWorkspace, relativePath);
+  const absolutePath = path.join(/* turbopackIgnore: true */ familiarWorkspace, relativePath);
   try {
     const fileStat = await stat(absolutePath);
     if (!fileStat.isFile()) return null;

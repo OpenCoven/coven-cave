@@ -386,6 +386,13 @@
           "qualification": {
             "candidateBuildId": "ZhCtRUET5IWsZpj-I_ycz",
             "decision": "runtime-activity-2026-10-18/decisions.json#contract"
+          },
+          "acceptedLimitation": {
+            "decision": "A: accept unavailable",
+            "decidedBy": "Val",
+            "decidedAt": "2026-10-22",
+            "record": "https://github.com/OpenCoven/coven-cave/issues/5762#issuecomment-6350863669",
+            "scope": "Documented-unavailable binding, approval and effect references are an accepted limitation of this display contract, not producer authority. Approval/change controls stay unavailable (#5765; #6058/#6059). Authenticated chat binding and receipt-read remain future work in OpenCoven/coven#1137."
           }
         },
         {

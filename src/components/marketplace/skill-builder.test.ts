@@ -62,6 +62,21 @@ assert.match(builder, /fetch\("\/api\/skills\/draft"/, "Draft with AI posts to t
 assert.match(builder, /Nothing is written until you review and save\./, "the draft path states its trust boundary");
 assert.match(builder, /usePromptEnhance\(\{/, "instructions enhance rides the shared race-safe hook");
 assert.match(builder, /enhancer\.state\.phase === "suggested"/, "a raced enhance surfaces as an apply/dismiss suggestion");
+assert.match(
+  builder,
+  /disabled=\{!instructions\.trim\(\) \|\| Boolean\(enhancer\.unavailableReason\)\}/,
+  "without a familiar, Enhance is disabled rather than producing a scripted rewrite (#5920)",
+);
+assert.match(
+  builder,
+  /\{enhancer\.unavailableReason \? \([\s\S]*?role="note"[\s\S]*?\{enhancer\.unavailableReason\}/,
+  "the disabled Enhance shows its reason in visible text",
+);
+assert.match(
+  builder,
+  /enhancer\.state\.retryable \? \([\s\S]*?onClick=\{enhancer\.retry\}/,
+  "a failed enhance keeps the instructions and offers Retry",
+);
 assert.match(builder, /buildSkillAgentPrompt\(\{ description: goal, root \}\)/, "Build in chat carries the full build-API brief");
 assert.match(builder, /new CustomEvent\("cave:agents-new-chat"/, "the brief dispatches the shared chat event");
 // .agents/ is gitignored with tracked exceptions — the companion skill must

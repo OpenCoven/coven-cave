@@ -12,6 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
 
   try {
     // repo passed REPO_RE and workflow passed WORKFLOW_RE — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/actions/workflows/${workflow}/dispatches`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

@@ -22,7 +22,7 @@ export async function GET() {
   const skills: LocalSkillEntry[] = [];
 
   // 1. Global shared Coven skills.
-  await scanSkillsDir(path.join(covenHome(), "skills"), "global", skills);
+  await scanSkillsDir(path.join(/* turbopackIgnore: true */ covenHome(), "skills"), "global", skills);
 
   // 2. Agent-level skills managed by the Skills CLI. These are visible to the
   // corresponding coding agents and should share the same browser/install state

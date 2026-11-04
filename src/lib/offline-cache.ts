@@ -26,6 +26,7 @@
  * this one survives a restart with the daemon down.
  */
 
+import { subscribeChatAccessInvalidation } from "./chat-access-invalidation.ts";
 import { isTauri } from "./tauri-platform.ts";
 
 /** Mirrors `OFFLINE_CACHE_SCHEMA_VERSION` in `offline_cache.rs`. */
@@ -124,6 +125,35 @@ export type OfflineCacheDependencies = {
    */
   warn?: (message: string) => void;
 };
+
+// Native writes and purges must finish in issue order. A purge also advances
+// the read epoch synchronously, before loading the IPC bridge or waiting for
+// an older write. Failed purges remain unreadable in this window until a fresh
+// authorized write succeeds; they must not silently restore an offline copy.
+let mutationTail: Promise<unknown> = Promise.resolve();
+let cacheGeneration = 0;
+const entryGenerations = new Map<string, number>();
+const blockedEntries = new Set<string>();
+let scopeBlocked = false;
+const admittedEntries = new Set<string>();
+
+function entryIdentity(scope: OfflineCacheScope, key: string): string {
+  return `${scope}:${key}`;
+}
+
+function cacheEpoch(identity: string): string {
+  return `${cacheGeneration}:${entryGenerations.get(identity) ?? 0}`;
+}
+
+function entryBlocked(identity: string): boolean {
+  return blockedEntries.has(identity) || (scopeBlocked && !admittedEntries.has(identity));
+}
+
+function mutateCache<T>(operation: () => Promise<T>): Promise<T> {
+  const pending = mutationTail.then(operation);
+  mutationTail = pending.catch(() => undefined);
+  return pending;
+}
 
 /**
  * Key names that must never reach disk. Matched against the key with
@@ -270,10 +300,15 @@ export async function readOfflineCache<T = unknown>(
   dependencies: OfflineCacheDependencies = {},
 ): Promise<OfflineCacheRead<T> | null> {
   if (!isOfflineCacheSupported(dependencies) || !isValidName(key)) return null;
+  const identity = entryIdentity(scope, key);
+  const epoch = cacheEpoch(identity);
+  if (entryBlocked(identity)) return null;
+  await mutationTail;
   const invoke = await resolveInvoke(dependencies);
-  if (!invoke) return null;
+  if (!invoke || epoch !== cacheEpoch(identity) || entryBlocked(identity)) return null;
   try {
     const result = await invoke("offline_cache_read", { scope, key });
+    if (epoch !== cacheEpoch(identity) || entryBlocked(identity)) return null;
     if (!isReadResult(result) || !result.entry) return null;
     const { payload, revision, updatedAtUnixMs, readOnly } = result.entry;
     if (readOnly !== true) return null;
@@ -327,15 +362,22 @@ export async function writeOfflineCache(
   if (typeof payload !== "string" || utf8Length(payload) > OFFLINE_CACHE_MAX_ENTRY_BYTES) {
     return false;
   }
-  const invoke = await resolveInvoke(dependencies);
-  if (!invoke) return false;
-  try {
-    await invoke("offline_cache_write", { scope, key, payload, revision });
-    return true;
-  } catch {
-    dependencies.warn?.("[cave] offline cache write is unavailable");
-    return false;
-  }
+  const identity = entryIdentity(scope, key);
+  const epoch = cacheEpoch(identity);
+  return mutateCache(async () => {
+    const invoke = await resolveInvoke(dependencies);
+    if (!invoke || epoch !== cacheEpoch(identity)) return false;
+    try {
+      await invoke("offline_cache_write", { scope, key, payload, revision });
+      if (epoch !== cacheEpoch(identity)) return false;
+      blockedEntries.delete(identity);
+      admittedEntries.add(identity);
+      return true;
+    } catch {
+      dependencies.warn?.("[cave] offline cache write is unavailable");
+      return false;
+    }
+  });
 }
 
 /** Drop one entry, e.g. a deleted chat's transcript (#5583). Absent is fine. */
@@ -345,14 +387,20 @@ export async function deleteOfflineCacheEntry(
   dependencies: OfflineCacheDependencies = {},
 ): Promise<boolean> {
   if (!isOfflineCacheSupported(dependencies) || !isValidName(key)) return false;
-  const invoke = await resolveInvoke(dependencies);
-  if (!invoke) return false;
-  try {
-    await invoke("offline_cache_delete", { scope, key });
-    return true;
-  } catch {
-    return false;
-  }
+  const identity = entryIdentity(scope, key);
+  entryGenerations.set(identity, (entryGenerations.get(identity) ?? 0) + 1);
+  blockedEntries.add(identity);
+  admittedEntries.delete(identity);
+  return mutateCache(async () => {
+    const invoke = await resolveInvoke(dependencies);
+    if (!invoke) return false;
+    try {
+      await invoke("offline_cache_delete", { scope, key });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** Drop one scope, or the whole cache for this instance when scope is omitted. */
@@ -361,14 +409,21 @@ export async function clearOfflineCache(
   dependencies: OfflineCacheDependencies = {},
 ): Promise<boolean> {
   if (!isOfflineCacheSupported(dependencies)) return false;
-  const invoke = await resolveInvoke(dependencies);
-  if (!invoke) return false;
-  try {
-    await invoke("offline_cache_clear", { scope: scope ?? null });
-    return true;
-  } catch {
-    return false;
-  }
+  cacheGeneration += 1;
+  entryGenerations.clear();
+  blockedEntries.clear();
+  scopeBlocked = true;
+  admittedEntries.clear();
+  return mutateCache(async () => {
+    const invoke = await resolveInvoke(dependencies);
+    if (!invoke) return false;
+    try {
+      await invoke("offline_cache_clear", { scope: scope ?? null });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**
@@ -390,3 +445,8 @@ export async function readOfflineCacheStatus(
     return null;
   }
 }
+
+subscribeChatAccessInvalidation((change) => {
+  if (change.sessionId === undefined) void clearOfflineCache("conversation");
+  else void deleteOfflineCacheEntry("conversation", change.sessionId);
+});

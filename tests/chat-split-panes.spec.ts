@@ -173,12 +173,17 @@ test("split-pane headers keep metadata readable and actions separate at 320–60
       expect(geometry.header.width).toBeCloseTo(width, 0);
       expect(geometry.title.width, "the conversation title remains legible").toBeGreaterThanOrEqual(96);
       expect(geometry.meta.width, "metadata gets a readable line, not a character column").toBeGreaterThanOrEqual(160);
-      expect(geometry.header.height, "header leaves room for the conversation").toBeLessThanOrEqual(144);
+      expect(geometry.header.height, "header fits within three rows").toBeLessThanOrEqual(80);
       expect(geometry.actions.right).toBeLessThanOrEqual(geometry.header.right);
       const overlaps = geometry.meta.left < geometry.actions.right && geometry.actions.left < geometry.meta.right
         && geometry.meta.top < geometry.actions.bottom && geometry.actions.top < geometry.meta.bottom;
       expect(overlaps, "metadata does not overlap the action buttons").toBe(false);
     }).toPass({ timeout: 5_000 });
+    await meta.focus();
+    await page.keyboard.press("ArrowRight");
+    if (width === 320) {
+      await expect.poll(() => meta.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+    }
     await header.screenshot({ animations: "disabled", path: testInfo.outputPath(`header-${width}.png`) });
   }
   await header.getByRole("button", { name: "Find in conversation", exact: true }).click();

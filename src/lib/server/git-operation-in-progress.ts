@@ -37,7 +37,7 @@ export async function gitOperationInProgress(repoRoot: string): Promise<GitOpera
   if (exists("rebase-merge")) return "rebase";
   if (exists("rebase-apply")) {
     // `git am` shares the directory and marks it as its own.
-    const applying = path.join(paths[MARKERS.indexOf("rebase-apply")]!, "applying");
+    const applying = path.join(/* turbopackIgnore: true */ paths[MARKERS.indexOf("rebase-apply")]!, "applying");
     return fs.existsSync(/* turbopackIgnore: true */ applying) ? "am" : "rebase";
   }
   if (exists("MERGE_HEAD")) return "merge";

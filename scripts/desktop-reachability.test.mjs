@@ -271,13 +271,28 @@ assert.match(
 );
 assert.match(
   server,
-  /function terminatePackagedUnixSidecarTree[\s\S]*process\.kill\(-process\.pid, "SIGKILL"\)/,
+  /function terminatePackagedSidecarTree[\s\S]*process\.kill\(-process\.pid, "SIGKILL"\)/,
   "parent EOF must kill the packaged server's owned Unix process group",
 );
 assert.match(
   server,
-  /terminatePackagedUnixSidecarTree[\s\S]*terminatePtySessions\(\)[\s\S]*Promise\.race\([\s\S]*PACKAGED_CHILD_SHUTDOWN_BUDGET_MS[\s\S]*finally[\s\S]*terminatePtySessions\(\)[\s\S]*process\.kill\(-process\.pid, "SIGKILL"\)/,
-  "parent EOF must kill PTYs first and bound direct-run cleanup before the native lease expires",
+  /PACKAGED_WINDOWS_CHILD_SHUTDOWN_BUDGET_MS = 400;[\s\S]*terminatePackagedSidecarTree[\s\S]*process\.platform === "win32"[\s\S]*PACKAGED_WINDOWS_CHILD_SHUTDOWN_BUDGET_MS[\s\S]*: PACKAGED_CHILD_SHUTDOWN_BUDGET_MS;[\s\S]*terminatePtySessions\(\)[\s\S]*coordinateStartupWorkerShutdown\([\s\S]*deadlineMs: budgetMs[\s\S]*Promise\.race\([\s\S]*budgetMs,[\s\S]*finally[\s\S]*await workerDrain[\s\S]*terminatePtySessions\(\)[\s\S]*process\.platform === "win32"[\s\S]*process\.exit\(exitCode\)[\s\S]*process\.kill\(-process\.pid, "SIGKILL"\)/,
+  "parent EOF must kill PTYs first, drain startup workers beside direct-run cleanup inside one platform budget, and keep the kernel fallback",
+);
+assert.match(
+  lifecycle,
+  /WINDOWS_SIDECAR_DRAIN_WINDOW: Duration = Duration::from_millis\(600\)[\s\S]*fn configure_windows_sidecar_parent_watchdog[\s\S]*stdin\(Stdio::piped\(\)\)[\s\S]*COVEN_CAVE_PARENT_WATCHDOG[\s\S]*stdin-eof/,
+  "the Windows parent lease must be the same inherited private pipe, with a drain window beneath the close deadline",
+);
+assert.match(
+  lifecycle,
+  /fn stop_after_startup_attempt[\s\S]*terminate_sidecar_child_now\(child\)[\s\S]*fn stop_sidecar_child[\s\S]*child\.stdin\.take\(\)[\s\S]*WINDOWS_SIDECAR_DRAIN_WINDOW[\s\S]*terminate_sidecar_child_now\(process\)/,
+  "Windows startup failure keeps immediate Job termination; normal quit drains over the pipe, then keeps the same fallback",
+);
+assert.match(
+  startup,
+  /configure_windows_sidecar_parent_watchdog\(&mut command\)/,
+  "packaged Windows sidecars must inherit the same exact parent lease through the gated launcher",
 );
 assert.match(
   server,

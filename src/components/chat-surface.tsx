@@ -680,9 +680,10 @@ export function ChatSurface({
         ) : scope === "familiar" ? (
           // The active familiar's identity + capability surface (hero, role,
           // skills, tools) — a purpose-built first-class chat tab, since it
-          // describes who you're chatting with.
-          <div className="flex min-h-0 min-w-0 flex-1 justify-center">
-            <div className="h-full w-full max-w-7xl">
+          // describes who you're chatting with. It spans the full pane like
+          // the Chats and Projects tabs rather than a centered column.
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <div className="h-full w-full min-w-0">
               <ChatFamiliarView
                 familiar={activeFamiliar}
                 familiars={familiars}

@@ -54,8 +54,8 @@ export {
   normalizeTravelState,
 } from "./cave-config-normalize.ts";
 
-const CONFIG_PATH = path.join(caveHome(), "config.json");
-const STATE_PATH = path.join(caveHome(), "state.json");
+const CONFIG_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "config.json");
+const STATE_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "state.json");
 const CONFIG_SCHEMA_VERSION = 1;
 
 export class CaveConfigCompatibilityError extends Error {

@@ -48,7 +48,7 @@ const DB_BASENAME = "search-index.sqlite";
  * hook rather than an enforced exclusion — stated plainly instead of implied.
  */
 export function searchIndexPath(): string {
-  return process.env.COVEN_CAVE_SEARCH_INDEX ?? path.join(caveHome(), DB_BASENAME);
+  return process.env.COVEN_CAVE_SEARCH_INDEX ?? path.join(/* turbopackIgnore: true */ caveHome(), DB_BASENAME);
 }
 
 export type ProviderIndexState = {

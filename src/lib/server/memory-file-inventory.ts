@@ -146,13 +146,13 @@ type Candidate = { fullPath: string; baseDir: string; overrides?: BuildOverrides
 async function walk(dir: string, acc: Candidate[], baseDir: string, overrides?: BuildOverrides) {
   let items;
   try {
-    items = await readdir(dir, { withFileTypes: true });
+    items = await readdir(/* turbopackIgnore: true */ dir, { withFileTypes: true });
   } catch {
     return;
   }
   for (const item of items) {
     if (item.name.startsWith(".")) continue;
-    const full = path.join(dir, item.name);
+    const full = path.join(/* turbopackIgnore: true */ dir, item.name);
     if (item.isDirectory()) {
       await walk(full, acc, baseDir, overrides);
     } else if (item.isFile() && /\.(md|markdown|txt|json)$/i.test(item.name)) {
@@ -179,21 +179,21 @@ async function buildEntries(candidates: Candidate[], home: string): Promise<Memo
 }
 
 async function collectFamiliarWorkspaces(acc: Candidate[], home: string) {
-  const workspacesDir = path.join(home, ".openclaw", "workspace");
+  const workspacesDir = path.join(/* turbopackIgnore: true */ home, ".openclaw", "workspace");
   let items;
   try {
-    items = await readdir(workspacesDir, { withFileTypes: true });
+    items = await readdir(/* turbopackIgnore: true */ workspacesDir, { withFileTypes: true });
   } catch {
     return;
   }
   for (const item of items) {
     if (!item.isDirectory() || item.name.startsWith(".")) continue;
     const familiarId = item.name;
-    const memDir = path.join(workspacesDir, familiarId, "memory");
-    const indexFile = path.join(workspacesDir, familiarId, "MEMORY.md");
+    const memDir = path.join(/* turbopackIgnore: true */ workspacesDir, familiarId, "memory");
+    const indexFile = path.join(/* turbopackIgnore: true */ workspacesDir, familiarId, "MEMORY.md");
     acc.push({
       fullPath: indexFile,
-      baseDir: path.join(workspacesDir, familiarId),
+      baseDir: path.join(/* turbopackIgnore: true */ workspacesDir, familiarId),
       overrides: { relPath: "MEMORY.md", familiarIdFallback: familiarId },
     });
     await walk(memDir, acc, memDir, { familiarIdFallback: familiarId });
@@ -201,22 +201,22 @@ async function collectFamiliarWorkspaces(acc: Candidate[], home: string) {
 }
 
 async function collectCovenFamiliarWorkspaces(acc: Candidate[], home: string) {
-  const familiarsDir = path.join(home, ".coven", "workspaces", "familiars");
+  const familiarsDir = path.join(/* turbopackIgnore: true */ home, ".coven", "workspaces", "familiars");
   let items;
   try {
-    items = await readdir(familiarsDir, { withFileTypes: true });
+    items = await readdir(/* turbopackIgnore: true */ familiarsDir, { withFileTypes: true });
   } catch {
     return;
   }
   for (const item of items) {
     if (!item.isDirectory() || item.name.startsWith(".")) continue;
-    const familiarRoot = path.join(familiarsDir, item.name);
+    const familiarRoot = path.join(/* turbopackIgnore: true */ familiarsDir, item.name);
     acc.push({
-      fullPath: path.join(familiarRoot, "MEMORY.md"),
+      fullPath: path.join(/* turbopackIgnore: true */ familiarRoot, "MEMORY.md"),
       baseDir: familiarRoot,
       overrides: { relPath: "MEMORY.md", familiarIdFallback: item.name },
     });
-    const memDir = path.join(familiarsDir, item.name, "memory");
+    const memDir = path.join(/* turbopackIgnore: true */ familiarsDir, item.name, "memory");
     await walk(memDir, acc, memDir);
   }
 }

@@ -26,6 +26,8 @@ import type { GitHubItem } from "@/lib/github-tasks";
 import {
   mergeLinksWithGitHub,
   mergeTaskGitHubLinks,
+  removeTaskGitHubLink,
+  sameTaskGitHubTarget,
   taskGitHubLinkFromGitHubItem,
 } from "@/lib/task-github";
 import type { AsanaItem } from "@/lib/asana-tasks";
@@ -291,18 +293,22 @@ function GitHubAttachSection({
 
   const attachedItems = mergeTaskGitHubLinks(
     card.github ?? [],
-    ...items.filter((i) => attachedUrls.has(i.url)).map(taskGitHubLinkFromAssignedItem),
+    ...items
+      .filter((item) => attachedUrls.has(item.url) || (card.github ?? []).some(
+        (attached) => sameTaskGitHubTarget(attached, taskGitHubLinkFromAssignedItem(item)),
+      ))
+      .map(taskGitHubLinkFromAssignedItem),
   );
 
   function attach(item: GitHubItem) {
-    if (attachedUrls.has(item.url)) return;
+    if (attachedItems.some((attached) => sameTaskGitHubTarget(attached, taskGitHubLinkFromAssignedItem(item)))) return;
     const github = mergeTaskGitHubLinks(card.github ?? [], taskGitHubLinkFromAssignedItem(item));
     onPatch(card.id, { github, links: mergeLinksWithGitHub(card.links, github) });
   }
 
   function detach(url: string) {
-    const github = (card.github ?? []).filter((item) => item.url !== url);
-    onPatch(card.id, { github, links: card.links.filter((l) => l !== url) });
+    const target = attachedItems.find((item) => item.url === url);
+    if (target) onPatch(card.id, removeTaskGitHubLink(card.github ?? [], card.links, target));
   }
 
   function assignAgent(item: GitHubItem) {
@@ -416,7 +422,7 @@ function GitHubAttachSection({
               </div>
             )}
             {filtered.map((item) => {
-              const attached = attachedUrls.has(item.url);
+              const attached = attachedItems.some((attached) => sameTaskGitHubTarget(attached, taskGitHubLinkFromAssignedItem(item)));
               const fam = familiars.find(
                 (f) => f.display_name?.toLowerCase() === item.repo?.toLowerCase()
               );

@@ -2,7 +2,7 @@
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { EnhanceControl } from "./composer-enhance";
+import { EnhanceControl, EnhanceStrip } from "./composer-enhance";
 
 // Exercise the real control's events and state without a DOM portal.
 vi.mock("@/lib/icon", () => ({ Icon: () => null }));
@@ -27,11 +27,11 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function setup(state = { phase: "idle" }) {
+async function setup(state = { phase: "idle" }, props = {}) {
   const enhance = vi.fn();
   const cancel = vi.fn();
   await act(async () => {
-    renderer = create(createElement(EnhanceControl, { state, onEnhance: enhance, onCancel: cancel }));
+    renderer = create(createElement(EnhanceControl, { state, onEnhance: enhance, onCancel: cancel, ...props }));
   });
   return {
     enhance, cancel,
@@ -175,4 +175,63 @@ test("secondary pointer events cannot interrupt or submit a primary hold", async
     p.main().props.onClick({ detail: 1 });
   });
   expect(p.enhance).not.toHaveBeenCalled();
+});
+
+const controlWrapper = () => renderer.root.findAllByType("span")
+  .find((node) => String(node.props.className).startsWith("composer-enhance-control "));
+
+test("without a familiar both segments are disabled and say why", async () => {
+  const reason = "Choose a familiar to enhance this prompt.";
+  const p = await setup({ phase: "idle" }, { unavailableReason: reason });
+  expect(p.main().props.disabled).toBe(true);
+  expect(p.options().props.disabled).toBe(true);
+  expect(p.main().props.title).toBe(reason);
+  expect(p.main().props["aria-label"]).toBe("Enhance prompt");
+  expect(controlWrapper().props.title).toBe(reason);
+  await act(async () => p.main().props.onPointerDown(pointer()));
+  await p.tick();
+  await act(async () => p.main().props.onKeyDown({ key: "ArrowDown", preventDefault() {} }));
+  expect(p.options().props["aria-expanded"]).toBe(false);
+  expect(p.enhance).not.toHaveBeenCalled();
+});
+
+test("an available control carries no unavailable reason", async () => {
+  const p = await setup();
+  expect(p.main().props.disabled).toBe(false);
+  expect(p.main().props.title).toBe("Enhance prompt");
+  expect(controlWrapper().props.title).toBeUndefined();
+});
+
+async function strip(state) {
+  const handlers = { onApply: vi.fn(), onDismiss: vi.fn(), onRevert: vi.fn(), onCancel: vi.fn(), onRetry: vi.fn(), onFocusComposer: vi.fn() };
+  await act(async () => {
+    renderer = create(createElement(EnhanceStrip, { state, ...handlers }));
+  });
+  const button = (label) => renderer.root.findAllByType("button").find((node) => node.props["aria-label"] === label);
+  return { handlers, button };
+}
+
+test("a retryable failure keeps the message and offers Retry before Dismiss", async () => {
+  const message = "Couldn't enhance the prompt: the familiar didn't start responding within 30 seconds. Your draft was kept.";
+  const { handlers, button } = await strip({ phase: "error", message, retryable: true });
+  expect(renderer.root.findByProps({ role: "alert" }).findByProps({ className: "composer-enhance-strip__message" }).props.children).toBe(message);
+  expect(renderer.root.findAllByType("button").map((node) => node.props.children)).toEqual(["Retry", "Dismiss"]);
+  await act(async () => button("Retry enhance").props.onClick());
+  expect(handlers.onRetry).toHaveBeenCalledOnce();
+  await act(async () => vi.advanceTimersByTime(1));
+  expect(handlers.onFocusComposer).toHaveBeenCalledOnce();
+  expect(handlers.onDismiss).not.toHaveBeenCalled();
+});
+
+test("a failure that retrying cannot fix offers only Dismiss", async () => {
+  const { button } = await strip({ phase: "error", message: "Choose a familiar to enhance this prompt.", retryable: false });
+  expect(button("Retry enhance")).toBeUndefined();
+  expect(button("Dismiss enhance error")).toBeDefined();
+});
+
+test("success copy never labels a rewrite as offline", async () => {
+  const recommendation = { id: "r1", rationale: "Smart enhance was selected.", evidenceRefs: [] };
+  await strip({ phase: "applied", original: "draft", recommendation });
+  expect(JSON.stringify(renderer.toJSON())).toContain("Prompt improved.");
+  expect(JSON.stringify(renderer.toJSON())).not.toMatch(/offline/i);
 });

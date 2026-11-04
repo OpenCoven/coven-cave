@@ -1,3 +1,4 @@
+import { invalidatesChatSession, subscribeChatAccessInvalidation } from "../chat-access-invalidation.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { setImmediate } from "node:timers/promises";
@@ -17,6 +18,22 @@ function payload(text: string, revision = text): ConversationHistoryPayload {
   return { ok: true, conversation: { activeLeafId: "answer", turns: [{ id: "answer", role: "assistant", text }], ...{ updatedAt: revision } } };
 }
 async function flush() { await setImmediate(); }
+
+for (const status of [401, 403]) {
+  test(`HTTP ${status} removes cached history instead of treating refusal as offline`, async () => {
+    const f = fixture({ memory: payload("revoked synthetic content") });
+    assert.equal(f.turns[0].text, "revoked synthetic content");
+    f.network.reject(new ConversationLoadError("Access denied", status));
+    await flush();
+    assert.deepEqual(f.turns, [], "authoritative refusal removes visible cached content");
+    assert.deepEqual(f.ownedTurns, [], "refused content cannot survive in the ownership ref");
+    assert.equal(f.activeLeafId, "");
+    assert.equal(f.context, null);
+    assert.notEqual(f.state, "offline", "refusal is not a network outage");
+    assert.equal(f.writes.length, 0);
+    f.cancel();
+  });
+}
 function fixture({ memory = null, switched = true, flow = false }: {
   memory?: ConversationHistoryPayload | null; switched?: boolean; flow?: boolean;
 } = {}) {
@@ -49,12 +66,16 @@ function fixture({ memory = null, switched = true, flow = false }: {
     onPaint: () => { paints += 1; },
   };
   const sources: ChatHistorySources = {
+    subscribeInvalidation: (sessionId, invalidate) => subscribeChatAccessInvalidation((change) => {
+      if (invalidatesChatSession(change, sessionId)) invalidate(change.reason === "missing");
+    }),
     readMemory: () => memory,
     loadNetwork: () => { events.push("network"); return network.promise; },
     loadDurable: () => { events.push("durable"); return durable.promise; },
     persist: (_id, value) => { writes.push(value); },
     loadFlowTranscript: () => { events.push("flow"); return flowTranscript.promise; },
     isMissingError: (error) => error instanceof ConversationLoadError && error.status === 404,
+    isAccessDeniedError: (error) => error instanceof ConversationLoadError && (error.status === 401 || error.status === 403),
   };
   const cancel = startChatHistoryLoad({ sessionId: "chat", isThreadSwitch: switched, flowBackedSession: flow, sources, view });
   return {
@@ -323,4 +344,35 @@ test("network refresh updates linked context even when the transcript revision i
   live.network.resolve({ ...payload("Old response"), context: nextContext });
   await flush();
   assert.equal(live.context, context, "a pending history response cannot steal context from a live generation");
+});
+
+test("policy invalidation clears owned history and fences pending durable and network results", async () => {
+  const { invalidateChatAccess } = await import("../chat-access-invalidation.ts");
+  const f = fixture();
+  try {
+    f.durable.resolve(payload("old offline history"));
+    await flush();
+    assert.equal(f.turns[0].text, "old offline history");
+    invalidateChatAccess({ reason: "policy" });
+    assert.deepEqual(f.turns, []);
+    assert.deepEqual(f.ownedTurns, []);
+    assert.equal(f.context, null);
+    f.network.resolve(payload("late previous-policy history"));
+    await flush();
+    assert.deepEqual(f.turns, []);
+    assert.equal(f.writes.length, 0);
+  } finally { f.cancel(); }
+});
+
+test("missing durable history clears the ownership ref as well as display state", async () => {
+  const f = fixture();
+  try {
+    f.durable.resolve(payload("deleted saved history"));
+    await flush();
+    assert.equal(f.ownedTurns[0].text, "deleted saved history");
+    f.network.reject(new ConversationLoadError("Missing", 404));
+    await flush();
+    assert.deepEqual(f.turns, []);
+    assert.deepEqual(f.ownedTurns, []);
+  } finally { f.cancel(); }
 });

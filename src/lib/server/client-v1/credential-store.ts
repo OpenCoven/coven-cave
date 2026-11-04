@@ -183,7 +183,7 @@ async function initializeCredentialStoreLocation(
   configuredRoot: string,
   ownership: ClientV1PathOwnershipOptions | undefined,
 ): Promise<CredentialStoreLocation> {
-  const resolvedRoot = resolve(configuredRoot);
+  const resolvedRoot = resolve(/* turbopackIgnore: true */ configuredRoot);
   try {
     await lstat(resolvedRoot);
   } catch (error) {
@@ -208,7 +208,7 @@ async function initializeCredentialStoreLocation(
   );
   await chmod(physicalRoot, 0o700);
 
-  const path = join(physicalRoot, CLIENT_V1_CREDENTIAL_STORE_FILE);
+  const path = join(/* turbopackIgnore: true */ physicalRoot, CLIENT_V1_CREDENTIAL_STORE_FILE);
   await assertRegularCredentialFileOrMissing(path, ownership);
   return {
     path,
@@ -344,7 +344,7 @@ async function writeStoreAtomic(
   let ownsTemporaryPath = false;
   let temporaryHandle: Awaited<ReturnType<typeof open>> | null = null;
   try {
-    temporaryHandle = await open(temporaryPath, "wx", 0o600);
+    temporaryHandle = await open(/* turbopackIgnore: true */ temporaryPath, "wx", 0o600);
     ownsTemporaryPath = true;
     await temporaryHandle.writeFile(JSON.stringify(file, null, 2), {
       encoding: "utf8",
@@ -352,14 +352,14 @@ async function writeStoreAtomic(
     await temporaryHandle.chmod(0o600);
     await temporaryHandle.close();
     temporaryHandle = null;
-    await rename(temporaryPath, path);
+    await rename(/* turbopackIgnore: true */ temporaryPath, path);
     ownsTemporaryPath = false;
   } catch (error) {
     if (temporaryHandle) {
       await temporaryHandle.close().catch(() => {});
     }
     if (ownsTemporaryPath) {
-      await rm(temporaryPath, { force: true }).catch(() => {});
+      await rm(/* turbopackIgnore: true */ temporaryPath, { force: true }).catch(() => {});
     }
     throw error;
   }
@@ -378,7 +378,7 @@ async function writeStoreAtomic(
 }
 
 export function clientV1CredentialStorePath(root = caveHome()): string {
-  return join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+  return join(/* turbopackIgnore: true */ root, CLIENT_V1_CREDENTIAL_STORE_FILE);
 }
 
 export class FileCredentialStore implements CredentialStore {

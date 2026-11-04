@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { invalidatesChatSession, subscribeChatAccessInvalidation } from "./chat-access-invalidation.ts";
 import { fetchToolOutput } from "./tool-output-fetch.ts";
 
 type OutputState = { status: "idle" | "loading" | "ready" | "error"; text?: string };
@@ -22,12 +23,17 @@ export function useToolOutput(target: OutputTarget, open: boolean, load: OutputL
     if (!open) { setResult({ key, status: "idle" }); return; }
     if (!sessionId) { setResult({ key, status: "error" }); return; }
     const controller = new AbortController();
+    const unsubscribe = subscribeChatAccessInvalidation((change) => {
+      if (!invalidatesChatSession(change, sessionId)) return;
+      controller.abort();
+      setResult({ key, status: "error" });
+    });
     setResult({ key, status: "loading" });
     void load(sessionId, toolId, controller.signal).then(
       (text) => { if (!controller.signal.aborted) setResult({ key, status: "ready", text }); },
       () => { if (!controller.signal.aborted) setResult({ key, status: "error" }); },
     );
-    return () => controller.abort();
+    return () => { unsubscribe(); controller.abort(); };
   }, [key, sessionId, toolId, open, load]);
   const state: OutputState = !open ? { status: "idle" }
     : result.key === key ? result : { status: sessionId ? "loading" : "error" };

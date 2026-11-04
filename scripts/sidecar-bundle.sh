@@ -276,6 +276,32 @@ fix_node_pty_spawn_helpers() {
   fi
 }
 
+# node-pty 1.1 ships prebuilds for darwin and win32 only. On Linux its binding
+# is the node-gyp build the root install makes (node-pty is in
+# onlyBuiltDependencies), but the staging install runs with --ignore-scripts.
+# Next's trace carried that build into the sidecar until #6097 dropped the
+# node-pty tracing include, and the Linux sidecar then shipped without pty.node
+# (#6225). Copy that one binary into the stage; never ship without it.
+stage_node_pty_binding() {
+  local base="$1"
+  local pkg="$base/node-pty"
+  local root_pkg="$ROOT/node_modules/node-pty"
+  local prebuild staged_version root_version
+  prebuild="$(node -p "process.platform + '-' + process.arch")"
+  if [ ! -d "$pkg" ] || [ -f "$pkg/prebuilds/$prebuild/pty.node" ] || [ -f "$pkg/build/Release/pty.node" ]; then
+    return 0
+  fi
+  staged_version="$(node -p "require(process.argv[1]).version" "$pkg/package.json")"
+  root_version="$(node -p "require(process.argv[1]).version" "$root_pkg/package.json" 2>/dev/null || true)"
+  if [ "$staged_version" != "$root_version" ] || [ ! -f "$root_pkg/build/Release/pty.node" ]; then
+    echo "ERROR: node-pty $staged_version has no $prebuild prebuild, and the root install has no matching build/Release/pty.node to stage (#6225)" >&2
+    exit 1
+  fi
+  mkdir -p "$pkg/build/Release"
+  cp "$root_pkg/build/Release/pty.node" "$pkg/build/Release/pty.node"
+  echo "==> staged node-pty $staged_version build/Release/pty.node for $prebuild from the root install"
+}
+
 prune_foreign_native_packages() {
   local base="$1"
   if [ ! -d "$base" ]; then
@@ -538,6 +564,7 @@ fi
 ) >&2
 prune_foreign_native_packages "$PNPM_STAGE/node_modules"
 fix_node_pty_spawn_helpers "$PNPM_STAGE/node_modules"
+stage_node_pty_binding "$PNPM_STAGE/node_modules"
 
 echo "==> assembling traced sidecar runtime → $DEST"
 node "$ROOT/scripts/sidecar-runtime-closure.mjs" \

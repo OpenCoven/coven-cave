@@ -1,5 +1,12 @@
 # Golden paths
 
+> **Historical (2026-10-20, #6111):** every path's enablement plan has shipped:
+> 1 #2802, 2 #2805, 3 #2793 (its Home strip later removed in #3892), 4 #2823,
+> 5 #2827, #3194 and #5035, 6 #5132, 7 #3070 (item 3, saying what the palette
+> searches, is untracked), 8 #2767 and #2833. The "path today" and "where it
+> breaks" sections describe the product on 2026-07-09; several surfaces have
+> since moved (Home digest and feed, the top bar, the Needs-you strip).
+
 The eight journeys Coven Cave must make effortless, written as user stories
 with the *current* path grounded in code, the exact places it breaks, and a
 conservative enablement plan — each phase a PR-sized change that reuses what

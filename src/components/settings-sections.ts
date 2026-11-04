@@ -7,6 +7,7 @@ export type Section =
   | "profile"
   | "general"
   | "voice"
+  | "local-models"
   | "daemon"
   | "mobile"
   | "client-access"
@@ -25,6 +26,7 @@ export const SECTIONS: SectionMeta[] = [
   { id: "profile", label: "Profile", icon: "ph:user-circle", description: "Your name, image, and details familiars know you by.", accent: "#f0c987" },
   { id: "general", label: "General", icon: "ph:sliders-horizontal", description: "Workspace, backups, and app-wide defaults.", accent: "#9386d0" },
   { id: "voice", label: "Voice", icon: "ph:waveform", description: "Providers, voices, local speech, and defaults for new familiars.", accent: "var(--accent-presence)" },
+  { id: "local-models", label: "Local models", icon: "ph:hard-drives", description: "Ollama and LM Studio servers for Codex local mode.", accent: "#9ccf5c" },
   { id: "daemon", label: "Daemon", icon: "ph:terminal-window", description: "Local runtime status and process controls.", accent: "#69d6a6" },
   { id: "mobile", label: "Phone", icon: "ph:device-mobile", description: "Native iOS handoff over your Tailscale network.", accent: "#73d9d0" },
   { id: "client-access", label: "Client access", icon: "ph:key", description: "Approve app requests and revoke issued client credentials.", accent: "#f5b56b" },
@@ -36,6 +38,7 @@ export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
   profile: ["Identity & pronouns", "Context & personality", "Portrait & links"],
   general: ["Workspace path", "Encrypted backup", "Chat stop phrases"],
   voice: ["Provider readiness", "Voices & models", "New familiar defaults"],
+  "local-models": ["Server status", "Addresses", "Tool-capable models"],
   daemon: ["Runtime health", "Local/hub routing", "Socket & version"],
   mobile: ["Mobile mode", "Tailscale handoff", "Native iOS guide"],
   "client-access": ["Pending requests", "Scoped credentials", "Revocation history"],
@@ -63,6 +66,9 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "voice", group: "OpenAI Realtime", keywords: "openai realtime key vault voices preview cloud" },
   { section: "voice", group: "Local speech", keywords: "local speech piper kokoro offline download model remove" },
   { section: "voice", group: "Familiar brain", keywords: "familiar brain true voice runtime keyless" },
+  { section: "local-models", group: "Ollama", keywords: "local models ollama codex offline inference server address endpoint tools gguf" },
+  { section: "local-models", group: "LM Studio", keywords: "local models lm studio lmstudio codex offline inference server address endpoint tools gguf" },
+  { section: "local-models", group: "Network", keywords: "local models remote server other computer allow network prompts" },
   { section: "daemon", group: "Status", keywords: "daemon status running start stop restart hub server executor private network tailscale" },
   { section: "daemon", group: "Connection", keywords: "daemon hub server executor private network tailscale remote multihost multi host" },
   { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },

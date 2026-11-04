@@ -74,4 +74,30 @@ function runHook(message) {
   assert.match(result.stderr, /users\.noreply\.github\.com/i);
 }
 
+
+
+{
+  const result = runHook(
+    "feat: accept familiar provenance trailers\n\nCoven-Familiar: cody\nCoven-Harness: claude / claude-opus-5-5\nCoven-Session: 9354681b-f005-40eb-84c6-313798c6590e\n",
+  );
+  assert.equal(result.status, 0, result.stderr);
+}
+
+{
+  const result = runHook("feat: accept a Codex harness line\n\nCoven-Familiar: nova\nCoven-Harness: codex / gpt-5-codex\n");
+  assert.equal(result.status, 0, result.stderr);
+}
+
+{
+  const result = runHook("feat: reject the familiar co-author form\n\nCo-Authored-By: Cody <cody@opencoven.ai>\nCoven-Familiar: cody\n");
+  assert.notEqual(result.status, 0, "familiar <id>@opencoven.ai co-author trailers stay blocked (option A, #6068)");
+  assert.match(result.stderr, /numeric no-reply identity/i);
+}
+
+{
+  const result = runHook("feat: reject a familiar address without a listed AI name\n\nCo-Authored-By: Nova <nova@opencoven.ai>\n");
+  assert.notEqual(result.status, 0, "every non-GitHub co-author address is blocked, not only listed AI names");
+  assert.match(result.stderr, /numeric no-reply identity/i);
+}
+
 console.log("git-hooks-commit-msg.test.mjs: ok");

@@ -164,7 +164,7 @@ async function prepareResearchRestorePath(
   const directories = [researchRoot];
   let directory = researchRoot;
   for (const segment of relativeParent ? relativeParent.split(path.sep) : []) {
-    directory = path.join(directory, segment);
+    directory = path.join(/* turbopackIgnore: true */ directory, segment);
     let created = false;
     await mkdir(directory, { mode: 0o700 }).then(() => { created = true; }).catch((error) => {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
@@ -190,18 +190,18 @@ async function pruneResearchAuthority(
   observer?: ResearchRestoreDurabilityObserver,
 ): Promise<void> {
   const structuralDirectories = new Set([
-    path.join(researchRoot, "blobs", "sha256"),
+    path.join(/* turbopackIgnore: true */ researchRoot, "blobs", "sha256"),
   ]);
   for (const relativeDirectory of RESEARCH_AUTHORITATIVE_DIRECTORIES) {
     const directory = path.join(/* turbopackIgnore: true */ researchRoot, relativeDirectory);
     await prepareResearchRestorePath(
-      path.join(directory, ".restore-placeholder"),
+      path.join(/* turbopackIgnore: true */ directory, ".restore-placeholder"),
       researchRoot,
       observer,
     );
     const walk = async (current: string): Promise<void> => {
       for (const entry of await readdir(current, { withFileTypes: true })) {
-        const candidate = path.join(current, entry.name);
+        const candidate = path.join(/* turbopackIgnore: true */ current, entry.name);
         const metadata = await lstat(candidate);
         if (metadata.isSymbolicLink() || (!metadata.isDirectory() && !metadata.isFile()) || (metadata.isFile() && metadata.nlink !== 1)) {
           throw new Error("Research backup restore entry is unsafe");
@@ -258,7 +258,7 @@ async function makeResearchLexicalUnavailable(
     if (process.platform !== "win32") throw error;
   });
   closeCanonicalResearchResourceLexicalHandlesForRestore(
-    path.join(indexDirectory, "research-resources.sqlite"),
+    path.join(/* turbopackIgnore: true */ indexDirectory, "research-resources.sqlite"),
   );
   const removeLexicalFile = async (candidate: string): Promise<void> => {
     const deadline = Date.now() + 15_000;
@@ -588,7 +588,7 @@ export async function restoreBackupArchive(
   const archive = await decryptBackupArchive(archiveBytes, passphrase);
   const restored: RestoredBackup["restored"] = [];
   const roots = backupRoots();
-  const researchRoot = path.join(roots.cave, "research-resources");
+  const researchRoot = path.join(/* turbopackIgnore: true */ roots.cave, "research-resources");
   const hasResearchResources = archive.files.some((file) =>
     file.root === "cave" && file.path.startsWith("research-resources/"))
     || hasResearchMarker(archive.manifest);

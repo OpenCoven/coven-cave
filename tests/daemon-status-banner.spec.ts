@@ -58,7 +58,10 @@ test.describe("daemon status banner", () => {
     await openRituals(page, "unreachable");
 
     const banner = page.locator(".shell-banner").filter({ hasText: "Can’t reach the Coven daemon" });
-    await expect(banner).toHaveCount(1);
+    // The banner waits for a second consecutive unavailable read (#6316). The
+    // supervisor retries the first failure after 5 s ± 20% jitter
+    // (daemonConnectionPollDelay), so the default 5 s window races it (#6366).
+    await expect(banner).toHaveCount(1, { timeout: 20_000 });
     await expect(banner.locator(".shell-banner__title")).toHaveText("Can’t reach the Coven daemon");
     await expect(banner.getByRole("button", { name: "Retry" })).toBeVisible();
 

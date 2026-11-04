@@ -22,10 +22,19 @@ pub(super) fn log_linux_tray_unavailable(reason: &str) {
 }
 
 /// Surface a fatal startup error to the user. Platform-specific: macOS uses
-/// osascript (Cocoa alert), Windows writes to a temp file and opens Notepad,
+/// osascript (Cocoa alert), Windows uses a native message box with Notepad fallback,
 /// Linux tries zenity/kdialog. Best-effort; ignored on failure.
 #[cfg(desktop)]
 pub(super) fn show_fatal_dialog(msg: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND};
+        let text: Vec<u16> = msg.replace('\0', " ").encode_utf16().chain(Some(0)).collect();
+        let title: Vec<u16> = "CovenCave failed to start".encode_utf16().chain(Some(0)).collect();
+        // Both buffers remain alive and NUL-terminated for the synchronous call.
+        let shown = unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), MB_OK | MB_ICONERROR | MB_SETFOREGROUND) };
+        if shown != 0 { return; }
+    }
     show_startup_dialog("CovenCave failed to start", msg);
 }
 
@@ -117,6 +126,15 @@ pub(super) fn show_startup_dialog(title: &str, msg: &str) {
 #[cfg(desktop)]
 pub(super) fn fatal_exit(msg: &str) -> ! {
     eprintln!("[cave] FATAL: {}", msg);
+    #[cfg(target_os = "windows")]
+    {
+        if crate::startup_failure_dialog::spawn_fatal_dialog_helper(msg).is_err() {
+            // Last-resort asynchronous fallback: never hold owned jobs or the
+            // port claim open while waiting for a modal in this failed host.
+            show_startup_dialog("CovenCave failed to start", msg);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
     show_fatal_dialog(msg);
     std::process::exit(1);
 }
@@ -201,6 +219,10 @@ pub(super) fn report_existing_gui_owner(pid: u32) -> ! {
 /// here would turn "you launched it twice" into a crash report.
 #[cfg(desktop)]
 pub(super) fn report_existing_port_owner(port: u16, pid: Option<u32>) -> ! {
+    #[cfg(target_os = "windows")]
+    if crate::windows_instance_activation::focus_existing_port_owner(port, pid) {
+        std::process::exit(0);
+    }
     match pid {
         Some(pid) => log::warn!(
             "[cave] another CovenCave (pid {pid}) already holds port {port}; this instance is exiting"

@@ -8,13 +8,13 @@
 // by the journal pane, never papered over with another execution path.
 
 import {
-  createRoutine,
-  listRoutineRuns,
-  listRoutines,
   runRoutine,
-  updateRoutine,
   type AutomationTransport,
 } from "@/lib/server/coven-automations-client";
+import { listRoutineRuns, readRoutineDefinition, type AutomationReadTransport } from "@/lib/server/automation-consumer-reads";
+import { createRoutineDraft, reviseRoutineDefinition, pauseRoutine, parseReviewedAutomationSource, type ReviewedAutomationSource } from "@/lib/server/automation-consumer-commands";
+import { createHash } from "node:crypto";
+import { retainedJournalDefinition } from "./journal-command-intent.ts";
 import {
   CovenAutomationsUnavailableError,
   type CovenAutomationsRunPayload,
@@ -43,7 +43,7 @@ import { caveHome } from "@/lib/coven-paths";
 import { dateSlug } from "@/lib/daily-report";
 import { ensureFamiliarJournalDir, isJournalFamiliarId, readJournalEntry } from "@/lib/server/journal-store";
 
-export type JournalRoutineView = CovenantAutomation & { hour: number | null; minute: number | null };
+export type JournalRoutineView = CovenantAutomation & { hour: number | null; minute: number | null; revision?: number; reviewedSource?: ReviewedAutomationSource };
 
 export type JournalAutomationBody = {
   ok: boolean;
@@ -51,6 +51,7 @@ export type JournalAutomationBody = {
   available: boolean;
   routine?: JournalRoutineView | null;
   lastRun?: RoutineRun | null;
+  lastRunUnavailable?: boolean;
   /**
    * Whether the last SUCCEEDED run actually wrote the familiar's entry for its
    * day. A harness that is signed out still exits 0, so the daemon records
@@ -73,12 +74,16 @@ export type JournalAutomationBody = {
   promptOutdated?: boolean;
   run?: CovenAutomationsRunPayload;
   error?: string;
+  uncertain?: boolean;
+  conflict?: boolean;
+  currentRevision?: number | null;
 };
 
 export type JournalAutomationResult = { status: number; body: JournalAutomationBody };
 
 export type JournalAutomationDeps = {
   transport?: AutomationTransport;
+  readTransport?: AutomationReadTransport;
   /** The familiar's workspace, named in the routine prompt. Optional. */
   workspaceDir?: (familiarId: string) => Promise<string | null>;
   /** Creates the routine cwd; defaults to the journal store's helper. */
@@ -101,7 +106,27 @@ export type JournalAutomationPut = {
   familiarName: string | null;
   /** Harness to run on; omitted keeps the routine's current one. */
   runtime: JournalRuntime | null;
+  mutation: JournalAutomationMutation;
 };
+
+export type JournalAutomationMutation = {
+  adoptionKey: string;
+  source: ReviewedAutomationSource | null;
+  expectedRevision?: number;
+  timezone: string;
+};
+
+function journalMutation(value: unknown, familiar: string): JournalAutomationMutation | null {
+  if (!value || typeof value !== "object") return null;
+  const mutation = value as JournalAutomationMutation;
+  if (typeof mutation.adoptionKey !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/.test(mutation.adoptionKey)
+    || typeof mutation.timezone !== "string" || !mutation.timezone || mutation.timezone === "local") return null;
+  if (mutation.source === null) return mutation.expectedRevision === undefined ? mutation : null;
+  try {
+    parseReviewedAutomationSource(mutation.source, journalRoutineId(familiar), mutation.expectedRevision!);
+    return mutation;
+  } catch { return null; }
+}
 
 const RUN_LOOKBACK = 5;
 
@@ -117,6 +142,18 @@ function invalid(error: string, status = 400): JournalAutomationResult {
 /** Map a daemon failure. `listing` marks the first call of an operation, where
  *  a rejection means the daemon does not serve automations at all. */
 function failure(err: unknown, listing: boolean): JournalAutomationResult {
+  const code = err && typeof err === "object" && "code" in err ? err.code : undefined;
+  if (code === "outcome_unknown" || code === "ADOPTION_REPLAY_MISMATCH" || (err && typeof err === "object" && "uncertain" in err && err.uncertain === true)) {
+    return { status: 503, body: { ok: false, available: true, uncertain: true, error: "The journal change is unconfirmed. Retry the original request with its original key." } };
+  }
+  if (code === "REVISION_CONFLICT") {
+    const currentRevision = err && typeof err === "object" && "currentRevision" in err && typeof err.currentRevision === "number" ? err.currentRevision : null;
+    return { status: 409, body: { ok: false, available: true, conflict: true, currentRevision, error: "This schedule changed in Coven. Review its current settings before saving again." } };
+  }
+  if (code === "unavailable" || code === "timeout" || code === "capability_unsupported" || code === "unsupported_operation") {
+    return { status: 503, body: { ok: false, available: false, error: "Coven cannot serve this journal request." } };
+  }
+  if (typeof code === "string") return { status: 422, body: { ok: false, available: true, error: `Coven refused the journal change: ${code}` } };
   if (err instanceof CovenAutomationsUnavailableError && (err.degraded || listing)) {
     return {
       status: 503,
@@ -133,22 +170,23 @@ function failure(err: unknown, listing: boolean): JournalAutomationResult {
   };
 }
 
-async function findRoutine(familiarId: string, transport?: AutomationTransport): Promise<CovenantAutomation | null> {
+async function findRoutine(familiarId: string, transport?: AutomationReadTransport): Promise<(CovenantAutomation & { revision: number; reviewedSource: ReviewedAutomationSource }) | null> {
   const id = journalRoutineId(familiarId);
-  const routines = await listRoutines(transport);
-  return routines.find((routine) => routine.id === id) ?? null;
+  const source = await readRoutineDefinition(id, transport);
+  return source ? { ...source.routine, revision: source.revision, reviewedSource: source } : null;
 }
 
 /** Newest run by startedAt; a runs-ledger failure is not a reason to hide the routine. */
-async function latestRun(id: string, transport?: AutomationTransport): Promise<RoutineRun | null> {
+async function latestRun(id: string, transport?: AutomationReadTransport): Promise<{ run: RoutineRun | null; unavailable: boolean }> {
   try {
     const runs = await listRoutineRuns(id, RUN_LOOKBACK, transport);
-    return runs.reduce<RoutineRun | null>(
+    const run = runs.reduce<RoutineRun | null>(
       (best, run) => (!best || run.startedAt > best.startedAt ? run : best),
       null,
     );
+    return { run, unavailable: false };
   } catch {
-    return null;
+    return { run: null, unavailable: true };
   }
 }
 
@@ -212,8 +250,9 @@ export async function readJournalAutomation(
 ): Promise<JournalAutomationResult> {
   if (!isJournalFamiliarId(familiar)) return invalid("invalid familiar");
   try {
-    const routine = await findRoutine(familiar, deps.transport);
-    const lastRun = routine ? await latestRun(routine.id, deps.transport) : null;
+    const routine = await findRoutine(familiar, deps.readTransport);
+    const history = routine ? await latestRun(routine.id, deps.readTransport) : { run: null, unavailable: false };
+    const lastRun = history.run;
     const [entry, failureReason] = await Promise.all([lastRunEntry(familiar, lastRun, Boolean(routine && isJournalRoutinePromptCurrent(routine.prompt)), deps), lastRunFailure(lastRun, deps)]);
     return {
       status: 200,
@@ -222,6 +261,7 @@ export async function readJournalAutomation(
         available: true,
         routine: routine ? view(routine) : null,
         lastRun,
+        ...(history.unavailable ? { lastRunUnavailable: true } : {}),
         lastRunEntry: entry,
         lastRunFailure: failureReason,
         ...(routine ? { promptOutdated: !isJournalRoutinePromptCurrent(routine.prompt) } : {}),
@@ -244,7 +284,9 @@ export function parseJournalAutomationPut(body: unknown): JournalAutomationPut |
   if (b.hour !== null && !isValidRoutineTime(b.hour, minute)) {
     return "hour must be a whole hour 0–23; Coven routines run on the hour, so minute must be 0";
   }
-  if (b.runtime !== undefined && !isJournalRuntime(b.runtime)) return "runtime must be one of coven-code, codex, claude, copilot";
+  if (b.runtime !== undefined && b.runtime !== null && !isJournalRuntime(b.runtime)) return "runtime must be one of coven-code, codex, claude, copilot";
+  const mutation = journalMutation(b.mutation, b.familiar);
+  if (!mutation) return "A stable adoption key, timezone and reviewed source/revision are required.";
   const name = typeof b.familiarName === "string" ? b.familiarName.replace(/\s+/g, " ").trim().slice(0, 80) : "";
   return {
     familiar: b.familiar,
@@ -253,25 +295,23 @@ export function parseJournalAutomationPut(body: unknown): JournalAutomationPut |
     minute: 0,
     familiarName: name || null,
     runtime: isJournalRuntime(b.runtime) ? b.runtime : null,
+    mutation,
   };
 }
 
 /**
  * PUT — create or update the familiar's daily reflection. Enabling creates
- * the routine (ACTIVE) when missing; disabling pauses it (PAUSED), and is a
- * no-op when none exists. The prompt is rebuilt on every save so it always
- * names the current journal directory; the routine's cwd is created first.
+ * the routine (PAUSED) when missing; disabling pauses it (PAUSED), and is a
+ * no-op when none exists. The prompt is prepared once per adoption key and retained before dispatch,
+ * so retries cannot change server-derived workspace inputs. The cwd is created first.
  */
 export async function saveJournalAutomation(
   input: JournalAutomationPut,
   deps: JournalAutomationDeps = {},
 ): Promise<JournalAutomationResult> {
-  let existing: CovenantAutomation | null;
-  try {
-    existing = await findRoutine(input.familiar, deps.transport);
-  } catch (err) {
-    return failure(err, true);
-  }
+  const mutation = journalMutation(input.mutation, input.familiar);
+  if (!mutation) return invalid("A stable adoption key, timezone and reviewed source/revision are required.");
+  const existing = mutation.source?.routine ?? null;
   if (!input.enabled && !existing) {
     return { status: 200, body: { ok: true, available: true, routine: null, lastRun: null } };
   }
@@ -280,48 +320,50 @@ export async function saveJournalAutomation(
   }
   try {
     const journalDir = await (deps.ensureJournalDir ?? ensureFamiliarJournalDir)(input.familiar);
-    const workspaceDir = deps.workspaceDir ? await deps.workspaceDir(input.familiar).catch(() => null) : null;
-    const name = input.familiarName ?? input.familiar;
-    const definition: CovenantAutomationDraft = {
-      id: journalRoutineId(input.familiar),
-      name: `Daily reflection · ${name}`,
-      status: input.enabled ? "ACTIVE" : "PAUSED",
-      // A null hour keeps a schedule set elsewhere instead of overwriting it.
-      rrule: input.hour === null ? existing!.rrule : journalRRule(input.hour, input.minute),
-      prompt: buildJournalRoutinePrompt({
+    const definition = await retainedJournalDefinition(journalDir, mutation.adoptionKey, input, async () => {
+      const workspaceDir = deps.workspaceDir ? await deps.workspaceDir(input.familiar).catch(() => null) : null;
+      const name = input.familiarName ?? input.familiar;
+      const definition: CovenantAutomationDraft = {
+        id: journalRoutineId(input.familiar),
+        name: existing?.name ?? `Daily reflection · ${name}`,
+        status: existing?.status ?? "PAUSED",
+        // A null hour keeps a schedule set elsewhere instead of overwriting it.
+        rrule: input.hour === null ? existing!.rrule : journalRRule(input.hour, input.minute),
+        prompt: buildJournalRoutinePrompt({
+          familiarId: input.familiar,
+          familiarName: name,
+          journalDir,
+          workspaceDir,
+          boardPath: deps.boardPath === undefined ? path.join(/* turbopackIgnore: true */ caveHome(), "board.json") : deps.boardPath,
+        }),
+        // An explicit choice wins; otherwise keep whatever the routine runs on
+        // (it may have been switched in Rituals), and only a new one defaults.
+        runtime: input.runtime ?? existing?.runtime ?? DEFAULT_JOURNAL_RUNTIME,
+        timeoutMinutes: existing?.timeoutMinutes ?? JOURNAL_ROUTINE_TIMEOUT_MINUTES,
+        tags: [...new Set([...(existing?.tags ?? []), JOURNAL_ROUTINE_TAG])],
         familiarId: input.familiar,
-        familiarName: name,
-        journalDir,
-        workspaceDir,
-        boardPath: deps.boardPath === undefined ? path.join(caveHome(), "board.json") : deps.boardPath,
-      }),
-      // An explicit choice wins; otherwise keep whatever the routine runs on
-      // (it may have been switched in Rituals), and only a new one defaults.
-      runtime: input.runtime ?? existing?.runtime ?? DEFAULT_JOURNAL_RUNTIME,
-      timeoutMinutes: JOURNAL_ROUTINE_TIMEOUT_MINUTES,
-      tags: [...new Set([...(existing?.tags ?? []), JOURNAL_ROUTINE_TAG])],
-      familiarId: input.familiar,
-      cwd: journalDir,
-      timezone: "local",
-      ...(existing?.model ? { model: existing.model } : {}),
-    };
-    const saved = existing
-      ? await updateRoutine({ ...definition, id: definition.id }, deps.transport)
-      : await createRoutine(definition, deps.transport);
-    const lastRun = existing ? await latestRun(saved.id, deps.transport) : null;
-    const [entry, failureReason] = await Promise.all([lastRunEntry(input.familiar, lastRun, isJournalRoutinePromptCurrent(saved.prompt), deps), lastRunFailure(lastRun, deps)]);
-    return {
-      status: 200,
-      body: {
-        ok: true,
-        available: true,
-        routine: view(saved),
-        lastRun,
-        lastRunEntry: entry,
-        lastRunFailure: failureReason,
-        promptOutdated: !isJournalRoutinePromptCurrent(saved.prompt),
-      },
-    };
+        cwd: journalDir,
+        timezone: existing?.timezone ?? mutation.timezone,
+        ...(existing?.model ? { model: existing.model } : {}),
+      };
+      return definition;
+    });
+    const revision = mutation.source
+      ? await reviseRoutineDefinition(mutation.source, { name: definition.name, prompt: definition.prompt,
+        rrule: definition.rrule, runtime: definition.runtime, cwd: definition.cwd, familiarId: definition.familiarId, tags: definition.tags },
+        { expectedRevision: mutation.expectedRevision!, adoptionKey: mutation.adoptionKey }, deps.readTransport)
+      : await createRoutineDraft(definition, { adoptionKey: mutation.adoptionKey }, deps.readTransport);
+    if (!input.enabled && existing?.status === "ACTIVE") {
+      try {
+        await pauseRoutine(definition.id, { expectedRevision: revision,
+          adoptionKey: `journal-pause:${createHash("sha256").update(mutation.adoptionKey).digest("hex")}` }, deps.readTransport);
+      } catch (error) {
+        throw Object.assign(error instanceof Error ? error : new Error("Pause unconfirmed"), { uncertain: true });
+      }
+    }
+    const observed = await readJournalAutomation(input.familiar, deps);
+    if (!observed.body.ok || !observed.body.routine) return failure({ code: "outcome_unknown" }, false);
+    return observed;
   } catch (err) {
     return failure(err, false);
   }
@@ -335,7 +377,7 @@ export async function runJournalAutomation(
   if (!isJournalFamiliarId(familiar)) return invalid("invalid familiar");
   let existing: CovenantAutomation | null;
   try {
-    existing = await findRoutine(familiar, deps.transport);
+    existing = await findRoutine(familiar, deps.readTransport);
   } catch (err) {
     return failure(err, true);
   }

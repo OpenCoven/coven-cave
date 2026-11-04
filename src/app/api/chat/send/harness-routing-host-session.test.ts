@@ -201,8 +201,8 @@ assert.match(
 // route asks the same routing helpers through direct-transport-reasoning-gates.
 assert.match(
   chatRoute,
-  /const codexReasoningForwardingEnabled =\s*\n\s*codexDirect && codexReasoningForwardable\(codexDirectCapabilities, Boolean\(codexResumeTarget\)\);/,
-  "Codex Thinking forwarding follows the direct routing decision and the launch shape's --config capability",
+  /const codexReasoningForwardingEnabled =\s*\n\s*codexDirect && !isLocalCodexHarness\(binding\.harness\) &&\s*\n\s*codexReasoningForwardable\(codexDirectCapabilities, Boolean\(codexResumeTarget\)\);/,
+  "Codex Thinking forwarding follows the direct routing decision and the launch shape's --config capability, and never reaches a local model (#6049)",
 );
 assert.match(
   chatRoute,
@@ -706,8 +706,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /import \{ chatProjectAccessId, taskWorktreeProjectAccessId \} from "@\/lib\/chat-project-access";/,
-  "Chat send should resolve exact, worktree, and Board handoff roots through the shared chat-project-access helpers",
+  /import \{[^}]*\bchatProjectAccessId,[^}]*\bresumeRootIsRegisteredProject,[^}]*\btaskWorktreeProjectAccessId,?[^}]*\} from "@\/lib\/chat-project-access";/,
+  "Chat send should resolve exact, worktree, and Board handoff roots, and the workspace exemption's registry check, through the shared chat-project-access helpers",
 );
 
 assert.match(

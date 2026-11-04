@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import type { CaveConfig } from "../cave-config.ts";
 import { daemonTargetForConfig, type DaemonResponse, type DaemonTarget } from "../coven-daemon.ts";
+import { projectDaemonLifecycle, type DaemonLifecycle } from "../daemon-lifecycle.ts";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "./daemon-health-request.ts";
+import type { DaemonLifecycleProbeInput } from "./daemon-lifecycle-owner.ts";
 import {
   createDaemonConnectionSnapshotBroker,
   daemonConnectionTargetKey,
@@ -74,17 +76,43 @@ function hubUnreachableResponse(): DaemonResponse<unknown> {
   return { ok: false, status: 0, data: null, error: "daemon timeout" };
 }
 
+// A deterministic stand-in for the process-global lifecycle owner: the
+// broker's contract is that it hands the probe result to the observer and
+// publishes whatever lifecycle comes back.
+function testLifecycle(input: DaemonLifecycleProbeInput): DaemonLifecycle {
+  return {
+    ...projectDaemonLifecycle({
+      targetMode: input.targetMode,
+      availability: input.availability,
+      runtime: "unknown",
+      serviceConflict: input.serviceConflict,
+      operation: null,
+      previouslyReady: false,
+      reason: input.reason ?? null,
+    }),
+    generation: 0,
+    observedAt: "test",
+  };
+}
+
 function expectedSnapshot(
   target: DaemonTarget,
   checkedAt: string,
   fields: Pick<DaemonConnectionSnapshot, "running" | "availability"> & { reason?: string },
 ): DaemonConnectionSnapshot {
+  const summary = daemonConnectionTargetSummary(target);
   return {
     running: fields.running,
     availability: fields.availability,
     checkedAt,
-    target: daemonConnectionTargetSummary(target),
+    target: summary,
     ...(fields.reason ? { reason: fields.reason } : {}),
+    lifecycle: testLifecycle({
+      targetMode: summary.mode,
+      availability: fields.availability,
+      serviceConflict: null,
+      reason: fields.reason ?? null,
+    }),
   };
 }
 
@@ -93,6 +121,7 @@ test("concurrent ordinary reads share exactly one probe", async () => {
   let calls = 0;
   let now = 1_000;
   const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
     loadConfig: async () => localConfig(),
     callTarget: async () => {
       calls += 1;
@@ -124,6 +153,7 @@ test("cache reuses values before ttl and reprobes at and after ttl", async () =>
   let now = 10_000;
   let calls = 0;
   const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
     loadConfig: async () => localConfig(),
     callTarget: async () => {
       calls += 1;
@@ -168,6 +198,7 @@ test("cache entries stay separated when the resolved target changes", async () =
   let now = 20_000;
   const seenKeys: string[] = [];
   const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
     loadConfig: async () => config,
     callTarget: async (target) => {
       calls += 1;
@@ -210,6 +241,7 @@ test("fresh reads bypass a live cached value", async () => {
   let now = 30_000;
   let calls = 0;
   const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
     loadConfig: async () => localConfig(),
     callTarget: async () => {
       calls += 1;
@@ -232,6 +264,7 @@ test("fresh probes outrank older pending work and older completion never overwri
   let calls = 0;
   let now = 40_000;
   const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
     loadConfig: async () => localConfig(),
     callTarget: async () => {
       calls += 1;
@@ -276,6 +309,7 @@ test("clear while pending prevents the older completion from repopulating cache"
   let calls = 0;
   let now = 50_000;
   const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
     loadConfig: async () => localConfig(),
     callTarget: async () => {
       calls += 1;
@@ -318,6 +352,7 @@ test("connection snapshot broker imports and uses the shared daemon health reque
 test("configured targets use the exact shared health request contract", async () => {
   const seenRequests: unknown[] = [];
   const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
     loadConfig: async () => hubConfig(),
     callTarget: async (_target, request) => {
       seenRequests.push(request);
@@ -339,6 +374,7 @@ test("classifies local and hub outcomes without extra daemon side effects", asyn
   let now = 70_000;
   let unconfiguredCalls = 0;
   const unconfiguredBroker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
     loadConfig: async () => hubConfig(""),
     callTarget: async () => {
       unconfiguredCalls += 1;
@@ -361,7 +397,7 @@ test("classifies local and hub outcomes without extra daemon side effects", asyn
     name: string;
     config: SnapshotConfig;
     response: DaemonResponse<unknown>;
-    expected: Omit<DaemonConnectionSnapshot, "checkedAt" | "target">;
+    expected: Omit<DaemonConnectionSnapshot, "checkedAt" | "target" | "lifecycle">;
   }> = [
     {
       name: "local online",
@@ -428,6 +464,7 @@ test("classifies local and hub outcomes without extra daemon side effects", asyn
   for (const scenario of cases) {
     now += 100;
     const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
       loadConfig: async () => scenario.config,
       callTarget: async () => scenario.response,
       now: () => now,
@@ -489,6 +526,7 @@ test("config load rejection propagates without probing the daemon", async () => 
   const expected = new Error("config unavailable");
   let calls = 0;
   const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
     loadConfig: async () => {
       throw expected;
     },
@@ -507,6 +545,7 @@ test("unexpected probe rejections are rethrown and do not seed the cache", async
   const expected = new Error("boom");
   let calls = 0;
   const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: testLifecycle,
     loadConfig: async () => localConfig(),
     callTarget: async () => {
       calls += 1;
@@ -523,3 +562,34 @@ test("unexpected probe rejections are rethrown and do not seed the cache", async
 });
 
 console.log("daemon-connection-snapshot.test.ts: ok");
+
+test("the snapshot publishes the owner's lifecycle, which can say more than availability alone", async () => {
+  assert.match(
+    source,
+    /import \{[^}]*observeDaemonLifecycle[^}]*\} from "\.\/daemon-lifecycle-owner\.ts"/,
+    "the production broker observes through the process-global lifecycle owner",
+  );
+  assert.match(source, /observeLifecycle: observeDaemonLifecycle/, "the owner is the default observer");
+  const seen: DaemonLifecycleProbeInput[] = [];
+  const broker = createDaemonConnectionSnapshotBroker({
+    observeLifecycle: (input) => {
+      seen.push(input);
+      return {
+        ...testLifecycle(input),
+        state: "starting",
+        evidence: { ...testLifecycle(input).evidence, operation: { kind: "start", startedAt: "t" } },
+        generation: 7,
+      };
+    },
+    loadConfig: async () => localConfig(),
+    callTarget: async () => offlineResponse(),
+    now: () => 1_000,
+  });
+  const snapshot = await broker.read();
+  assert.equal(snapshot.availability, "offline");
+  assert.equal(snapshot.lifecycle.state, "starting", "an in-flight start outranks a bare offline probe");
+  assert.equal(snapshot.lifecycle.generation, 7);
+  assert.deepEqual(seen, [
+    { targetMode: "local", availability: "offline", serviceConflict: null, reason: "daemon offline" },
+  ]);
+});

@@ -9,6 +9,7 @@ import {
   ONBOARDING_BOOTSTRAP_STAGES,
   createOnboardingBootstrapState,
   normalizeResumableBootstrapState,
+  prepareOnboardingBootstrapRun,
   runOnboardingBootstrapStages,
   startSerializedOnboardingBootstrapRun,
   type OnboardingBootstrapRunners,
@@ -44,7 +45,7 @@ const bootstrapRuntime = (bootstrapGlobal.__covenOnboardingBootstrap ??= {
 });
 
 function bootstrapStatePath(): string {
-  return path.join(caveHome(), "onboarding-bootstrap.json");
+  return path.join(/* turbopackIgnore: true */ caveHome(), "onboarding-bootstrap.json");
 }
 
 async function pathIsDirectory(target: string): Promise<boolean> {
@@ -204,7 +205,7 @@ export async function persistOnboardingBootstrapState(
   const directory = options.directory ?? caveHome();
   await (options.mkdir ?? mkdir)(directory, { recursive: true });
   await (options.writeJson ?? writeJsonAtomic)(
-    path.join(directory, "onboarding-bootstrap.json"),
+    path.join(/* turbopackIgnore: true */ directory, "onboarding-bootstrap.json"),
     safePersistedState(state),
   );
 }
@@ -214,8 +215,8 @@ async function inspectWorkspaceReady(): Promise<boolean> {
   const cave = caveHome();
   const checks = await Promise.all([
     pathIsDirectory(home),
-    pathIsDirectory(path.join(home, "defaults")),
-    pathIsFile(path.join(cave, "config.json")),
+    pathIsDirectory(path.join(/* turbopackIgnore: true */ home, "defaults")),
+    pathIsFile(path.join(/* turbopackIgnore: true */ cave, "config.json")),
   ]);
   return checks.every(Boolean);
 }
@@ -232,9 +233,9 @@ async function ensureWorkspace(
   }
   await onProgress("Creating user-scoped Cave folders…");
   for (const directory of [
-    path.join(covenHome(), "defaults"),
-    path.join(covenHome(), "memory"),
-    path.join(caveHome(), "conversations"),
+    path.join(/* turbopackIgnore: true */ covenHome(), "defaults"),
+    path.join(/* turbopackIgnore: true */ covenHome(), "memory"),
+    path.join(/* turbopackIgnore: true */ caveHome(), "conversations"),
   ]) {
     try {
       await mkdir(directory, { recursive: true });
@@ -392,12 +393,12 @@ export async function startOrResumeOnboardingBootstrap(
   confirm: boolean,
 ): Promise<OnboardingBootstrapState> {
   let state = await currentState();
-  if (!state.confirmed && !confirm) return state;
-  if (state.complete) return state;
   if (bootstrapRuntime.run) return state;
+  const prepared = prepareOnboardingBootstrapRun(state, confirm);
+  if (!prepared) return state;
 
   state = {
-    ...normalizeResumableBootstrapState(state),
+    ...prepared,
     confirmed: true,
     status: "running",
     failure: null,

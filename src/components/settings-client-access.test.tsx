@@ -1723,6 +1723,7 @@ describe("SettingsClientAccess", () => {
       "profile",
       "general",
       "voice",
+      "local-models",
       "daemon",
       "mobile",
       "client-access",

@@ -9,7 +9,9 @@ const home = await mkdtemp(path.join(tmpdir(), "cave-backfill-idem-"));
 process.env.COVEN_CAVE_HOME = home;
 process.env.CAVE_HOME = home;
 
-const { loadBoard, saveBoard } = await import("./cave-board.ts");
+const { loadBoard, saveBoard, updateCard } = await import("./cave-board.ts");
+const githubHelpers = await import("./task-github.ts");
+const { mergeTaskGitHubLinks, normalizeTaskGitHubLinks, taskGitHubLinkFromUrl } = await import("./task-github.ts");
 
 /**
  * backfillCard must be a fixed point (cave-0b8t8).
@@ -166,6 +168,73 @@ async function writeBoard(cards: unknown[]): Promise<void> {
   assert.equal(asana.length, 1, "a bare Asana URL still becomes a first-class connection");
   assert.equal(asana[0].gid, "1301");
   assert.equal(asana[0].title, "Asana task 1301", "with its derived title, since nothing was stored");
+}
+
+// A comment link, query string and issue root name one attachment (#6128).
+{
+  const issueUrl = "https://github.com/openclaw/openclaw/issues/57142";
+  const issue = {
+    ...taskGitHubLinkFromUrl(issueUrl)!,
+    title: "Repair startup",
+    source: "assigned" as const,
+    labels: ["bug"],
+    savedAt: "2026-10-20T15:36:18.614Z",
+  };
+  const comment = taskGitHubLinkFromUrl(`${issueUrl}#issuecomment-123`)!;
+  const query = taskGitHubLinkFromUrl(`${issueUrl}/?notification_referrer_id=42`)!;
+  const merged = mergeTaskGitHubLinks([issue, comment], query);
+  assert.equal(merged.length, 1, "URL variants must not produce duplicate React identities");
+  assert.equal(merged[0].title, "Repair startup", "URL-derived placeholders must not erase the title");
+  assert.deepEqual(merged[0].labels, ["bug"]);
+  assert.equal(merged[0].savedAt, issue.savedAt);
+
+  const updated = mergeTaskGitHubLinks(merged, { ...issue, id: "api-issue-id", title: "Updated title", labels: ["startup"] });
+  assert.equal(updated.length, 1, "API and derived IDs still refer to one repo/kind/number");
+  assert.equal(updated[0].title, "Updated title");
+  assert.deepEqual(updated[0].labels, ["bug", "startup"]);
+  assert.equal(mergeTaskGitHubLinks(updated, taskGitHubLinkFromUrl("https://github.com/other/repo/issues/57142")).length, 2);
+  assert.equal(mergeTaskGitHubLinks(updated, taskGitHubLinkFromUrl("https://github.com/openclaw/openclaw/pull/57142")).length, 2);
+
+  await writeBoard([{ ...BASE_CARD, github: [issue, comment, query], links: [issueUrl, comment.url, query.url] }]);
+  const first = await loadBoard();
+  assert.equal(first.cards[0].github.length, 1, "existing duplicate attachments heal when read");
+  await saveBoard(first);
+  const second = await loadBoard();
+  assert.deepEqual(second.cards, JSON.parse(JSON.stringify(first.cards)), "healed attachments remain stable across reloads");
+
+  const unrelatedUrl = "https://example.com/notes";
+  const other = taskGitHubLinkFromUrl("https://github.com/other/repo/issues/57142")!;
+  const patch = githubHelpers.removeTaskGitHubLink(
+    [issue, comment, other],
+    [issueUrl, comment.url, query.url, unrelatedUrl, other.url],
+    issue,
+  );
+  assert.deepEqual(patch.github, [other]);
+  assert.deepEqual(patch.links, [unrelatedUrl, other.url]);
+  await updateCard(BASE_CARD.id, patch);
+  const detached = await loadBoard();
+  assert.deepEqual(detached.cards[0].github.map((item) => item.id), [other.id], "detached aliases must not backfill the removed issue");
+}
+
+{
+  const url = "https://github.com/org/repo/pull/42";
+  const pull = taskGitHubLinkFromUrl(url)!;
+  const comment = taskGitHubLinkFromUrl(`${url}#discussion_r123`)!;
+  const old = normalizeTaskGitHubLinks([{ id: pull.id, url, repo: pull.repo, kind: pull.kind, number: 42, title: "Human title", labels: [] }, comment]);
+  assert.equal(old.length, 1);
+  assert.equal(old[0].title, "Human title", "old records without provenance retain their real title");
+  const review = { ...pull, id: "review-request:42", kind: "review_request" as const, source: "assigned" as const };
+  assert.equal(mergeTaskGitHubLinks([review], comment).length, 1, "review requests name the underlying pull request");
+  const removed = githubHelpers.removeTaskGitHubLink([review], [url, comment.url], review);
+  assert.deepEqual(removed.links, [], "review comment URLs must not revive a detached PR");
+  await writeBoard([{ ...BASE_CARD, github: [review], links: [url, comment.url] }]);
+  await updateCard(BASE_CARD.id, removed);
+  assert.deepEqual((await loadBoard()).cards[0].github, []);
+
+  const branches = ["123-startup", "123-network"].map((name) => taskGitHubLinkFromUrl(`https://github.com/org/repo/tree/${name}`)!);
+  assert.equal(mergeTaskGitHubLinks(branches).length, 2, "numeric branch prefixes are not issue numbers");
+  assert.notEqual(branches[0].id, branches[1].id);
+  assert.deepEqual(githubHelpers.removeTaskGitHubLink(branches, branches.map((item) => item.url), branches[0]).github, [branches[1]]);
 }
 
 console.log("cave-board-backfill-idempotence: all assertions passed");

@@ -14,8 +14,8 @@ gh project view 9 --owner OpenCoven
 entrypoints. A bounded list is a starting point, not proof that no work matches.
 
 Issue #5399 moved development tracking to GitHub on 2026-09-14. Issue #5566
-removes Beads from the repository in stages: its data, tooling, and guidance
-first, then the worktree lifecycle tooling and the product surfaces.
+removed Beads from the repository (closed 2026-09-26): its data, tooling, and
+guidance first, then the worktree lifecycle tooling and the product surfaces.
 
 ## Find and own the work
 
@@ -93,6 +93,11 @@ A configured directory that no longer exists, such as the removed
 `.beads/hooks`, is replaced. It also drops a stale `merge.beads-jsonl` driver
 section left in older clones. Do not use `--no-verify` or an empty hook path.
 
+The commit-msg hook accepts `Co-authored-by` only in the numeric GitHub
+no-reply form and accepts the `Coven-Familiar`, `Coven-Harness` and
+`Coven-Session` provenance trailers. Every other co-author address, including
+`<id>@opencoven.ai`, and every AI credit footer is rejected (#6068).
+
 The automatic `SessionEnd` cleanup hook and `wt:retire-on-exit` shortcut are
 removed. Stale calls to `scripts/worktree-session-exit-retirement.mjs` exit 2
 before any status probe or Git operation. A local `SAFE-RETIRE` verdict cannot
@@ -128,6 +133,13 @@ do not remove somebody else's unit to make room.
 The managed worktree creator and lifecycle patrol were removed with Beads
 (#5566). Do not manufacture `metadata.coven.worktree` records. An `uncertain`
 classification in older patrol output is not permission to delete a worktree.
+
+**Throwaway run worktrees** need no issue record. That covers a detached
+worktree created from `origin/main` only to build, run or capture the app,
+such as the `run-cave-app` skill's `.worktrees/run-<unique>`. It must never be
+committed to, it must hold no work anyone needs, and the same run must remove
+it. It still counts toward the budget while it exists, and it grants no
+authority over any other unit.
 
 `pnpm wt:status` is local evidence, not an ownership or deletion receipt.
 A paused merge/rebase can look like ordinary dirtiness. Preserve every dirty
@@ -168,8 +180,10 @@ unit. A merged squash PR does not retain the branch's own commits.
 When needed, preserve the exact head with a pushed `archive/` or `retention/`
 tag before authorized local retirement. A local-only tag does not count.
 Never remove a dirty tree, override another owner's lock, or infer that a
-remote branch is retained from a stale tracking ref. Remote deletion remains
-proposal-only.
+remote branch is retained from a stale tracking ref. Remote deletion by an
+agent remains proposal-only. GitHub deletes a merged PR's same-repository head
+branch automatically (`delete_branch_on_merge`); `refs/pull/<#>/head` keeps
+that head.
 
 The missing legacy maintenance planes are not made safe by changing trackers.
 No GitHub issue comment replaces a runtime exclusion lock. Preserve a unit

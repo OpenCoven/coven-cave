@@ -278,15 +278,18 @@ struct TasksView: View {
                 } message: { card in Text(card.title) }
                 .sidebarColumn()
         } detail: {
-            if let selection {
-                NavigationStack { TaskDetailView(card: selection) }
-            } else {
-                ContentUnavailableView {
-                    Label("Select a task", systemImage: "checklist")
-                } description: {
-                    Text("Pick a task to see its details and steps.")
+            Group {
+                if let selection {
+                    NavigationStack { TaskDetailView(card: selection) }
+                } else {
+                    ContentUnavailableView {
+                        Label("Select a task", systemImage: "checklist")
+                    } description: {
+                        Text("Pick a task to see its details and steps.")
+                    }
                 }
             }
+            .splitDetailColumn()
         }
         // Keep the task list visible beside the detail on iPad rather than letting
         // the detail take over; on iPhone the split view still collapses to a stack.

@@ -30,6 +30,7 @@ globalThis.fetch = async (url, init) => {
 };
 
 const { GET, __clearPreviewCacheForTests } = await import("./route.ts");
+const { resetUpstreamHealth } = await import("../../../../lib/server/upstream-fetch.ts");
 
 // Restore the shared global for any tests that later run in this process.
 after(() => { globalThis.fetch = realFetch; });
@@ -39,6 +40,7 @@ beforeEach(() => {
   nextFetchResponse = null;
   fetchCalls = [];
   __clearPreviewCacheForTests();
+  resetUpstreamHealth("openai");
 });
 
 test("400 unknown_voice for ids outside the realtime catalog", async () => {
@@ -137,6 +139,9 @@ test("502 preview_failed surfaces the provider message on non-400 failures", asy
   assert.equal(cacheProbeCalls(), 1);
 
   // Transient failures are NOT cached — a retry reaches the provider again.
+  // (The 429 opened upstreamFetch's cooldown on the host; that window is the
+  // primitive's contract, so treat it as elapsed and prove the route's cache.)
+  resetUpstreamHealth("openai");
   nextFetchResponse = new Response(new Uint8Array([7]), { status: 200 });
   const retry = await GET(req("verse"));
   assert.equal(retry.status, 200);

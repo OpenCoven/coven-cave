@@ -1,4 +1,5 @@
 use super::reliability_metrics::write_private_atomic;
+use fs2::FileExt;
 use rand::{rngs::OsRng, RngCore};
 use serde_json::{json, Value};
 use std::fs;
@@ -163,57 +164,125 @@ impl SidecarDiagnosticContext {
     }
 }
 
-pub(super) fn reset_native_diagnostics_file(path: &Path) -> Result<(), String> {
+/// Keep raw failure text on the local error surface, not in retained telemetry.
+/// The durable record uses the same redacted schema as sidecar lifecycle events.
+pub(super) fn startup_failure_message(
+    cause: &str,
+    path: Option<&Path>,
+    version: &str,
+    phase: &'static str,
+) -> String {
+    let saved = path.and_then(|path| {
+        let context = SidecarDiagnosticContext::new(
+            "startup",
+            1,
+            version.to_string(),
+            Some(path.to_path_buf()),
+        );
+        let event = context.event_value(
+            phase,
+            "failed",
+            "unavailable",
+            Some("startup-failure"),
+            None,
+        );
+        append_bounded_event(path, &event).ok().map(|()| path)
+    });
+    match saved {
+        Some(path) => format!("{cause}\n\nStartup diagnostics: {}", path.display()),
+        None => format!("{cause}\n\nStartup diagnostics could not be saved. Check that your local application data folder is writable."),
+    }
+}
+
+// Keep the lock in a stable sibling: the diagnostic file itself is atomically
+// replaced, so locking its old inode would not serialize other processes.
+struct NativeDiagnosticLock(fs::File);
+
+impl Drop for NativeDiagnosticLock {
+    fn drop(&mut self) {
+        // A concurrent fork can retain the open file description until exec.
+        // Explicit unlock ends this operation even while that duplicate lives.
+        let _ = fs2::FileExt::unlock(&self.0);
+    }
+}
+
+fn lock_native_diagnostics(path: &Path) -> Result<NativeDiagnosticLock, String> {
+    let parent = path
+        .parent()
+        .ok_or("native diagnostics path has no parent")?;
+    fs::create_dir_all(parent).map_err(|_| "could not create native diagnostics directory")?;
+    let lock_path = path.with_extension("jsonl.lock");
+    if let Ok(metadata) = fs::symlink_metadata(&lock_path) {
+        if !metadata.file_type().is_file() {
+            return Err("native diagnostics lock is not a regular file".into());
+        }
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options
+        .open(lock_path)
+        .map_err(|_| "could not open native diagnostics lock")?;
+    // Diagnostics must never hold up startup or recovery waiting for another
+    // process. Contention is a best-effort logging failure, not permission to
+    // overwrite a writer's data. Closing the handle releases the OS lock.
+    file.try_lock_exclusive()
+        .map_err(|_| "native diagnostics are busy or unavailable")?;
+    Ok(NativeDiagnosticLock(file))
+}
+
+pub(super) fn retain_native_diagnostics_file(path: &Path) -> Result<(), String> {
     let _guard = DIAGNOSTIC_FILE_LOCK
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    write_private_atomic(path, b"")
+    let _file_lock = lock_native_diagnostics(path)?;
+    let bytes = read_bounded_event_file(path)?;
+    write_private_atomic(path, &bytes)
 }
 
-fn read_bounded_event_file(path: &Path) -> Vec<u8> {
-    let Ok(path_metadata) = fs::symlink_metadata(path) else {
-        return Vec::new();
+fn read_bounded_event_file(path: &Path) -> Result<Vec<u8>, String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err("could not inspect native diagnostics".into()),
     };
-    // The path is meant to be our private regular file. Refuse special files so
-    // a replaced FIFO/device cannot turn event retention into an unbounded or
-    // blocking read.
-    if !path_metadata.file_type().is_file() {
-        return Vec::new();
+    if !metadata.file_type().is_file() {
+        return Err("native diagnostics are not a regular file".into());
     }
-    let Ok(mut file) = fs::File::open(path) else {
-        return Vec::new();
-    };
-    let Ok(metadata) = file.metadata() else {
-        return Vec::new();
-    };
-    if !metadata.is_file() {
-        return Vec::new();
+    let mut file = fs::File::open(path).map_err(|_| "could not read native diagnostics")?;
+    let size = file
+        .metadata()
+        .map_err(|_| "could not inspect opened native diagnostics")?
+        .len();
+    let keep = size.min(MAX_NATIVE_DIAGNOSTIC_BYTES as u64);
+    file.seek(SeekFrom::End(-(keep as i64)))
+        .map_err(|_| "could not seek native diagnostics")?;
+    let mut bytes = Vec::with_capacity(keep as usize);
+    file.take(keep)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "could not read native diagnostics")?;
+    if size > keep {
+        // The retained tail may begin inside an event. Drop that partial line.
+        let start = bytes
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|offset| offset + 1)
+            .unwrap_or(bytes.len());
+        bytes.drain(..start);
     }
-
-    let keep = metadata.len().min(MAX_NATIVE_DIAGNOSTIC_BYTES as u64) as usize;
-    if metadata.len() > keep as u64 && file.seek(SeekFrom::End(-(keep as i64))).is_err() {
-        return Vec::new();
-    }
-
-    let mut bytes = Vec::with_capacity(keep);
-    let mut buffer = [0_u8; 8192];
-    while bytes.len() < keep {
-        let want = buffer.len().min(keep - bytes.len());
-        match file.read(&mut buffer[..want]) {
-            Ok(0) => break,
-            Ok(read) => bytes.extend_from_slice(&buffer[..read]),
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(_) => break,
-        }
-    }
-    bytes
+    Ok(bytes)
 }
 
 fn append_bounded_event(path: &Path, event: &Value) -> Result<(), String> {
     let _guard = DIAGNOSTIC_FILE_LOCK
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    let mut bytes = read_bounded_event_file(path);
+    let _file_lock = lock_native_diagnostics(path)?;
+    let mut bytes = read_bounded_event_file(path)?;
     bytes.extend_from_slice(event.to_string().as_bytes());
     bytes.push(b'\n');
     if bytes.len() > MAX_NATIVE_DIAGNOSTIC_BYTES {
@@ -234,12 +303,8 @@ mod tests {
 
     #[test]
     fn diagnostic_event_is_structured_and_contains_no_raw_error_text() {
-        let context = SidecarDiagnosticContext::new(
-            "sidecar-recovery",
-            2,
-            "0.2.5".to_string(),
-            None,
-        );
+        let context =
+            SidecarDiagnosticContext::new("sidecar-recovery", 2, "0.2.5".to_string(), None);
         let serialized = context
             .event_value(
                 "startup",
@@ -317,7 +382,96 @@ mod tests {
     }
 
     #[test]
-    fn app_start_resets_native_events_from_prior_processes() {
+    fn failure_surface_identifies_saved_log_without_retaining_raw_cause() {
+        let root = std::env::temp_dir().join(format!(
+            "c5979-failure-{}-{}",
+            std::process::id(),
+            NEXT_GENERATION.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("events.jsonl");
+        let cause = "WebView2 failed: secret-test-token";
+        let message = startup_failure_message(cause, Some(&path), "1.2.3", "native-setup");
+        assert!(message.contains(cause));
+        assert!(message.contains(path.to_str().unwrap()));
+        let stored = fs::read_to_string(&path).unwrap();
+        assert!(stored.contains("native-setup"));
+        assert!(stored.contains("startup-failure"));
+        assert!(!stored.contains("secret-test-token"));
+        retain_native_diagnostics_file(&path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), stored);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failure_surface_does_not_claim_an_unsaved_log_exists() {
+        let message =
+            startup_failure_message("window creation failed", None, "1.2.3", "native-setup");
+        assert!(message.contains("window creation failed"));
+        assert!(message.contains("could not be saved"));
+        assert!(!message.contains("Startup diagnostics:"));
+    }
+
+    #[test]
+    fn completed_diagnostic_lock_releases_even_with_a_duplicated_handle() {
+        let root = std::env::temp_dir().join(format!(
+            "c5979-inherited-lock-{}-{}",
+            std::process::id(),
+            NEXT_GENERATION.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("events.jsonl");
+        let owner = lock_native_diagnostics(&path).unwrap();
+        // A concurrent Unix process spawn can briefly inherit the open file
+        // description before exec closes it. A duplicate models its lifetime.
+        let inherited = owner.0.try_clone().unwrap();
+        drop(owner);
+        retain_native_diagnostics_file(&path)
+            .expect("completed operation explicitly releases its lock");
+        drop(inherited);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn contended_diagnostics_preserve_existing_data_without_waiting() {
+        let root = std::env::temp_dir().join(format!(
+            "c5979-lock-{}-{}",
+            std::process::id(),
+            NEXT_GENERATION.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("events.jsonl");
+        append_bounded_event(&path, &json!({"eventId": "original"})).unwrap();
+        let before = fs::read(&path).unwrap();
+        let owner = lock_native_diagnostics(&path).unwrap();
+        assert!(retain_native_diagnostics_file(&path).is_err());
+        assert!(append_bounded_event(&path, &json!({"eventId": "contender"})).is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+        drop(owner);
+        append_bounded_event(&path, &json!({"eventId": "recovered"})).unwrap();
+        let events = fs::read_to_string(&path).unwrap();
+        assert!(events.contains("original") && events.contains("recovered"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unreadable_diagnostic_shape_is_not_replaced_on_startup() {
+        let root = std::env::temp_dir().join(format!(
+            "c5979-shape-{}-{}",
+            std::process::id(),
+            NEXT_GENERATION.fetch_add(1, Ordering::Relaxed)
+        ));
+        let path = root.join("events.jsonl");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("sentinel"), b"keep").unwrap();
+        assert!(retain_native_diagnostics_file(&path).is_err());
+        assert!(append_bounded_event(&path, &json!({"eventId": "new"})).is_err());
+        assert_eq!(fs::read(path.join("sentinel")).unwrap(), b"keep");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn app_start_preserves_native_events_from_prior_processes() {
         let path = std::env::temp_dir().join(format!(
             "coven-sidecar-diagnostics-reset-{}-{}.jsonl",
             std::process::id(),
@@ -326,9 +480,13 @@ mod tests {
         append_bounded_event(&path, &json!({ "eventId": "prior-launch" }))
             .expect("write prior launch event");
 
-        reset_native_diagnostics_file(&path).expect("reset native diagnostics");
+        retain_native_diagnostics_file(&path).expect("retain native diagnostics");
 
-        assert_eq!(fs::read(&path).expect("read reset diagnostics"), b"");
+        let retained = fs::read_to_string(&path).expect("read retained diagnostics");
+        assert!(
+            retained.contains("prior-launch"),
+            "startup must retain prior failure evidence: {retained}"
+        );
         let _ = fs::remove_file(path);
     }
 }

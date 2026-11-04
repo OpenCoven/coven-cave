@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 // @ts-expect-error -- react-test-renderer has no bundled declarations.
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -51,9 +51,9 @@ const canvas = {
   releasePointerCapture: (id: number) => capture.delete(id),
 };
 function frame(time = 1000) { arcs = []; labels = []; const draw = nextFrame; nextFrame = undefined; act(() => draw?.(time)); }
-function mount(data = graph) {
+function mount(data = graph, props: Partial<ComponentProps<typeof GrimoireGraphView>> = {}) {
   act(() => {
-    const element = <GrimoireGraphView graph={data} onOpen={vi.fn()} memoryOwnerByNodeId={new Map([["a", "nova"], ["c", "sage"]])} ownerLabel={(id) => id === "nova" ? "Nova" : "Sage"} />;
+    const element = <GrimoireGraphView graph={data} onOpen={vi.fn()} memoryOwnerByNodeId={new Map([["a", "nova"], ["c", "sage"]])} ownerLabel={(id) => id === "nova" ? "Nova" : "Sage"} {...props} />;
     if (root) root.update(element);
     else root = create(element, { createNodeMock: (element: { type: string }) => element.type === "canvas" || element.type === "div" ? canvas : null });
   });
@@ -201,6 +201,78 @@ test("canceling a node drag unpins it without selecting or opening a document", 
     canvasProps().onPointerCancel(pointer("pointercancel", 7, x + 30, y + 20));
   });
   expect(unpinForceSimNode).toHaveBeenCalled();
+  expect(capture.size).toBe(0);
+});
+
+for (const modifier of ["metaKey", "ctrlKey"]) {
+  test.each([false, true])(`${modifier} click saves selection and preserves explorer visibility %s before leaving`, (explorerOpen) => {
+    const saved = vi.fn();
+    const open = vi.fn(() => expect(saved).toHaveBeenCalled());
+    mount(graph, { onOpen: open, onNavigationChange: saved });
+    if (explorerOpen) act(() => button("Explore").props.onClick());
+    saved.mockClear();
+    const [x, y] = arcs[0];
+    act(() => {
+      canvasProps().onPointerDown({ ...pointer("pointerdown", 1, x, y), [modifier]: true });
+      canvasProps().onPointerUp({ ...pointer("pointerup", 1, x, y), [modifier]: true });
+    });
+    expect(open).toHaveBeenCalledOnce();
+    const navigation = saved.mock.calls.at(-1)![0];
+    expect(navigation.trail).toContain(navigation.selectedId);
+    expect(navigation.explorerOpen).toBe(explorerOpen);
+    act(() => root!.unmount());
+    root = undefined;
+    mount(graph, { initialNavigation: navigation });
+    expect(button(explorerOpen ? "Hide explorer" : "Explore")).toBeDefined();
+  });
+
+  test(`${modifier} drag over a node pans without moving or opening it`, () => {
+    const open = vi.fn();
+    mount(graph, { onOpen: open });
+    const sim = vi.mocked(createForceSim).mock.results.at(-1)!.value;
+    sim.alpha = 0;
+    const positions = [Array.from(sim.x), Array.from(sim.y), Array.from(sim.z)];
+    const before = arcs.map((arc) => arc.slice(0, 3));
+    const [x, y] = arcs[0];
+    act(() => {
+      canvasProps().onPointerDown({ ...pointer("pointerdown", 1, x, y), [modifier]: true });
+      canvasProps().onPointerMove({ ...pointer("pointermove", 1, x + 30, y + 20), [modifier]: true });
+      canvasProps().onPointerUp(pointer("pointerup", 1, x + 30, y + 20));
+    });
+    frame();
+    expect([Array.from(sim.x), Array.from(sim.y), Array.from(sim.z)]).toEqual(positions);
+    expect(arcs.map((arc) => arc.slice(0, 3))).not.toEqual(before);
+    expect(open).not.toHaveBeenCalled();
+  });
+}
+
+test("returning from a reader restores the selection and traversal Back action", () => {
+  const saved = vi.fn();
+  mount(graph, { onNavigationChange: saved });
+  act(() => button("Explore").props.onClick());
+  act(() => documentButton("Release decisions").props.onClick());
+  act(() => documentButton("Deployment guide").props.onClick());
+  act(() => button("Open").props.onClick());
+  const navigation = saved.mock.calls.at(-1)![0];
+  act(() => root!.unmount());
+  root = undefined;
+  mount(graph, { initialNavigation: navigation });
+  expect(root!.root.findByProps({ "aria-label": "Selected: Deployment guide" })).toBeDefined();
+  act(() => button("Back").props.onClick());
+  expect(root!.root.findByProps({ "aria-label": "Selected: Release decisions" })).toBeDefined();
+});
+
+test("modifier cancellation and non-primary clicks never open a document", () => {
+  const open = vi.fn();
+  mount(graph, { onOpen: open });
+  const [x, y] = arcs[0];
+  act(() => {
+    canvasProps().onPointerDown({ ...pointer("pointerdown", 1, x, y), metaKey: true });
+    canvasProps().onPointerCancel(pointer("pointercancel", 1, x, y));
+    canvasProps().onPointerDown({ ...pointer("pointerdown", 2, x, y), button: 2, ctrlKey: true });
+    canvasProps().onPointerUp({ ...pointer("pointerup", 2, x, y), button: 2, ctrlKey: true });
+  });
+  expect(open).not.toHaveBeenCalled();
   expect(capture.size).toBe(0);
 });
 

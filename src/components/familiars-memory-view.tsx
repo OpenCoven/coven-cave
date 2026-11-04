@@ -730,6 +730,7 @@ export function FamiliarsMemoryView({
               compact
               headline="Couldn't load memory files"
               subtitle={filesState.error}
+              actions={<Button size="sm" onClick={() => void load(true)}>Retry</Button>}
             />
           </div>
         ) : null}

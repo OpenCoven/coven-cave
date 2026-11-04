@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { ToolCallTracker, toPersistedTools, type ToolStreamEvent } from "./chat-tool-events.ts";
 import { applyToolActions } from "./runtime-tool-adapter.ts";
 import { copilotToolActions, parseCopilotChatEvent } from "./copilot-stream.ts";
-import { mergeToolObservation, settleToolObservations, toolStatusLabel, type ToolStatus } from "./chat-tool-state.ts";
+import { mergeToolObservation, settleToolObservations, toolProgressStatus, toolStatusCounts, toolStatusLabel, type ToolStatus } from "./chat-tool-state.ts";
 import { verificationEvidenceFromTool } from "./chat-tool-verification.ts";
 
 let now = 10;
@@ -81,4 +81,9 @@ assert.deepEqual(rejectedActions.map((event) => event.status), ["requested", "re
 assert.equal(verificationEvidenceFromTool({ id: "denied", name: "bash", input: '{"command":"pnpm test"}', status: "rejected" }), null);
 assert.equal(mergeToolObservation({ status: "rejected" }, { status: "ok" }).status, "rejected");
 assert.equal(settleToolObservations([{ status: "rejected" }])?.[0]?.status, "rejected");
+const everyStatus: ToolStatus[] = ["requested", "approval-requested", "cancel-requested", "running", "ok", "error", "rejected", "policy-rejected", "user-rejected", "cancelled", "unknown"];
+assert.deepEqual(toolStatusCounts(everyStatus), { running: 2, requested: 2, ok: 1, error: 1, rejected: 3, cancelled: 1, unknown: 1 },
+  "compact counters keep every rejection and cancellation out of running, done and unknown");
+assert.deepEqual(everyStatus.map(toolProgressStatus), ["running", "running", "running", "running", "done", "error", "notice", "notice", "notice", "notice", "notice"],
+  "only success settles as done; terminal rejections and cancellation never read as running");
 console.log("tool outcomes: passed");

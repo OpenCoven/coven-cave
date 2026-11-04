@@ -35,6 +35,7 @@ import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
+import { prepareLocalCodexLaunch } from "@/lib/server/local-codex-launch";
 import { emitFlowRunAttention } from "@/lib/server/flow-attention";
 import {
   startCopilotFlowRunWithTransportBoundary,
@@ -267,6 +268,14 @@ export async function startFlowSession(
   }
   const hermesProfileBlock = hermesProfileDaemonLaunchBlockReason(binding);
   if (hermesProfileBlock) return { ok: false, status: 409, error: hermesProfileBlock };
+  // Codex local mode (#6049): a flow session needs the model the familiar
+  // runs, a live local server, and the model name that server knows.
+  const localLaunch = await prepareLocalCodexLaunch(
+    harness,
+    options.model ?? (harness === binding.harness && "model" in binding ? binding.model : null),
+    "daemon",
+  );
+  if (localLaunch.local && !localLaunch.ok) return { ok: false, status: 409, error: localLaunch.message };
   const travelStatus = await travelLocalQueueStatus(config);
   if (travelStatus) {
     if (options.offlinePolicy === "reject") {
@@ -563,6 +572,7 @@ export async function startFlowSession(
     body: {
       projectRoot,
       harness,
+      ...(localLaunch.local && localLaunch.ok ? { model: localLaunch.nativeModel } : {}),
       prompt,
       launchMode: "nonInteractive",
       ...(launchPolicy ? { launchPolicy } : {}),

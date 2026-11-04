@@ -79,6 +79,13 @@ function craftPlugin(overrides: Record<string, unknown> = {}) {
 async function openCrafts(page: Page, plugin = craftPlugin()) {
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars: [] } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+  // The Craft dialog probes for the Codex CLI and shows an alert when it is
+  // missing. These journeys assume it is installed; leaving the probe to the
+  // machine running the tests made the alert, and their alert assertions,
+  // depend on that machine and on how fast it answered (#6191).
+  await page.route("**/api/harnesses**", (route) =>
+    route.fulfill({ json: { ok: true, harnesses: [{ id: "codex", installed: true }] } }),
+  );
   await page.route("**/api/marketplace", (route) => route.fulfill({ json: { ok: true, plugins: [plugin] } }));
   await page.route(`**/api/marketplace/crafts/plan?id=${CRAFT_ID}`, (route) => route.fulfill({ json: { ok: true, plan } }));
   await page.addInitScript(() => window.localStorage.setItem("cave:onboarding:dismissed", "1"));

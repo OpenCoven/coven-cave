@@ -212,6 +212,18 @@
       "allowCustom": true,
       "defaultOwner": "cave"
     },
+    "codex-ollama": {
+      "provider": "ollama",
+      "models": [],
+      "allowCustom": true,
+      "defaultOwner": "cave"
+    },
+    "codex-lmstudio": {
+      "provider": "lmstudio",
+      "models": [],
+      "allowCustom": true,
+      "defaultOwner": "cave"
+    },
     "claude": {
       "provider": "anthropic",
       "models": [

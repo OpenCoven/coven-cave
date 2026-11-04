@@ -83,7 +83,7 @@ export async function listHermesProfiles(options: {
     return { profiles: [], hint: "Couldn't list Hermes profiles. Check Hermes setup, then try again." };
   }
   const readSoul = options.readSoul ?? (async (homePath: string) =>
-    readFile(path.join(homePath, "SOUL.md"), "utf8").catch(() => null));
+    readFile(path.join(/* turbopackIgnore: true */ homePath, "SOUL.md"), "utf8").catch(() => null));
   const maxProfiles = Math.min(
     Math.max(1, options.maxProfiles ?? MAX_DISCOVERED_HERMES_PROFILES),
     MAX_DISCOVERED_HERMES_PROFILES,

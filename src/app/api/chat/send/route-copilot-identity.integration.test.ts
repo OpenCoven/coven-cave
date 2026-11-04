@@ -95,6 +95,20 @@ try {
     assert.equal(done.responseMetadata?.runtimeIdentity?.model, scenario.expected, scenario.name);
     assert.equal(done.responseMetadata?.runtimeIdentity?.version, "1.0.82");
     assert.equal(done.responseMetadata?.runtimeIdentity?.activity?.tools, "supported");
+    // #5763 criteria 1/5: the direct JSONL path carries the tool lifecycle and
+    // says plainly that it exposes no provider reasoning, instead of leaving
+    // the reader with an unexplained absence.
+    assert.equal(done.responseMetadata?.runtimeIdentity?.activity?.path, "direct");
+    assert.equal(done.responseMetadata?.runtimeIdentity?.activity?.reasoning, "unsupported", scenario.name);
+    const toolEvents = events.filter((event) => event.kind === "tool_use" && event.id === "probe");
+    assert.ok(toolEvents.length >= 2, "the native call id is announced before its result");
+    assert.ok(toolEvents.every((event) => event.name === "read_file"));
+    assert.equal(toolEvents[0].status, "running", "tool.execution_start is an execution start; Cave invents no earlier requested phase");
+    assert.equal(toolEvents.at(-1).status, "ok", "the matching completion settles the same id");
+    assert.equal(events.filter((event) => event.kind === "reasoning").length, 0, "no reasoning block is manufactured");
+    const text = events.reduce((acc, event) => event.kind === "assistant_replace" ? event.text : event.kind === "assistant_chunk" ? acc + event.text : acc, "");
+    assert.match(text, /Final\./);
+    assert.doesNotMatch(text, /First\.First\./, "a full message after its deltas does not duplicate prose");
     assert.equal(done.responseMetadata?.requestedModel, "requested-only");
     assert.equal(done.responseMetadata?.forwardedModel, "requested-only");
     assert.equal(done.responseMetadata?.confirmedModel, scenario.expected ?? undefined);

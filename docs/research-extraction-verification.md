@@ -2,15 +2,25 @@
 
 Verification snapshot for the Research extraction candidate. Delivery tracking: [#5997](https://github.com/OpenCoven/coven-cave/issues/5997).
 
+**Historical.** Every number below belongs to the 2026-10-15 extraction
+candidate and its build inputs. The current proof of absence, disablement and
+reinstallation on `main` is #6312 / PR #6313, and the current size and
+performance baselines are the measurement receipts on
+[#6119](https://github.com/OpenCoven/coven-cave/issues/6119); the
+[core boundary](research-core-boundary.md) names them. Do not cite this report
+for the present build.
+
 The measurements below compare pre-removal Cave commit
 `022a2408b3e628465c81e839f4419f8378691f9f` with the uncommitted extraction
 candidate based on `fec9f7c42ce663beb16793b63ad34987b7b2ee9c`, using Research
 commit `f322f27832c4ad13f31e8e943d495db93d21c4f1`. These measurements predate the final release pin and subsequent main integrations;
 they are not measurements of the final merged Cave revision.
 
-The working candidate has since been integrated with main
-`1dd8185a5de325e99b568e6c799a9dd955731d3a`. The measurements above identify
-the earlier build inputs; they are not measurements of this updated integration.
+The working candidate was then integrated with main
+`1dd8185a5de325e99b568e6c799a9dd955731d3a` and merged as PR #6025 (squash
+`71d77979187df1f473fd4e27416ef612cd888f2a`) on 2026-10-15. The measurements
+above identify the earlier build inputs; they are not measurements of the
+merged revision.
 Scoped integration checks cover saved links, all 340 API contracts, optional
 loading and authorization, and the retained iOS build contracts.
 Full lint and typechecking pass on the integrated candidate. Protocol

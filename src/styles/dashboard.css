@@ -48,19 +48,12 @@
     background:
       linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
   }
-  .spark-tip {
-    background: var(--bg-elevated);
-  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .settings-shell__header {
     background:
       linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
-    backdrop-filter: none;
-  }
-  .spark-tip {
-    background: var(--bg-elevated);
     backdrop-filter: none;
   }
 }
@@ -993,15 +986,5 @@
 /* Greeting eyebrow icon — replaces the old presence dot with a sun/moon. */
 
 
-/* Shared hover-able trend sparkline (report metric cards, analytics, profile) */
-.spark { position: relative; display: block; width: 100%; overflow: visible; }
-.spark svg { display: block; width: 100%; height: 100%; }
-.spark--flat { width: 100%; border-bottom: 1px dashed var(--border-hairline); opacity: 0.6; }
-.spark-tip { position: absolute; top: -7px; transform: translate(-50%, -100%);
-  white-space: nowrap; pointer-events: none; z-index: 4;
-  padding: 3px 7px; border-radius: 6px; font-size: 10.5px; line-height: 1.2;
-  color: var(--text-primary); background: var(--glass-elevated);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid var(--border-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
-  font-variant-numeric: tabular-nums; }
-.spark-tip b { font-weight: 700; }
+/* The shared trend sparkline's styles live in src/styles/sparkline.css, imported
+   by src/components/ui/sparkline.tsx. */

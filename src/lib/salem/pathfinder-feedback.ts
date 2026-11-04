@@ -10,7 +10,7 @@ import path from "node:path";
 import { caveHome } from "@/lib/coven-paths";
 import { REGISTRY_VERSION } from "@/lib/salem/happy-paths";
 
-export const FEEDBACK_PATH = path.join(caveHome(), "salem-pathfinder.json");
+export const FEEDBACK_PATH = path.join(/* turbopackIgnore: true */ caveHome(), "salem-pathfinder.json");
 
 export type SalemPathfinderFeedback = {
   pathId: string;

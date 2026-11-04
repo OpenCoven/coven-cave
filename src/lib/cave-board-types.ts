@@ -314,6 +314,13 @@ export type Card = {
   nextStep?: TaskNextStep | null;
   /** Append-only explanation of automatic primary-blocker promotions. */
   orchestrationAudit?: TaskOrchestrationAuditEntry[];
+  /**
+   * True when the card came from a version 1 board with no `dependencies`
+   * field: it predates dependency tracking rather than never having had a
+   * blocker. Set only by `loadBoard`; cleared by the first write that names
+   * the card's dependencies (#6258).
+   */
+  predatesDependencies?: true;
   /** Bounded, reviewable Enhance proposals and their governance audit trail. */
   agenticEnhance?: BoardAgenticEnhanceState;
   /** Files carried in from the composer when the card was created. Stored lean:

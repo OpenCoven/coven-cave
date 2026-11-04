@@ -192,14 +192,14 @@ const DEFAULT_SUPREME_FAMILIAR_ID = "supreme";
 function permissionsFilePath(): string {
   return (
     process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE ??
-    path.join(caveHome(), "project-permissions.json")
+    path.join(/* turbopackIgnore: true */ caveHome(), "project-permissions.json")
   );
 }
 
 function humanPermissionConfigPath(): string {
   return (
     process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE ??
-    path.join(caveHome(), "permission-config.json")
+    path.join(/* turbopackIgnore: true */ caveHome(), "permission-config.json")
   );
 }
 

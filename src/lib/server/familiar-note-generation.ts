@@ -62,13 +62,13 @@ export async function collectDailyNoteActivity(args: ActivityArgs): Promise<Dail
     }
   }
   const workspace = await familiarWorkspace(args.id);
-  const memoryRoot = path.join(workspace, "memory");
+  const memoryRoot = path.join(/* turbopackIgnore: true */ workspace, "memory");
   async function walk(dir: string): Promise<void> {
     let entries;
     try { entries = await readdir(/* turbopackIgnore: true */ dir, { withFileTypes: true }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
     for (const entry of entries) {
-      const file = path.join(dir, entry.name);
+      const file = path.join(/* turbopackIgnore: true */ dir, entry.name);
       if (entry.isDirectory()) await walk(file);
       else if (entry.isFile()) {
         const info = await stat(/* turbopackIgnore: true */ file);
@@ -106,12 +106,12 @@ export async function saveGeneratedDailyNote(args: Omit<ActivityArgs, "from" | "
   if ((await readDailyNote(args.id, args.date)).exists) return { status: "existing" as const };
   const activity = (await collectDailyNoteActivity({ ...args, from: args.date, to: args.date }))[0];
   if (!activity) return { status: "inactive" as const };
-  const directory = path.join(await familiarWorkspace(args.id), "notes");
+  const directory = path.join(/* turbopackIgnore: true */ await familiarWorkspace(args.id), "notes");
   await mkdir(/* turbopackIgnore: true */ directory, { recursive: true });
   // Match the existing notes writer: a validated date is one basename.
-  const target = path.join(directory, `${path.basename(args.date)}.md`);
+  const target = path.join(/* turbopackIgnore: true */ directory, `${path.basename(args.date)}.md`);
   if (path.relative(directory, target).startsWith("..")) throw new Error("Path not allowed.");
-  const temporary = path.join(directory, `.daily-note.${randomUUID()}.tmp`);
+  const temporary = path.join(/* turbopackIgnore: true */ directory, `.daily-note.${randomUUID()}.tmp`);
   try {
     await writeFile(/* turbopackIgnore: true */ temporary, formatDailyNote(args.date, { notes: activity.digest, reflection }), { flag: "wx" });
     await link(/* turbopackIgnore: true */ temporary, target);

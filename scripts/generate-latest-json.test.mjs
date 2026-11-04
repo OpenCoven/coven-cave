@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, symlinkSync } from "node:fs";
+import { mkdtempSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDirectRun, selectSignedArtifact } from "./generate-latest-json.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./generate-latest-json.mjs", import.meta.url));
@@ -99,4 +99,59 @@ test("signed artifact selection skips unsigned matches", () => {
     ),
     "CovenCave_0.0.140_amd64.AppImage",
   );
+});
+
+// Exercise the real CLI; only the external gh process is replaced. The stub
+// honors requested JSON fields, so forgetting to request body loses the notes.
+function runReleaseFixture(t, body, signed = true) {
+  const dir = mkdtempSync(path.join(tmpdir(), "notes-cli-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const preload = path.join(dir, "gh-fixture.mjs");
+  writeFileSync(preload, `
+    import cp from "node:child_process";
+    import { syncBuiltinESMExports } from "node:module";
+    import { writeFileSync } from "node:fs";
+    import { join } from "node:path";
+    cp.execFileSync = (command, args) => {
+      if (command !== "gh") throw new Error("Unexpected process");
+      if (args[1] === "view") {
+        const release = ${JSON.stringify({assets:[{name:"Cave.AppImage"}],body})};
+        return JSON.stringify(Object.fromEntries(args[args.indexOf("--json") + 1]
+          .split(",").map(key => [key, release[key]])));
+      }
+      if (args[1] === "download") {
+        if (${signed}) writeFileSync(join(args[args.indexOf("--dir") + 1], "Cave.AppImage.sig"), "fixture-signature");
+        return "";
+      }
+      throw new Error("Unexpected gh operation");
+    };
+    syncBuiltinESMExports();
+  `);
+  return spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, SCRIPT, "v9.9.9"], {
+    cwd: ROOT, encoding: "utf8", timeout: 60_000,
+    env: { ...process.env, TMPDIR: dir, TEMP: dir, TMP: dir },
+  });
+}
+
+test("manifest CLI preserves multiline release notes with signed artifact metadata", t => {
+  const result = runReleaseFixture(t, "## Changes\n\nRésumé — fixed <widget>.");
+  assert.equal(result.status, 0, result.stderr);
+  const manifest = JSON.parse(result.stdout);
+  assert.equal(manifest.notes, "## Changes\n\nRésumé — fixed <widget>.");
+  assert.equal(manifest.version, "9.9.9");
+  assert.equal(manifest.platforms["linux-x86_64"].signature, "fixture-signature");
+});
+
+for (const body of [undefined, null, "", "   ", { unexpected: true }]) {
+  test(`manifest accepts absent or unusable notes: ${JSON.stringify(body)}`, t => {
+    const result = runReleaseFixture(t, body);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).notes, undefined);
+  });
+}
+
+test("notes cannot make an unsigned release an updater manifest", t => {
+  const result = runReleaseFixture(t, "Notes exist", false);
+  assert.equal(result.status, 2, result.stderr);
+  assert.equal(result.stdout, "");
 });

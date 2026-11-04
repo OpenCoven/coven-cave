@@ -40,7 +40,7 @@ assert.match(
 );
 assert.match(
   route,
-  /agent\.workspace\?\.trim\(\) \|\| path\.join\(workspaceRoot, id\)/,
+  /agent\.workspace\?\.trim\(\) \|\| path\.join\((?:\/\* turbopackIgnore: true \*\/ )?workspaceRoot, id\)/,
   "registered agents should retain their authoritative workspace path",
 );
 assert.doesNotMatch(

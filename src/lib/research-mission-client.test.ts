@@ -153,21 +153,24 @@ test("schedule and standard Automation controls use their owning APIs", async ()
   const requests: Array<{ input: string; method?: string; body?: BodyInit | null }> = [];
   globalThis.fetch = (async (input, init) => {
     requests.push({ input: String(input), method: init?.method, body: init?.body });
-    return Response.json({ ok: true, mission: mission("m-1", "checkpoint") });
+    return Response.json(String(input).endsWith("/lifecycle") ? { kind: "committed", revision: 8, replayed: false } : { ok: true, mission: mission("m-1", "checkpoint") });
   }) as typeof fetch;
   globalThis.window = { dispatchEvent: (event: Event) => events.push(event.type) } as unknown as Window & typeof globalThis;
   try {
     await scheduleResearchMission("m/1", {
       rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
     });
-    await setResearchAutomationStatus("auto/1", "ACTIVE");
+    await setResearchAutomationStatus("auto-1", "ACTIVE", 7);
     await runResearchAutomationNow("auto/1");
     assert.deepEqual(requests.map((request) => [request.input, request.method]), [
       ["/api/research/missions/m%2F1/schedule", "POST"],
-      ["/api/codex-automations/auto%2F1", "PATCH"],
+      ["/api/coven-automations/auto-1/lifecycle", "POST"],
       ["/api/codex-automations/auto%2F1/run", "POST"],
     ]);
-    assert.deepEqual(JSON.parse(String(requests[1]?.body)), { status: "ACTIVE" });
+    const command = JSON.parse(String(requests[1]?.body));
+    assert.equal(command.command, "activate");
+    assert.equal(command.expectedRevision, 7);
+    assert.match(command.adoptionKey, /^cave-[A-Za-z0-9-]{8,120}$/);
     assert.deepEqual(events, ["cave:schedules:reload", "cave:schedules:reload"]);
   } finally {
     globalThis.fetch = originalFetch;
@@ -310,4 +313,21 @@ test("getResearchMissionFile surfaces API errors", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("Research lifecycle retry retains the reviewed revision and key after an unknown outcome", async () => {
+  const originalFetch = globalThis.fetch;
+  const commands: unknown[] = [];
+  globalThis.fetch = (async (_input, init) => {
+    commands.push(JSON.parse(String(init?.body)));
+    return Response.json({ kind: "unknown" }, { status: 503 });
+  }) as typeof fetch;
+  try {
+    assert.equal((await setResearchAutomationStatus("stable-id", "PAUSED", 9)).ok, false);
+    assert.equal((await setResearchAutomationStatus("stable-id", "PAUSED", 9)).ok, false);
+    assert.deepEqual(commands[0], commands[1]);
+    assert.equal((await setResearchAutomationStatus("stable-id", "PAUSED")).ok, false);
+    assert.equal(commands.length, 2, "missing revision must not send a mutation");
+  } finally { globalThis.fetch = originalFetch; }
 });

@@ -570,6 +570,171 @@
           "status": "unknown"
         }
       ]
+    },
+    {
+      "id": "policy-rejected-survives-replay",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "approval-requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "policy-rejected",
+          "durationMs": 12
+        },
+        {
+          "kind": "tool_use",
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "ok",
+          "durationMs": 30
+        }
+      ],
+      "expected": [
+        {
+          "id": "policy-rejected",
+          "name": "Read",
+          "status": "policy-rejected",
+          "durationMs": 12
+        }
+      ]
+    },
+    {
+      "id": "user-rejected-survives-replay",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "approval-requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "user-rejected",
+          "durationMs": 12
+        },
+        {
+          "kind": "tool_use",
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "ok",
+          "durationMs": 30
+        }
+      ],
+      "expected": [
+        {
+          "id": "user-rejected",
+          "name": "Read",
+          "status": "user-rejected",
+          "durationMs": 12
+        }
+      ]
+    },
+    {
+      "id": "cancelled-survives-replay",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "cancelled",
+          "name": "Read",
+          "status": "requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "cancelled",
+          "name": "Read",
+          "status": "approval-requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "cancelled",
+          "name": "Read",
+          "status": "cancelled",
+          "durationMs": 12
+        },
+        {
+          "kind": "tool_use",
+          "id": "cancelled",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "cancelled",
+          "name": "Read",
+          "status": "ok",
+          "durationMs": 30
+        }
+      ],
+      "expected": [
+        {
+          "id": "cancelled",
+          "name": "Read",
+          "status": "cancelled",
+          "durationMs": 12
+        }
+      ]
+    },
+    {
+      "id": "cancel-request-is-not-cancelled-on-settlement",
+      "events": [
+        {
+          "kind": "tool_use",
+          "id": "pending",
+          "name": "Read",
+          "status": "running"
+        },
+        {
+          "kind": "tool_use",
+          "id": "pending",
+          "name": "Read",
+          "status": "cancel-requested"
+        },
+        {
+          "kind": "tool_use",
+          "id": "pending",
+          "name": "Read",
+          "status": "running"
+        }
+      ],
+      "expected": [
+        {
+          "id": "pending",
+          "name": "Read",
+          "status": "unknown"
+        }
+      ]
     }
   ],
   "reasoningScenarios": [
@@ -937,6 +1102,133 @@
           "textOffset": 19
         }
       ]
+    },
+    {
+      "id": "withheld-block-with-text-is-rejected",
+      "blocks": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:withheld-text",
+          "representation": "provider-summary",
+          "phase": "unavailable",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable"
+          },
+          "unavailableReason": "provider-withheld",
+          "text": "PRIVATE_GOLDEN02_WITHHELD_SUMMARY"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "provider-withheld-reason-requires-unavailable-phase",
+      "blocks": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:forged-reason",
+          "representation": "provider-summary",
+          "phase": "complete",
+          "disclosure": "display-safe",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": 200,
+            "binding": "unavailable"
+          },
+          "unavailableReason": "provider-withheld",
+          "text": "PRIVATE_GOLDEN02_WITHHELD_SUMMARY"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "opaque-continuation-siblings-are-not-retained",
+      "blocks": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:opaque-siblings",
+          "representation": "provider-summary",
+          "phase": "unavailable",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable"
+          },
+          "unavailableReason": "provider-withheld",
+          "signature": "PRIVATE_GOLDEN02_OPAQUE_STATE",
+          "encrypted_content": "PRIVATE_GOLDEN02_OPAQUE_STATE",
+          "data": "PRIVATE_GOLDEN02_OPAQUE_STATE"
+        }
+      ],
+      "expected": [
+        {
+          "schemaVersion": 1,
+          "id": "22222222-2222-4333-8444-555555555555:opaque-siblings",
+          "representation": "provider-summary",
+          "phase": "unavailable",
+          "disclosure": "withheld",
+          "observation": {
+            "runId": "11111111-2222-4333-8444-555555555555",
+            "attemptId": "22222222-2222-4333-8444-555555555555",
+            "source": "runtime-report",
+            "producer": {
+              "harness": "codex",
+              "version": "0.145.0",
+              "protocol": "codex-jsonl-v1"
+            },
+            "firstObservedAt": 100,
+            "updatedAt": 200,
+            "completedAt": null,
+            "binding": "unavailable"
+          },
+          "unavailableReason": "provider-withheld"
+        }
+      ]
     }
-  ]
+  ],
+  "reasoningPrivacySentinels": {
+    "scope": "golden-02 (#6057) and golden-13 (#6061) share these values. Each private sentinel must be absent from every display, replay, history, log, copy, export, notification and cache surface. The continuation token must instead reach execution unchanged.",
+    "private": {
+      "withheldSummary": "PRIVATE_GOLDEN02_WITHHELD_SUMMARY",
+      "opaqueState": "PRIVATE_GOLDEN02_OPAQUE_STATE",
+      "legacyThought": "PRIVATE_GOLDEN02_LEGACY_THOUGHT"
+    },
+    "toolScope": "golden-13 (#6061). The argument and result may appear only inside an authorized tool card; they must stay out of copy, export, web storage, notifications and Live Activity state, and leave the display once access is revoked. The payload signature is opaque and must never be displayed.",
+    "tool": {
+      "argument": "PRIVATE_GOLDEN13_TOOL_ARGUMENT",
+      "result": "PRIVATE_GOLDEN13_TOOL_RESULT",
+      "payloadSignature": "PRIVATE_GOLDEN13_PAYLOAD_SIGNATURE"
+    },
+    "continuationToken": "resp_golden02-opaque.continuation_7f3a9c"
+  }
 }

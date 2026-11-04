@@ -7,11 +7,12 @@ without that client being part of the Cave build and without it being handed
 the desktop shell's own per-launch secret.
 
 **Read the scope line before you read anything else.** As of this commit the
-surface is thirteen routes: a credential-free health handshake, three pairing
+surface is sixteen routes: a credential-free health handshake, three pairing
 routes that walk a client through create, secret-authorized poll/exchange, and
-finally "holding a bearer", four administrator routes that let the Cave's own
-settings UI see and decide those requests, and **five canonical reads** a bearer
-actually opens — familiars, projects, conversations, one conversation, and that
+finally "holding a bearer", five administrator routes that let the Cave's own
+settings UI see and decide those requests and read status, and **seven
+canonical reads** a bearer actually opens — familiars, one familiar's contract,
+one familiar's analytics, projects, conversations, one conversation, and that
 conversation's messages.
 
 Every read is a `GET` and requires the `chat:read` scope. The four list reads
@@ -687,7 +688,7 @@ the check fails closed: every route that depends on it answers 401 or 403.
 That branch also *skips* the mobile-access gate, which is why a phone reaching
 in over Tailscale Serve gets the 403 above rather than a mobile-auth prompt.
 
-`clientV1IngressKind` also classifies the five canonical read paths, as
+`clientV1IngressKind` also classifies the seven canonical read paths, as
 `authenticated` rather than public. That classification is a **demotion**, not a
 promotion: `proxy()` skips the mobile-access gate and returns *before* the
 sidecar-token block, so on those paths the route's own bearer check is the only
@@ -700,11 +701,11 @@ which validates and opens it before the route runs. A request presenting neither
 receives the proxy's bare `401 {"ok":false,"error":"unauthorized"}`. See *When
 the authenticated routes land*.
 
-Eight of the thirteen routes re-check the stamp in the route itself, via
+Ten of the sixteen routes re-check the stamp in the route itself, via
 `runtime.authenticator.isTrustedLoopback`, and answer `unauthorized` in the
-envelope when it fails: all three pairing routes and all five canonical reads.
-The other five take their locality from the proxy alone — `GET /health`
-deliberately, because it returns no user data and no paths, and the four admin
+envelope when it fails: all three pairing routes and all seven canonical reads.
+The other six take their locality from the proxy alone — `GET /health`
+deliberately, because it returns no user data and no paths, and the five admin
 routes because `proxy.ts` gives that family its own hard direct-loopback gate
 (`403 forbidden peer: client v1 admin requires direct loopback`, #4843) rather
 than a check inside each handler.
@@ -2017,7 +2018,7 @@ Client-side rules that fall out of the above:
 Stated because a client author will otherwise discover them by writing code
 against something that is not there.
 
-- **Reads only.** The five canonical reads are the whole authenticated surface.
+- **Reads only.** The seven canonical reads are the whole authenticated surface.
   There is no way to send a message, create a conversation, upload an
   attachment, or act on a task through this API, and the five write scopes are
   recorded on a credential and read by nothing.
@@ -2051,11 +2052,12 @@ against something that is not there.
 
 ## When the authenticated routes land
 
-The first five landed (cave-jfa9y). The wiring they inherited is not the obvious
+The first five landed (cave-jfa9y); #5288 added the familiar contract and
+analytics reads. The wiring they inherited is not the obvious
 default, and it is the same wiring the next one will inherit — read this before
 adding a route here.
 
-`CLIENT_V1_AUTHENTICATED_PATHS` now holds exactly those five paths. **Matching
+`CLIENT_V1_AUTHENTICATED_PATHS` now holds exactly those seven paths. **Matching
 it is a demotion, not a promotion**: `proxy()` computes the ingress kind before
 the mobile-access gate, skips that gate for any client-v1 match, and returns
 before the sidecar-token block ever runs. The proxy still requires a

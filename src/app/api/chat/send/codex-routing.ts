@@ -6,6 +6,7 @@ import {
   type CodexRuntimeReport,
   type CodexSchemaSources,
 } from "../../../../lib/codex-compatibility.ts";
+import { isCodexFamilyHarness, isLocalCodexHarness } from "../../../../lib/local-codex.ts";
 
 /**
  * Fallback causes worth a one-line compatibility notice. `null` means the
@@ -85,8 +86,8 @@ export function resolveCodexChatRouting(input: {
   resumeSessionId?: string | null;
 }): CodexChatRouting {
   // Remote Coven routing is unchanged by design; non-Codex harnesses never
-  // reach the Codex protocol machinery.
-  if (input.isSshRuntime || input.harness !== "codex") {
+  // reach the Codex protocol machinery. Codex local mode shares this path.
+  if (input.isSshRuntime || !isCodexFamilyHarness(input.harness)) {
     return fallback(null, null);
   }
   const report = input.report;
@@ -111,6 +112,12 @@ export function resolveCodexChatRouting(input: {
   // Belt and braces: every direct launch needs the probed `--json` contract,
   // independent of what a (registry-refreshed) schema chose to require.
   if (report.capabilities.jsonEvents !== true) {
+    return fallback("capability-mismatch", report);
+  }
+  // Codex local mode reaches its server only through `-c` overrides; a CLI
+  // that cannot take them on this turn cannot run it locally at all.
+  if (isLocalCodexHarness(input.harness) &&
+    (report.capabilities.config !== true || (input.resumeSessionId != null && report.capabilities.resumeConfig !== true))) {
     return fallback("capability-mismatch", report);
   }
   if (input.resumeSessionId != null) {
@@ -143,7 +150,7 @@ export async function prepareCodexChatRouting(input: {
   probe: () => Promise<CodexRuntimeReport | null>;
   resolveSources: () => Promise<CodexSchemaSources | null>;
 }): Promise<CodexChatRouting> {
-  if (input.isSshRuntime || input.harness !== "codex") {
+  if (input.isSshRuntime || !isCodexFamilyHarness(input.harness)) {
     return resolveCodexChatRouting({
       harness: input.harness,
       isSshRuntime: input.isSshRuntime,
@@ -179,6 +186,9 @@ export function buildCodexExecArgs(input: {
   /** Validated Thinking pick (`model_reasoning_effort` level, #5905); null
    *  leaves the CLI's own default in place. */
   reasoningEffort?: string | null;
+  /** Codex local mode's `-c` overrides from the local preflight, passed on
+   *  fresh and resumed turns alike so a session never leaves its server. */
+  localConfigArgs?: readonly string[];
 }): string[] {
   const caps = input.capabilities;
   // Routing already refused unsafe resume tokens; this second check keeps the
@@ -197,6 +207,7 @@ export function buildCodexExecArgs(input: {
     const a = ["exec", "resume", resumeSessionId, "--json"];
     if (input.model && caps.resumeModel) a.push("--model", input.model);
     if (reasoningEffort && caps.resumeConfig) a.push("-c", `model_reasoning_effort=${reasoningEffort}`);
+    if (input.localConfigArgs?.length && caps.resumeConfig) a.push(...input.localConfigArgs);
     if (caps.resumeSkipGitRepoCheck) a.push("--skip-git-repo-check");
     a.push("--", input.prompt);
     return a;
@@ -204,6 +215,7 @@ export function buildCodexExecArgs(input: {
   const a = ["exec", "--json"];
   if (input.model && caps.model) a.push("--model", input.model);
   if (reasoningEffort && caps.config) a.push("-c", `model_reasoning_effort=${reasoningEffort}`);
+  if (input.localConfigArgs?.length && caps.config) a.push(...input.localConfigArgs);
   // Cave's Read-only chip maps onto Codex's native sandbox exactly like
   // `coven run --permission read-only` does; "full" stays implicit so the
   // harness keeps its own default sandbox rather than being widened.

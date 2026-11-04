@@ -180,10 +180,10 @@ assert.ok(
 );
 const sidecarMeasurement = declaredSidecarBudget.measurement;
 const measuredPlatforms = ["windows", "ubuntu", "macos"];
-assert.equal(sidecarMeasurement.on, "2026-10-15", "the release-candidate budget review date must not drift");
+assert.equal(sidecarMeasurement.on, "2026-10-25", "the release-candidate budget review date must not drift");
 assert.equal(
   sidecarMeasurement.reference,
-  "v0.5.14-rc.2 / GitHub Actions run 38773009779",
+  "v0.5.15-rc.1 / GitHub Actions run 40147550311",
   "the release-candidate budget must retain its governing evidence reference",
 );
 const governingMeasurement = Math.max(
@@ -238,39 +238,49 @@ assert.equal(
   true,
   "the governing Windows count must be identified as observed candidate evidence",
 );
+const releaseDelta = sidecarMeasurement.releaseDelta;
+assert.equal(releaseDelta.nextTraceFileCount, 8, "the release delta must retain the measured Next trace growth");
 assert.equal(
-  sidecarMeasurement.releaseDelta.nextTraceFileCount,
-  4,
-  "the release delta must retain the measured Next trace growth",
-);
-assert.equal(
-  sidecarMeasurement.releaseDelta.tracedPackageCountChanged,
+  releaseDelta.bundledNodeModulesChanged,
   false,
   "the release delta must not be reclassified as dependency-subtree growth",
 );
+assert.deepEqual(
+  releaseDelta.tracedPackageInputs,
+  { baseline: { windows: 26, ubuntu: 27, macos: 26 }, measured: { windows: 25, ubuntu: 25, macos: 25 } },
+  "the traced-package input counts must retain their observed values",
+);
+assert.deepEqual(
+  releaseDelta.baseline,
+  { windows: 8736, ubuntu: 8732, macos: 8728 },
+  "the release delta must start from the observed v0.5.14 release-run counts",
+);
 for (const platform of measuredPlatforms) {
   assert.equal(
-    sidecarMeasurement[platform] - sidecarMeasurement.releaseDelta.baseline[platform],
-    sidecarMeasurement.releaseDelta.fileCount,
-    `${platform} must move by exactly the reviewed v0.5.13 → v0.5.14 candidate delta`,
+    sidecarMeasurement[platform] - releaseDelta.baseline[platform],
+    releaseDelta.platformDeltas[platform],
+    `${platform} must move by exactly its recorded v0.5.14 → v0.5.15 candidate delta`,
   );
 }
 assert.deepEqual(
-  sidecarMeasurement.releaseDelta.inventoryDeltas,
+  releaseDelta.inventoryDeltas,
   {
-    ".next/server/chunks": 1694,
-    ".next/static/chunks": 267,
-    ".next/server/app": 20,
-    ".next/server/instrumentation.js": 1,
-    "marketplace/payloads.json": 1,
-    "marketplace/plugins": -785,
+    ".next/server/chunks": 107,
+    ".next/server/app": 40,
+    ".next/static/chunks": 13,
+    "public/marketplace-logos": 1,
   },
   "the release delta must retain the reviewed per-directory inventory counts",
 );
 assert.equal(
-  Object.values(sidecarMeasurement.releaseDelta.inventoryDeltas).reduce((total, count) => total + count, 0),
-  sidecarMeasurement.releaseDelta.fileCount,
+  Object.values(releaseDelta.inventoryDeltas).reduce((total, count) => total + count, 0),
+  releaseDelta.platformDeltas[releaseDelta.inventoryPlatform],
   "the same-machine inventory diff must account for the complete file-count delta",
+);
+assert.equal(
+  releaseDelta.routes.added.length - releaseDelta.routes.removed.length,
+  releaseDelta.nextTraceFileCount,
+  "the added and removed routes must account for the Next trace growth",
 );
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 for (const runtimeFile of [

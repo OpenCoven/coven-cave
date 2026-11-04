@@ -24,6 +24,7 @@ for (const [name, platform, status, expected] of [
   ["native iOS", "ios", localOffline, "skip"],
   ["native Android", "android", localOffline, "skip"],
   ["defensive non-local offline", "desktop", { kind: "offline", targetMode: "hub" }, "skip"],
+  ["server already starting the daemon", "desktop", { kind: "transitioning", state: "starting", targetMode: "local" }, "skip"],
 ]) {
   assert.equal(
     daemonDesktopAutoStartDecision({ platform, firstStatus: status }),
@@ -184,6 +185,23 @@ function response(ok, payload) {
   assert.deepEqual(refreshes, [undefined]);
 }
 
+for (const code of ["mutation_in_flight", "duplicate_after_timeout"]) {
+  // The mutation owner refused because a mutation is running or just timed
+  // out (#6298). Automatic recovery waits for it; it is not a failure to show.
+  const errors = [];
+  const refreshes = [];
+  const outcome = await runWorkspaceDaemonStart({
+    automatic: true,
+    fetchImpl: async () => response(false, { ok: false, code, error: "wait" }),
+    dismissError: () => assert.fail("deferred recovery has no prior error to dismiss"),
+    reportError: (message) => errors.push(message),
+    refreshStatus: async (opts) => { refreshes.push(opts); },
+  });
+  assert.equal(outcome, "deferred", `${code} defers automatic recovery`);
+  assert.deepEqual(errors, [], `${code} stays out of the error banner`);
+  assert.deepEqual(refreshes, [undefined]);
+}
+
 
 // ── Opt-in auto-restart (cave-bqywj) ────────────────────────────────────────
 // Boot auto-start has always been one-shot: the coordinator consumes its
@@ -209,6 +227,17 @@ function restartHarness({ enabled = true, startClock = 0 } = {}) {
   };
 }
 
+{
+  // A server-side start, recovery or stop in flight is not an absence (#6298).
+  const h = restartHarness();
+  h.coordinator.observePlatform("desktop");
+  h.coordinator.observeStatus(RUNNING);
+  h.advance(60_000);
+  h.coordinator.observeStatus({ kind: "transitioning", state: "recovering", targetMode: "local" });
+  assert.deepEqual(h.starts, [], "a daemon the server is already recovering is not started again");
+  h.coordinator.observeStatus(OFFLINE);
+  assert.equal(h.starts.length, 1, "a later definitive offline still restarts");
+}
 {
   // The behaviour the bead exists for: offline mid-session gets relaunched.
   const h = restartHarness();

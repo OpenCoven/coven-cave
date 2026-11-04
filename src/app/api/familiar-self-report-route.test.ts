@@ -14,9 +14,14 @@ const routeSource = readFileSync(
 
 describe("reflection auto-archive wiring", () => {
   it("archives the reflected thread through the shared policy helper", () => {
+    const archiveHelper = routeSource.slice(
+      routeSource.indexOf("async function maybeAutoArchiveReflectedThread"),
+      routeSource.indexOf("async function isReviewRunOf"),
+    );
+    assert.doesNotMatch(archiveHelper, /loadState/, "archive policy must remain inside its atomic mutator");
     assert.doesNotMatch(
       routeSource,
-      /shouldAutoArchiveOnReflection|loadState/,
+      /shouldAutoArchiveOnReflection/,
       "route must not make a stale state/policy decision before the atomic mutator",
     );
     assert.match(

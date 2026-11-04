@@ -41,7 +41,7 @@ populated session.
 
 ## How to capture
 
-1. `pnpm tauri dev` (native window — preferred) or `pnpm dev` (browser fallback)
+1. `bash scripts/dev-app.sh` (native window, preferred; see `AGENTS.md`) or `pnpm dev` (browser fallback)
 2. Resize the window to the target dimensions
 3. Use the OS screenshot tool:
    - macOS: `⌘⇧4` then `space` then click the Cave window

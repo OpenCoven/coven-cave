@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "issue": 5764,
+  "base": "b7a8ad2f41c2482bd64886347c7099e297106baf",
+  "sourceState": "Rebased implementation commit; subsequent documentation-only receipt updates do not change tested product bytes.",
+  "buildId": "ukbio8raWS63ofFRQoE_o",
+  "sourceSha256": {
+    "src/components/chat-view-chunk-coalescing.test.ts": "04d1b2ac7b5cdcdbe3ca08d73f73cd60c840739e51be811462ceb94c0bb9d499",
+    "src/components/chat-view-polish-header-composer.test.ts": "a456258bb7de2b5316bc41e5e0af9827ffab227a0bbf9e9925ef47024db6d539",
+    "src/components/chat-view.tsx": "8918fb14616b8a7b10bdd5e670356aa46d2b6dfa07f8d18484191ac5875bd17e",
+    "src/components/workspace-session-delete.test.ts": "e0f0009bf936fa23e1460a43b61ed7457bca17a1fd1a786ba5927286bc6165ca",
+    "src/components/workspace.tsx": "3c18c1f9d2bdb884fdd7c8cc2bd6feba41049587746b014368a51cd95df8738b",
+    "src/lib/chat-live-generation-identity.test.ts": "2d3b950e2e105941fd88e982ef2ce96f27e7d20e4d47d1a4aaae4b76d2dbd9e4",
+    "src/lib/chat-transcript-load.test.ts": "999f0e9c28527ed2d86a96a0341888f2ceadf5f8deb3b161dfdc9418c11b83bc",
+    "src/lib/chat-turn-state.ts": "1677adf56b1dd78ec9b91e49c976106c438fc59b4a7933d5d5503280a277656c",
+    "src/lib/chat/history-load.test.ts": "13374cdcdffc04cd25b6902de0e28ad152dc4d506836399a96e58e0810b909fc",
+    "src/lib/chat/history-load.ts": "f55e13a80414c25aa702edb234693b82d254acadb7dc923dafe682af93768519",
+    "src/lib/chat/history-sources.test.ts": "862ee9113ccf86e24a6f73feb07829ef6e97be4a735f5a9e84f48eb528de5a96",
+    "src/lib/chat/history-sources.ts": "ea3121b8af9ea511ae4005d14560eab8ed35f18f56210ac22cb13df49acddaa9",
+    "src/lib/conversation-cache.test.ts": "e513d427df34403d1c09599d0323caae8fd52aa12a6069cd7cf27165235352b7",
+    "src/lib/conversation-cache.ts": "2e58b70233e1251f133b74fa7f06bc9721034dcb16326571c3ee11f36d4a71f7",
+    "src/lib/live-chat-generations.test.ts": "2518ac7d2245c94714e48e97ea36abda90ed292dc5a0771ace8b875a076ec8a7",
+    "src/lib/live-chat-generations.ts": "4ab11da9121b64ecc905a8cb09a9ea83dabb5bf4e0765adace174f952ae30808",
+    "src/lib/offline-cache.test.ts": "e4b63c6ab9a81a9badaa0e24637434adf164542340484aa9a9c98910a499a388",
+    "src/lib/offline-cache.ts": "f61b6a7030f76a9d3cc0ded2989f6efdb7ef2e87b8042bc839b14de4049125a4",
+    "src/lib/project-access-events.ts": "8e6fd15162f841e4501237948749937050119d3d417da9ba6666daeb5c49a8c5",
+    "src/lib/tool-output-fetch.ts": "0dee01b8d2b24e1d0360744a72db2146e2aed681ddc4b6ab82b05f2f5e73409a",
+    "src/lib/use-tool-output.test.ts": "f62432ed408f8e44338c1330809e181431ac1807b2715900707f4a7e9a4b5a85",
+    "src/lib/use-tool-output.ts": "b337ca0c859677a1164b530944024467c7c0b825f12d060c5ddb0c9bba93b248",
+    "tests/chat-activity-acceptance.spec.ts": "69ab5d6d2a8ca4383f10903b27a966d30d0c6f6b1f9460ecbcfd1adf12dc5501",
+    "src/lib/chat-access-invalidation.ts": "0da269bdca371cadf0810b8934d44d8f622dd85b04fe5b20759aa7464ebf57e5"
+  },
+  "productionBrowser": {
+    "command": "CI=true COVEN_CAVE_PORT=49900 pnpm exec playwright test tests/chat-activity-acceptance.spec.ts --project=desktop --workers=1 --retries=0 --reporter=line",
+    "passed": 14,
+    "failed": 0,
+    "retries": 0,
+    "duration": "4.0m",
+    "classification": "Production web build, controlled route/provider responses; not real provider or native qualification"
+  },
+  "focused": {
+    "historyLoad": 23,
+    "liveGenerationRegistry": 16,
+    "liveGenerationIdentity": 5,
+    "conversationCache": 32,
+    "streamBuffer": 11,
+    "streamRoute": 5,
+    "hfrExportProjection": 17,
+    "toolOutputLookup": 4,
+    "historySources": 4
+  },
+  "gates": {
+    "lint": "passed final full run",
+    "testsWired": "passed 2130 files after rebase",
+    "typecheck": "passed final standalone and production build",
+    "build": "passed final production Playwright rebuild, including typecheck and bundle budgets",
+    "app": "passed full rebase run: 1477 test files, audited per-child scratch isolation",
+    "api": "passed full rebase run: 538 test files, audited per-child scratch isolation"
+  },
+  "omissions": [
+    "Physical remote ingress and broader delegated authorization unqualified (#6072)",
+    "Packaged/native restart purge and real keychain behavior not exercised",
+    "PR #6190 open; no merge, release or complete #5764 claim"
+  ],
+  "realClientRecovery": {
+    "passed": true,
+    "buildId": "ukbio8raWS63ofFRQoE_o",
+    "counterAfterInterruption": 1,
+    "counterAfterReload": 1,
+    "providerRequests": 1,
+    "negativeControl": {
+      "counter": 2,
+      "repeatedInvocationDetected": true
+    },
+    "uiReceipt": "browser-recovery-observation.json"
+  },
+  "managedAccessAndExpiry": {
+    "passed": true,
+    "receipt": "managed-access-expiry.json",
+    "buildId": "ukbio8raWS63ofFRQoE_o",
+    "finishedBufferExpiryVerified": true,
+    "activeStreamClosedOnRevocation": true,
+    "providerRequests": 1,
+    "counterAfterExpiryAndRestart": 1
+  },
+  "verificationEnvironmentAudit": {
+    "fixtures": 14,
+    "passed": 14,
+    "productOrAssertionsChanged": false,
+    "log": "home-fixtures.audit.log",
+    "note": "Explicit fixture list and wrapper are retained in verification.md; non-listed children keep isolated COVEN_HOME."
+  },
+  "qualifiedCodeHead": "c94dd4bbe00631a489190519cdc1d7c3648220c1"
+}

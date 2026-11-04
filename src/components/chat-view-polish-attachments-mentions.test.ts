@@ -314,13 +314,13 @@ assert.match(
 );
 assert.match(
   mentionSendSource,
-  /const resolvedFamiliarWorkspace = !sshRuntime\s*\n\s*\? await resolveFamiliarWorkspace\(body\.familiarId\)\s*\n\s*: undefined;/,
-  "Mention roots must come from the validated familiar workspace, not a client-supplied path",
+  /await resolveLocalRuntimeCwd\(authorizedProjectRoot, \{\s*rootAuthority: "authorized-project"/,
+  "Mention roots must come from the server-authorized runtime cwd after the project-access gate, not a client-supplied path",
 );
 assert.match(
   mentionSendSource,
-  /const mentionedFiles = imagesSupported\s*\n\s*\? await resolveMentionedFiles\(\s*\n\s*body\.mentionedFiles,\s*\n\s*resolvedFamiliarWorkspace,/,
-  "Mentions are only delivered to harnesses that can Read this machine's filesystem, against the validated familiar workspace",
+  /const mentionedFiles = imagesSupported\s*\n\s*\? await resolveMentionedFiles\(\s*\n\s*body\.mentionedFiles,\s*\n\s*cwd,\s*\n\s*body\.mentionedFilesRoot,/,
+  "Mentions use the authorized cwd; the picker root only checks consistency, and only local-file-capable harnesses receive paths",
 );
 
 // The first reply suggestion remains available as a lightweight placeholder

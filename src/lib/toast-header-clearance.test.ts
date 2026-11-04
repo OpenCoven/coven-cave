@@ -49,8 +49,19 @@ assert.equal(
   "subpixel edges round up so the gap never shrinks below the token",
 );
 
-for (const shared of [".ui-surface-toolbar", ".ui-view-header", ".surface-compact-header", ".gh-compact-header"]) {
+for (const shared of [".ui-surface-toolbar", ".ui-view-header", ".surface-compact-header", ".gh-compact-header", ".grimoire-graph-toolbar"]) {
   assert.ok(TOAST_CLEARANCE_HEADER_SELECTOR.split(", ").includes(shared), `${shared} is measured`);
 }
+
+// #6142: phone header wrapping + the daemon banner put Relations below the
+// ordinary top-third cutoff. It remains primary chrome, not a lower split.
+const phoneColumn = { left: 12, right: 381 };
+const phoneToolbar = { left: 0, right: 393, top: 278, bottom: 349 };
+assert.equal(toastHeaderClearance(phoneColumn, [phoneToolbar], 727), null,
+  "ordinary bands retain the top-third cutoff");
+assert.equal(toastHeaderClearance(phoneColumn, [{ ...phoneToolbar, primaryToolbar: true }], 727), 357,
+  "the primary Relations toolbar clears a toast below a tall phone header");
+assert.equal(toastHeaderClearance(phoneColumn, [{ ...phoneToolbar, top: 400, bottom: 471, primaryToolbar: true }], 727), null,
+  "even a primary toolbar in a lower pane cannot push the toast offscreen");
 
 console.log("toast-header-clearance.test.ts: ok");

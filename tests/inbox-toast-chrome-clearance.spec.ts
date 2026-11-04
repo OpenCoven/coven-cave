@@ -245,3 +245,64 @@ test("a toast leaves a surface header's actions usable", async ({ page }, testIn
     expect(hit.matched, `elementFromPoint at "${name}" resolved to ${hit.describe}`).toBe(true);
   }
 });
+
+// #6142: the Relations toolbar sits below the surface header. A first-run
+// milestone covered Explore even though the shared header itself was clear.
+test("a toast leaves the Memories Relations toolbar usable", async ({ page }, testInfo) => {
+  await page.context().addCookies([
+    { name: "cave_onboarding_dismissed", value: "1", domain: "127.0.0.1", path: "/" },
+  ]);
+  await page.addInitScript(() => {
+    localStorage.setItem("cave:onboarding:dismissed", "1");
+    localStorage.setItem("cave:shell:right-chat-open", "0");
+  });
+  await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars: FAMILIARS } }));
+  await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+  await page.route("**/api/knowledge", (route) => route.fulfill({ json: { ok: true, entries: [] } }));
+  await page.route("**/api/knowledge/collections", (route) => route.fulfill({ json: { ok: true, collections: [] } }));
+  await page.route("**/api/memory", (route) => route.fulfill({ json: { ok: true, entries: [] } }));
+  await page.route("**/api/journal**", (route) => route.fulfill({ json: { ok: true, days: [] } }));
+  await page.route("**/api/grimoire/graph**", (route) => route.fulfill({ json: { ok: true, nodes: [], edges: [] } }));
+  await page.route("**/api/milestones**", (route) => route.fulfill({ json: { ok: true, awarded: [], keys: [] } }));
+  let releaseMilestone!: () => void;
+  const milestoneReleased = new Promise<void>((resolve) => { releaseMilestone = resolve; });
+  let streamed = false;
+  await page.route("**/api/inbox/stream**", async (route) => {
+    if (streamed) return route.fulfill({ status: 204, body: "" });
+    streamed = true;
+    await milestoneReleased;
+    return route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
+      body: `data: ${JSON.stringify({ type: "snapshot", items: [] })}\n\n` +
+        `data: ${JSON.stringify({ type: "created", item: MILESTONE_ITEM })}\n\n`,
+    });
+  });
+  await page.goto("/?mode=grimoire");
+  await page.getByRole("button", { name: "Relations", exact: true }).click();
+  const explore = page.getByRole("button", { name: "Explore", exact: true });
+  await expect(explore).toBeVisible();
+  releaseMilestone();
+  const toast = page.locator(TOAST, { hasText: "Mission complete" }).first();
+  await expect(toast).toBeVisible();
+  // Keep the toast present: expiration must not turn an obstruction into a
+  // passing geometric check. This also checks its own controls remain usable.
+  await toast.getByRole("button", { name: /^Dismiss:/ }).focus();
+  await expect.poll(async () => {
+    const [toastBox, toolbarBox] = await Promise.all([
+      toast.boundingBox(), page.locator(".grimoire-graph-toolbar").boundingBox(),
+    ]);
+    if (!toastBox || !toolbarBox) return false;
+    return toastBox.y >= toolbarBox.y + toolbarBox.height;
+  }, { message: "the toast must start below the entire Relations toolbar" }).toBe(true);
+  const box = await explore.boundingBox();
+  if (!box) throw new Error("Explore did not lay out");
+  const hit = await hitTest(page, box.x + box.width / 2, box.y + box.height / 2, ".grimoire-graph-toolbar");
+  expect(hit.matched, `Explore hit target resolved to ${hit.describe}`).toBe(true);
+  await explore.click();
+  await expect(page.locator(".grimoire-graph-explorer")).toBeVisible();
+  await expect(toast).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("memories-relations-toast-clearance.png"), animations: "disabled" });
+  await toast.getByRole("button", { name: /^Dismiss:/ }).click();
+  await expect(toast).toBeHidden();
+});

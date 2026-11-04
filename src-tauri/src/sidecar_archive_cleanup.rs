@@ -44,12 +44,17 @@ pub(crate) fn cleanup_stale_sidecar_runtimes(current: &Path) {
     let Ok(entries) = fs::read_dir(cache_root) else {
         return;
     };
+    let mut complete = Vec::new();
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         let Ok(metadata) = fs::symlink_metadata(&path) else {
             continue;
         };
-        if !metadata.is_dir() || metadata.file_type().is_symlink() || path == current {
+        if !metadata.is_dir()
+            || metadata.file_type().is_symlink()
+            || path == current
+            || entry.file_name() == LEASE_DIR_NAME
+        {
             continue;
         }
         if entry.file_name().to_string_lossy().starts_with(".extract-") {
@@ -64,18 +69,17 @@ pub(crate) fn cleanup_stale_sidecar_runtimes(current: &Path) {
             }
             continue;
         }
-        // A complete content-addressed generation may still be serving an
-        // older concurrently running app. Without process leases there is no
-        // safe startup-time proof that it is unused, so explicit uninstall
-        // owns complete-generation reclamation.
-        if !has_complete_marker(&path) {
-            if let Err(error) = remove_cache_path(&path) {
-                log::warn!(
-                    "[cave] could not remove incomplete sidecar cache {}: {}",
-                    path.display(),
-                    error
-                );
-            }
+        if has_complete_marker(&path) {
+            complete.push(path);
+        } else if let Err(error) = remove_cache_path(&path) {
+            log::warn!(
+                "[cave] could not remove incomplete sidecar cache {}: {}",
+                path.display(),
+                error
+            );
         }
     }
+    // Complete generations are retired only through process leases: keep the
+    // current one and the newest rollback copy, plus any a live app holds.
+    retire_complete_generations(cache_root, current, complete, &remove_cache_path);
 }

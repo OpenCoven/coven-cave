@@ -36,8 +36,16 @@ assert.match(
   "Workspace automatic and manual starts should share one flow with explicit intent",
 );
 
-assert.match(
-  workspace,
-  /cta: \{[\s\S]*label: "Start daemon"[\s\S]*onClick: \(\) => \{[\s\S]*void startDaemon\(\)/,
-  "Workspace offline banner should use the shared daemon start handler",
-);
+const chat = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+for (const id of ["daemon-offline", "daemon-start-error"]) {
+  const banner = workspace.slice(workspace.indexOf(`id: "${id}"`));
+  assert.match(banner.slice(0, 650), /label: "Open setup",\s*onClick: openDaemonSetup/,
+    `${id} offers guided recovery instead of a dead end`);
+}
+assert.match(workspace, /const openDaemonSetup = useCallback\(\(\) => \{\s*onboardingOriginRef.current = "banner";\s*setOnboardingOpen\(true\)/,
+  "recovery opens the mounted setup dialog without navigating away from chat");
+const metaRecovery = chat.slice(chat.indexOf("function MetaLineStartDaemon"), chat.indexOf("function MetaLineElapsed"));
+assert.match(metaRecovery, /useSetupOpener\("banner"\)/);
+assert.match(metaRecovery, /onClick=\{openSetup\}/);
+assert.match(metaRecovery, /\{setupHost\}/, "chat recovery works even without a Workspace host");
+assert.doesNotMatch(metaRecovery, /fetch\(/, "chat must not silently discard a failed start response");
