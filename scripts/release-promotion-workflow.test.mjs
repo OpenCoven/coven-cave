@@ -120,30 +120,48 @@ test("candidate validation requires signed tag provenance and calls every deferr
   // stalled apt mirror can no longer cancel a release shard (#6290).
   const releaseForImage = await workflow("release.yml");
   const imageJobs = [
-    [full.jobs.e2e, "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1"],
-    [full.jobs["e2e-agentic"], "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps"],
-    [releaseForImage.jobs["release-e2e"], "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1"],
-    [releaseForImage.jobs["release-e2e-agentic"], "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps"],
+    [full.jobs.e2e, "--shard=${{ matrix.shard }}/6 --workers=1"],
+    [full.jobs["e2e-agentic"], "tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps"],
+    [releaseForImage.jobs["release-e2e"], "--shard=${{ matrix.shard }}/6 --workers=1"],
+    [releaseForImage.jobs["release-e2e-agentic"], "tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps"],
   ];
   for (const [job, command] of imageJobs) {
     const runs = job.steps.map((step) => step.run ?? "");
     assert.ok(runs.includes("bash scripts/playwright-ci-image.sh pull"), `${job.name} pulls the Playwright image`);
-    assert.ok(runs.includes(`bash scripts/playwright-ci-image.sh run ${command}`), `${job.name} runs its tests in the image`);
+    const executionCommand = `node "$RUNNER_TEMP/playwright-ci-evidence.mjs" ${command}`;
+    assert.ok(runs.includes(executionCommand), `${job.name} requires execution evidence from the image`);
     assert.ok(
-      runs.indexOf("bash scripts/playwright-ci-image.sh pull") < runs.indexOf(`bash scripts/playwright-ci-image.sh run ${command}`),
+      runs.indexOf("bash scripts/playwright-ci-image.sh pull") < runs.indexOf(executionCommand),
       `${job.name} pulls before it runs`,
     );
     assert.ok(!runs.some((run) => /playwright install/.test(run)), `${job.name} never installs browsers with apt`);
     const setupNode = job.steps.find((step) => String(step.uses ?? "").startsWith("actions/setup-node@"));
     assert.equal(setupNode?.with?.cache, undefined, `${job.name} keeps no pnpm cache, so the ref it executes cannot poison main's cache`);
+    const evidence = job.steps.find(step => step.name === "Preserve Playwright execution evidence");
+    assert.equal(evidence?.if, "always()", `${job.name} preserves failed and zero-test evidence`);
+    assert.equal(evidence?.with?.path, "playwright-evidence/");
+    assert.equal(evidence?.with?.["retention-days"], 7);
+    assert.match(evidence?.with?.name, /github\.run_id/);
+    assert.match(evidence?.with?.name, /github\.run_attempt/);
+    const loader = job.steps.find(step => step.name === "Load evidence checker from the workflow revision");
+    assert.equal(loader?.if, undefined, "historical candidate refs cannot skip the workflow checker");
+    assert.equal(loader?.["continue-on-error"], undefined);
+    assert.deepEqual(loader?.env, { GH_TOKEN: "${{ github.token }}" });
+    assert.match(loader?.run, /set -euo pipefail/);
+    assert.match(loader?.run, /GITHUB_WORKFLOW_SHA.*\^\[0-9a-f\]\{40\}\$/);
+    assert.match(loader?.run, /timeout --kill-after=5s 60s gh api/);
+    assert.match(loader?.run, /contents\/scripts\/playwright-ci-evidence\.mjs\?ref=\$GITHUB_WORKFLOW_SHA/);
+    assert.ok(runs.indexOf(loader.run) < runs.indexOf(executionCommand));
+    const execution = job.steps.find(step => step.run === executionCommand);
+    assert.equal(execution["continue-on-error"], undefined, "execution evidence cannot be advisory");
   }
   for (const file of ["full-validation.yml", "release.yml"]) {
     const text = await readFile(new URL(`../.github/workflows/${file}`, import.meta.url), "utf8");
     assert.doesNotMatch(text, /playwright install --with-deps/, `${file} no longer installs browsers with apt (#6290)`);
   }
-  assert.equal(full.jobs.e2e.name, "Validate candidate E2E (${{ matrix.shard }}/8)");
+  assert.equal(full.jobs.e2e.name, "Validate candidate E2E (${{ matrix.shard }}/6)");
   assert.equal(full.jobs.e2e.strategy["fail-fast"], false);
-  assert.deepEqual(full.jobs.e2e.strategy.matrix.shard, [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(full.jobs.e2e.strategy.matrix.shard, [1, 2, 3, 4, 5, 6]);
   assert.equal(full.jobs.e2e["timeout-minutes"], 30);
   const agenticE2e = full.jobs["e2e-agentic"];
   assert.equal(agenticE2e.name, "Validate candidate E2E (agentic)");
@@ -155,7 +173,7 @@ test("candidate validation requires signed tag provenance and calls every deferr
     agenticE2e.steps.some(
       (step) =>
         step.run ===
-        "bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+        'node "$RUNNER_TEMP/playwright-ci-evidence.mjs" tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps',
     ),
     "candidate E2E retains flag-enabled agentic coverage in an isolated job",
   );
@@ -221,14 +239,14 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
     /node scripts\/release-promotion\.mjs release/,
   );
   const releaseE2e = release.jobs["release-e2e"];
-  assert.equal(releaseE2e.name, "Validate release E2E (${{ matrix.shard }}/8)");
+  assert.equal(releaseE2e.name, "Validate release E2E (${{ matrix.shard }}/6)");
   assert.equal(releaseE2e.strategy["fail-fast"], false);
-  assert.deepEqual(releaseE2e.strategy.matrix.shard, [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(releaseE2e.strategy.matrix.shard, [1, 2, 3, 4, 5, 6]);
   assert.ok(
     releaseE2e.steps.some(
       (step) =>
         step.run ===
-        "bash scripts/playwright-ci-image.sh run pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1",
+        'node "$RUNNER_TEMP/playwright-ci-evidence.mjs" --shard=${{ matrix.shard }}/6 --workers=1',
     ),
     "final release E2E isolates each worker behind its own dev server",
   );
@@ -240,7 +258,7 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
     releaseAgentic.steps.some(
       (step) =>
         step.run ===
-        "bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+        'node "$RUNNER_TEMP/playwright-ci-evidence.mjs" tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps',
     ),
   );
   assert.deepEqual(release.jobs["release-web-validation"].needs, [
