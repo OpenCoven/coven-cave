@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectPatInvalid, expectRateLimited,expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-review-anomalies");
@@ -77,8 +77,8 @@ test("POST /api/github/review with a reviewed head across upstream anomalies", a
     degraded: {
       "http-500": failsWith(502, "github error (500)"),
       "http-502": failsWith(502, "github error (502)"),
-      "auth-revoked": failsWith(502, "github error (401)"),
-      "rate-limit": failsWith(502, "github error (429)"),
+      "auth-revoked": expectPatInvalid,
+      "rate-limit": expectRateLimited,
       timeout: timesOut,
       network: failsWith(502, "fetch failed"),
       "malformed-json": expectErrorStatus(502),
@@ -106,8 +106,8 @@ test("POST /api/github/review without a head across upstream anomalies", async (
     degraded: {
       "http-500": expectAmbiguousWrite,
       "http-502": expectAmbiguousWrite,
-      "auth-revoked": failsWith(502, "Bad credentials"),
-      "rate-limit": failsWith(502, "API rate limit exceeded"),
+      "auth-revoked": expectPatInvalid,
+      "rate-limit": expectRateLimited,
       timeout: expectAmbiguousWrite,
       network: failsWith(502, "fetch failed"),
       "malformed-json": expectAmbiguousWrite,

@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { upstreamFailureAnswer } from "@/lib/server/upstream-answer";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import type { AsanaItem } from "@/lib/asana-tasks";
 import { resolveSecret } from "@/lib/vault";
@@ -117,10 +118,8 @@ export async function GET(req: NextRequest) {
       );
     }
     if (!meRes.ok) {
-      return NextResponse.json(
-        { ok: false, error: `Asana API error: HTTP ${meRes.status}`, items: [], configured: true },
-        { status: 502 },
-      );
+      const answer = upstreamFailureAnswer(meRes, "Asana", `Asana API error: HTTP ${meRes.status}`);
+      return NextResponse.json({ ...answer.body, items: [], configured: true }, { status: 502, headers: answer.headers });
     }
     const meData = (await meRes.json().catch(() => null)) as { data?: AsanaMe } | null;
     const me = meData?.data;

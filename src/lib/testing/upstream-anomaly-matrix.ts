@@ -219,3 +219,21 @@ export const expectAmbiguousWrite: DegradedExpectation = (outcome, anomaly) => {
   assert.equal(body?.dispatched, true);
   assert.match(String(body?.error), /Check before trying again/);
 };
+
+/** A revoked credential: the reconnect signal, and no generic upstream wording (#6371). */
+export const expectPatInvalid: DegradedExpectation = (outcome) => {
+  const body = outcome.body as { ok?: unknown; patInvalid?: unknown; error?: unknown };
+  assert.equal(body?.ok, false, outcome.text);
+  assert.equal(body?.patInvalid, true, `expected patInvalid, got ${outcome.text.slice(0, 200)}`);
+  assert.match(String(body?.error), /Reconnect/);
+};
+
+/** A rate limit: the host's stated wait in the body and as `Retry-After` (#6371). */
+export const expectRateLimited: DegradedExpectation = (outcome, anomaly) => {
+  const seconds = anomaly.kind === "rate-limit" ? anomaly.retryAfterSeconds : undefined;
+  const body = outcome.body as { ok?: unknown; rateLimited?: unknown; retryAfterSeconds?: unknown };
+  assert.equal(body?.ok, false, outcome.text);
+  assert.equal(body?.rateLimited, true, `expected rateLimited, got ${outcome.text.slice(0, 200)}`);
+  assert.equal(body?.retryAfterSeconds, seconds);
+  assert.equal(outcome.response?.headers.get("retry-after"), String(seconds));
+};

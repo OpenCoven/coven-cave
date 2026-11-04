@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectPatInvalid, expectRateLimited,expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-comments-anomalies");
@@ -108,8 +108,8 @@ test("GET /api/github/comments across upstream anomalies", async (t) => {
     degraded: {
       "http-500": failsWith(502, "github error (500)"),
       "http-502": failsWith(502, "github error (502)"),
-      "auth-revoked": failsWith(502, "github error (401)"),
-      "rate-limit": failsWith(502, "github error (429)"),
+      "auth-revoked": expectPatInvalid,
+      "rate-limit": expectRateLimited,
       timeout: (outcome, anomaly) => {
         expectErrorStatus(502)(outcome, anomaly);
         assert.match((outcome.body as { error: string }).error, /timeout/i);

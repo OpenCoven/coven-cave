@@ -135,7 +135,7 @@ test("GET /api/github/assigned across upstream anomalies", async (t) => {
         assert.equal(body.configured, true);
         assert.deepEqual(body.items, []);
       },
-      "rate-limit": allSourcesDown("GitHub API error: HTTP 429"),
+      "rate-limit": allSourcesDown("GitHub rate limit reached. Try again in 7 seconds."),
       timeout: unreachable,
       network: (outcome, anomaly) => {
         unreachable(outcome, anomaly);

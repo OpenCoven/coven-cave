@@ -11,7 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
-import { positiveInteger, upstreamDrift } from "@/lib/server/upstream-answer";
+import { positiveInteger, upstreamDrift, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
@@ -63,10 +63,7 @@ export async function GET(req: Request) {
       | (Record<string, unknown> & { workflow_runs?: unknown[] })
       | null;
     if (!res.ok || !data || typeof data !== "object") {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
     }
 
     // A by-id fetch returns the run object itself; the list wraps runs in

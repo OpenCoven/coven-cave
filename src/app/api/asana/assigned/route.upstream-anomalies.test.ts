@@ -11,7 +11,7 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectRateLimited,expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("asana-assigned-anomalies");
@@ -75,7 +75,7 @@ test("GET /api/asana/assigned across upstream anomalies", async (t) => {
       },
       "http-500": expectErrorStatus(502),
       "http-502": expectErrorStatus(502),
-      "rate-limit": expectErrorStatus(502),
+      "rate-limit": expectRateLimited,
       timeout: expectErrorStatus(502),
       network: expectErrorStatus(502),
       "malformed-json": emptyButConfigured,
