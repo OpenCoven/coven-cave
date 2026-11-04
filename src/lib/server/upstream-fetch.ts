@@ -187,11 +187,11 @@ function recordSuccess(health: UpstreamHostHealth): void {
   health.lastSuccessAt = clock();
 }
 
-function recordAnomaly(health: UpstreamHostHealth, anomaly: UpstreamAnomalyClass, status: number | null, coolForMs: number | null): void {
+function recordAnomaly(health: UpstreamHostHealth, anomaly: UpstreamAnomalyClass, status: number | null, coolForMs: number | null, countFailure = true): void {
   const now = clock();
   health.lastAnomaly = { class: anomaly, status, at: now };
   if (anomaly === "server-error" || anomaly === "timeout" || anomaly === "network" || anomaly === "rate-limited") {
-    health.consecutiveFailures += 1;
+    if (countFailure) health.consecutiveFailures += 1;
     health.state = "degraded";
   }
   if (anomaly === "timeout" || anomaly === "network") health.transportStreak += 1;
@@ -256,7 +256,9 @@ export function carriesUpstreamDeadline(signal: AbortSignal | null | undefined):
 }
 
 /** Observe transport failures as callers consume the body, without buffering or retrying it. */
-function observeResponseBody(response: Response, health: UpstreamHostHealth, callerSignal: AbortSignal | null): Response {
+function observeResponseBody(response: Response, health: UpstreamHostHealth, callerSignal: AbortSignal | null, previous: {
+  call: number; failures: number; transportStreak: number; countedFailure: boolean;
+}): Response {
   // Some injected transports intentionally return only the response fields they use.
   if (!(response instanceof Response) || !response.body) return response;
   const reader = response.body.getReader();
@@ -267,6 +269,7 @@ function observeResponseBody(response: Response, health: UpstreamHostHealth, cal
         const chunk = await reader.read();
         if (chunk.done) {
           settled = true;
+          if (response.ok && health.calls === previous.call) recordSuccess(health);
           controller.close();
         } else controller.enqueue(chunk.value);
       } catch (error) {
@@ -274,7 +277,19 @@ function observeResponseBody(response: Response, health: UpstreamHostHealth, cal
           settled = true;
           const anomaly = classifyUpstreamError(error);
           if (!(anomaly === "aborted" && callerSignal?.aborted)) {
-            recordAnomaly(health, anomaly, response.status, null);
+            // Headers alone cannot erase a preceding series of failed bodies.
+            // Do not restore older counters over a newer concurrent dispatch.
+            if (health.calls === previous.call) {
+              health.consecutiveFailures = Math.max(health.consecutiveFailures, previous.failures + Number(previous.countedFailure));
+              health.transportStreak = Math.max(health.transportStreak, previous.transportStreak);
+            }
+            const providerWait = health.coolingReason === "rate-limited" ? health.coolingUntil : null;
+            recordAnomaly(health, anomaly, response.status, null, !previous.countedFailure);
+            if (providerWait !== null && providerWait > clock() && providerWait >= (health.coolingUntil ?? 0)) {
+              health.coolingUntil = providerWait;
+              health.coolingReason = "rate-limited";
+              health.state = "cooling";
+            }
           }
         }
         controller.error(error);
@@ -332,6 +347,7 @@ export async function upstreamFetch(
   for (let attempt = 0; ; attempt += 1) {
     health.calls += 1;
     if (attempt > 0) health.retries += 1;
+    const call = health.calls;
     const deadline = AbortSignal.timeout(timeoutMs);
     const signal = callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline;
     deadlineSignals.add(signal);
@@ -350,12 +366,14 @@ export async function upstreamFetch(
     }
 
     const anomaly = classifyUpstreamResponse(response);
+    const previous = { call, failures: health.consecutiveFailures, transportStreak: health.transportStreak,
+      countedFailure: anomaly === "server-error" || anomaly === "rate-limited" };
     if (anomaly === "none" || anomaly === "not-found" || anomaly === "client-error" || anomaly === "unauthorized" || anomaly === "forbidden") {
       // A definite answer, good or bad, from a host that is up: the fault, if
       // any, is the caller's credential or request, not the upstream.
       if (anomaly === "none") recordSuccess(health);
       else health.lastAnomaly = { class: anomaly, status: response.status, at: clock() };
-      return observeResponseBody(response, health, callerSignal);
+      return observeResponseBody(response, health, callerSignal, previous);
     }
 
     if (anomaly === "rate-limited") {
@@ -367,7 +385,7 @@ export async function upstreamFetch(
         continue;
       }
       recordAnomaly(health, anomaly, response.status, retryAfterMs ?? UPSTREAM_FAILURE_COOLDOWN_MS);
-      return observeResponseBody(response, health, callerSignal);
+      return observeResponseBody(response, health, callerSignal, previous);
     }
 
     // server-error
@@ -377,6 +395,6 @@ export async function upstreamFetch(
       await wait(BACKOFF_BASE_MS * 2 ** attempt + Math.random() * 50, callerSignal ?? new AbortController().signal);
       continue;
     }
-    return observeResponseBody(response, health, callerSignal);
+    return observeResponseBody(response, health, callerSignal, previous);
   }
 }

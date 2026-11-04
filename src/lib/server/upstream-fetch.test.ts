@@ -330,3 +330,53 @@ test("a body reset records no payload and caller cancellation is not provider do
   await assert.rejects(canceled.text(), { name: "AbortError" });
   assert.equal(upstreamHealth("github").state, "healthy");
 });
+
+test("three post-header transport failures open the existing cooldown without double dispatch", async () => {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls++;
+    return new Response(new ReadableStream({ pull(controller) { controller.error(new DOMException("body deadline", "TimeoutError")); } }));
+  }) as typeof fetch;
+  for (let i = 0; i < 3; i++) {
+    const response = await upstreamFetch("github", URL_USER, {}, { fetchImpl });
+    await assert.rejects(response.text(), { name: "TimeoutError" });
+  }
+  assert.equal(calls, 3);
+  assert.equal(upstreamHealth("github").transportStreak, 3);
+  assert.equal(upstreamHealth("github").consecutiveFailures, 3);
+  assert.equal(upstreamHealth("github").state, "cooling");
+  await assert.rejects(upstreamFetch("github", URL_USER, {}, { fetchImpl }), UpstreamCooldownError);
+  assert.equal(calls, 3, "no automatic retry or cooldown dispatch");
+  now += 60_001;
+  const healthy = await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => new Response("healed") });
+  assert.equal(await healthy.text(), "healed");
+  assert.equal(upstreamHealth("github").transportStreak, 0);
+  assert.equal(upstreamHealth("github").state, "healthy");
+});
+
+
+test("an errored response body counts one failed attempt and never shortens a provider wait", async () => {
+  const broken = (status: number, headers = {}) => new Response(new ReadableStream({
+    pull(controller) { controller.error(new DOMException("body deadline", "TimeoutError")); },
+  }), { status, headers });
+  const failed = await upstreamFetch("github", URL_USER, {}, { retries: 0, fetchImpl: async () => broken(503) });
+  await assert.rejects(failed.text());
+  assert.equal(upstreamHealth("github").consecutiveFailures, 1);
+  resetUpstreamHealth();
+  const started = now;
+  let calls = 0;
+  for (let i = 0; i < 3; i++) {
+    const response = await upstreamFetch("github", URL_USER, {}, { retries: 0, honorCooldown: false, fetchImpl: async () => {
+      calls++;
+      return broken(429, { "retry-after": "7200" });
+    } });
+    await assert.rejects(response.text());
+    assert.equal(upstreamHealth("github").coolingUntil, started + 7_200_000);
+    assert.equal(upstreamHealth("github").coolingReason, "rate-limited");
+  }
+  assert.equal(upstreamHealth("github").consecutiveFailures, 3);
+  now += 3_600_001;
+  const held = await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => { calls++; return Response.json({}); } });
+  assert.equal(held.status, 429);
+  assert.equal(calls, 3);
+});
