@@ -240,7 +240,7 @@ describe("rankCollaborators", () => {
 });
 
 describe("buildProfileCardModel", () => {
-  it("builds familiar stat tiles: total, 30d, memories, active now", () => {
+  it("builds familiar stat tiles: 90d, 30d, memories, active now", () => {
     const rows = [
       session({ familiarId: "momo", updated_at: new Date(NOW - 60_000).toISOString() }), // live
       session({ familiarId: "momo", updated_at: iso(5) }),
@@ -255,11 +255,13 @@ describe("buildProfileCardModel", () => {
       memoryCount: 7,
       now: NOW,
     });
+    // #6357: the familiar card's headline count is the shared 90-day definition.
     assert.equal(model.sessionsTotal, 3);
+    assert.equal(model.sessionsTotalLabel, "coven sessions · 90d");
     assert.deepEqual(
       model.statTiles.map((tile) => [tile.label, tile.value]),
       [
-        ["total sessions", "3"],
+        ["coven sessions · 90d", "3"],
         ["sessions (30d)", "2"],
         ["memories", "7"],
         ["active now", "1"],

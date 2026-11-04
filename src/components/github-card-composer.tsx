@@ -24,6 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isUncertainGitHubWrite } from "@/lib/github-write-answer";
 import { Icon, type IconName } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -126,11 +127,6 @@ const TOOLS: Tool[] = [
   { title: "Link — [text](url)", icon: "ph:link", wrap: ["[", "](https://)"] },
   { title: "Attach a file reference", icon: "ph:paperclip", wrap: ["![", "](url)"] },
 ];
-
-/** GitHub may have acted: the route said so, or the connection to Cave dropped (#6369). */
-export function isUncertainWrite(status: number, data: Record<string, unknown> | null): boolean {
-  return data?.code === "ambiguous-write" || status === 0;
-}
 
 async function postJson(url: string, body: unknown): Promise<{ ok: boolean; status: number; data: Record<string, unknown> | null }> {
   try {
@@ -422,14 +418,18 @@ export function GitHubCardComposer({
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (!res.ok || !data?.ok) {
-        setFailure({ code: String(res.status), message: data?.error ?? "update failed" });
+        setFailure({
+          code: String(res.status),
+          message: data?.error ?? "update failed",
+          uncertain: isUncertainGitHubWrite(res.status, data),
+        });
         setPhase("error");
         return false;
       }
       onMutated();
       return true;
     } catch {
-      setFailure({ code: "0", message: "network error" });
+      setFailure({ code: "0", message: "network error", uncertain: true });
       setPhase("error");
       return false;
     } finally {
@@ -454,7 +454,7 @@ export function GitHubCardComposer({
     const { ok, status, data } = await postJson("/api/github/rerun", { repo, number, failedOnly });
     setBusy(null);
     if (!ok) {
-      setFailure({ code: String(status), message: (data?.error as string) ?? "re-run failed", uncertain: isUncertainWrite(status, data) });
+      setFailure({ code: String(status), message: (data?.error as string) ?? "re-run failed", uncertain: isUncertainGitHubWrite(status, data) });
       setPhase("error");
       return;
     }
@@ -467,7 +467,7 @@ export function GitHubCardComposer({
     const { ok, status, data } = await postJson("/api/github/resolve-thread", { threadId, resolved: true });
     setBusy(null);
     if (!ok) {
-      setFailure({ code: String(status), message: (data?.error as string) ?? "resolve failed", uncertain: isUncertainWrite(status, data) });
+      setFailure({ code: String(status), message: (data?.error as string) ?? "resolve failed", uncertain: isUncertainGitHubWrite(status, data) });
       setPhase("error");
       return;
     }
@@ -563,7 +563,7 @@ export function GitHubCardComposer({
         ...(delBranch && item.pull?.headRef ? { deleteBranch: true } : {}),
       });
       if (!ok) {
-        setFailure({ code: String(status), message: (data?.error as string) ?? "merge failed", uncertain: isUncertainWrite(status, data) });
+        setFailure({ code: String(status), message: (data?.error as string) ?? "merge failed", uncertain: isUncertainGitHubWrite(status, data) });
         setPhase("error");
         return;
       }
@@ -603,7 +603,7 @@ export function GitHubCardComposer({
       setFailure({
         code: String(result.status),
         message: (result.data?.error as string) ?? "send failed",
-        uncertain: isUncertainWrite(result.status, result.data),
+        uncertain: isUncertainGitHubWrite(result.status, result.data),
       });
       setPhase("error");
       return;

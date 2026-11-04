@@ -11,6 +11,7 @@ import test from "node:test";
 
 import { installUpstreamAnomalyFetch, type UpstreamHandler } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import {
+  expectUpstreamDrift,
   expectErrorStatus,
   runUpstreamAnomalyMatrix,
   type DegradedExpectation,
@@ -160,17 +161,7 @@ test("GET /api/github/item across upstream anomalies", async (t) => {
       },
       "malformed-json": githubError(502, 200),
       "empty-body": githubError(502, 200),
-      "schema-drift": (outcome) => {
-        // Any object is rendered as an item: no title, not a pull, and so no
-        // pull block even though one was asked for.
-        assert.equal(outcome.status, 200);
-        const body = outcome.body as Detail;
-        assert.equal(body.ok, true);
-        assert.equal(body.title, "");
-        assert.equal(body.number, 7);
-        assert.equal(body.isPull, false);
-        assert.equal(body.pull, null);
-      },
+      "schema-drift": expectUpstreamDrift,
     },
   });
 });

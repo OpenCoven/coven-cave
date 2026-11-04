@@ -191,6 +191,7 @@
   "packageManager": "pnpm@10.34.0",
   "pnpm": {
     "overrides": {
+      "twitter-text>@babel/runtime": "7.29.7",
       "@hpke/common": "1.10.0",
       "enhanced-resolve": "5.23.0",
       "nanoid@3": "3.3.18",

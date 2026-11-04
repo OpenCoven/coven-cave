@@ -3,8 +3,8 @@
 // The validator's contract is a verdict object, never a throw, and the pasted
 // token must never leave through it. The matrix proves the three honest
 // answers stay distinct: 401/403 is "rejected", any other failure names the
-// status or says GitHub was unreachable, and a 200 whose body is unusable is
-// still "valid" with the login left unknown rather than a false rejection.
+// status or says GitHub was unreachable, and a 200 that names no account is
+// unverified: not valid, and not worded as a rejection (#6368).
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -38,12 +38,8 @@ const unreachable = (outcome: MatrixOutcome) => {
   assert.deepEqual(verdict(outcome), { ok: false, error: "could not reach GitHub" });
 };
 
-const validWithoutLogin = (outcome: MatrixOutcome) => {
-  // GitHub accepted the token (200) but the identity body was unreadable:
-  // the verdict stays "valid" and the login is simply unknown.
-  assert.equal(verdict(outcome).ok, true);
-  assert.equal(verdict(outcome).login, undefined);
-  assert.equal(verdict(outcome).error, undefined);
+const unverified = (outcome: MatrixOutcome) => {
+  assert.deepEqual(verdict(outcome), { ok: false, error: "GitHub answered without identifying the token's account" });
 };
 
 test("validateGithubToken across upstream anomalies", async (t) => {
@@ -66,9 +62,9 @@ test("validateGithubToken across upstream anomalies", async (t) => {
       "rate-limit": rejectedWithStatus(429),
       timeout: unreachable,
       network: unreachable,
-      "malformed-json": validWithoutLogin,
-      "empty-body": validWithoutLogin,
-      "schema-drift": validWithoutLogin,
+      "malformed-json": unverified,
+      "empty-body": unverified,
+      "schema-drift": unverified,
     },
   });
 });

@@ -41,6 +41,24 @@ describe("fireGitHubAction", () => {
     expect(failure?.uncertain).toBe(true);
   });
 
+  it("marks an unreadable answer from Cave as uncertain, even a 200", async () => {
+    const answered = async (status: number, text: string) => {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(text, { status })));
+      return fireGitHubAction(comment);
+    };
+    for (const [status, text] of [[200, '{"ok":tr'], [200, ""], [200, "[]"], [502, ""], [500, "<html>"]] as const) {
+      expect(await answered(status, text), `${status} ${text}`).toEqual({
+        error: "Cave’s answer was cut off, so this may have gone through.",
+        uncertain: true,
+      });
+    }
+  });
+
+  it("keeps a plain 502 retryable, because Cave proved the write never left", async () => {
+    answer(502, { ok: false, error: "GitHub is unreachable" });
+    expect(await fireGitHubAction(comment)).toEqual({ error: "GitHub is unreachable", uncertain: false });
+  });
+
   it("keeps a definite refusal retryable", async () => {
     answer(403, { ok: false, error: "github error (403)" });
     expect(await fireGitHubAction(comment)).toEqual({ error: "github error (403)", uncertain: false });

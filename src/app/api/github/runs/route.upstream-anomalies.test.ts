@@ -2,14 +2,14 @@
 //
 // One read of a repo's recent workflow runs (or one run by id) through
 // upstreamFetch, no cache. Every upstream failure is a 502 naming the upstream status; an
-// unreadable 200 body is a 502 too. A drifted body is the soft spot: a
-// well-formed object without `workflow_runs` renders as "no runs", and in
-// by-id mode the drifted object itself is normalized into a run card.
+// unreadable 200 body is a 502 too, and so is a drifted one: no `workflow_runs`
+// is not "no runs", and a run without an id is not a run card (#6368).
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import {
+  expectUpstreamDrift,
   expectErrorStatus,
   runUpstreamAnomalyMatrix,
   type DegradedExpectation,
@@ -102,16 +102,12 @@ test("GET /api/github/runs across upstream anomalies", async (t) => {
       },
       "malformed-json": githubError(502, 200),
       "empty-body": githubError(502, 200),
-      "schema-drift": (outcome) => {
-        // An object without `workflow_runs` is "no runs", not an error.
-        assert.equal(outcome.status, 200);
-        assert.deepEqual(outcome.body, { ok: true, authed: true, runs: [] });
-      },
+      "schema-drift": expectUpstreamDrift,
     },
   });
 });
 
-test("by id: the exact run is fetched and a drifted body still becomes one card", async () => {
+test("by id: the exact run is fetched and a drifted body is refused", async () => {
   harness.heal("github");
   harness.reset();
   assert.deepEqual(await (await byId()).json(), { ok: true, authed: true, runs: [NORMALIZED] });
@@ -119,10 +115,9 @@ test("by id: the exact run is fetched and a drifted body still becomes one card"
   assert.match(harness.calls("github")[0].url, /\/actions\/runs\/1001$/);
 
   harness.inject("github", { kind: "schema-drift" });
-  const drifted = await (await byId()).json();
-  assert.equal(drifted.ok, true);
-  assert.equal(drifted.runs.length, 1, "by-id mode normalizes whatever object GitHub returned");
-  assert.equal(drifted.runs[0].id, 0);
+  const drifted = await byId();
+  assert.equal(drifted.status, 502);
+  assert.equal((await drifted.json()).code, "upstream-drift");
   harness.heal("github");
 });
 
