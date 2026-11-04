@@ -14,3 +14,16 @@ export function isUncertainGitHubWrite(status: number, data: unknown): boolean {
   if (status >= 400 && status < 500) return false;
   return typeof answer.ok !== "boolean";
 }
+
+/** Validate Cave's envelope before its fields become error UI or write confirmation. */
+export type GitHubWriteAnswer = { ok: boolean; error?: string; code?: string } & Record<string, unknown>;
+
+export async function readGitHubWriteAnswer(response: Response): Promise<GitHubWriteAnswer | null> {
+  const value: unknown = await response.json().catch(() => null);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const data = value as Record<string, unknown>;
+  if (typeof data.ok !== "boolean") return null;
+  if (data.error !== undefined && typeof data.error !== "string") return null;
+  if (data.code !== undefined && typeof data.code !== "string") return null;
+  return data as GitHubWriteAnswer;
+}
