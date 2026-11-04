@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  twitter-text>@babel/runtime: 7.29.7
   '@hpke/common': 1.10.0
   enhanced-resolve: 5.23.0
   nanoid@3: 3.3.18
@@ -320,6 +321,10 @@ packages:
 
   '@babel/runtime@7.29.10':
     resolution: {integrity: sha512-NpugTzbKgGrNe45Ui32cN8vCFFMxVtP/9rtfwv0nP5FRDAjvYBxJcLVpYA9mr1jxP6cnIT7x9LUzuDTbWYYNRA==}
+    engines: {node: '>=6.9.0'}
+
+  '@babel/runtime@7.29.7':
+    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
 
   '@babel/template@7.29.7':
@@ -1210,7 +1215,7 @@ packages:
     engines: {node: '>=24.18.0 <25'}
 
   '@opencoven/research@https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz':
-    resolution: {tarball: https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz}
+    resolution: {integrity: sha512-Q1t+fwEODkY3oY92jSlSfdCTQv6yKjnmvS7v8z6DHCTM3RKForiVwGQ7y3ysonCaNBqjlFgdYhNMMIJPf3Mdrg==, tarball: https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz}
     version: 0.2.0
     engines: {node: '>=24.18.0 <25'}
     peerDependencies:
@@ -3726,6 +3731,8 @@ snapshots:
       '@babel/types': 7.29.11
 
   '@babel/runtime@7.29.10': {}
+
+  '@babel/runtime@7.29.7': {}
 
   '@babel/template@7.29.7':
     dependencies:
@@ -7304,7 +7311,7 @@ snapshots:
 
   twitter-text@3.1.0:
     dependencies:
-      '@babel/runtime': 7.29.10
+      '@babel/runtime': 7.29.7
       core-js: 2.6.12
       punycode: 1.4.1
       twemoji-parser: 11.0.2
