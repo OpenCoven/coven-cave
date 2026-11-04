@@ -13,6 +13,7 @@ import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import {
+  expectPatInvalid, expectRateLimited,
   expectAmbiguousWrite,
   expectErrorStatus,
   runUpstreamAnomalyMatrix,
@@ -102,8 +103,8 @@ test("POST /api/github/issue across upstream anomalies", async (t) => {
     degraded: {
       "http-500": errorMessage(502, "github error (500)"),
       "http-502": errorMessage(502, "github error (502)"),
-      "auth-revoked": errorMessage(502, "github error (401)"),
-      "rate-limit": errorMessage(502, "github error (429)"),
+      "auth-revoked": expectPatInvalid,
+      "rate-limit": expectRateLimited,
       timeout: unreachable,
       network,
       "malformed-json": expectAmbiguousWrite,
@@ -132,8 +133,8 @@ test("PATCH /api/github/issue across upstream anomalies", async (t) => {
       // PATCH forwards GitHub's own message when the body carries one.
       "http-500": errorMessage(502, "Internal Server Error"),
       "http-502": errorMessage(502, "github error (502)"),
-      "auth-revoked": errorMessage(502, "Bad credentials"),
-      "rate-limit": errorMessage(502, "API rate limit exceeded"),
+      "auth-revoked": expectPatInvalid,
+      "rate-limit": expectRateLimited,
       timeout: unreachable,
       network,
       "malformed-json": expectAmbiguousWrite,

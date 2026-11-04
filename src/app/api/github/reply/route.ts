@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
-import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, resourceId, userLogin, writeThrew } from "@/lib/server/upstream-answer";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, resourceId, userLogin, writeThrew, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -89,10 +89,7 @@ export async function POST(req: Request) {
     // and a blind retry could post it twice (#6368).
     if (res.ok && !isRecord(data)) return ambiguousWrite("GitHub", "reply");
     if (!res.ok || !data || typeof data !== "object") {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
     }
     const d = data as Record<string, unknown>;
     const id = resourceId(d.id);

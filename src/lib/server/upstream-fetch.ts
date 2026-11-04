@@ -199,7 +199,11 @@ function recordAnomaly(health: UpstreamHostHealth, anomaly: UpstreamAnomalyClass
   let cooldown = coolForMs;
   if (cooldown === null && health.transportStreak >= UPSTREAM_FAILURES_BEFORE_COOLDOWN) cooldown = UPSTREAM_FAILURE_COOLDOWN_MS;
   if (cooldown !== null && cooldown > 0) {
-    health.coolingUntil = now + Math.min(cooldown, UPSTREAM_COOLDOWN_MAX_MS);
+    // Explicit provider waits are timestamps, not transport backoff. A time
+    // beyond numeric precision remains effectively closed, never an early retry.
+    health.coolingUntil = anomaly === "rate-limited"
+      ? Math.min(now + cooldown, Number.MAX_SAFE_INTEGER)
+      : now + Math.min(cooldown, UPSTREAM_COOLDOWN_MAX_MS);
     health.coolingReason = anomaly === "rate-limited" ? "rate-limited" : "unreachable";
     health.state = "cooling";
   }

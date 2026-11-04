@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { resetUpstreamHealth, upstreamFetch } from "@/lib/server/upstream-fetch";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
 import {
@@ -86,7 +86,8 @@ async function validatePat(pat: string): Promise<PatValidation> {
       },
       cache: "no-store",
       signal: AbortSignal.timeout(VALIDATE_TIMEOUT_MS),
-    });
+      // A cooldown belongs to the old token. A new one has its own budget (#6371).
+    }, { honorCooldown: false });
     // Only GitHub's own verdict on the credential rejects it. A primary rate
     // limit also arrives as 403, with the remaining budget at zero, and says
     // nothing about the token — the same way a 5xx or a 429 says nothing
@@ -203,6 +204,7 @@ export async function POST(req: NextRequest) {
   // Inject into current process so next request picks it up without restart
   if (pat) process.env[PAT_KEY] = pat;
   if (login) process.env[LOGIN_KEY] = login;
+  if (pat) resetUpstreamHealth("github");
 
   return NextResponse.json({ ok: true, login, patStoredIn: pat ? "encrypted" : undefined });
 }

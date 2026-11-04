@@ -23,6 +23,7 @@ import { NextResponse } from "next/server.js";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
 import { GitHubRevisionError, readGitHubPullRevision } from "@/lib/server/github-review-revision";
+import { upstreamFailureResponse } from "@/lib/server/upstream-answer";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
@@ -103,10 +104,7 @@ export async function GET(req: Request) {
     );
     if (!res.ok || !Array.isArray(data?.files) ||
         data.base_commit?.sha !== revision.baseSha || !mergeBaseSha) {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
     }
 
     const raw = data.files;
@@ -149,8 +147,8 @@ export async function GET(req: Request) {
     });
   } catch (e) {
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "failed to load diff" },
-      { status: e instanceof GitHubRevisionError ? e.status : 502 },
+      { ok: false, error: e instanceof Error ? e.message : "failed to load diff", ...(e instanceof GitHubRevisionError ? e.fields : {}) },
+      { status: e instanceof GitHubRevisionError ? e.status : 502, headers: e instanceof GitHubRevisionError ? e.headers : undefined },
     );
   }
 }
