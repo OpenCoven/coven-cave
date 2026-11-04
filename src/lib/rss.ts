@@ -166,20 +166,104 @@ export function normalizeDate(raw: string | null): string | null {
 
 // ─── Feed parsing ────────────────────────────────────────────────────────────
 
-/** Recognize a complete RSS/Atom envelope before treating an empty parse as healthy.
- * This is an envelope check, not a general XML validator. */
+/** Recognize a complete RSS/Atom envelope without rescanning malformed input.
+ * This checks tag structure, not the full XML grammar, and never resolves entities. */
 export function isFeedDocument(xml: string): boolean {
-  const document = xml.replace(/^\uFEFF/, "").replace(/<\?[\s\S]*?\?>|<!--[\s\S]*?-->/g, "").trim();
-  const rss = /^<rss(?:\s[^>]*)?>[\s\S]*<\/rss>$/i.test(document)
-    && /<channel(?:\s[^>]*)?>(?:[\s\S]*<\/channel>)|<channel(?:\s[^>]*)?\/>/i.test(document);
-  const atom = /^<feed(?:\s[^>]*)?>[\s\S]*<\/feed>$/i.test(document)
-    || /^<feed(?:\s[^>]*)?\/>$/i.test(document);
-  if (!rss && !atom) return false;
-  const structure = document.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, "");
-  const tag = atom ? "entry" : "item";
-  const opens = structure.match(new RegExp(`<${tag}(?:\\s[^>]*)?>`, "gi"))?.length ?? 0;
-  const closes = structure.match(new RegExp(`<\\/${tag}>`, "gi"))?.length ?? 0;
-  return opens === closes;
+  const stack: string[] = [];
+  let root: string | null = null;
+  let closed = false;
+  let channel = false;
+  let doctype = false;
+  let cursor = 0;
+  const space = (value: string | undefined) => value === " " || value === "\t" || value === "\r" || value === "\n";
+  const nameStart = (value: string | undefined) => {
+    if (!value) return false;
+    const code = value.charCodeAt(0);
+    return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || value === "_" || value === ":";
+  };
+  const namePart = (value: string | undefined) => nameStart(value) || (value !== undefined && value >= "0" && value <= "9") || value === "-" || value === ".";
+
+  while (cursor < xml.length) {
+    const start = xml.indexOf("<", cursor);
+    const end = start < 0 ? xml.length : start;
+    if (stack.length === 0 && xml.slice(cursor, end).trim()) return false;
+    if (start < 0) break;
+    cursor = start;
+    if (xml.startsWith("<!--", cursor)) {
+      const close = xml.indexOf("-->", cursor + 4);
+      if (close < 0) return false;
+      cursor = close + 3;
+      continue;
+    }
+    if (xml.startsWith("<?", cursor)) {
+      const close = xml.indexOf("?>", cursor + 2);
+      if (close < 0) return false;
+      cursor = close + 2;
+      continue;
+    }
+    if (xml.startsWith("<![CDATA[", cursor)) {
+      if (!stack.length) return false;
+      const close = xml.indexOf("]]>", cursor + 9);
+      if (close < 0) return false;
+      cursor = close + 3;
+      continue;
+    }
+    if (xml.slice(cursor, cursor + 9).toUpperCase() === "<!DOCTYPE" && space(xml[cursor + 9])) {
+      if (root || doctype) return false;
+      doctype = true;
+      cursor += 9;
+      let quote: string | null = null;
+      let brackets = 0;
+      for (; cursor < xml.length; cursor++) {
+        const char = xml[cursor];
+        if (quote) { if (char === quote) quote = null; }
+        else if (char === '"' || char === "'") quote = char;
+        else if (char === "[") brackets++;
+        else if (char === "]") brackets--;
+        else if (char === ">" && brackets === 0) break;
+        if (brackets < 0) return false;
+      }
+      if (cursor === xml.length) return false;
+      cursor++;
+      continue;
+    }
+    cursor++;
+    const closing = xml[cursor] === "/";
+    if (closing) cursor++;
+    const nameAt = cursor;
+    if (!nameStart(xml[cursor])) return false;
+    while (namePart(xml[cursor])) cursor++;
+    const name = xml.slice(nameAt, cursor).toLowerCase();
+    if (closing) {
+      while (space(xml[cursor])) cursor++;
+      if (xml[cursor] !== ">" || stack.pop() !== name) return false;
+      cursor++;
+      if (!stack.length) closed = true;
+      continue;
+    }
+    if (closed) return false;
+    if (!root) {
+      if (name !== "rss" && name !== "feed") return false;
+      root = name;
+    }
+    if (!space(xml[cursor]) && xml[cursor] !== ">" && xml[cursor] !== "/") return false;
+    let quote: string | null = null;
+    for (; cursor < xml.length; cursor++) {
+      const char = xml[cursor];
+      if (quote) { if (char === quote) quote = null; }
+      else if (char === '"' || char === "'") quote = char;
+      else if (char === ">") break;
+      else if (char === "<") return false;
+    }
+    if (cursor === xml.length) return false;
+    const selfClosing = xml[cursor - 1] === "/";
+    cursor++;
+    if (root === "rss" && stack.length === 1 && name === "channel") channel = true;
+    if (!selfClosing) stack.push(name);
+    else if (!stack.length) closed = true;
+    if (stack.length > 256) return false;
+  }
+  return closed && stack.length === 0 && (root === "feed" || channel);
 }
 
 /** Parse a feed document (RSS 2.0 or Atom) into normalized items. Resilient to
