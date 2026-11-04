@@ -7,6 +7,15 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changed
+- **Full-access Claude will take its permissions only from your project
+  grants** (#6393). This needs a Coven release with the updated `--write-scope`
+  and Claude Code 2.1.318 or later. A familiar can then run shell commands and
+  owner-configured MCP tools without `settings.json` allow rules, and the OS
+  sandbox limits shell writes to folders it can write to. A repository's own
+  `.mcp.json` is never loaded. No Coven release has this yet, so a Claude chat
+  in Full access still runs Read-only.
+
 ## [0.5.20] - 2026-11-07
 
 > GitHub actions that admit an unknown outcome, service calls that heal on their own, and a shorter sidebar.
