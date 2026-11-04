@@ -110,3 +110,5 @@ as elapsed before each heal so the two contracts stay separate.
 ## Unconfirmed GitHub writes
 
 A GitHub write can land before its answer is lost. Routes return `ambiguous-write` unless the request provably never left, and the clients in `src/lib/github-write-answer.ts` treat the same way an unreadable answer from Cave, including a torn 200. In each case the UI asks the user to check on GitHub before sending again and never retries on its own.
+
+Explicit provider retry windows are retained through their requested expiry, including waits longer than an hour. Only transport-failure backoff uses the short cooldown cap. No long timer is allocated: the next call compares the recorded retry timestamp with the current clock. The long-window regression covers numeric and HTTP-date `Retry-After`, GitHub primary-limit resets, no early dispatch, and successful recovery after expiry.

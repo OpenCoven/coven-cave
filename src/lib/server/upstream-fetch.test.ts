@@ -234,3 +234,33 @@ test("a long Retry-After is honoured in full, not shortened to the transport coo
   assert.equal(calls, 2, "the wait is over");
   resetUpstreamHealth();
 });
+
+
+test("provider retry times beyond an hour prevent early dispatch and recover at expiry", async () => {
+  for (const kind of ["seconds", "date", "reset"]) {
+    resetUpstreamHealth();
+    now = Math.ceil(now / 1000) * 1000;
+    const started = now;
+    const headers: Record<string, string> = kind === "seconds"
+      ? { "retry-after": "7200" }
+      : kind === "date"
+        ? { "retry-after": new Date(started + 7_200_000).toUTCString() }
+        : { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(started / 1000 + 7200) };
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return calls === 1 ? new Response("{}", { status: headers["x-ratelimit-reset"] ? 403 : 429, headers }) : Response.json({ login: "octocat" });
+    }) as typeof fetch;
+    await upstreamFetch("github", URL_USER, {}, { fetchImpl, retries: 0 });
+    assert.equal(upstreamHealth("github").coolingUntil, started + 7_200_000);
+    now = started + 3_600_001;
+    const held = await upstreamFetch("github", URL_USER, {}, { fetchImpl, retries: 0 });
+    assert.equal(held.status, 429);
+    assert.equal(held.headers.get("retry-after"), "3600");
+    assert.equal(calls, 1, "the provider's two-hour wait must not be shortened");
+    now = started + 7_200_001;
+    assert.equal((await upstreamFetch("github", URL_USER, {}, { fetchImpl, retries: 0 })).status, 200);
+    assert.equal(calls, 2);
+    assert.equal(upstreamHealth("github").state, "healthy");
+  }
+});
