@@ -5,6 +5,8 @@ import {
   classifyDaemonFailureAvailability,
   classifyDaemonStatusPoll,
   describeDaemonAvailability,
+  DAEMON_STATUS_READ_TIMEOUT_REASON,
+  daemonUnavailableReadsBeforeNotice,
   describeDaemonStatusProblem,
 } from "./daemon-status-classification.ts";
 
@@ -464,6 +466,16 @@ for (const [reason, title] of [
     `plain copy for: ${reason}`,
   );
 }
+// #6388: Cave's own read timing out does not blame the daemon, and waits longer
+// only after the daemon was confirmed running.
+assert.deepEqual(
+  describeDaemonStatusProblem(DAEMON_STATUS_READ_TIMEOUT_REASON),
+  { title: "Cave’s server is taking too long to answer", detail: "status request timed out" },
+);
+assert.equal(daemonUnavailableReadsBeforeNotice(DAEMON_STATUS_READ_TIMEOUT_REASON, true), 4);
+assert.equal(daemonUnavailableReadsBeforeNotice(DAEMON_STATUS_READ_TIMEOUT_REASON, false), 2);
+assert.equal(daemonUnavailableReadsBeforeNotice("connect ECONNREFUSED 127.0.0.1:7777", true), 2);
+assert.equal(daemonUnavailableReadsBeforeNotice("status request failed", true), 2);
 assert.deepEqual(
   describeDaemonStatusProblem("access check failed"),
   { title: "Couldn’t confirm access to the Coven daemon", detail: null },
