@@ -7,6 +7,7 @@
 import { resolveGitHubToken } from "@/lib/github-token";
 import { resolveSecret } from "@/lib/vault";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { userLogin } from "@/lib/server/upstream-answer";
 import type { MergedPr } from "@/lib/daily-report-facts";
 
 const GH = "https://api.github.com";
@@ -63,8 +64,8 @@ export async function fetchMergedPrsForDay(now: Date): Promise<MergedPr[] | null
   let login = resolveSecret("GITHUB_USERNAME") ?? null;
   if (token) {
     try {
-      const user = (await ghJson("/user", token)) as { login?: string } | null;
-      login = user?.login ?? login;
+      // Only a string login may reach the search query (#6368).
+      login = userLogin(await ghJson("/user", token)) ?? login;
     } catch {
       // Invalid PAT — the public path below still works when a username is set.
     }

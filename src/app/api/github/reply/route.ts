@@ -12,6 +12,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isRecord, resourceId, userLogin } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -75,6 +76,9 @@ export async function POST(req: Request) {
       body: JSON.stringify({ body: text }),
     });
     const data = await res.json().catch(() => null);
+    // GitHub accepted the reply; an unreadable answer leaves it unconfirmed,
+    // and a blind retry could post it twice (#6368).
+    if (res.ok && !isRecord(data)) return ambiguousWrite("GitHub", "reply");
     if (!res.ok || !data || typeof data !== "object") {
       return NextResponse.json(
         { ok: false, error: `github error (${res.status})` },
@@ -82,14 +86,17 @@ export async function POST(req: Request) {
       );
     }
     const d = data as Record<string, unknown>;
-    const user = d.user as Record<string, unknown> | undefined;
+    const id = resourceId(d.id);
+    if (!id) return ambiguousWrite("GitHub", "reply");
+    const user = isRecord(d.user) ? d.user : undefined;
+    const authorLogin = userLogin(user);
     return NextResponse.json({
       ok: true,
       comment: {
-        id: String(d.id ?? ""),
-        author: user?.login
+        id,
+        author: user && authorLogin
           ? {
-              login: String(user.login),
+              login: authorLogin,
               avatarUrl: typeof user.avatar_url === "string" ? user.avatar_url : null,
               url: typeof user.html_url === "string" ? user.html_url : null,
             }

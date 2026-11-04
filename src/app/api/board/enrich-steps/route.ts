@@ -25,6 +25,7 @@ import { stripAnsi } from "@/lib/ansi";
 import { assistantTextFromStream } from "@/lib/server/coven-stream-text";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { isRecord, positiveInteger } from "@/lib/server/upstream-answer";
 import {
   appendEnrichmentProposal,
   assessEnrichmentGates,
@@ -475,7 +476,13 @@ async function fetchGitHubIssueStates(github: CardGitHubLink[]): Promise<CardGit
         headers,
         cache: "no-store",
       });
-      const data = await res.json().catch(() => null) as Record<string, unknown> | null;
+      const raw: unknown = await res.json().catch(() => null);
+      // Only an answer that is recognisably this issue may overwrite the
+      // stored link. A drifted 200 used to rebuild labels from a missing
+      // field and wipe them (#6368); now it leaves the link as it was.
+      const data = isRecord(raw) && positiveInteger(raw.number) === item.number && typeof raw.state === "string"
+        ? raw
+        : null;
       if (!res.ok || !data) {
         refreshed.push(item);
         continue;
@@ -489,7 +496,7 @@ async function fetchGitHubIssueStates(github: CardGitHubLink[]): Promise<CardGit
         title: typeof data.title === "string" && data.title.trim() ? data.title.trim() : item.title,
         state: state || item.state,
         ...(typeof data.state_reason === "string" ? { stateReason: data.state_reason } : {}),
-        labels: labelsFromGitHub(data.labels),
+        labels: Array.isArray(data.labels) ? labelsFromGitHub(data.labels) : item.labels,
         updatedAt: typeof data.updated_at === "string" ? data.updated_at : item.updatedAt,
         url: typeof data.html_url === "string" ? data.html_url : item.url,
       });

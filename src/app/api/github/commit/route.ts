@@ -16,6 +16,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamDrift } from "@/lib/server/upstream-answer";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +62,10 @@ async function listPullCommits(repo: string, numberRaw: string) {
         { status: res.status === 403 ? 403 : 502 },
       );
     }
+    // A commit with no sha cannot be opened or cited, so don't list it.
+    if (data.some((entry) => typeof entry?.sha !== "string" || !entry.sha)) {
+      return upstreamDrift("GitHub", "the commit shas");
+    }
     const commits = data.map((entry) => {
       const commit = entry.commit as Record<string, unknown> | undefined;
       const author = commit?.author as Record<string, unknown> | undefined;
@@ -69,7 +74,7 @@ async function listPullCommits(repo: string, numberRaw: string) {
       const message = typeof commit?.message === "string" ? commit.message : "";
       const split = message.indexOf("\n");
       return {
-        sha: String(entry.sha ?? ""),
+        sha: entry.sha as string,
         // Subject and body separately: the reader shows the subject in the row
         // and the body only when the row is expanded.
         subject: split < 0 ? message : message.slice(0, split),
@@ -139,6 +144,9 @@ export async function GET(req: Request) {
       );
     }
 
+    // Echoing the requested sha over an empty message would invent a commit.
+    if (typeof data.sha !== "string" || !data.sha) return upstreamDrift("GitHub", "the commit");
+
     const commit = data.commit as Record<string, unknown> | undefined;
     const commitAuthor = commit?.author as Record<string, unknown> | undefined;
     const user = data.author as Record<string, unknown> | undefined;
@@ -149,7 +157,7 @@ export async function GET(req: Request) {
       ok: true,
       authed: Boolean(token),
       commit: {
-        sha: String(data.sha ?? sha),
+        sha: data.sha,
         message: typeof commit?.message === "string" ? commit.message : "",
         authorLogin: typeof user?.login === "string" ? user.login : null,
         authorName: typeof commitAuthor?.name === "string" ? commitAuthor.name : null,

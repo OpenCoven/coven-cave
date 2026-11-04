@@ -2,14 +2,15 @@
 //
 // Two modes, one upstream call each: `?sha=` reads a single commit, `?number=`
 // lists a pull request's commits. Neither caches; both go through upstreamFetch.
-// Failures are 502s naming the upstream status. The modes differ on schema
-// drift: the list refuses a non-array, while the single-commit mode renders
-// any object as a commit with the requested sha and an empty message.
+// Failures are 502s naming the upstream status. Both modes refuse schema drift:
+// the list refuses a non-array or a sha-less entry, and the single-commit mode
+// refuses a body with no sha instead of inventing a commit (#6368).
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import {
+  expectUpstreamDrift,
   expectErrorStatus,
   runUpstreamAnomalyMatrix,
   type DegradedExpectation,
@@ -115,16 +116,7 @@ test("GET /api/github/commit?sha= across upstream anomalies", async (t) => {
     },
     degraded: {
       ...sharedDegraded,
-      "schema-drift": (outcome) => {
-        // Any object renders as a commit: the requested sha, an empty
-        // message, zeroed stats, no files.
-        assert.equal(outcome.status, 200);
-        const body = outcome.body as { ok: boolean; commit: { sha: string; message: string; fileCount: number } };
-        assert.equal(body.ok, true);
-        assert.equal(body.commit.sha, SHA);
-        assert.equal(body.commit.message, "");
-        assert.equal(body.commit.fileCount, 0);
-      },
+      "schema-drift": expectUpstreamDrift,
     },
   });
 });

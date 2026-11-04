@@ -2,15 +2,16 @@
 //
 // One public profile read through upstreamFetch, which bounds the call and
 // heals a single transient fault. The route has no cache, so the contract is simple: every upstream failure is a 502 with a reason, a
-// GitHub 404 is a 404, and the PAT only ever travels as a bearer. The one
-// soft spot the matrix pins is schema drift: a well-formed body of the wrong
-// shape is still rendered as a profile rather than refused.
+// GitHub 404 is a 404, and the PAT only ever travels as a bearer. A
+// well-formed body without a login is refused as upstream drift rather than
+// rendered as a blank profile (#6368).
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import {
   expectErrorStatus,
+  expectUpstreamDrift,
   runUpstreamAnomalyMatrix,
   type DegradedExpectation,
 } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
@@ -95,16 +96,7 @@ test("GET /api/github/user across upstream anomalies", async (t) => {
       // An unreadable body on a 200 is reported with the upstream status.
       "malformed-json": githubError(502, 200),
       "empty-body": githubError(502, 200),
-      "schema-drift": (outcome) => {
-        // The route accepts any JSON object as a profile; the drifted body is
-        // rendered with zeroed counts instead of refused.
-        assert.equal(outcome.status, 200);
-        const body = outcome.body as { ok: boolean; login: unknown; followers: number; name: string | null };
-        assert.equal(body.ok, true);
-        assert.equal(typeof body.login, "string");
-        assert.equal(body.followers, 0);
-        assert.equal(body.name, null);
-      },
+      "schema-drift": expectUpstreamDrift,
     },
   });
 });
