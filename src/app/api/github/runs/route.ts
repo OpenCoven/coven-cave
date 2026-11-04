@@ -11,6 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,7 +47,7 @@ export async function GET(req: Request) {
     // hydrate one run, not a page of twenty).
     const qs = branch ? `?per_page=20&branch=${encodeURIComponent(branch)}` : "?per_page=20";
     const endpoint = runId ? `${GH}/repos/${repo}/actions/runs/${runId}` : `${GH}/repos/${repo}/actions/runs${qs}`;
-    const res = await fetch(endpoint, {
+    const res = await upstreamFetch("github", endpoint, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",

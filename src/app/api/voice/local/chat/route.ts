@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server.js";
+import { upstreamFetch } from "../../../../../lib/server/upstream-fetch.ts";
 import { buildLocalBrainMessages, DEFAULT_LOCAL_MODEL, localLlmBaseUrl, MAX_BRAIN_CONTENT_CHARS } from "../../../../../lib/voice/local-loop.ts";
 
 export const runtime = "nodejs";
@@ -50,7 +51,9 @@ export async function POST(req: Request) {
 
   let res: Response;
   try {
-    res = await fetch(`${base}/v1/chat/completions`, {
+    // The ledger is keyed by the registry id, so a configured
+    // COVEN_LOCAL_LLM_URL still routes through the same entry.
+    res = await upstreamFetch("local-llm", `${base}/v1/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -58,8 +61,7 @@ export async function POST(req: Request) {
         messages: buildLocalBrainMessages(system, turns),
         stream: false,
       }),
-      signal: AbortSignal.timeout(120_000),
-    });
+    }, { timeoutMs: 120_000 });
   } catch (e) {
     return NextResponse.json({
       ok: false,

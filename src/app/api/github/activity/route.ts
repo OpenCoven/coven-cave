@@ -29,6 +29,7 @@ import {
 } from "@/lib/github-activity";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { summarizeChecks, type CheckSummary } from "@/lib/github-checks";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { resolveSecret } from "@/lib/vault";
 
 export const dynamic = "force-dynamic";
@@ -137,7 +138,7 @@ async function ghFetch(path: string, token: string | null, signal?: AbortSignal)
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store", signal });
+  const res = await upstreamFetch("github", `${GH}${path}`, { headers, cache: "no-store", signal });
   const rateRemaining = Number(res.headers.get("x-ratelimit-remaining") ?? -1);
   const rateLimit = Number(res.headers.get("x-ratelimit-limit") ?? -1);
   const retryAfter = res.headers.get("retry-after");

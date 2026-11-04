@@ -11,6 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
     : `mutation($id:ID!){ unresolveReviewThread(input:{threadId:$id}){ thread{ id isResolved } } }`;
 
   try {
-    const res = await fetch(`${GH}/graphql`, {
+    const res = await upstreamFetch("github", `${GH}/graphql`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

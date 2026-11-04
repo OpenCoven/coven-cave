@@ -4,6 +4,7 @@ import {
   type GitHubPullRevision,
 } from "../github-review";
 import { sanitizeGithubObjectSha } from "../github-object-sha";
+import { upstreamFetch } from "./upstream-fetch";
 
 export class GitHubRevisionError extends Error {
   readonly status: number;
@@ -16,7 +17,7 @@ export class GitHubRevisionError extends Error {
 export async function readGitHubPullRevision(
   repo: string, number: number, token: string | null,
 ): Promise<GitHubPullRevision> {
-  const response = await fetch(`https://api.github.com/repos/${repo}/pulls/${number}`, {
+  const response = await upstreamFetch("github", `https://api.github.com/repos/${repo}/pulls/${number}`, {
     headers: {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",

@@ -119,6 +119,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 
 ### Integrity and integrations
 
+- [`upstream-api-anomaly-suite.md`](upstream-api-anomaly-suite.md) — the registry of every upstream API the server calls, the relevance scan that keeps it honest, the `upstreamFetch` primitive that classifies, retries, cools down and publishes a live health ledger, and the anomaly matrix each caller is proven against (#6359)
 - [`dependency-advisories.md`](dependency-advisories.md) — open Dependabot alerts whose patched version is unreachable from this dependency graph: the resolver refusal, the exposure assessment, and the upstream change that would lift each
 - [`stuck-action-runs.md`](stuck-action-runs.md) — the four Actions runs wedged in `queued` since 2026-07-25 (issue #4905, closed as not planned 2026-09-16; the runs remain queued): the HTTP-500 history, the 2026-08-30 HTTP-403 retry record, the do-not-delete-workflow-history rule, and the retry tooling
 - [`project-permission-integrity.md`](project-permission-integrity.md) — reconciling stale grants against the project registry

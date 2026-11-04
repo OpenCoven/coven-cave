@@ -7,6 +7,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import type { AsanaWorkspace } from "@/lib/asana-tasks";
 import { resolveSecret } from "@/lib/vault";
 
@@ -30,7 +31,7 @@ export async function GET() {
   }
 
   try {
-    const res = await fetch(`${API}/users/me?opt_fields=workspaces.name`, {
+    const res = await upstreamFetch("asana", `${API}/users/me?opt_fields=workspaces.name`, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       cache: "no-store",
     });

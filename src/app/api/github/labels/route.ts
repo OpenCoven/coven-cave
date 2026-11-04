@@ -12,6 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,7 +37,7 @@ export async function GET(req: Request) {
 
   try {
     // repo passed REPO_RE — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/labels?per_page=100`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/labels?per_page=100`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
