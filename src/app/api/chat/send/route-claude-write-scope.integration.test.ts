@@ -21,7 +21,7 @@ const noPermission = process.argv.includes("no-permission");
 const legacy = noPermission || process.argv.includes("legacy");
 const script = `const fs = require('node:fs');
 const args = process.argv.slice(2);
-if (args.includes('--version')) { console.log('2.1.316 (Claude Code)'); process.exit(0); }
+if (args.includes('--version')) { console.log('2.1.318 (Claude Code)'); process.exit(0); }
 if (args.includes('--help')) { console.log('--model ${noPermission ? "" : "--permission"} --add-dir ${legacy ? "" : "--write-scope <FILE>"} --output-format stream-json'); process.exit(0); }
 if (args[0] === 'adapter') { console.log('[]'); process.exit(0); }
 if (args[0] !== 'run') process.exit(0);

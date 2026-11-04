@@ -1,9 +1,9 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, lstat, readFile, symlink, access } from "node:fs/promises";
+import { mkdtemp, mkdir, lstat, readFile, symlink, access, writeFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { buildClaudeWriteScope, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "./claude-write-scope.ts";
+import { buildClaudeWriteScope, loadClaudeFamiliarMcpServers, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "./claude-write-scope.ts";
 
 const root = await mkdtemp(path.join(tmpdir(), "cave-write-scope-test-"));
 for (const dir of ["primary", "read", "read/write", "primary/skills", "workspace"]) await mkdir(path.join(root, dir), { recursive: true });
@@ -18,7 +18,7 @@ const input = {
   familiarWorkspace: path.join(root, "workspace"), protectedRoots: [path.join(primary, "skills")],
 };
 const scope = buildClaudeWriteScope(input);
-assert.equal(scope.version, 1);
+assert.equal(scope.version, 2);
 assert.equal(scope.writableRoots.length, 3, "primary, writable alias and own workspace are distinct canonical grants");
 assert.ok(scope.writableRoots.some(p => p.replaceAll("\\", "/").endsWith("/read/write")));
 assert.ok(!scope.writableRoots.includes(scope.readOnlyRoots[0]));
@@ -39,6 +39,34 @@ assert.equal(countClaudeWriteDenials({ permission_denials: "malformed" }), 0);
 assert.equal(countClaudeWriteDenials(null), 0);
 assert.equal(claudeWriteScopeRefusal("writeScope has filesystem-object aliases outside its writable roots PRIVATE_PATH").code, "write_scope_aliases_unsupported");
 assert.doesNotMatch(JSON.stringify(claudeWriteScopeRefusal("writeScope has filesystem-object aliases PRIVATE_PATH")), /PRIVATE_PATH/);
-assert.equal(claudeWriteScopeRefusal("Claude scoped-write profile is unsupported; qualified version is 2.1.316").code, "write_scope_profile_unqualified");
+assert.equal(claudeWriteScopeRefusal("Claude scoped-write profile is unsupported; qualified versions start at 2.1.318").code, "write_scope_profile_unqualified");
 assert.equal(claudeWriteScopeRefusal("unrelated provider error"), null);
+
+// MCP servers run outside the shell sandbox, so only owner config may name them.
+const configDir = path.join(root, "config");
+const workspace = path.join(root, "workspace");
+await mkdir(configDir);
+await writeFile(path.join(configDir, ".claude.json"), JSON.stringify({
+  mcpServers: { user: { command: "u" }, shadowed: { command: "user" }, "bad name*": { command: "x" } },
+  projects: { [await realpath(workspace)]: { mcpServers: { perWorkspace: { command: "p" } } }, [primary]: { mcpServers: { otherProject: { command: "o" } } } },
+}));
+await writeFile(path.join(workspace, ".mcp.json"), JSON.stringify({ mcpServers: { shadowed: { command: "workspace" } } }));
+await writeFile(path.join(primary, ".mcp.json"), JSON.stringify({ mcpServers: { fromRepo: { command: "repo" } } }));
+const servers = await loadClaudeFamiliarMcpServers({ familiarWorkspace: workspace, configDir });
+assert.deepEqual(Object.keys(servers).sort(), ["perWorkspace", "shadowed", "user"], "a repository's own .mcp.json and unsafe rule names are excluded");
+assert.equal(servers.shadowed.command, "workspace");
+assert.deepEqual(await loadClaudeFamiliarMcpServers({ configDir: path.join(root, "missing") }), {});
+await writeFile(path.join(configDir, ".claude.json"), "{not json");
+assert.deepEqual(Object.keys(await loadClaudeFamiliarMcpServers({ familiarWorkspace: workspace, configDir })), ["shadowed"], "unreadable config adds no servers");
+
+const mcpFile = prepareClaudeWriteScopeFile(scope, { sanity: { command: "s", env: { TOKEN: "SECRET" } } });
+await mcpFile.create();
+const written = JSON.parse(await readFile(mcpFile.path, "utf8"));
+assert.deepEqual(written.mcpServerNames, ["sanity"]);
+assert.doesNotMatch(JSON.stringify(written), /SECRET/, "credentials stay out of the scope file");
+assert.deepEqual(JSON.parse(await readFile(written.mcpConfigFile, "utf8")).mcpServers.sanity.env, { TOKEN: "SECRET" });
+if (process.platform !== "win32") assert.equal((await lstat(written.mcpConfigFile)).mode & 0o777, 0o600);
+await mcpFile.dispose();
+await assert.rejects(access(written.mcpConfigFile));
+await assert.rejects(access(path.dirname(written.mcpConfigFile)));
 console.log("claude-write-scope.test.ts: ok");
