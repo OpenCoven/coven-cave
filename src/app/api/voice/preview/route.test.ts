@@ -64,7 +64,7 @@ test("400 vault_key_unresolved when no OpenAI key is configured", async () => {
 test("200 happy path streams audio/mpeg and asks TTS for the picked voice", async () => {
   process.env.OPENAI_API_KEY = "sk-x";
   const bytes = new Uint8Array([1, 2, 3, 4]);
-  nextFetchResponse = new Response(bytes, { status: 200 });
+  nextFetchResponse = new Response(bytes, { status: 200, headers: { "content-type": "audio/mpeg" } });
 
   const res = await GET(req("shimmer"));
   assert.equal(res.status, 200);
@@ -83,7 +83,7 @@ test("200 happy path streams audio/mpeg and asks TTS for the picked voice", asyn
 
 test("per-voice cache: the second preview never re-bills the provider", async () => {
   process.env.OPENAI_API_KEY = "sk-x";
-  nextFetchResponse = new Response(new Uint8Array([9]), { status: 200 });
+  nextFetchResponse = new Response(new Uint8Array([9]), { status: 200, headers: { "content-type": "audio/mpeg" } });
   await GET(req("ash"));
   const res = await GET(req("ash"));
   assert.equal(res.status, 200);
@@ -119,7 +119,7 @@ test("a 400 unrelated to the voice param is NOT cached as unsupported", async ()
   assert.equal(json.error, "preview_failed");
 
   // A retry reaches the provider again and can succeed.
-  nextFetchResponse = new Response(new Uint8Array([5]), { status: 200 });
+  nextFetchResponse = new Response(new Uint8Array([5]), { status: 200, headers: { "content-type": "audio/mpeg" } });
   const retry = await GET(req("sage"));
   assert.equal(retry.status, 200);
   assert.equal(fetchCalls.length, 2);
@@ -142,7 +142,7 @@ test("502 preview_failed surfaces the provider message on non-400 failures", asy
   // (The 429 opened upstreamFetch's cooldown on the host; that window is the
   // primitive's contract, so treat it as elapsed and prove the route's cache.)
   resetUpstreamHealth("openai");
-  nextFetchResponse = new Response(new Uint8Array([7]), { status: 200 });
+  nextFetchResponse = new Response(new Uint8Array([7]), { status: 200, headers: { "content-type": "audio/mpeg" } });
   const retry = await GET(req("verse"));
   assert.equal(retry.status, 200);
   assert.equal(cacheProbeCalls(), 2);
