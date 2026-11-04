@@ -4,6 +4,26 @@ import XCTest
 @testable import CovenCave
 
 final class ChatScrollStateTests: XCTestCase {
+    func testHistoricalMarkdownStaysBoundedIncludingUnderVoiceOver() {
+        for voiceOver in [false, true] {
+            XCTAssertFalse(MessageProseView.shouldMountMarkdown(historical: true, deferredSpan: false,
+                streaming: false, voiceOver: voiceOver, nearby: false))
+            XCTAssertTrue(MessageProseView.shouldMountMarkdown(historical: true, deferredSpan: false,
+                streaming: false, voiceOver: voiceOver, nearby: true))
+            XCTAssertTrue(MessageProseView.shouldMountMarkdown(historical: true, deferredSpan: true,
+                streaming: true, voiceOver: voiceOver, nearby: false))
+        }
+    }
+
+    func testLatestMarkdownAndVoiceOverTimelineStayAvailable() {
+        XCTAssertTrue(MessageProseView.shouldMountMarkdown(historical: false, deferredSpan: false,
+            streaming: false, voiceOver: false, nearby: false))
+        XCTAssertTrue(MessageProseView.shouldMountMarkdown(historical: false, deferredSpan: true,
+            streaming: false, voiceOver: true, nearby: false))
+        XCTAssertFalse(MessageProseView.shouldMountMarkdown(historical: false, deferredSpan: true,
+            streaming: false, voiceOver: false, nearby: false))
+    }
+
     func testInitialAndDelayedLayoutKeepFollowing() {
         var state = ChatScrollState()
         state.updateGeometry(atBottom: false)

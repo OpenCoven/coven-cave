@@ -418,11 +418,13 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .groupedBackNavigation(canGoBack: $canGoBack)
         .toolbar {
-            if app.isPerformanceFixture && CaveTimelinePerformanceFixture.isEnabled {
+            if CaveTimelinePerformanceFixture.isEnabled {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Capture metrics") {
                         CaveTimelinePerformanceFixture.capture(threadID: thread.id,
-                            expandedCount: app.expandedActivityMessages.count, recorder: app.performanceRecorder)
+                            expandedCount: app.expandedActivityMessages.count, recorder: app.performanceRecorder,
+                            messageCount: thread.messages.count,
+                            activityCount: thread.messages.reduce(0) { $0 + $1.activitySteps.count })
                     }
                     .accessibilityIdentifier("Capture timeline metrics")
                 }
@@ -1053,44 +1055,27 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 let rows = thread.transcriptRows
-                let turnStart = TranscriptRow.currentTurnStart(in: rows)
                 VStack(spacing: 10) {
-                    // Keep history lazy, but never virtualize the current turn.
-                    // The latest row's large WebView must be mounted on
-                    // cold/repeated opens and must survive a sharp shrink while
-                    // reading above it (#5613). The message just sent, its day
-                    // divider and the pending replies stay mounted beside it,
-                    // so a send never inserts them into the lazy stack (#5933).
-                    LazyVStack(spacing: 10) {
-                        ForEach(rows[..<turnStart]) { row in
-                            VStack(spacing: 10) {
-                                transcriptRow(row, proxy: proxy)
-                            }
-                            .id(row.id)
-                            .modifier(scrollAnchorRow(row.id))
-                        }
-                    }
-                    ForEach(rows[turnStart..<max(turnStart, rows.count - 1)]) { row in
+                    // Keep row geometry and identity stable. A nested lazy
+                    // history estimates its height independently of the eager
+                    // latest turn, rebasing the viewport as rows realize.
+                    // Virtualize historical WebKit content inside the retained
+                    // rows instead; the latest renderer remains mounted (#5613).
+                    ForEach(rows) { row in
                         VStack(spacing: 10) {
                             transcriptRow(row, proxy: proxy)
                         }
                         .id(row.id)
                         .modifier(scrollAnchorRow(row.id))
-                    }
-                    if let row = rows.last {
-                        VStack(spacing: 10) {
-                            transcriptRow(row, proxy: proxy)
-                        }
-                            .id(row.id)
-                            .modifier(scrollAnchorRow(row.id))
                             .onGeometryChange(for: ChatScrollGeometry?.self) { geometry in
+                                guard row.id == rows.last?.id else { return nil }
                                 guard let viewport = geometry.bounds(of: .scrollView) else { return nil }
                                 return ChatScrollGeometry(
                                     contentHeight: geometry.size.height,
                                     visibleBottom: viewport.maxY
                                 )
                             } action: { previous, geometry in
-                                guard let geometry else { return }
+                                guard row.id == rows.last?.id, let geometry else { return }
                                 if previous?.contentHeight != geometry.contentHeight {
                                     // Only the latest reply's own shrink may arm
                                     // offset recovery (#5613), never a lazy

@@ -9,6 +9,9 @@ struct MessageProseView: View {
     var isLast: Bool = false
     var preferNativePlainText = false
     var deferOffscreenMarkdown = false
+    /// Historical messages retain lightweight geometry, including for
+    /// VoiceOver; their WebKit content mounts when the message approaches.
+    var deferOffscreenMessage = false
     var onOpenReader: ((String) -> Void)? = nil
     var onContentHeightChange: (() -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
@@ -23,7 +26,8 @@ struct MessageProseView: View {
     var body: some View {
         bubble(projection)
             .onGeometryChange(for: Bool.self) { geometry in
-                guard deferOffscreenMarkdown, let viewport = geometry.bounds(of: .scrollView) else { return true }
+                guard deferOffscreenMarkdown || deferOffscreenMessage,
+                      let viewport = geometry.bounds(of: .scrollView) else { return true }
                 // Prefetch one viewport on either side. Report only crossings,
                 // not a state mutation for every scrolling pixel.
                 return CGRect(origin: .zero, size: geometry.size)
@@ -35,7 +39,18 @@ struct MessageProseView: View {
     }
 
     private var keepsMarkdownMounted: Bool {
-        !deferOffscreenMarkdown || message.streaming || voiceOverEnabled || isNearViewport
+        Self.shouldMountMarkdown(historical: deferOffscreenMessage, deferredSpan: deferOffscreenMarkdown,
+                                 streaming: message.streaming, voiceOver: voiceOverEnabled, nearby: isNearViewport)
+    }
+
+    nonisolated static func shouldMountMarkdown(historical: Bool, deferredSpan: Bool,
+                                    streaming: Bool, voiceOver: Bool, nearby: Bool) -> Bool {
+        if streaming || nearby { return true }
+        // Offscreen history remains accessible as the full native-text
+        // placeholder. Loading every historical WebView under VoiceOver would
+        // defeat virtualization; nearby messages still expose rich semantics.
+        if historical { return false }
+        return !deferredSpan || voiceOver
     }
 
     private var measuredHeight: Binding<CGFloat> {
