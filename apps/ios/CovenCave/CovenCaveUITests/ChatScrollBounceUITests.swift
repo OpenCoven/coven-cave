@@ -139,15 +139,18 @@ final class ChatScrollBounceUITests: XCTestCase {
     func testSmallDragsAtLatestStayOnLatest() {
         let (_, transcript) = openRich("--ui-preview-rich-chat-scroll",
                                        thread: "ui-preview-rich-chat-scroll", needle: bottomMarker)
-        var lost = 0
-        for pass in 0..<6 {
-            // Alternate a pull past the end with a small nudge back: both are
-            // what scrolling "to the latest" looks like when already nearly there.
-            let fromY = pass.isMultiple(of: 2) ? 0.6 : 0.5
-            let toY = pass.isMultiple(of: 2) ? 0.5 : 0.53
+        func drag(from fromY: CGFloat, to toY: CGFloat) {
             let start = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: fromY))
             let end = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: toY))
             start.press(forDuration: 0.05, thenDragTo: end)
+        }
+        var lost = 0
+        for pass in 0..<6 {
+            // A nudge away with momentum can legitimately carry the marker off
+            // screen with no layout change, so it is never sampled. Only the
+            // pull back to the end is: nothing the reader did asks to leave it.
+            if !pass.isMultiple(of: 2) { drag(from: 0.5, to: 0.53) }
+            drag(from: 0.6, to: 0.5)
             for sample in 0..<3 {
                 Thread.sleep(forTimeInterval: 0.5)
                 if !isDrawn(bottomMarker) {

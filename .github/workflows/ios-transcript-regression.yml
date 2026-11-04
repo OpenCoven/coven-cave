@@ -67,8 +67,20 @@ jobs:
             -only-testing:CovenCaveTests/ChatScrollStateTests \
             -only-testing:CovenCaveTests/ChatViewportRecoveryTests \
             -only-testing:CovenCaveUITests/ChatScrollingUITests \
-            -only-testing:CovenCaveUITests/ChatScrollBounceUITests \
             | tee "$RUNNER_TEMP/scroll-debug.log"
+      # The latest-reply bounce (#6090) appeared in only some attempts on the
+      # same head, so a retry could pass by luck. Every iteration must pass.
+      - name: Latest-reply bounce, three full runs without retries
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
+            -destination "$CAVE_TEST_DESTINATION" -derivedDataPath "$RUNNER_TEMP/CaveDerived" \
+            -resultBundlePath "$RUNNER_TEMP/scroll-bounce.xcresult" CODE_SIGNING_ALLOWED=NO \
+            -test-iterations 3 \
+            -only-testing:CovenCaveUITests/ChatScrollBounceUITests \
+            | tee "$RUNNER_TEMP/scroll-bounce.log"
       - name: Release shrink and independent no-shrink repeated opens
         if: ${{ !cancelled() }}
         shell: bash
