@@ -24,7 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isUncertainGitHubWrite } from "@/lib/github-write-answer";
+import { readGitHubWriteAnswer, isUncertainGitHubWrite } from "@/lib/github-write-answer";
 import { Icon, type IconName } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -135,7 +135,7 @@ async function postJson(url: string, body: unknown): Promise<{ ok: boolean; stat
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    const data = await readGitHubWriteAnswer(res);
     return { ok: res.ok && data?.ok === true, status: res.status, data };
   } catch {
     return { ok: false, status: 0, data: null };
@@ -416,7 +416,7 @@ export function GitHubCardComposer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repo, number, ...patch }),
       });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      const data = await readGitHubWriteAnswer(res);
       if (!res.ok || !data?.ok) {
         setFailure({
           code: String(res.status),

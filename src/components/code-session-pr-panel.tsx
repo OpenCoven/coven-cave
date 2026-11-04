@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { isUncertainGitHubWrite, UNREADABLE_GITHUB_WRITE_ANSWER } from "@/lib/github-write-answer";
+import { readGitHubWriteAnswer, isUncertainGitHubWrite, UNREADABLE_GITHUB_WRITE_ANSWER } from "@/lib/github-write-answer";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/relative-time";
@@ -428,8 +428,8 @@ function ThreadsSection({
         body: JSON.stringify({ threadId: thread.id, resolved: !thread.isResolved }),
         signal: AbortSignal.timeout(GITHUB_ACTION_TIMEOUT_MS),
       });
-      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      if (res.ok && json?.ok) state.refresh();
+      const json = await readGitHubWriteAnswer(res);
+      if (res.ok && json?.ok === true) state.refresh();
       else setResolveError(json?.error ?? `GitHub answered ${res.status}.`);
     } catch (err) {
       setResolveError(githubActionError(err, "The request didn't reach GitHub."));
@@ -590,7 +590,7 @@ function ActionsSection({
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(GITHUB_ACTION_TIMEOUT_MS),
       });
-      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      const json = await readGitHubWriteAnswer(res);
       if (!res.ok || json?.ok !== true) {
         const uncertain = isUncertainGitHubWrite(res.status, json);
         return { ok: false, error: json?.error ?? (uncertain ? UNREADABLE_GITHUB_WRITE_ANSWER : `HTTP ${res.status}`) };
