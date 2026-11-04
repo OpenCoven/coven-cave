@@ -3,11 +3,7 @@
 Every third-party API the Cave server calls is declared once, in
 `src/lib/server/upstream-api-registry.ts`, and proven three ways (#6359):
 
-- **Relevant.** `src/lib/server/upstream-api-registry.test.ts` scans the server
-  source for every file that both calls `fetch` and names an external host.
-  A call site the registry does not credit fails the scan; so does a registry
-  caller that no longer fetches, a host no caller names, and a stale
-  link-only allowlist entry. The fix is always a one-line registry edit.
+- **Relevant.** `src/lib/server/upstream-api-registry.test.ts` uses the call-expression scanner in `src/lib/testing/upstream-network-scan.ts` to inventory recognized network calls independently of inline host literals, including named/renamed Node HTTP imports and simple fetch aliases. Missing callers, stale registrations and changed exact internal/separate-contract boundaries fail the scan. Coverage limits and the boundary contract are recorded below; a registry edit alone does not qualify a new caller's failure and recovery behavior.
 - **Adaptive.** `src/lib/testing/upstream-anomaly-fetch.ts` replaces
   `globalThis.fetch` with a router keyed by the registry. A test registers one
   healthy handler per upstream and switches that upstream into a fault mode
