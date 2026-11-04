@@ -226,6 +226,33 @@ export function diagnosticInstaller(
   };
 }
 
+type ServiceDiagnostics = NonNullable<OnboardingSetupDiagnostics["service"]>;
+
+const SERVICE_RECOVERY: Record<ServiceDiagnostics["code"], string> = {
+  spawn_failed: "The local service could not be launched. Check the Coven CLI installation and service manager, then retry setup.",
+  runner_exited: "The local service launcher exited before becoming ready. Check the daemon logs, then retry setup.",
+  readiness_timeout: "The local service did not become ready in time. Check the daemon logs, then retry setup.",
+  runtime_incompatible: "The running service is incompatible with Cave. Update Coven and restart its local service, then retry setup.",
+  restart_throttled: "Local service startup is cooling down after repeated attempts. Wait a moment, then retry setup.",
+  owner_unreachable: "Cave could not confirm the local service owner. Check the existing daemon or service manager, then retry setup.",
+  address_in_use: "Another process is holding the local service socket or port. Check which process owns it before retrying setup.",
+};
+
+function diagnosticService(value: unknown): ServiceDiagnostics | undefined {
+  const source = statusBody(value);
+  if (!source || typeof source.code !== "string" ||
+      !Object.hasOwn(SERVICE_RECOVERY, source.code)) return undefined;
+  return {
+    code: source.code as ServiceDiagnostics["code"],
+    launchMode: source.launchMode === "shell" || source.launchMode === "direct" || source.launchMode === "service"
+      ? source.launchMode : "none",
+    readinessAttempts: finiteNonnegative(source.readinessAttempts),
+    elapsedMs: finiteNonnegative(source.elapsedMs),
+    exitCode: typeof source.exitCode === "number" && Number.isSafeInteger(source.exitCode)
+      ? source.exitCode : null,
+  };
+}
+
 export function createOnboardingSetupDiagnostics(input: {
   stage: OnboardingBootstrapStageId;
   code: OnboardingSetupFailureCode;
@@ -240,15 +267,18 @@ export function createOnboardingSetupDiagnostics(input: {
     localService: OnboardingComponentReadiness;
   }>;
   installer?: NonNullable<OnboardingSetupDiagnostics["installer"]>;
+  service?: unknown;
 }): OnboardingSetupDiagnostics {
   const copy = onboardingFailureCopy(input.code);
+  const service = input.stage === "daemon" && input.code === "local_service_failed"
+    ? diagnosticService(input.service) : undefined;
   return {
     version: 1,
     capturedAt: input.capturedAt ?? new Date().toISOString(),
     stage: input.stage,
     code: input.code,
     summary: copy.summary,
-    nextStep: copy.nextStep,
+    nextStep: service ? SERVICE_RECOVERY[service.code] : copy.nextStep,
     environment: {
       appVersion: APP_VERSION,
       platform: safePlatform(),
@@ -265,6 +295,7 @@ export function createOnboardingSetupDiagnostics(input: {
       localService: input.components?.localService ?? "not_checked",
     },
     ...(input.installer ? { installer: input.installer } : {}),
+    ...(service ? { service } : {}),
   };
 }
 
@@ -342,6 +373,7 @@ export function normalizePersistedOnboardingSetupDiagnostics(
       localService: safeReadiness(components.localService),
     },
     ...(installer ? { installer } : {}),
+    service: source.service,
   });
 }
 

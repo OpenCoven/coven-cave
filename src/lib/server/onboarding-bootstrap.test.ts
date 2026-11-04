@@ -10,6 +10,7 @@ import {
 } from "../onboarding-bootstrap.ts";
 import {
   bootstrapRunFailureState,
+  ensureDaemon,
   persistOnboardingBootstrapState,
   safePersistedState,
 } from "./onboarding-bootstrap.ts";
@@ -183,6 +184,41 @@ test("a state-file write failure uses the exact persistence-directory probe", as
   assert.equal(failed.status, "failed");
   assert.equal(failed.failure?.code, "application_data_not_writable");
   assert.equal(failed.failure?.diagnostics?.applicationData.writeProbe, "failed");
+});
+
+test("daemon failure keeps checked readiness and startup facts through saved state", async () => {
+  const result = await ensureDaemon(async () => {}, {
+    inspectReady: async () => false,
+    start: async () => ({ ok: false, code: "readiness_timeout", error: "RAW_PRIVATE_SECRET", stdout: "RAW_PRIVATE_SECRET", stderr: "RAW_PRIVATE_SECRET", status: 504, readinessAttempts: 20, elapsedMs: 15000, launchMode: "service" }),
+    inspectTools: async () => ({ runtimeReady: true, coreToolsReady: true, components: { managedNode: "ready", covenCli: "ready" } }),
+    inspectDirectory: async () => true,
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.diagnostics?.components.managedNode, "ready");
+  assert.equal(result.diagnostics?.components.covenCli, "ready");
+  assert.equal(result.diagnostics?.applicationData.exists, true);
+  assert.equal(result.diagnostics?.applicationData.writeProbe, "not_run");
+  assert.equal(result.diagnostics?.service?.code, "readiness_timeout");
+  const state = createOnboardingBootstrapState(true);
+  state.failure = { stage: "daemon", stageLabel: "Start local services", recoveryLabel: "Retry setup", ...result };
+  const restored = safePersistedState(state);
+  assert.equal(restored.failure?.nextStep, result.nextStep);
+  assert.match(restored.failure!.message, /did not become ready in time/);
+  assert.doesNotMatch(JSON.stringify(restored), /RAW_PRIVATE_SECRET/);
+});
+
+test("diagnostic probe failures do not erase the daemon failure", async () => {
+  const result = await ensureDaemon(async () => {}, {
+    inspectReady: async () => false,
+    start: async () => ({ ok: false, code: "spawn_failed", error: "RAW_PRIVATE_SECRET", stdout: "", stderr: "", status: 500, readinessAttempts: 1, elapsedMs: 2, launchMode: "direct" }),
+    inspectTools: async () => { throw new Error("probe failed"); },
+    inspectDirectory: async () => { throw new Error("probe failed"); },
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.diagnostics?.service?.code, "spawn_failed");
+  assert.equal(result.diagnostics?.applicationData.exists, null);
 });
 
 console.log("server onboarding-bootstrap.test.ts: ok");
