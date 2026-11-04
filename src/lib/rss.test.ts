@@ -173,6 +173,7 @@ for (const invalid of [
   '<rss><channel><item></channel></rss>', '<rss><channel></channel></rss><rss><channel/></rss>',
   '<feed><entry></feed>', '<rss><channel attribute="unterminated></channel></rss>',
   '<!-- unterminated', '<feed><![CDATA[unterminated</feed>', '<!DOCTYPE rss [<rss><channel/></rss>',
+  '<<!--x-->rss><channel/></rss>', // Stripping the comment must not manufacture a valid root.
 ]) assert.equal(isFeedDocument(invalid), false, invalid);
 
 // A malformed provider body must not pin the server in a backtracking regex.
