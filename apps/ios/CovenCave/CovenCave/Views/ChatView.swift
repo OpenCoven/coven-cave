@@ -369,6 +369,7 @@ struct ChatView: View {
         streamScroll.cancel()
         scrollState = ChatScrollState()
         viewportRecovery = ChatViewportRecovery()
+        scrollAnchor.reset()
         // A fresh scroll state follows latest, and the follow observer only
         // fires on a change, so the fresh recovery is told directly.
         viewportRecovery.noteFollowingLatest(scrollState.isFollowingLatest && !scrollState.isUserScrolling)
@@ -1214,6 +1215,7 @@ struct ChatView: View {
             // beyond that end is never a place the reader chose (#5933).
             .onChange(of: scrollState.isFollowingLatest && !scrollState.isUserScrolling,
                       initial: true) { _, following in
+                if following { scrollAnchor.cancelPendingCorrection() }
                 viewportRecovery.noteFollowingLatest(following)
                 recoverTranscriptViewportIfNeeded(proxy)
             }
