@@ -27,6 +27,7 @@ import {
   readGitHubItemThroughCache,
   type CachedGitHubItem,
 } from "@/lib/server/github-item-cache";
+import { positiveInteger } from "@/lib/server/upstream-answer";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
@@ -236,11 +237,17 @@ async function loadItem(
     }
 
     const d = data as Record<string, unknown>;
+    // A body with no number or title is not this item, so it must not render
+    // as a blank card. A 502 is also never cached.
+    const itemNumber = positiveInteger(d.number);
+    if (itemNumber === null || typeof d.title !== "string") {
+      return jsonResult({ ok: false, code: "upstream-drift", error: "GitHub answered without the issue or pull request" }, 502);
+    }
     const pull = d.pull_request as Record<string, unknown> | undefined;
     const detail: ItemDetail = {
       ok: true,
-      title: String(d.title ?? ""),
-      number: Number(d.number ?? number),
+      title: d.title,
+      number: itemNumber,
       state: String(d.state ?? "open"),
       isPull: Boolean(pull),
       merged: Boolean(pull?.merged_at),

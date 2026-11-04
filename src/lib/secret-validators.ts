@@ -25,7 +25,11 @@ export async function validateGithubToken(value: string, fetchImpl: FetchLike): 
     if (res.status === 401 || res.status === 403) return { ok: false, error: "token rejected by GitHub" };
     if (!res.ok) return { ok: false, error: `GitHub API error (${res.status})` };
     const data = await res.json().catch(() => null);
-    return { ok: true, login: userLogin(data) ?? undefined };
+    // A 200 that names no account hasn't verified this token, and it isn't a
+    // rejection either: the error says so, and checking again can succeed.
+    const login = userLogin(data);
+    if (login === null) return { ok: false, error: "GitHub answered without identifying the token's account" };
+    return { ok: true, login };
   } catch {
     return { ok: false, error: "could not reach GitHub" };
   }

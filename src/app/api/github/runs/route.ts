@@ -11,6 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { positiveInteger, upstreamDrift } from "@/lib/server/upstream-answer";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
@@ -70,16 +71,16 @@ export async function GET(req: Request) {
 
     // A by-id fetch returns the run object itself; the list wraps runs in
     // workflow_runs. Both shapes flow through the same normalizer.
-    const raw = runId
-      ? [data as Record<string, unknown>]
-      : Array.isArray(data.workflow_runs)
-        ? (data.workflow_runs as Array<Record<string, unknown>>)
-        : [];
+    const raw = runId ? [data as Record<string, unknown>] : data.workflow_runs;
+    // A missing list is not "no runs", and a run without an id cannot be opened.
+    if (!Array.isArray(raw) || raw.some((r) => positiveInteger((r as Record<string, unknown> | null)?.id) === null)) {
+      return upstreamDrift("GitHub", "its workflow runs");
+    }
     return NextResponse.json({
       ok: true,
       authed: Boolean(token),
-      runs: raw.map((r) => ({
-        id: Number(r.id ?? 0),
+      runs: (raw as Array<Record<string, unknown>>).map((r) => ({
+        id: r.id as number,
         name: typeof r.name === "string" ? r.name : "workflow",
         runNumber: Number(r.run_number ?? 0),
         status: String(r.status ?? "queued"),
