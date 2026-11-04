@@ -52,6 +52,11 @@ exact-candidate evidence, not as a timeless support table. Since 2026-10-28 the
 inventory (schema 2) also probes Claude and Copilot, derives the local Codex
 rows from the same CLI, and lists SSH, Coven relay and OpenClaw declaratively.
 
+Real-provider canary receipts for `51ea27f66` are in
+[evidence/runtime-activity-2026-11-04](evidence/runtime-activity-2026-11-04/README.md):
+Codex, Claude and Copilot, read-only, with one web client. They promote no row
+below, and that packet records an open answer-rendering defect.
+
 The current per-path matrix is
 [evidence/runtime-activity-2026-10-28/capability-matrix.json](evidence/runtime-activity-2026-10-28/capability-matrix.json)
 with its [README](evidence/runtime-activity-2026-10-28/README.md). It maps the
