@@ -93,7 +93,13 @@ export async function GET(req: Request) {
     }, { status: 502 });
   }
 
-  const body = await res.arrayBuffer();
+  let body: ArrayBuffer;
+  try {
+    body = await res.arrayBuffer();
+  } catch {
+    // Headers arrived, then the audio stream failed or passed its deadline.
+    return NextResponse.json({ ok: false, error: "provider_unreachable" }, { status: 502 });
+  }
   if (body.byteLength === 0) {
     // A 2xx with no bytes is not a sample. Caching it would replay silence for
     // the process lifetime, long after the provider recovered (#6359).

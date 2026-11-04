@@ -69,7 +69,10 @@ per case, so a 429 in one case cannot leave the host cooling for the next.
 Two callers stay on plain `fetch` by design, each named with its reason in
 the scan: `src/lib/voice/openai-realtime.ts` and `src/lib/voice/elevenlabs.ts`
 ship to the browser through the voice registry, so the server ledger stays
-out of the client bundle.
+out of the client bundle. Their calls hold their own `AbortSignal.timeout`
+instead. A matrix call's `hasDeadline` is true only for a signal from
+`upstreamFetch`, because a bare signal has no timer to prove; these two callers
+assert `hasSignal`.
 
 ## Adding or changing an upstream call
 

@@ -29,7 +29,9 @@ export async function readGitHubPullRevision(
     response.status === 404 ? "not_found" : `github error (${response.status})`,
     response.status === 404 || response.status === 403 ? response.status : 502,
   );
-  const data = await response.json() as {
+  // A body that fails or stalls after its headers falls through to the same
+  // "unavailable" answer as one that arrives with no revision.
+  const data = await response.json().catch(() => null) as {
     head?: { sha?: unknown }; base?: { sha?: unknown; ref?: unknown };
   } | null;
   const headSha = sanitizeGithubObjectSha(typeof data?.head?.sha === "string" ? data.head.sha : null);

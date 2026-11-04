@@ -66,6 +66,7 @@ test("openaiRealtimeProvider.mintSession across upstream anomalies", async (t) =
       assert.equal(outcome.threw, undefined, outcome.text);
       const grant = outcome.value as { provider: string; clientSecret: string; expiresAt: string; connection: { kind: string; url: string; model: string; voice: string } };
       assert.equal(grant.provider, "openai");
+      assert.equal(harness.calls("openai").at(-1)?.hasSignal, true, "the mint is bounded by its own timer");
       assert.equal(grant.clientSecret, EPHEMERAL, "the grant carries the ephemeral token, never the vault key");
       assert.equal(grant.expiresAt, new Date(EXPIRES_AT_SEC * 1000).toISOString());
       assert.deepEqual(grant.connection, {
@@ -80,8 +81,8 @@ test("openaiRealtimeProvider.mintSession across upstream anomalies", async (t) =
       "http-502": throwsMessage("provider_http_502"),
       "auth-revoked": throwsMessage("provider_http_401"),
       "rate-limit": throwsMessage("provider_http_429"),
-      // The mint carries no deadline of its own: the harness ceiling is what
-      // ends the wait here, surfacing as the platform's TimeoutError.
+      // The mint holds its own 15 s timer. The shorter harness ceiling ends the
+      // wait here, surfacing as the platform's TimeoutError.
       timeout: throwsNamed("TimeoutError"),
       network: (outcome) => {
         assert.ok(outcome.threw instanceof TypeError, outcome.text);

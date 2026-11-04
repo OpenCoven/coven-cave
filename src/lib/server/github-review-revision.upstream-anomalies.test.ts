@@ -70,8 +70,9 @@ test("readGitHubPullRevision across upstream anomalies", async (t) => {
       "rate-limit": typedStatus(502, /github error \(429\)/),
       timeout: untyped("TimeoutError"),
       network: untyped("TypeError"),
-      "malformed-json": untyped("SyntaxError"),
-      "empty-body": untyped("SyntaxError"),
+      // An unreadable body, whether torn or stalled, gets the same typed 502.
+      "malformed-json": typedStatus(502, /revision is unavailable/),
+      "empty-body": typedStatus(502, /revision is unavailable/),
       // Well-formed JSON without head/base is "revision unavailable", a 502.
       "schema-drift": typedStatus(502, /revision is unavailable/),
     },

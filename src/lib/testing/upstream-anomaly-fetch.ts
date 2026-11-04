@@ -24,7 +24,7 @@ import {
   type UpstreamApiEntry,
   type UpstreamApiId,
 } from "../server/upstream-api-registry.ts";
-import { resetUpstreamHealth } from "../server/upstream-fetch.ts";
+import { carriesUpstreamDeadline, resetUpstreamHealth } from "../server/upstream-fetch.ts";
 
 export type UpstreamAnomaly =
   /** Any HTTP status with an optional body and headers. */
@@ -44,6 +44,8 @@ export type UpstreamAnomaly =
   | { kind: "empty-body" }
   /** 200 with well-formed JSON of the wrong shape. */
   | { kind: "schema-drift"; body?: unknown }
+  /** 200 with its headers sent, then the body stream fails. */
+  | { kind: "body-failure" }
   /** Delay, then either `then` or the healthy answer. */
   | { kind: "slow"; delayMs: number; then?: UpstreamAnomaly };
 
@@ -90,8 +92,10 @@ export type UpstreamCall = {
   method: string;
   headers: Record<string, string>;
   body: string | null;
-  /** The caller bounded the request with an AbortSignal. */
+  /** The call went through upstreamFetch, whose signal holds a real timer. */
   hasDeadline: boolean;
+  /** The caller passed some signal. All a browser-shared caller on plain fetch can show. */
+  hasSignal: boolean;
   /** The anomaly in force when the call arrived (null = healthy). */
   anomaly: UpstreamAnomaly | null;
   /** A healthy handler existed for the resolved upstream. */
@@ -207,7 +211,7 @@ function serializeBody(body: unknown): string | null {
 async function describeRequest(
   input: string | URL | Request,
   init: RequestInit | undefined,
-): Promise<{ url: string; method: string; headers: Record<string, string>; body: string | null; signal: AbortSignal | null; hasDeadline: boolean }> {
+): Promise<{ url: string; method: string; headers: Record<string, string>; body: string | null; signal: AbortSignal | null; hasDeadline: boolean; hasSignal: boolean }> {
   const url = input instanceof Request ? input.url : String(input);
   const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
   const headers: Record<string, string> = {};
@@ -222,9 +226,9 @@ async function describeRequest(
     body = await input.clone().text().catch(() => null);
   }
   const signal = init?.signal ?? (input instanceof Request ? input.signal : null);
-  // A Request always carries a signal, so only an explicit init signal proves
-  // the caller bounded the call with a deadline of its own.
-  return { url, method, headers, body, signal: signal ?? null, hasDeadline: Boolean(init?.signal) };
+  // Any signal would satisfy a presence check, including one with no timer, so
+  // only a signal from upstreamFetch counts as a deadline (#6370).
+  return { url, method, headers, body, signal: signal ?? null, hasDeadline: carriesUpstreamDeadline(init?.signal), hasSignal: Boolean(init?.signal) };
 }
 
 function buildRequest(url: string, method: string, headers: Record<string, string>, body: string | null, signal: AbortSignal | null): Request {
@@ -300,6 +304,15 @@ export function installUpstreamAnomalyFetch(options: InstallOptions = {}): Upstr
         throw networkError(anomaly.message);
       case "malformed-json":
         return new Response('{"data":[{"id":1,"name":"trunc', { status: 200, headers: jsonHeaders() });
+      case "body-failure":
+        return new Response(
+          new ReadableStream({
+            pull(controller) {
+              controller.error(new DOMException("The body stalled past its deadline", "TimeoutError"));
+            },
+          }),
+          { status: 200, headers: jsonHeaders() },
+        );
       case "empty-body":
         return new Response("", { status: 200, headers: jsonHeaders({ "content-length": "0" }) });
       case "schema-drift":
@@ -332,6 +345,7 @@ export function installUpstreamAnomalyFetch(options: InstallOptions = {}): Upstr
       headers: described.headers,
       body: described.body,
       hasDeadline: described.hasDeadline,
+      hasSignal: described.hasSignal,
       anomaly,
       handled: entry ? anomaly !== null || handlers.has(entry.id) : false,
       at: Date.now(),

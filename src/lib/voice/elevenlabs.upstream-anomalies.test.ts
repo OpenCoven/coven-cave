@@ -53,7 +53,7 @@ test("probeElevenLabs across upstream anomalies", async (t) => {
       goodKey(outcome);
       const call = harness.calls("elevenlabs").at(-1);
       assert.ok(call);
-      assert.equal(call.hasDeadline, true, "an unbounded probe would stall the whole mint on a dead socket");
+      assert.equal(call.hasSignal, true, "an unbounded probe would stall the whole mint on a dead socket");
     },
     degraded: {
       "http-500": probeFailed(500),
