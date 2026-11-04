@@ -29,6 +29,7 @@ let lastFetchCall: { url: string; init: RequestInit } | null = null;
 
 const { POST } = await import("./route.ts");
 const { ELEVENLABS_TTS_MAX_CHARS } = await import("../../../../../lib/voice/elevenlabs-shared.ts");
+const { resetUpstreamHealth } = await import("../../../../../lib/server/upstream-fetch.ts");
 
 const VOICE_ID = "AbCdEf123456";
 const MODEL_ID = "eleven_turbo_v2_5";
@@ -44,6 +45,9 @@ beforeEach(() => {
   delete process.env.ELEVENLABS_API_KEY;
   nextFetchResponse = null;
   lastFetchCall = null;
+  // A 429 in one test opens upstreamFetch's cooldown on the host; that window
+  // is the primitive's own contract, not this proxy's.
+  resetUpstreamHealth("elevenlabs");
 });
 
 test("400 invalid_json on an unparseable body", async () => {
@@ -113,6 +117,7 @@ test("502 with a hint when ElevenLabs rejects, 502 key-invalid on 401", async ()
   assert.equal(rejectedJson.error, "elevenlabs_tts_failed");
   assert.match(rejectedJson.hint, /quota exceeded/);
 
+  resetUpstreamHealth("elevenlabs");
   nextFetchResponse = new Response("{}", { status: 401 });
   const unauthorized = await POST(req({ voiceId: VOICE_ID, modelId: MODEL_ID, text: "hello" }));
   const unauthorizedJson = await unauthorized.json();

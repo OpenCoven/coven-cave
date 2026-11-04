@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server.js";
 import { resolveSecret } from "../../../../lib/vault.ts";
+import { upstreamFetch } from "../../../../lib/server/upstream-fetch.ts";
 import {
   findOpenAiVoice,
   openAiVoicePreviewText,
@@ -15,6 +16,8 @@ export const dynamic = "force-dynamic";
 // rejections still get a retryable, actionable message.
 const TTS_URL = "https://api.openai.com/v1/audio/speech";
 const TTS_MODEL = "gpt-4o-mini-tts";
+// A short sample renders in seconds; the deadline only has to catch a dead socket.
+const TTS_TIMEOUT_MS = 30_000;
 
 type CacheEntry =
   | { kind: "audio"; body: ArrayBuffer }
@@ -51,7 +54,7 @@ export async function GET(req: Request) {
 
   let res: Response;
   try {
-    res = await fetch(TTS_URL, {
+    res = await upstreamFetch("openai", TTS_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -63,7 +66,7 @@ export async function GET(req: Request) {
         input: openAiVoicePreviewText(voice),
         response_format: "mp3",
       }),
-    });
+    }, { timeoutMs: TTS_TIMEOUT_MS });
   } catch {
     return NextResponse.json({ ok: false, error: "provider_unreachable" }, { status: 502 });
   }
@@ -91,6 +94,15 @@ export async function GET(req: Request) {
   }
 
   const body = await res.arrayBuffer();
+  if (body.byteLength === 0) {
+    // A 2xx with no bytes is not a sample. Caching it would replay silence for
+    // the process lifetime, long after the provider recovered (#6359).
+    return NextResponse.json({
+      ok: false,
+      error: "preview_failed",
+      providerMessage: "empty audio body",
+    }, { status: 502 });
+  }
   cache.set(voice.id, { kind: "audio", body });
   return audioResponse(body);
 }

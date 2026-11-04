@@ -22,6 +22,7 @@ import { resolveGitHubToken } from "@/lib/github-token";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
 import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
 import { restSource } from "@/lib/github-assigned-meta";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -130,7 +131,7 @@ async function ghFetch(path: string, token: string | null) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store" });
+  const res = await upstreamFetch("github", `${GH}${path}`, { headers, cache: "no-store" });
   const data = await res.json().catch(() => null);
   return { res, data };
 }
@@ -188,7 +189,7 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
         }
       }
     }`;
-  const res = await fetch(`${GH}/graphql`, {
+  const res = await upstreamFetch("github", `${GH}/graphql`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,

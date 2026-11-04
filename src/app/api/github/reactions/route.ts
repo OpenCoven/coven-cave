@@ -16,6 +16,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,7 +44,7 @@ function ghHeaders(token: string | null): Record<string, string> {
 /** The authenticated login, or null — best-effort, so a failure only costs `mine`. */
 async function viewerLogin(token: string): Promise<string | null> {
   try {
-    const res = await fetch(`${GH}/user`, { headers: ghHeaders(token), cache: "no-store" });
+    const res = await upstreamFetch("github", `${GH}/user`, { headers: ghHeaders(token), cache: "no-store" });
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok || typeof data?.login !== "string") return null;
     return data.login;
@@ -75,7 +76,7 @@ export async function GET(req: Request) {
   try {
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
     const [res, login] = await Promise.all([
-      fetch(`${GH}/repos/${repo}/issues/${number}/reactions?per_page=100`, {
+      upstreamFetch("github", `${GH}/repos/${repo}/issues/${number}/reactions?per_page=100`, {
         headers: ghHeaders(token),
         cache: "no-store",
       }),
@@ -135,7 +136,7 @@ export async function POST(req: Request) {
 
   try {
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/issues/${number}/reactions`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/issues/${number}/reactions`, {
       method: "POST",
       headers: ghHeaders(token),
       cache: "no-store",
@@ -187,7 +188,7 @@ export async function DELETE(req: Request) {
   try {
     // repo passed REPO_RE; number and reactionId are positive integers — all
     // safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/issues/${number}/reactions/${reactionId}`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/issues/${number}/reactions/${reactionId}`, {
       method: "DELETE",
       headers: ghHeaders(token),
       cache: "no-store",

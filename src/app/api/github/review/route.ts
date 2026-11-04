@@ -15,6 +15,7 @@ import { resolveGitHubToken } from "@/lib/github-token";
 import { parseGitHubDiffRevision, validateGitHubReviewBody } from "@/lib/github-review";
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
   try {
     await assertCurrentGitHubRevision(repo, number, token, headSha, reviewedRevision);
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/reviews`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}/reviews`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

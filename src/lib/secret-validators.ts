@@ -5,20 +5,22 @@
  * an optional detail. The secret value is never logged or returned.
  */
 
+import { upstreamFetch } from "./server/upstream-fetch.ts";
+
 export type SecretValidation = { ok: boolean; login?: string; error?: string };
 type FetchLike = typeof fetch;
 type Validator = (value: string, fetchImpl: FetchLike) => Promise<SecretValidation>;
 
 export async function validateGithubToken(value: string, fetchImpl: FetchLike): Promise<SecretValidation> {
   try {
-    const res = await fetchImpl("https://api.github.com/user", {
+    const res = await upstreamFetch("github", "https://api.github.com/user", {
       headers: {
         Authorization: `Bearer ${value}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
       },
       cache: "no-store",
-    });
+    }, { fetchImpl });
     if (res.status === 401 || res.status === 403) return { ok: false, error: "token rejected by GitHub" };
     if (!res.ok) return { ok: false, error: `GitHub API error (${res.status})` };
     const data = await res.json().catch(() => null);

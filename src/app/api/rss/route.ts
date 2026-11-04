@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { canonicalLink, mergeFeedItems, parseFeed, type FeedItem } from "@/lib/rss";
 import { resolveFeeds, type FeedSource } from "@/lib/server/rss-feeds";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { upstreamApiForHost } from "@/lib/server/upstream-api-registry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -34,7 +36,10 @@ let cache: { at: number; body: RssPayload } | null = null;
 
 async function fetchOne(feed: FeedSource): Promise<{ source: FeedSource; items: FeedItem[]; ok: boolean }> {
   try {
-    const res = await fetch(feed.url, {
+    // A Hugging Face feed is charged to that upstream; any other configured
+    // feed host shares the generic RSS ledger.
+    const id = upstreamApiForHost(new URL(feed.url).host)?.id ?? "rss-feeds";
+    const res = await upstreamFetch(id, feed.url, {
       headers: {
         // Some hosts reject the default fetch agent or non-feed Accept headers.
         "User-Agent": "coven-cave/rss (+https://github.com/OpenCoven/coven-cave)",

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveSecret } from "@/lib/vault";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { loadConfig } from "@/lib/cave-config";
 import { buildProjectIconPrompt } from "@/lib/project-icon-prompt";
 import {
@@ -19,6 +20,8 @@ const GEMINI_IMAGES_URL_BASE = "https://generativelanguage.googleapis.com/v1beta
 // ProjectAvatar renders at 16–28px — low quality webp keeps payloads far
 // under the 2MB avatar-store cap while staying crisp at tile size.
 const OPENAI_IMAGE_OPTIONS = { size: "1024x1024", quality: "low", output_format: "webp" } as const;
+/** A render is slow by nature; the deadline only has to catch a dead socket. */
+const GENERATION_TIMEOUT_MS = 60_000;
 
 /**
  * Only the base64 payload crosses this boundary. The providers also return a
@@ -38,14 +41,14 @@ async function generateWithOpenAI(
 ): Promise<ProviderResult> {
   let res: Response;
   try {
-    res = await fetch(OPENAI_IMAGES_URL, {
+    res = await upstreamFetch("openai", OPENAI_IMAGES_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ model, prompt, n: 1, ...OPENAI_IMAGE_OPTIONS }),
-    });
+    }, { timeoutMs: GENERATION_TIMEOUT_MS });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: "provider_unreachable", providerMessage: msg };
@@ -80,7 +83,7 @@ async function generateWithGemini(
 ): Promise<ProviderResult> {
   let res: Response;
   try {
-    res = await fetch(`${GEMINI_IMAGES_URL_BASE}/${model}:predict`, {
+    res = await upstreamFetch("gemini", `${GEMINI_IMAGES_URL_BASE}/${model}:predict`, {
       method: "POST",
       headers: {
         "x-goog-api-key": apiKey,
@@ -90,7 +93,7 @@ async function generateWithGemini(
         instances: [{ prompt }],
         parameters: { sampleCount: 1, aspectRatio: "1:1" },
       }),
-    });
+    }, { timeoutMs: GENERATION_TIMEOUT_MS });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: "provider_unreachable", providerMessage: msg };
