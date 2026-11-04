@@ -99,6 +99,7 @@ export const SUITES = {
     "src/lib/surface-warm-cache.test.ts",
     "scripts/test-alias-loader.test.mjs",
     "scripts/research-package-config.test.mjs",
+    "scripts/submissions-build-config.test.mjs",
     "scripts/check-version-continuity.test.mjs",
     "scripts/maintenance-gate.test.mjs",
     "scripts/install-playwright-ci.test.mjs",
@@ -1718,6 +1719,9 @@ export const SUITES = {
     "src/app/api/config/workspace-path/route.test.ts",
     "src/app/api/opencoven-executions-route.test.ts",
     "src/app/api/opencoven-submissions-route.test.ts",
+    "src/lib/server/opencoven-submissions-host.test.ts",
+    "src/lib/server/opencoven-submissions-retained.test.ts",
+    "src/lib/server/opencoven-submissions-runtime.test.ts",
     "src/app/api/familiars/route.test.ts",
     "src/app/api/familiars/[id]/dashboard/route.test.ts",
     "src/app/api/familiars/[id]/avatar/route.test.ts",
@@ -2316,6 +2320,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/server/opencoven-submissions-runtime.test.ts",
   // imports the one-shot runner, which reaches cave-config through @/ (#6374)
   "src/lib/server/coven-oneshot-workspace.test.ts",
   // The Research capability route reaches the activation owner through @/lib (#6332).

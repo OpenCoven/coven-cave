@@ -298,8 +298,10 @@ const contracts: RouteContract[] = [
   { route: "/queue/issues", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/queue/prs", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/queue/readiness", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
-  { route: "/opencoven/executions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  // Thin hosts: the optional implementation reads the body, after admission.
+  { route: "/opencoven/executions", methods: ["POST"], kind: "json" },
+  { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json" },
+  { route: "/opencoven/submissions/retained", methods: ["GET", "DELETE"], kind: "json", localOriginGuard: true },
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
   { route: "/opencoven-tools/status", methods: ["GET"], kind: "json" },
   { route: "/passkey/challenge", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -494,6 +496,9 @@ function effectiveRouteSource(file: string, source: string): string {
   if (reexport) {
     const target = path.resolve(path.dirname(file), `${reexport[1]}.ts`);
     parts.push(readFileSync(target, "utf8"));
+  }
+  if (source.includes('from "@/lib/server/opencoven-submissions-host"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "opencoven-submissions-host.ts"), "utf8"));
   }
   if (source.includes('from "@/lib/proposal-decision-body"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "proposal-decision-body.ts"), "utf8"));
