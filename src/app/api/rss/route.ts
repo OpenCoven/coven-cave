@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canonicalLink, mergeFeedItems, parseFeed, type FeedItem } from "@/lib/rss";
+import { canonicalLink, isFeedDocument, mergeFeedItems, parseFeed, type FeedItem } from "@/lib/rss";
 import { resolveFeeds, type FeedSource } from "@/lib/server/rss-feeds";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { upstreamApiForHost } from "@/lib/server/upstream-api-registry";
@@ -51,6 +51,7 @@ async function fetchOne(feed: FeedSource): Promise<{ source: FeedSource; items: 
     });
     if (!res.ok) return { source: feed, items: [], ok: false };
     const xml = await res.text();
+    if (!isFeedDocument(xml)) return { source: feed, items: [], ok: false };
     const parsed = parseFeed(xml);
     const items: FeedItem[] = parsed.items.slice(0, PER_FEED_ITEMS).map((it, i) => ({
       ...it,
@@ -86,6 +87,6 @@ export async function GET(req: Request) {
   }));
 
   const body: RssPayload = { ok: true, items, sources, fetchedAt: new Date(now).toISOString() };
-  cache = { at: now, body };
+  if (results.every((result) => result.ok)) cache = { at: now, body };
   return NextResponse.json(body);
 }

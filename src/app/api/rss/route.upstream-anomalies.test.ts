@@ -12,7 +12,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { installUpstreamAnomalyFetch } from "../../../lib/testing/upstream-anomaly-fetch.ts";
+import { STANDARD_UPSTREAM_ANOMALIES, installUpstreamAnomalyFetch } from "../../../lib/testing/upstream-anomaly-fetch.ts";
 import { runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../lib/testing/scratch-cave-home.ts";
 
@@ -93,15 +93,6 @@ const hnLostHfKept = (outcome: MatrixOutcome) => {
   assert.deepEqual(body.items.map((item) => item.source), ["Hugging Face"], "the survivor's items are served");
 };
 
-/** hnrss.org answered 200 with a body that is not a feed: no HN items, chip still on. */
-const hnEmptyHfKept = (outcome: MatrixOutcome) => {
-  assert.equal(outcome.status, 200);
-  const body = outcome.body as Body;
-  assert.equal(sourceOk(body, "hn"), true, "a 200 that is not a feed parses to zero items, which the route reads as ok");
-  assert.equal(sourceOk(body, "hf"), true);
-  assert.deepEqual(body.items.map((item) => item.source), ["Hugging Face"]);
-};
-
 test("GET /api/rss across upstream anomalies on one of two feeds", async (t) => {
   await runUpstreamAnomalyMatrix(t, {
     harness,
@@ -116,9 +107,9 @@ test("GET /api/rss across upstream anomalies on one of two feeds", async (t) => 
       "rate-limit": hnLostHfKept,
       timeout: hnLostHfKept,
       network: hnLostHfKept,
-      "malformed-json": hnEmptyHfKept,
-      "empty-body": hnEmptyHfKept,
-      "schema-drift": hnEmptyHfKept,
+      "malformed-json": hnLostHfKept,
+      "empty-body": hnLostHfKept,
+      "schema-drift": hnLostHfKept,
     },
   });
 });
@@ -142,37 +133,18 @@ test("every feed down at once is still a 200 with empty items and every chip off
   }
 });
 
-test("the window holds a degraded answer until ?refresh=1 or expiry (documented, not fixed)", async () => {
-  // Finding: the route caches whatever it assembled, including an answer with
-  // a feed marked ok:false, for the full window. A feed outage therefore stays
-  // visible for up to five minutes after the host recovers unless the widget
-  // asks with refresh=1. Bounded and user-recoverable, so recorded rather than
-  // changed here.
+test("a degraded aggregate is not cached and both sources recover on the next call", async () => {
   stepPastWindow();
   harness.inject("rss-feeds", { kind: "http", status: 503 });
-  harness.reset();
   hnLostHfKept(await captureJson(read()));
-  // upstreamFetch retries a failed read once before the route sees it.
-  assert.equal(harness.calls("rss-feeds").length, 2);
-
   harness.heal("rss-feeds");
   harness.reset();
-  hnLostHfKept(await captureJson(read()));
-  assert.equal(harness.calls().length, 0, "inside the window the degraded answer is served without a fetch");
-
-  harness.reset();
-  healthyBody(await captureJson(read("?refresh=1")));
-  assert.equal(harness.calls("rss-feeds").length, 1, "refresh=1 bypasses the window and reaches hnrss.org");
+  healthyBody(await captureJson(read()));
+  assert.equal(harness.calls("rss-feeds").length, 1);
   assert.equal(harness.calls("huggingface").length, 1);
-
   harness.reset();
   healthyBody(await captureJson(read()));
-  assert.equal(harness.calls().length, 0, "the refreshed good answer is then held for the window");
-
-  stepPastWindow();
-  harness.reset();
-  healthyBody(await captureJson(read()));
-  assert.equal(harness.calls().length, 2, "past the window every feed is fetched again");
+  assert.equal(harness.calls().length, 0, "only the complete healthy aggregate is cached");
 });
 
 test("each feed fetch carries a deadline", () => {
@@ -184,3 +156,17 @@ async function captureJson(pending: Promise<Response>): Promise<MatrixOutcome> {
   const text = await response.clone().text();
   return { value: response, response, status: response.status, text, body: JSON.parse(text), threw: undefined };
 }
+
+test("every degraded source recovers without resetting the route cache or advancing its clock", async () => {
+  for (const { name, anomaly } of STANDARD_UPSTREAM_ANOMALIES) {
+    stepPastWindow();
+    healthyBody(await captureJson(read()));
+    stepPastWindow();
+    harness.inject("rss-feeds", anomaly);
+    hnLostHfKept(await captureJson(read()));
+    harness.heal("rss-feeds");
+    harness.reset();
+    healthyBody(await captureJson(read()));
+    assert.equal(harness.calls("rss-feeds").length, 1, name);
+  }
+});

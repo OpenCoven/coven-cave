@@ -92,7 +92,8 @@ assert `hasSignal`.
    library whose contract is a typed error.
 4. Where the caller caches, stub `Date.now` and step the clock in
    `beforeEach`/`beforeHeal` so the healed call is reachable, and add an
-   explicit test that a failure is not served past its documented hold.
+   explicit healthy → fault → healed test without clearing route caches or
+   advancing the route clock between fault and recovery.
 5. Wire the file into the `api` suite in `scripts/run-tests.mjs` (and into
    `ALIAS_LOADER` when it imports anything that resolves `@/`). Run
    `node scripts/check-tests-wired.mjs`.
@@ -116,6 +117,19 @@ Explicit provider retry windows are retained through their requested expiry, inc
 ## GitHub write response validation
 
 The proposal, composer and Coding Desk PR actions validate Cave's write envelope before displaying its fields or confirming success. `ok` must be boolean; optional `error` and `code` fields must be strings. Invalid envelopes remain unconfirmed instead of exposing malformed values to React or offering an ordinary retry. Rendered component regressions prove that an uncertain card links to GitHub, an uncertain review preserves its draft, and refresh does not resend the write. These fixtures do not prove live GitHub or native-device acceptance.
+
+
+## Cache, audio and provider-error recovery
+
+Home Tweets retains its last good timeline when a 200 lacks a complete RSS/Atom envelope. A valid empty feed remains cacheable. RSS marks unreadable sources as failed and caches an aggregate only when every source is healthy. The feed guard recognizes envelope completion and balanced item/entry boundaries; it does not provide general XML validation.
+
+Skills search caches only non-empty live entries. Failed, empty or non-text SKILL.md previews remain retryable. Dedicated regressions drive every standard anomaly through feed, search and preview callers and prove the next healed call reaches the provider without resetting route caches or advancing their clocks. The shared provider cooldown is reset by the harness to separate route-cache behavior from Retry-After policy; it remains qualified independently.
+
+Voice preview accepts MP3 response types before reading and caching bytes. ElevenLabs validates the requested MP3 or PCM response type, requires a first non-empty chunk, and then streams with backpressure and cancellation. Missing or non-audio types, empty audio and initial stream failures return an actionable 502. A later streaming failure remains a stream error after headers have been sent; no successful complete-audio claim is made. Provider messages retain useful context while the shared redactor removes the exact configured credential and recognized secret formats. Both real audio route handlers have echoed-toy-credential regressions.
+
+The intentional projects/icon precharged cooldown remains unchanged. Salem's old fallback rows are superseded by the separately owned #6399/#6408 no-egress retirement contract after that work lands; this class does not implement a replacement assistant. These are synthetic server-handler checks, without live provider calls, native audio playback, packaged builds or human acceptance.
+
+The feed-envelope guard advances a single cursor through tags, quoted attributes, comments, processing instructions, CDATA and inert declarations. It rejects mismatched/truncated structure and nesting deeper than 256 without resolving entities. It does not validate the full XML grammar. A bounded child-process regression rejects large malformed tag/comment prefixes without leaving the API test runner stuck. The original regex-based malformed-feed timeout and hosted CodeQL failure are retained for comparison; security acceptance requires the repaired head's scan.
 
 
 ## Retained acceptance regressions

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server.js";
+import { redactSecretText } from "../../../../../lib/secret-redaction.ts";
 import { resolveSecret } from "../../../../../lib/vault.ts";
 import { upstreamFetch } from "../../../../../lib/server/upstream-fetch.ts";
 import {
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: false,
       error: "elevenlabs_unreachable",
-      hint: `Couldn't reach ElevenLabs (${e instanceof Error ? e.message : "fetch failed"}).`,
+      hint: redactSecretText(`Couldn't reach ElevenLabs (${e instanceof Error ? e.message : "fetch failed"}).`, [apiKey]),
     }, { status: 502 });
   }
 
@@ -104,13 +105,43 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: false,
       error: "elevenlabs_tts_failed",
-      hint: detail || `ElevenLabs returned http ${res.status}.`,
+      hint: typeof detail === "string" && detail ? redactSecretText(detail, [apiKey]) : `ElevenLabs returned http ${res.status}.`,
     }, { status: 502 });
   }
 
-  // Preserve backpressure and start playback as soon as the first bytes
-  // arrive. Buffering here erases the provider's time-to-first-audio benefit.
-  return new Response(res.body, {
+  const contentType = res.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+  const expectedAudio = pcm
+    ? contentType === "audio/pcm" || contentType === "audio/l16"
+    : contentType === "audio/mpeg" || contentType === "audio/mp3";
+  if (!expectedAudio || !res.body || res.headers.get("content-length") === "0") {
+    void res.body?.cancel().catch(() => {});
+    return NextResponse.json({ ok: false, error: "elevenlabs_tts_failed", hint: "ElevenLabs did not return the requested audio format." }, { status: 502 });
+  }
+
+  // Verify that audio starts, then preserve backpressure without buffering the
+  // utterance. An empty or failed stream must not become a successful render.
+  const reader = res.body.getReader();
+  let first: ReadableStreamReadResult<Uint8Array>;
+  try {
+    do { first = await reader.read(); } while (!first.done && first.value.byteLength === 0);
+  } catch {
+    return NextResponse.json({ ok: false, error: "elevenlabs_unreachable", hint: "ElevenLabs audio stream failed before playback." }, { status: 502 });
+  }
+  if (first.done) {
+    return NextResponse.json({ ok: false, error: "elevenlabs_tts_failed", hint: "ElevenLabs returned an empty audio stream." }, { status: 502 });
+  }
+  const audio = new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(first.value!); },
+    async pull(controller) {
+      try {
+        const chunk = await reader.read();
+        if (chunk.done) controller.close();
+        else controller.enqueue(chunk.value);
+      } catch (error) { controller.error(error); }
+    },
+    cancel(reason) { return reader.cancel(reason); },
+  });
+  return new Response(audio, {
     status: 200,
     headers: {
       "content-type": pcm ? "audio/pcm" : "audio/mpeg",

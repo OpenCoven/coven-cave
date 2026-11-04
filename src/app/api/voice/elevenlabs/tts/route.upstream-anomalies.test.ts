@@ -47,7 +47,7 @@ function streamedAudio(contentType: string): Response {
 harness.healthy("elevenlabs", async (request) => {
   const url = new URL(request.url);
   assert.equal(url.pathname, `/v1/text-to-speech/${VOICE_ID}/stream`);
-  assert.equal(request.headers.get("xi-api-key"), API_KEY, "the key travels as xi-api-key and nowhere else");
+  assert.equal(request.headers.get("xi-api-key"), process.env.ELEVENLABS_API_KEY, "the key travels as xi-api-key and nowhere else");
   const body = (await request.json()) as { text: string; model_id: string };
   assert.equal(body.model_id, MODEL_ID);
   assert.equal(body.text, "The cave hums.");
@@ -85,12 +85,9 @@ const unreachable: DegradedExpectation = (outcome, anomaly) => {
   singleAttempt();
 };
 
-// The proxy relays any 2xx body under its own audio content-type without
-// looking at what ElevenLabs declared, so JSON on a 200 is streamed as audio.
-// Documented here, not endorsed.
+// Non-audio 2xx bodies are rejected before caching or streaming.
 const relayedAsAudio: DegradedExpectation = (outcome) => {
-  assert.equal(outcome.status, 200);
-  assert.equal(outcome.response?.headers.get("content-type"), "audio/mpeg");
+  assert.equal(outcome.status, 502, "a non-audio 200 is a provider failure");
 };
 
 test("POST /api/voice/elevenlabs/tts across upstream anomalies", async (t) => {
@@ -176,4 +173,29 @@ test("the caller hanging up cancels the upstream render", async () => {
   harness.reset();
   assert.equal((await speak()).status, 200, "the next render after a hang-up reaches ElevenLabs again");
   assert.equal(harness.calls("elevenlabs").length, 1);
+});
+
+
+test("echoed credentials are removed from provider details and network errors, with recovery", async () => {
+  const toyKey = "audit-fixture-only-not-a-real-secret";
+  const previousKey = process.env.ELEVENLABS_API_KEY;
+  process.env.ELEVENLABS_API_KEY = toyKey;
+  try {
+    for (const anomaly of [
+      { kind: "http", status: 422, body: { detail: { message: `Rejected credential ${toyKey}` } } },
+      { kind: "http", status: 422, body: { detail: `Rejected credential ${toyKey}` } },
+      { kind: "network", message: `Rejected credential ${toyKey}` },
+    ] as const) {
+      harness.inject("elevenlabs", anomaly);
+      const failed = await speak();
+      assert.equal(failed.status, 502);
+      const text = await failed.text();
+      assert.equal(text.includes(toyKey), false);
+      assert.match(text, /Rejected credential \[redacted\]/);
+      harness.heal("elevenlabs");
+      harness.reset();
+      assert.equal((await speak()).status, 200);
+      assert.equal(harness.calls("elevenlabs").length, 1);
+    }
+  } finally { process.env.ELEVENLABS_API_KEY = previousKey; }
 });
