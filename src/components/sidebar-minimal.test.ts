@@ -374,8 +374,9 @@ assert.doesNotMatch(
   "footer should not render an unread reminders badge",
 );
 
-// Marketplace stays a visible entry; Browser is now summoned on demand
-// (navHidden), so it must NOT appear among the rendered VISIBLE_MODES rows.
+// Browser is summoned on demand (navHidden), so it must NOT appear among the
+// rendered VISIBLE_MODES rows. Marketplace left default navigation (#6398): its
+// mode, palette row, deep links and Settings entry stay.
 // (Capabilities moved to a tab on the Roles page — no standalone entry.)
 assert.match(
   navigation,
@@ -385,8 +386,8 @@ assert.match(
 assert.doesNotMatch(navigation, /id:\s*"terminal"/, "terminal does not stay visible");
 assert.match(
   navigation,
-  /id:\s*"marketplace"[^}]*label:\s*"Marketplace"/,
-  "marketplace stays visible",
+  /id:\s*"marketplace"[^}]*label:\s*"Marketplace"[^}]*navHidden:\s*true/,
+  "marketplace is reachable without a sidebar row",
 );
 assert.doesNotMatch(
   navigation,
@@ -564,8 +565,8 @@ assert.match(
 );
 assert.match(
   navigation,
-  /\{ id: "marketplace",[^}]*quiet: true \}/,
-  "Marketplace is in the quiet cluster",
+  /\{ id: "marketplace",[^}]*quiet: true, navHidden: true \}/,
+  "Marketplace keeps its quiet metadata but has no sidebar row",
 );
 assert.match(
   styles,

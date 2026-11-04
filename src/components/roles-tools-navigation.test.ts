@@ -61,7 +61,7 @@ assert.doesNotMatch(
 // ── Navigation: one Tools entry for the merged hub ───────────────────────────
 assert.match(
   navigation,
-  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Manage installed items and author local skills", group: "explore", quiet: true \},/,
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Manage installed items and author local skills", group: "explore", quiet: true, navHidden: true \},/,
   "The navigation registry describes owned inventory and local skill authoring",
 );
 assert.doesNotMatch(

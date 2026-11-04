@@ -82,7 +82,7 @@ export const surfacePreferenceSpecs = {
   familiars: {
     selectedId: nullableStringSpec("familiars.selectedId"),
     viewMode: enumSpec("familiars.viewMode", "roster", ["roster", "detail", "agent-memory"] as const),
-    detailTab: enumSpec("familiars.detailTab", "memory", ["memory", "daily-notes", "files", "sessions", "feed"] as const),
+    detailTab: enumSpec("familiars.detailTab", "memory", ["memory", "daily-notes", "files", "sessions"] as const),
   },
   familiarMemory: {
     familiarId: stringSpec("familiarMemory.familiarId", ""),

@@ -186,7 +186,7 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     title: "Marketplace",
     canonicalId: "marketplace",
     variant: "default",
-    nav: "quiet",
+    nav: "hidden",
     palette: "secondary",
     statusContext: "contextual",
     split: "always",

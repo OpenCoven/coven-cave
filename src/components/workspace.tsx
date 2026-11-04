@@ -4593,7 +4593,6 @@ export function Workspace() {
           openGrimoireDoc("memory", path);
         }}
         onOpenOnboarding={openOnboarding}
-        onOpenUrl={openUrlInAppBrowser}
         onFamiliarCreated={(id) => {
           void loadFamiliars();
           selectFamiliar(id);

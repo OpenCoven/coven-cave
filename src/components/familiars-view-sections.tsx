@@ -16,7 +16,6 @@ import { AuthedImage } from "@/components/ui/authed-image";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
 import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-view";
 import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
-import { HomeFeed } from "@/components/home/home-feed";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -391,14 +390,13 @@ export function FamiliarDetailRail({ familiars, selectedId, onSelect, onPreview,
 // FamiliarDetailPanel — right-side panel with Memory / Files / Sessions tabs
 // ────────────────────────────────────────────────────────────────────────────
 
-type DetailTab = "memory" | "daily-notes" | "files" | "sessions" | "feed";
+type DetailTab = "memory" | "daily-notes" | "files" | "sessions";
 
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "memory", label: "Memory" },
   { id: "daily-notes", label: "Daily Notes" },
   { id: "files", label: "Files" },
   { id: "sessions", label: "Sessions" },
-  { id: "feed", label: "Feed" },
 ];
 
 type AgentDetailPanelProps = {
@@ -416,7 +414,6 @@ type AgentDetailPanelProps = {
   onEnhance: () => void;
   onOpenSession: (sessionId: string) => void;
   onOpenMemoryFile: (path: string) => void;
-  onOpenUrl: (url: string) => void;
 };
 
 // Per-familiar overflow menu on the detail panel header. Remove routes to the
@@ -491,10 +488,9 @@ export function FamiliarDetailPanel({
   onEnhance,
   onOpenSession,
   onOpenMemoryFile,
-  onOpenUrl,
 }: AgentDetailPanelProps) {
   const [tab, setTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
-  // Memory / Daily Notes / Files / Sessions / Feed are destinations inside the
+  // Memory / Daily Notes / Files / Sessions are destinations inside the
   // familiar detail, not a view toggle.
   const selectTab = useTrackedSurfaceValue({
     id: "familiars:detail-tab",
@@ -632,10 +628,6 @@ export function FamiliarDetailPanel({
             <p className="mt-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               Only files traced to {familiar.display_name} are shown here.
             </p>
-          </div>
-        ) : tab === "feed" ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-            <HomeFeed onOpenUrl={onOpenUrl} />
           </div>
         ) : (
           <div className="h-full overflow-y-auto p-4">

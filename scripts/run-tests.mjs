@@ -643,6 +643,7 @@ export const SUITES = {
     "src/lib/home-task-handoff.test.ts",
     "src/components/home/dashboard-open-work.test.ts",
     "src/components/home-feed.test.ts",
+    "src/components/default-navigation-scope.test.ts",
     "src/components/home-composer-centering.test.ts",
     "src/components/home-composer-hide-archived.test.ts",
     "src/components/ios-theme-api.test.ts",

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { observeSettingsTarget } from "@/lib/settings-search-target";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Icon } from "@/lib/icon";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { relativeTime } from "@/lib/relative-time";
@@ -388,6 +389,20 @@ function GeneralSection() {
         <SetupStatusRow />
       </SettingsGroup>
       <BackupSettingsGroup />
+      <SettingsGroup label="Installed capabilities" variant="ruled" panel={false}>
+        <SettingsRow
+          label="Skills, tools and connectors"
+          description="Check health and compatibility, change access, or uninstall."
+          variant="sheet"
+        >
+          {/* Settings is its own route with no Workspace listening for
+              cave:navigate-mode, so this is a real navigation to the saved-link
+              form of the surface. */}
+          <Link className="ui-btn ui-btn--secondary focus-ring" href="/?mode=marketplace">
+            Manage installed items
+          </Link>
+        </SettingsRow>
+      </SettingsGroup>
     </SettingsPage>
     </GeneralSettingsDataProvider>
   );

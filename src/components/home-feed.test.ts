@@ -8,11 +8,11 @@ const composer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "
 const familiarsView = readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8");
 const familiarsSections = readFileSync(new URL("./familiars-view-sections.tsx", import.meta.url), "utf8");
 
-// The content feed now lives as a per-familiar "Feed" tab in the Familiars
-// detail panel, not on the Home composer.
-assert.match(familiarsSections, /import \{ HomeFeed \} from "@\/components\/home\/home-feed"/, "detail sections import HomeFeed");
-assert.match(familiarsSections, /<HomeFeed onOpenUrl=\{onOpenUrl\}/, "detail sections render HomeFeed in the Feed tab");
-assert.match(familiarsSections, /\{ id: "feed", label: "Feed" \}/, "detail panel exposes a Feed tab");
+// The promotional feed left the default experience (#6398). No surface renders
+// it, so it makes no /api/home-tweets request. The component is hidden, not
+// absent: it stays in the tree until a separate cleanup removes it.
+assert.doesNotMatch(familiarsSections, /HomeFeed|home-feed/, "familiar detail no longer imports the feed");
+assert.doesNotMatch(familiarsSections, /id: "feed"/, "familiar detail has no Feed tab");
 assert.doesNotMatch(familiarsView, /HomeFeed/, "the controller does not retain feed rendering ownership");
 assert.doesNotMatch(composer, /<HomeFeed/, "the content feed no longer renders on the Home composer");
 assert.doesNotMatch(composer, /HomeRssWidget|rss-widget/, "the old RSS widget is gone from home");
