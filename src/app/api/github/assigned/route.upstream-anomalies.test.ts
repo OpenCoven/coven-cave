@@ -12,6 +12,7 @@ import test from "node:test";
 
 import { installUpstreamAnomalyFetch, type UpstreamHandler } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import {
+  expectRateLimitRetry,
   expectErrorStatus,
   runUpstreamAnomalyMatrix,
   type DegradedExpectation,
@@ -135,7 +136,7 @@ test("GET /api/github/assigned across upstream anomalies", async (t) => {
         assert.equal(body.configured, true);
         assert.deepEqual(body.items, []);
       },
-      "rate-limit": allSourcesDown("GitHub API error: HTTP 429"),
+      "rate-limit": expectRateLimitRetry,
       timeout: unreachable,
       network: (outcome, anomaly) => {
         unreachable(outcome, anomaly);
@@ -159,6 +160,26 @@ test("GET /api/github/assigned across upstream anomalies", async (t) => {
       },
     },
   });
+});
+
+test("a rate-limited search preserves items from successful sources", async () => {
+  stepPastCache();
+  const healthy = github();
+  harness.healthy("github", (request, call) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/search/issues" && url.search.includes("review-requested")) {
+      return Response.json({ message: "API rate limit exceeded" }, {
+        status: 429,
+        headers: { "retry-after": "7" },
+      });
+    }
+    return healthy(request, call);
+  });
+  const response = await read();
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "7");
+  assert.deepEqual(((await response.json()) as Assigned).items.map((entry) => entry.id).sort(), ["1", "3"]);
+  harness.healthy("github", github());
 });
 
 test("a failure stands for its fresh minute and no longer", async () => {

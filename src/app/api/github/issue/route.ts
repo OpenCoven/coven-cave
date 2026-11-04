@@ -19,6 +19,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { ambiguousWrite, isRecord, positiveInteger } from "@/lib/server/upstream-answer";
 
@@ -135,10 +136,12 @@ export async function POST(req: Request) {
     // existence unknown, so say so rather than invite a duplicate.
     if (res.ok && !isRecord(data)) return ambiguousWrite("GitHub", "new issue");
     if (!res.ok || !data || typeof data !== "object") {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 || res.status === 404 ? res.status : 502 },
-      );
+      return upstreamApiError("GitHub", res, {
+        configured: true,
+        error: `github error (${res.status})`,
+        responseBody: data,
+        fallbackStatus: res.status === 403 || res.status === 404 ? res.status : 502,
+      });
     }
     const issue = issuePayload(data as Record<string, unknown>);
     if (!issue) return ambiguousWrite("GitHub", "new issue");
@@ -213,10 +216,12 @@ export async function PATCH(req: Request) {
         typeof (data as Record<string, unknown> | null)?.message === "string"
           ? String((data as Record<string, unknown>).message)
           : `github error (${res.status})`;
-      return NextResponse.json(
-        { ok: false, error: message },
-        { status: res.status === 403 || res.status === 404 ? res.status : 502 },
-      );
+      return upstreamApiError("GitHub", res, {
+        configured: true,
+        error: message,
+        responseBody: data,
+        fallbackStatus: res.status === 403 || res.status === 404 ? res.status : 502,
+      });
     }
     const d = data as Record<string, unknown>;
     const issue = issuePayload(d);

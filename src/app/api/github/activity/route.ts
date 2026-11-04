@@ -576,8 +576,13 @@ export async function GET() {
     items,
     rateLimit: rateInfo,
     warning: checkCooldownFailure?.message,
-    retryAfterSeconds: checkCooldownFailure?.retryAfterSeconds ?? undefined,
+    retryAfterSeconds: checkCooldownFailure?.retryAfterSeconds ?? cooldownFailure?.retryAfterSeconds ?? undefined,
   };
 
-  return NextResponse.json(result);
+  const retryAfterSeconds = checkCooldownFailure?.retryAfterSeconds ?? cooldownFailure?.retryAfterSeconds;
+  return NextResponse.json(result, {
+    headers: retryAfterSeconds === null || retryAfterSeconds === undefined
+      ? undefined
+      : { "Retry-After": String(retryAfterSeconds) },
+  });
 }

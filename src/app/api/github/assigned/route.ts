@@ -3,6 +3,7 @@ import type { GitHubItem } from "@/lib/github-tasks";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { createSwrCache } from "@/lib/swr-cache";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
+import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import {
   failedSource,
@@ -60,11 +61,19 @@ async function fetchSource<T>(
   url: string,
   headers: Record<string, string>,
   parse: (body: T, linkHeader: string | null) => { items: GitHubItem[]; meta: AssignedSourceMeta },
-): Promise<{ items: GitHubItem[]; meta: AssignedSourceMeta; unauthorized?: boolean }> {
+): Promise<{ items: GitHubItem[]; meta: AssignedSourceMeta; unauthorized?: boolean; rateLimited?: Response }> {
   try {
     const res = await upstreamFetch("github", url, { headers });
     if (res.status === 401) return { items: [], meta: failedSource("HTTP 401"), unauthorized: true };
-    if (!res.ok) return { items: [], meta: failedSource(`GitHub API error: HTTP ${res.status}`) };
+    if (!res.ok) {
+      const rateLimited = res.status === 429
+        || (res.status === 403 && (res.headers.get("x-ratelimit-remaining") === "0" || res.headers.has("retry-after")));
+      return {
+        items: [],
+        meta: failedSource(`GitHub API error: HTTP ${res.status}`),
+        ...(rateLimited ? { rateLimited: res } : {}),
+      };
+    }
     const body = (await res.json()) as T;
     return parse(body, res.headers.get("link"));
   } catch (err) {
@@ -72,7 +81,7 @@ async function fetchSource<T>(
   }
 }
 
-type CachedAssigned = { status: number; body: string; servable: boolean };
+type CachedAssigned = { status: number; body: string; servable: boolean; headers?: Record<string, string> };
 
 /**
  * Three live GitHub calls (two on the 30/min search API) took 2.9 s on every
@@ -104,11 +113,16 @@ export async function GET() {
     } catch {
       servable = false;
     }
-    return { status: response.status, body, servable };
+    return {
+      status: response.status,
+      body,
+      servable,
+      headers: Object.fromEntries(response.headers.entries()),
+    };
   });
   return new NextResponse(result.body, {
     status: result.status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...result.headers },
   });
 }
 
@@ -195,15 +209,6 @@ async function loadAssigned(token: string): Promise<Response> {
     authored: created.meta,
   };
 
-  // Every source down = the old total-failure path: the caller gets an error,
-  // never a plausible-looking empty list.
-  if (!assigned.meta.ok && !review.meta.ok && !created.meta.ok) {
-    return NextResponse.json(
-      { ok: false, error: assigned.meta.error ?? "GitHub API error", items: [], sources },
-      { status: 502 },
-    );
-  }
-
   // De-duplicate by url (keep first occurrence), then sort by updatedAt desc
   const seen = new Set<string>();
   const all: GitHubItem[] = [];
@@ -214,6 +219,24 @@ async function loadAssigned(token: string): Promise<Response> {
     }
   }
   all.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+  const rateLimited = assigned.rateLimited ?? review.rateLimited ?? created.rateLimited;
+  if (rateLimited) {
+    return upstreamApiError("GitHub", rateLimited, {
+      configured: true,
+      error: `GitHub API error: HTTP ${rateLimited.status}`,
+      details: { items: all, configured: true, sources },
+    });
+  }
+
+  // Every source down = the old total-failure path: the caller gets an error,
+  // never a plausible-looking empty list.
+  if (!assigned.meta.ok && !review.meta.ok && !created.meta.ok) {
+    return NextResponse.json(
+      { ok: false, error: assigned.meta.error ?? "GitHub API error", items: [], sources },
+      { status: 502 },
+    );
+  }
 
   return NextResponse.json({
     ok: true,

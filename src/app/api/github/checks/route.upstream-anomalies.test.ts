@@ -11,7 +11,9 @@ import test from "node:test";
 
 import { installUpstreamAnomalyFetch, type UpstreamHandler } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import {
+  expectCredentialReconnect,
   expectErrorStatus,
+  expectRateLimitRetry,
   runUpstreamAnomalyMatrix,
   type DegradedExpectation,
 } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
@@ -106,8 +108,8 @@ test("GET /api/github/checks across upstream anomalies", async (t) => {
     degraded: {
       "http-500": githubError(502, 500),
       "http-502": githubError(502, 502),
-      "auth-revoked": githubError(502, 401),
-      "rate-limit": githubError(502, 429),
+      "auth-revoked": expectCredentialReconnect,
+      "rate-limit": expectRateLimitRetry,
       timeout: unreachable,
       network: (outcome, anomaly) => {
         unreachable(outcome, anomaly);
@@ -139,6 +141,43 @@ test("an unreadable status side keeps the runs and demotes passing to pending", 
   assert.equal(body.runs.length, 1);
   assert.deepEqual(body.statuses, []);
   assert.equal(body.rollup, "pending");
+  harness.healthy("github", github());
+});
+
+test("a rate limit on a later check page retains partial checks and retry timing", async () => {
+  harness.healthy("github", (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === PULL) return Response.json({ head: { sha: SHA } });
+    if (url.pathname === RUNS && url.searchParams.get("page") === "2") {
+      return Response.json({ message: "API rate limit exceeded" }, {
+        status: 429,
+        headers: { "retry-after": "7" },
+      });
+    }
+    if (url.pathname === RUNS) return Response.json({ total_count: 1, check_runs: [] });
+    if (url.pathname === STATUS) return Response.json({ state: "success", total_count: 1, statuses: [] });
+    return Response.json({ message: "Not Found" }, { status: 404 });
+  });
+  const response = await read();
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "7");
+  const body = await response.json();
+  assert.equal(body.sha, SHA);
+  assert.deepEqual(body.runs, []);
+  assert.equal(body.statuses.length, 0);
+  harness.healthy("github", github());
+});
+
+test("a primary limit is reported as 429 with its reset time", async () => {
+  const reset = Math.floor(Date.now() / 1000) + 45;
+  harness.healthy("github", () => Response.json({ message: "API rate limit exceeded" }, {
+    status: 403,
+    headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) },
+  }));
+  const response = await read();
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "45");
+  assert.equal((await response.json()).retryAfterSeconds, 45);
   harness.healthy("github", github());
 });
 

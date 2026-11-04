@@ -11,7 +11,9 @@ import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import {
+  expectCredentialReconnect,
   expectErrorStatus,
+  expectRateLimitRetry,
   runUpstreamAnomalyMatrix,
   type DegradedExpectation,
 } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
@@ -76,8 +78,8 @@ test("GET /api/github/labels across upstream anomalies", async (t) => {
       "http-500": githubError(502, 500),
       "http-502": githubError(502, 502),
       // GitHub's own 401 passes through: the route only says 401 when GitHub does.
-      "auth-revoked": githubError(401, 401),
-      "rate-limit": githubError(502, 429),
+      "auth-revoked": expectCredentialReconnect,
+      "rate-limit": expectRateLimitRetry,
       timeout: unreachable,
       network: (outcome, anomaly) => {
         unreachable(outcome, anomaly);

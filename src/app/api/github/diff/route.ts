@@ -23,6 +23,7 @@ import { NextResponse } from "next/server.js";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
 import { GitHubRevisionError, readGitHubPullRevision } from "@/lib/server/github-review-revision";
+import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
@@ -103,10 +104,11 @@ export async function GET(req: Request) {
     );
     if (!res.ok || !Array.isArray(data?.files) ||
         data.base_commit?.sha !== revision.baseSha || !mergeBaseSha) {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamApiError("GitHub", res, {
+        configured: Boolean(token),
+        error: `github error (${res.status})`,
+        responseBody: data,
+      });
     }
 
     const raw = data.files;
@@ -148,6 +150,13 @@ export async function GET(req: Request) {
       truncated, total: raw.length, files,
     });
   } catch (e) {
+    if (e instanceof GitHubRevisionError && e.response && (e.status === 401 || e.status === 429)) {
+      return upstreamApiError("GitHub", e.response, {
+        configured: Boolean(token),
+        error: e.message,
+        responseBody: e.responseBody,
+      });
+    }
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to load diff" },
       { status: e instanceof GitHubRevisionError ? e.status : 502 },

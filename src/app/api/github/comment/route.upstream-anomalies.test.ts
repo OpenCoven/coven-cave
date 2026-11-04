@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectAmbiguousWrite, expectCredentialReconnect, expectErrorStatus, expectRateLimitRetry, runUpstreamAnomalyMatrix } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-comment-anomalies");
@@ -52,12 +52,6 @@ const post = () =>
     }),
   );
 
-/** `ok: false` with a 502 and the route's own "github error (N)" string. */
-const githubError = (upstreamStatus: number) => (outcome: MatrixOutcome) => {
-  expectErrorStatus(502)(outcome, { kind: "http", status: upstreamStatus });
-  assert.equal((outcome.body as { error: string }).error, `github error (${upstreamStatus})`);
-};
-
 test("POST /api/github/comment across upstream anomalies", async (t) => {
   await runUpstreamAnomalyMatrix(t, {
     harness,
@@ -86,8 +80,8 @@ test("POST /api/github/comment across upstream anomalies", async (t) => {
       "http-500": expectAmbiguousWrite,
       "http-502": expectAmbiguousWrite,
       // Only a 403 passes through; a revoked token is a generic 502 here.
-      "auth-revoked": githubError(401),
-      "rate-limit": githubError(429),
+      "auth-revoked": expectCredentialReconnect,
+      "rate-limit": expectRateLimitRetry,
       timeout: expectAmbiguousWrite,
       network: (outcome, anomaly) => {
         expectErrorStatus(502)(outcome, anomaly);

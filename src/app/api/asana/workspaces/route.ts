@@ -7,6 +7,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import type { AsanaWorkspace } from "@/lib/asana-tasks";
 import { resolveSecret } from "@/lib/vault";
@@ -36,10 +37,11 @@ export async function GET() {
       cache: "no-store",
     });
     if (!res.ok) {
-      return NextResponse.json(
-        { ok: false, configured: true, workspaces: [], error: `Asana API error: HTTP ${res.status}` },
-        { status: 502 },
-      );
+      return upstreamApiError("Asana", res, {
+        configured: true,
+        error: `Asana API error: HTTP ${res.status}`,
+        details: { configured: true, workspaces: [] },
+      });
     }
     const data = (await res.json().catch(() => null)) as {
       data?: { workspaces?: Array<{ gid: string; name?: string }> };

@@ -64,10 +64,8 @@ test("readGitHubPullRevision across upstream anomalies", async (t) => {
     degraded: {
       "http-500": typedStatus(502, /github error \(500\)/),
       "http-502": typedStatus(502, /github error \(502\)/),
-      // A revoked token is 401 at GitHub; only 403 and 404 pass through, so it
-      // surfaces as a 502 "github error (401)".
-      "auth-revoked": typedStatus(502, /github error \(401\)/),
-      "rate-limit": typedStatus(502, /github error \(429\)/),
+      "auth-revoked": typedStatus(401, /github error \(401\)/),
+      "rate-limit": typedStatus(429, /github error \(429\)/),
       timeout: untyped("TimeoutError"),
       network: untyped("TypeError"),
       // An unreadable body, whether torn or stalled, gets the same typed 502.
@@ -79,7 +77,7 @@ test("readGitHubPullRevision across upstream anomalies", async (t) => {
   });
 });
 
-test("404 and 403 pass through with their own status; everything else is 502", async () => {
+test("404 and non-rate-limit 403 pass through; primary rate limits become retryable 429s", async () => {
   harness.inject("github", { kind: "http", status: 404, body: { message: "Not Found" } });
   await assert.rejects(read, (error: unknown) => error instanceof GitHubRevisionError && error.status === 404 && error.message === "not_found");
 
@@ -87,7 +85,10 @@ test("404 and 403 pass through with their own status; everything else is 502", a
   await assert.rejects(read, (error: unknown) => error instanceof GitHubRevisionError && error.status === 403 && /github error \(403\)/.test(error.message));
 
   harness.inject("github", { kind: "rate-limit", status: 403 });
-  await assert.rejects(read, (error: unknown) => error instanceof GitHubRevisionError && error.status === 403, "a primary rate limit is a 403 and passes through as one");
+  await assert.rejects(read, (error: unknown) => error instanceof GitHubRevisionError
+    && error.status === 429
+    && error.response?.status === 403
+    && error.response.headers.has("retry-after"), "a primary rate limit becomes a 429 with the provider's retry time");
 
   harness.inject("github", { kind: "http", status: 422, body: { message: "Validation Failed" } });
   await assert.rejects(read, (error: unknown) => error instanceof GitHubRevisionError && error.status === 502);

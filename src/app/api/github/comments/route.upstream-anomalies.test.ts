@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectCredentialReconnect, expectErrorStatus, expectRateLimitRetry, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-comments-anomalies");
@@ -108,8 +108,8 @@ test("GET /api/github/comments across upstream anomalies", async (t) => {
     degraded: {
       "http-500": failsWith(502, "github error (500)"),
       "http-502": failsWith(502, "github error (502)"),
-      "auth-revoked": failsWith(502, "github error (401)"),
-      "rate-limit": failsWith(502, "github error (429)"),
+      "auth-revoked": expectCredentialReconnect,
+      "rate-limit": expectRateLimitRetry,
       timeout: (outcome, anomaly) => {
         expectErrorStatus(502)(outcome, anomaly);
         assert.match((outcome.body as { error: string }).error, /timeout/i);
@@ -144,6 +144,28 @@ test("only the review slices failing keeps the timeline readable and the evidenc
   assert.equal(body.reviewEvidenceComplete, false);
   assert.match(body.reviewEvidenceError, /threads are unavailable \(HTTP 503\)/);
   assert.match(body.reviewEvidenceError, /summaries are unavailable \(HTTP 503\)/);
+});
+
+test("a rate-limited review slice preserves successful comment evidence and retry timing", async () => {
+  harness.healthy("github", (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/repos/o/r/issues/7/comments") return Response.json([{ id: 2, body: "Timeline", user: { login: "octocat" } }]);
+    if (url.pathname === "/repos/o/r/pulls/7/reviews") return Response.json([{ id: 9, state: "APPROVED", user: { login: "reviewer" } }]);
+    if (url.pathname === "/graphql") {
+      return Response.json({ message: "API rate limit exceeded" }, {
+        status: 429,
+        headers: { "retry-after": "7" },
+      });
+    }
+    return Response.json({ message: "Not Found" }, { status: 404 });
+  });
+  const response = await read();
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "7");
+  const body = await response.json();
+  assert.deepEqual(body.issueComments.map((comment: { id: string }) => comment.id), ["2"]);
+  assert.deepEqual(body.reviews.map((review: { id: string }) => review.id), ["9"]);
+  harness.healthy("github", () => Response.json([]));
 });
 
 test("an issue read never asks GraphQL and reports complete evidence", async () => {

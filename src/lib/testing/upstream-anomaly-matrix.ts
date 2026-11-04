@@ -196,6 +196,17 @@ export function expectErrorStatus(status: number | readonly number[]): DegradedE
   };
 }
 
+export const expectCredentialReconnect: DegradedExpectation = (outcome, anomaly) => {
+  expectErrorStatus(401)(outcome, anomaly);
+  assert.equal((outcome.body as { patInvalid?: unknown } | undefined)?.patInvalid, true);
+};
+
+export const expectRateLimitRetry: DegradedExpectation = (outcome, anomaly) => {
+  expectErrorStatus(429)(outcome, anomaly);
+  assert.equal(outcome.response?.headers.get("retry-after"), "7");
+  assert.equal((outcome.body as { retryAfterSeconds?: unknown } | undefined)?.retryAfterSeconds, 7);
+};
+
 /**
  * A read whose 2xx body drifted: a 502 with `code: "upstream-drift"`, never
  * `ok: true` (#6368).

@@ -178,13 +178,26 @@ test("a membership outage keeps the activity and drops only the organizations", 
 });
 
 test("a rate limit during search is reported per collection and stops further searches", async () => {
-  harness.healthy("github", github({ match: (url) => url.pathname === "/search/issues" && url.search.includes("review-requested:"), status: 429 }));
+  const healthy = github();
+  harness.healthy("github", (request, call) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/search/issues" && url.search.includes("review-requested:")) {
+      return Response.json({ message: "API rate limit exceeded" }, {
+        status: 429,
+        headers: { ...RATE, "retry-after": "7" },
+      });
+    }
+    return healthy(request, call);
+  });
   harness.reset();
-  const body = (await (await read()).json()) as Activity;
+  const response = await read();
+  const body = (await response.json()) as Activity;
   assert.equal(body.ok, true);
   assert.equal(body.collections?.authored.status, "complete");
   assert.equal(body.collections?.reviewRequests.status, "failed");
   assert.equal(body.collections?.assignedIssues.status, "failed", "the cooldown covers the search that was not attempted");
+  assert.equal(body.retryAfterSeconds, 7);
+  assert.equal(response.headers.get("retry-after"), "7");
   assert.equal(harness.calls("github").filter((call) => call.url.includes("assignee:")).length, 0, "no search after the limit");
   harness.healthy("github", github());
 });

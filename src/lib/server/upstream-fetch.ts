@@ -199,7 +199,11 @@ function recordAnomaly(health: UpstreamHostHealth, anomaly: UpstreamAnomalyClass
   let cooldown = coolForMs;
   if (cooldown === null && health.transportStreak >= UPSTREAM_FAILURES_BEFORE_COOLDOWN) cooldown = UPSTREAM_FAILURE_COOLDOWN_MS;
   if (cooldown !== null && cooldown > 0) {
-    health.coolingUntil = now + Math.min(cooldown, UPSTREAM_COOLDOWN_MAX_MS);
+    health.coolingUntil = now + (
+      anomaly === "rate-limited"
+        ? cooldown
+        : Math.min(cooldown, UPSTREAM_COOLDOWN_MAX_MS)
+    );
     health.coolingReason = anomaly === "rate-limited" ? "rate-limited" : "unreachable";
     health.state = "cooling";
   }

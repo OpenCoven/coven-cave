@@ -15,6 +15,7 @@ import { resolveGitHubToken } from "@/lib/github-token";
 import { parseGitHubDiffRevision, validateGitHubReviewBody } from "@/lib/github-review";
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
+import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, resourceId, writeThrew } from "@/lib/server/upstream-answer";
 
@@ -102,7 +103,11 @@ export async function POST(req: Request) {
       // Surface GitHub's own message verbatim (e.g. "Can not approve your own
       // pull request") — the card renders it as the actionable error.
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamApiError("GitHub", res, {
+        configured: true,
+        error: message,
+        responseBody: data,
+      });
     }
     return NextResponse.json({
       ok: true,
@@ -113,6 +118,13 @@ export async function POST(req: Request) {
       },
     });
   } catch (e) {
+    if (e instanceof GitHubRevisionError && e.response && (e.status === 401 || e.status === 429)) {
+      return upstreamApiError("GitHub", e.response, {
+        configured: Boolean(token),
+        error: e.message,
+        responseBody: e.responseBody,
+      });
+    }
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to submit review" },
       { status: e instanceof GitHubRevisionError ? e.status : 502 },

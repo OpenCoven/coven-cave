@@ -111,6 +111,8 @@ type ReposBody = {
   configured: boolean;
   incomplete: boolean;
   errors: string[];
+  patInvalid?: boolean;
+  retryAfterSeconds?: number;
   scope: { hasMore: boolean };
 };
 
@@ -154,11 +156,18 @@ test("GET /api/github/repos across upstream anomalies", async (t) => {
     degraded: {
       "http-500": failSoft("Couldn't load OpenCoven repositories (500).", "Couldn't load the curated repository list (500)."),
       "http-502": failSoft("Couldn't load OpenCoven repositories (502).", "Couldn't load the curated repository list (502)."),
-      "auth-revoked": failSoft("GitHub rejected the configured token.", "GitHub rejected the configured token."),
-      "rate-limit": failSoft(
-        "GitHub rate limit reached. Try again in 7 seconds.",
-        "GitHub rate limit reached. Try again in 7 seconds.",
-      ),
+      "auth-revoked": (outcome, anomaly) => {
+        failSoft("GitHub rejected the configured token.", "GitHub rejected the configured token.")(outcome, anomaly);
+        assert.equal((outcome.body as ReposBody).patInvalid, true);
+      },
+      "rate-limit": (outcome, anomaly) => {
+        failSoft(
+          "GitHub rate limit reached. Try again in 7 seconds.",
+          "GitHub rate limit reached. Try again in 7 seconds.",
+        )(outcome, anomaly);
+        assert.equal((outcome.body as ReposBody).retryAfterSeconds, 7);
+        assert.equal(outcome.response?.headers.get("retry-after"), "7");
+      },
       timeout: unreachable,
       network: unreachable,
       // A torn or empty 200 body throws inside the same catch as a dead socket.

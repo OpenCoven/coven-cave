@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectCredentialReconnect, expectErrorStatus, expectRateLimitRetry, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("asana-workspaces-anomalies");
@@ -64,13 +64,8 @@ test("GET /api/asana/workspaces across upstream anomalies", async (t) => {
     degraded: {
       "http-500": unavailable,
       "http-502": unavailable,
-      "auth-revoked": (outcome, anomaly) => {
-        // The route has no reconnect contract of its own: a revoked token is
-        // reported as the upstream status it was (see the finding in the report).
-        unavailable(outcome, anomaly);
-        assert.match((outcome.body as { error: string }).error, /HTTP 401/);
-      },
-      "rate-limit": unavailable,
+      "auth-revoked": expectCredentialReconnect,
+      "rate-limit": expectRateLimitRetry,
       timeout: unavailable,
       network: unavailable,
       "malformed-json": emptyButOk,

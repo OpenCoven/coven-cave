@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import type { AsanaItem } from "@/lib/asana-tasks";
 import { resolveSecret } from "@/lib/vault";
@@ -117,10 +118,11 @@ export async function GET(req: NextRequest) {
       );
     }
     if (!meRes.ok) {
-      return NextResponse.json(
-        { ok: false, error: `Asana API error: HTTP ${meRes.status}`, items: [], configured: true },
-        { status: 502 },
-      );
+      return upstreamApiError("Asana", meRes, {
+        configured: true,
+        error: `Asana API error: HTTP ${meRes.status}`,
+        details: { items: [], configured: true },
+      });
     }
     const meData = (await meRes.json().catch(() => null)) as { data?: AsanaMe } | null;
     const me = meData?.data;
@@ -142,20 +144,28 @@ export async function GET(req: NextRequest) {
           `${API}/tasks?assignee=me&workspace=${encodeURIComponent(ws.gid)}` +
           `&completed_since=now&limit=${PER_WORKSPACE}&opt_fields=${encodeURIComponent(TASK_FIELDS)}`;
         const res = await upstreamFetch("asana", url, { headers, cache: "no-store" });
-        if (!res.ok) return [] as AsanaItem[];
+        if (!res.ok) return { items: [] as AsanaItem[], response: res };
         const data = (await res.json().catch(() => null)) as { data?: RawAsanaTask[] } | null;
-        return (data?.data ?? []).filter((t) => !t.completed).map((t) => toItem(t, ws.gid));
+        return { items: (data?.data ?? []).filter((t) => !t.completed).map((t) => toItem(t, ws.gid)) };
       }),
     );
-
     const seen = new Set<string>();
     const items: AsanaItem[] = [];
-    for (const item of perWorkspace.flat()) {
+    for (const item of perWorkspace.flatMap((result) => result.items)) {
       if (seen.has(item.gid)) continue;
       seen.add(item.gid);
       items.push(item);
     }
     items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+    const upstreamFailure = perWorkspace.find(({ response }) => response?.status === 401 || response?.status === 429);
+    if (upstreamFailure?.response) {
+      return upstreamApiError("Asana", upstreamFailure.response, {
+        configured: true,
+        error: `Asana API error: HTTP ${upstreamFailure.response.status}`,
+        details: { items, configured: true },
+      });
+    }
 
     return NextResponse.json({ ok: true, items, configured: true, assigned: true });
   } catch (err) {

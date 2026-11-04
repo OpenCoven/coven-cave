@@ -11,6 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, resourceId, writeThrew } from "@/lib/server/upstream-answer";
 
@@ -71,7 +72,11 @@ export async function POST(req: Request) {
       const msg = Array.isArray(json?.errors) && json.errors[0]?.message
         ? String(json.errors[0].message)
         : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: msg }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamApiError("GitHub", res, {
+        configured: true,
+        error: msg,
+        responseBody: json?.errors?.[0],
+      });
     }
     const thread = resolved
       ? json?.data?.resolveReviewThread?.thread

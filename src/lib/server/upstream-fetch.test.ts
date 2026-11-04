@@ -20,6 +20,7 @@ import {
   upstreamHealth,
   upstreamHealthSnapshot,
 } from "./upstream-fetch.ts";
+import { upstreamApiError } from "./upstream-api-error.ts";
 
 let now = Date.UTC(2026, 0, 1);
 setUpstreamClockForTests(() => now);
@@ -151,6 +152,35 @@ test("a short Retry-After is waited out inside the call; a long one opens a cool
   assert.equal(upstreamHealth("github").coolingUntil, null);
 });
 
+test("a provider Retry-After longer than the transport cooldown is not shortened", async () => {
+  harness.inject("github", { kind: "rate-limit", retryAfterSeconds: 120 });
+  const res = await upstreamFetch("github", URL_USER, {}, { retries: 0 });
+  assert.equal(res.status, 429);
+  assert.equal(upstreamHealth("github").coolingUntil, now + 120_000);
+
+  harness.heal("github");
+  now += 60_001;
+  assert.equal((await upstreamFetch("github", URL_USER, {}, { retries: 0 })).status, 429);
+  assert.equal(harness.calls("github").length, 1, "the host is still cooling after the transport maximum");
+
+  now += 60_000;
+  assert.equal((await upstreamFetch("github", URL_USER, {}, { retries: 0 })).status, 200);
+  assert.equal(harness.calls("github").length, 2, "the first call after the provider's window reaches the host");
+});
+
+test("a primary rate-limit reset longer than the transport cooldown is not shortened", async () => {
+  const resetEpochSeconds = Math.ceil((now + 120_000) / 1000);
+  const res = await upstreamFetch("github", URL_USER, {}, {
+    retries: 0,
+    fetchImpl: async () => new Response("{}", {
+      status: 403,
+      headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(resetEpochSeconds) },
+    }),
+  });
+  assert.equal(res.status, 403);
+  assert.equal(upstreamHealth("github").coolingUntil, resetEpochSeconds * 1000);
+});
+
 test("a GitHub primary rate limit (403 with no remaining budget) counts as rate-limited", () => {
   const res = new Response("{}", { status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(now / 1000) + 30) } });
   assert.equal(classifyUpstreamResponse(res), "rate-limited");
@@ -162,6 +192,32 @@ test("a GitHub primary rate limit (403 with no remaining budget) counts as rate-
   assert.equal(classifyUpstreamResponse(new Response("{}", { status: 422 })), "client-error");
   assert.equal(classifyUpstreamError(new DOMException("x", "TimeoutError")), "timeout");
   assert.equal(classifyUpstreamError(new TypeError("fetch failed")), "network");
+});
+
+test("API error responses signal revoked credentials and propagate provider retry times", async () => {
+  const revoked = upstreamApiError("GitHub", new Response("{}", { status: 401 }), {
+    configured: true,
+    error: "github error (401)",
+  });
+  assert.equal(revoked.status, 401);
+  assert.equal((await revoked.json()).patInvalid, true);
+
+  const reset = Math.floor(Date.now() / 1000) + 120;
+  const limited = upstreamApiError("GitHub", new Response("{}", {
+    status: 403,
+    headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) },
+  }), { configured: true, error: "github error (403)" });
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get("retry-after"), "120");
+  assert.equal((await limited.json()).retryAfterSeconds, 120);
+
+  const asanaLimit = upstreamApiError("Asana", new Response("{}", {
+    status: 429,
+    headers: { "retry-after": "90" },
+  }), { configured: true, error: "Asana API error: HTTP 429" });
+  assert.equal(asanaLimit.status, 429);
+  assert.equal(asanaLimit.headers.get("retry-after"), "90");
+  assert.equal((await asanaLimit.json()).retryAfterSeconds, 90);
 });
 
 test("repeated transport failures open a short cooldown so a dead host is not hammered", async () => {

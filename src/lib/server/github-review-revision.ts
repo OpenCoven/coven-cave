@@ -4,13 +4,18 @@ import {
   type GitHubPullRevision,
 } from "../github-review";
 import { sanitizeGithubObjectSha } from "../github-object-sha";
+import { githubApiFailure } from "../github-activity";
 import { upstreamFetch } from "./upstream-fetch";
 
 export class GitHubRevisionError extends Error {
   readonly status: number;
-  constructor(message: string, status: number) {
+  readonly response?: Response;
+  readonly responseBody?: unknown;
+  constructor(message: string, status: number, response?: Response, responseBody?: unknown) {
     super(message);
     this.status = status;
+    this.response = response;
+    this.responseBody = responseBody;
   }
 }
 
@@ -25,10 +30,24 @@ export async function readGitHubPullRevision(
     },
     cache: "no-store",
   });
-  if (!response.ok) throw new GitHubRevisionError(
-    response.status === 404 ? "not_found" : `github error (${response.status})`,
-    response.status === 404 || response.status === 403 ? response.status : 502,
-  );
+  if (!response.ok) {
+    const responseBody = await response.clone().json().catch(() => null);
+    const responseMessage = responseBody && typeof responseBody === "object" && "message" in responseBody
+      && typeof responseBody.message === "string" ? responseBody.message : null;
+    const rateLimit = githubApiFailure({
+      status: response.status,
+      remaining: Number(response.headers.get("x-ratelimit-remaining") ?? -1),
+      retryAfter: response.headers.get("retry-after"),
+      rateLimitReset: response.headers.get("x-ratelimit-reset"),
+      responseMessage,
+    });
+    throw new GitHubRevisionError(
+      response.status === 404 ? "not_found" : `github error (${response.status})`,
+      response.status === 404 ? 404 : response.status === 401 ? 401 : rateLimit.rateLimited ? 429 : response.status === 403 ? 403 : 502,
+      response,
+      responseBody,
+    );
+  }
   // A body that fails or stalls after its headers falls through to the same
   // "unavailable" answer as one that arrives with no revision.
   const data = await response.json().catch(() => null) as {

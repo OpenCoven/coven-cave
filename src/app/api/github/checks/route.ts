@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
 import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
+import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { summarizeCheckSignals, summarizeChecks, type CheckRun } from "@/lib/github-checks";
 
@@ -96,16 +97,36 @@ async function load(req: Request): Promise<Response> {
     }
     const sha = (pr.data as { head?: { sha?: string } } | null)?.head?.sha ?? null;
     if (!pr.res.ok || !sha) {
-      return NextResponse.json(
-        { ok: false, error: `github error (${pr.res.status})` },
-        { status: pr.res.status === 403 ? 403 : 502 },
-      );
+      return upstreamApiError("GitHub", pr.res, {
+        configured: Boolean(token),
+        error: `github error (${pr.res.status})`,
+        responseBody: pr.data,
+      });
     }
 
     const [runsResp, statusResp] = await Promise.all([
       ghFetch(`/repos/${repo}/commits/${sha}/check-runs?per_page=100`, token),
       ghFetch(`/repos/${repo}/commits/${sha}/status`, token),
     ]);
+
+    const failedResponses = [runsResp, statusResp].filter(({ res }) => !res.ok);
+    const authFailure = failedResponses.find(({ res }) => res.status === 401);
+    if (authFailure) {
+      return upstreamApiError("GitHub", authFailure.res, {
+        configured: Boolean(token),
+        error: `github error (${authFailure.res.status})`,
+        responseBody: authFailure.data,
+      });
+    }
+    const rateLimitFailure = failedResponses.find(({ res }) => res.status === 429
+      || (res.status === 403 && (res.headers.get("x-ratelimit-remaining") === "0" || res.headers.has("retry-after"))));
+    if (rateLimitFailure) {
+      return upstreamApiError("GitHub", rateLimitFailure.res, {
+        configured: Boolean(token),
+        error: `github error (${rateLimitFailure.res.status})`,
+        responseBody: rateLimitFailure.data,
+      });
+    }
 
     if (!runsResp.res.ok && !statusResp.res.ok) {
       const status = runsResp.res.status === 403 || statusResp.res.status === 403 ? 403 : 502;
@@ -123,10 +144,19 @@ async function load(req: Request): Promise<Response> {
     // read leaves the rollup unable to claim passing.
     const totalRuns = Number((runsResp.data as { total_count?: unknown } | null)?.total_count ?? rawRuns.length) || 0;
     let runsIncomplete = !runsResp.res.ok;
+    let pageFailure: Awaited<ReturnType<typeof ghFetch>> | null = null;
     for (let page = 2; runsResp.res.ok && rawRuns.length < totalRuns && page <= MAX_RUN_PAGES; page++) {
       const next = await ghFetch(`/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`, token);
       const more = ((next.data as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<Record<string, unknown>>;
-      if (!next.res.ok || more.length === 0) break;
+      if (!next.res.ok) {
+        runsIncomplete = true;
+        if (next.res.status === 401 || next.res.status === 429
+          || (next.res.status === 403 && (next.res.headers.get("x-ratelimit-remaining") === "0" || next.res.headers.has("retry-after")))) {
+          pageFailure = next;
+        }
+        break;
+      }
+      if (more.length === 0) break;
       rawRuns.push(...more);
     }
     if (rawRuns.length < totalRuns) runsIncomplete = true;
@@ -164,6 +194,15 @@ async function load(req: Request): Promise<Response> {
     const signal = runs.length === 0 && statusCount === 0 ? summarizeChecks([], combinedState) : merged;
     // A side that couldn't be read can't let the gate claim passing.
     const rollup = (runsIncomplete || !statusResp.res.ok) && signal === "passing" ? "pending" : signal;
+
+    if (pageFailure) {
+      return upstreamApiError("GitHub", pageFailure.res, {
+        configured: Boolean(token),
+        error: `github error (${pageFailure.res.status})`,
+        responseBody: pageFailure.data,
+        details: { authed: Boolean(token), sha, rollup, runs, statuses },
+      });
+    }
 
     return NextResponse.json({
       ok: true,

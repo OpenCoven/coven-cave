@@ -10,8 +10,10 @@ import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import {
+  expectCredentialReconnect,
   expectErrorStatus,
   expectUpstreamDrift,
+  expectRateLimitRetry,
   runUpstreamAnomalyMatrix,
   type DegradedExpectation,
 } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
@@ -86,8 +88,8 @@ test("GET /api/github/user across upstream anomalies", async (t) => {
       "http-502": githubError(502, 502),
       // A revoked token is reported as an upstream error, not a reconnect
       // prompt: profiles are public, so the route never treats 401 specially.
-      "auth-revoked": githubError(502, 401),
-      "rate-limit": githubError(502, 429),
+      "auth-revoked": expectCredentialReconnect,
+      "rate-limit": expectRateLimitRetry,
       timeout: unreachable,
       network: (outcome, anomaly) => {
         unreachable(outcome, anomaly);

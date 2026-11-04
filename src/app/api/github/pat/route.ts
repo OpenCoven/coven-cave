@@ -13,6 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { githubApiFailure } from "@/lib/github-activity";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
@@ -74,6 +75,8 @@ type PatValidation = {
   network?: boolean;
   /** GitHub answered but could not judge the token (an outage or a rate limit). */
   unavailable?: number;
+  retryAfter?: string;
+  retryAfterSeconds?: number;
 };
 
 async function validatePat(pat: string): Promise<PatValidation> {
@@ -91,7 +94,22 @@ async function validatePat(pat: string): Promise<PatValidation> {
     // limit also arrives as 403, with the remaining budget at zero, and says
     // nothing about the token — the same way a 5xx or a 429 says nothing
     // (#6359, the HTTP-shaped sibling of cave-cjgg's offline case).
-    const rateLimited = res.status === 429 || (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0");
+    const failure = githubApiFailure({
+      status: res.status,
+      remaining: Number(res.headers.get("x-ratelimit-remaining") ?? -1),
+      retryAfter: res.headers.get("retry-after"),
+      rateLimitReset: res.headers.get("x-ratelimit-reset"),
+    });
+    const rateLimited = failure.rateLimited;
+    if (rateLimited) {
+      return {
+        valid: false,
+        login: null,
+        unavailable: 429,
+        retryAfter: res.headers.get("retry-after") ?? String(failure.retryAfterSeconds ?? 60),
+        retryAfterSeconds: failure.retryAfterSeconds ?? 60,
+      };
+    }
     if (!rateLimited && (res.status === 401 || res.status === 403)) return { valid: false, login: null };
     if (!res.ok) return { valid: false, login: null, unavailable: res.status };
     const data = await res.json().catch(() => null);
@@ -156,8 +174,15 @@ export async function POST(req: NextRequest) {
       }
       if (result.unavailable) {
         return NextResponse.json(
-          { ok: false, error: `GitHub couldn't verify the token right now (HTTP ${result.unavailable}) — try again in a moment.` },
-          { status: 503 },
+          {
+            ok: false,
+            error: `GitHub couldn't verify the token right now (HTTP ${result.unavailable}) — try again in a moment.`,
+            ...(result.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: result.retryAfterSeconds }),
+          },
+          {
+            status: result.unavailable === 429 ? 429 : 503,
+            headers: result.retryAfter ? { "Retry-After": result.retryAfter } : undefined,
+          },
         );
       }
       return NextResponse.json({ ok: false, error: "PAT is invalid or lacks required scopes (needs read:user, repo)" }, { status: 422 });

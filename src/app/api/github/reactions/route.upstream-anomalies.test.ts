@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectAmbiguousWrite, expectCredentialReconnect, expectErrorStatus, expectRateLimitRetry, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-reactions-anomalies");
@@ -96,8 +96,8 @@ test("GET /api/github/reactions across upstream anomalies", async (t) => {
       "http-500": failsWith(502, "github error (500)"),
       "http-502": failsWith(502, "github error (502)"),
       // A read passes 401 and 403 through unchanged.
-      "auth-revoked": failsWith(401, "github error (401)"),
-      "rate-limit": failsWith(502, "github error (429)"),
+      "auth-revoked": expectCredentialReconnect,
+      "rate-limit": expectRateLimitRetry,
       timeout: timesOut,
       network: failsWith(502, "fetch failed"),
       "malformed-json": failsWith(502, "github error (200)"),
@@ -121,8 +121,8 @@ test("POST /api/github/reactions across upstream anomalies", async (t) => {
     degraded: {
       "http-500": expectAmbiguousWrite,
       "http-502": expectAmbiguousWrite,
-      "auth-revoked": failsWith(502, "Bad credentials"),
-      "rate-limit": failsWith(502, "API rate limit exceeded"),
+      "auth-revoked": expectCredentialReconnect,
+      "rate-limit": expectRateLimitRetry,
       timeout: expectAmbiguousWrite,
       network: failsWith(502, "fetch failed"),
       "malformed-json": expectAmbiguousWrite,
@@ -148,8 +148,8 @@ test("DELETE /api/github/reactions across upstream anomalies", async (t) => {
     degraded: {
       "http-500": failsWith(502, "Internal Server Error"),
       "http-502": failsWith(502, "github error (502)"),
-      "auth-revoked": failsWith(502, "Bad credentials"),
-      "rate-limit": failsWith(502, "API rate limit exceeded"),
+      "auth-revoked": expectCredentialReconnect,
+      "rate-limit": expectRateLimitRetry,
       timeout: timesOut,
       network: failsWith(502, "fetch failed"),
       // A 2xx is the end state; the body is never read.

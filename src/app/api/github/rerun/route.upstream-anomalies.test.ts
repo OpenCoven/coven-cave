@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectAmbiguousWrite, expectCredentialReconnect, expectErrorStatus, expectRateLimitRetry, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-rerun-anomalies");
@@ -61,8 +61,8 @@ test("POST /api/github/rerun across upstream anomalies", async (t) => {
     degraded: {
       "http-500": expectAmbiguousWrite,
       "http-502": expectAmbiguousWrite,
-      "auth-revoked": failsWith(502, "Bad credentials"),
-      "rate-limit": failsWith(502, "API rate limit exceeded"),
+      "auth-revoked": expectCredentialReconnect,
+      "rate-limit": expectRateLimitRetry,
       timeout: expectAmbiguousWrite,
       network: failsWith(502, "fetch failed"),
       // Success is the status alone: the body is never read on a 2xx.

@@ -27,6 +27,7 @@ import {
   readGitHubItemThroughCache,
   type CachedGitHubItem,
 } from "@/lib/server/github-item-cache";
+import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { positiveInteger } from "@/lib/server/upstream-answer";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
@@ -209,7 +210,7 @@ export async function GET(req: Request) {
   );
   return new NextResponse(result.body, {
     status: result.status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...result.headers },
   });
 }
 
@@ -230,10 +231,16 @@ async function loadItem(
       return jsonResult({ ok: false, error: "not_found" }, 404);
     }
     if (!res.ok || !data || typeof data !== "object") {
-      return jsonResult(
-        { ok: false, error: `github error (${res.status})` },
-        res.status === 403 ? 403 : 502,
-      );
+      const failure = upstreamApiError("GitHub", res, {
+        configured: Boolean(token),
+        error: `github error (${res.status})`,
+        responseBody: data,
+      });
+      return {
+        status: failure.status,
+        body: await failure.text(),
+        headers: Object.fromEntries(failure.headers.entries()),
+      };
     }
 
     const d = data as Record<string, unknown>;

@@ -85,6 +85,8 @@ type RepoSourceResult = {
   items: RepoItem[];
   error: string | null;
   hasMore: boolean;
+  retryAfter?: string;
+  retryAfterSeconds?: number;
 };
 
 function repoSourceError(res: Response, source: string): string {
@@ -97,6 +99,20 @@ function repoSourceError(res: Response, source: string): string {
   });
   if (failure.rateLimited || res.status === 401) return failure.message;
   return `Couldn't load ${source} (${res.status}).`;
+}
+
+function repoRetryAfter(res: Response): Pick<RepoSourceResult, "retryAfter" | "retryAfterSeconds"> {
+  const failure = githubApiFailure({
+    status: res.status,
+    remaining: Number(res.headers.get("x-ratelimit-remaining") ?? -1),
+    retryAfter: res.headers.get("retry-after"),
+    rateLimitReset: res.headers.get("x-ratelimit-reset"),
+  });
+  if (!failure.rateLimited || failure.retryAfterSeconds === null) return {};
+  return {
+    retryAfter: res.headers.get("retry-after") ?? String(failure.retryAfterSeconds),
+    retryAfterSeconds: failure.retryAfterSeconds,
+  };
 }
 
 function nextGitHubPagePath(link: string | null): string | null {
@@ -159,7 +175,12 @@ async function fetchOrgRepos(token: string): Promise<RepoSourceResult> {
       },
       { timeoutMs: ORG_TIMEOUT_MS },
     );
-    if (!res.ok) return { items: [], error: repoSourceError(res, "OpenCoven repositories"), hasMore: false };
+    if (!res.ok) return {
+      items: [],
+      error: repoSourceError(res, "OpenCoven repositories"),
+      hasMore: false,
+      ...repoRetryAfter(res),
+    };
     const raw = (await res.json()) as RestRepo[];
     if (!Array.isArray(raw)) {
       return {
@@ -197,7 +218,12 @@ async function fetchListRepos(token: string): Promise<RepoSourceResult> {
       { timeoutMs: LIST_TIMEOUT_MS },
     );
     if (!res.ok) {
-      return { items: [], error: repoSourceError(res, "the curated repository list"), hasMore: false };
+      return {
+        items: [],
+        error: repoSourceError(res, "the curated repository list"),
+        hasMore: false,
+        ...repoRetryAfter(res),
+      };
     }
     const json = (await res.json()) as {
       data?: {
@@ -296,15 +322,26 @@ export async function GET(request: Request) {
   const items = out.slice(0, MAX_ITEMS);
   const hasMore = orgRepos.hasMore || listRepos.hasMore || out.length > items.length;
   const errors = [orgRepos.error, listRepos.error].filter((error): error is string => error !== null);
+  const retry = [orgRepos, listRepos]
+    .filter((source) => source.retryAfterSeconds !== undefined)
+    .sort((a, b) => (b.retryAfterSeconds ?? 0) - (a.retryAfterSeconds ?? 0))[0];
+  const retryAfterSeconds = retry?.retryAfterSeconds ?? 0;
+  const retryAfter = retry?.retryAfter ?? (retryAfterSeconds > 0 ? String(retryAfterSeconds) : undefined);
+  const patInvalid = Boolean(token) && [orgRepos.error, listRepos.error].some((error) => error === "GitHub rejected the configured token.");
   // Only cache a non-empty result so a transient upstream blip isn't pinned.
   if (items.length > 0 && errors.length === 0) cache = { at: now, items, hasMore };
-  return NextResponse.json({
-    ok: true,
-    items,
-    source: "curated",
-    configured: true,
-    incomplete: errors.length > 0,
-    errors,
-    scope: { mode: "curated", limit: MAX_ITEMS, hasMore },
-  });
+  return NextResponse.json(
+    {
+      ok: true,
+      items,
+      source: "curated",
+      configured: true,
+      incomplete: errors.length > 0,
+      errors,
+      ...(patInvalid ? { patInvalid: true } : {}),
+      ...(retryAfterSeconds > 0 ? { retryAfterSeconds } : {}),
+      scope: { mode: "curated", limit: MAX_ITEMS, hasMore },
+    },
+    { headers: retryAfter ? { "Retry-After": retryAfter } : undefined },
+  );
 }

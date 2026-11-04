@@ -22,6 +22,7 @@ import { resolveGitHubToken } from "@/lib/github-token";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
 import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
 import { restSource } from "@/lib/github-assigned-meta";
+import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
@@ -71,6 +72,21 @@ type ReviewThread = {
 };
 
 type ReviewRead<T> = { items: T[]; complete: boolean };
+
+class GitHubResponseError extends Error {
+  readonly response: Response;
+  readonly responseBody: unknown;
+
+  constructor(
+    message: string,
+    response: Response,
+    responseBody: unknown,
+  ) {
+    super(message);
+    this.response = response;
+    this.responseBody = responseBody;
+  }
+}
 
 function person(raw: unknown): Person | null {
   if (!raw || typeof raw !== "object") return null;
@@ -145,6 +161,9 @@ async function ghFetch(path: string, token: string | null) {
 async function fetchReviews(repo: string, number: number, token: string | null): Promise<ReviewRead<Review>> {
   const { res, data } = await ghFetch(`/repos/${repo}/pulls/${number}/reviews?per_page=100`, token);
   if (!res.ok || !Array.isArray(data)) {
+    if (!res.ok) {
+      throw new GitHubResponseError(`GitHub review summaries are unavailable (HTTP ${res.status}).`, res, data);
+    }
     throw new Error(`GitHub review summaries are unavailable (HTTP ${res.status}).`);
   }
   if (!data.every((r) => r && typeof r === "object" && typeof r.state === "string")) {
@@ -202,6 +221,9 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
   const connection = json?.data?.repository?.pullRequest?.reviewThreads;
   const nodes = connection?.nodes;
   if (!res.ok || (json?.errors != null && (!Array.isArray(json.errors) || json.errors.length > 0))) {
+    if (!res.ok) {
+      throw new GitHubResponseError(`GitHub review threads are unavailable (HTTP ${res.status}).`, res, json);
+    }
     throw new Error(`GitHub review threads are unavailable (HTTP ${res.status}).`);
   }
   if (!Array.isArray(nodes) || typeof connection?.pageInfo?.hasNextPage !== "boolean" ||
@@ -284,10 +306,11 @@ async function load(req: Request): Promise<Response> {
     // and number is a positive integer, both safe to interpolate.
     const { res, data } = await ghFetch(`/repos/${repo}/issues/${number}/comments?per_page=100`, token);
     if (!res.ok || !Array.isArray(data)) {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamApiError("GitHub", res, {
+        configured: Boolean(token),
+        error: `github error (${res.status})`,
+        responseBody: data,
+      });
     }
     const issueComments: Comment[] = data.map((c): Comment => {
       const co = c as Record<string, unknown>;
@@ -325,6 +348,34 @@ async function load(req: Request): Promise<Response> {
         if (!reviewRead.value.complete) evidenceErrors.push("Review summary list is incomplete; open GitHub for the remaining reviews.");
       } else {
         evidenceErrors.push(reviewRead.reason instanceof Error ? reviewRead.reason.message : "Review summaries could not be read.");
+      }
+
+      const failedResponse = [threadRead, reviewRead].find((result) => {
+        if (result.status !== "rejected" || !(result.reason instanceof GitHubResponseError)) return false;
+        const { response, responseBody } = result.reason;
+        const mapped = upstreamApiError("GitHub", response, {
+          configured: Boolean(token),
+          error: `github error (${response.status})`,
+          responseBody,
+        });
+        return mapped.status === 401 || mapped.status === 429;
+      });
+      if (failedResponse?.status === "rejected" && failedResponse.reason instanceof GitHubResponseError) {
+        const { response, responseBody } = failedResponse.reason;
+        return upstreamApiError("GitHub", response, {
+          configured: Boolean(token),
+          error: `github error (${response.status})`,
+          responseBody,
+          details: {
+            authed: Boolean(token),
+            canResolve: Boolean(token),
+            issueComments,
+            reviewThreads,
+            reviews,
+            reviewEvidenceComplete: false,
+            reviewEvidenceError: evidenceErrors.join(" "),
+          },
+        });
       }
     }
 

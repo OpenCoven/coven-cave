@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectErrorStatus, expectRateLimitRetry, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("asana-pat-anomalies");
@@ -74,10 +74,7 @@ test("POST /api/asana/pat across upstream anomalies", async (t) => {
         assert.match((outcome.body as { error: string }).error, /try again/, "an outage is 'not now', never 'bad token'");
       },
       "http-502": expectErrorStatus(503),
-      "rate-limit": (outcome, anomaly) => {
-        expectErrorStatus(503)(outcome, anomaly);
-        assert.match((outcome.body as { error: string }).error, /try again/, "a rate limit asks for a retry, not a new token");
-      },
+      "rate-limit": expectRateLimitRetry,
       timeout: expectErrorStatus(503),
       network: (outcome, anomaly) => {
         expectErrorStatus(503)(outcome, anomaly);

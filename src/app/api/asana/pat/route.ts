@@ -57,6 +57,8 @@ type PatValidation = {
   network?: boolean;
   /** Asana answered but could not judge the token (an outage or a rate limit). */
   unavailable?: number;
+  retryAfter?: string;
+  retryAfterSeconds?: number;
 };
 
 async function validatePat(pat: string): Promise<PatValidation> {
@@ -70,6 +72,13 @@ async function validatePat(pat: string): Promise<PatValidation> {
     // says nothing about the token, the same way an unreachable host says
     // nothing (#6359, mirroring /api/github/pat).
     if (res.status === 401 || res.status === 403) return { valid: false, login: null };
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("retry-after");
+      const retryAfterSeconds = retryAfter && /^\d+(?:\.\d+)?$/.test(retryAfter)
+        ? Math.ceil(Number(retryAfter))
+        : undefined;
+      return { valid: false, login: null, unavailable: 429, retryAfter: retryAfter ?? undefined, retryAfterSeconds };
+    }
     if (!res.ok) return { valid: false, login: null, unavailable: res.status };
     const data = await res.json().catch(() => null);
     const me = data?.data as { name?: unknown; email?: unknown } | undefined;
@@ -108,8 +117,15 @@ export async function POST(req: NextRequest) {
     }
     if (result.unavailable) {
       return NextResponse.json(
-        { ok: false, error: `Asana couldn't verify the token right now (HTTP ${result.unavailable}) — try again in a moment.` },
-        { status: 503 },
+        {
+          ok: false,
+          error: `Asana couldn't verify the token right now (HTTP ${result.unavailable}) — try again in a moment.`,
+          ...(result.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: result.retryAfterSeconds }),
+        },
+        {
+          status: result.unavailable === 429 ? 429 : 503,
+          headers: result.retryAfter ? { "Retry-After": result.retryAfter } : undefined,
+        },
       );
     }
     return NextResponse.json(

@@ -11,7 +11,7 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectErrorStatus, expectRateLimitRetry, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("asana-assigned-anomalies");
@@ -75,13 +75,42 @@ test("GET /api/asana/assigned across upstream anomalies", async (t) => {
       },
       "http-500": expectErrorStatus(502),
       "http-502": expectErrorStatus(502),
-      "rate-limit": expectErrorStatus(502),
+      "rate-limit": expectRateLimitRetry,
       timeout: expectErrorStatus(502),
       network: expectErrorStatus(502),
       "malformed-json": emptyButConfigured,
       "empty-body": emptyButConfigured,
       "schema-drift": emptyButConfigured,
     },
+  });
+});
+
+test("a rate-limited workspace preserves tasks from successful workspaces", async () => {
+  harness.healthy("asana", (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/1.0/users/me") {
+      return Response.json({ data: { gid: "u1", workspaces: [{ gid: "w1" }, { gid: "w2" }] } });
+    }
+    if (url.searchParams.get("workspace") === "w1") {
+      return Response.json({ data: [
+        { gid: "t1", name: "Keep this task", completed: false, modified_at: "2026-11-01T08:00:00Z" },
+      ] });
+    }
+    return Response.json({ errors: [{ message: "rate limited" }] }, {
+      status: 429,
+      headers: { "retry-after": "7" },
+    });
+  });
+  const response = await read();
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "7");
+  assert.deepEqual(((await response.json()) as { items: Array<{ gid: string }> }).items.map((item) => item.gid), ["t1"]);
+  harness.healthy("asana", (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/1.0/users/me") {
+      return Response.json({ data: { gid: "u1", name: "Val", workspaces: [{ gid: "w1", name: "Coven" }] } });
+    }
+    return Response.json({ data: [] });
   });
 });
 
