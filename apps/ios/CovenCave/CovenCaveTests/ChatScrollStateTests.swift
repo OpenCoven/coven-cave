@@ -125,6 +125,38 @@ final class ChatScrollStateTests: XCTestCase {
         XCTAssertEqual(anchor.takeCorrection(viewportTop: 3_800, viewportHeight: 600, preserving: true), 0,
                        "growth absorbed while following is not corrected again later")
     }
+
+    /// A SwiftUI row can report its new position before UIScrollView has its
+    /// matching contentSize. The first bounded adjustment must not discard the
+    /// remainder: no second row callback is required when UIKit catches up.
+    @MainActor
+    func testAnchorCorrectionSurvivesDelayedNativeContentSize() async {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.contentSize = CGSize(width: 390, height: 3_000)
+        scrollView.contentOffset.y = 2_400
+        let coordinator = ChatScrollAnchorCoordinator()
+        coordinator.scrollView = scrollView
+        coordinator.note("latest", row(1_800, 3_000), preserving: { true })
+        await settleAnchorLayout()
+
+        coordinator.note("latest", row(3_200, 4_400), preserving: { true })
+        await settleAnchorLayout()
+        XCTAssertEqual(scrollView.contentOffset.y, 2_400, accuracy: 0.5,
+                       "the correction must respect the currently available native extent")
+
+        scrollView.contentSize.height = 4_400
+        await settleAnchorLayout()
+        XCTAssertEqual(scrollView.contentOffset.y, 3_800, accuracy: 0.5,
+                       "the unapplied 1,400pt correction survives until UIKit can apply it")
+    }
+
+    @MainActor
+    private func settleAnchorLayout() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
 }
 
 final class ChatViewportRecoveryTests: XCTestCase {

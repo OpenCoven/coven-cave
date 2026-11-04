@@ -69,12 +69,12 @@ struct ChatScrollAnchor {
 /// transcript must not re-render because of them.
 @MainActor
 final class ChatScrollAnchorCoordinator {
-    fileprivate weak var scrollView: UIScrollView?
+    weak var scrollView: UIScrollView?
     private var anchor = ChatScrollAnchor()
     private var preserving: (@MainActor () -> Bool)?
     private var flushScheduled = false
 
-    fileprivate func note(_ id: String, _ row: ChatScrollAnchor.Row, preserving: @escaping @MainActor () -> Bool) {
+    func note(_ id: String, _ row: ChatScrollAnchor.Row, preserving: @escaping @MainActor () -> Bool) {
         anchor.note(id, row)
         self.preserving = preserving
         guard !flushScheduled else { return }
