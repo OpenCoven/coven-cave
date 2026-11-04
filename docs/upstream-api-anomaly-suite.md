@@ -3,11 +3,7 @@
 Every third-party API the Cave server calls is declared once, in
 `src/lib/server/upstream-api-registry.ts`, and proven three ways (#6359):
 
-- **Relevant.** `src/lib/server/upstream-api-registry.test.ts` scans the server
-  source for every file that both calls `fetch` and names an external host.
-  A call site the registry does not credit fails the scan; so does a registry
-  caller that no longer fetches, a host no caller names, and a stale
-  link-only allowlist entry. The fix is always a one-line registry edit.
+- **Relevant.** `src/lib/server/upstream-api-registry.test.ts` uses the call-expression scanner in `src/lib/testing/upstream-network-scan.ts` to inventory recognized network calls independently of inline host literals, including named/renamed Node HTTP imports and simple fetch aliases. Missing callers, stale registrations and changed exact internal/separate-contract boundaries fail the scan. Coverage limits and the boundary contract are recorded below; a registry edit alone does not qualify a new caller's failure and recovery behavior.
 - **Adaptive.** `src/lib/testing/upstream-anomaly-fetch.ts` replaces
   `globalThis.fetch` with a router keyed by the registry. A test registers one
   healthy handler per upstream and switches that upstream into a fault mode
@@ -55,9 +51,7 @@ that acts on each answer the moment it arrives:
   header, body or token — and `GET /api/daemon/diagnostics` publishes it as
   `upstreams`.
 
-Body anomalies (torn JSON, an empty body, a drifted schema) arrive as a 200,
-so only the caller reading the body can see them; the ledger records status
-and transport anomalies.
+Body-format anomalies (torn JSON, an empty body, a drifted schema) remain the caller's contract. The ledger additionally observes transport errors while a caller consumes a native Response body. A post-header timeout or socket reset marks the host degraded without buffering the stream or dispatching a retry. Consumer cancellation remains distinct from provider downtime.
 
 A matrix case with `expectLiveDetection: true` also asserts the ledger saw
 each status or transport anomaly as it happened, reads healthy after the
@@ -132,3 +126,16 @@ Voice preview accepts MP3 response types before reading and caching bytes. Eleve
 The intentional projects/icon precharged cooldown remains unchanged. Salem's old fallback rows are superseded by the separately owned #6399/#6408 no-egress retirement contract after that work lands; this class does not implement a replacement assistant. These are synthetic server-handler checks, without live provider calls, native audio playback, packaged builds or human acceptance.
 
 The feed-envelope guard advances a single cursor through tags, quoted attributes, comments, processing instructions, CDATA and inert declarations. It rejects mismatched/truncated structure and nesting deeper than 256 without resolving entities. It does not validate the full XML grammar. A bounded child-process regression rejects large malformed tag/comment prefixes without leaving the API test runner stuck. The original regex-based malformed-feed timeout and hosted CodeQL failure are retained for comparison; security acceptance requires the repaired head's scan.
+
+
+## Retained acceptance regressions
+
+A dispatched GitHub merge requires a boolean `merged` verdict. A readable 200 with a missing or drifted verdict remains `ambiguous-write`; explicit `merged: false` remains a definite refusal. Reviewed-head callers retain the atomic SHA guard, and uncertain answers trigger neither automatic retry nor branch cleanup.
+
+Response-body observation preserves status, headers, redirect URL/type metadata, clone behavior, backpressure and cancellation. It records transport classes without error messages, URLs or credentials. The ledger can observe only the stream errors that consumption exposes; it does not validate JSON/schema or claim completed native playback from headers.
+
+The relevance inventory now parses call expressions independently of inline host literals, including named/renamed Node HTTP imports and simple aliases. Mutation regressions prove that both imported-URL and destructured-request callers fail without registration. Existing internal or separate-contract dynamic calls carry exact argument/count boundaries with reasons. A changed or stale boundary fails; these entries do not grant blanket file exemptions. This source-level inventory is not an interprocedural call-graph proof: indirect callbacks, runtime-computed imports and separately qualified runtime/artifact transports remain explicit coverage limits, not provider-matrix acceptance.
+
+A header-only 200 is provisional for body-failure streaks: three sequential body timeouts enter the existing transport cooldown, and completed healthy consumption closes it. A failed status and its failed body count as one attempt. A body failure cannot shorten an explicit provider retry window. These cases are qualified separately from schema parsing and caller cancellation.
+
+A transport that resolves headers after its merged signal has already aborted is discarded before body observation acquires a reader. The original body is canceled directly; a late answer cannot heal health, retry, or reach watcher notification/cursor side effects. The retained watcher behavior test and direct caller-cancellation cases cover both abort and deadline reasons.
