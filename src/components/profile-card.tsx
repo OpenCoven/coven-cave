@@ -223,7 +223,7 @@ export function ProfileCard({
           <p className="pfc-handle">@{handle}</p>
           {bio ? <p className="pfc-bio">{bio}</p> : null}
           <div className="pfc-rail-chip">
-            <span className="pfc-rail-chip-label">coven<br />sessions</span>
+            <span className="pfc-rail-chip-label">{vm.model.sessionsTotalLabel}</span>
             <strong className="pfc-rail-chip-value">{vm.model.sessionsTotal}</strong>
           </div>
         </aside>
@@ -243,7 +243,7 @@ export function ProfileCard({
           <div className="pfc-panels">
             <MetricPanel
               titlePrefix="coven"
-              titleStrong="sessions"
+              titleStrong={`sessions · past ${vm.model.heatmap.windowDays}d`}
               big={String(vm.model.sessionsPanel.total)}
               series={vm.model.sessionsPanel.cumulative}
               sideLabel="busiest day"

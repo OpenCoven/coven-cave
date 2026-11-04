@@ -105,6 +105,7 @@ function emptyStats(
     lastSessionAt: null,
     sessionsTotal: 0,
     sessionsLast7d: 0,
+    sessionsLast90d: 0,
     hasActiveSession: false,
     streakDays: 0,
     activity: new Array<number>(ACTIVITY_DAYS).fill(0),
