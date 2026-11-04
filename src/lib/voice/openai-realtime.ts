@@ -2,6 +2,7 @@ import type { VoiceProvider, VoiceClientAdapter, LiveSession, VoiceCallbacks, Vo
 import { VoiceConnectError } from "./types.ts";
 
 const CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
+const MINT_TIMEOUT_MS = 15_000;
 const REALTIME_BASE = "https://api.openai.com/v1/realtime";
 
 const serverProvider: Pick<VoiceProvider, "id" | "label" | "mintSession"> = {
@@ -10,6 +11,8 @@ const serverProvider: Pick<VoiceProvider, "id" | "label" | "mintSession"> = {
   async mintSession(apiKey, req) {
     const res = await fetch(CLIENT_SECRETS_URL, {
       method: "POST",
+      // Plain timer, not upstreamFetch: this module also ships to the browser.
+      signal: AbortSignal.timeout(MINT_TIMEOUT_MS),
       headers: {
         "authorization": `Bearer ${apiKey}`,
         "content-type": "application/json",

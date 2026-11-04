@@ -121,6 +121,16 @@ async function previewWithoutClearing(): Promise<{ status: number; body: unknown
   return { status: response.status, body, upstreamCalls: harness.calls("openai").length };
 }
 
+test("an audio stream failing after its headers answers 502, and nothing is cached", async () => {
+  __clearPreviewCacheForTests();
+  harness.inject("openai", { kind: "body-failure" });
+  const failed = await previewWithoutClearing();
+  assert.equal(failed.status, 502);
+  assert.deepEqual(failed.body, { ok: false, error: "provider_unreachable" });
+  harness.heal("openai");
+  assert.equal((await previewWithoutClearing()).status, 200, "the next request is live");
+});
+
 test("what the preview cache remembers", async (t) => {
   await t.test("a healthy sample is cached: the second request never reaches OpenAI", async () => {
     __clearPreviewCacheForTests();

@@ -241,6 +241,16 @@ function methodOf(input: string | URL | Request, init: RequestInit | undefined):
   return (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
 }
 
+const deadlineSignals = new WeakSet<AbortSignal>();
+
+/**
+ * Whether this signal came from `upstreamFetch` and so holds a timer. A bare
+ * AbortSignal can't show that, so the anomaly harness asks here (#6370).
+ */
+export function carriesUpstreamDeadline(signal: AbortSignal | null | undefined): boolean {
+  return signal != null && deadlineSignals.has(signal);
+}
+
 export async function upstreamFetch(
   id: UpstreamApiId,
   input: string | URL | Request,
@@ -271,6 +281,7 @@ export async function upstreamFetch(
     if (attempt > 0) health.retries += 1;
     const deadline = AbortSignal.timeout(timeoutMs);
     const signal = callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline;
+    deadlineSignals.add(signal);
     let response: Response;
     try {
       response = await fetchImpl(input, { ...init, signal });

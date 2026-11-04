@@ -11,6 +11,7 @@ import {
   assertNoSecretLeak,
   installUpstreamAnomalyFetch,
 } from "./upstream-anomaly-fetch.ts";
+import { upstreamFetch } from "../server/upstream-fetch.ts";
 import { captureOutcome, runUpstreamAnomalyMatrix } from "./upstream-anomaly-matrix.ts";
 
 const originalFetch = globalThis.fetch;
@@ -67,7 +68,31 @@ test("timeout honours the caller's own abort before the harness ceiling", async 
     const pending = fetch("https://api.github.com/user", { signal: controller.signal });
     controller.abort(new DOMException("caller gave up", "AbortError"));
     await assert.rejects(pending, (error: DOMException) => error.name === "AbortError" && error.message === "caller gave up");
-    assert.equal(harness.calls("github")[0]?.hasDeadline, true);
+    assert.equal(harness.calls("github")[0]?.hasDeadline, false, "a signal with no timer is not a deadline");
+  } finally {
+    harness.restore();
+  }
+});
+
+test("a call through upstreamFetch records a real deadline, with or without a caller signal", async () => {
+  const harness = installUpstreamAnomalyFetch({ hangMs: 5_000 });
+  try {
+    harness.healthy("github", () => Response.json({ ok: true }));
+    await upstreamFetch("github", "https://api.github.com/user");
+    await upstreamFetch("github", "https://api.github.com/user", { signal: new AbortController().signal });
+    assert.deepEqual(harness.calls("github").map((call) => call.hasDeadline), [true, true]);
+  } finally {
+    harness.restore();
+  }
+});
+
+test("body-failure sends its headers, then fails the body", async () => {
+  const harness = installUpstreamAnomalyFetch();
+  try {
+    harness.inject("github", { kind: "body-failure" });
+    const response = await fetch("https://api.github.com/user");
+    assert.equal(response.status, 200);
+    await assert.rejects(response.text(), (error: DOMException) => error.name === "TimeoutError");
   } finally {
     harness.restore();
   }

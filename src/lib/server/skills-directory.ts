@@ -393,7 +393,7 @@ async function readLiveEntries(): Promise<SkillDirectoryEntry[]> {
   if (token) headers.authorization = `Bearer ${token}`;
   const response = await upstreamFetch("skills-directory", url, { headers });
   if (!response.ok) return [];
-  const parsed = (await response.json()) as { data?: unknown; entries?: unknown };
+  const parsed = (await response.json().catch(() => null)) as { data?: unknown; entries?: unknown } | null;
   const source = parsed?.entries ?? parsed?.data;
   if (!Array.isArray(source)) return [];
   const normalized = source.map((item) => normalizeRawEntry(item as RawDirectoryEntry)).filter((item) => item !== null);
