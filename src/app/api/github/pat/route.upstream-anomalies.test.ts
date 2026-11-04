@@ -92,6 +92,19 @@ test("a primary rate limit (403 with no remaining budget) is 'not now', not 'bad
   assert.equal((await connect()).status, 200);
 });
 
+test("a secondary rate limit is 'not now', not 'bad token'", async () => {
+  harness.inject("github", {
+    kind: "http",
+    status: 403,
+    body: { message: "You have exceeded a secondary rate limit." },
+  });
+  const response = await connect();
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "60");
+  harness.heal("github");
+  assert.equal((await connect()).status, 200);
+});
+
 test("the token validation call carries a deadline", () => {
   const call = harness.calls("github").at(-1);
   assert.ok(call);

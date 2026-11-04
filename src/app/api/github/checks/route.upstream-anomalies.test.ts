@@ -181,6 +181,22 @@ test("a primary limit is reported as 429 with its reset time", async () => {
   harness.healthy("github", github());
 });
 
+test("a secondary limit is reported as retryable instead of a generic 403", async () => {
+  harness.healthy("github", (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === PULL) return Response.json({ head: { sha: SHA } });
+    if (url.pathname === RUNS) {
+      return Response.json({ message: "You have exceeded a secondary rate limit." }, { status: 403 });
+    }
+    if (url.pathname === STATUS) return Response.json({ state: "success", total_count: 1, statuses: [] });
+    return Response.json({ message: "Not Found" }, { status: 404 });
+  });
+  const response = await read();
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "60");
+  harness.healthy("github", github());
+});
+
 test("both rollup sides down is a 502 naming both statuses", async () => {
   harness.healthy("github", github([{ path: RUNS, status: 500 }, { path: STATUS, status: 502 }]));
   const response = await read();

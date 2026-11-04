@@ -179,6 +179,30 @@ test("a rate-limited search preserves items from successful sources", async () =
   assert.equal(response.status, 429);
   assert.equal(response.headers.get("retry-after"), "7");
   assert.deepEqual(((await response.json()) as Assigned).items.map((entry) => entry.id).sort(), ["1", "3"]);
+  now += 8_000;
+  resetUpstreamHealth("github");
+  harness.healthy("github", github());
+  harness.reset();
+  const retry = await read();
+  assert.equal(retry.status, 200, "after Retry-After expires, the route must retry rather than replay the cached 429");
+  assert.equal(retry.headers.get("retry-after"), null);
+  assert.equal(harness.calls("github").length, 3);
+});
+
+test("a secondary rate limit is not mistaken for a credential failure", async () => {
+  stepPastCache();
+  const healthy = github();
+  harness.healthy("github", (request, call) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/search/issues" && url.search.includes("review-requested")) {
+      return Response.json({ message: "You have exceeded a secondary rate limit." }, { status: 403 });
+    }
+    return healthy(request, call);
+  });
+  const response = await read();
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "60");
+  assert.deepEqual(((await response.json()) as Assigned).items.map((entry) => entry.id).sort(), ["1", "3"]);
   harness.healthy("github", github());
 });
 

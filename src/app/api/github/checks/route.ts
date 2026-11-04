@@ -15,6 +15,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { githubApiFailure } from "@/lib/github-activity";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
 import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
 import { upstreamApiError } from "@/lib/server/upstream-api-error";
@@ -54,6 +55,18 @@ type StatusDetail = {
 
 function str(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function isRateLimited(response: Response, body: unknown): boolean {
+  const responseMessage = body && typeof body === "object" && "message" in body
+    && typeof body.message === "string" ? body.message : null;
+  return githubApiFailure({
+    status: response.status,
+    remaining: Number(response.headers.get("x-ratelimit-remaining") ?? -1),
+    retryAfter: response.headers.get("retry-after"),
+    rateLimitReset: response.headers.get("x-ratelimit-reset"),
+    responseMessage,
+  }).rateLimited;
 }
 
 async function ghFetch(path: string, token: string | null) {
@@ -118,8 +131,7 @@ async function load(req: Request): Promise<Response> {
         responseBody: authFailure.data,
       });
     }
-    const rateLimitFailure = failedResponses.find(({ res }) => res.status === 429
-      || (res.status === 403 && (res.headers.get("x-ratelimit-remaining") === "0" || res.headers.has("retry-after"))));
+    const rateLimitFailure = failedResponses.find(({ res, data }) => isRateLimited(res, data));
     if (rateLimitFailure) {
       return upstreamApiError("GitHub", rateLimitFailure.res, {
         configured: Boolean(token),
@@ -150,8 +162,7 @@ async function load(req: Request): Promise<Response> {
       const more = ((next.data as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<Record<string, unknown>>;
       if (!next.res.ok) {
         runsIncomplete = true;
-        if (next.res.status === 401 || next.res.status === 429
-          || (next.res.status === 403 && (next.res.headers.get("x-ratelimit-remaining") === "0" || next.res.headers.has("retry-after")))) {
+        if (next.res.status === 401 || isRateLimited(next.res, next.data)) {
           pageFailure = next;
         }
         break;

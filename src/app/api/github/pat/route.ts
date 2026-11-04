@@ -90,6 +90,9 @@ async function validatePat(pat: string): Promise<PatValidation> {
       cache: "no-store",
       signal: AbortSignal.timeout(VALIDATE_TIMEOUT_MS),
     });
+    const responseBody = res.ok ? null : await res.clone().json().catch(() => null);
+    const responseMessage = responseBody && typeof responseBody === "object" && "message" in responseBody
+      && typeof responseBody.message === "string" ? responseBody.message : null;
     // Only GitHub's own verdict on the credential rejects it. A primary rate
     // limit also arrives as 403, with the remaining budget at zero, and says
     // nothing about the token — the same way a 5xx or a 429 says nothing
@@ -99,6 +102,7 @@ async function validatePat(pat: string): Promise<PatValidation> {
       remaining: Number(res.headers.get("x-ratelimit-remaining") ?? -1),
       retryAfter: res.headers.get("retry-after"),
       rateLimitReset: res.headers.get("x-ratelimit-reset"),
+      responseMessage,
     });
     const rateLimited = failure.rateLimited;
     if (rateLimited) {

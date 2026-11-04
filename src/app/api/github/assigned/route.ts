@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { GitHubItem } from "@/lib/github-tasks";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { createSwrCache } from "@/lib/swr-cache";
+import { githubApiFailure } from "@/lib/github-activity";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
 import { upstreamApiError } from "@/lib/server/upstream-api-error";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
@@ -61,17 +62,30 @@ async function fetchSource<T>(
   url: string,
   headers: Record<string, string>,
   parse: (body: T, linkHeader: string | null) => { items: GitHubItem[]; meta: AssignedSourceMeta },
-): Promise<{ items: GitHubItem[]; meta: AssignedSourceMeta; unauthorized?: boolean; rateLimited?: Response }> {
+): Promise<{
+  items: GitHubItem[];
+  meta: AssignedSourceMeta;
+  unauthorized?: boolean;
+  rateLimited?: { response: Response; body: unknown };
+}> {
   try {
     const res = await upstreamFetch("github", url, { headers });
     if (res.status === 401) return { items: [], meta: failedSource("HTTP 401"), unauthorized: true };
     if (!res.ok) {
-      const rateLimited = res.status === 429
-        || (res.status === 403 && (res.headers.get("x-ratelimit-remaining") === "0" || res.headers.has("retry-after")));
+      const body = await res.clone().json().catch(() => null);
+      const responseMessage = body && typeof body === "object" && "message" in body
+        && typeof body.message === "string" ? body.message : null;
+      const failure = githubApiFailure({
+        status: res.status,
+        remaining: Number(res.headers.get("x-ratelimit-remaining") ?? -1),
+        retryAfter: res.headers.get("retry-after"),
+        rateLimitReset: res.headers.get("x-ratelimit-reset"),
+        responseMessage,
+      });
       return {
         items: [],
         meta: failedSource(`GitHub API error: HTTP ${res.status}`),
-        ...(rateLimited ? { rateLimited: res } : {}),
+        ...(failure.rateLimited ? { rateLimited: { response: res, body } } : {}),
       };
     }
     const body = (await res.json()) as T;
@@ -104,7 +118,8 @@ export async function GET() {
     return NextResponse.json({ ok: true, items: [], configured: false });
   }
 
-  const result = await assignedCache.get(githubTokenIdentity(token), async () => {
+  const cacheKey = githubTokenIdentity(token);
+  const result = await assignedCache.get(cacheKey, async () => {
     const response = await loadAssigned(token);
     const body = await response.text();
     let servable = false;
@@ -120,6 +135,7 @@ export async function GET() {
       headers: Object.fromEntries(response.headers.entries()),
     };
   });
+  if (result.status === 429) assignedCache.invalidate(cacheKey);
   return new NextResponse(result.body, {
     status: result.status,
     headers: { "Content-Type": "application/json", ...result.headers },
@@ -222,9 +238,10 @@ async function loadAssigned(token: string): Promise<Response> {
 
   const rateLimited = assigned.rateLimited ?? review.rateLimited ?? created.rateLimited;
   if (rateLimited) {
-    return upstreamApiError("GitHub", rateLimited, {
+    return upstreamApiError("GitHub", rateLimited.response, {
       configured: true,
-      error: `GitHub API error: HTTP ${rateLimited.status}`,
+      error: `GitHub API error: HTTP ${rateLimited.response.status}`,
+      responseBody: rateLimited.body,
       details: { items: all, configured: true, sources },
     });
   }
