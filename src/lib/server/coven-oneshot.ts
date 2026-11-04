@@ -10,34 +10,63 @@
 // the normal send path instead.
 
 import { spawn } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
+import path from "node:path";
 
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { covenLaunchCommand, covenWrapperSpawnEnv } from "@/lib/coven-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { familiarWorkspace } from "@/lib/coven-paths";
+import { familiarWorkspacesRoot, readFamiliarWorkspaces } from "@/lib/coven-paths";
 import { launchModelArg, prepareLocalCodexLaunch, withLaunchModel } from "@/lib/server/local-codex-launch";
 
 /** A familiar id safe to pass as a CLI argument. */
 const SAFE_ID = /^[a-z0-9_-]+$/i;
+
+/** The real path of `target` when it is a directory, else undefined. */
+async function realDirectory(target: string): Promise<string | undefined> {
+  try {
+    const resolved = await realpath(target);
+    return (await stat(resolved)).isDirectory() ? resolved : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * The familiar's workspace directory, when it exists — the cwd a one-shot run
  * should use so relative paths in its prompt resolve the way the familiar's own
  * runs do. Undefined for an unknown id or a path that is not a directory; the
  * caller then falls back to the server's cwd.
+ *
+ * The id arrives in request bodies, so the result is always a real path
+ * (#6374): the workspace the owner declared in familiars.toml, or a directory
+ * whose real path stays inside the real familiars root. A symlink out of the
+ * root, or a root reached through an alias such as macOS /tmp ->
+ * /private/tmp, cannot hand the spawned run a cwd elsewhere.
  */
 export async function resolveFamiliarWorkspace(
   familiarId: string,
 ): Promise<string | undefined> {
   if (!SAFE_ID.test(familiarId)) return undefined;
-  const candidate = await familiarWorkspace(familiarId);
-  try {
-    const entry = await stat(candidate);
-    return entry.isDirectory() ? candidate : undefined;
-  } catch {
-    return undefined;
+  // The owner chose this path in familiars.toml, so it may sit outside the
+  // familiars root, as the chat-send resolver also allows.
+  const declared = (await readFamiliarWorkspaces()).get(familiarId);
+  if (declared) {
+    const resolvedDeclared = await realDirectory(declared);
+    if (resolvedDeclared) return resolvedDeclared;
   }
+  const root = await realDirectory(familiarWorkspacesRoot());
+  if (!root) return undefined;
+  // Lexical containment before the filesystem sees the id, then real-path
+  // containment, because a symlink inside the root can still point out of it.
+  const lexical = path.resolve(/* turbopackIgnore: true */ root, familiarId);
+  const lexicalRelative = path.relative(root, lexical);
+  if (lexicalRelative.startsWith("..") || path.isAbsolute(lexicalRelative)) return undefined;
+  const candidate = await realDirectory(lexical);
+  if (!candidate) return undefined;
+  const relative = path.relative(root, candidate);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+  return candidate;
 }
 
 type OneShotLaunch = {
