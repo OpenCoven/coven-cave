@@ -365,6 +365,14 @@ export async function upstreamFetch(
       throw error;
     }
 
+    // A transport shim can resolve after its caller has already released the
+    // read. Dispose the original stream before observation acquires its reader;
+    // a late result must not heal health, retry, or reach caller side effects.
+    if (signal.aborted) {
+      void response.body?.cancel?.().catch(() => {});
+      throw signal.reason ?? new DOMException("The read was aborted", "AbortError");
+    }
+
     const anomaly = classifyUpstreamResponse(response);
     const previous = { call, failures: health.consecutiveFailures, transportStreak: health.transportStreak,
       countedFailure: anomaly === "server-error" || anomaly === "rate-limited" };

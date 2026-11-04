@@ -380,3 +380,26 @@ test("an errored response body counts one failed attempt and never shortens a pr
   assert.equal(held.status, 429);
   assert.equal(calls, 3);
 });
+
+test("late headers after caller cancellation are discarded before body observation", async () => {
+  for (const name of ["AbortError", "TimeoutError"]) {
+    resetUpstreamHealth();
+    const caller = new AbortController();
+    const reason = new DOMException("The caller released this read", name);
+    let deliver!: (response: Response) => void;
+    const late = new Promise<Response>(resolve => { deliver = resolve; });
+    let canceled = 0;
+    const response = new Response(new ReadableStream<Uint8Array>({ cancel() { canceled++; } }));
+    const pending = upstreamFetch("github", URL_USER, { signal: caller.signal }, { fetchImpl: () => late });
+    caller.abort(reason);
+    deliver(response);
+    await assert.rejects(pending, error => error === reason);
+    assert.equal(canceled, 1, "cancel the original stream without locking it in an observer");
+    assert.equal(response.body!.locked, false);
+    const health = upstreamHealth("github");
+    assert.equal(health.calls, 1);
+    assert.equal(health.retries, 0);
+    assert.equal(health.lastSuccessAt, null, "a discarded late response is not a recovery");
+    assert.equal(health.lastAnomaly, null, "late caller cancellation does not mutate provider health");
+  }
+});
