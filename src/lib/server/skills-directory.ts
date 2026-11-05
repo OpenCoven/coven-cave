@@ -126,7 +126,7 @@ const FALLBACK_AGENTS = new Set([
 ]);
 let skillsShCache: { expiresAt: number; entries: SkillDirectoryEntry[] } | null = null;
 const skillsShSearchCache = new Map<string, { expiresAt: number; entries: SkillDirectoryEntry[] }>();
-const remoteMarkdownCache = new Map<string, { expiresAt: number; preview: SkillDirectoryPreview | null }>();
+const remoteMarkdownCache = new Map<string, { expiresAt: number; preview: SkillDirectoryPreview }>();
 
 function norm(value: string | undefined | null): string {
   return (value ?? "").trim().toLowerCase();
@@ -488,7 +488,7 @@ async function readSkillsShSearchEntries(query: string): Promise<SkillDirectoryE
     });
     if (!response.ok) return [];
     const entries = parseSkillsShSearchResponse(await response.json());
-    skillsShSearchCache.set(key, { expiresAt: now + SKILLS_SH_CACHE_MS, entries });
+    if (entries.length > 0) skillsShSearchCache.set(key, { expiresAt: now + SKILLS_SH_CACHE_MS, entries });
     return entries;
   } catch {
     return [];
@@ -663,8 +663,7 @@ export async function readRemoteSkillMarkdown(entry: SkillDirectoryEntry): Promi
   for (const url of urls) {
     const cached = remoteMarkdownCache.get(url);
     if (cached && cached.expiresAt > now) {
-      if (cached.preview) return cached.preview;
-      continue;
+      return cached.preview;
     }
     try {
       const response = await upstreamFetch("github-raw", url, {
@@ -672,10 +671,12 @@ export async function readRemoteSkillMarkdown(entry: SkillDirectoryEntry): Promi
         signal: AbortSignal.timeout(8_000),
       });
       if (!response.ok) {
-        remoteMarkdownCache.set(url, { expiresAt: now + SKILLS_SH_CACHE_MS, preview: null });
         continue;
       }
+      const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+      if (contentType !== "text/plain" && contentType !== "text/markdown" && contentType !== "text/x-markdown") continue;
       const text = (await response.text()).slice(0, REMOTE_SKILL_MARKDOWN_MAX_BYTES);
+      if (!text.trim()) continue;
       const preview: SkillDirectoryPreview = {
         text,
         source: "github-raw",
@@ -685,7 +686,7 @@ export async function readRemoteSkillMarkdown(entry: SkillDirectoryEntry): Promi
       remoteMarkdownCache.set(url, { expiresAt: now + SKILLS_SH_CACHE_MS, preview });
       return preview;
     } catch {
-      remoteMarkdownCache.set(url, { expiresAt: now + SKILLS_SH_CACHE_MS, preview: null });
+      // A failed preview remains retryable on the next request.
     }
   }
   return null;

@@ -95,6 +95,7 @@ import {
   readLiveChatGeneration,
   reconcileLiveChatGenerationSession,
   recordLiveChatGeneration,
+  forgetFailedSendModel,
   retryTurnModelRequest,
   stageLiveChatGenerationMetadata,
   subscribeLiveChatGeneration,
@@ -3142,6 +3143,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectModel = useCallback(
     (modelId: string | null) => {
       const selectionRevision = ++modelSelectionRevisionRef.current;
+      setLastFailedSend((failed) => failed && forgetFailedSendModel(failed));
       const stagedModel = modelId ?? "";
       pendingModelOverrideRef.current = stagedModel;
       pendingModelScopeRef.current = modelId
@@ -3259,6 +3261,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
       const selectionRevision = ++modelSelectionRevisionRef.current;
+      // The saved failure belongs to the old runtime, as in handleUseHarnessFix.
+      setLastFailedSend((failed) => failed && forgetFailedSendModel(failed));
       const nextModel = modelForRuntimeSwitch(runtime);
       pendingModelOverrideRef.current = nextModel;
       pendingModelScopeRef.current = "next-message";
@@ -5761,6 +5765,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // Advisory permission mode for the picked access level; the daemon may
           // ignore it if the harness doesn't support per-turn permission scoping.
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+          // Someone is watching this chat and will see the notice, so a Claude
+          // turn may run Read-only when Coven can't scope Full access (#6419).
+          allowReadOnlyFallback: true,
           // Composer Host chip: only an explicit pick rides; the server
           // resolves it against the registered-host registry fail-closed.
           ...(fleetHost ? { runtimeHost: fleetHost } : {}),
@@ -5822,7 +5829,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           : null;
         const message = await chatBridgeFailureMessage(res);
         let surfacedMessage = message;
-        setLastFailedSend(request);
+        // Resending a model the server refused can only be refused again, so
+        // Retry follows the composer and the composer catches up (#6419).
+        const modelRefused = /model_runtime_mismatch|unsupported_model_override/.test(message);
+        setLastFailedSend(modelRefused ? forgetFailedSendModel(request) : request);
+        if (modelRefused) void refreshModelState();
         // A 403 here is the project-access gate: the chat's cwd belongs to no
         // registered project the familiar can reach. Capture that cwd so the
         // error strip can offer a one-click "register + grant, then retry".
@@ -6405,7 +6416,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         next,
         prevAttachments ?? [],
         [],
-        { parentTurnId: parentId ?? null, ...retryTurnModelRequest(prevUser, turn) },
+        { parentTurnId: parentId ?? null, ...retryTurnModelRequest(prevUser, turn, modelStateRef.current?.harness) },
         {
           thinkingEffort,
           responseSpeed,
@@ -6432,7 +6443,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       [],
       {
         parentTurnId: parentId ?? null,
-        ...retryTurnModelRequest(prevUser, turn),
+        ...retryTurnModelRequest(prevUser, turn, modelStateRef.current?.harness),
       },
       {
         thinkingEffort,

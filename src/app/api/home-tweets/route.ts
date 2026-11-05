@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canonicalLink, cleanText, extractLinks, parseFeed } from "@/lib/rss";
+import { canonicalLink, isFeedDocument, cleanText, extractLinks, parseFeed } from "@/lib/rss";
 import { parseTweetRef, type TweetItem } from "@/lib/home-feed";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
@@ -44,6 +44,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, items: cache?.items ?? [] });
     }
     const xml = await res.text();
+    if (!isFeedDocument(xml)) return NextResponse.json({ ok: true, items: cache?.items ?? [] });
     const parsed = parseFeed(xml);
 
     // rss.app bundles the timeline into "digest" items whose body lists several

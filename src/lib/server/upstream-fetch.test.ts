@@ -216,3 +216,190 @@ test("a bare response-like object from an injected fetch is classified, not cras
   assert.equal(res.status, 403);
   assert.equal(upstreamHealth("github").lastAnomaly?.class, "forbidden");
 });
+
+test("a long Retry-After is honoured in full, not shortened to the transport cooldown", async () => {
+  resetUpstreamHealth();
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls += 1;
+    return new Response("{}", { status: 429, headers: { "retry-after": "120" } });
+  }) as typeof fetch;
+  const ask = () => upstreamFetch("github", "https://api.github.com/user", {}, { fetchImpl, retries: 0 });
+  await ask();
+  now += 60_001;
+  await ask();
+  assert.equal(calls, 1, "still cooling at 60s: the host asked for 120");
+  now += 60_000;
+  await ask();
+  assert.equal(calls, 2, "the wait is over");
+  resetUpstreamHealth();
+});
+
+
+test("provider retry times beyond an hour prevent early dispatch and recover at expiry", async () => {
+  for (const kind of ["seconds", "date", "reset"]) {
+    resetUpstreamHealth();
+    now = Math.ceil(now / 1000) * 1000;
+    const started = now;
+    const headers: Record<string, string> = kind === "seconds"
+      ? { "retry-after": "7200" }
+      : kind === "date"
+        ? { "retry-after": new Date(started + 7_200_000).toUTCString() }
+        : { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(started / 1000 + 7200) };
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return calls === 1 ? new Response("{}", { status: headers["x-ratelimit-reset"] ? 403 : 429, headers }) : Response.json({ login: "octocat" });
+    }) as typeof fetch;
+    await upstreamFetch("github", URL_USER, {}, { fetchImpl, retries: 0 });
+    assert.equal(upstreamHealth("github").coolingUntil, started + 7_200_000);
+    now = started + 3_600_001;
+    const held = await upstreamFetch("github", URL_USER, {}, { fetchImpl, retries: 0 });
+    assert.equal(held.status, 429);
+    assert.equal(held.headers.get("retry-after"), "3600");
+    assert.equal(calls, 1, "the provider's two-hour wait must not be shortened");
+    now = started + 7_200_001;
+    assert.equal((await upstreamFetch("github", URL_USER, {}, { fetchImpl, retries: 0 })).status, 200);
+    assert.equal(calls, 2);
+    assert.equal(upstreamHealth("github").state, "healthy");
+  }
+});
+
+
+test("a post-header body deadline degrades the live ledger, is not retried, and heals", async () => {
+  let calls = 0;
+  const fetchImpl = (async (_input: unknown, init: RequestInit) => {
+    calls++;
+    return new Response(new ReadableStream({ start(controller) {
+      init.signal!.addEventListener("abort", () => controller.error(init.signal!.reason), { once: true });
+    } }));
+  }) as typeof fetch;
+  const hold = setTimeout(() => {}, 250);
+  try {
+    const response = await upstreamFetch("github", URL_USER, {}, { fetchImpl, timeoutMs: 15 });
+    await assert.rejects(response.text(), { name: "TimeoutError" });
+    assert.equal(calls, 1, "body failures never trigger an automatic second dispatch");
+    assert.equal(upstreamHealth("github").state, "degraded");
+    assert.equal(upstreamHealth("github").lastAnomaly?.class, "timeout");
+    assert.equal(await (await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => Response.json({ login: "healed" }) })).text(), '{"login":"healed"}');
+    assert.equal(upstreamHealth("github").state, "healthy");
+  } finally { clearTimeout(hold); }
+});
+
+test("stream observation preserves metadata, clone behavior, initial bytes and cancellation", async () => {
+  let canceled = false;
+  const source = new Response(new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(new Uint8Array([1, 2])); },
+    cancel() { canceled = true; },
+  }), { status: 206, statusText: "Partial Content", headers: { "content-type": "audio/pcm" } });
+  Object.defineProperties(source, { url: { value: "https://api.github.com/final" }, redirected: { value: true } });
+  const response = await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => source });
+  assert.equal(response.url, source.url);
+  assert.equal(response.redirected, true);
+  assert.equal(response.status, 206);
+  assert.equal(response.statusText, "Partial Content");
+  assert.equal(response.headers.get("content-type"), "audio/pcm");
+  const reader = response.body!.getReader();
+  assert.deepEqual((await reader.read()).value, new Uint8Array([1, 2]));
+  await reader.cancel();
+  assert.equal(canceled, true);
+  assert.equal(upstreamHealth("github").state, "healthy", "consumer cancellation is not an upstream failure");
+  const complete = new Response("audio", { headers: { "content-type": "audio/mpeg" } });
+  Object.defineProperty(complete, "url", { value: "https://api.github.com/final" });
+  const observed = await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => complete });
+  const clone = observed.clone();
+  assert.equal(clone.url, complete.url);
+  assert.equal(await clone.text(), "audio");
+  assert.equal(await observed.text(), "audio");
+});
+
+test("a body reset records no payload and caller cancellation is not provider downtime", async () => {
+  const privateText = "audit-fixture-only-not-a-real-secret";
+  const response = await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => new Response(new ReadableStream({
+    pull(controller) { controller.error(new TypeError(privateText)); },
+  })) });
+  await assert.rejects(response.text());
+  assert.equal(upstreamHealth("github").lastAnomaly?.class, "network");
+  assert.equal(JSON.stringify(upstreamHealthSnapshot()).includes(privateText), false);
+  resetUpstreamHealth();
+  const caller = new AbortController();
+  const canceled = await upstreamFetch("github", URL_USER, { signal: caller.signal }, { fetchImpl: async (_input, init) => new Response(new ReadableStream({
+    start(controller) { init!.signal!.addEventListener("abort", () => controller.error(init!.signal!.reason), { once: true }); },
+  })) });
+  caller.abort(new DOMException("caller left", "AbortError"));
+  await assert.rejects(canceled.text(), { name: "AbortError" });
+  assert.equal(upstreamHealth("github").state, "healthy");
+});
+
+test("three post-header transport failures open the existing cooldown without double dispatch", async () => {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls++;
+    return new Response(new ReadableStream({ pull(controller) { controller.error(new DOMException("body deadline", "TimeoutError")); } }));
+  }) as typeof fetch;
+  for (let i = 0; i < 3; i++) {
+    const response = await upstreamFetch("github", URL_USER, {}, { fetchImpl });
+    await assert.rejects(response.text(), { name: "TimeoutError" });
+  }
+  assert.equal(calls, 3);
+  assert.equal(upstreamHealth("github").transportStreak, 3);
+  assert.equal(upstreamHealth("github").consecutiveFailures, 3);
+  assert.equal(upstreamHealth("github").state, "cooling");
+  await assert.rejects(upstreamFetch("github", URL_USER, {}, { fetchImpl }), UpstreamCooldownError);
+  assert.equal(calls, 3, "no automatic retry or cooldown dispatch");
+  now += 60_001;
+  const healthy = await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => new Response("healed") });
+  assert.equal(await healthy.text(), "healed");
+  assert.equal(upstreamHealth("github").transportStreak, 0);
+  assert.equal(upstreamHealth("github").state, "healthy");
+});
+
+
+test("an errored response body counts one failed attempt and never shortens a provider wait", async () => {
+  const broken = (status: number, headers = {}) => new Response(new ReadableStream({
+    pull(controller) { controller.error(new DOMException("body deadline", "TimeoutError")); },
+  }), { status, headers });
+  const failed = await upstreamFetch("github", URL_USER, {}, { retries: 0, fetchImpl: async () => broken(503) });
+  await assert.rejects(failed.text());
+  assert.equal(upstreamHealth("github").consecutiveFailures, 1);
+  resetUpstreamHealth();
+  const started = now;
+  let calls = 0;
+  for (let i = 0; i < 3; i++) {
+    const response = await upstreamFetch("github", URL_USER, {}, { retries: 0, honorCooldown: false, fetchImpl: async () => {
+      calls++;
+      return broken(429, { "retry-after": "7200" });
+    } });
+    await assert.rejects(response.text());
+    assert.equal(upstreamHealth("github").coolingUntil, started + 7_200_000);
+    assert.equal(upstreamHealth("github").coolingReason, "rate-limited");
+  }
+  assert.equal(upstreamHealth("github").consecutiveFailures, 3);
+  now += 3_600_001;
+  const held = await upstreamFetch("github", URL_USER, {}, { fetchImpl: async () => { calls++; return Response.json({}); } });
+  assert.equal(held.status, 429);
+  assert.equal(calls, 3);
+});
+
+test("late headers after caller cancellation are discarded before body observation", async () => {
+  for (const name of ["AbortError", "TimeoutError"]) {
+    resetUpstreamHealth();
+    const caller = new AbortController();
+    const reason = new DOMException("The caller released this read", name);
+    let deliver!: (response: Response) => void;
+    const late = new Promise<Response>(resolve => { deliver = resolve; });
+    let canceled = 0;
+    const response = new Response(new ReadableStream<Uint8Array>({ cancel() { canceled++; } }));
+    const pending = upstreamFetch("github", URL_USER, { signal: caller.signal }, { fetchImpl: () => late });
+    caller.abort(reason);
+    deliver(response);
+    await assert.rejects(pending, error => error === reason);
+    assert.equal(canceled, 1, "cancel the original stream without locking it in an observer");
+    assert.equal(response.body!.locked, false);
+    const health = upstreamHealth("github");
+    assert.equal(health.calls, 1);
+    assert.equal(health.retries, 0);
+    assert.equal(health.lastSuccessAt, null, "a discarded late response is not a recovery");
+    assert.equal(health.lastAnomaly, null, "late caller cancellation does not mutate provider health");
+  }
+});

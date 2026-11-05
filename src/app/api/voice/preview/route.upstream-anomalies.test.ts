@@ -63,11 +63,9 @@ const unreachable: DegradedExpectation = (outcome, anomaly) => {
   singleAttempt();
 };
 
-// The route reads any 2xx body as audio without consulting the content-type,
-// so a JSON body on a 200 is served as a sample. Documented here, not endorsed.
+// Non-audio 2xx bodies are rejected before caching or streaming.
 const servedAsAudio: DegradedExpectation = (outcome) => {
-  assert.equal(outcome.status, 200);
-  assert.equal(outcome.response?.headers.get("content-type"), "audio/mpeg");
+  assert.equal(outcome.status, 502, "a non-audio 200 is a provider failure");
 };
 
 test("GET /api/voice/preview across upstream anomalies", async (t) => {
@@ -123,11 +121,13 @@ async function previewWithoutClearing(): Promise<{ status: number; body: unknown
 
 test("an audio stream failing after its headers answers 502, and nothing is cached", async () => {
   __clearPreviewCacheForTests();
-  harness.inject("openai", { kind: "body-failure" });
+  harness.healthy("openai", () => new Response(new ReadableStream({
+    pull(controller) { controller.error(new DOMException("The body stalled past its deadline", "TimeoutError")); },
+  }), { headers: { "content-type": "audio/mpeg" } }));
   const failed = await previewWithoutClearing();
   assert.equal(failed.status, 502);
   assert.deepEqual(failed.body, { ok: false, error: "provider_unreachable" });
-  harness.heal("openai");
+  harness.healthy("openai", () => new Response(MP3, { headers: { "content-type": "audio/mpeg" } }));
   assert.equal((await previewWithoutClearing()).status, 200, "the next request is live");
 });
 
@@ -204,4 +204,29 @@ test("what the preview cache remembers", async (t) => {
       assert.equal(healed.upstreamCalls, 1, `${name}: the healed request never reached OpenAI`);
     });
   }
+});
+
+
+test("non-audio responses and echoed credentials stay retryable without clearing the preview cache", async () => {
+  const toyKey = "audit-fixture-only-not-a-real-secret";
+  const previousKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = toyKey;
+  try {
+    for (const anomaly of [
+      { kind: "http", status: 401, body: { error: { message: `Rejected credential ${toyKey}`, param: "api_key" } } },
+      { kind: "http", status: 200, body: "<html>gateway</html>", headers: { "content-type": "text/html" } },
+      { kind: "http", status: 200, body: "not audio", headers: { "content-type": "application/octet-stream" } },
+      { kind: "http", status: 200, body: "", headers: { "content-type": "audio/mpeg" } },
+    ] as const) {
+      __clearPreviewCacheForTests();
+      harness.inject("openai", anomaly);
+      const failed = await previewWithoutClearing();
+      assert.equal(failed.status, 502);
+      assert.equal(JSON.stringify(failed.body).includes(toyKey), false);
+      if (anomaly.status === 401) assert.match(JSON.stringify(failed.body), /Rejected credential \[redacted\]/);
+      harness.heal("openai");
+      assert.equal((await previewWithoutClearing()).status, 200, "the first healed call is live");
+      assert.equal((await previewWithoutClearing()).upstreamCalls, 0, "only healed audio is cached");
+    }
+  } finally { process.env.OPENAI_API_KEY = previousKey; }
 });

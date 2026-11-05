@@ -16,7 +16,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
-import { upstreamDrift } from "@/lib/server/upstream-answer";
+import { upstreamDrift, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
@@ -57,10 +57,7 @@ async function listPullCommits(repo: string, numberRaw: string) {
     }
     const data = (await res.json().catch(() => null)) as Array<Record<string, unknown>> | null;
     if (!res.ok || !Array.isArray(data)) {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
     }
     // A commit with no sha cannot be opened or cited, so don't list it.
     if (data.some((entry) => typeof entry?.sha !== "string" || !entry.sha)) {
@@ -138,10 +135,7 @@ export async function GET(req: Request) {
     }
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok || !data || typeof data !== "object") {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
     }
 
     // Echoing the requested sha over an empty message would invent a commit.

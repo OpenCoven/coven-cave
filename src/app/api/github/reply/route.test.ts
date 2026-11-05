@@ -23,7 +23,7 @@ assert.match(source, /method: "POST"/, "reply uses POST");
 assert.match(source, /JSON\.stringify\(\{ body: text \}\)/, "reply sends the trimmed body");
 assert.match(source, /Authorization: `Bearer \$\{token\}`/, "reply authenticates with the resolved PAT");
 assert.match(source, /"X-GitHub-Api-Version": "2022-11-28"/, "reply pins the GitHub API version");
-assert.match(source, /status: res\.status === 403 \? 403 : 502/, "upstream permission errors remain 403 and other failures are 502");
+assert.match(source, /res\.status === 403 \? 403 : 502/, "upstream permission errors remain 403 and other failures are 502");
 assert.match(source, /comment: \{/, "successful replies return the normalized comment shape");
 assert.match(source, /createdAt:/, "normalized replies include createdAt");
 assert.match(source, /authorAssociation:/, "normalized replies include authorAssociation");

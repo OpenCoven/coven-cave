@@ -21,7 +21,7 @@ export async function validateGithubToken(value: string, fetchImpl: FetchLike): 
         "X-GitHub-Api-Version": "2022-11-28",
       },
       cache: "no-store",
-    }, { fetchImpl });
+    }, { fetchImpl, honorCooldown: false });
     if (res.status === 401 || res.status === 403) return { ok: false, error: "token rejected by GitHub" };
     if (!res.ok) return { ok: false, error: `GitHub API error (${res.status})` };
     const data = await res.json().catch(() => null);

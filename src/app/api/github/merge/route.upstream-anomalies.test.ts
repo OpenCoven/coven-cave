@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectPatInvalid, expectRateLimited,expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-merge-anomalies");
@@ -87,8 +87,8 @@ test("POST /api/github/merge with a reviewed head across upstream anomalies", as
     degraded: {
       "http-500": failsWith(502, "github error (500)"),
       "http-502": failsWith(502, "github error (502)"),
-      "auth-revoked": failsWith(502, "github error (401)"),
-      "rate-limit": failsWith(502, "github error (429)"),
+      "auth-revoked": expectPatInvalid,
+      "rate-limit": expectRateLimited,
       timeout: timesOut,
       network: failsWith(502, "fetch failed"),
       // The revision read parses the body without a guard; the SyntaxError
@@ -117,14 +117,14 @@ test("POST /api/github/merge without a head (legacy caller) across upstream anom
     degraded: {
       "http-500": expectAmbiguousWrite,
       "http-502": expectAmbiguousWrite,
-      "auth-revoked": failsWith(502, "Bad credentials"),
-      "rate-limit": failsWith(502, "API rate limit exceeded"),
+      "auth-revoked": expectPatInvalid,
+      "rate-limit": expectRateLimited,
       timeout: expectAmbiguousWrite,
       network: failsWith(502, "fetch failed"),
       // Merging needs GitHub's own `merged: true`; a 200 without it is refused.
       "malformed-json": expectAmbiguousWrite,
       "empty-body": expectAmbiguousWrite,
-      "schema-drift": failsWith(502, "github error (200)"),
+      "schema-drift": expectAmbiguousWrite,
     },
   });
 });
@@ -199,4 +199,26 @@ test("a merge whose connection never opened is a plain failure the caller may re
 test("the merge calls carry a deadline through upstreamFetch", async () => {
   assert.ok(harness.calls("github").length >= 1);
   assert.ok(harness.calls("github").every((call) => call.hasDeadline === true));
+});
+
+
+test("a dispatched reviewed-head merge stays uncertain without a boolean merge verdict", async () => {
+  for (const answer of [{ unexpected: true }, { merged: "true" }, { merged: 1 }, null]) {
+    harness.healthy("github", request => request.method === "GET"
+      ? Response.json({ head: { sha: HEAD }, base: { sha: BASE, ref: "main" } })
+      : Response.json(answer));
+    harness.reset();
+    const response = await merge({ headSha: HEAD, deleteBranch: true });
+    assert.equal(response.status, 502);
+    const body = await response.json();
+    assert.equal(body.code, "ambiguous-write");
+    assert.equal(body.dispatched, true);
+    assert.deepEqual(harness.calls("github").map(call => call.method), ["GET", "PUT"], "no retry or cleanup is sent");
+  }
+  harness.healthy("github", () => Response.json({ merged: false, message: "Merge was refused." }));
+  const refused = await merge();
+  const body = await refused.json();
+  assert.equal(refused.status, 502);
+  assert.equal(body.error, "Merge was refused.");
+  assert.notEqual(body.code, "ambiguous-write", "an explicit false is a definite refusal");
 });
