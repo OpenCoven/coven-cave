@@ -518,9 +518,8 @@ private struct MessageAttachmentImage: View {
                 .accessibilityAddTraits(.isImage)
         }
         .onGeometryChange(for: Bool.self) { geometry in
-            guard let viewport = geometry.bounds(of: .scrollView) else { return true }
-            return CGRect(origin: .zero, size: geometry.size)
-                .intersects(viewport.insetBy(dx: 0, dy: -viewport.height))
+            ChatResourceViewport.isNearby(size: geometry.size,
+                viewport: geometry.bounds(of: .scrollView))
         } action: { isNearViewport = $0 }
         .onDisappear {
             zoomTask?.cancel()

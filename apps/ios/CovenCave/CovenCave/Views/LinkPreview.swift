@@ -55,9 +55,8 @@ struct LinkPreviewCard: View {
             }
         }
         .onGeometryChange(for: Bool.self) { geometry in
-            guard let viewport = geometry.bounds(of: .scrollView) else { return true }
-            return CGRect(origin: .zero, size: geometry.size)
-                .intersects(viewport.insetBy(dx: 0, dy: -viewport.height))
+            ChatResourceViewport.isNearby(size: geometry.size,
+                viewport: geometry.bounds(of: .scrollView))
         } action: { isNearViewport = $0 }
         .task(id: isNearViewport ? url : nil) {
             guard isNearViewport else {

@@ -116,7 +116,12 @@ final class ChatScrollBounceUITests: XCTestCase {
         let app = launch(argument, thread: thread)
         let transcript = app.scrollViews["Chat transcript"].firstMatch
         XCTAssertTrue(transcript.waitForExistence(timeout: 30), "the transcript opens")
-        XCTAssertTrue(waitUntilDrawn(needle), "the transcript opens on the latest reply")
+        let latestIsDrawn = waitUntilDrawn(needle)
+        if !latestIsDrawn {
+            attachScreenshot("Open: latest reply missing")
+            print("=== Open rendered text: \(drawnText()) ===")
+        }
+        XCTAssertTrue(latestIsDrawn, "the transcript opens on the latest reply")
         return (app, transcript)
     }
 
@@ -163,6 +168,7 @@ final class ChatScrollBounceUITests: XCTestCase {
                 if !isDrawn(bottomMarker) {
                     lost += 1
                     attachScreenshot("Small drag: lost at pass \(pass) sample \(sample)")
+                    print("=== Small drag pass \(pass) sample \(sample) rendered text: \(drawnText()) ===")
                 }
             }
         }

@@ -4,6 +4,22 @@ import XCTest
 @testable import CovenCave
 
 final class ChatScrollStateTests: XCTestCase {
+    func testDeferredResourcesWaitForValidViewport() {
+        let size = CGSize(width: 390, height: 300)
+        XCTAssertFalse(ChatResourceViewport.isNearby(size: size, viewport: nil))
+        XCTAssertFalse(ChatResourceViewport.isNearby(size: size, viewport: .zero))
+        XCTAssertFalse(ChatResourceViewport.isNearby(size: size,
+            viewport: CGRect(x: 0, y: 0, width: 390, height: CGFloat.infinity)))
+        XCTAssertFalse(ChatResourceViewport.isNearby(size: .zero,
+            viewport: CGRect(x: 0, y: 0, width: 390, height: 600)))
+        XCTAssertTrue(ChatResourceViewport.isNearby(size: size,
+            viewport: CGRect(x: 0, y: 0, width: 390, height: 600)))
+        XCTAssertTrue(ChatResourceViewport.isNearby(size: size,
+            viewport: CGRect(x: 0, y: 800, width: 390, height: 600)))
+        XCTAssertFalse(ChatResourceViewport.isNearby(size: size,
+            viewport: CGRect(x: 0, y: 2000, width: 390, height: 600)))
+    }
+
     func testHistoricalMarkdownStaysBoundedIncludingUnderVoiceOver() {
         for voiceOver in [false, true] {
             XCTAssertFalse(MessageProseView.shouldMountMarkdown(historical: true, deferredSpan: false,

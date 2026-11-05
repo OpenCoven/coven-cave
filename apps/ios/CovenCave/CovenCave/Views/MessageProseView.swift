@@ -26,15 +26,16 @@ struct MessageProseView: View {
     var body: some View {
         bubble(projection)
             .onGeometryChange(for: Bool.self) { geometry in
-                guard deferOffscreenMarkdown || deferOffscreenMessage,
-                      let viewport = geometry.bounds(of: .scrollView) else { return true }
-                // Prefetch one viewport on either side. Report only crossings,
-                // not a state mutation for every scrolling pixel.
-                return CGRect(origin: .zero, size: geometry.size)
-                    .intersects(viewport.insetBy(dx: 0, dy: -viewport.height))
+                guard deferOffscreenMarkdown || deferOffscreenMessage else { return true }
+                // Unknown bounds are not evidence that history is visible.
+                return ChatResourceViewport.isNearby(size: geometry.size,
+                    viewport: geometry.bounds(of: .scrollView))
             } action: { isNearViewport = $0 }
             .onChange(of: keepsMarkdownMounted) { _, mounted in
                 if !mounted { markdownReady = false }
+                #if DEBUG
+                ChatScrollTrace.shared.note("markdownMount \(message.id) mounted=\(mounted) height=\(Int(mdHeight.rounded()))")
+                #endif
             }
     }
 
