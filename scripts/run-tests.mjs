@@ -2320,6 +2320,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/server/opencoven-submissions-retained.test.ts",
   "src/lib/server/opencoven-submissions-runtime.test.ts",
   // imports the one-shot runner, which reaches cave-config through @/ (#6374)
   "src/lib/server/coven-oneshot-workspace.test.ts",

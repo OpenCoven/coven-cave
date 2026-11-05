@@ -18,9 +18,9 @@ export type RetainedSubmissionsSummary =
   /** Present but not a shape we can count: it is still exportable and deletable. */
   | { exists: true; count: null };
 
-async function readStore(): Promise<string | null> {
+async function readStore() {
   try {
-    return await readFile(submissionsStorePath(), "utf8");
+    return await readFile(submissionsStorePath());
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
@@ -31,7 +31,7 @@ export async function summarizeRetainedSubmissions(): Promise<RetainedSubmission
   const raw = await readStore();
   if (raw === null) return { exists: false, count: 0 };
   try {
-    const parsed = JSON.parse(raw) as { submissions?: unknown };
+    const parsed = JSON.parse(raw.toString("utf8")) as { submissions?: unknown };
     return { exists: true, count: Array.isArray(parsed.submissions) ? parsed.submissions.length : null };
   } catch {
     return { exists: true, count: null };
