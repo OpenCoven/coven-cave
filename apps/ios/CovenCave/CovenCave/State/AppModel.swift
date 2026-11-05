@@ -2481,6 +2481,17 @@ final class AppModel {
             return
         }
 
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-large-rich-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-large-rich-chat-scroll", title: "Large Rich Scroll Chat",
+                streamsLatest: false, historyCount: 1_000
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-chat-scroll") {
             isConnectingPreview = true
             configureRichChatScrollPreview(
@@ -2790,11 +2801,11 @@ final class AppModel {
     /// #6090: history whose replies are much taller than the 12-line loading
     /// placeholder, so rows change height as WebKit measures them while the
     /// reader scrolls back to the latest reply. Optionally keeps streaming.
-    private func configureRichChatScrollPreview(id: String, title: String, streamsLatest: Bool) {
+    private func configureRichChatScrollPreview(id: String, title: String, streamsLatest: Bool, historyCount: Int = 40) {
         configureEmptyChatPreview()
         let base = Date(timeIntervalSince1970: 1_786_000_000)
         var messages: [DisplayMessage] = []
-        for index in 0..<40 {
+        for index in 0..<historyCount {
             let created = base.addingTimeInterval(Double(index) * 60)
             if index.isMultiple(of: 2) {
                 messages.append(DisplayMessage(
@@ -2819,7 +2830,7 @@ final class AppModel {
 
             Latest bottom marker q3k9z
             """,
-            createdAt: base.addingTimeInterval(40 * 60)
+            createdAt: base.addingTimeInterval(Double(historyCount) * 60)
         )
         latest.streaming = streamsLatest
         messages.append(latest)

@@ -1,8 +1,45 @@
 import SwiftUI
+import UIKit
 import XCTest
 @testable import CovenCave
 
 final class ChatScrollStateTests: XCTestCase {
+    func testDeferredResourcesWaitForValidViewport() {
+        let size = CGSize(width: 390, height: 300)
+        XCTAssertFalse(ChatResourceViewport.isNearby(size: size, viewport: nil))
+        XCTAssertFalse(ChatResourceViewport.isNearby(size: size, viewport: .zero))
+        XCTAssertFalse(ChatResourceViewport.isNearby(size: size,
+            viewport: CGRect(x: 0, y: 0, width: 390, height: CGFloat.infinity)))
+        XCTAssertFalse(ChatResourceViewport.isNearby(size: .zero,
+            viewport: CGRect(x: 0, y: 0, width: 390, height: 600)))
+        XCTAssertTrue(ChatResourceViewport.isNearby(size: size,
+            viewport: CGRect(x: 0, y: 0, width: 390, height: 600)))
+        XCTAssertTrue(ChatResourceViewport.isNearby(size: size,
+            viewport: CGRect(x: 0, y: 800, width: 390, height: 600)))
+        XCTAssertFalse(ChatResourceViewport.isNearby(size: size,
+            viewport: CGRect(x: 0, y: 2000, width: 390, height: 600)))
+    }
+
+    func testHistoricalMarkdownStaysBoundedIncludingUnderVoiceOver() {
+        for voiceOver in [false, true] {
+            XCTAssertFalse(MessageProseView.shouldMountMarkdown(historical: true, deferredSpan: false,
+                streaming: false, voiceOver: voiceOver, nearby: false))
+            XCTAssertTrue(MessageProseView.shouldMountMarkdown(historical: true, deferredSpan: false,
+                streaming: false, voiceOver: voiceOver, nearby: true))
+            XCTAssertTrue(MessageProseView.shouldMountMarkdown(historical: true, deferredSpan: true,
+                streaming: true, voiceOver: voiceOver, nearby: false))
+        }
+    }
+
+    func testLatestMarkdownAndVoiceOverTimelineStayAvailable() {
+        XCTAssertTrue(MessageProseView.shouldMountMarkdown(historical: false, deferredSpan: false,
+            streaming: false, voiceOver: false, nearby: false))
+        XCTAssertTrue(MessageProseView.shouldMountMarkdown(historical: false, deferredSpan: true,
+            streaming: false, voiceOver: true, nearby: false))
+        XCTAssertFalse(MessageProseView.shouldMountMarkdown(historical: false, deferredSpan: true,
+            streaming: false, voiceOver: false, nearby: false))
+    }
+
     func testInitialAndDelayedLayoutKeepFollowing() {
         var state = ChatScrollState()
         state.updateGeometry(atBottom: false)
@@ -124,6 +161,139 @@ final class ChatScrollStateTests: XCTestCase {
         XCTAssertEqual(anchor.takeCorrection(viewportTop: 2_400, viewportHeight: 600, preserving: false), 0)
         XCTAssertEqual(anchor.takeCorrection(viewportTop: 3_800, viewportHeight: 600, preserving: true), 0,
                        "growth absorbed while following is not corrected again later")
+    }
+
+    /// A SwiftUI row can report its new position before UIScrollView has its
+    /// matching contentSize. The first bounded adjustment must not discard the
+    /// remainder: no second row callback is required when UIKit catches up.
+    @MainActor
+    func testAnchorCorrectionSurvivesDelayedNativeContentSize() async {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.contentSize = CGSize(width: 390, height: 3_000)
+        scrollView.contentOffset.y = 2_400
+        let coordinator = ChatScrollAnchorCoordinator()
+        defer { withExtendedLifetime(coordinator) {} }
+        coordinator.scrollView = scrollView
+        coordinator.note("latest", row(1_800, 3_000), preserving: { true })
+        await settleAnchorLayout()
+
+        coordinator.note("latest", row(3_200, 4_400), preserving: { true })
+        await settleAnchorLayout()
+        XCTAssertEqual(scrollView.contentOffset.y, 2_400, accuracy: 0.5,
+                       "the correction must respect the currently available native extent")
+
+        scrollView.contentSize.height = 4_400
+        await settleAnchorLayout()
+        XCTAssertEqual(scrollView.contentOffset.y, 3_800, accuracy: 0.5,
+                       "the unapplied 1,400pt correction survives until UIKit can apply it")
+
+        scrollView.contentSize.height = 4_500
+        await settleAnchorLayout()
+        XCTAssertEqual(scrollView.contentOffset.y, 3_800, accuracy: 0.5,
+                       "a correction already applied is never repeated on another size update")
+    }
+
+    @MainActor
+    func testAnchorCorrectionSurvivesPartiallyAvailableNativeExtent() async {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.contentSize = CGSize(width: 390, height: 3_000)
+        scrollView.contentOffset.y = 2_400
+        let coordinator = ChatScrollAnchorCoordinator()
+        defer { withExtendedLifetime(coordinator) {} }
+        coordinator.scrollView = scrollView
+        coordinator.note("latest", row(1_800, 3_000), preserving: { true })
+        await settleAnchorLayout()
+
+        scrollView.contentSize.height = 3_200
+        coordinator.note("latest", row(3_200, 4_400), preserving: { true })
+        await settleAnchorLayout()
+        XCTAssertEqual(scrollView.contentOffset.y, 2_600, accuracy: 0.5)
+
+        // The reader moves another 100pt while UIKit is catching up. Apply
+        // only the outstanding 1,200pt, preserving that intentional movement.
+        scrollView.contentOffset.y = 2_500
+        scrollView.contentSize.height = 4_400
+        await settleAnchorLayout()
+        XCTAssertEqual(scrollView.contentOffset.y, 3_700, accuracy: 0.5)
+    }
+
+    @MainActor
+    func testFollowingLatestCancelsAnUnappliedAnchorCorrection() async {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.contentSize = CGSize(width: 390, height: 3_000)
+        scrollView.contentOffset.y = 2_400
+        let coordinator = ChatScrollAnchorCoordinator()
+        defer { withExtendedLifetime(coordinator) {} }
+        coordinator.scrollView = scrollView
+        var preserving = true
+        coordinator.note("latest", row(1_800, 3_000), preserving: { preserving })
+        await settleAnchorLayout()
+        coordinator.note("latest", row(3_200, 4_400), preserving: { preserving })
+        await settleAnchorLayout()
+
+        // A jump takes ownership even if no native size update occurs until
+        // the reader has already started another gesture.
+        preserving = false
+        coordinator.cancelPendingCorrection()
+        preserving = true
+        scrollView.contentSize.height = 4_400
+        await settleAnchorLayout()
+        XCTAssertEqual(scrollView.contentOffset.y, 2_400, accuracy: 0.5,
+                       "once following owns the offset, an old anchor cannot move it")
+    }
+
+    @MainActor
+    func testAdditionalLayoutGrowthUsesThePendingAnchorPosition() async {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.contentSize = CGSize(width: 390, height: 3_000)
+        scrollView.contentOffset.y = 2_400
+        let coordinator = ChatScrollAnchorCoordinator()
+        defer { withExtendedLifetime(coordinator) {} }
+        coordinator.scrollView = scrollView
+        coordinator.note("latest", row(1_800, 3_000), preserving: { true })
+        await settleAnchorLayout()
+        coordinator.note("latest", row(3_200, 4_400), preserving: { true })
+        await settleAnchorLayout()
+
+        // Another row realizes before UIKit has made room for the first
+        // displacement. The same visible reply remains the anchor.
+        coordinator.note("latest", row(3_800, 5_000), preserving: { true })
+        await settleAnchorLayout()
+        scrollView.contentSize.height = 5_000
+        await settleAnchorLayout()
+        XCTAssertEqual(scrollView.contentOffset.y, 4_400, accuracy: 0.5,
+                       "both layout displacements apply once when the extent catches up")
+    }
+
+    @MainActor
+    func testResetDropsCorrectionsFromThePreviousConversation() async {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.contentSize = CGSize(width: 390, height: 3_000)
+        scrollView.contentOffset.y = 2_400
+        let coordinator = ChatScrollAnchorCoordinator()
+        defer { withExtendedLifetime(coordinator) {} }
+        coordinator.scrollView = scrollView
+        coordinator.note("latest", row(1_800, 3_000), preserving: { true })
+        await settleAnchorLayout()
+        coordinator.note("latest", row(3_200, 4_400), preserving: { true })
+        await settleAnchorLayout()
+
+        coordinator.reset()
+        scrollView.contentSize.height = 4_400
+        await settleAnchorLayout()
+        XCTAssertEqual(scrollView.contentOffset.y, 2_400, accuracy: 0.5)
+    }
+
+    @MainActor
+    private func settleAnchorLayout() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
     }
 }
 

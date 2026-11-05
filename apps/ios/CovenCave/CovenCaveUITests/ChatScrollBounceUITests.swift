@@ -8,6 +8,7 @@ final class ChatScrollBounceUITests: XCTestCase {
     private let bottomMarker = "bottom marker q3k9z"
     private let streamingTail = "tail q3k9z"
     private var tracePath = ""
+    private var metricsPath = ""
 
     override func setUp() {
         super.setUp()
@@ -24,6 +25,7 @@ final class ChatScrollBounceUITests: XCTestCase {
             print("=== SCROLL TRACE \(name): unavailable at \(tracePath) ===")
         }
         try? FileManager.default.removeItem(atPath: tracePath)
+        try? FileManager.default.removeItem(atPath: metricsPath)
         super.tearDown()
     }
 
@@ -32,9 +34,14 @@ final class ChatScrollBounceUITests: XCTestCase {
         app.terminate()
         _ = app.wait(for: .notRunning, timeout: 5)
         tracePath = NSTemporaryDirectory() + "cave-scroll-trace-\(UUID().uuidString).log"
-        app.launchArguments = [argument]
+        app.launchArguments = [argument, "--performance-instrumentation"]
+        if argument == "--ui-preview-large-rich-chat-scroll" {
+            app.launchArguments.append("--timeline-performance-rich")
+        }
         app.launchEnvironment["CAVE_OPEN_THREAD"] = thread
         app.launchEnvironment["CAVE_SCROLL_TRACE_PATH"] = tracePath
+        metricsPath = NSTemporaryDirectory() + "cave-scroll-metrics-\(UUID().uuidString).json"
+        app.launchEnvironment["CAVE_SCROLL_METRICS_PATH"] = metricsPath
         app.launch()
         return app
     }
@@ -109,7 +116,12 @@ final class ChatScrollBounceUITests: XCTestCase {
         let app = launch(argument, thread: thread)
         let transcript = app.scrollViews["Chat transcript"].firstMatch
         XCTAssertTrue(transcript.waitForExistence(timeout: 30), "the transcript opens")
-        XCTAssertTrue(waitUntilDrawn(needle), "the transcript opens on the latest reply")
+        let latestIsDrawn = waitUntilDrawn(needle)
+        if !latestIsDrawn {
+            attachScreenshot("Open: latest reply missing")
+            print("=== Open rendered text: \(drawnText()) ===")
+        }
+        XCTAssertTrue(latestIsDrawn, "the transcript opens on the latest reply")
         return (app, transcript)
     }
 
@@ -156,6 +168,7 @@ final class ChatScrollBounceUITests: XCTestCase {
                 if !isDrawn(bottomMarker) {
                     lost += 1
                     attachScreenshot("Small drag: lost at pass \(pass) sample \(sample)")
+                    print("=== Small drag pass \(pass) sample \(sample) rendered text: \(drawnText()) ===")
                 }
             }
         }
@@ -172,5 +185,67 @@ final class ChatScrollBounceUITests: XCTestCase {
         assertReturnsAndStays(streamingTail, transcript, attempts: 40, "Streaming flick") {
             transcript.swipeUp()
         }
+    }
+
+    @MainActor
+    func testThousandMessageConversationKeepsRichRenderingBounded() {
+        let (app, transcript) = openRich("--ui-preview-large-rich-chat-scroll",
+            thread: "ui-preview-large-rich-chat-scroll", needle: bottomMarker)
+        let capture = app.buttons["Capture timeline metrics"].firstMatch
+        XCTAssertTrue(capture.waitForExistence(timeout: 5))
+        var capturedCount = 0
+
+        func captureAndCheck() {
+            capture.tap()
+            let expectedCount = capturedCount + 1
+            let deadline = Date().addingTimeInterval(5)
+            var capturedData: Data?
+            var capturedSamples: [[String: Any]]?
+            while Date() < deadline {
+                if let data = try? Data(contentsOf: URL(fileURLWithPath: metricsPath)),
+                   let report = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let samples = report["captures"] as? [[String: Any]], samples.count == expectedCount {
+                    capturedData = data
+                    capturedSamples = samples
+                    break
+                }
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            guard let data = capturedData, let sample = capturedSamples?.last,
+                  let attached = sample["attachedWebViews"] as? Int,
+                  let counters = sample["counters"] as? [String: Int],
+                  let created = counters["markdown.webview.created"],
+                  let invalidated = counters["markdown.webview.invalidated"] else {
+                XCTFail("real view-hierarchy and renderer ownership metrics must be captured")
+                return
+            }
+            capturedCount = expectedCount
+            XCTAssertEqual(sample["index"] as? Int, capturedCount - 1)
+            XCTAssertEqual(sample["messageCount"] as? Int, 1_001)
+            // A generous fixture guard, not a production memory-budget claim:
+            // 500 historical rich replies must not create 500 resident WebViews.
+            XCTAssertLessThanOrEqual(attached, 16)
+            XCTAssertGreaterThan(attached, 0)
+            XCTAssertGreaterThan(created, 0)
+            XCTAssertGreaterThan(counters["markdown.webview.first-render"] ?? 0, 0)
+            XCTAssertGreaterThanOrEqual(created - invalidated, 0)
+            XCTAssertLessThanOrEqual(created - invalidated, 16)
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            attachment.name = "1,001-message renderer and app-footprint metrics"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+
+        captureAndCheck()
+        for _ in 0..<2 {
+            for _ in 0..<4 { transcript.swipeDown() }
+            captureAndCheck()
+            let jump = app.buttons["Scroll to latest"].firstMatch
+            XCTAssertTrue(jump.waitForExistence(timeout: 5))
+            jump.tap()
+            XCTAssertTrue(waitUntilDrawn(bottomMarker))
+            captureAndCheck()
+        }
+        attachScreenshot("1,001-message conversation after revisiting history")
     }
 }

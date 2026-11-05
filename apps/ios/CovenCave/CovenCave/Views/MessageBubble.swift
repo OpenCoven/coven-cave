@@ -448,6 +448,7 @@ struct MessageBubble: View {
 
     private func bubble(_ projection: AssistantResponseProjection) -> some View {
         MessageProseView(message: message, projection: projection, isLast: isLast,
+                         deferOffscreenMessage: !isLast,
                          onOpenReader: onOpenReader, onContentHeightChange: onContentHeightChange)
     }
 
@@ -477,6 +478,7 @@ struct MessageBubble: View {
         return MessageProseView(message: span, projection: projection, isLast: isLast,
                                 preferNativePlainText: true,
                                 deferOffscreenMarkdown: deferOffscreenMarkdown,
+                                deferOffscreenMessage: !isLast,
                                 onOpenReader: message.streaming ? nil : onOpenReader.map { open in { _ in open(parsed.visible) } },
                                 onContentHeightChange: onContentHeightChange)
     }
@@ -489,10 +491,12 @@ private struct MessageAttachmentImage: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var zoomTask: Task<Void, Never>?
+    @State private var isNearViewport = false
+    @State private var thumbnailSize = CGSize(width: 240, height: 240)
 
     var body: some View {
         CachedImageView(
-            source: .dataURL(dataURL),
+            source: isNearViewport ? .dataURL(dataURL) : nil,
             targetSize: CGSize(width: 240, height: 240)
         ) { thumbnail in
             Image(uiImage: thumbnail)
@@ -505,9 +509,18 @@ private struct MessageAttachmentImage: View {
                 .onTapGesture { presentZoom(fallback: thumbnail) }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint("Tap to enlarge")
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                    if size.width > 0, size.height > 0 { thumbnailSize = size }
+                }
         } placeholder: {
-            EmptyView()
+            Color.clear.frame(width: thumbnailSize.width, height: thumbnailSize.height)
+                .accessibilityLabel("Image attachment")
+                .accessibilityAddTraits(.isImage)
         }
+        .onGeometryChange(for: Bool.self) { geometry in
+            ChatResourceViewport.isNearby(size: geometry.size,
+                viewport: geometry.bounds(of: .scrollView))
+        } action: { isNearViewport = $0 }
         .onDisappear {
             zoomTask?.cancel()
             zoomTask = nil

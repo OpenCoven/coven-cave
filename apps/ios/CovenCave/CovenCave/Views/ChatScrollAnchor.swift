@@ -69,14 +69,34 @@ struct ChatScrollAnchor {
 /// transcript must not re-render because of them.
 @MainActor
 final class ChatScrollAnchorCoordinator {
-    fileprivate weak var scrollView: UIScrollView?
+    weak var scrollView: UIScrollView? {
+        didSet {
+            guard scrollView !== oldValue else { return }
+            contentSizeObservation = nil
+            if oldValue != nil { reset() }
+            contentSizeObservation = scrollView?.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.scheduleFlush() }
+            }
+            // A row can report before the probe finds its UIScrollView.
+            scheduleFlush()
+        }
+    }
+    private var contentSizeObservation: NSKeyValueObservation?
     private var anchor = ChatScrollAnchor()
     private var preserving: (@MainActor () -> Bool)?
     private var flushScheduled = false
+    /// SwiftUI can report a row's new position before UIKit publishes the
+    /// matching scrollable extent. Keep any bounded-out movement until that
+    /// native extent arrives, even if no row reports another position.
+    private var unappliedCorrection: CGFloat = 0
 
-    fileprivate func note(_ id: String, _ row: ChatScrollAnchor.Row, preserving: @escaping @MainActor () -> Bool) {
+    func note(_ id: String, _ row: ChatScrollAnchor.Row, preserving: @escaping @MainActor () -> Bool) {
         anchor.note(id, row)
         self.preserving = preserving
+        scheduleFlush()
+    }
+
+    private func scheduleFlush() {
         guard !flushScheduled else { return }
         flushScheduled = true
         // Rows report one at a time; wait for the whole layout pass.
@@ -89,24 +109,57 @@ final class ChatScrollAnchorCoordinator {
         anchor.remove(id)
     }
 
+    func reset() {
+        anchor = ChatScrollAnchor()
+        cancelPendingCorrection()
+        preserving = nil
+    }
+
+    func cancelPendingCorrection() {
+        unappliedCorrection = 0
+    }
+
     private func flush() {
         flushScheduled = false
         guard let scrollView else { return }
         let insets = scrollView.adjustedContentInset
         let offset = scrollView.contentOffset.y
+        let shouldPreserve = preserving?() ?? false
         let delta = anchor.takeCorrection(
-            viewportTop: offset + insets.top,
+            // The row baseline already includes earlier layout displacement;
+            // the native offset may still be waiting for room to apply it.
+            viewportTop: offset + insets.top + unappliedCorrection,
             viewportHeight: scrollView.bounds.height - insets.top - insets.bottom,
-            preserving: preserving?() ?? false
+            preserving: shouldPreserve
         )
-        guard delta != 0 else { return }
+        guard shouldPreserve else {
+            unappliedCorrection = 0
+            return
+        }
+        unappliedCorrection += delta
+        guard abs(unappliedCorrection) >= 0.5 else {
+            unappliedCorrection = 0
+            return
+        }
         let lowest = -insets.top
         let highest = max(offset, scrollView.contentSize.height + insets.bottom - scrollView.bounds.height)
+        let requested = unappliedCorrection
         // Assigning the offset directly keeps a drag or deceleration running;
         // `setContentOffset(_:animated:)` would stop it.
-        scrollView.contentOffset.y = min(max(offset + delta, lowest), highest)
+        scrollView.contentOffset.y = min(max(offset + requested, lowest), highest)
+        let applied = scrollView.contentOffset.y - offset
+        unappliedCorrection -= applied
+        // The top bound is already authoritative; unlike a growing bottom
+        // extent, there is no later contentSize that can make it negative.
+        if unappliedCorrection < 0, scrollView.contentOffset.y <= lowest + 0.5 {
+            unappliedCorrection = 0
+        }
         #if DEBUG
-        ChatScrollTrace.shared.note("anchorCorrection delta=\(Int(delta.rounded()))")
+        ChatScrollTrace.shared.note(
+            "anchorCorrection delta=\(Int(delta.rounded())) requested=\(Int(requested.rounded())) "
+                + "applied=\(Int(applied.rounded())) remaining=\(Int(unappliedCorrection.rounded())) "
+                + "nativeHeight=\(Int(scrollView.contentSize.height.rounded()))"
+        )
         #endif
     }
 }

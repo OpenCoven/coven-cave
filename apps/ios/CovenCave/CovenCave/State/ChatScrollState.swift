@@ -217,3 +217,19 @@ struct ChatViewportRecovery {
         }
     }
 }
+
+/// Deferred transcript resources must wait for a real viewport. During the
+/// first layout pass SwiftUI may have no scroll bounds (or zero-sized bounds);
+/// treating that as visible eagerly mounts every historical renderer.
+enum ChatResourceViewport {
+    nonisolated static func isNearby(size: CGSize, viewport: CGRect?) -> Bool {
+        guard let viewport,
+              viewport.origin.x.isFinite, viewport.origin.y.isFinite,
+              viewport.width.isFinite, viewport.height.isFinite,
+              viewport.width > 0, viewport.height > 0,
+              size.width.isFinite, size.height.isFinite,
+              size.width > 0, size.height > 0 else { return false }
+        return CGRect(origin: .zero, size: size)
+            .intersects(viewport.insetBy(dx: 0, dy: -viewport.height))
+    }
+}
