@@ -102,11 +102,11 @@ assert.match(
 assert.match(css, /--scrollbar-thumb\s*:/, "--scrollbar-thumb token defined on :root");
 assert.match(css, /--scrollbar-track\s*:/, "--scrollbar-track token defined on :root");
 
-// (d) Salem scrollbar consumes the token, not raw rgba.
+// (d) Scrollbars must not reintroduce the old hardcoded purple value.
 assert.doesNotMatch(
   css,
   /scrollbar-color:\s*rgba\(124,\s*77,\s*255,\s*0\.3\)/,
-  "salem must not use the hardcoded purple rgba scrollbar (use var(--scrollbar-thumb))",
+  "scrollbars must not use the hardcoded purple rgba value (use var(--scrollbar-thumb))",
 );
 
 // (e) Global ::selection rule exists and uses --accent-presence.
@@ -118,15 +118,15 @@ assert.match(
 
 console.log("globals.css.test.ts (foundations) OK");
 
-// Salem surfaces should inherit shared Cave tokens instead of hardcoded purple
-// literals, so theme/background tuning reaches the sidepanel consistently.
-const salemBlock = css.match(/\.salem-panel[\s\S]*?\/\* Foundations PR/)?.[0] ?? "";
-assert.match(salemBlock, /var\(--bg-panel\)/, "salem panel should derive surfaces from --bg-panel");
-assert.match(salemBlock, /var\(--accent-presence\)/, "salem glow/accent should derive from --accent-presence");
-assert.doesNotMatch(salemBlock, /rgba\(124,\s*77,\s*255/, "salem surfaces should not hardcode old purple rgba");
-assert.doesNotMatch(salemBlock, /#(?:d1c4e9|e8e0f0|c9a7ff|d26bff|a855f7|a89ac0)\b/i, "salem surfaces should not hardcode old purple hex colors");
+// Built-in Salem is retired (#6399). Its exclusive selectors and animation
+// stay out of the shipped CSS; the inert notice uses shared UI primitives.
+assert.doesNotMatch(
+  css,
+  /\.(?:salem-|ask-salem|home-ask-salem)|@keyframes\s+salem-dots\b/,
+  "retired Salem assistant styles must stay absent from the global bundle",
+);
 
-console.log("globals.css.test.ts (salem tokens) OK");
+console.log("globals.css.test.ts (salem retirement) OK");
 
 // The mode wrapper stays continuously visible. Animating the full pane from
 // opacity 0 caused every mode change to flash blank, while an animated

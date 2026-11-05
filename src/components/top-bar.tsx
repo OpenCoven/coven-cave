@@ -64,7 +64,7 @@ type Props = {
 
 const ENRICH_TASKS_TITLE =
   "Enhance every open task: each assigned familiar reviews its tasks, then updates or closes them";
-const SEARCH_LABEL = "Search anything or ask Salem, the docs familiar";
+const SEARCH_LABEL = "Search Cave";
 const NEW_CHAT_LABEL = "New chat";
 const TASKS_LABEL = workspacePageDefinition("board")?.title ?? "Tasks";
 const SETTINGS_LABEL = workspacePageDefinition("settings")?.title ?? "Settings";
@@ -171,10 +171,10 @@ export function TopBar(props: Props) {
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           // The phone bar fits about eight characters; the label and title carry
-          // "ask Salem" (#5527).
+          // search action (#5527).
           placeholder="Search…"
           aria-label={SEARCH_LABEL}
-          title={`Search everything — or ask Salem, the familiar trained on the OpenCoven docs (${searchShortcut})`}
+          title={`Search Cave (${searchShortcut})`}
           autoComplete="off"
           spellCheck={false}
         />

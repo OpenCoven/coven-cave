@@ -24,7 +24,6 @@ export const UPSTREAM_API_IDS = [
   "elevenlabs",
   "x-rss-bridge",
   "rss-feeds",
-  "opencoven-docs",
   "skills-directory",
   "huggingface",
   "sorsa",
@@ -185,15 +184,6 @@ export const UPSTREAM_APIS: readonly UpstreamApiEntry[] = [
     userSupplied: true,
     callers: ["src/app/api/rss/route.ts"],
     hostSources: ["src/lib/server/rss-feeds.ts"],
-  },
-  {
-    id: "opencoven-docs",
-    name: "OpenCoven documentation and Salem retrieval",
-    purpose: "The llms-full.txt corpus and the hosted retrieval API behind Ask Salem.",
-    hosts: ["docs.opencoven.ai", "salem.opencoven.ai"],
-    auth: "none",
-    userSupplied: true,
-    callers: ["src/app/api/salem/route.ts"],
   },
   {
     id: "skills-directory",

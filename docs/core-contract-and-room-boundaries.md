@@ -53,7 +53,7 @@ core capabilities before making the full interface optional.
 | `marketplace` | Lazy Marketplace; catalogs, installation, roles, skills, capabilities, workflows and connectors | Optional discovery UI. Installed capabilities, compatibility validation, permission checks and uninstall/recovery cannot depend on that UI being present. |
 | `submissions` | Lazy submission form; [submission adapter](../src/lib/opencoven-submissions.ts), OpenCoven endpoints | Optional publication workflow. Preserve explicit publication authority and any saved drafts; no background submission on activation/recovery. |
 | `grimoire` | Lazy Grimoire; memory, Journal, knowledge, stitches, weaves and generated wikis | Optional rich reading/authoring views. Retain data discovery, access control, backup/export/deletion and the data needed by familiar chat. |
-| `salem` | Lazy AskSalem/Salem chat; Salem APIs and contextual assistance | Optional assistance interface. Verify no hidden requests when absent and preserve conversation ownership for existing sessions. |
+| `salem` | Retired compatibility notice and local saved-history export; legacy APIs return `410 salem-retired` | Built-in assistant removed by Val’s decision (#6399). No launcher, answering, retrieval or replacement assistant. Keep old browser history/pathfinder data and backup/migration handling intact. |
 
 All compatibility aliases remain accounted for:
 
