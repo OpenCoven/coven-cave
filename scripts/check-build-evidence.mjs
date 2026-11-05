@@ -67,7 +67,7 @@ function isNewerJob(candidate, existing) {
  * exact job name.
  *
  * Prefixes identify the workflow families, but they are never map keys. The
- * seven Frontend validation matrix legs, eight numbered E2E shards, and the
+ * Frontend validation matrix legs, numbered E2E shards, and the
  * agentic E2E leg are independent evidence and must remain independently
  * auditable.
  */

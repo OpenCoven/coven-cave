@@ -103,6 +103,7 @@ export const SUITES = {
     "scripts/maintenance-gate.test.mjs",
     "scripts/install-playwright-ci.test.mjs",
     "scripts/playwright-ci-image.test.mjs",
+    "scripts/playwright-ci-evidence.test.mjs",
     "scripts/local-maintenance-gate.test.mjs",
     "scripts/rules-of-hooks-gate.test.mjs",
     "scripts/eslint/react-hooks-gate.test.mjs",
