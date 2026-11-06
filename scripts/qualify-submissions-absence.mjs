@@ -240,6 +240,25 @@ await row('existing data with the implementation absent, then reinstalled', asyn
   await rm(home, { recursive: true, force: true });
 });
 
+await row('malformed stored bytes export exactly from both artifacts', async () => {
+  const home = await tempHome();
+  // {"x":"<FF>"}: valid JSON punctuation around one invalid UTF-8 byte.
+  const stored = Buffer.from('7b2278223a22ff227d', 'hex');
+  await writeFile(path.join(home, STORE), stored);
+  for (const [label, dir] of [['absent', args.absent], ['included', args.included]]) {
+    const server = await start(dir, home);
+    const summary = await fetch(`${server.base}${RETAINED}`).then(json);
+    check(`${label}: the summary reports uncountable data`, summary.body?.exists === true && summary.body?.count === null, summary);
+    const download = await fetch(`${server.base}${RETAINED}?download=1`);
+    const bytes = Buffer.from(await download.arrayBuffer());
+    check(`${label}: the download is the stored bytes`, download.status === 200 && bytes.equals(stored), { status: download.status, hex: bytes.toString('hex') });
+    check(`${label}: the download digest matches the file`, sha(bytes) === sha(stored));
+    await server.stop();
+  }
+  check('the stored file is unchanged', (await readFile(path.join(home, STORE))).equals(stored));
+  await rm(home, { recursive: true, force: true });
+});
+
 await row('installed but disabled', async () => {
   const home = await tempHome();
   const seed = await start(args.included, home);
@@ -251,6 +270,16 @@ await row('installed but disabled', async () => {
   check('refused publish wrote nothing', (await read(home)) === before);
   const retained = await fetch(`${server.base}${RETAINED}`).then(json);
   check('retained data stays reachable while disabled', retained.body?.count === 1, retained);
+  await server.stop();
+  await rm(home, { recursive: true, force: true });
+});
+
+await row('absent and disabled together: physical absence is reported', async () => {
+  const home = await tempHome();
+  const server = await start(args.absent, home, { COVEN_CAVE_SUBMISSIONS_DISABLED: '1' });
+  await assertRefused(server.base, 'submissions-not-installed', 'absent and disabled');
+  const retained = await fetch(`${server.base}${RETAINED}`).then(json);
+  check('retained path still answers', retained.status === 200 && retained.body?.exists === false, retained);
   await server.stop();
   await rm(home, { recursive: true, force: true });
 });
@@ -346,15 +375,59 @@ await row('unauthorized callers are refused before the boundary', async () => {
       check(`${label}: cross-origin ${method} ${route} is refused`, response.status === 403, response.status);
       check(`${label}: cross-origin ${method} ${route} discloses no saved data`, !text.includes('synthetic-runtime'));
     }
-    // Saved data needs the packaged credential even from loopback. The other two
-    // routes follow the proxy's prompt-free loopback path, as on the baseline.
-    for (const [method, route] of routes.slice(3)) {
+    // Every route needs the packaged credential even from loopback: the shared
+    // local guard runs first in the Submissions host as well as on saved data.
+    for (const [method, route] of routes) {
       const response = await globalThis.fetch(`${server.base}${route}`, { method });
       check(`${label}: tokenless loopback ${method} ${route} is refused`, response.status === 403, response.status);
     }
     await server.stop();
   }
   check('no unauthorized request changed the data', (await read(home)) === before);
+  await rm(home, { recursive: true, force: true });
+});
+
+await row('authenticated phone ingress is refused before the boundary', async () => {
+  // A device-access bearer is what the real proxy admits as remote ingress and
+  // marks with x-coven-cave-mobile-access. The packaged sidecar token is absent,
+  // as it is on a phone.
+  const phone = randomBytes(24).toString('hex');
+  const pairs = [['GET', SUBMISSIONS], ['POST', SUBMISSIONS], ['POST', EXECUTIONS]];
+  const ingress = (base, method, route) => globalThis.fetch(`${base}${route}`, {
+    method,
+    headers: { authorization: `Bearer ${phone}`, ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
+    ...(method === 'POST' ? { body: JSON.stringify(route === SUBMISSIONS ? { package: packageFor('9.9.9'), publish: true } : { harnessId: 'x' }) } : {}),
+  });
+  const home = await tempHome();
+  const seed = await start(args.included, home);
+  await publish(seed.base, '1.0.0');
+  await seed.stop();
+  const before = await read(home);
+  for (const [label, dir] of [['absent', args.absent], ['included', args.included]]) {
+    const server = await start(dir, home, { COVEN_CAVE_ACCESS_TOKEN: phone });
+    for (const [method, route] of pairs) {
+      const response = await ingress(server.base, method, route);
+      const text = await response.text();
+      let body = null;
+      try { body = JSON.parse(text); } catch { /* not JSON */ }
+      check(`${label}: phone ${method} ${route} is refused by the local guard`, response.status === 403 && body?.code === 'local_request_required', { status: response.status, body: text.slice(0, 200) });
+      check(`${label}: phone ${method} ${route} discloses no saved data`, !text.includes('synthetic-runtime'));
+    }
+    await server.stop();
+  }
+  check('no phone request changed the data', (await read(home)) === before);
+  // Control: the pre-boundary build admits the same bearer to its unguarded
+  // route, so the refusals above come from the new guard, not the proxy.
+  if (!args.baseline) {
+    currentRow.controlSkipped = 'no --baseline artifact supplied';
+    check('baseline control ran', false, currentRow.controlSkipped);
+  } else {
+    const baseline = await start(args.baseline, home, { COVEN_CAVE_ACCESS_TOKEN: phone });
+    const admitted = await ingress(baseline.base, 'GET', SUBMISSIONS);
+    const text = await admitted.text();
+    check('control: the baseline proxy admits the phone bearer', admitted.status === 200, { status: admitted.status, body: text.slice(0, 200) });
+    await baseline.stop();
+  }
   await rm(home, { recursive: true, force: true });
 });
 

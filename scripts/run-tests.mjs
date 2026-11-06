@@ -1137,6 +1137,7 @@ export const SUITES = {
     "src/components/browser-quick-open.test.ts",
     "src/components/opencoven-submission-panel.test.ts",
     "src/components/opencoven-submissions-navigation.test.ts",
+    "src/components/opencoven-submissions-absent-page.test.ts",
     "src/components/chat-linked-context.test.ts",
     "src/components/chat-task-handoff-wiring.test.ts",
     "src/lib/chat-task-handoff.test.ts",

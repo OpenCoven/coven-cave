@@ -64,6 +64,7 @@ test("the download route preserves malformed UTF-8 byte for byte", async () => {
   const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
   assert.equal(sha256(downloaded), sha256(stored));
   assert.deepEqual(await readFile(file), stored, "downloading must leave the stored bytes intact");
+  assert.deepEqual(await summarizeRetainedSubmissions(), { exists: true, count: null }, "the summary still reports uncountable data");
 });
 
 test("backup keeps covering the file", async () => {

@@ -65,7 +65,9 @@ export function OpenCovenSubmissionPage() {
       link.href = url;
       link.download = "opencoven-submissions.json";
       link.click();
-      URL.revokeObjectURL(url);
+      // Keep the URL alive through the click's frame, as the other downloads do:
+      // Safari, the engine of the packaged macOS shell, needs it to outlive the click.
+      requestAnimationFrame(() => URL.revokeObjectURL(url));
       announce("Saved submissions exported.");
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "Saved submissions couldn't be exported.";
