@@ -96,6 +96,7 @@ export const SUITES = {
     "src/lib/surface-toolbar-actions.test.ts",
     "src/lib/use-surface-history.test.tsx",
     "src/lib/surface-preferences.test.ts",
+    "src/lib/surface-preferences-lifecycle.test.ts",
     "src/lib/surface-warm-cache.test.ts",
     "scripts/test-alias-loader.test.mjs",
     "scripts/research-package-config.test.mjs",
@@ -645,6 +646,7 @@ export const SUITES = {
     "src/lib/home-task-handoff.test.ts",
     "src/components/home/dashboard-open-work.test.ts",
     "src/components/home-feed.test.ts",
+    "src/components/default-navigation-scope.test.ts",
     "src/components/home-composer-centering.test.ts",
     "src/components/home-composer-hide-archived.test.ts",
     "src/components/ios-theme-api.test.ts",
@@ -2323,6 +2325,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/surface-preferences-lifecycle.test.ts",
   "src/lib/server/opencoven-submissions-host.test.ts",
   "src/lib/server/opencoven-submissions-retained.test.ts",
   "src/lib/server/opencoven-submissions-runtime.test.ts",
