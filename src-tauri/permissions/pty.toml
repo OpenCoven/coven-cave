@@ -120,7 +120,7 @@ commands.allow = ["arm_update_install_recovery"]
 
 [[permission]]
 identifier = "allow-disarm-update-install-recovery"
-description = "Allows the trusted desktop UI to disarm Windows install recovery when install returns an error."
+description = "Allows the trusted desktop UI to disarm Windows install recovery when install returns an error. If the updater's teardown already ran, the app exits or restarts."
 commands.allow = ["disarm_update_install_recovery"]
 
 [[permission]]

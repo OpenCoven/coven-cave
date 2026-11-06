@@ -33,7 +33,7 @@ mod updater_argument_tests {
     use super::msi_verbose_log_installer_args;
     use std::{ffi::OsStr, path::Path};
 
-    const UPDATER_JOIN_CONTRACT_VERSION: &str = "2.10.1";
+    const UPDATER_JOIN_CONTRACT_VERSION: &str = "2.14.1";
 
     fn locked_updater_package_entry() -> &'static str {
         let mut entries = include_str!("../Cargo.lock")
@@ -71,7 +71,7 @@ mod updater_argument_tests {
             )
         );
 
-        // This mirrors tauri-plugin-updater 2.10.1's `ShellExecuteW`
+        // This mirrors tauri-plugin-updater 2.14.1's `ShellExecuteW`
         // parameter construction. No quotes would split this spaced path, and
         // a second pair would end quote mode and split it as well.
         let parameters = installer_args.join(OsStr::new(" "));

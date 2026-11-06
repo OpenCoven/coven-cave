@@ -2,7 +2,7 @@
 
 A staged rollout is only safe if it can be *un*-done — and "un-done" means two
 different things for two different populations, because **the updater never
-downgrades anyone**. The desktop app runs `tauri-plugin-updater` (2.10.1, per
+downgrades anyone**. The desktop app runs `tauri-plugin-updater` (2.14.1, per
 `src-tauri/Cargo.lock`) with no version comparator of its own — the only
 builder call in `src-tauri/src/tauri_setup.rs` is Windows MSI `installer_args`,
 and the JS side calls a bare `check()` — so the plugin's default applies:
