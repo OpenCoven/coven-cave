@@ -58,8 +58,8 @@ test("specs normalize allowed values and discard stale enum values", () => {
   assert.equal(surfacePreferenceSpecs.github.sortDir.parse("sideways"), undefined);
   assert.equal(surfacePreferenceSpecs.calendar.viewMode.parse("month"), "month");
   assert.equal(surfacePreferenceSpecs.calendar.viewMode.parse("year"), undefined);
-  // A profile that last viewed the retired Feed tab falls back to the default (#6398).
-  assert.equal(surfacePreferenceSpecs.familiars.detailTab.parse("feed"), undefined);
+  // Hidden Feed remains parseable so hydration cannot delete the rollback value (#6398).
+  assert.equal(surfacePreferenceSpecs.familiars.detailTab.parse("feed"), "feed");
   assert.equal(surfacePreferenceSpecs.familiars.detailTab.defaultValue, "memory");
   assert.equal(surfacePreferenceSpecs.familiarMemory.staleOnly.parse(true), true);
   assert.equal(surfacePreferenceSpecs.familiarMemory.staleOnly.parse("true"), undefined);

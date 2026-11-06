@@ -489,12 +489,14 @@ export function FamiliarDetailPanel({
   onOpenSession,
   onOpenMemoryFile,
 }: AgentDetailPanelProps) {
-  const [tab, setTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
+  const [storedTab, setTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
+  // Do not rewrite a hidden destination merely by mounting the reduced UI.
+  const tab = storedTab === "feed" ? "memory" : storedTab;
   // Memory / Daily Notes / Files / Sessions are destinations inside the
   // familiar detail, not a view toggle.
   const selectTab = useTrackedSurfaceValue({
     id: "familiars:detail-tab",
-    value: tab,
+    value: storedTab,
     onRestore: setTab,
   });
   // Session trace overlay — the daemon event timeline behind one session.

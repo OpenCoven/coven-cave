@@ -96,6 +96,7 @@ export const SUITES = {
     "src/lib/surface-toolbar-actions.test.ts",
     "src/lib/use-surface-history.test.tsx",
     "src/lib/surface-preferences.test.ts",
+    "src/lib/surface-preferences-lifecycle.test.ts",
     "src/lib/surface-warm-cache.test.ts",
     "scripts/test-alias-loader.test.mjs",
     "scripts/research-package-config.test.mjs",
@@ -2317,6 +2318,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/surface-preferences-lifecycle.test.ts",
   // imports the one-shot runner, which reaches cave-config through @/ (#6374)
   "src/lib/server/coven-oneshot-workspace.test.ts",
   // The Research capability route reaches the activation owner through @/lib (#6332).
