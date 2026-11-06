@@ -1,7 +1,7 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { covenHome } from "@/lib/coven-paths";
 import { writeJsonAtomic } from "@/lib/server/atomic-write.ts";
+import { submissionsStorePath } from "@/lib/server/opencoven-submissions-retained.ts";
 import {
   coerceSubmissionManifest,
   type OpenCovenSubmissionManifest,
@@ -14,9 +14,11 @@ type StoreFile = {
   submissions: OpenCovenSubmissionManifest[];
 };
 
-function storePath(): string {
-  return path.join(/* turbopackIgnore: true */ covenHome(), "opencoven-submissions.json");
-}
+const storePath = submissionsStorePath;
+
+// Publishes read, merge and write the whole file. Serialized so two concurrent
+// publishes can't lose one another's entry.
+let writeQueue: Promise<unknown> = Promise.resolve();
 
 export async function loadOpenCovenSubmissions(): Promise<OpenCovenSubmissionManifest[]> {
   try {
@@ -31,7 +33,15 @@ export async function loadOpenCovenSubmissions(): Promise<OpenCovenSubmissionMan
   }
 }
 
-export async function saveOpenCovenSubmission(
+export function saveOpenCovenSubmission(
+  manifest: OpenCovenSubmissionManifest,
+): Promise<OpenCovenSubmissionManifest[]> {
+  const result = writeQueue.then(() => writeSubmission(manifest));
+  writeQueue = result.catch(() => undefined);
+  return result;
+}
+
+async function writeSubmission(
   manifest: OpenCovenSubmissionManifest,
 ): Promise<OpenCovenSubmissionManifest[]> {
   const current = await loadOpenCovenSubmissions();

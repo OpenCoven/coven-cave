@@ -72,6 +72,18 @@ export function formatOnboardingSetupDiagnostics(
     `Local service: ${READINESS_LABELS[diagnostics.components.localService]}`,
   ];
 
+  if (diagnostics.service) {
+    const service = diagnostics.service;
+    lines.push(
+      "",
+      `Service failure code: ${service.code}`,
+      `Service launch mode: ${service.launchMode}`,
+      `Service readiness attempts: ${service.readinessAttempts ?? "Unavailable"}`,
+      `Service elapsed ms: ${service.elapsedMs ?? "Unavailable"}`,
+      `Service exit code: ${service.exitCode ?? "Unavailable"}`,
+    );
+  }
+
   if (diagnostics.installer) {
     lines.push(
       "",
@@ -208,6 +220,15 @@ export function OnboardingSetupDiagnosticsModal({
             label="Local service"
             value={READINESS_LABELS[diagnostics.components.localService]}
           />
+          {diagnostics.service ? (
+            <>
+              <Fact label="Service failure code" value={diagnostics.service.code} />
+              <Fact label="Service launch mode" value={diagnostics.service.launchMode} />
+              <Fact label="Service readiness attempts" value={String(diagnostics.service.readinessAttempts ?? "Unavailable")} />
+              <Fact label="Service elapsed ms" value={String(diagnostics.service.elapsedMs ?? "Unavailable")} />
+              <Fact label="Service exit code" value={String(diagnostics.service.exitCode ?? "Unavailable")} />
+            </>
+          ) : null}
           {installer ? (
             <>
               <Fact label="Installer target" value={installer.target} />

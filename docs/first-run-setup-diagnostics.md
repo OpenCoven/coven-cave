@@ -38,3 +38,17 @@ folder” action. Cave has a native path-opening command, but the current deskto
 capabilities do not authorize this first-run surface to use it. Adding the
 action would require widening native permissions and exposing a raw local path,
 which is outside this diagnostic feature’s security boundary.
+
+## Local service failures
+
+The daemon stage retains the startup result's stable failure code, launch mode,
+readiness-attempt count, elapsed time, and exit code. These facts survive saved
+state reload and appear in both the modal and copied report. Recovery guidance
+is selected from the stable code; raw daemon errors, stdout, and stderr are not
+persisted. Unknown service codes and extra fields are discarded on read.
+
+On a service failure, setup rechecks component readiness and directory existence.
+It does not run a write probe for a service failure, so “Not run” remains accurate.
+If a diagnostic check fails, its value stays unknown without replacing the
+original service failure. Older snapshots without service facts remain readable;
+retry setup to capture new facts.
