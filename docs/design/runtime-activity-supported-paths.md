@@ -48,7 +48,31 @@ Refresh installed versions with `scripts/runtime-activity-runtime-matrix.mjs`.
 It runs bounded help/version probes with credential-bearing environment variables
 removed, scratch Coven state and registry network refresh disabled. It does not
 start a provider conversation or publish trust. Record its result beside the
-exact-candidate evidence, not as a timeless support table.
+exact-candidate evidence, not as a timeless support table. Since 2026-10-28 the
+inventory (schema 2) also probes Claude and Copilot, derives the local Codex
+rows from the same CLI, and lists SSH, Coven relay and OpenClaw declaratively.
+
+Real-provider canary receipts for `51ea27f66` are in
+[evidence/runtime-activity-2026-11-04](evidence/runtime-activity-2026-11-04/README.md):
+Codex, Claude and Copilot, read-only, with one web client. They promote no row
+below, and that packet records an open answer-rendering defect.
+
+The current per-path matrix is
+[evidence/runtime-activity-2026-10-28/capability-matrix.json](evidence/runtime-activity-2026-10-28/capability-matrix.json)
+with its [README](evidence/runtime-activity-2026-10-28/README.md). It maps the
+seven #5763 acceptance criteria to route-level fixtures for every claimed path.
+Each row carries one status: `passes`, `unverified`, `unsupported` or
+`deferred`. Hermes over the Responses API is the only path that passes all seven
+at route level (synthetic upstream traffic; its real provider stays unverified),
+and the only one with a vertical-slice fixture that includes a second summary. Claude
+reasoning is `unknown` on every path until a Runtimes descriptor says whether
+thinking is a summary or progress; the request is drafted in
+[claude-reasoning-display-descriptor-proposal.md](claude-reasoning-display-descriptor-proposal.md).
+Hermes over its direct CLI is unsupported for activity, OpenCode read-only is
+unsupported (501), SSH relays report every detail as unverified, and OpenClaw is
+deferred per #4892. `route-launch-path-activity.integration.test.ts` runs those
+states and refusals through the real route; the 2026-10-18 matrix below is
+historical.
 
 Rollout uses these existing capability gates and the instance's reviewed runtime
 configuration. Enable a claimed path only after its exact-candidate receipts are

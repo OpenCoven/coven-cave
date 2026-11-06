@@ -1,54 +1,23 @@
 import type { GithubRepoSnapshotInput, GithubRepoSnapshotResult } from "../research-github-snapshot-contract.ts";
-import { researchCapability, type ResearchCapability } from '../research-capability.ts';
+import { researchCapability } from '../research-capability.ts';
 import { rejectNonLocalRequest, rejectResearchMediaRequest, rejectResearchRunStreamRequest } from './api-security.ts';
+import { withResearchActivation } from './research-activation.ts';
+import {
+  loadCompatibleResearchRuntime as loadCompatibleRuntime,
+  loadResearchRuntime as loadRuntime,
+  type ResearchRuntimeLoader as Loader,
+} from './research-runtime-loader.ts';
 
-type Runtime = typeof import('./research-package-absent.ts');
-type Loader = () => Promise<Runtime>;
-const loadRuntime: Loader = () => import('@opencoven/research-runtime');
-
-type RuntimeResult = { ok: true; runtime: Runtime } | {
-  ok: false;
-  code: 'research-runtime-unavailable' | 'research-incompatible';
-  error: string;
-};
-
-async function loadCompatibleRuntime(load: Loader): Promise<RuntimeResult> {
-  let runtime: Runtime;
-  try {
-    runtime = await load();
-  } catch {
-    return {
-      ok: false,
-      code: 'research-runtime-unavailable',
-      error: 'Research could not be loaded. Repair or reinstall Research, then restart Cave.',
-    };
-  }
-  // v2 requires mission correlation, stable adoption keys and revisions for
-  // Coven-owned automations. A v1 package cannot safely issue those commands.
-  if (runtime.researchHostContractVersion !== 2) {
-    return {
-      ok: false,
-      code: 'research-incompatible',
-      error: 'Research is incompatible with this version of Cave. Update Cave and Research together, then restart Cave.',
-    };
-  }
-  return { ok: true, runtime };
-}
-
-export function researchUnavailable(capability: ResearchCapability): Response {
-  return Response.json({
-    ok: false,
-    code: capability.available ? 'research-disabled' : 'research-not-installed',
-    error: capability.available ? 'Research is disabled' : 'Research is not installed',
-  }, { status: 503 });
-}
+export { startOptionalResearch, stopOptionalResearch, stopOptionalResearchForShutdown } from './research-activation.ts';
+export { researchUnavailable } from './research-runtime-loader.ts';
+import { researchUnavailable } from './research-runtime-loader.ts';
 
 export async function dispatchResearchRequest(
   route: string,
   method: string,
   request: Request,
   context?: unknown,
-  capability = researchCapability(),
+  requested = researchCapability(),
   load: Loader = loadRuntime,
 ): Promise<Response> {
   // Preserve the existing narrow credentials for native media and SSE reads.
@@ -59,6 +28,9 @@ export async function dispatchResearchRequest(
       ? rejectResearchRunStreamRequest(request)
       : rejectNonLocalRequest(request);
   if (forbidden) return forbidden;
+  // Build and environment gates first, then the activation owner (#6332): a
+  // hot-disabled Research refuses here, before any implementation loads.
+  const capability = withResearchActivation(requested);
   if (!capability.enabled) return researchUnavailable(capability);
   const result = await loadCompatibleRuntime(load);
   if (!result.ok) return Response.json(result, { status: 503 });
@@ -67,21 +39,12 @@ export async function dispatchResearchRequest(
   return result.runtime.dispatchResearchRequest(route, method, request, context);
 }
 
-export async function startOptionalResearch(
-  capability = researchCapability(),
-  load: Loader = loadRuntime,
-): Promise<void> {
-  if (!capability.enabled) return;
-  const result = await loadCompatibleRuntime(load);
-  if (!result.ok) throw new Error(result.error);
-  await result.runtime.startResearchRuntime();
-}
-
 export async function fetchOptionalGithubRepoView(
   input: GithubRepoSnapshotInput,
-  capability = researchCapability(),
+  requested = researchCapability(),
   load: Loader = loadRuntime,
 ): Promise<GithubRepoSnapshotResult> {
+  const capability = withResearchActivation(requested);
   if (!capability.enabled) return { ok: false };
   const result = await loadCompatibleRuntime(load);
   if (!result.ok) return { ok: false };

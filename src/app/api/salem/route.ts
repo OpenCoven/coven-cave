@@ -3,6 +3,7 @@ import { SALEM_PRELOAD_CONTEXT, summarizePreload } from "@/components/salem/sale
 import { COVEN_IDENTITY_CANON } from "@/lib/coven-identity-canon";
 import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 import { stripMdxLeakage } from "./strip-mdx";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 /**
  * Salem docs API — v1: live retrieval from llms-full.txt
@@ -84,12 +85,12 @@ async function askChatApiContext(message: string): Promise<ChatApiContextRespons
     const controller = new AbortController();
     const connectTimer = setTimeout(() => controller.abort(), CHAT_API_CONNECT_TIMEOUT_MS);
 
-    const res = await fetch(`${CHAT_API_URL}/api/chat`, {
+    const res = await upstreamFetch("opencoven-docs", `${CHAT_API_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, mode: "context" }),
       signal: controller.signal,
-    }).finally(() => clearTimeout(connectTimer));
+    }, { timeoutMs: CHAT_API_CONNECT_TIMEOUT_MS + CHAT_API_TIMEOUT_MS }).finally(() => clearTimeout(connectTimer));
 
     if (!res.ok) return null;
     const json = (await res.json()) as ChatApiContextResponse;
@@ -111,12 +112,14 @@ async function askChatApiAnswer(message: string): Promise<string | null> {
     const controller = new AbortController();
     const connectTimer = setTimeout(() => controller.abort(), CHAT_API_CONNECT_TIMEOUT_MS);
 
-    const res = await fetch(`${CHAT_API_URL}/api/chat`, {
+    // The route's own timers bound connect and stream; the primitive's
+    // deadline also covers the body, so it must outlast both.
+    const res = await upstreamFetch("opencoven-docs", `${CHAT_API_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
       signal: controller.signal,
-    }).finally(() => clearTimeout(connectTimer));
+    }, { timeoutMs: CHAT_API_CONNECT_TIMEOUT_MS + CHAT_API_TIMEOUT_MS }).finally(() => clearTimeout(connectTimer));
 
     if (!res.ok || !res.body) return null;
 
@@ -336,13 +339,19 @@ async function getDocsChunks(): Promise<{ chunks: DocChunk[]; error: string | nu
   }
 
   try {
-    const res = await fetch(DOCS_URL, {
+    const res = await upstreamFetch("opencoven-docs", DOCS_URL, {
       next: { revalidate: 3600 },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const raw = await res.text();
-    docsCache = parseChunks(raw);
+    const chunks = parseChunks(raw);
+    // A 200 whose body parses to no chunks (empty, torn, not the corpus) is
+    // a failed fetch, not a fresh corpus. Caching it would answer every ask
+    // with "the docs fetch failed" for the whole hour after docs.opencoven.ai
+    // recovered (#6359).
+    if (chunks.length === 0) throw new Error("empty corpus");
+    docsCache = chunks;
     docsFetchedAt = now;
     docsFetchError = null;
     return { chunks: docsCache, error: null };

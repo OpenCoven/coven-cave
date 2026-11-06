@@ -10,7 +10,9 @@ import { configureGithubWatcher, startGithubWatcher } from "@/lib/github-watcher
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// Guarantee the watcher is alive even if instrumentation.ts was bypassed.
+// Guarantee the watcher is alive even if instrumentation.ts was bypassed. The
+// watcher registers itself as a startup worker, so a load after coordinated
+// shutdown began owns no timer (#6350).
 void startGithubWatcher().catch(() => undefined);
 
 /** Prefs without poll cursors — the client has no use for them. */

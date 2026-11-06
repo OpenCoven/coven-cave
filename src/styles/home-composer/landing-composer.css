@@ -26,7 +26,10 @@
 
 /* ── Viewport centering ──────────────────────────────────────────────────── */
 .home-composer-root {
-  --hc-max-shift: max(0px, calc((100% - 1200px) / 2));
+  /* Home content fills the pane. The centering shift is bounded to the slack
+     around this cap, so a full-width cap leaves nothing to shift. */
+  --hc-content-max: 100%;
+  --hc-max-shift: max(0px, calc((100% - var(--hc-content-max)) / 2));
   --hc-ideal-shift: var(--shell-home-center-shift-px, 0px);
   transform: translateX(
     clamp(
@@ -54,8 +57,8 @@
  *   The greeting, headline, agent label, composer, and suggestions read as one
  *   unified launch cluster. The heavy bordered container is retired: the visible
  *   frame emphasised the large empty area below the composer at 1280×720. It is
- *   now an invisible layout wrapper on the flat base. Cluster is capped ~900px
- *   and centers vertically in the usable workspace (auto block margins split
+ *   now an invisible layout wrapper on the flat base. The cluster fills the
+ *   pane (--hc-content-max) and centers vertically in the usable workspace (auto block margins split
  *   the root's free space; when the cluster outgrows a short viewport they
  *   collapse to 0 and the root scrolls). */
 .home-hearth-card {
@@ -63,7 +66,7 @@
   flex-direction: column;
   flex: 0 0 auto;
   width: 100%;
-  max-width: min(900px, 100%);
+  max-width: var(--hc-content-max);
   margin-inline: auto;
   padding: 0 var(--space-2);
 
@@ -175,7 +178,7 @@
 .home-composer-card-wrap {
   position: relative;
   width: 100%;
-  max-width: min(1200px, 100%);
+  max-width: var(--hc-content-max);
   margin-inline: auto;
   container-type: inline-size;
 }

@@ -80,6 +80,11 @@ for (const [boundaryName, boundary] of [
     t.after(() => gateway.close());
     t.mock.timers.tick(1_000);
     await setImmediate();
+    assert.equal(policyReads.mock.callCount(), 0, "an idle gateway does not poll policy");
+    // Background revalidation serves live remote connections (#6119).
+    gateway.holdRemoteConnection();
+    t.mock.timers.tick(1_000);
+    await setImmediate();
     assert.equal(policyReads.mock.callCount(), 1);
     assert.equal(closures, 0, "initialization pending is not a policy failure");
     initialization.reject(new Error("synthetic terminal initialization failure"));
@@ -139,6 +144,11 @@ for (const [boundaryName, boundary] of [
         store.close();
         await rm(root, { recursive: true, force: true });
       });
+      t.mock.timers.tick(1_000);
+      await setImmediate();
+      assert.equal(policyReads.mock.callCount(), 0, "an idle gateway does not poll policy");
+      // Background revalidation serves live remote connections (#6119).
+      gateway.holdRemoteConnection();
       t.mock.timers.tick(1_000);
       await setImmediate();
       assert.equal(policyReads.mock.callCount(), 1, "healthy legacy policy is observed");

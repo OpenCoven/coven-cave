@@ -279,6 +279,30 @@ test("at rest the composer is its input and Tools; focus or text brings the cont
   await expect(controls).toBeHidden();
 });
 
+test("a tap above the focused composer lands on the control it started on", async ({ page }) => {
+  await page.route("**/api/daemon/connection**", (route) =>
+    route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),
+  );
+  await openThread(page);
+  const chat = page.locator(".cave-chat-linear");
+  const input = chat.locator(".cave-composer-input");
+  const actions = chat.getByRole("button", { name: "More response actions" }).last();
+  await expect(actions).toBeVisible();
+
+  // #5840: focus expands the phone composer (#5546) and the bottom-pinned
+  // transcript rises with it. Pressing a transcript control blurs the input;
+  // collapsing right then moved the control out from under the press, so the
+  // release landed on its container and the tap did nothing.
+  await input.focus();
+  await expect(chat.locator(".cave-composer-footer-band")).toBeVisible();
+  await actions.click();
+  await expect(page.getByRole("menuitem", { name: "Open reader" })).toBeVisible();
+
+  // The composer still rests once the press is over.
+  await page.keyboard.press("Escape");
+  await expect(chat).toHaveAttribute("data-composer-rest", "true");
+});
+
 test("while typing, the composer is two lines and the transcript keeps half the screen", async ({ page }) => {
   await page.route("**/api/daemon/connection**", (route) =>
     route.fulfill({ json: { running: true, availability: "online", target: { mode: "local" } } }),

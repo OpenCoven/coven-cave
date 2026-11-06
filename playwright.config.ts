@@ -4,6 +4,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { resolvePort } from "./scripts/ports.mjs";
+import { SOAK_PERFORMANCE_PROFILE } from "./tests/fixtures/soak-performance.ts";
 
 // Playwright config — three viewport projects so the same specs in
 // tests/mobile/ run against desktop AND two real mobile presets.
@@ -24,13 +25,33 @@ import { resolvePort } from "./scripts/ports.mjs";
 // need a daemon should mock /api/*).
 
 const PORT = resolvePort("e2e", process.env);
+// The browser performance gates (stream, shell boot) always run the production
+// server against an isolated state root their launcher created; a bare
+// `playwright test` cannot opt into them.
 const streamPerformance = process.env.CAVE_STREAM_PERFORMANCE === "1";
-const streamStateRoot = process.env.CAVE_STREAM_STATE_ROOT;
-if (streamPerformance && (!streamStateRoot || !isAbsolute(streamStateRoot) || !existsSync(streamStateRoot))) {
-  throw new Error("Run the stream benchmark with pnpm performance:stream for isolated state");
+const shellPerformance = process.env.CAVE_SHELL_PERFORMANCE === "1";
+const doctorPerformance = process.env.CAVE_DOCTOR_PERFORMANCE === "1";
+const soakPerformance = process.env.CAVE_SOAK_PERFORMANCE === "1";
+const browserPerformance = streamPerformance || shellPerformance || doctorPerformance || soakPerformance;
+const performanceStateRoot = streamPerformance
+  ? process.env.CAVE_STREAM_STATE_ROOT
+  : shellPerformance
+    ? process.env.CAVE_SHELL_STATE_ROOT
+    : doctorPerformance
+      ? process.env.CAVE_DOCTOR_STATE_ROOT
+      : process.env.CAVE_SOAK_STATE_ROOT;
+if (browserPerformance && (!performanceStateRoot || !isAbsolute(performanceStateRoot) || !existsSync(performanceStateRoot))) {
+  throw new Error("Run the browser performance gates with pnpm performance:stream, pnpm performance:shell, pnpm performance:doctor or pnpm performance:soak for isolated state");
 }
-const fixtureTmpRoot = streamPerformance ? streamStateRoot! : tmpdir();
-const productionE2E = !!process.env.CI || streamPerformance;
+// The soak lane's duration is its only input (#6347). The launcher validates
+// it; a direct spec invocation is refused here rather than after the build.
+const soakMinutes = soakPerformance ? Number(process.env.CAVE_SOAK_MINUTES) : 0;
+if (soakPerformance && (!Number.isInteger(soakMinutes)
+  || soakMinutes < SOAK_PERFORMANCE_PROFILE.minimumMinutes || soakMinutes > SOAK_PERFORMANCE_PROFILE.maximumMinutes)) {
+  throw new Error(`Run the soak lane with pnpm performance:soak [--minutes N]; CAVE_SOAK_MINUTES must be an integer from ${SOAK_PERFORMANCE_PROFILE.minimumMinutes} to ${SOAK_PERFORMANCE_PROFILE.maximumMinutes}`);
+}
+const fixtureTmpRoot = browserPerformance ? performanceStateRoot! : tmpdir();
+const productionE2E = !!process.env.CI || browserPerformance;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_RUN_ID = randomUUID();
 const E2E_PROJECTS_PATH = join(fixtureTmpRoot, `cave-e2e-projects-${E2E_RUN_ID}.json`);
@@ -101,7 +122,15 @@ writeFileSync(E2E_QUEUE_PROJECT_PATH, JSON.stringify({ version: 1, projectId: "e
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
-  globalTimeout: streamPerformance ? 20 * 60_000 : undefined,
+  // The global timeout covers the production build (the server readiness
+  // budget is 20 minutes) plus the measurement. The shell gate runs two modes
+  // of up to 15 minutes each; the doctor gate's worst case is 100 trials at
+  // the 6 s ceiling plus the route's termination grace (about 12 minutes); the
+  // stream gate's two patterns fit its original 20 minutes; the soak lane runs
+  // for its requested minutes after the build (#6347).
+  globalTimeout: soakPerformance
+    ? (soakMinutes + 35) * 60_000
+    : shellPerformance || doctorPerformance ? 35 * 60_000 : streamPerformance ? 20 * 60_000 : undefined,
   forbidOnly: !!process.env.CI,
   // Retry once everywhere: the dev server compiles routes on first hit, so under
   // parallel load a cold route can exceed a test's timeout on the first try and
@@ -198,6 +227,12 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      name: "automations-webkit",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /automations-occurrence-reader\.spec\.ts/,
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
       name: "voice-webkit",
       dependencies: ["preferences-iphone-13"],
       testMatch: /voice-call\.spec\.ts/,
@@ -255,7 +290,7 @@ export default defineConfig({
     // to an arbitrary server that may be using the developer's real ~/.coven.
     reuseExistingServer: false,
     env: {
-      ...(streamPerformance ? {
+      ...(browserPerformance ? {
         HOME: join(fixtureTmpRoot, "home"),
         USERPROFILE: join(fixtureTmpRoot, "home"),
         XDG_CONFIG_HOME: join(fixtureTmpRoot, "config"),
@@ -269,7 +304,9 @@ export default defineConfig({
       COVEN_CAVE_E2E: "1",
       // The existing suite covers every registered room, as next dev did.
       // Keep that explicit in fixture builds; released apps keep their allowlist.
-      NEXT_PUBLIC_CAVE_ROOMS: "all",
+      // Only the stream benchmark may measure another visibility (#6338); its
+      // runner validates CAVE_STREAM_ROOMS and records it with the evidence.
+      NEXT_PUBLIC_CAVE_ROOMS: (streamPerformance && process.env.CAVE_STREAM_ROOMS) || "all",
       // Local dev-mode E2E only; the CI production server has no compiler.
       // Full Turbopack eviction only runs after a filesystem-cache snapshot.
       // Next 16.3's own eviction fixture removes the minimum active window and

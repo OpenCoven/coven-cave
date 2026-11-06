@@ -211,6 +211,7 @@ import {
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
+import { buildClaudeWriteScope, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
@@ -337,6 +338,7 @@ import {
   covenRunModelFlagOutcome,
   hermesChatSupportsModel,
   covenRunSupportsPermission,
+  covenRunSupportsWriteScope,
   covenRunSupportsSpeed,
   openCodeRunCapabilities,
 } from "./chat-send-capabilities";
@@ -474,6 +476,11 @@ type SendBody = {
    *  only when the installed CLI advertises it; "full" is left implicit so the
    *  harness keeps its default sandbox rather than being widened. */
   permissionMode?: string;
+  /** Lets a Claude turn in Full access run Read-only, with a visible notice,
+   *  when Coven can't apply a write scope. Only a chat someone is watching
+   *  sets this: an unattended run that can't edit must not report success. It
+   *  can only narrow access, never widen it (#6419). */
+  allowReadOnlyFallback?: boolean;
   /** Composer Host chip: "local" or a REGISTERED ssh host id from /api/hosts.
    *  Resolved against the server-side registry (config.remoteHosts ∪ familiar
    *  runtime bindings) — an unregistered host is rejected fail-closed, and the
@@ -2635,6 +2642,7 @@ async function postAdmittedChat(
   // the browser submits the exact CWD persisted on that task card, and only
   // when the symlink-resolved runtime cwd remains inside the task project.
   let authorizedProjectRoot: string;
+  let authorizedProjectId: string | null = null;
   try {
     if (projectlessLaunch.kind === "unavailable") {
       throw new ChatProjectLaunchError(
@@ -2683,6 +2691,7 @@ async function postAdmittedChat(
         },
       );
       authorizedProjectRoot = authorized.root;
+      authorizedProjectId = authorized.projectId;
     }
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
@@ -2889,6 +2898,17 @@ async function postAdmittedChat(
     binding.harness !== "grok" &&
     binding.harness !== "hermes" &&
     ((await probeCovenCapability(covenRunSupportsPermission)) ?? false);
+  // Full access for Claude needs Coven's `--write-scope` (#6356), and no Coven
+  // release has it yet. Without it Claude never gets Full access. A person
+  // watching the chat gets a Read-only turn and a notice instead of a dead end.
+  const writeScopeReadOnlyFallback =
+    body.allowReadOnlyFallback === true &&
+    !sshRuntime &&
+    binding.harness === "claude" &&
+    body.permissionMode !== "read" &&
+    permissionForwardingEnabled &&
+    !((await probeCovenCapability(covenRunSupportsWriteScope)) ?? false);
+  if (writeScopeReadOnlyFallback) body.permissionMode = "read";
   const directReadOnlyEnforcement =
     !sshRuntime &&
     (Boolean(copilotStream) || grokDirect || (codexDirect && codexDirectCapabilities?.sandbox === true));
@@ -3430,6 +3450,30 @@ async function postAdmittedChat(
         : grokDirect
           ? grokLaunchModel
           : forwardModel) ?? undefined;
+  const claudeScopedWrite = !sshRuntime && binding.harness === "claude" && body.permissionMode !== "read";
+  const claudeWriteScopeSupported = claudeScopedWrite
+    ? ((await probeCovenCapability(covenRunSupportsWriteScope)) ?? false) : false;
+  let writeScopeFile: ReturnType<typeof prepareClaudeWriteScopeFile> | undefined;
+  const protectedRuntimeRoots = claudeScopedWrite ? await resolveRuntimeResourceRoots() : runtimeResourceRoots;
+  if (claudeScopedWrite) {
+    const primaryAccess = authorizedProjectId
+      ? effectiveAccessibleProjects.find(entry => entry.project.id === authorizedProjectId)?.access
+      : projectlessLaunch.kind === "workspace" ? "write" : undefined;
+    if (primaryAccess !== "write") {
+      return Response.json({ ok: false, code: "project_write_access_required",
+        error: "This project's access is read-only. Choose Read-only mode or request write access, then retry." }, { status: 403 });
+    }
+    try {
+      writeScopeFile = prepareClaudeWriteScopeFile(buildClaudeWriteScope({
+        primaryRoot: cwd, primaryAccess, grantedProjectRoots,
+        projectRootAccess: grantedProjectRootAccess,
+        familiarWorkspace: resolvedFamiliarWorkspace, protectedRoots: protectedRuntimeRoots,
+      }));
+    } catch {
+      return Response.json({ ok: false, code: "scoped_write_unavailable",
+        error: "A granted folder is unavailable. Review project access and retry before writing." }, { status: 409 });
+    }
+  }
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
   // Directory grants are writable in full-permission harness modes. Forward
@@ -3443,12 +3487,15 @@ async function postAdmittedChat(
     ? runtimeGrantDirs({
         spawnRoot: cwd,
         grantedProjectRoots,
+        projectRootAccess: grantedProjectRootAccess,
         familiarWorkspace: resolvedFamiliarWorkspace,
       })
     : [];
   const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
   const runtimeAccessFingerprint = buildRuntimeAccessFingerprint({
     primaryRoot: cwd,
+    permissionMode: body.permissionMode === "read" ? "read" : "full",
+    readOnlyResourceRoots: protectedRuntimeRoots,
     grantedProjectRoots,
     projectRootAccess: grantedProjectRootAccess,
     additionalRoots: resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : [],
@@ -3618,13 +3665,14 @@ async function postAdmittedChat(
     // Enforce Read-only by mapping to the harness's native sandbox flag via
     // `coven run --permission read-only` (codex --sandbox read-only / claude
     // --permission-mode plan). Gated on the CLI advertising the flag.
-    if (forwardPermission) a.push("--permission", forwardPermission);
+    if (writeScopeFile) a.push("--write-scope", writeScopeFile.path);
+    else if (forwardPermission) a.push("--permission", forwardPermission);
     // The Speed control: `coven run --speed fast|balanced|thorough`, mapped by
     // the daemon onto Claude's `--effort`. Only an explicit, validated pick is
     // forwarded; an unset control leaves the runtime's own default in place.
     if (forwardSpeed) a.push("--speed", forwardSpeed);
     // Trust each granted root at the harness level; repeatable flag.
-    for (const dir of forwardAddDirs) a.push("--add-dir", dir);
+    if (!writeScopeFile) for (const dir of forwardAddDirs) a.push("--add-dir", dir);
     // Inject identity preamble. coven-cli renders this through the best
     // available identity channel for the chosen harness. Without this, the
     // harness answers as its generic CLI identity instead of as the familiar.
@@ -3750,6 +3798,8 @@ async function postAdmittedChat(
   let runHandle!: ChatRunHandle;
   const stream = new ReadableStream<Uint8Array>({
     start: (controller) => startAdmittedChatStream(admission, async () => {
+      try {
+      await writeScopeFile?.create();
       let closed = false;
       const displayProjection = new LegacyReasoningStreamProjection();
       const push = (incoming: StreamEvent) => {
@@ -3805,7 +3855,10 @@ async function postAdmittedChat(
           id === "familiar-contract" ||
           id === "runtime-process" ||
           id === "runtime-launch-diagnostics" ||
-          id === "runtime-grants"
+          id === "runtime-grants" ||
+          id === "runtime-write-denied" ||
+          id === "runtime-write-scope" ||
+          id === "runtime-write-scope-read-only"
         ) {
           persistedCompatibilityDiagnostics.push({
             ...projected,
@@ -3840,6 +3893,14 @@ async function postAdmittedChat(
           "Unavailable project grants skipped",
           "notice",
           `${omittedGrantCount} registered project ${omittedGrantCount === 1 ? "directory was" : "directories were"} unavailable on this host.`,
+        );
+      }
+      if (writeScopeReadOnlyFallback) {
+        pushProgress(
+          "runtime-write-scope-read-only",
+          "Read-only for this turn",
+          "notice",
+          "This version of Coven can't limit Claude's file changes to your project grants, so Claude can read but not edit. To edit files now, switch to another runtime.",
         );
       }
       // Report what identity context this turn actually loaded. A familiar
@@ -3958,6 +4019,9 @@ async function postAdmittedChat(
       // unterminated/malformed OpenCode JSONL frame so a client regression or
       // a tool dumping one huge value cannot retain unbounded route memory.
       const MAX_OPENCODE_JSONL_FRAME_BYTES = 256 * 1024;
+      let claudeWriteDenied = false;
+      let claudeScopeRefused = false;
+      let claudeScopeStderr = "";
       let result: {
         duration_ms?: number;
         is_error?: boolean;
@@ -5041,6 +5105,7 @@ async function postAdmittedChat(
                *  the CLI's failure notice (e.g. a usage limit, #5938). It
                *  feeds the classifiers only and is never rendered. */
               result?: unknown;
+              permission_denials?: unknown;
               text?: string;
               message?: {
                 model?: unknown;
@@ -5067,12 +5132,25 @@ async function postAdmittedChat(
               announceSession(ev.session_id);
             }
             if (ev.type === "result") {
+              if (binding.harness === "claude" && countClaudeWriteDenials(ev) > 0 && !claudeWriteDenied) {
+                claudeWriteDenied = true;
+                const message = "The runtime blocked a file or shell action. Review this familiar's project access, then retry.";
+                pushProgress("runtime-write-denied", "Write blocked by runtime permissions", "error", message);
+                push({ kind: "error", code: "write_permission_denied", message, harness: binding.harness });
+              }
+              const scopeRefusal = writeScopeFile && ev.is_error === true ? claudeWriteScopeRefusal(ev.error) : null;
+              if (scopeRefusal) {
+                claudeScopeRefused = true;
+                launchFailure = scopeRefusal;
+                pushProgress("runtime-write-scope", "Project write access unavailable", "error", scopeRefusal.message);
+                push({ kind: "error", ...scopeRefusal, harness: binding.harness });
+              }
               // The result event also carries token usage and total cost
               // (CHAT-D12-02). Both are optional and defensively validated —
               // harnesses without billing metadata simply omit them.
               result = {
                 duration_ms: ev.duration_ms,
-                is_error: ev.is_error,
+                is_error: ev.is_error || claudeWriteDenied || claudeScopeRefused,
                 usage: parseStreamJsonUsage(ev.usage),
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
@@ -5737,6 +5815,18 @@ async function postAdmittedChat(
                   push({ kind: "error", code: availability.code, message: availability.message });
                   return null;
                 }
+                if (claudeScopedWrite && !claudeWriteScopeSupported) {
+                  // Only a Coven too old to enforce Read-only can be fixed by updating:
+                  // no release has `--write-scope` yet (#6419).
+                  launchFailure = { code: "scoped_write_unavailable",
+                    message: permissionForwardingEnabled
+                      ? "Full access for Claude needs a newer Coven than this one. Switch Access to Read-only or choose another runtime, then retry."
+                      : "This runtime cannot safely apply project write access. Update Coven and restart Cave, then retry." };
+                  result.is_error = true;
+                  pushProgress("harness-start", "Scoped writes unavailable", "error", launchFailure.message);
+                  push({ kind: "error", ...launchFailure, harness: binding.harness });
+                  return null;
+                }
                 const command = openCodeLaunchCommand
                   ?? {
                     command: localPlan.command,
@@ -5875,6 +5965,17 @@ async function postAdmittedChat(
 
           child.stderr.on("data", (data: Buffer) => {
             const text = stripAnsi(data.toString("utf8"));
+            if (writeScopeFile && !claudeScopeRefused) {
+              claudeScopeStderr = (claudeScopeStderr + text).slice(-8192);
+              const refusal = claudeWriteScopeRefusal(claudeScopeStderr);
+              if (refusal) {
+                claudeScopeRefused = true;
+                launchFailure = refusal;
+                result.is_error = true;
+                pushProgress("runtime-write-scope", "Project write access unavailable", "error", refusal.message);
+                push({ kind: "error", ...refusal, harness: binding.harness });
+              }
+            }
             captureHermesSessionFromStderr(text);
             if (RESUME_ERR_RE.test(text)) resumeFailed = true;
             if (!adapterConflict) {
@@ -6850,6 +6951,9 @@ async function postAdmittedChat(
       runBuffer?.finish();
       await sleep(20);
       close();
+      } finally {
+        await writeScopeFile?.dispose().catch(() => console.warn("Could not retire an owned runtime scope file; retained for inspection."));
+      }
     }),
   });
 

@@ -330,12 +330,33 @@ function migrateProjectId(card: Card, projects: Awaited<ReturnType<typeof loadPr
   return project ? { ...card, projectId: project.id } : card;
 }
 
+/**
+ * The board file's schema discriminant (#6258). A version 1 board predates the
+ * canonical task fields, so a card read from one without a `dependencies` array
+ * is marked `predatesDependencies` and repair diagnostics can tell it from a
+ * task that never had blockers. A version 2 board stores that marker; every
+ * card written since carries authoritative dependencies.
+ */
+export const BOARD_SCHEMA_VERSION = 2;
+
 type BoardFile = {
   version: number;
   cards: Card[];
 };
 
-const EMPTY: BoardFile = { version: 1, cards: [] };
+const EMPTY: BoardFile = { version: BOARD_SCHEMA_VERSION, cards: [] };
+
+/** Set or clear the legacy marker for one card as it is read. */
+function withDependencySchema(card: Card, raw: unknown, legacySchema: boolean): Card {
+  const predates = legacySchema
+    ? !Array.isArray((raw as { dependencies?: unknown } | null)?.dependencies)
+    : card.predatesDependencies === true;
+  if (predates) return { ...card, predatesDependencies: true };
+  if (!("predatesDependencies" in card)) return card;
+  const rest = { ...card };
+  delete rest.predatesDependencies;
+  return rest;
+}
 
 async function ensureDir() {
   await mkdir(path.dirname(BOARD_PATH), { recursive: true });
@@ -356,6 +377,7 @@ export async function loadBoard(): Promise<BoardFile> {
   }
   const board = parsed as Partial<BoardFile>;
   const rawCards = Array.isArray(board.cards) ? board.cards : [];
+  const legacySchema = typeof board.version !== "number" || board.version < BOARD_SCHEMA_VERSION;
   const projects = await loadProjects();
   // Normalize each card in isolation. A single malformed card (e.g. `links`
   // stored as objects instead of strings) must never throw out of the whole
@@ -364,7 +386,9 @@ export async function loadBoard(): Promise<BoardFile> {
   const cards: Card[] = [];
   for (const raw of rawCards) {
     try {
-      cards.push(migrateProjectId(backfillCard(raw as Card), projects));
+      cards.push(
+        withDependencySchema(migrateProjectId(backfillCard(raw as Card), projects), raw, legacySchema),
+      );
     } catch (err) {
       console.error(
         `cave-board: skipping unreadable card ${(raw as { id?: unknown })?.id ?? "<unknown>"}:`,
@@ -372,7 +396,8 @@ export async function loadBoard(): Promise<BoardFile> {
       );
     }
   }
-  return { version: board.version ?? 1, cards };
+  // A legacy board is upgraded on its next save; a newer one keeps its version.
+  return { version: legacySchema ? BOARD_SCHEMA_VERSION : board.version!, cards };
 }
 
 // Serialize board mutations. Each mutator does load → modify → save; without
@@ -1491,6 +1516,13 @@ async function updateCardLocked(
     nextStep: "nextStep" in patch ? patch.nextStep ?? null : current.nextStep ?? null,
     orchestrationAudit: current.orchestrationAudit ?? [],
   };
+  // Only loading a version 1 board sets the legacy marker. No patch can set
+  // it, and a write that names the task's dependencies settles it (#6258).
+  if (current.predatesDependencies === true && !("dependencies" in patch)) {
+    next.predatesDependencies = true;
+  } else {
+    delete next.predatesDependencies;
+  }
   const promotion = promoteResolvedPrimary(current, next, patch, now, options);
   if (statusChanged) next.needsHuman = next.status === "blocked";
   if (next.nextStep?.requiresApproval) next.needsHuman = true;
@@ -1610,6 +1642,7 @@ function applyExecutionBlocker(
     : undefined;
 
   next.dependencies = [...currentDependencies, blocker];
+  delete next.predatesDependencies;
   if (pinnedPrimary) {
     next.primaryBlockerId = pinnedPrimary.id;
   } else {

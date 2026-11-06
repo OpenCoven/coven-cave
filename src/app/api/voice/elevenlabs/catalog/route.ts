@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server.js";
 import { resolveSecret } from "../../../../../lib/vault.ts";
+import { upstreamFetch } from "../../../../../lib/server/upstream-fetch.ts";
 import {
   parseElevenLabsModels,
   parseElevenLabsVoices,
@@ -30,9 +31,10 @@ export async function GET() {
   let voicesRes: Response;
   let modelsRes: Response;
   try {
+    // Both reads carry the primitive's default 10 s deadline.
     [voicesRes, modelsRes] = await Promise.all([
-      fetch(`${API_BASE}/v1/voices`, { headers, signal: AbortSignal.timeout(10_000) }),
-      fetch(`${API_BASE}/v1/models`, { headers, signal: AbortSignal.timeout(10_000) }),
+      upstreamFetch("elevenlabs", `${API_BASE}/v1/voices`, { headers }),
+      upstreamFetch("elevenlabs", `${API_BASE}/v1/models`, { headers }),
     ]);
   } catch (e) {
     return NextResponse.json({

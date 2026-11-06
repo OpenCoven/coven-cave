@@ -184,16 +184,13 @@ never fake production data.
   Lanes, titles, owners, projects, the needs-a-human flag and dependencies are
   real writes to `/api/board`. Which card *waits on* which is canonical board
   data (`Card.dependencies`, under
-  [`orchestration-ready-tasks.md`](./orchestration-ready-tasks.md)). The room's
-  older per-familiar, per-browser chart overlay (`chart-room-model.ts`) is only
-  a read-side legacy store: its edges are imported onto the cards on load with
-  `dependencyOps`, which the server merges into the current card under the
-  board lock, so a stale browser can neither drop another writer's edge nor
-  duplicate an edge another device already imported. Linking, cutting and
-  undoing a dependency in the room are `dependencyOps` too (#6286): a cut
-  primary blocker re-points to the next unresolved dependency on the current
-  card, and an undo removes or restores exactly the records its edit touched.
-  Dangling edges are pruned on every read. Retiring the overlay reader is #6258.
+  [`orchestration-ready-tasks.md`](./orchestration-ready-tasks.md)), and the
+  room keeps no dependency store of its own. Linking, cutting and undoing a
+  dependency are `dependencyOps` (#6286), which the server resolves against the
+  current card under the board lock: a stale browser can't drop another
+  writer's edge, a cut primary blocker re-points to the next unresolved
+  dependency on the current card, and an undo removes or restores exactly the
+  records its edit touched. Edges to cards that are gone aren't drawn.
 
   Agentic Enhance uses the canonical Board task graph and persists its proposal
   audit with the task. It may normalize only mechanically verified references;

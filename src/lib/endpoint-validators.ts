@@ -1,3 +1,5 @@
+import { upstreamFetch } from "./server/upstream-fetch.ts";
+
 /**
  * Endpoint reachability probe for remote (URL-based) MCP plugins. Posts a
  * minimal JSON-RPC `initialize` and classifies the response. This checks that
@@ -10,7 +12,7 @@ type FetchLike = typeof fetch;
 
 export async function checkMcpEndpoint(url: string, fetchImpl: FetchLike = fetch): Promise<EndpointCheck> {
   try {
-    const res = await fetchImpl(url, {
+    const res = await upstreamFetch("mcp-endpoint", url, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
       body: JSON.stringify({
@@ -19,9 +21,8 @@ export async function checkMcpEndpoint(url: string, fetchImpl: FetchLike = fetch
         method: "initialize",
         params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "coven-cave", version: "0" } },
       }),
-      signal: AbortSignal.timeout(5000),
       cache: "no-store",
-    });
+    }, { fetchImpl, timeoutMs: 5_000 });
     if (res.status === 401 || res.status === 403) return { reachable: true, detail: "reachable — sign in on connect" };
     if (res.ok) return { reachable: true, detail: "endpoint live" };
     return { reachable: true, detail: `reachable (HTTP ${res.status})` };

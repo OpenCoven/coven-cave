@@ -61,8 +61,10 @@
   cursor: pointer;
 }
 
+/* Chats are neither healthy nor failing, so their tab fill and "resume"
+   badges stay neutral: green means passing only (issue 6357). */
 .cave-sf [data-kind="chats"] {
-  --sf-tint: var(--color-success);
+  --sf-tint: var(--text-secondary);
 }
 .cave-sf [data-kind="tasks"] {
   --sf-tint: var(--color-warning);

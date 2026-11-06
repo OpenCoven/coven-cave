@@ -27,6 +27,8 @@ import {
   readGitHubItemThroughCache,
   type CachedGitHubItem,
 } from "@/lib/server/github-item-cache";
+import { positiveInteger, upstreamFailureAnswer } from "@/lib/server/upstream-answer";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -119,7 +121,7 @@ async function ghFetch(path: string, token: string | null) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store" });
+  const res = await upstreamFetch("github", `${GH}${path}`, { headers, cache: "no-store" });
   const data = await res.json().catch(() => null);
   return { res, data };
 }
@@ -207,7 +209,7 @@ export async function GET(req: Request) {
   );
   return new NextResponse(result.body, {
     status: result.status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...result.headers },
   });
 }
 
@@ -228,18 +230,22 @@ async function loadItem(
       return jsonResult({ ok: false, error: "not_found" }, 404);
     }
     if (!res.ok || !data || typeof data !== "object") {
-      return jsonResult(
-        { ok: false, error: `github error (${res.status})` },
-        res.status === 403 ? 403 : 502,
-      );
+      const answer = upstreamFailureAnswer(res, "GitHub", `github error (${res.status})`);
+      return { ...jsonResult(answer.body, res.status === 403 ? 403 : 502), headers: answer.headers };
     }
 
     const d = data as Record<string, unknown>;
+    // A body with no number or title is not this item, so it must not render
+    // as a blank card. A 502 is also never cached.
+    const itemNumber = positiveInteger(d.number);
+    if (itemNumber === null || typeof d.title !== "string") {
+      return jsonResult({ ok: false, code: "upstream-drift", error: "GitHub answered without the issue or pull request" }, 502);
+    }
     const pull = d.pull_request as Record<string, unknown> | undefined;
     const detail: ItemDetail = {
       ok: true,
-      title: String(d.title ?? ""),
-      number: Number(d.number ?? number),
+      title: d.title,
+      number: itemNumber,
       state: String(d.state ?? "open"),
       isPull: Boolean(pull),
       merged: Boolean(pull?.merged_at),

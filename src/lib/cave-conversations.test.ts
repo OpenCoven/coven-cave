@@ -20,6 +20,7 @@ const {
 } = await import("./cave-conversations.ts");
 const {
   mapConversationHistoryTurns,
+  forgetFailedSendModel,
   retryTurnModelRequest,
 } = await import("./chat-turn-state.ts");
 const { deriveChatAttention, NO_CHAT_ATTENTION } = await import("./chat-attention.ts");
@@ -206,6 +207,59 @@ assert.deepEqual(
   },
   "an honest concrete retry model remains a one-turn override",
 );
+
+assert.deepEqual(
+  retryTurnModelRequest(
+    reloadedRuntimeDefaultTurns[0],
+    {
+      ...reloadedRuntimeDefaultTurns[1],
+      responseMetadata: { harness: "claude", retryModel: "anthropic/claude-opus-4-6" },
+    },
+    "claude",
+  ),
+  {
+    modelOverride: "anthropic/claude-opus-4-6",
+    modelOverrideScope: "next-message",
+  },
+  "the same runtime still retries the same model",
+);
+assert.deepEqual(
+  retryTurnModelRequest(
+    { modelOverrideScope: undefined },
+    { responseMetadata: { harness: "claude", retryModel: "anthropic/claude-opus-4-6" } },
+    "codex",
+  ),
+  {},
+  "a model from the runtime the turn failed on is not sent to another runtime (#6419)",
+);
+assert.deepEqual(
+  retryTurnModelRequest(
+    { modelOverrideScope: undefined },
+    { responseMetadata: { retryModel: "anthropic/claude-opus-4-6" } },
+    "codex",
+  ),
+  {},
+  "a turn with no recorded runtime still can't send another provider's model",
+);
+{
+  const failed = {
+    text: "Keep me",
+    options: {
+      parentTurnId: "parent",
+      modelOverride: "anthropic/claude-opus-4-6",
+      modelOverrideScope: "next-message" as const,
+    },
+    controls: { permissionMode: "full", modelControls: { speed: "fast" } },
+  };
+  const forgotten = forgetFailedSendModel(failed);
+  assert.deepEqual(
+    forgotten,
+    { text: "Keep me", options: { parentTurnId: "parent" }, controls: { permissionMode: "full" } },
+    "Retry keeps the message and branch but resolves the model and its controls afresh",
+  );
+  assert.ok(!("modelOverride" in (forgotten.options ?? {})), "null would still outrank a newer composer pick");
+  assert.deepEqual(forgetFailedSendModel({ text: "No options" }), { text: "No options" });
+}
 
 const firstRuntimeDefaultRetry = retryTurnModelRequest(
   reloadedRuntimeDefaultTurns[0],

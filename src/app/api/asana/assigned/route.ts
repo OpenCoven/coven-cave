@@ -8,6 +8,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { upstreamFailureAnswer } from "@/lib/server/upstream-answer";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import type { AsanaItem } from "@/lib/asana-tasks";
 import { resolveSecret } from "@/lib/vault";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
@@ -102,7 +104,7 @@ export async function GET(req: NextRequest) {
   const headers = authHeaders(token);
 
   try {
-    const meRes = await fetch(`${API}/users/me?opt_fields=name,email,workspaces.name`, {
+    const meRes = await upstreamFetch("asana", `${API}/users/me?opt_fields=name,email,workspaces.name`, {
       headers,
       cache: "no-store",
     });
@@ -116,10 +118,8 @@ export async function GET(req: NextRequest) {
       );
     }
     if (!meRes.ok) {
-      return NextResponse.json(
-        { ok: false, error: `Asana API error: HTTP ${meRes.status}`, items: [], configured: true },
-        { status: 502 },
-      );
+      const answer = upstreamFailureAnswer(meRes, "Asana", `Asana API error: HTTP ${meRes.status}`);
+      return NextResponse.json({ ...answer.body, items: [], configured: true }, { status: 502, headers: answer.headers });
     }
     const meData = (await meRes.json().catch(() => null)) as { data?: AsanaMe } | null;
     const me = meData?.data;
@@ -140,7 +140,7 @@ export async function GET(req: NextRequest) {
         const url =
           `${API}/tasks?assignee=me&workspace=${encodeURIComponent(ws.gid)}` +
           `&completed_since=now&limit=${PER_WORKSPACE}&opt_fields=${encodeURIComponent(TASK_FIELDS)}`;
-        const res = await fetch(url, { headers, cache: "no-store" });
+        const res = await upstreamFetch("asana", url, { headers, cache: "no-store" });
         if (!res.ok) return [] as AsanaItem[];
         const data = (await res.json().catch(() => null)) as { data?: RawAsanaTask[] } | null;
         return (data?.data ?? []).filter((t) => !t.completed).map((t) => toItem(t, ws.gid));

@@ -826,3 +826,6 @@ assert.equal(
 );
 
 console.log("secret-redaction.test.ts: ok");
+
+assert.equal(redactSecretText("Rejected credential audit-fixture-only-not-a-real-secret; retry later", ["audit-fixture-only-not-a-real-secret"]), "Rejected credential [redacted]; retry later");
+assert.equal(redactSecretText("abcde abc", ["abc", "abcde", ""]), "[redacted] [redacted]");

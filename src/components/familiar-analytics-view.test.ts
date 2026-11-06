@@ -164,7 +164,7 @@ function mockFetchFor(score: "low" | "trusted") {
       },
     ],
     [
-      "/api/sessions/list?includeArchived=1&familiarId=cody",
+      "/api/sessions/list?includeArchived=1&classifyFamiliarWorkspace=1&familiarId=cody",
       {
         ok: true,
         sessions: score === "trusted"
@@ -619,7 +619,7 @@ describe("FamiliarAnalyticsView", () => {
   it("gives progression its own dock card, under the identity and above trust", () => {
     assert.match(
       dockSource,
-      /<RenownCard progression=\{model\.progression\} \/>[\s\S]*className="fa-trust-card focus-ring"/,
+      /<RenownCard progression=\{model\.progression\} onOpen=\{onOpenRenown\} \/>[\s\S]*className="fa-trust-card focus-ring"/,
       "renown sits between the identity card and the trust ring",
     );
     assert.match(dockSource, /Top of the ladder/, "top-tier accessible copy remains explicit");
@@ -904,7 +904,7 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
     assert.equal(model.recentSessions.length, 41, "the ALL session ledger is not capped at the newest 40 rows");
     assert.match(
       dataSource,
-      /\/api\/sessions\/list\?includeArchived=1&familiarId=\$\{encodedId\}/,
+      /\/api\/sessions\/list\?includeArchived=1&classifyFamiliarWorkspace=1&familiarId=\$\{encodedId\}/,
       "the evidence read includes archived sessions instead of silently omitting history",
     );
   });

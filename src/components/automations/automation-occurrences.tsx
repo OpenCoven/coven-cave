@@ -154,9 +154,11 @@ export function AutomationOccurrences({
   onWatchStreams: (streams: AutomationFeedStream[]) => void;
 }) {
   const [page, setPage] = useState<Page | null>(null);
-  const [older, setOlder] = useState<{ occurrences: AutomationOccurrenceView[]; nextCursor: string | null } | null>(null);
+  const [older, setOlder] = useState<Page | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const [olderFailure, setOlderFailure] = useState<Failure | "stalled" | null>(null);
   const [loading, setLoading] = useState(false);
+  const [olderLoading, setOlderLoading] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ id: string; readAt: string; occurrence: AutomationOccurrenceDetailView | null } | null>(null);
   const [detailFailure, setDetailFailure] = useState<Failure | null>(null);
@@ -164,12 +166,21 @@ export function AutomationOccurrences({
   const pageRequest = useRef(0);
   const detailRequest = useRef(0);
   const controller = useRef<AbortController | null>(null);
+  const olderController = useRef<AbortController | null>(null);
+  const detailController = useRef<AbortController | null>(null);
+  const rereadButton = useRef<HTMLButtonElement | null>(null);
+  const olderButton = useRef<HTMLButtonElement | null>(null);
+  const focusAfterRead = useRef<HTMLButtonElement | null>(null);
   const openIdRef = useRef<string | null>(null);
   openIdRef.current = openId;
   const base = `/api/coven-automations/${encodeURIComponent(automationId)}/occurrences`;
 
-  const readDetail = useCallback(async (occurrenceId: string, signal: AbortSignal) => {
+  const readDetail = useCallback(async (occurrenceId: string) => {
     const request = ++detailRequest.current;
+    detailController.current?.abort();
+    const current = new AbortController();
+    detailController.current = current;
+    const { signal } = current;
     try {
       const res = await fetch(`${base}/${encodeURIComponent(occurrenceId)}`, { cache: "no-store", signal });
       const result = parseOccurrenceResult(await res.json().catch(() => null));
@@ -182,12 +193,22 @@ export function AutomationOccurrences({
       }
     } catch {
       if (request === detailRequest.current && !signal.aborted) setDetailFailure("unavailable");
+    } finally {
+      if (detailController.current === current) detailController.current = null;
     }
   }, [base]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (startAgain = false) => {
+    const source = [rereadButton.current, olderButton.current].find(
+      (button) => button !== null && button.ownerDocument.activeElement === button,
+    );
+    if (source) focusAfterRead.current = source;
     const request = ++pageRequest.current;
     controller.current?.abort();
+    olderController.current?.abort();
+    olderController.current = null;
+    setOlderLoading(false);
+    detailController.current?.abort();
     const current = new AbortController();
     controller.current = current;
     setLoading(true);
@@ -198,21 +219,28 @@ export function AutomationOccurrences({
       if (result.kind === "available" && res.ok) {
         setPage({ readAt: result.readAt, occurrences: result.occurrences, nextCursor: result.nextCursor });
         setFailure(null);
+        if (startAgain) { setOlder(null); setOlderFailure(null); }
       } else {
         setFailure(result.kind === "available" ? "unavailable" : result.kind);
       }
     } catch {
       if (request === pageRequest.current && !current.signal.aborted) setFailure("unavailable");
     } finally {
+      if (controller.current === current) controller.current = null;
       if (request === pageRequest.current && !current.signal.aborted) setLoading(false);
     }
-    if (openIdRef.current && !current.signal.aborted) await readDetail(openIdRef.current, current.signal);
+    if (openIdRef.current && !current.signal.aborted) await readDetail(openIdRef.current);
   }, [base, readDetail]);
 
   // The owner keys this component by automation id, so a new automation starts empty.
   useEffect(() => {
     void refresh();
-    return () => controller.current?.abort();
+    return () => {
+      controller.current?.abort();
+      olderController.current?.abort();
+      olderController.current = null;
+      detailController.current?.abort();
+    };
   }, [refresh]);
   // A changefeed signal re-reads now rather than at the next interval.
   const firstNonce = useRef(refreshNonce);
@@ -223,28 +251,37 @@ export function AutomationOccurrences({
   usePausablePoll(refresh, REFRESH_MS, { serialize: true });
 
   const loadOlder = async () => {
-    const cursor = older?.nextCursor ?? page?.nextCursor;
-    if (!cursor || loading) return;
-    setLoading(true);
+    const cursor = older ? older.nextCursor : page?.nextCursor;
+    // Refs also serialize clicks that arrive before React commits the disabled state.
+    if (!cursor || controller.current || olderController.current) return;
+    const source = olderButton.current;
+    if (source?.ownerDocument.activeElement === source) focusAfterRead.current = source;
+    const current = new AbortController();
+    olderController.current = current;
+    setOlderLoading(true);
+    setOlderFailure(null);
     try {
-      const res = await fetch(`${base}?${new URLSearchParams({ cursor })}`, { cache: "no-store" });
+      const res = await fetch(`${base}?${new URLSearchParams({ cursor })}`, { cache: "no-store", signal: current.signal });
       const result = parseOccurrencesResult(await res.json().catch(() => null));
+      if (current.signal.aborted || olderController.current !== current) return;
       if (result.kind === "available" && res.ok) {
-        setOlder((previous) => ({ occurrences: [...(previous?.occurrences ?? []), ...result.occurrences], nextCursor: result.nextCursor }));
-        setFailure(null);
+        if (result.nextCursor === cursor) { setOlderFailure("stalled"); return; }
+        // Both pages are independently bounded by the shared response parser.
+        setOlder({ readAt: result.readAt, occurrences: result.occurrences, nextCursor: result.nextCursor });
       } else {
-        setFailure(result.kind === "available" ? "unavailable" : result.kind);
+        setOlderFailure(result.kind === "available" ? "unavailable" : result.kind);
       }
     } catch {
-      setFailure("unavailable");
+      if (!current.signal.aborted && olderController.current === current) setOlderFailure("unavailable");
     } finally {
-      setLoading(false);
+      if (olderController.current === current) { olderController.current = null; setOlderLoading(false); }
     }
   };
 
   const toggle = (occurrenceId: string) => {
     if (openId === occurrenceId) {
       detailRequest.current += 1;
+      detailController.current?.abort();
       setOpenId(null);
       setDetail(null);
       setDetailFailure(null);
@@ -253,19 +290,42 @@ export function AutomationOccurrences({
     setOpenId(occurrenceId);
     setDetail(null);
     setDetailFailure(null);
-    void readDetail(occurrenceId, controller.current?.signal ?? new AbortController().signal);
+    void readDetail(occurrenceId);
   };
 
   const newest = page?.occurrences ?? [];
   const shownIds = new Set(newest.map((occurrence) => occurrence.id));
   const occurrences = [...newest, ...(older?.occurrences ?? []).filter((occurrence) => !shownIds.has(occurrence.id))];
   const nextCursor = older ? older.nextCursor : page?.nextCursor ?? null;
+  const openIsVisible = openId !== null && occurrences.some((occurrence) => occurrence.id === openId);
+  useEffect(() => {
+    if (!openId || openIsVisible) return;
+    detailRequest.current += 1;
+    detailController.current?.abort();
+    setOpenId(null);
+    setDetail(null);
+    setDetailFailure(null);
+  }, [openId, openIsVisible]);
+  const busy = loading || olderLoading;
+  useEffect(() => {
+    if (busy) return;
+    const source = focusAfterRead.current;
+    focusAfterRead.current = null;
+    if (!source) return;
+    const document = source.ownerDocument;
+    // A removed/disabled button may fall back to body. Never take focus from
+    // a field the person deliberately selected while the read was pending.
+    if (document.activeElement === source || document.activeElement === document.body) {
+      const target = source === rereadButton.current || nextCursor === null ? rereadButton.current : olderButton.current;
+      target?.focus({ preventScroll: true });
+    }
+  }, [busy, nextCursor]);
 
   // Follow the streams of what is still open on screen: the newest open
   // occurrences, and the open runs of the one being inspected.
   const watchKey = [
     ...newest.filter((occurrence) => occurrenceIsOpen(occurrence.state)).slice(0, WATCHED_OCCURRENCES).map((occurrence) => `occurrence:${occurrence.id}`),
-    ...(detail?.occurrence?.runs ?? []).filter(runIsOpen).slice(-WATCHED_RUNS).map((run) => `run:${run.id}`),
+    ...(openIsVisible && detail?.id === openId ? detail.occurrence?.runs ?? [] : []).filter(runIsOpen).slice(-WATCHED_RUNS).map((run) => `run:${run.id}`),
   ].join("\n");
   useEffect(() => {
     onWatchStreams(watchKey ? watchKey.split("\n").map((entry) => {
@@ -280,13 +340,16 @@ export function AutomationOccurrences({
       title="Occurrences and runs"
       description="What Coven planned, claimed and ran for this cron, newest first. Coven records all of it; Cave only reads."
     >
-      <div className="space-y-3 text-[length:var(--text-xs)] text-[var(--text-secondary)]" aria-busy={loading}>
+      <div className="space-y-3 text-[length:var(--text-xs)] text-[var(--text-secondary)]" aria-busy={busy}>
         {page ? (
           <p>Read at <When iso={page.readAt} />. Re-read every 30 seconds while this panel is open, and when Coven&apos;s changefeed reports a change.</p>
         ) : loading ? <p role="status">Reading occurrences…</p> : null}
         {failure ? (
           <p role="alert">{FAILURES[failure]}{page ? " The occurrences below are from the earlier read and may be stale." : ""}</p>
         ) : null}
+        {older ? <p>Older page read at <When iso={older.readAt} />. One older page is shown at a time; Re-read now returns to the newest page.</p> : null}
+        {olderLoading ? <p role="status">Reading older occurrences…</p> : null}
+        {olderFailure ? <p role="alert">{olderFailure === "stalled" ? "The older-page checkpoint didn't advance. Re-read now to start again." : FAILURES[olderFailure]}{older ? " The earlier older page is kept." : ""}</p> : null}
         {page && occurrences.length === 0 ? (
           <p>Coven has no occurrences for this cron yet. A scheduled one appears when it comes due; Run now creates one at once.</p>
         ) : null}
@@ -327,8 +390,8 @@ export function AutomationOccurrences({
           </ul>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button size="xs" disabled={loading} onClick={() => void refresh()}>{page ? "Re-read now" : "Retry"}</Button>
-          {nextCursor ? <Button size="xs" disabled={loading} aria-controls={listId} onClick={() => void loadOlder()}>Show older</Button> : null}
+          <Button ref={rereadButton} size="xs" disabled={busy} onClick={() => void refresh(true)}>{page ? "Re-read now" : "Retry"}</Button>
+          {nextCursor ? <Button ref={olderButton} size="xs" disabled={busy} aria-controls={listId} onClick={() => void loadOlder()}>Show older</Button> : null}
         </div>
       </div>
     </CronDetailSection>

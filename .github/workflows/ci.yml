@@ -538,7 +538,7 @@ jobs:
         run: node scripts/build-with-retry.mjs
 
   frontend-e2e:
-    name: Frontend E2E (${{ matrix.shard }}/8)
+    name: Frontend E2E (${{ matrix.shard }}/6)
     needs: paths
     if: needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
     runs-on: ubuntu-latest
@@ -546,7 +546,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        # The 133-case serial group can span an entire eighth (#6392).
+        # Six partitions retain every case without splitting serial suites.
+        shard: [1, 2, 3, 4, 5, 6]
     env:
       NEXT_PUBLIC_CAVE_CRAFTS: "1"
     steps:
@@ -615,10 +617,18 @@ jobs:
             trap 'kill "$telemetry_pid" 2>/dev/null || true; wait "$telemetry_pid" 2>/dev/null || true' EXIT
           fi
 
-          bash scripts/playwright-ci-image.sh run pnpm exec playwright test \
-            --shard="$PLAYWRIGHT_SHARD/8" \
-            --workers=1 \
-            --reporter="github,line"
+          node scripts/playwright-ci-evidence.mjs \
+            --shard="$PLAYWRIGHT_SHARD/6" \
+            --workers=1
+
+      - name: Preserve Playwright execution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-evidence-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: playwright-evidence/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Preserve failed Playwright evidence
         if: failure() && steps.e2e.outcome == 'failure'
@@ -680,7 +690,16 @@ jobs:
       # This is a separate Playwright invocation, so its webServer starts with
       # the explicit public capability instead of sharing a default-off server.
       - name: Validate flag-enabled agentic journeys
-        run: bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+        run: node scripts/playwright-ci-evidence.mjs tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+
+      - name: Preserve Playwright execution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-evidence-agentic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: playwright-evidence/
+          if-no-files-found: warn
+          retention-days: 7
 
   build:
     name: Frontend build

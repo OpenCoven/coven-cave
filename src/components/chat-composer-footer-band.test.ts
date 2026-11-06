@@ -272,8 +272,8 @@ assert.doesNotMatch(css, /\.cave-context-pill/, "the combined pill's CSS is reti
 // ── The reading measure stays on content while the composer uses the full dock
 assert.match(
   activityCss,
-  /\.cave-chat-linear \{[\s\S]*--cave-chat-measure:\s*64rem;/,
-  "chat activity should keep the 64rem reading column",
+  /\.cave-chat-linear \{[\s\S]*--cave-chat-measure:\s*calc\(100% - 2 \* var\(--cave-chat-gutter\)\);/,
+  "chat activity's reading column spans the pane",
 );
 assert.doesNotMatch(activityCss, /--cave-composer-measure/, "the retired narrow composer measure stays removed");
 assert.match(
@@ -309,10 +309,10 @@ assert.ok(
   ruleBody(transcriptCss, ".cave-chat-linear .cave-new-response-content").includes(`margin-right: max(0px, ${columnInset});`),
   "Latest sits at the column's right edge",
 );
-assert.match(
-  ruleBody(transcriptCss, ".cave-chat-linear .cave-chat-thread .cave-md > :is(p, ul, ol, blockquote)"),
-  /max-width:\s*72ch;/,
-  "prose paragraphs and lists keep a readable line length; code and tables keep the column",
+assert.doesNotMatch(
+  transcriptCss,
+  /\.cave-chat-linear \.cave-chat-thread \.cave-md > :is\(p, ul, ol, blockquote\)\s*\{[^}]*max-width/,
+  "prose fills the column under the default Full reading width; the narrower presets cap .cave-md",
 );
 assert.match(
   transcriptCss,

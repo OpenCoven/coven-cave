@@ -244,7 +244,8 @@ writer. *(Sage F5/R5, Astra R1.)*
    cycle detection is a full DFS, external blockers are excluded from both.
 4. **Stop writing.** Chart Room dependency edits write canonically only.
 5. **Contract.** After a deprecation window, the overlay reader and
-   `dependsOn` are removed and `docs/role-surfaces.md` is updated.
+   `dependsOn` are removed and `docs/role-surfaces.md` is updated. *(Done in
+   #6258, one release after the merge-safe import of #6287 shipped.)*
 
 Repair diagnostics for legacy incomplete cards are **advisory** during expand —
 they surface recommendations, they do not auto-mutate — so an operator reviews
@@ -303,12 +304,14 @@ before data changes.
 
 ## Open items for implementation planning
 
-- Deprecation window length for the overlay reader.
+- ~~Deprecation window length for the overlay reader.~~ One release (Val,
+  2026-10-27, on #6258).
 - Whether `waived` needs a distinct readiness treatment from `resolved`.
 - Whether external dependency resolution can be polled (GitHub state) or stays
   manual in v1. Recommendation: manual in v1, polling as a follow-up.
-- Schema version discriminant on the board file so repair diagnostics can tell
-  "never had blockers" from "predates the field".
+- ~~Schema version discriminant on the board file so repair diagnostics can
+  tell "never had blockers" from "predates the field".~~ Board schema version
+  2 and `Card.predatesDependencies` (#6258).
 
 ## Research basis
 

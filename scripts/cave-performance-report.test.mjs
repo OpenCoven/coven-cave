@@ -13,6 +13,7 @@ import {
   buildPerformanceReport,
   renderPerformanceReportMarkdown,
   writePerformanceReport,
+  describeReportHost,
 } from "./cave-performance-report.mjs";
 import { enforcedFixtureProfiles } from "../src/lib/performance-budgets.ts";
 import { measureEventPlaneWorkload } from "./event-plane-workload.mjs";
@@ -162,6 +163,7 @@ test("markdown includes comparison and reliability evidence", () => {
   assert.match(markdown, /deterministic daemon startup, reconnect, and recovery contract/);
   assert.match(markdown, /Enforced by separate gates:/);
   assert.match(markdown, /enforced by `tests\/chat-stream-performance\.spec\.ts`/);
+  assert.match(markdown, /enforced by `tests\/shell-boot-performance\.spec\.ts`/);
 });
 
 test("failed daemon reliability contract fails the report summary", () => {
@@ -192,7 +194,8 @@ test("a run inside every budget reports a passing budget verdict", () => {
   assert.equal(report.summary.budgetBreachCount, 0);
   assert.equal(report.summary.budgetUnmeasuredCount, 0);
   assert.equal(report.summary.status, "pass");
-  assert.ok(report.budgets.pendingCount > 0, "pending budgets stay visible in the report");
+  assert.equal(report.budgets.pendingCount, 0,
+    "every catalogue ceiling has a gate since #6346; a new pending entry must change this deliberately");
 });
 
 test("a breached budget fails the report even with no baseline to regress against", () => {
@@ -397,7 +400,7 @@ test("the benchmark reports a swept dimension, and only a genuinely swept one", 
   );
 });
 
-test("markdown renders the budget table with limits and pending surfaces", () => {
+test("markdown renders the budget table with limits and delegated surfaces", () => {
   const markdown = renderPerformanceReportMarkdown(
     buildPerformanceReport({
       conversation: conversation(),
@@ -409,6 +412,8 @@ test("markdown renders the budget table with limits and pending surfaces", () =>
   assert.match(markdown, /## Production budgets/);
   assert.match(markdown, /Budget verdict: \*\*PASS\*\*/);
   assert.match(markdown, /Warm shell boot to interactive p95/);
+  assert.match(markdown, /coven doctor wall clock p95/);
+  assert.match(markdown, /enforced by `tests\/doctor-exec-performance\.spec\.ts`/);
   assert.match(markdown, /must not read as a clean run/);
 });
 
@@ -462,6 +467,84 @@ test("the workflow benchmarks the fixture the enforced budgets were seeded again
   // the benchmark reads blank as "not overridden" rather than as zero.
   assert.equal(workflow.jobs.report.env.CAVE_BENCH_ITERATIONS, "${{ inputs.iterations }}");
   assert.equal(workflow.on.workflow_dispatch.inputs.iterations.default, "");
+});
+
+test("the report names its measured configuration and the workflow can produce the absent one (#6338)", async () => {
+  const implied = buildPerformanceReport({
+    conversation: conversation(), reliability: reliability(), metadata: metadata(), budgetCatalogue: [],
+  });
+  assert.deepEqual(implied.configuration, { rooms: "all", researchPackageInstalled: true },
+    "a report that does not say is the default, installed build");
+  const absent = buildPerformanceReport({
+    conversation: conversation(), reliability: reliability(), budgetCatalogue: [],
+    metadata: metadata({ configuration: { rooms: "none", researchPackageInstalled: false } }),
+  });
+  assert.deepEqual(absent.configuration, { rooms: "none", researchPackageInstalled: false });
+
+  const workflow = parse(
+    await readFile(new URL("../.github/workflows/cave-performance.yml", import.meta.url), "utf8"),
+  );
+  assert.equal(workflow.on.workflow_dispatch.inputs.rooms_absent.default, false);
+  const absentRooms = "${{ inputs.rooms_absent && 'none' || '' }}";
+  for (const job of ["stream", "report"]) {
+    assert.equal(workflow.jobs[job].env.CAVE_STREAM_ROOMS, absentRooms, `${job} builds the chosen visibility`);
+    const steps = workflow.jobs[job].steps;
+    const install = steps.findIndex((step) => step.run === "pnpm install --frozen-lockfile");
+    const removal = steps.findIndex((step) => /Remove the optional Research package/.test(step.name ?? ""));
+    assert.ok(install >= 0 && removal === install + 1, `${job} removes the package right after install`);
+    assert.equal(steps[removal].if, "${{ inputs.rooms_absent }}");
+    assert.match(steps[removal].run, /rm -rf node_modules\/@opencoven\/research/);
+    assert.match(steps[removal].run, /test ! -e node_modules\/@opencoven\/research/);
+    const upload = steps.find((step) => /upload-artifact/.test(step.uses ?? ""));
+    assert.ok(upload.with.name.startsWith("${{ inputs.rooms_absent && 'rooms-absent-' || '' }}cave-"),
+      `${job} evidence says when it is the absent configuration`);
+  }
+  // The absent artifact is not a baseline: the restore step only accepts
+  // default-named report artifacts and keeps looking past runs without one.
+  const restore = workflow.jobs.report.steps.find((step) => step.name === "Restore previous report");
+  assert.match(restore.run, /startswith\("cave-performance-"\)/);
+  assert.match(restore.run, /--limit 10/);
+  assert.match(restore.run, /for candidate in/);
+});
+
+test("the report names the host the report job ran on, and an older baseline still compares (#6341)", () => {
+  const host = {
+    node: "v24.22.1", platform: "linux", arch: "x64",
+    cpu: "INTEL(R) XEON(R) PLATINUM 8573C  ", cpuCount: 4, totalMemoryBytes: 16759304192,
+  };
+  const older = buildPerformanceReport({
+    conversation: conversation(), reliability: reliability(), budgetCatalogue: [],
+    metadata: metadata({ sha: "b".repeat(40), runId: "16" }),
+  });
+  const current = buildPerformanceReport({
+    conversation: conversation(), reliability: reliability(), budgetCatalogue: [],
+    metadata: metadata({ runtime: host }), baselineReport: older,
+  });
+  assert.deepEqual(current.runtime, host, "the host fields travel with the report as recorded");
+  assert.equal(current.baseline.sha, "b".repeat(40), "a baseline without host fields is still compared");
+  assert.equal(current.summary.historyPoints, 2);
+  const line = (report) => renderPerformanceReportMarkdown(report).split("\n").find((l) => l.startsWith("- Host: "));
+  assert.equal(line(current), "- Host: linux/x64, Node v24.22.1, INTEL(R) XEON(R) PLATINUM 8573C × 4, 15.6 GiB");
+  assert.equal(line(older), "- Host: linux/x64, Node v24.0.0, CPU model not recorded",
+    "a report that did not record its host says so instead of guessing");
+  assert.equal(describeReportHost(undefined), "unknown/unknown, Node unknown, CPU model not recorded");
+});
+
+test("the benchmark drains the summary index write before it removes its home (#6344)", async () => {
+  // The index write is scheduled on an unreferenced timer after each cold
+  // scan; a teardown that removes the home first races it and fails a complete
+  // measurement with ENOTEMPTY. Pin the order and the tolerant removal.
+  const source = await readFile(new URL("./conversation-list-benchmark.mjs", import.meta.url), "utf8");
+  const finallyAt = source.lastIndexOf("} finally {");
+  assert.ok(finallyAt > 0, "the benchmark tears down in a finally block");
+  const teardown = source.slice(finallyAt);
+  const flushAt = teardown.indexOf("await flushConversationSummaryIndex()");
+  const removeAt = teardown.indexOf("await rm(benchHome");
+  assert.ok(flushAt >= 0, "teardown flushes the summary index");
+  assert.ok(removeAt > flushAt, "the flush completes before the home is removed");
+  assert.match(teardown.slice(removeAt), /maxRetries: 3, retryDelay: 100/, "removal tolerates a transient ENOTEMPTY");
+  assert.match(source, /flushConversationSummaryIndex,[\s\S]{0,200}\} = await import\("\.\.\/src\/lib\/cave-conversations\.ts"\);\n\ntry \{/,
+    "the seam is imported outside the try so the finally can reach it");
 });
 
 test("the report carries the event plane's aggregate counters (#5862)", () => {

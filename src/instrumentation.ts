@@ -23,11 +23,17 @@ export async function register() {
   } catch (error) {
     console.warn("[instrumentation] Research Resource restore recovery could not start:", error);
   }
+  const shutdown = await import("@/lib/server/startup-worker-shutdown");
   try {
+    // The optional Research runtime has one activation owner (#6332): it
+    // drains beside the other startup workers, and a hot disable over the
+    // capability route closes admission before anything loads.
     const research = await import("@/lib/server/research-package");
-    void research.startOptionalResearch().catch((error) => {
-      console.warn("[instrumentation] research media jobs failed to start:", error);
-    });
+    if (shutdown.registerStartupWorker("research", research.stopOptionalResearchForShutdown)) {
+      void research.startOptionalResearch().catch((error) => {
+        console.warn("[instrumentation] research media jobs failed to start:", error);
+      });
+    }
   } catch (error) {
     console.warn("[instrumentation] research media jobs could not start:", error);
   }
@@ -59,7 +65,6 @@ export async function register() {
   } catch (error) {
     console.warn("[instrumentation] X mission runtime sweep could not start:", error);
   }
-  const shutdown = await import("@/lib/server/startup-worker-shutdown");
   const inbox = await import("@/lib/inbox-scheduler");
   if (shutdown.registerStartupWorker("inbox-reminders", inbox.stopScheduler)) {
     void inbox.startScheduler().catch(error => {
@@ -72,10 +77,19 @@ export async function register() {
       console.warn("[instrumentation] scheduled chat failed to start:", error);
     });
   }
-  const watcher = await import("@/lib/github-watcher");
-  void watcher.startGithubWatcher().catch((error) => {
-    console.warn("[instrumentation] GitHub watcher failed to start:", error);
-  });
+  try {
+    // The watcher is its own admission point (#6350): every activation
+    // registers `stopGithubWatcher` as the `github-watcher` drain and owns no
+    // timer once shutdown began, so the subscriptions route's module-load
+    // start shares this drain. Wrapped like Research: a failed optional
+    // feature must not stop backup from registering.
+    const watcher = await import("@/lib/github-watcher");
+    void watcher.startGithubWatcher().catch((error) => {
+      console.warn("[instrumentation] GitHub watcher failed to start:", error);
+    });
+  } catch (error) {
+    console.warn("[instrumentation] GitHub watcher could not start:", error);
+  }
   const backupSync = await import("@/lib/server/backup-sync");
   if (shutdown.registerStartupWorker("backup-sync", () => backupSync.stopBackupSyncScheduler({ pushOnQuit: true }))) {
     void backupSync.startBackupSyncScheduler().catch(error => {

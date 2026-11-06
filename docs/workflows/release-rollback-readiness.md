@@ -91,10 +91,12 @@ release-page defect, even if the build job was green.
 v0.5.12 tags were not replayed. A new version still follows the
 [release and candidate sequence](branching.md#release-and-testflight) from clean
 `main`, and its Windows MSI path uses the v0.5.7 build, budget, upload, updater
-signature, and attestation sequence. The MSI is **not Authenticode-signed**; do
-not describe it as code-signed. Check the new MSI's checksum entry,
-`latest.json`, updater signature, and public release page before directing
-downloads to it. The rollback gate selects the newest older release with the
+signature, and attestation sequence. Every MSI through v0.5.18 is **not
+Authenticode-signed**; do not describe it as code-signed. Once the
+[Windows signing gate](windows-msi-signing.md) is on `main`, a Windows leg
+without all five signing inputs fails before its build and publishes no MSI.
+Check the new MSI's checksum entry, `latest.json`, updater signature, and
+public release page before directing downloads to it. The rollback gate selects the newest older release with the
 required assets and verifies its manifest.
 
 ## What it checks

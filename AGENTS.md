@@ -157,6 +157,20 @@ mention does not credit the commit. Add substantial external contributors to
 Don't add trailers or footers that credit an AI model, assistant, vendor,
 or coding harness.
 
+A coven familiar is recorded by provenance, not by a co-author line. Commits a
+familiar writes end with:
+
+```text
+Coven-Familiar: <familiar id>
+Coven-Harness: <harness> / <model id>
+Coven-Session: <daemon session id, if known>
+```
+
+The commit-msg hook accepts these trailers and still rejects
+`Co-authored-by: <Name> <<id>@opencoven.ai>` or any other non-GitHub address.
+The squash message carries `Coven-Familiar` onto `main` once per familiar;
+`Coven-Harness` and `Coven-Session` stay in the PR commits. Decision: #6068.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
