@@ -56,6 +56,75 @@ final class ChatScrollStateTests: XCTestCase {
         XCTAssertTrue(ChatScrollGeometry(contentHeight: 100, visibleBottom: 600).isAtBottom)
         XCTAssertTrue(ChatScrollGeometry(contentHeight: 1_000, visibleBottom: 980).isAtBottom)
     }
+
+    // MARK: Scroll anchoring (#6090)
+
+    private func row(_ minY: CGFloat, _ maxY: CGFloat) -> ChatScrollAnchor.Row {
+        ChatScrollAnchor.Row(minY: minY, maxY: maxY)
+    }
+
+    /// History rows at 0–900 and 900–1,800, the latest reply at 1,800–3,000.
+    private func settledTranscript() -> ChatScrollAnchor {
+        var anchor = ChatScrollAnchor()
+        anchor.note("history-a", row(0, 900))
+        anchor.note("history-b", row(900, 1_800))
+        anchor.note("latest", row(1_800, 3_000))
+        _ = anchor.takeCorrection(viewportTop: 2_400, viewportHeight: 600, preserving: true)
+        return anchor
+    }
+
+    func testGrowthAboveKeepsAReaderInsideTheLatestReplyInPlace() {
+        var anchor = settledTranscript()
+        anchor.note("history-b", row(900, 3_200))
+        anchor.note("latest", row(3_200, 4_400))
+        XCTAssertEqual(anchor.takeCorrection(viewportTop: 2_400, viewportHeight: 600, preserving: true), 1_400)
+    }
+
+    func testOnePassCorrectsOnceHoweverManyRowsMoved() {
+        var anchor = settledTranscript()
+        anchor.note("history-a", row(0, 1_500))
+        anchor.note("history-b", row(1_500, 2_400))
+        anchor.note("latest", row(2_400, 3_600))
+        XCTAssertEqual(anchor.takeCorrection(viewportTop: 2_400, viewportHeight: 600, preserving: true), 600)
+        XCTAssertEqual(anchor.takeCorrection(viewportTop: 3_000, viewportHeight: 600, preserving: true), 0)
+    }
+
+    func testGrowthBelowTheReaderDoesNotMoveThem() {
+        var anchor = settledTranscript()
+        anchor.note("latest", row(1_800, 5_000))
+        XCTAssertEqual(anchor.takeCorrection(viewportTop: 300, viewportHeight: 600, preserving: true), 0)
+    }
+
+    func testTheLatestReplyStreamingUnderItsReaderDoesNotMoveThem() {
+        var anchor = settledTranscript()
+        anchor.note("latest", row(1_800, 3_400))
+        XCTAssertEqual(anchor.takeCorrection(viewportTop: 2_400, viewportHeight: 600, preserving: true), 0)
+    }
+
+    func testAnchorIsTheTopmostRowInViewNotOneBelowAGrowingVisibleRow() {
+        var anchor = settledTranscript()
+        anchor.note("history-b", row(900, 2_100))
+        anchor.note("latest", row(2_100, 3_300))
+        XCTAssertEqual(anchor.takeCorrection(viewportTop: 800, viewportHeight: 1_200, preserving: true), 0,
+                       "the reader's first visible row did not move")
+    }
+
+    func testRowRemovedAboveMovesTheReaderBackWithTheirContent() {
+        var anchor = settledTranscript()
+        anchor.remove("history-a")
+        anchor.note("history-b", row(0, 900))
+        anchor.note("latest", row(900, 2_100))
+        XCTAssertEqual(anchor.takeCorrection(viewportTop: 2_400, viewportHeight: 600, preserving: true), -900)
+    }
+
+    func testFollowingLeavesTheOffsetToTheFollowPathButKeepsTheBaseline() {
+        var anchor = settledTranscript()
+        anchor.note("history-b", row(900, 3_200))
+        anchor.note("latest", row(3_200, 4_400))
+        XCTAssertEqual(anchor.takeCorrection(viewportTop: 2_400, viewportHeight: 600, preserving: false), 0)
+        XCTAssertEqual(anchor.takeCorrection(viewportTop: 3_800, viewportHeight: 600, preserving: true), 0,
+                       "growth absorbed while following is not corrected again later")
+    }
 }
 
 final class ChatViewportRecoveryTests: XCTestCase {

@@ -84,6 +84,7 @@ struct ChatView: View {
     @Namespace private var pickerZoomNamespace
     @State private var scrollState = ChatScrollState()
     @State private var viewportRecovery = ChatViewportRecovery()
+    @State private var scrollAnchor = ChatScrollAnchorCoordinator()
     /// Coalesces streaming auto-scroll: several text flushes can land inside
     /// one display frame (group fan-out, resume replay) — issue one scrollTo.
     @State private var streamScroll = ScrollCoalescer()
@@ -337,6 +338,9 @@ struct ChatView: View {
 
     private func scrollToLatest(_ proxy: ScrollViewProxy, animation: Animation? = nil) {
         guard scrollState.isFollowingLatest, !scrollState.isUserScrolling else { return }
+        #if DEBUG
+        ChatScrollTrace.shared.note("scrollToLatest animated=\(animation != nil)")
+        #endif
         let target = thread.messages.last?.id ?? "bottom"
         if let animation, !reduceMotion {
             withAnimation(animation) { proxy.scrollTo(target, anchor: .bottom) }
@@ -1018,6 +1022,12 @@ struct ChatView: View {
         }
     }
 
+    /// While following, the follow path owns the offset; anchoring both would
+    /// move it twice. Read when a layout pass settles, not when a row reports.
+    private func scrollAnchorRow(_ id: String) -> ChatScrollAnchorRowModifier {
+        ChatScrollAnchorRowModifier(id: id, coordinator: scrollAnchor) { !scrollState.isFollowingLatest }
+    }
+
     private func recoverTranscriptViewportIfNeeded(_ proxy: ScrollViewProxy) {
         guard viewportRecovery.hasPendingRecovery, !scrollState.isUserScrolling else { return }
         // Re-check after one runloop turn: a settling layout frame that brings
@@ -1025,6 +1035,9 @@ struct ChatView: View {
         DispatchQueue.main.async {
             guard viewportRecovery.takeRecovery(isUserScrolling: scrollState.isUserScrolling) else { return }
             streamScroll.cancel()
+            #if DEBUG
+            ChatScrollTrace.shared.note("viewportRecovery")
+            #endif
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
@@ -1053,6 +1066,7 @@ struct ChatView: View {
                                 transcriptRow(row, proxy: proxy)
                             }
                             .id(row.id)
+                            .modifier(scrollAnchorRow(row.id))
                         }
                     }
                     ForEach(rows[turnStart..<max(turnStart, rows.count - 1)]) { row in
@@ -1060,12 +1074,14 @@ struct ChatView: View {
                             transcriptRow(row, proxy: proxy)
                         }
                         .id(row.id)
+                        .modifier(scrollAnchorRow(row.id))
                     }
                     if let row = rows.last {
                         VStack(spacing: 10) {
                             transcriptRow(row, proxy: proxy)
                         }
                             .id(row.id)
+                            .modifier(scrollAnchorRow(row.id))
                             .onGeometryChange(for: ChatScrollGeometry?.self) { geometry in
                                 guard let viewport = geometry.bounds(of: .scrollView) else { return nil }
                                 return ChatScrollGeometry(
@@ -1094,9 +1110,13 @@ struct ChatView: View {
                 .scrollTargetLayout()
                 .padding(.horizontal, 12)
                 .padding(.vertical, 14)
+                .chatScrollAnchorContent(scrollAnchor)
                 .animation(reduceMotion ? nil : .spring(duration: 0.3), value: thread.messages.count)
             }
             .accessibilityIdentifier("Chat transcript")
+            .chatScrollTrace(following: scrollState.isFollowingLatest,
+                             userScrolling: scrollState.isUserScrolling,
+                             atBottom: scrollState.isAtBottom)
             .onScrollGeometryChange(for: ChatViewportGeometry.self) { geometry in
                 ChatViewportGeometry(
                     contentHeight: geometry.contentSize.height,
@@ -1307,6 +1327,9 @@ struct ChatView: View {
                           operatorAvatarSource: app.operatorAvatarSource,
                           familiarAvatarSource: bubbleAvatarSource,
                           onContentHeightChange: {
+                              #if DEBUG
+                              ChatScrollTrace.shared.note("heightChange \(message.id) following=\(scrollState.isFollowingLatest)")
+                              #endif
                               guard scrollState.isFollowingLatest else { return }
                               streamScroll.request { scrollToLatest(proxy) }
                           },

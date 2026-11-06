@@ -63,6 +63,31 @@ final class ChatScrollingUITests: XCTestCase {
     }
 
     @MainActor
+    func testLatestReplyRemainsStableAfterJump() {
+        let app = launch(["--ui-preview-long-chat-scroll-jump"],
+                         openThread: "ui-preview-long-chat-scroll-jump")
+        _ = waitForLatest(app)
+        let transcript = app.scrollViews["Chat transcript"].firstMatch
+        for _ in 0..<4 { transcript.swipeDown() }
+        let jump = app.buttons["Scroll to latest"].firstMatch
+        XCTAssertTrue(jump.waitForExistence(timeout: 5))
+        jump.tap()
+        _ = waitForLatest(app)
+        let link = app.links["Scroll fixture link"].firstMatch
+        let initialY = link.frame.midY
+        let displaced = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            !link.isHittable || abs(link.frame.midY - initialY) > 24
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [displaced], timeout: 8)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Latest reply stability"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertEqual(result, .timedOut,
+                       "a completed reply remains readable without repeated viewport corrections")
+    }
+
+    @MainActor
     func testLongUnreadThreadOpensAtLatestReply() {
         let app = launch(
             ["--ui-preview-long-chat-scroll"],
