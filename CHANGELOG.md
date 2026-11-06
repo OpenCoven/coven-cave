@@ -7,6 +7,15 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Fixed
+- **A Claude chat answers instead of failing outright** (#6419). No Coven
+  release can yet limit Claude's file changes to your project grants, so a turn
+  in Full access now runs Read-only and says so. Scheduled and other unattended
+  runs still refuse rather than report success without editing anything.
+- **Retry uses the runtime and model you just picked** (#6419). It used to
+  resend the failed model, so after moving a Claude chat to Codex every Retry
+  was refused with the same error.
+
 ## [0.5.19] - 2026-10-30
 
 > Wide windows filled, account switching from the Runtime menu, and the first Authenticode-signed Windows MSI.

@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 export const GITHUB_ITEM_FRESH_MS = 30_000;
 const MAX_ENTRIES = 256;
 
-export type CachedGitHubItem = { status: number; body: string };
+export type CachedGitHubItem = { status: number; body: string; headers?: Record<string, string> };
 
 type Entry = { at: number; value: CachedGitHubItem };
 

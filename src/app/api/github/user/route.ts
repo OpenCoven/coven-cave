@@ -13,7 +13,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
-import { login as loginField, upstreamDrift } from "@/lib/server/upstream-answer";
+import { login as loginField, upstreamDrift, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -80,10 +80,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
     }
     if (!res.ok || !data || typeof data !== "object") {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
     }
 
     const d = data as Record<string, unknown>;

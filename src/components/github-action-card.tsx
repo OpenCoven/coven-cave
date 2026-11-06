@@ -15,7 +15,7 @@
  */
 
 import { useState } from "react";
-import { isUncertainGitHubWrite, UNREADABLE_GITHUB_WRITE_ANSWER } from "@/lib/github-write-answer";
+import { readGitHubWriteAnswer, isUncertainGitHubWrite, UNREADABLE_GITHUB_WRITE_ANSWER } from "@/lib/github-write-answer";
 import { Icon } from "@/lib/icon";
 import { classifyGitHubAction, type GitHubActionDescriptor } from "@/lib/github-blocks";
 
@@ -82,7 +82,7 @@ export async function fireGitHubAction(a: GitHubActionDescriptor): Promise<GitHu
       // The request may have reached the server; its outcome is unknown.
       return { error: "Lost the connection before Cave answered.", uncertain: true };
     }
-    const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; code?: string } | null;
+    const data = await readGitHubWriteAnswer(res);
     if (!res.ok || data?.ok !== true) {
       if (isUncertainGitHubWrite(res.status, data)) {
         return { error: data?.error ?? UNREADABLE_GITHUB_WRITE_ANSWER, uncertain: true };

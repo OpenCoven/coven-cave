@@ -11,7 +11,7 @@
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { upstreamFetch } from "@/lib/server/upstream-fetch";
-import { ambiguousWrite, isAmbiguousWriteStatus, writeThrew } from "@/lib/server/upstream-answer";
+import { ambiguousWrite, isAmbiguousWriteStatus, writeThrew, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     if (!res.ok) {
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamFailureResponse(res, "GitHub", message, res.status === 403 ? 403 : 502);
     }
     return NextResponse.json({ ok: true });
   } catch (e) {

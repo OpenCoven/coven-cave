@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { researchPackageConfig } from "./scripts/research-package-config.mjs";
+import { submissionsBuildConfig } from "./scripts/submissions-build-config.mjs";
 import bundleAnalyzer from "@next/bundle-analyzer";
 import { MAX_PROXY_BODY_BYTES } from "./src/lib/request-body-limit.ts";
 
@@ -28,6 +29,7 @@ const typecheckedBeforeCompile =
   process.env.COVEN_CAVE_TYPECHECKED_BEFORE_COMPILE === "1";
 
 const researchPackage = researchPackageConfig();
+const submissionsBuild = submissionsBuildConfig();
 
 const nextConfig: NextConfig = {
   transpilePackages: researchPackage.available ? ["@opencoven/research"] : [],
@@ -53,7 +55,7 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: process.cwd(),
   turbopack: {
     root: process.cwd(),
-    resolveAlias: researchPackage.aliases,
+    resolveAlias: { ...researchPackage.aliases, ...submissionsBuild.aliases },
   },
   // Standalone output produces a self-contained Node server at
   // .next/standalone/ that we can bundle as a Tauri sidecar.

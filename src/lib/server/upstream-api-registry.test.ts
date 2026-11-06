@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { networkCalls } from "../testing/upstream-network-scan.ts";
 
 import { DEFAULT_FEEDS } from "./rss-feeds.ts";
 import {
@@ -25,9 +26,9 @@ const SKIP_DIRS = new Set(["node_modules", ".next", "fixtures", "openclaw-fixtur
 const SKIP_FILE = /\.test\.(ts|tsx)$|\.gen\.ts$|\.d\.ts$/;
 const SOURCE_FILE = /\.(ts|tsx)$/;
 /** A fetch-shaped call: the shared primitive, the global, an injected implementation, or Node's https client. */
-const FETCHES = /\b(upstreamFetch|fetch|fetchImpl|fetchFn|fetcher)\s*\(|\bhttps?\.(get|request)\s*\(/;
+const FETCHES = { test: (source: string) => networkCalls(source).length > 0 };
 /** A raw fetch that bypasses the live primitive. */
-const RAW_FETCH = /(?<![.\w])(fetch|fetchImpl|fetchFn|fetcher)\s*\(/;
+
 /** Callers allowed to keep a raw fetch, each with the reason. Keep this short. */
 const RAW_FETCH_EXEMPT: Readonly<Record<string, string>> = {
   "src/lib/server/pin-sources.ts": "the user-URL path goes through https.request behind the public-only resolver; the fixed GitHub hosts use the primitive",
@@ -60,6 +61,53 @@ const files = SCAN_ROOTS.flatMap((scanRoot) => walk(path.join(root, scanRoot), [
   .map((file) => path.relative(root, file).split(path.sep).join("/"))
   .sort();
 const sources = new Map(files.map((file) => [file, readFileSync(path.join(root, file), "utf8")]));
+
+// Existing non-provider call signatures, not blanket file exemptions. Counts and
+// arguments ratchet: a new unknown call or a stale entry fails the inventory.
+const CALL_BOUNDARIES: Record<string, { args: string[]; reason: string }> = {
+  "src/lib/shared-json-fetch.ts": { args: ["url"], reason: "browser-shared Cave JSON resources; not a server provider transport" },
+  "src/lib/daemon-fault-harness.ts": { args: ["`${harness.url}/health`"], reason: "synthetic loopback daemon fixture health check" },
+  "src/app/api/mobile-handoff/route.ts": { args: ['new URL("/api/familiars", backend)', 'new URL("/api/familiars", target)'], reason: "Cave-to-Cave mobile handoff peer probes" },
+  "src/app/api/chat/broadcast/route.ts": { args: ['new URL("/api/chat/send", req.url)'], reason: "same-origin Cave route forwarding" },
+  "src/lib/omnigent/client.ts": { args: ["url"], reason: "Coven hub protocol client; separate internal peer contract" },
+  "src/lib/familiar-stream.ts": { args: ["bridgeUrl"], reason: "browser sends to Cave chat/send or chat/generate" },
+  "src/lib/workflows.ts": { args: ["url"], reason: "browser workflow CRUD helper against Cave routes" },
+  "src/lib/use-runtime-model-options.ts": { args: ["url"], reason: "browser runtime model discovery through Cave API" },
+  "src/lib/openclaw-compatibility.ts": { args: ["url"], reason: "injected schema-bundle transport; production server wrapper is runtime-compatibility-registry" },
+  "src/lib/passkey-client.ts": { args: ["url"], reason: "browser passkey challenge/credential requests to Cave" },
+  "src/lib/tool-output-fetch.ts": { args: ["url"], reason: "same-origin-only Cave conversation tool-output route" },
+  "src/lib/github-tasks-cache.ts": { args: ["input", "endpoint"], reason: "browser cache for Cave GitHub task routes, not GitHub's API" },
+  "src/lib/use-milestone-watch.ts": { args: ["url"], reason: "browser milestone reads from Cave" },
+  "src/app/api/chat/send/route.ts": { args: ["hermesResponsesUrl(hermesApi)"], reason: "separate Hermes runtime stream contract, outside the original scoped provider matrix; no shared-ledger acceptance claimed" },
+  "src/lib/surface-warmup-registry.ts": { args: ["url"], reason: "browser warmup of Cave API resources" },
+  "src/lib/use-familiar-contracts.ts": { args: ["url"], reason: "browser familiar contract/retro/self-report reads from Cave" },
+  "src/lib/authed-image.ts": { args: ["src"], reason: "browser sidecar-authenticated Cave image reads" },
+  "src/lib/use-projects-cache.ts": { args: ["url"], reason: "browser projects reads from Cave" },
+  "src/lib/mobile-mode-reconcile.ts": { args: ["input"], reason: "browser shared-mode preference reconciliation with Cave" },
+  "src/lib/github-item-fetch.ts": { args: ["url"], reason: "browser reads Cave GitHub item proxy" },
+  "src/lib/use-github-pr.ts": { args: ["url"], reason: "browser reads Cave PR proxy" },
+  "src/lib/use-local-daemon-readiness.ts": { args: ["...args"], reason: "browser Cave daemon/status readiness helper" },
+  "src/lib/session-changes-api.ts": { args: ['changesUrl(projectRoot, { checkpoints: "1" })', 'changesUrl(projectRoot, { branches: "1" })', 'changesUrl(projectRoot, { path: filePath })'], reason: "browser Cave project session-change routes" },
+  "src/lib/composer-add-menu-data.ts": { args: ["url"], reason: "browser composer menu resources from Cave" },
+  "src/lib/executor-status.ts": { args: ["url"], reason: "Coven executor peer health protocol, separate from third-party providers" },
+  "src/lib/grok-compatibility.ts": { args: ["url"], reason: "injected signed-schema transport; production wrapper is runtime-compatibility-registry" },
+  "src/lib/opencode-compatibility.ts": { args: ["url"], reason: "injected signed-schema transport; production wrapper is runtime-compatibility-registry" },
+  "src/lib/cave-backdrop.ts": { args: ["familiarBackdropUrl(familiarId)", "familiarBackdropUrl(familiarId)"], reason: "browser familiar backdrop reads/writes through Cave" },
+  "src/lib/voice/local-loop.ts": { args: ["`${base}/v1/models`"], reason: "browser-delivered local voice provider readiness probe; keeps its own deadline" },
+  "src/lib/automations/revision-rebase.ts": { args: ["`${path}/definition`", "path"], reason: "browser automation revision reads/writes through Cave API" },
+  "src/lib/server/marketplace-payload.ts": { args: ["url"], reason: "separate size/hash-pinned marketplace artifact downloader; no provider-matrix acceptance claimed" },
+  "src/lib/server/upstream-fetch.ts": { args: ["input"], reason: "the registry's transport primitive itself" },
+  "src/lib/server/local-codex-backends.ts": { args: ["url"], reason: "separate local-model backend eligibility probes; no shared-ledger acceptance claimed" },
+};
+
+const callsByFile = new Map([...sources].map(([file, source]) => [file, networkCalls(source, file)]));
+const registeredCallers = new Set(UPSTREAM_APIS.flatMap(entry => [...entry.callers]));
+function unknownCalls(file: string, source: string): string[] {
+  if (registeredCallers.has(file)) return [];
+  const actual = networkCalls(source, file).filter(call => !call.internal).map(call => call.argument).sort();
+  const allowed = [...(CALL_BOUNDARIES[file]?.args ?? [])].sort();
+  return JSON.stringify(actual) === JSON.stringify(allowed) ? [] : [`${file}: network call inventory changed; register the caller or review a specific internal/separate-contract boundary (${actual.join(", ")})`];
+}
 
 function hostsIn(source: string): Set<string> {
   const hosts = new Set<string>();
@@ -136,7 +184,7 @@ test("every registry caller reaches its upstream through upstreamFetch, so detec
         problems.push(`${entry.id}: ${file} never calls upstreamFetch — route its ${entry.hosts.join("/") || "upstream"} call through src/lib/server/upstream-fetch.ts`);
         continue;
       }
-      if (RAW_FETCH.test(source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")) && !(file in RAW_FETCH_EXEMPT)) {
+      if (networkCalls(source, file).some(call => call.transport !== "upstream") && !(file in RAW_FETCH_EXEMPT)) {
         problems.push(`${entry.id}: ${file} still has a raw fetch beside upstreamFetch — route it through the primitive or add a RAW_FETCH_EXEMPT reason`);
       }
     }
@@ -162,4 +210,24 @@ test("the default RSS feed hosts are each owned by a registry entry", () => {
     const host = new URL(feed.url).host.toLowerCase();
     assert.ok(upstreamApiForHost(host), `feed ${feed.id} (${host}) has no registry entry`);
   }
+});
+
+
+test("new network callers fail independently of inline hosts or Node import spelling", () => {
+  assert.deepEqual([...sources].flatMap(([file, source]) => unknownCalls(file, source)), []);
+  for (const [file, boundary] of Object.entries(CALL_BOUNDARIES)) {
+    assert.ok(sources.has(file), `${file}: remove stale boundary`);
+    assert.ok(boundary.reason.trim(), `${file}: boundary needs provenance`);
+    assert.ok(callsByFile.get(file)?.length, `${file}: boundary no longer calls a transport`);
+  }
+  for (const source of [
+    'import { endpoint } from "./config"; export function GET() { return fetch(endpoint); }',
+    'import { request } from "node:https"; export function GET() { return request("https://api.github.com/user"); }',
+    'import { request as send } from "node:https"; export function GET() { return send(endpoint); }',
+    'const send = globalThis.fetch; export function GET() { return send(endpoint); }',
+  ]) {
+    assert.equal(unknownCalls("src/app/api/new-provider/route.ts", source).length, 1, source);
+  }
+  assert.deepEqual(unknownCalls("src/lib/browser-helper.ts", 'fetch("/api/preferences")'), []);
+  assert.equal(unknownCalls("src/lib/browser-helper.ts", 'fetch("//unregistered.invalid/path")').length, 1);
 });

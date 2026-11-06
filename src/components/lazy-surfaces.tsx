@@ -166,7 +166,8 @@ export const RailTerminalPanel = dynamic(
 
 export const OpenCovenSubmissionPage = dynamic(
   timed("submissions", () =>
-    import("@/components/opencoven-submission-page").then((m) => m.OpenCovenSubmissionPage),
+    // Resolves to the page or the absent page, decided at build time (#6401).
+    import("@opencoven/submissions-page").then((m) => m.OpenCovenSubmissionPage),
   ),
   { ssr: false, loading: SurfaceFallback },
 );

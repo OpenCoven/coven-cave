@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
-import { expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
+import { expectPatInvalid, expectRateLimited,expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
 
 const home = isolateCaveHome("github-reply-anomalies");
@@ -51,11 +51,6 @@ const reply = () =>
     }),
   );
 
-const githubError = (upstreamStatus: number) => (outcome: MatrixOutcome) => {
-  expectErrorStatus(502)(outcome, { kind: "http", status: upstreamStatus });
-  assert.equal((outcome.body as { error: string }).error, `github error (${upstreamStatus})`);
-};
-
 test("POST /api/github/reply across upstream anomalies", async (t) => {
   await runUpstreamAnomalyMatrix(t, {
     harness,
@@ -80,8 +75,8 @@ test("POST /api/github/reply across upstream anomalies", async (t) => {
     degraded: {
       "http-500": expectAmbiguousWrite,
       "http-502": expectAmbiguousWrite,
-      "auth-revoked": githubError(401),
-      "rate-limit": githubError(429),
+      "auth-revoked": expectPatInvalid,
+      "rate-limit": expectRateLimited,
       timeout: expectAmbiguousWrite,
       network: (outcome, anomaly) => {
         expectErrorStatus(502)(outcome, anomaly);

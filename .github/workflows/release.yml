@@ -446,7 +446,7 @@ jobs:
           node scripts/client-v1-release-smoke.mjs --origin "http://127.0.0.1:${COVEN_CAVE_PORT}"
 
   release-e2e:
-    name: Validate release E2E (${{ matrix.shard }}/8)
+    name: Validate release E2E (${{ matrix.shard }}/6)
     needs:
       - daemon-package
       - source-version
@@ -455,7 +455,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -476,7 +476,26 @@ jobs:
       # a stalled apt mirror can no longer cancel a release shard (#6290). The
       # pull is bounded and retried.
       - run: bash scripts/playwright-ci-image.sh pull
-      - run: bash scripts/playwright-ci-image.sh run pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
+      - name: Load evidence checker from the workflow revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          timeout --kill-after=5s 60s gh api \
+            "repos/$GITHUB_REPOSITORY/contents/scripts/playwright-ci-evidence.mjs?ref=$GITHUB_WORKFLOW_SHA" \
+            --jq .content | base64 --decode > "$RUNNER_TEMP/playwright-ci-evidence.mjs"
+      - run: node "$RUNNER_TEMP/playwright-ci-evidence.mjs" --shard=${{ matrix.shard }}/6 --workers=1
+
+      - name: Preserve Playwright execution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-evidence-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: playwright-evidence/
+          if-no-files-found: warn
+          retention-days: 7
 
   release-e2e-agentic:
     name: Validate release E2E (agentic)
@@ -507,7 +526,26 @@ jobs:
       # a stalled apt mirror can no longer cancel a release shard (#6290). The
       # pull is bounded and retried.
       - run: bash scripts/playwright-ci-image.sh pull
-      - run: bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+      - name: Load evidence checker from the workflow revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          timeout --kill-after=5s 60s gh api \
+            "repos/$GITHUB_REPOSITORY/contents/scripts/playwright-ci-evidence.mjs?ref=$GITHUB_WORKFLOW_SHA" \
+            --jq .content | base64 --decode > "$RUNNER_TEMP/playwright-ci-evidence.mjs"
+      - run: node "$RUNNER_TEMP/playwright-ci-evidence.mjs" tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+
+      - name: Preserve Playwright execution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-evidence-agentic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: playwright-evidence/
+          if-no-files-found: warn
+          retention-days: 7
 
   release-web-validation:
     name: Release web validated
