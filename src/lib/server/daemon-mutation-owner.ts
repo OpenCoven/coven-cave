@@ -29,6 +29,12 @@ export type DaemonMutationOutcome = { kind: DaemonMutationKind; code: string; se
 type DaemonMutationOwner = {
   inFlight: { kind: DaemonMutationKind; startedAt: number; promise: Promise<unknown> } | null;
   lastOutcome: DaemonMutationOutcome | null;
+  reconciliation: {
+    outcome: DaemonMutationOutcome;
+    startedAt: number;
+    promise: Promise<boolean>;
+    acceptedOutcome: DaemonMutationOutcome | null;
+  } | null;
 };
 
 declare global {
@@ -40,7 +46,17 @@ export const DAEMON_MUTATION_TIMEOUT_WINDOW_MS = 30_000;
 const TIMEOUT_CODE = "readiness_timeout";
 
 function owner(): DaemonMutationOwner {
-  return globalThis.__caveDaemonMutationOwner ??= { inFlight: null, lastOutcome: null };
+  return globalThis.__caveDaemonMutationOwner ??= { inFlight: null, lastOutcome: null, reconciliation: null };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 function canJoin(requested: DaemonMutationKind, inFlight: DaemonMutationKind): boolean {
@@ -80,30 +96,59 @@ export async function runDaemonMutation<T>(input: RunDaemonMutationInput<T>): Pr
     if (current < last.settledAt) last.settledAt = current;
     const elapsed = current - last.settledAt;
     if (elapsed < windowMs) {
-      if (await input.probeReady()) {
-        state.lastOutcome = { kind: input.kind, code: "ok", settledAt: now() };
-        return input.reconciled();
+      let reconciliation = state.reconciliation;
+      if (reconciliation?.outcome !== last) {
+        const proof = deferred<boolean>();
+        reconciliation = { outcome: last, startedAt: current, promise: proof.promise, acceptedOutcome: null };
+        // Reentrant callers must find the real shared proof before probe code runs.
+        state.reconciliation = reconciliation;
+        try {
+          input.probeReady().then(proof.resolve, proof.reject);
+        } catch (error) {
+          proof.reject(error);
+        }
       }
-      // The probe took time; another request may have been admitted meanwhile.
-      if (state.inFlight) {
-        const current = state.inFlight as { kind: DaemonMutationKind; promise: Promise<unknown> };
-        if (canJoin(input.kind, current.kind)) return current.promise as Promise<T>;
-        return input.refused({ code: "mutation_in_flight", inFlight: current.kind });
+      try {
+        const ready = await reconciliation.promise;
+        // Both positive and negative health results belong to the timeout we
+        // probed. Re-enter admission if another mutation ran while we waited;
+        // never settle or refuse using evidence from its predecessor.
+        if (state.inFlight || (state.lastOutcome !== last && state.lastOutcome !== reconciliation.acceptedOutcome)) {
+          return runDaemonMutation(input);
+        }
+        if (ready) {
+          if (!reconciliation.acceptedOutcome) {
+            reconciliation.acceptedOutcome = { kind: input.kind, code: "ok", settledAt: now() };
+            state.lastOutcome = reconciliation.acceptedOutcome;
+          }
+          return input.reconciled();
+        }
+        // Charge the probe's elapsed time to this timeout window. A negative
+        // answer after expiry must re-enter admission rather than extend it.
+        const completedAt = now();
+        if (completedAt < last.settledAt) last.settledAt = completedAt;
+        const remainingMs = windowMs - (completedAt - last.settledAt);
+        if (remainingMs <= 0) return runDaemonMutation(input);
+        return input.refused({
+          code: "duplicate_after_timeout",
+          retryAfterMs: remainingMs,
+          previous: last.kind,
+        });
+      } finally {
+        if (state.reconciliation === reconciliation) state.reconciliation = null;
       }
-      return input.refused({
-        code: "duplicate_after_timeout",
-        retryAfterMs: Math.max(1, windowMs - elapsed),
-        previous: last.kind,
-      });
     }
   }
 
+  const result = deferred<T>();
   const entry: NonNullable<DaemonMutationOwner["inFlight"]> = {
     kind: input.kind,
     startedAt: now(),
-    promise: Promise.resolve(),
+    promise: result.promise,
   };
-  const promise = (async () => {
+  // Publish the lane before invoking user code, including synchronous throws.
+  state.inFlight = entry;
+  void (async () => {
     try {
       const result = await input.run();
       state.lastOutcome = { kind: input.kind, code: input.outcome(result), settledAt: now() };
@@ -114,20 +159,22 @@ export async function runDaemonMutation<T>(input: RunDaemonMutationInput<T>): Pr
     } finally {
       if (state.inFlight === entry) state.inFlight = null;
     }
-  })();
-  entry.promise = promise;
-  state.inFlight = entry;
-  return promise;
+  })().then(result.resolve, result.reject);
+  return result.promise;
 }
 
 export function daemonMutationOwnerSnapshot(): {
   inFlight: { kind: DaemonMutationKind; startedAt: number } | null;
   lastOutcome: DaemonMutationOutcome | null;
+  reconciliation: { kind: DaemonMutationKind; startedAt: number } | null;
 } {
   const state = owner();
   return {
     inFlight: state.inFlight ? { kind: state.inFlight.kind, startedAt: state.inFlight.startedAt } : null,
     lastOutcome: state.lastOutcome ? { ...state.lastOutcome } : null,
+    reconciliation: state.reconciliation
+      ? { kind: state.reconciliation.outcome.kind, startedAt: state.reconciliation.startedAt }
+      : null,
   };
 }
 
