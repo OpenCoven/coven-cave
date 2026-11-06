@@ -174,14 +174,7 @@ Settings daemon card prefers that label over the availability fallback.
 | `misconfigured` | `Stopped` (no target) | Selected hub configuration is missing or invalid |
 | `unknown` | none | Cave home status could not be read; the daemon was not checked |
 
-Ordering is fixed: configuration and compatibility failures win over health,
-a deliberate stop wins over a still-answering endpoint, confirmed health wins
-over a start or recovery in flight (so `ready` is never downgraded to
-`starting` by a stale operation record), and an in-flight operation wins over
-an offline or unhealthy probe (a daemon still booting answers unhealthy).
-Each asynchronous probe reserves its lifecycle generation immediately before starting its health call, after configuration and executor-status waits, rather than when it completes. The generation records process-local probe admission order. A successful local probe records genuine readiness history even when a newer probe is pending or has completed; this history distinguishes recovery from a first start and does not replace current health. `mergeDaemonLifecycle` remains a pure comparison helper with no production caller, so it does not fence published responses. The connection broker's per-entry request guard fences its cache, and client request guards fence their own requests across server restarts; lifecycle generations provide no cross-process authority.
-`Handshaking` and `Degraded` are not projected: the handshake is folded into
-`starting`, and capability degradation is still reported per surface.
+Ordering is fixed: configuration and compatibility failures win over health, a deliberate stop wins over a still-answering endpoint, confirmed health wins over a start or recovery in flight (so `ready` is never downgraded to `starting` by a stale operation record), and an in-flight operation wins over an offline or unhealthy probe (a daemon still booting answers unhealthy). Each asynchronous probe reserves its lifecycle generation immediately before starting its health call, after configuration and executor-status waits, rather than when it completes. The generation records process-local probe admission order. A successful local probe records genuine readiness history even when a newer probe is pending or has completed; this history distinguishes recovery from a first start and does not replace current health. `mergeDaemonLifecycle` remains a pure comparison helper with no production caller, so it does not fence published responses. The connection broker's per-entry request guard fences its cache, and client request guards fence their own requests across server restarts; lifecycle generations provide no cross-process authority. `Handshaking` and `Degraded` are not projected: the handshake is folded into `starting`, and capability degradation is still reported per surface.
 
 The client reads the projection too. `classifyDaemonStatusPoll` returns
 `transitioning` for a local `starting`, `recovering` or `stopping` state, and
