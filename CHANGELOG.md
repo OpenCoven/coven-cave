@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changed
+- **Quick Chat says why Send is held** (#6421). When a message can't launch
+  until you choose a project, the composer says so under the message box,
+  screen readers hear it once, and the project picker is outlined. Choosing a
+  project keeps your draft and returns focus to it. `/` commands still send
+  without a project.
+- **Tidier Quick Chat tray** (#6421). The Enhance control matches the height of
+  Send on desktop; before, a phone-width rule made it 46px tall in the 580px
+  tray. "Open in CovenCave" appears once there is a conversation to open,
+  instead of sitting disabled. The footer chips are labelled (Model, Thinking, Speed),
+  and the empty thread lists its `@`, `/` and Enter shortcuts as keys.
+
 ### Fixed
 - **A Claude chat answers instead of failing outright** (#6419). No Coven
   release can yet limit Claude's file changes to your project grants, so a turn
