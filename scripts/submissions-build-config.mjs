@@ -9,6 +9,9 @@ export function submissionsBuildConfig(env = process.env) {
   return {
     included,
     aliases: {
+      '@opencoven/submissions-availability': included
+        ? './src/lib/server/opencoven-submissions-available.ts'
+        : './src/lib/server/opencoven-submissions-unavailable.ts',
       '@opencoven/submissions-runtime': included
         ? './src/lib/server/opencoven-submissions-runtime.ts'
         : './src/lib/server/opencoven-submissions-absent.ts',

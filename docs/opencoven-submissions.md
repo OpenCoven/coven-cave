@@ -79,13 +79,19 @@ routing, execution planner and form aren't in the artifact.
 rebuild with that flag, or the previous artifact; neither changes saved data.
 
 The routes stay in every build and answer through
-`src/lib/server/opencoven-submissions-host.ts`. Each refusal is a 503 with a
-stable `code`, after the proxy's usual authorization:
+`src/lib/server/opencoven-submissions-host.ts`. They are desktop-local, like
+the saved-data routes. Proxy authentication alone isn't enough: a phone or
+other remote request gets 403 `local_request_required` before anything else is
+checked, and a packaged app needs its sidecar token even from loopback. The
+host then checks, in order, whether the build includes Submissions, whether it
+is turned off, whether the implementation loads, and its contract version. It
+decides the first two from build-time metadata, without importing the
+implementation. Each of those refusals is a 503 with a stable `code`:
 
 | Code | Meaning |
 | --- | --- |
 | `submissions-not-installed` | This build has no implementation. |
-| `submissions-disabled` | `COVEN_CAVE_SUBMISSIONS_DISABLED=1`. Refused before the implementation loads. |
+| `submissions-disabled` | An included build with `COVEN_CAVE_SUBMISSIONS_DISABLED=1`. Refused before the implementation loads. |
 | `submissions-load-failed` | The implementation is in the build but couldn't load. Retrying is safe. |
 | `submissions-incompatible` | The implementation's contract version isn't the one this host supports. |
 

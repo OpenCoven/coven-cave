@@ -1,7 +1,8 @@
-import type { SubmissionsRoute } from "./opencoven-submissions-host.ts";
+import { submissionsAvailable } from "@opencoven/submissions-availability";
+import type { SubmissionsActivation } from "./opencoven-submissions-host.ts";
 
 /** Resolves to the implementation or the absent stub, decided at build time. */
-export const loadSubmissionsRuntime = (): Promise<{
-  submissionsContractVersion: number;
-  handleSubmissionsRequest: (route: SubmissionsRoute, request: Request) => Promise<Response>;
-}> => import("@opencoven/submissions-runtime");
+export const submissionsActivation: SubmissionsActivation = {
+  available: submissionsAvailable,
+  load: () => import("@opencoven/submissions-runtime"),
+};

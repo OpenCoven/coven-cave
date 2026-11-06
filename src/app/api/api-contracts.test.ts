@@ -299,8 +299,8 @@ const contracts: RouteContract[] = [
   { route: "/queue/prs", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/queue/readiness", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   // Thin hosts: the optional implementation reads the body, after admission.
-  { route: "/opencoven/executions", methods: ["POST"], kind: "json" },
-  { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json" },
+  { route: "/opencoven/executions", methods: ["POST"], kind: "json", localOriginGuard: true },
+  { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
   { route: "/opencoven/submissions/retained", methods: ["GET", "DELETE"], kind: "json", localOriginGuard: true },
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
   { route: "/opencoven-tools/status", methods: ["GET"], kind: "json" },
