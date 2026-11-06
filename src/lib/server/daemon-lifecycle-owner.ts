@@ -141,7 +141,8 @@ export function beginDaemonLifecycleObservation(): (input: DaemonLifecycleProbeI
 /**
  * Project the lifecycle for one probe result and record what it proves.
  * Asynchronous callers reserve a generation before probing. Completion keeps
- * that order, and superseded probes cannot change remembered readiness.
+ * that order. A successful local probe records readiness history even when
+ * a newer probe has started; that fact is not a replacement for current health.
  */
 export function observeDaemonLifecycle(
   input: DaemonLifecycleProbeInput,
@@ -161,7 +162,7 @@ export function observeDaemonLifecycle(
     reason: input.reason ?? null,
   };
   const projection = projectDaemonLifecycle(evidence);
-  if (generation === state.generation && projection.state === "ready" && local) state.lastReadyAt = now;
+  if (projection.state === "ready" && local) state.lastReadyAt = now;
   return {
     ...projection,
     generation,

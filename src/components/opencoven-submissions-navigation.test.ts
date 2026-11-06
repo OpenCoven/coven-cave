@@ -7,6 +7,7 @@ const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import
 const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const page = readFileSync(new URL("./opencoven-submission-page.tsx", import.meta.url), "utf8");
+const lazy = readFileSync(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
 
 // The mode + page remain (reachable programmatically), but Submissions is hidden
 // from the sidebar nav — it should no longer be listed as a Tools surface.
@@ -25,5 +26,9 @@ assert.match(workspace, /mode === "submissions" \?\s*\(\s*<OpenCovenSubmissionPa
 assert.match(page, /OpenCovenSubmissionPanel/, "Submission page should own the reusable submission panel");
 assert.match(page, /Submit once to OpenCoven/, "Submission page should state the corrected product flow");
 assert.doesNotMatch(page, /clawhub|openclaw/i, "Submission page must not point to external publishing paths");
+
+// The workspace reaches the page only through the build-time alias (#6401).
+assert.match(lazy, /import\("@opencoven\/submissions-page"\)/, "the page is resolved by the build alias");
+assert.doesNotMatch(lazy, /@\/components\/opencoven-submission-page/, "nothing imports the page directly");
 
 console.log("opencoven-submissions-navigation.test.ts: ok");

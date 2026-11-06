@@ -32,6 +32,15 @@
       "@opencoven/research-host/*": [
         "./src/lib/research-host/*"
       ],
+      "@opencoven/submissions-availability": [
+        "./src/lib/server/opencoven-submissions-available.ts"
+      ],
+      "@opencoven/submissions-runtime": [
+        "./src/lib/server/opencoven-submissions-runtime.ts"
+      ],
+      "@opencoven/submissions-page": [
+        "./src/components/opencoven-submission-page.tsx"
+      ],
       "@opencoven/research-runtime": [
         "./src/lib/server/research-package-absent.ts"
       ],

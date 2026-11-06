@@ -179,12 +179,7 @@ a deliberate stop wins over a still-answering endpoint, confirmed health wins
 over a start or recovery in flight (so `ready` is never downgraded to
 `starting` by a stale operation record), and an in-flight operation wins over
 an offline or unhealthy probe (a daemon still booting answers unhealthy).
-Each asynchronous probe reserves its lifecycle generation before awaiting
-health (and before loading the status snapshot on the status route), rather
-than when it completes. `mergeDaemonLifecycle` can therefore reject an older
-probe even when it finishes last. Superseded probes also cannot update the
-owner's remembered readiness. These generations are process-local; client
-request guards still fence requests across server restarts.
+Each asynchronous probe reserves its lifecycle generation immediately before starting its health call, after configuration and executor-status waits, rather than when it completes. The generation records process-local probe admission order. A successful local probe records genuine readiness history even when a newer probe is pending or has completed; this history distinguishes recovery from a first start and does not replace current health. `mergeDaemonLifecycle` remains a pure comparison helper with no production caller, so it does not fence published responses. The connection broker's per-entry request guard fences its cache, and client request guards fence their own requests across server restarts; lifecycle generations provide no cross-process authority.
 `Handshaking` and `Degraded` are not projected: the handshake is folded into
 `starting`, and capability degradation is still reported per surface.
 
@@ -204,13 +199,7 @@ and the real-owner broker test in `daemon-connection-snapshot.test.ts`.
 
 ### One mutation owner (#6298, slice 2)
 
-Timeout reconciliation rechecks the current mutation and outcome after its
-health probe, for both positive and negative answers. A stale answer joins or
-refuses the current mutation, or re-enters admission after that mutation has
-settled; it cannot overwrite the newer result. The lane is installed before
-invoking mutation code, so even a synchronous exception releases it. These
-races are covered by `daemon-mutation-owner.behavior.test.ts`. Requests for
-the same timed-out attempt share one reconciliation probe and result.
+Timeout reconciliation rechecks the current mutation and outcome after its health probe, for both positive and negative answers. A stale answer joins or refuses the current mutation, or re-enters admission after that mutation has settled; it cannot overwrite the newer result. Requests for the same timed-out attempt share only the health proof, and each requester builds its own reconciled or refused response. Negative answers charge the probe's elapsed time to the timeout window and re-enter admission when it expires. The real joinable promise is installed before mutation code runs synchronously, so reentrant requests join it and synchronous exceptions release it. The owner snapshot exposes an in-flight reconciliation's kind and start time, or explicit null. These races are covered by `daemon-mutation-owner.behavior.test.ts`.
 
 `src/lib/server/daemon-mutation-owner.ts` admits every start, automatic
 recovery and restart before anything spawns, kicks launchd or stops a daemon;

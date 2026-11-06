@@ -249,3 +249,53 @@ test("generated snapshots persist only the bounded diagnostic contract", () => {
 });
 
 console.log("onboarding-diagnostics.test.ts: ok");
+
+test("service startup facts survive normalization without raw process data", () => {
+  const service = {
+    code: "owner_unreachable",
+    launchMode: "none",
+    readinessAttempts: 2,
+    elapsedMs: 2500,
+    exitCode: null,
+    error: "token=PRIVATE /Users/val/private",
+    stderr: "PRIVATE",
+  };
+  const snapshot = createOnboardingSetupDiagnostics({
+    stage: "daemon",
+    code: "local_service_failed",
+    service,
+  });
+  const persisted = normalizePersistedOnboardingSetupDiagnostics(snapshot)!;
+  assert.deepEqual(persisted.service, {
+    code: "owner_unreachable", launchMode: "none",
+    readinessAttempts: 2, elapsedMs: 2500, exitCode: null,
+  });
+  assert.doesNotMatch(JSON.stringify(persisted), /PRIVATE|Users/);
+  assert.match(persisted.nextStep, /owner/i);
+});
+
+test("service facts reject untrusted codes and numeric values", () => {
+  const base = createOnboardingSetupDiagnostics({ stage: "daemon", code: "local_service_failed" });
+  const normalized = normalizePersistedOnboardingSetupDiagnostics({
+    ...base, service: { code: "address_in_use", launchMode: "/Users/private", elapsedMs: -1, readinessAttempts: Infinity, exitCode: 1.5 },
+  })!;
+  assert.deepEqual(normalized.service, { code: "address_in_use", launchMode: "none", elapsedMs: null, readinessAttempts: null, exitCode: null });
+  assert.match(normalized.nextStep, /socket or port/);
+  assert.equal(normalizePersistedOnboardingSetupDiagnostics({ ...base, service: { code: "secret" } })!.service, undefined);
+});
+
+test("copied service report retains failure facts and supports legacy reports", async () => {
+  const { formatOnboardingSetupDiagnostics } = await import("../../components/onboarding-setup-diagnostics.tsx");
+  const base = { stage: "daemon", code: "local_service_failed" } as const;
+  const report = formatOnboardingSetupDiagnostics(createOnboardingSetupDiagnostics({
+    ...base,
+    service: { code: "runner_exited", launchMode: "direct", readinessAttempts: 3, elapsedMs: 15000, exitCode: 1 },
+  }));
+  assert.match(report, /Service failure code: runner_exited/);
+  assert.match(report, /Service launch mode: direct/);
+  assert.match(report, /Service readiness attempts: 3/);
+  assert.match(report, /Service elapsed ms: 15000/);
+  assert.match(report, /Service exit code: 1/);
+  assert.match(report, /Next step: .*launcher exited/);
+  assert.doesNotMatch(formatOnboardingSetupDiagnostics(createOnboardingSetupDiagnostics(base)), /Service failure code/);
+});
