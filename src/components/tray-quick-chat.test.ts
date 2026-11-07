@@ -164,8 +164,61 @@ assert.match(
 );
 assert.match(
   component,
-  /selectedFamiliar \? \([\s\S]{0,700}?quick-chat-meta-chips[\s\S]{0,900}?\) : \(\s*\n\s*<p className="min-w-0 truncate text-xs text-\[var\(--fg-muted\)\]">\s*\n\s*@id switches familiars · \{platformizeHint\("⌘N new chat", keys\)\}/,
+  // Window widened from 900 for the labelled chips (#6421): each chip now
+  // carries a key span ("Model") and a separately truncating value span.
+  /selectedFamiliar \? \([\s\S]{0,700}?quick-chat-meta-chips[\s\S]{0,1400}?\) : \(\s*\n\s*<p className="min-w-0 truncate text-xs text-\[var\(--fg-muted\)\]">\s*\n\s*@id switches familiars · \{platformizeHint\("⌘N new chat", keys\)\}/,
   "once a familiar is chosen, the composer hint area shows negotiated capabilities (e.g. Thinking) plus Model as quiet meta chips; the @id switch hint remains for the unpicked state",
+);
+// #6421: each chip names what it shows ("Model Auto", "Thinking High"), so an
+// unexplained "auto" pill never reads as a toggle.
+assert.match(
+  component,
+  /<span className="quick-chat-meta-chip__key">Model<\/span>\s*\n\s*<span className="quick-chat-meta-chip__value">\{modelLabel\}<\/span>/,
+  "the model chip shows a visible Model key beside its value",
+);
+assert.match(
+  component,
+  /<span className="quick-chat-meta-chip__key">\{controlChipLabel\(capability\)\}<\/span>/,
+  "capability chips show their own key (Thinking, Speed) beside the value",
+);
+// #6421: before the first reply there is no chat to open, so the hand-off
+// button waits for a session instead of sitting permanently disabled.
+assert.match(
+  component,
+  /\{sessionId \? \(\s*\n\s*<IconButton\s*\n\s*icon="ph:arrow-square-out"/,
+  "Open in CovenCave appears once a session exists",
+);
+assert.doesNotMatch(
+  component,
+  /disabled=\{!sessionId\}/,
+  "Open in CovenCave is never rendered as a dead disabled control",
+);
+// #6421: the composer names why a typed message is held, and the project
+// picker it is waiting on is marked and described by that same reason.
+assert.match(
+  component,
+  /launchBlockedReason=\{projectLaunchMessage\}/,
+  "the tray hands the hook's launch reason to the composer",
+);
+assert.match(
+  component,
+  /projectAttention=\{projectAttention\}\s*\n\s*projectHintId=\{quickChatSendHintId\(inputId\)\}/,
+  "the project picker is marked and described by the composer's send-blocked reason",
+);
+assert.match(
+  component,
+  /launchBlockedReason=\{projectLaunchMessage\}\s*\n\s*onSendBlockedChange=\{setProjectAttention\}/,
+  "the picker's attention follows the composer's own held-send state (text or staged files), not a re-derived text-only predicate",
+);
+assert.doesNotMatch(
+  component,
+  /const projectAttention =/,
+  "the tray must not re-derive the held-send predicate; attachment-only drafts and the reading/disabled states would drift from the rendered hint",
+);
+assert.match(
+  component,
+  /setSelectedProjectRoot\(root\);\s*\n\s*requestAnimationFrame\(\(\) => composerRef\.current\?\.focus\(\)\);/,
+  "choosing a project hands focus back to the waiting message",
 );
 assert.match(
   component,

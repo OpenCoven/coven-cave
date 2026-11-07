@@ -1,0 +1,72 @@
+/* Quick Chat details shared by the tray and notch panes (#6421).
+ * Component-imported by quick-chat-controls.tsx, after cave-composer.css, so
+ * only /quick-chat pays for it and its overrides land later in the cascade. */
+
+/* ── Enhance matches Send on a fine pointer ──────────────────────────────────
+ * cave-composer.css grows the Enhance segments to the 44px touch target below
+ * 768px. The desktop tray is a roughly 580px window driven by a mouse, so that
+ * phone rule made Enhance nearly twice the height of the 26px Send beside it.
+ * On a fine pointer, roll back to the component's own size="sm" utilities
+ * (the layered h-[26px]); coarse pointers keep the touch target. */
+@media (pointer: fine) {
+  .quick-chat-overlay__actions .composer-enhance-control__segment {
+    height: revert-layer;
+    min-width: revert-layer;
+  }
+}
+
+/* ── Why Send is held ────────────────────────────────────────────────────────
+ * A draft exists but the launch gate (no project yet, access still loading)
+ * holds it. The reason sits directly above the actions row and describes
+ * Send, the message field and the project picker. */
+.quick-chat-send-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.quick-chat-send-hint > svg {
+  flex-shrink: 0;
+  color: var(--accent-presence);
+}
+
+/* The project picker is the next step while a draft waits on it. The visible
+ * reason above carries the meaning; this ring only points at the control. */
+.quick-chat-select--attention {
+  border-color: var(--accent-presence);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}
+
+/* ── Empty-state keyboard hints ──────────────────────────────────────────────
+ * Each hint is one unbreakable unit, so a narrow window wraps between hints,
+ * never inside one. The keycaps reuse the reply strip's .quick-chat-reco__kbd. */
+.quick-chat-empty__keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-1) var(--space-3);
+}
+.quick-chat-empty__key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+/* ── Composer meta chips name what they show ─────────────────────────────────
+ * "auto" alone read as an unexplained toggle; a key ("Model") makes each chip
+ * self-describing, and the value truncates on its own. The key keeps the chip's
+ * secondary text and the value steps up to primary. Not --text-muted for the
+ * key: that is foreground at 72-76%, brighter than --text-secondary in Coven
+ * dark, which would make the label outshine its value. */
+.quick-chat-meta-chip__key {
+  margin-inline-end: var(--space-1);
+}
+.quick-chat-meta-chip__value {
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
