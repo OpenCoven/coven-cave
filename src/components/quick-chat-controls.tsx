@@ -239,6 +239,7 @@ export function QuickChatComposer({
   disabled,
   launchReady = true,
   launchBlockedReason,
+  onSendBlockedChange,
   familiar,
   inputId,
   composerRef,
@@ -274,6 +275,10 @@ export function QuickChatComposer({
    *  beside Send once there is something to send, so a disabled Send (and an
    *  Enter that does nothing) is never left unexplained. */
   launchBlockedReason?: string | null;
+  /** Reports whether that reason is showing — text or staged files held by the
+   *  launch gate — so the project picker can point at the same hint without
+   *  re-deriving the composer's send predicate (attachments, reading, disabled). */
+  onSendBlockedChange?: (blocked: boolean) => void;
   familiar: Familiar | null;
   inputId: string;
   composerRef?: React.RefObject<HTMLTextAreaElement | null>;
@@ -601,6 +606,10 @@ export function QuickChatComposer({
     }
     announcedBlockRef.current = sendBlockedReason;
   }, [announce, sendBlockedReason]);
+  const sendBlocked = sendBlockedReason !== null;
+  useEffect(() => {
+    onSendBlockedChange?.(sendBlocked);
+  }, [onSendBlockedChange, sendBlocked]);
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // The inline slash menus (Esc-dismiss, ↑↓/Tab/Enter across the pickers)

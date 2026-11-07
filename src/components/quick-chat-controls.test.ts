@@ -659,6 +659,11 @@ assert.match(
   );
   assert.match(
     source,
+    /const sendBlocked = sendBlockedReason !== null;\s*\n\s*useEffect\(\(\) => \{\s*\n\s*onSendBlockedChange\?\.\(sendBlocked\);\s*\n\s*\}, \[onSendBlockedChange, sendBlocked\]\);/,
+    "the composer reports exactly the held state that renders the hint, so the project picker can follow it",
+  );
+  assert.match(
+    source,
     /className=\{projectAttention \? "flex-1 quick-chat-select--attention" : "flex-1"\}\s*\n\s*ariaDescribedBy=\{projectAttention \? projectHintId : undefined\}/,
     "the project picker is marked and described while a draft waits on it",
   );

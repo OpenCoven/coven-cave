@@ -141,6 +141,62 @@ test("a starter waiting on a project names why, then sends after the pick", asyn
   await expect(pane.locator(".quick-chat-turn--familiar").last()).toContainText("Two reviews are waiting on you.");
 });
 
+test("an attachment-only message held on a project points the picker at the same hint", async ({ page }) => {
+  const { sends } = await seed(page);
+  const { pane, message } = await openQuickChat(page);
+  const send = pane.getByRole("button", { name: "Send", exact: true });
+  const projectPicker = page.getByRole("button", { name: "Project", exact: true });
+  const hint = pane.locator(".quick-chat-send-hint");
+
+  // Hold the text read open so the in-between "reading" state is observable.
+  await page.evaluate(() => {
+    const slice = File.prototype.slice;
+    File.prototype.slice = function (...args: Parameters<typeof slice>) {
+      const blob = slice.apply(this, args);
+      blob.text = () => new Promise((resolve) => {
+        window.addEventListener("release-attachment-read", () => resolve("Evidence"), { once: true });
+      });
+      return blob;
+    };
+  });
+  await expect(message).toHaveValue("");
+  await message.evaluate((element) => {
+    const data = new DataTransfer();
+    data.items.add(new File(["Evidence"], "notes.txt", { type: "text/plain" }));
+    element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
+  });
+
+  // Still reading: nothing can send yet, so neither the hint nor the picker's
+  // description exists — the picker never points at a hint that isn't there.
+  await expect(pane.getByRole("status").filter({ hasText: "Reading attachments…" })).toBeVisible();
+  await expect(send).toBeDisabled();
+  await expect(hint).toHaveCount(0);
+  await expect(projectPicker).not.toHaveClass(/quick-chat-select--attention/);
+  await expect(projectPicker).not.toHaveAttribute("aria-describedby", /.+/);
+
+  // Read settles: a file with no text is something to send, held by the
+  // project gate — the hint shows and the picker is marked and described by it.
+  await page.evaluate(() => window.dispatchEvent(new Event("release-attachment-read")));
+  const remove = pane.getByRole("button", { name: "Remove notes.txt", exact: true });
+  await expect(remove).toBeVisible();
+  await expect(message).toHaveValue("");
+  await expect(hint).toHaveText(HELD_REASON);
+  const hintId = await hint.getAttribute("id");
+  expect(hintId).toBeTruthy();
+  await expect(send).toBeDisabled();
+  await expect(send).toHaveAttribute("aria-describedby", hintId!);
+  await expect(projectPicker).toHaveAttribute("aria-describedby", hintId!);
+  await expect(projectPicker).toHaveClass(/quick-chat-select--attention/);
+
+  // Removing the only file leaves nothing to send: hint and attention go together.
+  await remove.click();
+  await expect(remove).toHaveCount(0);
+  await expect(hint).toHaveCount(0);
+  await expect(projectPicker).not.toHaveClass(/quick-chat-select--attention/);
+  await expect(projectPicker).not.toHaveAttribute("aria-describedby", /.+/);
+  expect(sends).toHaveLength(0);
+});
+
 test("the footer shows only controls that can act and names its chips", async ({ page }) => {
   await seed(page);
   const { pane, message } = await openQuickChat(page);

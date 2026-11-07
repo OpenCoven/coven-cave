@@ -207,6 +207,16 @@ assert.match(
 );
 assert.match(
   component,
+  /launchBlockedReason=\{projectLaunchMessage\}\s*\n\s*onSendBlockedChange=\{setProjectAttention\}/,
+  "the picker's attention follows the composer's own held-send state (text or staged files), not a re-derived text-only predicate",
+);
+assert.doesNotMatch(
+  component,
+  /const projectAttention =/,
+  "the tray must not re-derive the held-send predicate; attachment-only drafts and the reading/disabled states would drift from the rendered hint",
+);
+assert.match(
+  component,
   /setSelectedProjectRoot\(root\);\s*\n\s*requestAnimationFrame\(\(\) => composerRef\.current\?\.focus\(\)\);/,
   "choosing a project hands focus back to the waiting message",
 );
