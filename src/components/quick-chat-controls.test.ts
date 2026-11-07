@@ -697,6 +697,16 @@ assert.match(
     /@media \(pointer: fine\) \{\s*\n\s*\.quick-chat-overlay__actions \.composer-enhance-control__segment \{\s*\n\s*height: revert-layer;\s*\n\s*min-width: revert-layer;/,
     "on a fine pointer the narrow tray keeps Enhance at Send's height instead of the phone touch target",
   );
+  assert.match(
+    quickChatCss,
+    /\.quick-chat-meta-chip__value \{\s*\n\s*color: var\(--text-primary\);/,
+    "a footer chip's value outranks its key in every palette",
+  );
+  assert.doesNotMatch(
+    quickChatCss,
+    /\.quick-chat-meta-chip__key \{[^}]*--text-muted/,
+    "--text-muted is brighter than the chip's --text-secondary in Coven dark, so it would make the key outshine the value",
+  );
 }
 
 // ── #6421: empty-state keyboard hints ───────────────────────────────────────

@@ -56,13 +56,16 @@
 }
 
 /* ── Composer meta chips name what they show ─────────────────────────────────
- * "auto" alone read as an unexplained toggle; a muted key ("Model") makes each
- * chip self-describing, and the value truncates on its own. */
+ * "auto" alone read as an unexplained toggle; a key ("Model") makes each chip
+ * self-describing, and the value truncates on its own. The key keeps the chip's
+ * secondary text and the value steps up to primary. Not --text-muted for the
+ * key: that is foreground at 72-76%, brighter than --text-secondary in Coven
+ * dark, which would make the label outshine its value. */
 .quick-chat-meta-chip__key {
   margin-inline-end: var(--space-1);
-  color: var(--text-muted);
 }
 .quick-chat-meta-chip__value {
+  color: var(--text-primary);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

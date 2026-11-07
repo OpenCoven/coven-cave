@@ -197,6 +197,81 @@ test("an attachment-only message held on a project points the picker at the same
   expect(sends).toHaveLength(0);
 });
 
+// Design language §9: the new hint, the picker's attention ring and the
+// labelled chips must hold in dark and light and on a non-default palette.
+const PALETTES: ReadonlyArray<{ theme: string; mode: "dark" | "light" }> = [
+  { theme: "coven", mode: "dark" },
+  { theme: "coven", mode: "light" },
+  { theme: "tide", mode: "dark" },
+  { theme: "ember", mode: "light" },
+];
+
+test("the held hint, picker attention and chips stay legible across palettes", async ({ page }, testInfo) => {
+  await seed(page);
+  await page.setViewportSize({ width: 580, height: 640 });
+  const { pane } = await openQuickChat(page);
+  await pane.getByRole("button", { name: "Summarize what needs my attention", exact: true }).click();
+  await expect(pane.locator(".quick-chat-send-hint")).toHaveText(HELD_REASON);
+  await expect(page.locator(".quick-chat-select--attention")).toBeVisible();
+
+  for (const { theme, mode } of PALETTES) {
+    await page.evaluate(({ theme, mode }) => {
+      document.documentElement.setAttribute("data-theme", theme);
+      document.documentElement.setAttribute("data-mode", mode);
+      window.dispatchEvent(new CustomEvent("cave:theme-changed", { detail: { themeId: theme, mode } }));
+    }, { theme, mode });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
+    const contrast = await page.evaluate(() => {
+      const rgba = (color: string) => {
+        const context = document.createElement("canvas").getContext("2d")!;
+        context.fillStyle = "#000";
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+        return [r, g, b, a / 255];
+      };
+      // Composite every translucent layer from the root down to the element.
+      const backdrop = (element: Element) => {
+        const chain: Element[] = [];
+        for (let node: Element | null = element; node; node = node.parentElement) chain.unshift(node);
+        return chain.reduce((under, node) => {
+          const [r, g, b, a] = rgba(getComputedStyle(node).backgroundColor);
+          return [r * a + under[0] * (1 - a), g * a + under[1] * (1 - a), b * a + under[2] * (1 - a)];
+        }, [255, 255, 255]);
+      };
+      const luminance = ([r, g, b]: number[]) => {
+        const channel = (value: number) => {
+          const v = value / 255;
+          return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+        };
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+      };
+      const ratio = (selector: string, property: "color" | "borderTopColor") => {
+        const element = document.querySelector(selector)!;
+        const under = backdrop(element);
+        const [r, g, b, a] = rgba(getComputedStyle(element)[property]);
+        const over = [r * a + under[0] * (1 - a), g * a + under[1] * (1 - a), b * a + under[2] * (1 - a)];
+        const [light, dark] = [luminance(over), luminance(under)].sort((x, y) => y - x);
+        return (light + 0.05) / (dark + 0.05);
+      };
+      return {
+        hint: ratio(".quick-chat-send-hint", "color"),
+        attention: ratio(".quick-chat-select--attention", "borderTopColor"),
+        chipKey: ratio(".quick-chat-meta-chip__key", "color"),
+        chipValue: ratio(".quick-chat-meta-chip__value", "color"),
+      };
+    });
+    const label = `${theme}/${mode}`;
+    expect(contrast.hint, `${label}: hint text`).toBeGreaterThanOrEqual(4.5);
+    expect(contrast.attention, `${label}: attention border (non-text)`).toBeGreaterThanOrEqual(3);
+    expect(contrast.chipKey, `${label}: chip key`).toBeGreaterThanOrEqual(4.5);
+    expect(contrast.chipValue, `${label}: chip value outranks its key`).toBeGreaterThan(contrast.chipKey);
+    await testInfo.attach(`palette-${theme}-${mode}`, { body: await page.screenshot({ animations: "disabled" }), contentType: "image/png" });
+    await testInfo.attach(`palette-${theme}-${mode}-contrast`, { body: JSON.stringify(contrast), contentType: "application/json" });
+  }
+});
+
 test("the footer shows only controls that can act and names its chips", async ({ page }) => {
   await seed(page);
   const { pane, message } = await openQuickChat(page);
