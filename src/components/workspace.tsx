@@ -1706,6 +1706,7 @@ export function Workspace() {
   }, [selectedWorkspaceProjectId, projectCrewRecords, projectCrewLoadedSuccessfully, scopeIds]);
 
   useEffect(() => {
+    // Legacy events only open the inert retirement/history-export notice.
     const openSalem = () => {
       const request = normalizeWorkspacePaneRequest(nextPaneInstanceId(), "salem");
       if (request) addSplitTarget(request);
@@ -4770,7 +4771,7 @@ export function Workspace() {
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
     ) : mode === "salem" ? (
-      <AskSalemView familiars={familiars} activeFamiliarId={activeId} />
+      <AskSalemView />
     ) : (
       <HomeComposer
         familiars={resolvedFamiliars}

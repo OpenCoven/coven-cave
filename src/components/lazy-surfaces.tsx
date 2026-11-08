@@ -179,15 +179,8 @@ export const RailInspector = dynamic(
   { ssr: false, loading: SurfaceFallback },
 );
 
-export const SalemChatPanel = dynamic(
-  timed("salem", () =>
-    import("@/components/salem/salem-widget").then((m) => m.SalemChatPanel),
-  ),
-  { ssr: false, loading: SurfaceFallback },
-);
-
 export const AskSalemView = dynamic(
-  timed("ask-salem", () =>
+  timed("salem-retired", () =>
     import("@/components/salem/ask-salem-view").then((m) => m.AskSalemView),
   ),
   { ssr: false, loading: SurfaceFallback },
