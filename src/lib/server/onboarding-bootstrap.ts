@@ -17,6 +17,7 @@ import {
   type OnboardingBootstrapStageId,
   type OnboardingBootstrapState,
   type OnboardingSetupFailureCode,
+  type OnboardingSetupDiagnostics,
 } from "@/lib/onboarding-bootstrap";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
 import {
@@ -125,14 +126,15 @@ export function safePersistedState(
       : persistedCode;
   const matchedDiagnostics = diagnostics?.code === code ? diagnostics : null;
   const copy = onboardingFailureCopy(code);
+  const nextStep = matchedDiagnostics?.nextStep ?? copy.nextStep;
   const failure = state.failure && definition
     ? {
         stage: definition.id,
         stageLabel: definition.label,
-        message: `Setup stopped at ${definition.label}. ${copy.summary} ${copy.nextStep}`,
+        message: `Setup stopped at ${definition.label}. ${copy.summary} ${nextStep}`,
         recoveryLabel: "Retry setup" as const,
         code,
-        nextStep: copy.nextStep,
+        nextStep,
         ...(matchedDiagnostics ? { diagnostics: matchedDiagnostics } : {}),
       }
     : null;
@@ -275,10 +277,16 @@ async function inspectDaemonReady(): Promise<boolean> {
   return result.ok && result.data?.ok !== false;
 }
 
-async function ensureDaemon(
+export async function ensureDaemon(
   onProgress: (detail: string) => Promise<void>,
+  dependencies = {
+    inspectReady: inspectDaemonReady,
+    start: startLocalDaemon,
+    inspectTools: inspectOnboardingCoreTools,
+    inspectDirectory: async () => (await stat(caveHome())).isDirectory(),
+  },
 ): Promise<OnboardingBootstrapStageResult> {
-  if (await inspectDaemonReady()) {
+  if (await dependencies.inspectReady()) {
     return {
       ok: true,
       skipped: true,
@@ -286,10 +294,17 @@ async function ensureDaemon(
     };
   }
   await onProgress("Starting Cave’s local service…");
-  const result = await startLocalDaemon({ automatic: true });
+  const result = await dependencies.start({ automatic: true });
   if (!result.ok) {
+    const [tools, exists] = await Promise.all([
+      dependencies.inspectTools().catch(() => null),
+      dependencies.inspectDirectory().catch(() => null),
+    ]);
     return setupStageFailure("daemon", "local_service_failed", {
       localService: "not_ready",
+      service: result,
+      components: tools?.components,
+      applicationData: { exists, writeProbe: "not_run" },
     });
   }
   return {
@@ -308,6 +323,8 @@ function setupStageFailure(
       writeProbe: "passed" | "failed" | "not_run";
     };
     localService?: "not_ready";
+    service?: unknown;
+    components?: Partial<OnboardingSetupDiagnostics["components"]>;
   } = {},
 ): Extract<OnboardingBootstrapStageResult, { ok: false }> {
   const definition = ONBOARDING_BOOTSTRAP_STAGES.find(
@@ -323,15 +340,17 @@ function setupStageFailure(
     components: {
       managedNode: "unknown",
       covenCli: "unknown",
+      ...options.components,
       localService: options.localService ?? "not_checked",
     },
+    service: options.service,
   });
   return {
     ok: false,
     code,
-    nextStep: copy.nextStep,
+    nextStep: diagnostics.nextStep,
     diagnostics,
-    message: `Setup stopped at ${definition.label}. ${copy.summary} ${copy.nextStep}`,
+    message: `Setup stopped at ${definition.label}. ${copy.summary} ${diagnostics.nextStep}`,
   };
 }
 

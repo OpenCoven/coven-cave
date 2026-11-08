@@ -1,4 +1,4 @@
-import { classifyDaemonStatusPoll } from "./daemon-status-classification.ts";
+import { classifyDaemonStatusPoll, DAEMON_STATUS_READ_TIMEOUT_REASON } from "./daemon-status-classification.ts";
 import {
   classifyDaemonConnectionFailure,
   type DaemonReliabilityMeasurementInput,
@@ -246,7 +246,7 @@ export function createDaemonConnectionSupervisor<Handle = TimerHandle>(
         if (settled) return;
         // Settle before aborting so a transport's AbortError cannot hide the
         // timeout. Authority is fenced by activeRequest/generation, not signal.
-        finish(fallbackUnavailablePoll("status request timed out"));
+        finish(fallbackUnavailablePoll(DAEMON_STATUS_READ_TIMEOUT_REASON));
         request.controller.abort();
       }, STATUS_READ_TIMEOUT_MS);
       const failed = () => finish(signal.aborted ? null : fallbackUnavailablePoll());

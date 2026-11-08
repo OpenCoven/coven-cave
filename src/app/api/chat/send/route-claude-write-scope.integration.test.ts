@@ -17,11 +17,12 @@ Object.assign(process.env, {
 });
 if (process.platform === "win32") { process.env.USERPROFILE = home; delete process.env.Path; }
 delete process.env.COVEN_SOCKET;
-const legacy = process.argv.includes("legacy");
+const noPermission = process.argv.includes("no-permission");
+const legacy = noPermission || process.argv.includes("legacy");
 const script = `const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args.includes('--version')) { console.log('2.1.316 (Claude Code)'); process.exit(0); }
-if (args.includes('--help')) { console.log('--model --permission --add-dir ${legacy ? "" : "--write-scope <FILE>"} --output-format stream-json'); process.exit(0); }
+if (args.includes('--help')) { console.log('--model ${noPermission ? "" : "--permission"} --add-dir ${legacy ? "" : "--write-scope <FILE>"} --output-format stream-json'); process.exit(0); }
 if (args[0] === 'adapter') { console.log('[]'); process.exit(0); }
 if (args[0] !== 'run') process.exit(0);
 const index = args.indexOf('--write-scope');
@@ -60,16 +61,45 @@ const send = async (extra={}) => {
   return { status:response.status,body,events,done:events.findLast(e=>e.kind==="done") };
 };
 const calls = async () => (await readFile(log,"utf8")).trim().split("\n").map(line=>JSON.parse(line));
-if (legacy) {
-  const result = await send();
+if (noPermission) {
+  // Neither boundary is available, so asking for the fallback changes nothing.
+  const result = await send({allowReadOnlyFallback:true});
   assert.equal(result.status,200,result.body);
-  assert.ok(result.events.some(e=>e.kind === "error" && e.code === "scoped_write_unavailable"),result.body);
-  await assert.rejects(access(log),"unsupported runtime must never receive a model launch");
+  const refusal = result.events.find(e=>e.kind === "error" && e.code === "scoped_write_unavailable");
+  assert.ok(refusal,result.body);
+  assert.match(refusal.message,/Update Coven/);
+  await assert.rejects(access(log),"a runtime that can enforce neither boundary must never launch");
+} else if (legacy) {
+  // Unattended callers don't opt in: a run that can't edit must not report success.
+  const refused = await send();
+  assert.equal(refused.status,200,refused.body);
+  const refusal = refused.events.find(e=>e.kind === "error" && e.code === "scoped_write_unavailable");
+  assert.ok(refusal,refused.body);
+  assert.doesNotMatch(refusal.message,/Update Coven/,"no released Coven has the flag, so updating can't help");
+  assert.match(refusal.message,/Read-only/);
+  await assert.rejects(access(log),"a caller that didn't opt in must never receive a model launch");
+  // A person watching the chat gets the narrower turn and is told about it.
+  const result = await send({allowReadOnlyFallback:true});
+  assert.equal(result.status,200,result.body);
+  assert.ok(!result.events.some(e=>e.kind === "error"),result.body);
+  assert.equal(result.done?.isError,false,result.body);
+  const launches = await calls();
+  assert.equal(launches.length,1);
+  const {argv} = launches[0];
+  assert.equal(argv[argv.indexOf("--permission")+1],"read-only","the fallback must enforce Read-only");
+  assert.ok(!argv.includes("--write-scope"));
+  const notice = result.events.find(e=>e.kind === "progress" && e.id === "runtime-write-scope-read-only");
+  assert.equal(notice?.status,"notice",result.body);
+  assert.match(notice.detail,/can read but not edit/);
+  const saved = await loadConversation(result.done.sessionId);
+  assert.ok(saved?.turns.some(turn=>turn.progress?.some(p=>p.id==="runtime-write-scope-read-only")),"the notice survives reload");
 } else {
-  const first = await send();
+  const first = await send({allowReadOnlyFallback:true});
   assert.equal(first.status,200,first.body);
   let launches = await calls();
   const scope = launches[0].scope;
+  assert.ok(!launches[0].argv.includes("--permission"),"a Coven with the flag keeps Full access even when the fallback is allowed");
+  assert.ok(!first.events.some(e=>e.kind==="progress"&&e.id==="runtime-write-scope-read-only"),first.body);
   assert.ok(scope,"the real route must forward a separate scope document");
   assert.equal(scope.writableRoots.length,2);
   assert.ok(scope.writableRoots.some(p=>p.endsWith(path.join("read","write"))));

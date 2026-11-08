@@ -476,6 +476,11 @@ type SendBody = {
    *  only when the installed CLI advertises it; "full" is left implicit so the
    *  harness keeps its default sandbox rather than being widened. */
   permissionMode?: string;
+  /** Lets a Claude turn in Full access run Read-only, with a visible notice,
+   *  when Coven can't apply a write scope. Only a chat someone is watching
+   *  sets this: an unattended run that can't edit must not report success. It
+   *  can only narrow access, never widen it (#6419). */
+  allowReadOnlyFallback?: boolean;
   /** Composer Host chip: "local" or a REGISTERED ssh host id from /api/hosts.
    *  Resolved against the server-side registry (config.remoteHosts ∪ familiar
    *  runtime bindings) — an unregistered host is rejected fail-closed, and the
@@ -2893,6 +2898,17 @@ async function postAdmittedChat(
     binding.harness !== "grok" &&
     binding.harness !== "hermes" &&
     ((await probeCovenCapability(covenRunSupportsPermission)) ?? false);
+  // Full access for Claude needs Coven's `--write-scope` (#6356), and no Coven
+  // release has it yet. Without it Claude never gets Full access. A person
+  // watching the chat gets a Read-only turn and a notice instead of a dead end.
+  const writeScopeReadOnlyFallback =
+    body.allowReadOnlyFallback === true &&
+    !sshRuntime &&
+    binding.harness === "claude" &&
+    body.permissionMode !== "read" &&
+    permissionForwardingEnabled &&
+    !((await probeCovenCapability(covenRunSupportsWriteScope)) ?? false);
+  if (writeScopeReadOnlyFallback) body.permissionMode = "read";
   const directReadOnlyEnforcement =
     !sshRuntime &&
     (Boolean(copilotStream) || grokDirect || (codexDirect && codexDirectCapabilities?.sandbox === true));
@@ -3841,7 +3857,8 @@ async function postAdmittedChat(
           id === "runtime-launch-diagnostics" ||
           id === "runtime-grants" ||
           id === "runtime-write-denied" ||
-          id === "runtime-write-scope"
+          id === "runtime-write-scope" ||
+          id === "runtime-write-scope-read-only"
         ) {
           persistedCompatibilityDiagnostics.push({
             ...projected,
@@ -3876,6 +3893,14 @@ async function postAdmittedChat(
           "Unavailable project grants skipped",
           "notice",
           `${omittedGrantCount} registered project ${omittedGrantCount === 1 ? "directory was" : "directories were"} unavailable on this host.`,
+        );
+      }
+      if (writeScopeReadOnlyFallback) {
+        pushProgress(
+          "runtime-write-scope-read-only",
+          "Read-only for this turn",
+          "notice",
+          "This version of Coven can't limit Claude's file changes to your project grants, so Claude can read but not edit. To edit files now, switch to another runtime.",
         );
       }
       // Report what identity context this turn actually loaded. A familiar
@@ -5791,8 +5816,12 @@ async function postAdmittedChat(
                   return null;
                 }
                 if (claudeScopedWrite && !claudeWriteScopeSupported) {
+                  // Only a Coven too old to enforce Read-only can be fixed by updating:
+                  // no release has `--write-scope` yet (#6419).
                   launchFailure = { code: "scoped_write_unavailable",
-                    message: "This runtime cannot safely apply project write access. Update Coven and restart Cave, then retry." };
+                    message: permissionForwardingEnabled
+                      ? "Full access for Claude needs a newer Coven than this one. Switch Access to Read-only or choose another runtime, then retry."
+                      : "This runtime cannot safely apply project write access. Update Coven and restart Cave, then retry." };
                   result.is_error = true;
                   pushProgress("harness-start", "Scoped writes unavailable", "error", launchFailure.message);
                   push({ kind: "error", ...launchFailure, harness: binding.harness });

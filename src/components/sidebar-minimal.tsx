@@ -6,7 +6,7 @@
  * Layout (top to bottom):
  *   1. Familiar scope selector and New chat CTA
  *   2. Navigation  — the daily destinations, Chat directly under Home
- *   3. Explore     — the registry's `quiet` destinations (Marketplace, Memories)
+ *   3. Explore     — the registry's `quiet` destinations (Canvas, Memories)
  *   4. Rooms       — registry-driven role surfaces
  *   5. Footer: Dashboard, Settings
  *
@@ -301,7 +301,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             {primaryDestinations.map((destination) => renderDestination(destination))}
           </SidebarSection>
 
-          {/* Marketplace and Memories are their own category rather than a
+          {/* Canvas and Memories are their own category rather than a
             silent gap at the end of Navigation. They were already marked
             `quiet` in the registry — the visual step that separated them was
             carrying the meaning a heading should carry, and a step with no

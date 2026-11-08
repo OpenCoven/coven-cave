@@ -44,7 +44,7 @@ async function openEditor(page: Page) {
   await expect(canvas).toHaveCount(1);
   const exploreRows = sidebar.locator('[data-section="explore"] button');
   await expect(exploreRows.nth(0)).toHaveText("Canvas");
-  await expect(exploreRows.nth(1)).toHaveText("Marketplace");
+  await expect(exploreRows.nth(1)).toHaveText("Memories");
   await canvas.click();
   await expect(canvas).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".chat-canvas-view")).toBeVisible({ timeout: 30_000 });

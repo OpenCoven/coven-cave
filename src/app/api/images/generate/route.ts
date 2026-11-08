@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveSecret } from "@/lib/vault";
 import { readJsonBody } from "@/lib/server/api-security";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 import {
   resolveImageGeneration,
@@ -16,6 +17,8 @@ const OPENAI_IMAGES_URL = "https://api.openai.com/v1/images/generations";
 const GEMINI_IMAGES_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 /** DALL·E 3's documented prompt ceiling — the strictest of the providers. */
 const MAX_PROMPT_CHARS = 4000;
+/** A render is slow by nature; the deadline only has to catch a dead socket. */
+const GENERATION_TIMEOUT_MS = 60_000;
 
 type ProviderImage = { b64: string; mime: string };
 type ProviderResult =
@@ -47,14 +50,14 @@ async function generateWithOpenAI(
 
   let res: Response;
   try {
-    res = await fetch(OPENAI_IMAGES_URL, {
+    res = await upstreamFetch("openai", OPENAI_IMAGES_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-    });
+    }, { timeoutMs: GENERATION_TIMEOUT_MS });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: "provider_unreachable", providerMessage: msg };
@@ -90,7 +93,7 @@ async function generateWithGemini(
 ): Promise<ProviderResult> {
   let res: Response;
   try {
-    res = await fetch(`${GEMINI_IMAGES_URL_BASE}/${model}:predict`, {
+    res = await upstreamFetch("gemini", `${GEMINI_IMAGES_URL_BASE}/${model}:predict`, {
       method: "POST",
       headers: {
         "x-goog-api-key": apiKey,
@@ -101,7 +104,7 @@ async function generateWithGemini(
         // Imagen sizes are aspect ratios ("1:1", "16:9", …).
         parameters: { sampleCount: 1, aspectRatio: /^\d+:\d+$/.test(size) ? size : "1:1" },
       }),
-    });
+    }, { timeoutMs: GENERATION_TIMEOUT_MS });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: "provider_unreachable", providerMessage: msg };

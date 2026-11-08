@@ -51,4 +51,21 @@ assert.equal(
   "junk input degrades to zero",
 );
 
+// #6357: provider-prefixed and dotted spellings of one model share a bucket.
+const variants = rollupMessageFeedback([
+  { messageId: "v1", vote: "up", cleared: false, model: "github/claude-fable-5" },
+  { messageId: "v2", vote: "up", cleared: false, model: "anthropic/claude-fable-5" },
+  { messageId: "v3", vote: "down", cleared: false, model: "Claude-Fable-5" },
+  { messageId: "v4", vote: "up", cleared: false, model: "openai/gpt-6.1-sol" },
+  { messageId: "v5", vote: "up", cleared: false, model: "gpt-6-1-sol" },
+]);
+assert.deepEqual(
+  variants.models.map((m) => [m.key, m.up, m.down]),
+  [
+    ["claude-fable-5", 2, 1],
+    ["gpt-6-1-sol", 2, 0],
+  ],
+  "spelling variants merge into one canonical model bucket",
+);
+
 console.log("message-feedback-rollup.test.ts OK");

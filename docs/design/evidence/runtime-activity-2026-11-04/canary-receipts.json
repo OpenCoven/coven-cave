@@ -1,0 +1,396 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-04T05:18:51.547Z",
+  "issue": 6071,
+  "classification": "Real-provider canaries through a real daemon and a built HTTP server on loopback, one web client in headless Chromium. Read-only marker turns only. Not protected-effect or side-effect-counter qualification, and no row is promoted.",
+  "authority": "Val, directly in the session on 2026-11-04: once each on this candidate: Claude 2.1.318 and Copilot 1.0.103 with --interactive-client web (two provider turns each), Codex 0.166.0 --http (one turn).",
+  "candidate": {
+    "head": "51ea27f663aeabda196adc142700a43282893a19",
+    "patchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "changedSourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ci": "run 41773524472 attempt 1, 23/23 jobs success",
+    "build": {
+      "id": "59vw5PXSReKgWPSFiMgvN",
+      "serverSha256": "8e91c30c1b4fd6e5e18210b545d22ad5660220e00a3ca782a861172a3d4ee23a",
+      "sendRouteSha256": "180923ec9020f43ad3ca32f31d6fbc4ffaf81316443aa832853f5a359c2b854c"
+    }
+  },
+  "host": {
+    "platform": "darwin/arm64",
+    "browser": "Playwright chromium_headless_shell, 1440x900"
+  },
+  "providerTurns": {
+    "codex": 1,
+    "claude": 2,
+    "copilot": 2,
+    "retries": 0
+  },
+  "driverSha256": {
+    "copilot": "65eee440b5db4697f82071b782948ad3a6d6be87fb8ac3a65ac9a9237d9a3249",
+    "claudeFirst": "62a7561b3f5d403177120dae968a85884dc3dd9e3a39c818614f53349f7dd7c4",
+    "claudeFinish": "0f8b06d085eb53812ad5ad292ed4723479c58953db9885a324297d6ff6f68412",
+    "shared": "2bbad665ee76eaf0f6b401a750ca9e69e62686a25e74092c4465dddec169e9c4"
+  },
+  "canaries": {
+    "codex": {
+      "harness": "codex",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-11-04T05:08:11.667Z",
+      "finishedAt": "2026-11-04T05:08:23.750Z",
+      "runtimeVersion": "codex-cli 0.166.0",
+      "covenVersion": "coven v0.4.10 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "routing": {
+        "mode": "fallback",
+        "diagnostic": "unsupported-version",
+        "version": "0.166.0"
+      },
+      "profile": null,
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "httpStatus": 200,
+      "eventKinds": [
+        "user",
+        "response_metadata",
+        "progress",
+        "session",
+        "assistant_chunk",
+        "done"
+      ],
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "codex",
+        "version": null,
+        "model": null,
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "unknown",
+          "reasoning": "unknown"
+        }
+      },
+      "answerContainsMarker": true,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "answerMatchesPersistencePolicy": true,
+        "identityMatches": true,
+        "toolCount": 0,
+        "toolOutputContainsMarker": false
+      },
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "identityMatches": true
+      },
+      "passed": false,
+      "failure": "successful native tool output must include the marker",
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "tools": []
+    },
+    "claude": {
+      "harness": "claude",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-11-04T05:08:44.094Z",
+      "finishedAt": "2026-11-04T05:16:25.124Z",
+      "runtimeVersion": "2.1.318 (Claude Code)",
+      "covenVersion": "coven v0.4.10 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "routing": null,
+      "profile": "claude-stream-json-v2",
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "httpStatus": 200,
+      "eventKinds": [
+        "user",
+        "response_metadata",
+        "progress",
+        "session",
+        "tool_use",
+        "assistant_chunk",
+        "done"
+      ],
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "claude",
+        "version": "2.1.318",
+        "model": "claude-opus-5-5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "coven",
+          "tools": "supported",
+          "reasoning": "unknown"
+        }
+      },
+      "answerContainsMarker": true,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "answerMatchesPersistencePolicy": true,
+        "identityMatches": true,
+        "toolCount": 1,
+        "toolOutputContainsMarker": true
+      },
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "identityMatches": true
+      },
+      "passed": false,
+      "failure": "Expected values to be strictly equal:\n\n404 !== 200\n",
+      "serverStopped": true,
+      "daemonStopped": true,
+      "sourceUnchanged": true,
+      "tools": [
+        {
+          "name": "Read",
+          "status": "requested",
+          "outputContainsMarker": false
+        },
+        {
+          "name": "Read",
+          "status": "ok",
+          "outputContainsMarker": true
+        }
+      ],
+      "interactiveResult": {
+        "passed": false,
+        "uiRenderingVerified": false,
+        "failure": "Expected values to be strictly equal:\n\n404 !== 200\n"
+      },
+      "webObservation": {
+        "sends": [
+          {
+            "permissionMode": "read",
+            "forwarded": true,
+            "at": "2026-11-04T05:12:06.643Z"
+          }
+        ],
+        "steps": {
+          "readOnlyChecked": true,
+          "sentAt": "2026-11-04T05:12:06.650Z",
+          "streamingText": "Activity Canary · Using tools\n0:02\nToday at 11:12 PM\nVerification\nStop\nInspecting project context…\nThinking\n2.4s\nRead\n· <scratch-path>\nSucceeded\n0s\nRun details\n· claude 2.1.318\n· model saved\n· 1 unverified\n5 activity updates",
+          "4-reopened-completed": {
+            "toolBlocks": 1,
+            "answerShowsExactMarker": false,
+            "answerShowsUnderscoreStrippedMarker": true,
+            "toolOutputShowsExactMarker": true,
+            "toolOutputShowsStrippedMarker": false,
+            "showsVersion": true,
+            "showsModel": true,
+            "showsReasoningUnavailable": true,
+            "showsUnverified": true
+          },
+          "emphasisElements": [
+            "EM:ACTIVITY"
+          ]
+        },
+        "driverFirstAttempt": "The first driver looked for the exact marker in the rendered answer; it timed out after 170s because rendering differs from the saved text. The live page was closed then. Completed-state checks below come from reopening the saved conversation through the sidebar, so no live completed-state capture exists.",
+        "blockedSends": 0
+      },
+      "failureCause": "Driver timing. FINISHED_RETENTION_MS is 2 minutes; the first driver stalled 170s on an exact-marker selector, so the first snapshot ran about 4 minutes after the turn ended and /api/chat/stream returned 404. Not rerun: authority was once each."
+    },
+    "copilot": {
+      "harness": "copilot",
+      "permission": "read",
+      "transport": "http",
+      "startedAt": "2026-11-04T05:18:15.586Z",
+      "finishedAt": "2026-11-04T05:18:51.547Z",
+      "runtimeVersion": "GitHub Copilot CLI 1.0.103.\nRun 'copilot update' to check for updates.",
+      "covenVersion": "coven v0.4.10 (engine coven-code 0.8.0, pinned 0.8.0)",
+      "routing": {
+        "mode": "direct-jsonl",
+        "diagnostic": null,
+        "version": "1.0.103",
+        "probeExecutable": "copilot",
+        "launchCommand": {
+          "command": "/opt/homebrew/Caskroom/copilot-cli/1.0.103/copilot",
+          "fixedArgs": [],
+          "requiredFiles": []
+        },
+        "spawnPathWarmed": true,
+        "scope": "canonical-launch-preflight"
+      },
+      "profile": "copilot-jsonl-v1",
+      "ingress": {
+        "missingCredential": 401,
+        "invalidCredential": 401
+      },
+      "httpStatus": 200,
+      "eventKinds": [
+        "user",
+        "response_metadata",
+        "progress",
+        "session",
+        "tool_use",
+        "assistant_replace",
+        "assistant_chunk",
+        "done"
+      ],
+      "identity": {
+        "schemaVersion": 1,
+        "harness": "copilot",
+        "version": "1.0.103",
+        "model": "claude-sonnet-5.5",
+        "activity": {
+          "schemaVersion": 1,
+          "path": "direct",
+          "tools": "supported",
+          "reasoning": "unsupported"
+        }
+      },
+      "answerContainsMarker": true,
+      "saved": {
+        "exists": true,
+        "answerContainsMarker": true,
+        "answerMatches": false,
+        "answerMatchesPersistencePolicy": true,
+        "identityMatches": true,
+        "toolCount": 1,
+        "toolOutputContainsMarker": true
+      },
+      "replay": {
+        "finished": true,
+        "toolsMatch": true,
+        "answerContainsMarker": true,
+        "answerMatches": true,
+        "identityMatches": true
+      },
+      "passed": false,
+      "failure": null,
+      "serverStopped": true,
+      "daemonStopped": false,
+      "sourceUnchanged": true,
+      "tools": [
+        {
+          "name": "view",
+          "status": "requested",
+          "outputContainsMarker": false
+        },
+        {
+          "name": "view",
+          "status": "running",
+          "outputContainsMarker": false
+        },
+        {
+          "name": "view",
+          "status": "ok",
+          "outputContainsMarker": true
+        }
+      ],
+      "interactiveResult": {
+        "passed": true,
+        "uiRenderingVerified": false,
+        "live": {
+          "identity": {
+            "schemaVersion": 1,
+            "harness": "copilot",
+            "version": "1.0.103",
+            "model": "claude-sonnet-5.5",
+            "activity": {
+              "schemaVersion": 1,
+              "path": "direct",
+              "tools": "supported",
+              "reasoning": "unsupported"
+            }
+          },
+          "outputContainsMarker": true,
+          "replayMatchesSavedAnswerIdentityAndTool": true,
+          "conversationCount": 2
+        },
+        "restored": {
+          "identity": {
+            "schemaVersion": 1,
+            "harness": "copilot",
+            "version": "1.0.103",
+            "model": "claude-sonnet-5.5",
+            "activity": {
+              "schemaVersion": 1,
+              "path": "direct",
+              "tools": "supported",
+              "reasoning": "unsupported"
+            }
+          },
+          "outputContainsMarker": true,
+          "replayMatchesSavedAnswerIdentityAndTool": true,
+          "conversationCount": 2
+        }
+      },
+      "webObservation": {
+        "sends": [
+          {
+            "permissionMode": "read",
+            "forwarded": true,
+            "at": "2026-11-04T05:18:35.850Z"
+          }
+        ],
+        "steps": {
+          "readOnlyChecked": true,
+          "sentAt": "2026-11-04T05:18:35.872Z",
+          "streamingText": "Activity Canary · Using tools\n0:02\nToday at 11:18 PM\nVerification\nStop\nStarting copilot\nThinking\n2.0s\nRun details\n· copilot 1.0.103\n· model saved\n· 1 unverified\n4 activity updates",
+          "completedAt": "2026-11-04T05:18:43.277Z",
+          "3-live-completed": {
+            "toolBlocks": 1,
+            "answerShowsExactMarker": false,
+            "answerShowsUnderscoreStrippedMarker": true,
+            "bubble": "Activity Canary · Completed in 0:05\nToday at 11:18 PM\nVerification\nCopy\nActivity Canary completed response\nview\n· <scratch-path>\nSucceeded\n0s\n\n<STRIPPED>\n\nRun details\n· copilot 1.0.103\n7 activity updates\nRetry\nCollapse",
+            "emphasis": [
+              "ACTIVITY"
+            ],
+            "toolOutputShowsExactMarker": true,
+            "showsVersion": true,
+            "showsModel": true
+          },
+          "snapshot": "2026-11-04T05:18:45.339Z",
+          "hashAfterReload": true,
+          "4-reload": {
+            "toolBlocks": 1,
+            "answerShowsExactMarker": false,
+            "answerShowsUnderscoreStrippedMarker": true,
+            "bubble": "Activity Canary · Completed in 0:05\nToday at 11:18 PM\nVerification\nCopy\nActivity Canary completed response\nview\n· <scratch-path>\nSucceeded\n0s\n\n<STRIPPED>\n\nRun details\n· copilot 1.0.103\n2 activity updates\nRetry\nCollapse",
+            "emphasis": [
+              "ACTIVITY"
+            ],
+            "toolOutputShowsExactMarker": true,
+            "showsVersion": true,
+            "showsModel": true
+          },
+          "restored": "2026-11-04T05:18:51.140Z",
+          "finishSent": "2026-11-04T05:18:51.151Z"
+        },
+        "driverFirstAttempt": null,
+        "blockedSends": 0
+      },
+      "daemonStoppedNote": "Strict result false: the script found the pid alive immediately after daemon stop. Later checks found no such process and coven daemon status reported not running. A race is likely but not proven."
+    }
+  },
+  "findings": [
+    {
+      "id": "rendered-answer-drops-intraword-underscores",
+      "observed": "Saved answer and tool output hold the exact marker; the rendered answer shows it with underscores removed and the middle word italic (EM element), on Claude and Copilot; on Copilot both live and after reload.",
+      "reproduction": "@create-markdown/core 2.0.3 parse(\"set MAX_RETRY_COUNT to 3\") yields MAX, italic RETRY, COUNT. Inline code is unaffected.",
+      "scope": "Provider independent. Not fixed by this packet."
+    },
+    {
+      "id": "e2e-shard-3-reports-success-without-running",
+      "observed": "Frontend E2E (3/8) logs no Running line and no summary yet reports success on all 10 sampled green runs that had the job, 2026-11-02 to 2026-11-04. Cause not investigated."
+    }
+  ],
+  "images": {
+    "claude-web-reopened-completed.png": "5578d92cc348ccc4b5857c587cbb11463210ce8cba033df6f743d48ab3854d32",
+    "copilot-web-live-completed.png": "eb64b2b81af143c5fa1354b5969eaf9df5d5727002ec41a77e2d5c41774fa659",
+    "copilot-web-after-reload.png": "4cf54774f2857e1e65c22aab6ae64281080a82ee151a67e3781818602a8a3de3"
+  }
+}

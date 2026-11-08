@@ -189,6 +189,9 @@ export function OpenCovenSubmissionPanel() {
         const res = await fetch("/api/opencoven/submissions", { cache: "no-store" });
         const json = (await res.json()) as SubmissionResponse;
         if (cancelled) return;
+        // A refused request (turned off, failed to load) says so rather than
+        // reading as an empty catalog.
+        if (!res.ok) setResult(json);
         setCatalog(json.catalog ?? []);
         setRoute(json.route ?? null);
       } catch {

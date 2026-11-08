@@ -6,6 +6,8 @@
 
 import { resolveGitHubToken } from "@/lib/github-token";
 import { resolveSecret } from "@/lib/vault";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { userLogin } from "@/lib/server/upstream-answer";
 import type { MergedPr } from "@/lib/daily-report-facts";
 
 const GH = "https://api.github.com";
@@ -23,14 +25,13 @@ function slug(date: Date): string {
 }
 
 async function ghJson(path: string, token: string | null): Promise<unknown> {
-  const res = await fetch(`${GH}${path}`, {
+  const res = await upstreamFetch("github", `${GH}${path}`, {
     headers: {
       accept: "application/vnd.github+json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     cache: "no-store",
-  });
+  }, { timeoutMs: FETCH_TIMEOUT_MS });
   if (!res.ok) throw new Error(`github ${res.status}`);
   return res.json();
 }
@@ -63,8 +64,8 @@ export async function fetchMergedPrsForDay(now: Date): Promise<MergedPr[] | null
   let login = resolveSecret("GITHUB_USERNAME") ?? null;
   if (token) {
     try {
-      const user = (await ghJson("/user", token)) as { login?: string } | null;
-      login = user?.login ?? login;
+      // Only a string login may reach the search query (#6368).
+      login = userLogin(await ghJson("/user", token)) ?? login;
     } catch {
       // Invalid PAT — the public path below still works when a username is set.
     }

@@ -54,11 +54,30 @@ test.describe("daemon status banner", () => {
   // Two cold surface loads under `next dev` (the shell, then the Rituals chunk).
   test.describe.configure({ timeout: 120_000 });
 
+  // #6388: Cave's server going quiet after a healthy answer is not a daemon
+  // problem. No notice during a short stall, and a lasting one names the server.
+  test("status reads timing out after a healthy answer wait, then name Cave's server", async ({ page }) => {
+    test.setTimeout(240_000);
+    await openRituals(page, "online");
+    const banner = page.locator(".shell-banner").filter({ hasText: "Cave’s server is taking too long to answer" });
+    await page.route("**/api/daemon/connection**", () => {
+      // Never answered, so each read runs out its 10 s deadline.
+    });
+
+    await page.waitForTimeout(35_000);
+    await expect(page.locator(".shell-banner").filter({ hasText: "daemon" })).toHaveCount(0);
+    await expect(banner).toHaveCount(0);
+    await expect(banner).toHaveCount(1, { timeout: 70_000 });
+  });
+
   test("an unreachable daemon gets one plain banner with the raw error behind Details", async ({ page }) => {
     await openRituals(page, "unreachable");
 
     const banner = page.locator(".shell-banner").filter({ hasText: "Can’t reach the Coven daemon" });
-    await expect(banner).toHaveCount(1);
+    // The banner waits for a second consecutive unavailable read (#6316). The
+    // supervisor retries the first failure after 5 s ± 20% jitter
+    // (daemonConnectionPollDelay), so the default 5 s window races it (#6366).
+    await expect(banner).toHaveCount(1, { timeout: 20_000 });
     await expect(banner.locator(".shell-banner__title")).toHaveText("Can’t reach the Coven daemon");
     await expect(banner.getByRole("button", { name: "Retry" })).toBeVisible();
 
