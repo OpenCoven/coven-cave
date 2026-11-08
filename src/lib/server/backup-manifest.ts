@@ -136,6 +136,8 @@ const EXCLUDED_NAMES = new Set([
   "sockets",
   "archives",
   ".git",
+  // Live per-turn files, which can hold MCP server credentials.
+  "claude-authority",
 ]);
 
 const EXCLUDED_SUFFIXES = [".sock", ".lock", ".log", ".tmp", ".bak"];
