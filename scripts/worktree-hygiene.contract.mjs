@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,7 +68,7 @@ function details(overrides = {}) {
 
 // Tool output every working worktree gains (#5726) is disposable; a source
 // file that merely shares the extension or sits in a subdirectory is not.
-for (const generated of ["next-env.d.ts", "tsconfig.tsbuildinfo"]) {
+for (const generated of ["next-env.d.ts", "tsconfig.tsbuildinfo", "server.mjs"]) {
   assert.ok(DISPOSABLE_FILES.includes(generated), `${generated} is declared disposable`);
   assert.equal(isDisposableRelative(generated), true, `${generated} is disposable at the worktree root`);
   assert.equal(isDisposableRelative(`./${generated}`), true, `./${generated} normalizes to the root file`);
@@ -76,6 +76,7 @@ for (const generated of ["next-env.d.ts", "tsconfig.tsbuildinfo"]) {
 assert.equal(isDisposableRelative("src/next-env.d.ts"), false, "only the root next-env.d.ts is generated output");
 assert.equal(isDisposableRelative("packages/app/tsconfig.tsbuildinfo"), false, "only the root build cache is declared");
 assert.equal(isDisposableRelative("src/types.d.ts"), false, "ordinary declaration files are never disposable");
+assert.equal(isDisposableRelative("src/server.mjs"), false, "a nested server module is source, not the root build output");
 
 // Generated iOS output (#5816) is disposable at its exact paths. The build
 // folder can hold evidence screenshots, and the sources XcodeGen reads are work.
@@ -247,6 +248,55 @@ assert.doesNotMatch(workflow, /^\s*cache:\s*pnpm\s*$/m, "dependency-free contrac
     assert.equal(result.status, 0);
     assert.equal(existsSync(path.join(wt, ".next", "cache", "blob")), false);
     assert.equal(run(dir, "daily", "--json").status, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// #6425: unlink each ignored terminal link even after an earlier sorted entry
+// removes its target. Existing dangling links and chains must also disappear;
+// neither an external target nor tracked source with the same basename is work
+// that this cleanup owns.
+{
+  const dir = repo();
+  try {
+    const wt = path.join(dir, "wt");
+    const branch = "fix/issue-6425-thin-fixture";
+    git(dir, "worktree", "add", "-q", "-b", branch, wt, "main");
+    writeFileSync(path.join(wt, ".gitignore"), "/server.mjs\nsrc-tauri/resources/\n.env\n");
+    mkdirSync(path.join(wt, "src"));
+    writeFileSync(path.join(wt, "src", "server.mjs"), "tracked source\n");
+    git(wt, "add", ".gitignore", "src/server.mjs");
+    git(wt, "commit", "-qm", "seed generated-output fixture");
+    const resources = path.join(wt, "src-tauri", "resources");
+    mkdirSync(resources, { recursive: true });
+    writeFileSync(path.join(resources, "a-real.dylib"), "generated library\n");
+    symlinkSync("a-real.dylib", path.join(resources, "b-link.dylib"));
+    symlinkSync("b-link.dylib", path.join(resources, "c-chain.dylib"));
+    symlinkSync("missing.dylib", path.join(resources, "d-dangling.dylib"));
+    const outside = path.join(dir, "outside.txt");
+    writeFileSync(outside, "outside target\n");
+    symlinkSync(outside, path.join(resources, "e-outside.dylib"));
+    writeFileSync(path.join(wt, "server.mjs"), "generated bundle\n");
+    writeFileSync(path.join(wt, ".env"), "non-disposable fixture\n");
+
+    let result = run(dir, "thin", "--branch", branch);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(path.join(wt, "server.mjs"), "utf8"), "generated bundle\n");
+    assert.equal(lstatSync(path.join(resources, "d-dangling.dylib")).isSymbolicLink(), true);
+
+    result = run(dir, "thin", "--branch", branch, "--apply");
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).refused, []);
+    for (const name of ["a-real.dylib", "b-link.dylib", "c-chain.dylib", "d-dangling.dylib", "e-outside.dylib"]) {
+      assert.throws(() => lstatSync(path.join(resources, name)), { code: "ENOENT" }, `${name} must be unlinked, not merely dangling`);
+    }
+    assert.equal(existsSync(path.join(wt, "server.mjs")), false, "remove the ignored root bundle");
+    assert.equal(readFileSync(path.join(wt, "src", "server.mjs"), "utf8"), "tracked source\n");
+    assert.equal(readFileSync(path.join(wt, ".env"), "utf8"), "non-disposable fixture\n");
+    assert.equal(readFileSync(outside, "utf8"), "outside target\n");
+    assert.equal(git(wt, "status", "--porcelain"), "", "tracked source stays clean");
+    assert.equal(run(dir, "thin", "--branch", branch, "--apply").status, 0, "a rerun handles already-removed entries");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
