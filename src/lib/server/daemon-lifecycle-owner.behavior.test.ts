@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 import {
   beginDaemonLifecycleOperation,
+  beginDaemonLifecycleObservation,
   daemonLifecycleOperation,
   localRuntimeEvidence,
   observeDaemonLifecycle,
@@ -135,4 +136,29 @@ test("a backwards clock jump makes runtime evidence stale rather than cached ind
   assert.equal(await localRuntimeEvidence({ probe, now: () => 40_000 }), "present");
   assert.equal(probes, 2, "an answer stamped in the future is not trusted");
   assert.equal(observeDaemonLifecycle(probeInput(), { now: () => 40_000 }).evidence.runtime, "present");
+});
+
+test("a late probe retains its start order while recording genuine readiness history", () => {
+  const older = beginDaemonLifecycleObservation();
+  const newer = beginDaemonLifecycleObservation();
+  const current = newer(probeInput());
+  const stale = older(probeInput({ availability: "online", reason: null }));
+  assert.ok(stale.generation < current.generation);
+  const operation = beginDaemonLifecycleOperation("start");
+  assert.equal(observeDaemonLifecycle(probeInput()).state, "recovering",
+    "an older successful probe still proves this process observed a ready daemon");
+  operation.end();
+});
+
+test("a pending newer probe cannot erase genuine local readiness history", () => {
+  const online = beginDaemonLifecycleObservation();
+  beginDaemonLifecycleObservation();
+  assert.equal(online(probeInput({ availability: "online", reason: null })).state, "ready");
+  const start = beginDaemonLifecycleOperation("start");
+  try {
+    assert.equal(observeDaemonLifecycle(probeInput()).state, "recovering",
+      "previouslyReady records that this process has seen a ready local daemon");
+  } finally {
+    start.end();
+  }
 });
