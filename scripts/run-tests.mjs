@@ -675,6 +675,7 @@ export const SUITES = {
     "src/lib/message-markdown-stream.test.ts",
     "src/lib/response-status-tokens.test.ts",
     "src/lib/markdown-preview-shell.test.ts",
+    "src/lib/markdown-underscore.test.ts",
     "src/lib/markdown-table-cells.test.ts",
     "src/components/mermaid-viewer.test.ts",
     "src/components/message-bubble-code-header.test.ts",

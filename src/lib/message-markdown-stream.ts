@@ -66,6 +66,20 @@ function isEscaped(text: string, index: number): boolean {
   return slashCount % 2 === 1;
 }
 
+/** Same underscore flanking rule as the pinned core parser patch (#6391). */
+function underscoreDelimiterState(text: string, start: number, end: number): { open: boolean; close: boolean } {
+  const previousIndex = start - (/[\uDC00-\uDFFF]/.test(text[start - 1] ?? "") && start > 1 ? 2 : 1);
+  const previous = start === 0 ? "" : String.fromCodePoint(text.codePointAt(previousIndex)!);
+  const next = end === text.length ? "" : String.fromCodePoint(text.codePointAt(end)!);
+  const previousSpace = previous === "" || /[\p{Zs}\t\n\f\r]/u.test(previous);
+  const nextSpace = next === "" || /[\p{Zs}\t\n\f\r]/u.test(next);
+  const previousPunctuation = /[\p{P}\p{S}]/u.test(previous);
+  const nextPunctuation = /[\p{P}\p{S}]/u.test(next);
+  const left = !nextSpace && (!nextPunctuation || previousSpace || previousPunctuation);
+  const right = !previousSpace && (!previousPunctuation || nextSpace || nextPunctuation);
+  return { open: left && (!right || previousPunctuation), close: right && (!left || nextPunctuation) };
+}
+
 /**
  * Presentation-only completion for an in-flight Markdown snapshot.
  *
@@ -75,7 +89,7 @@ function isEscaped(text: string, index: number): boolean {
  */
 export function stabilizeStreamingMarkdown(markdown: string): string {
   const source = closeTrailingFence(markdown);
-  type Delimiter = "`" | "**" | "__" | "*" | "_";
+  type Delimiter = "`" | "**" | "__" | "___" | "*" | "_";
   const stack: Array<{ token: Delimiter; index: number }> = [];
   const lines = source.split("\n");
   let inFence = false;
@@ -104,21 +118,35 @@ export function stabilizeStreamingMarkdown(markdown: string): string {
       }
       if (top === "`") continue;
 
+      // Identifier underscores (including a chunk ending mid-identifier) are
+      // literal. Only real delimiters may enter the completion/removal stack.
+      if (current === "_") {
+        let end = i + 1;
+        while (line[end] === "_") end += 1;
+        const token = line.slice(i, end);
+        const state = underscoreDelimiterState(line, i, end);
+        if (token === "_" || token === "__" || token === "___") {
+          if (top === token && state.close) stack.pop();
+          else if (state.open || ((i === 0 || /[\p{Zs}\t]/u.test(line[i - 1])) && !/\S/u.test(line.slice(end)))) {
+            stack.push({ token, index: lineOffset + i });
+          }
+        }
+        i = end - 1;
+        continue;
+      }
+
       const pair = line.slice(i, i + 2);
-      if (pair === "**" || pair === "__") {
+      if (pair === "**") {
         if (top === pair) stack.pop();
         else stack.push({ token: pair, index: lineOffset + i });
         i += 1;
         continue;
       }
-      if (current !== "*" && current !== "_") continue;
+      if (current !== "*") continue;
 
-      const before = line[i - 1] ?? "";
       const after = line[i + 1] ?? "";
-      const isBullet = current === "*" && /^\s*$/.test(line.slice(0, i)) && /\s/.test(after);
-      const isIntrawordUnderscore =
-        current === "_" && /[A-Za-z0-9]/.test(before) && /[A-Za-z0-9]/.test(after);
-      if (isBullet || isIntrawordUnderscore) continue;
+      const isBullet = /^\s*$/.test(line.slice(0, i)) && /\s/.test(after);
+      if (isBullet) continue;
 
       if (top === current) stack.pop();
       else stack.push({ token: current, index: lineOffset + i });

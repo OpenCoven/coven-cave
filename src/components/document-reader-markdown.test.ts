@@ -144,3 +144,11 @@ test("wiki-links stay literal without a host and become doc links with one", () 
   );
   assert.match(markup, /<code>\[\[code\]\]<\/code>/, "inline code keeps literal brackets");
 });
+
+test("shared document reader retains identifier underscores and real emphasis", () => {
+  const markup = render("Set MAX_RETRY_COUNT; snake_case_name; file_a and file_b. _real emphasis_ and `inline_code_name`.");
+  assert.match(markup, /Set MAX_RETRY_COUNT; snake_case_name; file_a and file_b\./);
+  assert.match(markup, /<em>real emphasis<\/em>/);
+  assert.match(markup, /<code>inline_code_name<\/code>/);
+  assert.equal((markup.match(/<em>/g) ?? []).length, 1);
+});
