@@ -221,6 +221,9 @@
         "glibc",
         "musl"
       ]
+    },
+    "patchedDependencies": {
+      "@create-markdown/core@2.0.3": "patches/@create-markdown__core@2.0.3.patch"
     }
   },
   "optionalDependencies": {

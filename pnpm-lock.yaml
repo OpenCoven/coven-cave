@@ -21,6 +21,11 @@ overrides:
   brace-expansion@>=4.0.0 <5.0.12: 5.0.12
   minimatch@>=10.0.0 <11.0.1: 11.0.1
 
+patchedDependencies:
+  '@create-markdown/core@2.0.3':
+    hash: 70006c676c9a62b94ee6cf2f564f93a1209ec87f4a608caf0fb1b378ddd52aa3
+    path: patches/@create-markdown__core@2.0.3.patch
+
 importers:
 
   .:
@@ -30,7 +35,7 @@ importers:
         version: 6.12.4
       '@create-markdown/core':
         specifier: 2.0.3
-        version: 2.0.3
+        version: 2.0.3(patch_hash=70006c676c9a62b94ee6cf2f564f93a1209ec87f4a608caf0fb1b378ddd52aa3)
       '@create-markdown/preview':
         specifier: 2.0.3
         version: 2.0.3(@create-markdown/core@2.0.3)(shiki@4.3.1)
@@ -4025,7 +4030,7 @@ snapshots:
       style-mod: 4.1.4
       w3c-keyname: 2.2.8
 
-  '@create-markdown/core@2.0.3': {}
+  '@create-markdown/core@2.0.3(patch_hash=70006c676c9a62b94ee6cf2f564f93a1209ec87f4a608caf0fb1b378ddd52aa3)': {}
 
   '@create-markdown/preview-mermaid@2.0.3(@create-markdown/preview@2.0.3(@create-markdown/core@2.0.3)(shiki@4.3.1))(mermaid@11.16.1)':
     dependencies:
@@ -4035,7 +4040,7 @@ snapshots:
 
   '@create-markdown/preview@2.0.3(@create-markdown/core@2.0.3)(shiki@4.3.1)':
     optionalDependencies:
-      '@create-markdown/core': 2.0.3
+      '@create-markdown/core': 2.0.3(patch_hash=70006c676c9a62b94ee6cf2f564f93a1209ec87f4a608caf0fb1b378ddd52aa3)
       shiki: 4.3.1
 
   '@discoveryjs/json-ext@0.5.7': {}
