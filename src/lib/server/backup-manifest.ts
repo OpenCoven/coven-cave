@@ -85,6 +85,7 @@ const CAVE_FILES = [
 
 const CAVE_DIRS = [
   "conversations",
+  "chat-attachments",
   "research-missions",
   "backdrops",
   "workflows",
@@ -197,10 +198,19 @@ export function isAllowedBackupEntry(root: BackupRoot, rel: string): boolean {
   });
 }
 
+function isHardenedCavePath(rel: string): boolean {
+  return rel === "chat-attachments" || rel.startsWith("chat-attachments/")
+    || rel.startsWith("research-resources/") || rel.startsWith("research-context-packs/");
+}
+
+function privateBackupLabel(rel: string): string {
+  return rel === "chat-attachments" || rel.startsWith("chat-attachments/") ? "Chat attachment" : "Research";
+}
+
 async function collectFiles(candidate: Candidate, roots: Record<BackupRoot, string>): Promise<Array<{ root: BackupRoot; rel: string; secret: boolean; optional?: boolean }>> {
   const full = resolveBackupEntryPath(candidate.root, candidate.rel, roots);
   const hardenedCave = candidate.root === "cave"
-    && (candidate.rel.startsWith("research-resources/") || candidate.rel.startsWith("research-context-packs/"));
+    && isHardenedCavePath(candidate.rel);
   let s;
   try {
     s = hardenedCave ? await lstat(full) : await stat(full);
@@ -208,8 +218,8 @@ async function collectFiles(candidate: Candidate, roots: Record<BackupRoot, stri
     if (hardenedCave && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     return [];
   }
-  if (hardenedCave && s.isSymbolicLink()) throw new Error("Research backup path is unsafe");
-  if (hardenedCave && !s.isDirectory()) throw new Error("Research backup path is unsafe");
+  if (hardenedCave && s.isSymbolicLink()) throw new Error(`${privateBackupLabel(candidate.rel)} backup path is unsafe`);
+  if (hardenedCave && !s.isDirectory()) throw new Error(`${privateBackupLabel(candidate.rel)} backup path is unsafe`);
   if (s.isFile()) return [{ root: candidate.root, rel: normalizeBackupPath(candidate.rel), secret: candidate.secret === true, optional: candidate.optional }];
   if (!s.isDirectory()) return [];
 
@@ -223,7 +233,7 @@ async function collectFiles(candidate: Candidate, roots: Record<BackupRoot, stri
       if (hardenedCave) {
         const metadata = await lstat(child);
         if (metadata.isSymbolicLink() || (!metadata.isDirectory() && !metadata.isFile()) || (metadata.isFile() && metadata.nlink !== 1)) {
-          throw new Error("Research backup entry is unsafe");
+          throw new Error(`${privateBackupLabel(childRel)} backup entry is unsafe`);
         }
         if (metadata.isDirectory()) await walk(childRel);
         else out.push({ root: candidate.root, rel: childRel, secret: candidate.secret === true });
@@ -241,10 +251,11 @@ async function collectFiles(candidate: Candidate, roots: Record<BackupRoot, stri
 async function researchAncestorIdentities(
   fullPath: string,
   caveRoot: string,
+  label = "Research",
 ): Promise<BackupSourceDirectoryIdentity[]> {
   const relativeParent = path.relative(caveRoot, path.dirname(fullPath));
   if (relativeParent === ".." || relativeParent.startsWith(`..${path.sep}`) || path.isAbsolute(relativeParent)) {
-    throw new Error("Research backup entry escapes its root");
+    throw new Error(`${label} backup entry escapes its root`);
   }
   const directories = [caveRoot];
   let current = caveRoot;
@@ -256,7 +267,7 @@ async function researchAncestorIdentities(
   for (const directory of directories) {
     const metadata = await lstat(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
-      throw new Error("Research backup directory is unsafe");
+      throw new Error(`${label} backup directory is unsafe`);
     }
     identities.push({ path: directory, dev: metadata.dev, ino: metadata.ino });
   }
@@ -274,10 +285,10 @@ export async function listBackupFiles(roots = backupRoots()): Promise<BackupSour
       seen.add(key);
       const fullPath = resolveBackupEntryPath(file.root, file.rel, roots);
       const hardenedCave = file.root === "cave"
-        && (file.rel.startsWith("research-resources/") || file.rel.startsWith("research-context-packs/"));
+        && isHardenedCavePath(file.rel);
       const metadata = hardenedCave ? await lstat(fullPath) : null;
       if (metadata && (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1)) {
-        throw new Error("Research backup entry is unsafe");
+        throw new Error(`${privateBackupLabel(file.rel)} backup entry is unsafe`);
       }
       files.push({
         ...file,
@@ -293,6 +304,7 @@ export async function listBackupFiles(roots = backupRoots()): Promise<BackupSour
           ancestorIdentities: await researchAncestorIdentities(
             fullPath,
             roots.cave,
+            privateBackupLabel(file.rel),
           ),
         } : {}),
       });
