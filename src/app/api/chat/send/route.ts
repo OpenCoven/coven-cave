@@ -211,7 +211,7 @@ import {
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
-import { buildClaudeWriteScope, loadClaudeFamiliarMcpServers, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
+import { buildClaudeWriteScope, ClaudeAuthorityRootGrantedError, loadClaudeFamiliarMcpServers, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
@@ -3464,14 +3464,20 @@ async function postAdmittedChat(
         error: "This project's access is read-only. Choose Read-only mode or request write access, then retry." }, { status: 403 });
     }
     try {
-      writeScopeFile = prepareClaudeWriteScopeFile(buildClaudeWriteScope({
+      const writeScope = buildClaudeWriteScope({
         primaryRoot: cwd, primaryAccess, grantedProjectRoots,
         projectRootAccess: grantedProjectRootAccess,
         familiarWorkspace: resolvedFamiliarWorkspace, protectedRoots: protectedRuntimeRoots,
-      }), await loadClaudeFamiliarMcpServers({ familiarWorkspace: resolvedFamiliarWorkspace }));
-    } catch {
+      });
+      // A Coven without the flag refuses this launch below, so credentials never reach disk for it.
+      if (claudeWriteScopeSupported) {
+        writeScopeFile = prepareClaudeWriteScopeFile(writeScope, await loadClaudeFamiliarMcpServers({ familiarWorkspace: resolvedFamiliarWorkspace }));
+      }
+    } catch (error) {
       return Response.json({ ok: false, code: "scoped_write_unavailable",
-        error: "A granted folder is unavailable. Review project access and retry before writing." }, { status: 409 });
+        error: error instanceof ClaudeAuthorityRootGrantedError
+          ? error.message
+          : "A granted folder is unavailable. Review project access and retry before writing." }, { status: 409 });
     }
   }
   const forwardPermission =
@@ -3799,7 +3805,8 @@ async function postAdmittedChat(
   const stream = new ReadableStream<Uint8Array>({
     start: (controller) => startAdmittedChatStream(admission, async () => {
       try {
-      await writeScopeFile?.create();
+      // A failed creation retires its own files; runAttempt then refuses the launch.
+      await writeScopeFile?.create().catch(() => console.warn("Could not create an owned runtime scope file."));
       let closed = false;
       const displayProjection = new LegacyReasoningStreamProjection();
       const push = (incoming: StreamEvent) => {
@@ -5671,9 +5678,19 @@ async function postAdmittedChat(
         }
       };
 
-      const runAttempt = (spawnArgs: string[], apiPrompt = harnessPrompt): Promise<void> => {
-        if (runHandle.stopRequested) return Promise.resolve();
+      const runAttempt = async (spawnArgs: string[], apiPrompt = harnessPrompt): Promise<void> => {
+        if (runHandle.stopRequested) return;
         if (hermesApi) return runHermesApiAttempt(apiPrompt);
+        // These files decide what a launch may write and what it starts outside
+        // the sandbox. A retry reuses them, so each attempt checks them first.
+        if (writeScopeFile && !await writeScopeFile.assertIntact().then(() => true, () => false)) {
+          launchFailure = { code: "runtime_write_scope_unavailable",
+            message: "Cave could not verify this familiar's write access files, so the run did not start. Retry, and restart Cave if this continues." };
+          result.is_error = true;
+          pushProgress("runtime-write-scope", "Project write access unavailable", "error", launchFailure.message);
+          push({ kind: "error", ...launchFailure, harness: binding.harness });
+          return;
+        }
         return new Promise((resolve) => {
           const attemptStartedAt = Date.now();
           let discardingOpenCodeFrame = false;

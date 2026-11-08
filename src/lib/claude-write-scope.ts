@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
-import { mkdir, open, lstat, readFile, unlink, rmdir } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { mkdirSync, realpathSync } from "node:fs";
+import { lstat, mkdir, open, readdir, readFile, rm, rmdir, unlink } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
+import { caveHome } from "./coven-paths.ts";
 import type { ProjectAccessLevel } from "./project-access-levels.ts";
 
 export type ClaudeWriteScope = {
@@ -80,43 +81,145 @@ export async function loadClaudeFamiliarMcpServers(input: {
   return Object.fromEntries(Object.entries(servers).filter(([name]) => /^[A-Za-z0-9_-]+$/.test(name)));
 }
 
-/** Allocate only after stream admission; keep these files out of project roots.
- * The MCP config can hold server credentials, so it never travels through argv. */
-export function prepareClaudeWriteScopeFile(baseScope: ClaudeWriteScope, mcpServers: ClaudeMcpServers = {}) {
-  const directory = path.join(/* turbopackIgnore: true */ tmpdir(), `cave-claude-write-scope-${randomUUID()}`);
+/** A writable grant over this root would put every turn's authority files within a familiar's reach. */
+export class ClaudeAuthorityRootGrantedError extends Error {
+  constructor() {
+    super("A writable project grant includes Cave's private state folder. Narrow that grant or use Read-only, then retry.");
+  }
+}
+
+const nodeFileSystem = { lstat, mkdir, open, readdir, readFile, rm, rmdir, unlink };
+export type ClaudeAuthorityFileSystem = typeof nodeFileSystem;
+
+function isWithin(candidate: string, root: string): boolean {
+  const relative = path.relative(/* turbopackIgnore: true */ root, candidate);
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+function processIsGone(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ESRCH";
+  }
+}
+
+/** A killed server can't dispose its files, so the next turn retires them, credentials included. */
+async function retireAbandonedAuthorityDirectories(authorityRoot: string, fileSystem: ClaudeAuthorityFileSystem) {
+  const entries = await fileSystem.readdir(/* turbopackIgnore: true */ authorityRoot).catch(() => [] as string[]);
+  await Promise.all(entries.map(async (name) => {
+    const owner = /^(\d+)-[0-9a-f-]{36}$/.exec(name)?.[1];
+    if (!owner || !processIsGone(Number(owner))) return;
+    await fileSystem.rm(path.join(/* turbopackIgnore: true */ authorityRoot, name), { recursive: true, force: true }).catch(() => {});
+  }));
+}
+
+/**
+ * The scope and MCP config decide what the next launch may write and what it
+ * starts outside the sandbox, so no familiar may change them. They live under
+ * Cave's home rather than temp: Claude's sandbox always allows
+ * `/tmp/claude-<uid>`, where `tmpdir()` points for a server started from a
+ * sandboxed session, and the supported Claude version is a floor, not a pin.
+ * Refusing a writable grant over this root keeps every turn's files out of every
+ * sandbox. Each launch also denies its own directory outright, which lets
+ * Claude's Read tool open it; that is no wider than sandboxed Bash reads already are.
+ *
+ * Allocate only after stream admission. The MCP config can hold server
+ * credentials, so it never travels through argv.
+ */
+export function prepareClaudeWriteScopeFile(
+  baseScope: ClaudeWriteScope,
+  mcpServers: ClaudeMcpServers = {},
+  options: { authorityRoot?: string; fileSystem?: ClaudeAuthorityFileSystem } = {},
+) {
+  const fileSystem = options.fileSystem ?? nodeFileSystem;
+  const requestedRoot = options.authorityRoot ?? path.join(/* turbopackIgnore: true */ caveHome(), "claude-authority");
+  mkdirSync(/* turbopackIgnore: true */ requestedRoot, { recursive: true, mode: 0o700 });
+  const authorityRoot = realpathSync.native(/* turbopackIgnore: true */ requestedRoot);
+  if (baseScope.writableRoots.some(root => isWithin(authorityRoot, root))) throw new ClaudeAuthorityRootGrantedError();
+  const directory = path.join(/* turbopackIgnore: true */ authorityRoot, `${process.pid}-${randomUUID()}`);
   const filePath = path.join(/* turbopackIgnore: true */ directory, "scope.json");
   const mcpNames = Object.keys(mcpServers).sort();
   const mcpPath = mcpNames.length ? path.join(/* turbopackIgnore: true */ directory, "mcp.json") : undefined;
-  const scope: ClaudeWriteScope = mcpPath ? { ...baseScope, mcpConfigFile: mcpPath, mcpServerNames: mcpNames } : baseScope;
-  let identity: { dev: number; ino: number } | undefined;
-  let mcpWritten = false;
+  const scope: ClaudeWriteScope = {
+    ...baseScope,
+    protectedRoots: [...baseScope.protectedRoots, directory].sort(),
+    ...(mcpPath ? { mcpConfigFile: mcpPath, mcpServerNames: mcpNames } : {}),
+  };
+  const expected = new Map<string, string>();
+  if (mcpPath) expected.set(mcpPath, JSON.stringify({ mcpServers }));
+  expected.set(filePath, JSON.stringify(scope));
+  // Tracked from the moment a file exists. Null means its identity isn't known
+  // yet, as after a partial write or a failed stat.
+  const allocated = new Map<string, { dev: number; ino: number } | null>();
+  let directoryAllocated = false;
+
+  const hasIdentity = async (target: string, identity: { dev: number; ino: number }) => {
+    const metadata = await fileSystem.lstat(/* turbopackIgnore: true */ target);
+    return metadata.isFile() && metadata.dev === identity.dev && metadata.ino === identity.ino;
+  };
+  // Each file retires on its own, so a changed scope can't strand the credentials.
+  const retire = async () => {
+    let retained = false;
+    for (const [target, identity] of allocated) {
+      try {
+        if (identity && !(await hasIdentity(target, identity))) {
+          retained = true;
+          continue;
+        }
+        await fileSystem.unlink(/* turbopackIgnore: true */ target);
+        allocated.delete(target);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") allocated.delete(target);
+        else retained = true;
+      }
+    }
+    if (retained) throw new Error("An authority file changed or could not be removed; retained for inspection.");
+    if (directoryAllocated) {
+      await fileSystem.rmdir(/* turbopackIgnore: true */ directory);
+      directoryAllocated = false;
+    }
+  };
+
   return {
     path: filePath,
     async create() {
-      await mkdir(/* turbopackIgnore: true */ directory, { mode: 0o700 });
-      if (mcpPath) {
-        const mcpFile = await open(/* turbopackIgnore: true */ mcpPath, "wx", 0o600);
-        try { await mcpFile.writeFile(JSON.stringify({ mcpServers })); mcpWritten = true; }
-        finally { await mcpFile.close(); }
-      }
-      const file = await open(/* turbopackIgnore: true */ filePath, "wx", 0o600);
+      await retireAbandonedAuthorityDirectories(authorityRoot, fileSystem);
+      await fileSystem.mkdir(/* turbopackIgnore: true */ directory, { mode: 0o700 });
+      directoryAllocated = true;
       try {
-        await file.writeFile(JSON.stringify(scope));
-        const metadata = await file.stat();
-        identity = { dev: metadata.dev, ino: metadata.ino };
-      } finally { await file.close(); }
-    },
-    async dispose() {
-      if (!identity) return;
-      const metadata = await lstat(/* turbopackIgnore: true */ filePath);
-      if (!metadata.isFile() || metadata.dev !== identity.dev || metadata.ino !== identity.ino) {
-        throw new Error("Scope file identity changed; retained for inspection.");
+        for (const [target, contents] of expected) {
+          const handle = await fileSystem.open(/* turbopackIgnore: true */ target, "wx", 0o600);
+          allocated.set(target, null);
+          try {
+            await handle.writeFile(contents);
+            const metadata = await handle.stat();
+            allocated.set(target, { dev: metadata.dev, ino: metadata.ino });
+          } finally {
+            await handle.close();
+          }
+        }
+      } catch (error) {
+        // `dispose` retries anything this can't remove.
+        await retire().catch(() => {});
+        throw error;
       }
-      await unlink(/* turbopackIgnore: true */ filePath);
-      if (mcpPath && mcpWritten) await unlink(/* turbopackIgnore: true */ mcpPath);
-      await rmdir(/* turbopackIgnore: true */ directory);
-      identity = undefined;
     },
+    /**
+     * Run before every launch, including a retry inside one turn. The sandbox
+     * keeps familiars out; this catches any other writer, such as an MCP server.
+     */
+    async assertIntact() {
+      for (const [target, contents] of expected) {
+        const identity = allocated.get(target);
+        if (!identity || !(await hasIdentity(target, identity))
+          || await fileSystem.readFile(/* turbopackIgnore: true */ target, "utf8") !== contents) {
+          throw new Error("An authority file changed after it was written.");
+        }
+      }
+    },
+    dispose: retire,
   };
 }
 

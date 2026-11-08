@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, access } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, access, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -30,6 +30,11 @@ const scopeFile = index < 0 ? null : args[index+1];
 const scope = scopeFile ? JSON.parse(fs.readFileSync(scopeFile, 'utf8')) : null;
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({argv:args,scopeFile,scope})+'\\n');
 if (process.env.CAVE_6356_PREINIT) { process.stderr.write('writeSco'); setTimeout(()=>{process.stderr.write('pe has unsupported overlapping read/write roots PRIVATE_SCOPE_SENTINEL'); process.exit(1);},10); return; }
+if (process.env.CAVE_6393_STALE_RESUME && args.includes('--continue')) {
+  if (process.env.CAVE_6393_STALE_RESUME === 'tamper') fs.writeFileSync(scopeFile, JSON.stringify({...scope,writableRoots:[...scope.writableRoots,'/tampered']}));
+  process.stderr.write('No conversation found with session ID 64c936fa-736e-4218-b279-e72dd318b2da\\n');
+  process.exit(1);
+}
 console.log(JSON.stringify({type:'system',subtype:'init',session_id:'64c936fa-736e-4218-b279-e72dd318b2da'}));
 console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'Synthetic route reply'}]}}));
 console.log(JSON.stringify({type:'result',is_error:false,permission_denials:process.env.CAVE_6356_DENY ? [{tool_name:'Write',tool_input:{file_path:'PRIVATE_DENIAL_SENTINEL'}}] : []}));
@@ -78,6 +83,7 @@ if (noPermission) {
   assert.doesNotMatch(refusal.message,/Update Coven/,"no released Coven has the flag, so updating can't help");
   assert.match(refusal.message,/Read-only/);
   await assert.rejects(access(log),"a caller that didn't opt in must never receive a model launch");
+  await assert.rejects(access(path.join(process.env.COVEN_CAVE_HOME,"claude-authority")),"a Coven that can't use authority files never gets any written");
   // A person watching the chat gets the narrower turn and is told about it.
   const result = await send({allowReadOnlyFallback:true});
   assert.equal(result.status,200,result.body);
@@ -101,6 +107,9 @@ if (noPermission) {
   assert.ok(!launches[0].argv.includes("--permission"),"a Coven with the flag keeps Full access even when the fallback is allowed");
   assert.ok(!first.events.some(e=>e.kind==="progress"&&e.id==="runtime-write-scope-read-only"),first.body);
   assert.ok(scope,"the real route must forward a separate scope document");
+  const authorityDirectory = path.dirname(launches[0].scopeFile);
+  assert.equal(path.dirname(authorityDirectory),await realpath(path.join(process.env.COVEN_CAVE_HOME,"claude-authority")),"authority files live under Cave's home, not temp");
+  assert.ok(scope.protectedRoots.includes(authorityDirectory),"a launch denies its own authority directory to its own sandbox");
   assert.equal(scope.writableRoots.length,2);
   assert.ok(scope.writableRoots.some(p=>p.endsWith(path.join("read","write"))));
   assert.ok(!scope.writableRoots.some(p=>p===scope.readOnlyRoots[0]));
@@ -140,6 +149,27 @@ if (noPermission) {
   assert.ok(!launches.at(-1).argv.includes("--write-scope"));
   assert.ok(launches.at(-1).argv.includes("read-only"));
   for (const launch of launches.filter(call=>call.scopeFile)) await assert.rejects(access(launch.scopeFile), "per-turn scope files are retired after the stream");
+  // A stale native session makes the route retry within the turn, reusing its authority files.
+  const staleFirst = await send();
+  const beforeRetry = (await calls()).length;
+  process.env.CAVE_6393_STALE_RESUME = "clean";
+  const retried = await send({sessionId:staleFirst.done.sessionId});
+  const attempts = (await calls()).slice(beforeRetry);
+  assert.equal(attempts.length,2,retried.body);
+  assert.ok(attempts[0].argv.includes("--continue") && !attempts[1].argv.includes("--continue"),"the retry starts a fresh native session");
+  assert.equal(attempts[0].scopeFile,attempts[1].scopeFile,"a retry inside one turn reuses its authority files");
+  assert.equal(retried.done?.isError,false,retried.body);
+  // So a change made during the first attempt must never reach the second.
+  const tamperFirst = await send();
+  const beforeTamper = (await calls()).length;
+  process.env.CAVE_6393_STALE_RESUME = "tamper";
+  const tampered = await send({sessionId:tamperFirst.done.sessionId});
+  delete process.env.CAVE_6393_STALE_RESUME;
+  const tamperAttempts = (await calls()).slice(beforeTamper);
+  assert.equal(tamperAttempts.length,1,"a changed scope never reaches another launch");
+  assert.ok(tampered.events.some(e=>e.kind==="error"&&e.code==="runtime_write_scope_unavailable"),tampered.body);
+  assert.equal(tampered.done?.isError,true,tampered.body);
+  await assert.rejects(access(tamperAttempts[0].scopeFile),"the turn still retires its files");
   await grantProjectToFamiliar({familiarId:"sage",projectId:project.id,source:"human",access:"read"});
   const before = (await calls()).length;
   const readPrimary = await send();

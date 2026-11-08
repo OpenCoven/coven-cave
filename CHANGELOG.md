@@ -13,8 +13,9 @@ breaking config changes; patch releases stay additive.
   and Claude Code 2.1.318 or later. A familiar can then run shell commands and
   owner-configured MCP tools without `settings.json` allow rules, and the OS
   sandbox limits shell writes to folders it can write to. A repository's own
-  `.mcp.json` is never loaded. No Coven release has this yet, so a Claude chat
-  in Full access still runs Read-only.
+  `.mcp.json` is never loaded. A writable grant that includes Cave's own state
+  folder is refused. No Coven release has this yet, so a Claude chat in Full
+  access still runs Read-only.
 
 ## [0.5.20] - 2026-11-07
 
