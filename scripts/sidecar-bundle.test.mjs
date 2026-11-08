@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const script = readFileSync(new URL("./sidecar-bundle.sh", import.meta.url), "utf8");
 
@@ -42,6 +43,49 @@ assert.doesNotMatch(
   /npm install(?!\s+-)/,
   "sidecar-bundle.sh must not use bare npm install",
 );
+
+// #6431: the staged install reads every patch that package.json registers. This
+// script runs only in release and RC builds, so PR CI never sees a missing one.
+// Run the real copy step against the real manifest.
+const stageCopyStep = script.match(
+  /^cp "\$ROOT\/package\.json" "\$PNPM_STAGE\/package\.json"\n[\s\S]*?(?=^\(\n  cd "\$PNPM_STAGE" && pnpm install)/m,
+)?.[0];
+assert.ok(stageCopyStep, "sidecar-bundle.sh must copy its install inputs into the stage before pnpm install");
+function runStageCopy(rootDir) {
+  const stageDir = mkdtempSync(path.join(tmpdir(), "cave-sidecar-stage-"));
+  const result = spawnSync("bash", ["-e", "-c", stageCopyStep], {
+    encoding: "utf8",
+    env: { ...process.env, ROOT: rootDir, PNPM_STAGE: stageDir },
+  });
+  return { stageDir, result };
+}
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const { pnpm: pnpmConfig } = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+const registeredPatches = Object.values(pnpmConfig?.patchedDependencies ?? {});
+const realStage = runStageCopy(repoRoot);
+try {
+  assert.equal(realStage.result.status, 0, realStage.result.stderr);
+  for (const patch of registeredPatches) {
+    assert.ok(
+      existsSync(path.join(realStage.stageDir, patch)),
+      `sidecar-bundle.sh must copy ${patch} into the stage, or pnpm install fails with ENOENT`,
+    );
+  }
+} finally {
+  rmSync(realStage.stageDir, { recursive: true, force: true });
+}
+// Removing the last patch must not turn into a release-only copy failure.
+const noPatchesRoot = mkdtempSync(path.join(tmpdir(), "cave-sidecar-root-"));
+mkdirSync(path.join(noPatchesRoot, "vendor/opencoven-sdk"), { recursive: true });
+writeFileSync(path.join(noPatchesRoot, "package.json"), "{}");
+writeFileSync(path.join(noPatchesRoot, "pnpm-lock.yaml"), "");
+const noPatchesStage = runStageCopy(noPatchesRoot);
+try {
+  assert.equal(noPatchesStage.result.status, 0, noPatchesStage.result.stderr);
+} finally {
+  rmSync(noPatchesStage.stageDir, { recursive: true, force: true });
+  rmSync(noPatchesRoot, { recursive: true, force: true });
+}
 
 // Release-availability regression: the macos-15 runner sizes V8's default
 // old-space near 2 GB, and the Next build's TypeScript phase exceeds it. That
