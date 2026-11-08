@@ -197,3 +197,190 @@ test("a backwards clock jump after a timeout refuses for at most one window, nev
   assert.equal(admitted.code, "ok");
   assert.equal(runs, 1, "one window after the jump, the mutation is admitted again");
 });
+
+for (const ready of [true, false]) {
+  test(`timeout reconciliation (${ready}) joins a newer in-flight restart`, async () => {
+    await runDaemonMutation(mutation("start", {
+      run: async () => ({ ok: false, code: "readiness_timeout" }),
+    }));
+    const probe = deferred();
+    const pending = runDaemonMutation(mutation("start", { probeReady: () => probe.promise }));
+    const restart = deferred();
+    const newer = runDaemonMutation(mutation("restart", { run: () => restart.promise }));
+    probe.resolve(ready);
+    await Promise.resolve();
+    assert.equal(daemonMutationOwnerSnapshot().lastOutcome.code, "readiness_timeout");
+    const result = { ok: false, code: "spawn_failed" };
+    restart.resolve(result);
+    assert.deepEqual(await pending, result);
+    await newer;
+  });
+
+  test(`timeout reconciliation (${ready}) rechecks admission after a newer mutation settles`, async () => {
+    await runDaemonMutation(mutation("start", {
+      run: async () => ({ ok: false, code: "readiness_timeout" }),
+    }));
+    const probe = deferred();
+    let runs = 0;
+    const pending = runDaemonMutation(mutation("start", {
+      probeReady: () => probe.promise,
+      run: async () => { runs += 1; return { ok: false, code: "spawn_failed" }; },
+    }));
+    await runDaemonMutation(mutation("restart"));
+    probe.resolve(ready);
+    assert.equal((await pending).code, "spawn_failed");
+    assert.equal(runs, 1, "admission uses the current outcome, not the old timeout");
+    assert.equal(daemonMutationOwnerSnapshot().lastOutcome.code, "spawn_failed");
+  });
+}
+
+test("a synchronous throw releases the mutation lane", async () => {
+  await assert.rejects(runDaemonMutation(mutation("start", {
+    run: () => { throw new Error("sync failure"); },
+  })), /sync failure/);
+  assert.equal(daemonMutationOwnerSnapshot().inFlight, null);
+  assert.equal((await runDaemonMutation(mutation("start"))).code, "ok");
+});
+
+test("concurrent timeout reconciliation shares proof without replaying restart", async () => {
+  await runDaemonMutation(mutation("restart", {
+    run: async () => ({ ok: false, code: "readiness_timeout" }),
+  }));
+  const probe = deferred();
+  let probes = 0;
+  let runs = 0;
+  const input = mutation("restart", {
+    probeReady: () => { probes += 1; return probe.promise; },
+    run: async () => { runs += 1; return { ok: true, code: "ok" }; },
+  });
+  const first = runDaemonMutation(input);
+  const second = runDaemonMutation(input);
+  probe.resolve(true);
+  const results = await Promise.all([first, second]);
+  assert.deepEqual(results, [input.reconciled(), input.reconciled()]);
+  assert.equal(probes, 1);
+  assert.equal(runs, 0, "two waiters must not turn a health check into another restart");
+});
+
+for (const ready of [true, false]) {
+  test(`shared reconciliation (${ready}) preserves each requester's result`, async () => {
+    await runDaemonMutation(mutation("start", {
+      run: async () => ({ ok: false, code: "readiness_timeout" }),
+    }));
+    const proof = deferred();
+    let probes = 0;
+    const input = (caller) => mutation("start", {
+      probeReady: () => { probes += 1; return proof.promise; },
+      reconciled: () => ({ ok: true, caller }),
+      refused: (refusal) => ({ ok: false, caller, ...refusal }),
+    });
+    const first = runDaemonMutation(input("first"));
+    const second = runDaemonMutation(input("second"));
+    proof.resolve(ready);
+    const results = await Promise.all([first, second]);
+    assert.deepEqual(results.map((result) => result.caller), ["first", "second"]);
+    assert.equal(probes, 1, "only the health proof is shared");
+  });
+}
+
+for (const completedAt of [12_000, 31_000]) {
+  test(`a negative reconciliation charges time spent probing (${completedAt}ms)`, async () => {
+    let now = 0;
+    await runDaemonMutation(mutation("start", {
+      run: async () => ({ ok: false, code: "readiness_timeout" }), now: () => now,
+    }));
+    now = 1;
+    const proof = deferred();
+    let runs = 0;
+    const pending = runDaemonMutation(mutation("start", {
+      probeReady: () => proof.promise,
+      run: async () => { runs += 1; return { ok: true, code: "ok" }; },
+      now: () => now,
+    }));
+    await Promise.resolve();
+    now = completedAt;
+    proof.resolve(false);
+    const result = await pending;
+    if (completedAt >= 30_000) {
+      assert.equal(result.code, "ok");
+      assert.equal(runs, 1, "the expired window admits one current mutation");
+    } else {
+      assert.equal(result.code, "duplicate_after_timeout");
+      assert.equal(result.retryAfterMs, 30_000 - completedAt);
+      assert.equal(runs, 0);
+    }
+  });
+}
+
+test("mutation code starts synchronously with its real joinable lane already published", async () => {
+  const finish = deferred();
+  let observed;
+  const pending = runDaemonMutation(mutation("start", {
+    run: () => { observed = daemonMutationOwnerSnapshot().inFlight; return finish.promise; },
+  }));
+  try {
+    assert.deepEqual(observed, { kind: "start", startedAt: 0 });
+    const joined = runDaemonMutation(mutation("recovery"));
+    finish.resolve({ ok: true, code: "ok" });
+    assert.deepEqual(await joined, await pending);
+  } finally {
+    finish.resolve({ ok: true, code: "ok" });
+    await pending;
+  }
+});
+
+test("the owner snapshot exposes a pending reconciliation and clears it after settlement", async () => {
+  await runDaemonMutation(mutation("restart", {
+    run: async () => ({ ok: false, code: "readiness_timeout" }),
+  }));
+  const proof = deferred();
+  const pending = runDaemonMutation(mutation("restart", { probeReady: () => proof.promise }));
+  try {
+    assert.deepEqual(daemonMutationOwnerSnapshot().reconciliation, {
+      kind: "restart", startedAt: 0,
+    });
+  } finally {
+    proof.resolve(true);
+    await pending;
+  }
+  assert.equal(daemonMutationOwnerSnapshot().reconciliation, null);
+});
+
+test("a reentrant mutation joins the actual pending result", async () => {
+  const finish = deferred();
+  let joined;
+  let nestedRuns = 0;
+  const first = runDaemonMutation(mutation("start", {
+    run: () => {
+      joined = runDaemonMutation(mutation("recovery", {
+        run: async () => { nestedRuns += 1; return { ok: false, code: "wrong-run" }; },
+      }));
+      return finish.promise;
+    },
+  }));
+  assert.ok(joined, "nested admission happens before the outer call returns");
+  let settled = false;
+  void joined.then(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(settled, false, "a placeholder must not settle a reentrant join");
+  finish.resolve({ ok: true, code: "actual-result" });
+  assert.deepEqual(await joined, await first);
+  assert.equal((await joined).code, "actual-result");
+  assert.equal(nestedRuns, 0);
+});
+
+test("a rejected shared proof clears reconciliation and permits a later probe", async () => {
+  await runDaemonMutation(mutation("start", {
+    run: async () => ({ ok: false, code: "readiness_timeout" }),
+  }));
+  const proof = deferred();
+  const first = runDaemonMutation(mutation("start", { probeReady: () => proof.promise }));
+  const second = runDaemonMutation(mutation("start", { probeReady: () => assert.fail("proof must be shared") }));
+  proof.reject(new Error("health unavailable"));
+  await Promise.all([
+    assert.rejects(first, /health unavailable/),
+    assert.rejects(second, /health unavailable/),
+  ]);
+  assert.equal(daemonMutationOwnerSnapshot().reconciliation, null);
+  assert.equal((await runDaemonMutation(mutation("start", { probeReady: async () => true }))).code, "reconciled");
+});

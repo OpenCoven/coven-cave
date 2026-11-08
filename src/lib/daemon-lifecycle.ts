@@ -65,7 +65,7 @@ export type DaemonLifecycleProjection = {
 };
 
 export type DaemonLifecycle = DaemonLifecycleProjection & {
-  /** Monotonic per process; results from an older generation cannot win. */
+  /** Process-local probe admission order, not a cross-request or restart fence. */
   generation: number;
   observedAt: string;
 };
@@ -111,8 +111,9 @@ export function projectDaemonLifecycle(evidence: DaemonLifecycleEvidence): Daemo
 }
 
 /**
- * Keep whichever observation is newer. A result that belongs to an older
- * generation is evidence about a daemon that no longer exists in that form.
+ * Compare observations from the same owner process. This pure helper is not
+ * wired into production response handling; broker and client request guards
+ * fence their own requests. Generation alone does not prove current health.
  */
 export function mergeDaemonLifecycle(
   current: DaemonLifecycle | null,
