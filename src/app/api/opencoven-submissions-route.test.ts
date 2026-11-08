@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(
-  new URL("./opencoven/submissions/route.ts", import.meta.url),
+  new URL("../../lib/server/opencoven-submissions-runtime.ts", import.meta.url),
   "utf8",
 );
 
-assert.match(source, /export async function GET/);
-assert.match(source, /export async function POST/);
+assert.match(source, /async function getSubmissions/);
+assert.match(source, /async function postSubmission/);
 assert.match(source, /invalid json body/i, "submission route should guard malformed JSON");
 assert.match(source, /validateSubmissionPackage/, "POST should validate the uploaded OpenCoven package");
 assert.match(source, /catalogEntriesFromSubmissions/, "route should publish through OpenCoven catalog projection");

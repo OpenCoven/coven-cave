@@ -7,6 +7,67 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.5.20] - 2026-11-07
+
+> GitHub actions that admit an unknown outcome, service calls that heal on their own, and a shorter sidebar.
+
+Patch release on top of v0.5.19. Headline: **a GitHub action that may have
+gone through says so** instead of inviting a duplicate, and calls to GitHub
+and other services recover on their own once the service is back (#6360,
+#6380). Until a Coven release can limit Claude's file changes to your project
+grants, **a local Claude chat in Full access runs Read-only** (#6364, #6420).
+
+### Changed
+- **Claude edits wait for a Coven that can scope them** (#6364). In Full
+  access, Cave now asks Coven to limit Claude's file changes to the projects
+  you granted write access, and no longer passes a read-only project as
+  writable. No Coven release can apply that limit yet. A conversation in Chat
+  falls back to Read-only (see Fixed). Quick Chat, group chat and voice don't
+  yet, so a Claude turn there in Full access stops and suggests Read-only or
+  another runtime (#6420).
+- **A shorter sidebar** (#6410). Marketplace leaves the sidebar. Open it from
+  Settings → General → Installed capabilities, ⌘K, a skill link in the
+  composer or on a familiar, or a saved link. The familiar Feed tab is gone
+  too: a saved Feed choice opens Memory and stays stored, so it returns if
+  Feed does. Both are hidden, not removed.
+- **Quick Chat says why Send is held** (#6421). When a message can't launch
+  until you choose a project, the composer says so under the message box,
+  screen readers hear it once, and the project picker is outlined. Choosing a
+  project keeps your draft and returns focus to it. `/` commands still send
+  without a project.
+- **Tidier Quick Chat tray** (#6421). The Enhance control matches the height of
+  Send on desktop; before, a phone-width rule made it 46px tall in the 580px
+  tray. "Open in CovenCave" appears once there is a conversation to open,
+  instead of sitting disabled. The footer chips are labelled (Model, Thinking,
+  Speed), and the empty thread lists its `@`, `/` and Enter shortcuts as keys.
+- **Familiar analytics agree** (#6361). The roster, share card and analytics
+  dock count "Coven sessions · 90d" the same way, leaving out the familiar's
+  automatic journal and reflection runs, and the all-time count is labelled.
+  The share card shows the roster's memory count, or "unavailable". One model
+  spelled several ways is one row, with its provider in its own column.
+  Colour marks problems only: "0 critical" is muted, and success bars hatch
+  the failed share. Renown and Contract open a breakdown of how they were
+  reached, and Telemetry coverage says how many attempts lack each field.
+- **The Chart Room reads dependencies from the board only** (#6330). v0.5.19
+  copied each browser's old local links onto the cards; this release stops
+  reading the local copy, and Clear legacy links is gone. A browser that never
+  opened the Chart Room on v0.5.19 keeps those links in its storage, but they
+  no longer show. A blocked card from before dependency tracking asks you to
+  name what blocks it or move it out of Blocked.
+- **Submissions is left out of the default build** (#6412). It already had no
+  launcher. A saved Submissions link opens a page that says it isn't
+  included, with Export and a two-step Delete for saved data, which stays as
+  it was. Building with `COVEN_CAVE_INCLUDE_SUBMISSIONS=1` brings it back.
+- **Setup diagnostics name the local-service failure** (#6416). When
+  first-run setup can't start the Coven service, the diagnostics window and
+  copied report show the failure code, launch mode, readiness attempts,
+  elapsed time and exit code, and the recovery advice fits that failure
+  instead of a generic restart. Raw errors and process output stay out. A
+  report saved earlier gains these after a retry.
+- **Settings → Daemon diagnostics include third-party services** (#6360):
+  failure counts and cooldowns for GitHub, Asana and the rest, never URLs,
+  headers, bodies or tokens.
+
 ### Fixed
 - **A Claude chat answers instead of failing outright** (#6419). No Coven
   release can yet limit Claude's file changes to your project grants, so a turn
@@ -15,6 +76,91 @@ breaking config changes; patch releases stay additive.
 - **Retry uses the runtime and model you just picked** (#6419). It used to
   resend the failed model, so after moving a Claude chat to Codex every Retry
   was refused with the same error.
+- **A GitHub action that may have gone through says so** (#6379, #6380,
+  #6409, #6418). If a comment, reply, review, reaction, workflow dispatch,
+  rerun, thread resolve or merge gets a missing, malformed or cut-off answer,
+  or the connection drops partway, the proposal card shows "This may have gone
+  through" with **Check on GitHub**, and its button reads **Send again
+  anyway**. The composer offers **Refresh to check**. Before, these could read
+  as a success with nothing in it, or as a plain failure that invited a
+  duplicate. An unconfirmed merge never retries or cleans up the branch.
+  Unusable reads show an error instead of a blank profile, "no runs" or an
+  invented commit, and step enrichment no longer wipes a Board card's labels.
+- **Outages at GitHub and other services clear on the next try** (#6360,
+  #6394, #6417). Calls to GitHub, Asana, voice providers, skills.sh and the
+  docs now have a deadline, and the first call after a service recovers
+  reaches it again. A GitHub or Asana token check during an outage or rate
+  limit says it couldn't verify the token right now, instead of calling it
+  invalid. A voice preview that came back empty, not as MP3 or broken partway
+  isn't kept as the sample, and ElevenLabs speech in the wrong format or with
+  no audio is an error. A failed skills search or SKILL.md preview can be
+  retried at once, and Ask Salem no longer fails for an hour after an empty
+  answer from docs.opencoven.ai.
+- **Revoked tokens and rate limits are told apart** (#6406). GitHub and Asana
+  errors say when a token was revoked and needs reconnecting, or when you're
+  rate-limited and for how long. A provider's stated wait is honoured to the
+  end, even past an hour. A newly pasted token is checked at once during a
+  host's cooldown, and saving it clears the cooldown.
+- **Fewer false daemon warnings** (#6317, #6389). One slow or failed status
+  read no longer shows "The Coven daemon didn't answer in time"; it takes two
+  in a row. Once the daemon has answered as running, a slow Cave server takes
+  about a minute of missed reads and then shows "Cave's server is taking too
+  long to answer", instead of blaming the daemon.
+- **On a phone, a tap on a reply control works while you're typing** (#6323).
+  Focusing the composer lifts the transcript, and the composer dropped back
+  mid-tap, so the tap missed: More response actions or a skill's details
+  didn't open. The composer now settles only after the tap.
+- **Automation occurrences** keep the newest page and at most one older one
+  (#6322). A read that has been replaced can no longer change the list, and
+  keyboard focus stays on the control you used; at the last page it moves to
+  **Re-read now**.
+- **Quitting Cave** lets a GitHub notification that is being written to the
+  inbox finish instead of cutting it off (#6351).
+
+### Security
+- **minimatch 11.0.1** (#6381) clears a medium denial-of-service alert. Only
+  development tools such as ESLint use it; it isn't in the installed app.
+  ESLint still asks for 10.x, so an override sets the version.
+- **One-shot familiar runs stay in the familiars folder** (#6376). Board card
+  Enhance, step enrichment and the reader's Rewrite run Coven in the
+  familiar's workspace. A workspace that is a symlink out of the familiars
+  folder, or to the folder itself, is now refused, as chat sends already were.
+- **Submissions answers only this machine** (#6412). In a build that includes
+  it, a request from a paired phone or another remote device is refused
+  before anything loads. Before, an authenticated phone request reached it.
+- **ElevenLabs errors can't echo your API key** (#6417). Error text from
+  ElevenLabs is scrubbed of the configured key and other recognised secrets
+  before Cave shows it.
+
+### Under the hood
+- **Upstream services:** every third-party call the server makes is declared
+  in one registry, and tests inject outages, timeouts, rate limits and
+  malformed answers into each one and check that the next call heals (#6360,
+  #6394, #6418). A failure while reading a response body now counts in
+  diagnostics (#6418), and the X feed and RSS routes keep their last good
+  answer (#6417).
+- **Research:** a local route can turn Research off while Cave runs, and its
+  routes then refuse at once (#6335).
+- **Startup and shutdown:** the runtime startup supervision page matches the
+  shipped lifecycle and workers, with a test that keeps it current (#6337),
+  and shutdown tests register workers through one helper (#6355).
+- **CI and releases:** signing jobs no longer restore shared caches, and a
+  test keeps every job that reads secrets cache-free (#6373). Each of the six
+  E2E shards must show executed tests (#6414).
+- **Performance lane:** warm and offline shell boot to interactive and
+  `coven doctor` are measured against their budgets, so none is left pending
+  (#6336, #6348). The lane gains a rooms-absent baseline (#6339) and a
+  production soak that samples memory and descriptor growth (#6349, #6354).
+  Reports record their host (#6342), and a benchmark teardown race is fixed
+  (#6345).
+- **Dependencies:** transitive packages refreshed within their ranges (#6363,
+  and a direct lockfile update). The Research archive checksum and the
+  tweet-thread validator's Babel runtime pin that the refresh dropped are
+  restored (#6384).
+- **Tests and docs:** the daemon banner spec waits out the two-read retry
+  (#6375), the native harness records a late write instead of crashing
+  (#6343), the first real-provider runtime canaries (#6390), and the
+  automations policy for external callers (#6365).
 
 ## [0.5.19] - 2026-10-30
 

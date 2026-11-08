@@ -70,6 +70,41 @@ Execution routing resolves:
 Latest compatible version wins. Newer incompatible or review-required versions do
 not blindly replace a compatible publishable version.
 
+## Optional in the build
+
+Submissions is left out of a default build. `pnpm build` aliases its runtime and
+page to small stubs in `scripts/submissions-build-config.mjs`, so the validator,
+routing, execution planner and form aren't in the artifact.
+`COVEN_CAVE_INCLUDE_SUBMISSIONS=1 pnpm build` includes them. Rolling back is a
+rebuild with that flag, or the previous artifact; neither changes saved data.
+
+The routes stay in every build and answer through
+`src/lib/server/opencoven-submissions-host.ts`. They are desktop-local, like
+the saved-data routes. Proxy authentication alone isn't enough: a phone or
+other remote request gets 403 `local_request_required` before anything else is
+checked, and a packaged app needs its sidecar token even from loopback. The
+host then checks, in order, whether the build includes Submissions, whether it
+is turned off, whether the implementation loads, and its contract version. It
+decides the first two from build-time metadata, without importing the
+implementation. Each of those refusals is a 503 with a stable `code`:
+
+| Code | Meaning |
+| --- | --- |
+| `submissions-not-installed` | This build has no implementation. |
+| `submissions-disabled` | An included build with `COVEN_CAVE_SUBMISSIONS_DISABLED=1`. Refused before the implementation loads. |
+| `submissions-load-failed` | The implementation is in the build but couldn't load. Retrying is safe. |
+| `submissions-incompatible` | The implementation's contract version isn't the one this host supports. |
+
+A saved `/?mode=submissions` link opens a page that says the feature isn't
+included. Saved submissions stay in `opencoven-submissions.json`, in the Cave
+home and in backups, whichever build runs. Nothing is rewritten or migrated, and
+reinstalling reopens them unchanged. Submissions has no background jobs. A
+refused request starts nothing and an acknowledged publish is durable, so there
+is no accepted work to drain or replay.
+
+`node scripts/qualify-submissions-absence.mjs` qualifies built artifacts. Its
+receipt keeps failures, and it does not cover the signed native bundle.
+
 ## API Surface
 
 - `GET /api/opencoven/submissions`: returns Runtime/Harness choices, catalog
@@ -80,3 +115,8 @@ not blindly replace a compatible publishable version.
   execution-service plan for a selected harness/runtime pair. It resolves and
   returns the dispatch contract; uploaded artifacts are not executed directly by
   the submission UI.
+- `GET /api/opencoven/submissions/retained`: in every build, reports whether
+  saved submissions exist and how many. `?download=1` exports the file byte for
+  byte.
+- `DELETE /api/opencoven/submissions/retained?confirm=delete`: deletes the saved
+  file. It works without the implementation and requires the confirmation.

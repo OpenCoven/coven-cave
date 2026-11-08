@@ -619,4 +619,111 @@ assert.match(
   );
 }
 
+// ── #6421: a held send explains itself ──────────────────────────────────────
+{
+  const quickChatCss = readFileSync(new URL("../styles/quick-chat.css", import.meta.url), "utf8");
+  assert.match(
+    quickHook,
+    /projectLaunchMessage: string;[\s\S]*return \{[\s\S]*projectLaunchReady,\s*\n\s*projectLaunchMessage,/,
+    "the hook exposes the launch reason it already writes to error on a refused send",
+  );
+  assert.match(
+    source,
+    /const sendBlockedReason =\s*canSend && !launchReady && !slashDraft && !disabled \? launchBlockedReason \|\| null : null;/,
+    "the reason shows only when there is something to send, the gate holds it and it is not a local /command",
+  );
+  assert.match(
+    source,
+    /\{sendBlockedReason \? \(\s*\n\s*<p id=\{sendHintId\} className="quick-chat-send-hint">/,
+    "the reason renders as visible text with a stable id",
+  );
+  assert.match(
+    source,
+    /aria-describedby=\{sendBlockedReason \? sendHintId : undefined\}\s*\n\s*placeholder=/,
+    "the message field is described by the reason",
+  );
+  assert.match(
+    source,
+    /disabled=\{disabled \|\| !canDispatch\}\s*\n\s*aria-describedby=\{sendBlockedReason \? sendHintId : undefined\}/,
+    "the disabled Send is described by the same reason",
+  );
+  assert.match(
+    source,
+    /if \(!disabled && canDispatch\) send\(\);\s*\n\s*else if \(sendBlockedReason\) announce\(sendBlockedReason\);/,
+    "Enter on a held message announces the reason instead of doing nothing",
+  );
+  assert.match(
+    source,
+    /if \(sendBlockedReason && announcedBlockRef\.current !== sendBlockedReason\) \{\s*\n\s*announce\(sendBlockedReason\);/,
+    "the reason is announced once when it appears, not on every keystroke",
+  );
+  assert.match(
+    source,
+    /const sendBlocked = sendBlockedReason !== null;\s*\n\s*useEffect\(\(\) => \{\s*\n\s*onSendBlockedChange\?\.\(sendBlocked\);\s*\n\s*\}, \[onSendBlockedChange, sendBlocked\]\);/,
+    "the composer reports exactly the held state that renders the hint, so the project picker can follow it",
+  );
+  assert.match(
+    source,
+    /className=\{projectAttention \? "flex-1 quick-chat-select--attention" : "flex-1"\}\s*\n\s*ariaDescribedBy=\{projectAttention \? projectHintId : undefined\}/,
+    "the project picker is marked and described while a draft waits on it",
+  );
+  assert.match(
+    source,
+    /ariaDescribedBy=\{projectAttention \? projectHintId : undefined\}\s*\n\s*triggerIcon="ph:folder"/,
+    "the closed project trigger carries the folder glyph so it reads as the project field",
+  );
+  assert.match(
+    source,
+    /\{ value: "__choose__", label: "Choose project…", disabled: true \},/,
+    "the disabled placeholder row in the menu stays iconless, so it never looks like a project",
+  );
+  assert.match(
+    primitives,
+    /const glyph = selected\?\.icon \?\? triggerIcon;[\s\S]{0,200}selected\?\.leading \?\? \(glyph \?/,
+    "an option's own glyph wins; the trigger glyph only fills a placeholder",
+  );
+  assert.match(
+    primitives,
+    /aria-describedby=\{ariaDescribedBy\}/,
+    "QuickChatSelect forwards its description to the shared StandardSelect trigger",
+  );
+  assert.match(
+    source,
+    /import "@\/styles\/home-composer\.css";[\s\S]{0,400}import "@\/styles\/quick-chat\.css";/,
+    "Quick Chat's sheet is component-imported after the composer sheets it overrides",
+  );
+  assert.match(
+    quickChatCss,
+    /@media \(pointer: fine\) \{\s*\n\s*\.quick-chat-overlay__actions \.composer-enhance-control__segment \{\s*\n\s*height: revert-layer;\s*\n\s*min-width: revert-layer;/,
+    "on a fine pointer the narrow tray keeps Enhance at Send's height instead of the phone touch target",
+  );
+  assert.match(
+    quickChatCss,
+    /\.quick-chat-meta-chip__value \{\s*\n\s*color: var\(--text-primary\);/,
+    "a footer chip's value outranks its key in every palette",
+  );
+  assert.doesNotMatch(
+    quickChatCss,
+    /\.quick-chat-meta-chip__key \{[^}]*--text-muted/,
+    "--text-muted is brighter than the chip's --text-secondary in Coven dark, so it would make the key outshine the value",
+  );
+}
+
+// ── #6421: empty-state keyboard hints ───────────────────────────────────────
+assert.doesNotMatch(
+  thread,
+  /Replies stream right here · @name to switch familiar · Enter to send/,
+  "the run-on hint sentence that orphaned \"send\" is gone",
+);
+assert.match(
+  thread,
+  /\{ key: "@", action: "switch familiar" \},\s*\n\s*\{ key: "\/", action: "commands" \},\s*\n\s*\{ key: "Enter", action: "send" \},/,
+  "the empty state names @, / and Enter as keycap hints",
+);
+assert.match(
+  thread,
+  /<kbd className="quick-chat-reco__kbd">\{key\}<\/kbd>/,
+  "the keycaps reuse Quick Chat's existing kbd treatment",
+);
+
 console.log("quick-chat-controls.test.ts OK");

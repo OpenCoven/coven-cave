@@ -20,7 +20,16 @@ for (const [path, method, handler] of routes) {
     });
     let bodyReads = 0;
     let fetches = 0;
-    request.json = async () => { bodyReads++; return { message: "Help", userMessage: "Help" }; };
+    for (const bodyMethod of ["json", "text", "arrayBuffer", "formData", "blob", "bytes"]) {
+      Object.defineProperty(request, bodyMethod, { value: async () => {
+        bodyReads++;
+        throw new Error("Retirement must precede every body reader");
+      } });
+    }
+    Object.defineProperty(request, "body", { get() {
+      bodyReads++;
+      throw new Error("Retirement must not access the request stream");
+    } });
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => { fetches++; throw new Error("Retired work must not contact providers"); };
     try {

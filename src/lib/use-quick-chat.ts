@@ -170,6 +170,10 @@ export type UseQuickChat = {
   projectsLoading: boolean;
   projectsError: string | null;
   projectLaunchReady: boolean;
+  /** Why an ordinary message cannot launch yet (no project chosen, access
+   *  still loading, …) — the same text a refused send writes to `error`, so
+   *  the composer can say it before the person presses Send. */
+  projectLaunchMessage: string;
   selectedProjectRoot: string | null;
   setSelectedProjectRoot: (root: string | null) => void;
   draft: string;
@@ -1091,6 +1095,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     projectsLoading,
     projectsError,
     projectLaunchReady,
+    projectLaunchMessage,
     selectedProjectRoot,
     setSelectedProjectRoot: pickProjectRoot,
     draft,

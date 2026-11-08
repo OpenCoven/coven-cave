@@ -1,4 +1,4 @@
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
@@ -73,6 +73,8 @@ export function QuickChatSelect<T extends string>({
   onChange,
   disabled,
   className,
+  ariaDescribedBy,
+  triggerIcon,
 }: {
   label: string;
   value: T;
@@ -80,6 +82,13 @@ export function QuickChatSelect<T extends string>({
   onChange: (value: T) => void;
   disabled?: boolean;
   className?: string;
+  /** Help text that explains the control's current state (e.g. why a
+   *  project must be chosen before sending). */
+  ariaDescribedBy?: string;
+  /** Glyph naming the field on the closed trigger while the shown option has
+   *  none of its own (a placeholder). Kept off the menu, where it would make
+   *  a disabled placeholder row look like another choice. */
+  triggerIcon?: IconName;
 }) {
   return (
     <StandardSelect
@@ -88,20 +97,24 @@ export function QuickChatSelect<T extends string>({
       options={options}
       onChange={onChange}
       disabled={disabled}
+      aria-describedby={ariaDescribedBy}
       showCaret={false}
       className={[
         "quick-chat-select__trigger min-w-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-left text-xs outline-none disabled:cursor-not-allowed disabled:opacity-55",
         className ?? "",
       ].filter(Boolean).join(" ")}
-      renderValue={(selected) => (
-        <>
-          <span className="flex min-w-0 items-center gap-2">
-            {selected?.leading ?? (selected?.icon ? <Icon name={selected.icon} width={13} aria-hidden className="shrink-0 text-[var(--fg-muted)]" /> : null)}
-            <span className="min-w-0 truncate">{selected?.label ?? label}</span>
-          </span>
-          <Icon name="ph:caret-down" width={13} aria-hidden className="shrink-0 text-[var(--fg-muted)]" />
-        </>
-      )}
+      renderValue={(selected) => {
+        const glyph = selected?.icon ?? triggerIcon;
+        return (
+          <>
+            <span className="flex min-w-0 items-center gap-2">
+              {selected?.leading ?? (glyph ? <Icon name={glyph} width={13} aria-hidden className="shrink-0 text-[var(--fg-muted)]" /> : null)}
+              <span className="min-w-0 truncate">{selected?.label ?? label}</span>
+            </span>
+            <Icon name="ph:caret-down" width={13} aria-hidden className="shrink-0 text-[var(--fg-muted)]" />
+          </>
+        );
+      }}
     />
   );
 }

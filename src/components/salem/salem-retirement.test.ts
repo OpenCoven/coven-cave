@@ -44,6 +44,7 @@ test("saved primary and split Salem links retain their address for the inert not
 for (const sample of [
   { name: "existing history", raw: JSON.stringify(Array.from({ length: 60 }, (_, at) => ({ role: "user", text: `保留 ${at}`, at, legacy: true }))) },
   { name: "unrecognized legacy payload", raw: "{legacy payload preserved verbatim" },
+  { name: "oversized malformed history", raw: "{legacy:" + "保留\r\n".repeat(300_000) },
   { name: "missing history", raw: null },
   { name: "blocked browser storage", blocked: true },
 ]) {

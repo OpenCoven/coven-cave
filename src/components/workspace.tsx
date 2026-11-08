@@ -113,6 +113,7 @@ import { isLatestFamiliarRosterRequest } from "@/lib/familiar-roster-request";
 import {
   classifyDaemonConnectionTravelCadence,
   classifyDaemonStatusPoll,
+  daemonUnavailableReadsBeforeNotice,
   describeDaemonStatusProblem,
 } from "@/lib/daemon-status-classification";
 import {
@@ -1191,6 +1192,8 @@ export function Workspace() {
   // One slow or dropped status read (wake from sleep, a busy server) is not
   // evidence of a problem. The notice waits for a second consecutive failure.
   const daemonUnavailableStreakRef = useRef(0);
+  // Whether the last definite answer said running, which lets a read timeout wait longer.
+  const daemonConfirmedRunningRef = useRef(false);
   const daemonConnectionSupervisorRef = useRef<ReturnType<typeof createDaemonConnectionSupervisor> | null>(null);
   const daemonTravelReconcileRequesterRef = useRef<ReturnType<typeof createDaemonTravelReconcileRequester> | null>(null);
   const startDaemonRef = useRef<({ automatic }?: { automatic?: boolean }) => Promise<void>>(async () => {});
@@ -1445,7 +1448,10 @@ export function Workspace() {
     // live UI state, but can never turn into a delayed automatic restart.
     daemonAutoStartCoordinatorRef.current!.observeStatus(result);
     if (result.kind === "running") {
+      daemonConfirmedRunningRef.current = true;
       setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "running" }));
+    } else if (result.kind === "offline") {
+      daemonConfirmedRunningRef.current = false;
     }
     if (result.kind === "unavailable") {
       daemonHealthyStreakRef.current = 0;
@@ -1454,7 +1460,10 @@ export function Workspace() {
       // still surfaces quickly while a one-off blip never paints the banner.
       // A tolerated read also leaves the boot state unresolved: resolving it
       // without a notice would read as "offline" before any answer (#5781).
-      if (daemonUnavailableStreakRef.current < 2) return;
+      if (
+        daemonUnavailableStreakRef.current
+        < daemonUnavailableReadsBeforeNotice(result.reason, daemonConfirmedRunningRef.current)
+      ) return;
       setDaemonStatusResolved(true);
       setDaemonStatusUnavailable(result.reason);
       return;
@@ -4594,7 +4603,6 @@ export function Workspace() {
           openGrimoireDoc("memory", path);
         }}
         onOpenOnboarding={openOnboarding}
-        onOpenUrl={openUrlInAppBrowser}
         onFamiliarCreated={(id) => {
           void loadFamiliars();
           selectFamiliar(id);
