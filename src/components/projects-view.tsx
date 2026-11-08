@@ -899,13 +899,6 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             >
               {addFlow.adding ? "Adding project…" : "New project"}
             </Button>
-            <Button
-              variant="secondary"
-              leadingIcon="ph:sparkle"
-              onClick={() => window.dispatchEvent(new CustomEvent("cave:salem-open"))}
-            >
-              Ask Salem
-            </Button>
           </>
         }
       />

@@ -374,9 +374,9 @@ const contracts: RouteContract[] = [
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
   { route: "/rss", methods: ["GET"], kind: "json" },
   { route: "/running-activity", methods: ["GET"], kind: "json" },
-  { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
-  { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/salem", methods: ["GET", "POST"], kind: "json" },
+  { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json" },
+  { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json" },
   { route: "/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },
   { route: "/sessions/[id]/input", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -492,6 +492,9 @@ function usesJsonResponse(source: string): boolean {
 
 function effectiveRouteSource(file: string, source: string): string {
   const parts = [source];
+  if (source.includes('from "@/lib/server/salem-retired"')) {
+    parts.push(readFileSync(path.join(root, "src", "lib", "server", "salem-retired.ts"), "utf8"));
+  }
   const reexport = source.match(/from\s+"(\.[^"]+\/route)";/);
   if (reexport) {
     const target = path.resolve(path.dirname(file), `${reexport[1]}.ts`);

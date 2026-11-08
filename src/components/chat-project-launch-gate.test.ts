@@ -7,7 +7,6 @@ const chat = read("./chat-view.tsx");
 const home = read("./home-composer.tsx");
 const sessionHeader = read("./chat-session-header.tsx");
 const emptyState = read("./chat-empty-state.tsx");
-const salem = read("../app/api/salem/route.ts");
 
 assert.match(
   chat,
@@ -117,10 +116,5 @@ assert.match(
   "Home voice should require the shell project and validated actor before setting mint state",
 );
 
-assert.match(
-  salem,
-  /fetch\(new URL\("\/api\/chat\/generate\/enhance"[\s\S]*familiarId:\s*args\.familiarId,[\s\S]*permissionMode:\s*"read"/,
-  "Ask Salem's hidden docs synthesis should remain projectless and read-only instead of becoming a broken Chat launch",
-);
 
 console.log("chat-project-launch-gate.test.ts: ok");

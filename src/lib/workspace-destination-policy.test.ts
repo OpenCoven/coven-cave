@@ -24,7 +24,7 @@ test("palette destinations expose only visible canonical destinations", () => {
   const destinations = paletteDestinations();
   assert.deepEqual(
     destinations.map(({ id }) => id),
-    ["chat", "home", "inbox", "board", "salem", "browser", "canvas", "marketplace", "grimoire"],
+    ["chat", "home", "inbox", "board", "browser", "canvas", "marketplace", "grimoire"],
   );
   assert.ok(destinations.every(({ id, canonicalId, palette }) => id === canonicalId && palette !== "hidden"));
   assert.equal(new Set(destinations.map(({ id }) => id)).size, destinations.length);

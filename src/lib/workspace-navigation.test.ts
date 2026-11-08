@@ -42,11 +42,7 @@ assert.match(
   /\{ id: "browser",[\s\S]*?group: "(?:work|explore)"/,
   "hidden Browser remains classified for future visible navigation",
 );
-assert.match(
-  registry,
-  /\{ id: "salem",[\s\S]*?group: "(?:work|explore)"/,
-  "hidden Ask Salem remains classified for future visible navigation",
-);
+assert.doesNotMatch(registry, /id: "salem"/, "retired Salem has no launcher");
 
 assert.match(
   sidebar,

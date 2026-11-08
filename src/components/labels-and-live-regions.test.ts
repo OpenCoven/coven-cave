@@ -26,14 +26,11 @@ function read(file: string) {
   );
 }
 
-// 3. salem-widget.tsx search input has an accessible name.
+// 3. The legacy Salem compatibility notice is labelled and never has a composer.
 {
-  const src = read("salem/salem-widget.tsx");
-  assert.match(
-    src,
-    /<input[\s\S]*?aria-label="[^"]+"/,
-    "salem search input has aria-label",
-  );
+  const src = read("salem/ask-salem-view.tsx");
+  assert.match(src, /aria-label="Retired Ask Salem"/);
+  assert.doesNotMatch(src, /<input|<textarea/);
 }
 
 // 4. chat-view.tsx transcript container is an announced log region.

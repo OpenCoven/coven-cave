@@ -14,6 +14,9 @@ await mkdir(path.join(sourceHome, "cave", "conversations"), { recursive: true })
 await mkdir(path.join(sourceHome, "journal"), { recursive: true });
 await mkdir(path.join(sourceHome, "workspaces", "repo"), { recursive: true });
 await writeFile(path.join(sourceHome, "cave", "config.json"), JSON.stringify({ multiHost: { mode: "local" } }));
+// Retirement must preserve even unparseable legacy pathfinder data byte-for-byte.
+const legacySalemBytes = Buffer.from("7b226c6567616379223aff000d0a7d", "hex");
+await writeFile(path.join(sourceHome, "cave", "salem-pathfinder.json"), legacySalemBytes);
 await writeFile(path.join(sourceHome, "cave", "conversations", "chat-1.json"), JSON.stringify({ sessionId: "chat-1", text: "private chat" }));
 await writeFile(path.join(sourceHome, "journal", "entry.md"), "# Journal\n");
 await writeFile(path.join(sourceHome, "cave", "local-vault.key"), `${Buffer.alloc(32, 7).toString("base64")}\n`);
@@ -38,6 +41,8 @@ const {
 
 const passphrase = "correct horse battery staple";
 const { archive, manifest } = await buildBackupArchive(passphrase);
+assert.ok(manifest.entries.some((entry) => entry.path === "salem-pathfinder.json"), "retired Salem data remains in encrypted backup");
+assert.deepEqual(await readFile(path.join(sourceHome, "cave", "salem-pathfinder.json")), legacySalemBytes, "backup never rewrites legacy Salem bytes");
 const archiveText = archive.toString("utf8");
 assert.equal(archiveText.includes("SECRET_SHOULD_NOT_APPEAR"), false, "plaintext .env secret is encrypted inside the envelope");
 assert.equal(archiveText.includes(Buffer.alloc(32, 7).toString("base64")), false, "vault key is not plaintext in the archive");
@@ -150,6 +155,7 @@ await restoreBackupArchive(archive, passphrase, {
   },
 });
 assert.equal(recoveryCalls, 1);
+assert.deepEqual(await readFile(path.join(restoreHome, "cave", "salem-pathfinder.json")), legacySalemBytes, "restore preserves malformed legacy Salem bytes");
 assert.equal(await readFile(path.join(restoreHome, "cave", "conversations", "chat-1.json"), "utf8"), JSON.stringify({ sessionId: "chat-1", text: "private chat" }));
 assert.equal((await readFile(path.join(restoreHome, "cave", "local-vault.key"), "utf8")).trim(), Buffer.alloc(32, 7).toString("base64"));
 const restoredResearchManifest = path.join(
