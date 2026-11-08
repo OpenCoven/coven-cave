@@ -1225,7 +1225,7 @@ for (const contract of contracts) {
   );
   assert.match(
     sendSource,
-    /const runAttempt = [\s\S]*if \(runHandle\.stopRequested\) return(?: Promise\.resolve\(\))?;/,
+    /const runAttempt = [\s\S]*if \(runHandle\.stopRequested\) return Promise\.resolve\(\);/,
     "/chat/send: shared direct dispatch must not launch after consuming an early Stop",
   );
   assert.match(

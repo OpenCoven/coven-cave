@@ -5678,18 +5678,24 @@ async function postAdmittedChat(
         }
       };
 
-      const runAttempt = async (spawnArgs: string[], apiPrompt = harnessPrompt): Promise<void> => {
-        if (runHandle.stopRequested) return;
+      const runAttempt = (spawnArgs: string[], apiPrompt = harnessPrompt, authorityVerified = false): Promise<void> => {
+        if (runHandle.stopRequested) return Promise.resolve();
         if (hermesApi) return runHermesApiAttempt(apiPrompt);
         // These files decide what a launch may write and what it starts outside
-        // the sandbox. A retry reuses them, so each attempt checks them first.
-        if (writeScopeFile && !await writeScopeFile.assertIntact().then(() => true, () => false)) {
-          launchFailure = { code: "runtime_write_scope_unavailable",
-            message: "Cave could not verify this familiar's write access files, so the run did not start. Retry, and restart Cave if this continues." };
-          result.is_error = true;
-          pushProgress("runtime-write-scope", "Project write access unavailable", "error", launchFailure.message);
-          push({ kind: "error", ...launchFailure, harness: binding.harness });
-          return;
+        // the sandbox. A retry reuses them, so each attempt checks them first,
+        // then re-enters above so a Stop during the check still prevents the launch.
+        if (writeScopeFile && !authorityVerified) {
+          return writeScopeFile.assertIntact().then(
+            () => runAttempt(spawnArgs, apiPrompt, true),
+            () => {
+              const failure = { code: "runtime_write_scope_unavailable",
+                message: "Cave could not verify this familiar's write access files, so the run did not start. Retry, and restart Cave if this continues." };
+              launchFailure = failure;
+              result.is_error = true;
+              pushProgress("runtime-write-scope", "Project write access unavailable", "error", failure.message);
+              push({ kind: "error", ...failure, harness: binding.harness });
+            },
+          );
         }
         return new Promise((resolve) => {
           const attemptStartedAt = Date.now();
