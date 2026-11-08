@@ -604,7 +604,7 @@ export async function restoreBackupArchive(
       const researchFile = file.root === "cave" && file.path.startsWith("research-resources/");
       const attachmentFile = file.root === "cave"
         && (file.path === "chat-attachments" || file.path.startsWith("chat-attachments/"));
-      const privateRoot = attachmentFile ? path.join(roots.cave, "chat-attachments") : researchFile ? researchRoot : null;
+      const privateRoot = attachmentFile ? path.join(/* turbopackIgnore: true */ roots.cave, "chat-attachments") : researchFile ? researchRoot : null;
       const label = attachmentFile ? "Chat attachment" : "Research";
       const observer = researchFile ? options.researchDurabilityObserver : undefined;
       if (privateRoot) {
