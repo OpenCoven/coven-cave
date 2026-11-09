@@ -3474,7 +3474,8 @@ async function postAdmittedChat(
         writeScopeFile = prepareClaudeWriteScopeFile(writeScope, await loadClaudeFamiliarMcpServers({
           familiarWorkspace: resolvedFamiliarWorkspace,
           projectRoots: grantedProjectRoots,
-        }));
+          writableRoots: writeScope.writableRoots,
+        }), { env: localRuntimePlan?.env });
       }
     } catch (error) {
       return Response.json({ ok: false, code: "scoped_write_unavailable",
@@ -3920,7 +3921,7 @@ async function postAdmittedChat(
           "runtime-mcp-servers-excluded",
           "MCP servers left out",
           "notice",
-          `Left out of this turn: ${writeScopeFile.excludedMcpServers.join(", ")}. These servers run outside Claude's sandbox and use a folder this familiar can write to. To use them, move what they reference out of that folder or narrow its access.`,
+          `Left out of this turn: ${writeScopeFile.excludedMcpServers.join(", ")}. They use a folder this familiar can write to, and MCP servers can't open those folders while Claude has write access. To use them, move what they reference out of that folder or narrow its access.`,
         );
       }
       // Report what identity context this turn actually loaded. A familiar

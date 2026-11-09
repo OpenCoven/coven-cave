@@ -13,10 +13,13 @@ breaking config changes; patch releases stay additive.
   and Claude Code 2.1.318 or later. A familiar can then run shell commands and
   owner-configured MCP tools without `settings.json` allow rules, and the OS
   sandbox limits shell writes to folders it can write to. A repository's own
-  `.mcp.json` is never loaded. Local MCP servers start outside your project
-  folders, and a server that references a folder the familiar can write to is
-  left out of the turn with a notice, because those servers run outside the
-  sandbox. A writable grant that overlaps Cave's own state folder is refused. No
+  `.mcp.json` is never loaded, including at a workspace inside a repository.
+  Local MCP servers and header helpers run outside Claude's sandbox, so on macOS
+  they start outside your project folders and can't read, write or run anything
+  in a folder the familiar can write to. A server that references one is left
+  out of the turn with a notice. A tool that starts its own sandbox, such as
+  Chromium, needs its no-sandbox option to run inside an MCP server. A writable
+  grant that overlaps Cave's own state folder is refused. No
   Coven release has this yet, so a Claude chat in Full access still runs
   Read-only.
 
