@@ -317,7 +317,7 @@ async function checkDaemon(): Promise<Step> {
 
 /**
  * Advisory since familiar creation moved out of the wizard: the roster count
- * still ships in the payload (Salem context and the wizard read it), but a
+ * still ships in the payload (the wizard reads it), but a
  * familiar-less machine is DONE with setup — the in-app Summoning Circle
  * (Familiars surface) owns creation now, so this never gates `complete`.
  */

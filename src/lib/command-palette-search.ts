@@ -53,10 +53,6 @@ export function filterPaletteRows<T extends PaletteCategorizedRow>(
   return rows.filter((row) => paletteCategoryForKind(row.kind) === category);
 }
 
-function isLocalResult(row: PaletteCategorizedRow): boolean {
-  return row.kind !== "salem-answer";
-}
-
 export function paletteResultCounts(rows: readonly PaletteCategorizedRow[]): Record<PaletteCategory, number> {
   const counts: Record<PaletteCategory, number> = {
     all: 0,
@@ -67,7 +63,6 @@ export function paletteResultCounts(rows: readonly PaletteCategorizedRow[]): Rec
     actions: 0,
   };
   for (const row of rows) {
-    if (!isLocalResult(row)) continue;
     counts.all += 1;
     counts[paletteCategoryForKind(row.kind)] += 1;
   }
@@ -79,7 +74,7 @@ export function paletteResultSummary(
   category: PaletteCategory,
   query: string,
 ): string {
-  const count = rows.filter(isLocalResult).length;
+  const count = rows.length;
   const noun = SUMMARY_NOUN[category];
   const suffix = count === 1 ? "" : "s";
   const trimmed = query.trim();
