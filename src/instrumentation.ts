@@ -23,6 +23,16 @@ export async function register() {
   } catch (error) {
     console.warn("[instrumentation] Research Resource restore recovery could not start:", error);
   }
+  try {
+    const claudeAuthority = await import("@/lib/claude-write-scope");
+    void caveHomeReady
+      .then(() => claudeAuthority.retireAbandonedClaudeAuthorityFiles())
+      .catch((error) => {
+        console.warn("[instrumentation] abandoned Claude authority sweep failed:", error);
+      });
+  } catch (error) {
+    console.warn("[instrumentation] abandoned Claude authority sweep could not start:", error);
+  }
   const shutdown = await import("@/lib/server/startup-worker-shutdown");
   try {
     // The optional Research runtime has one activation owner (#6332): it
