@@ -462,7 +462,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const capturedActiveId = activeIdRef\.current;\s*const capturedScopeKey = chatAttentionProjectionScopeKey\(capturedActiveId\);[\s\S]*const isCurrent = \(\) => isCurrentSessionListRequest\(\{[\s\S]*capturedScopeKey,[\s\S]*currentScopeKey: chatAttentionProjectionScopeKey\(activeIdRef\.current\)/,
+  /const capturedActiveId = modeRef\.current === "chat" \? null : activeIdRef\.current;\s*const capturedScopeKey = chatAttentionProjectionScopeKey\(capturedActiveId\);[\s\S]*const isCurrent = \(\) => isCurrentSessionListRequest\(\{[\s\S]*capturedScopeKey,[\s\S]*currentScopeKey: chatAttentionProjectionScopeKey\(modeRef\.current === "chat" \? null : activeIdRef\.current\)/,
   "each session-list response should be tagged with its captured scope and rejected after a scope switch",
 );
 assert.match(
@@ -472,12 +472,12 @@ assert.match(
 );
 assert.match(
   workspace,
-  /useEffect\(\(\) => \{[\s\S]{0,600}?void loadSessions\(\);\s*\}, \[activeId, loadSessions\]\);/,
+  /useEffect\(\(\) => \{[\s\S]{0,600}?void loadSessions\(\);\s*\}, \[activeId, mode, loadSessions\]\);/,
   "scope changes should explicitly launch a current-scope session-list request",
 );
 assert.match(
   workspace,
-  /familiarSwitchSpanRef\.current = \{\s*scopeKey: chatAttentionProjectionScopeKey\(activeId\),\s*end: startSpan\("chat:familiar-switch"\),/,
+  /familiarSwitchSpanRef\.current = \{\s*scopeKey: chatAttentionProjectionScopeKey\(mode === "chat" \? null : activeId\),\s*end: startSpan\("chat:familiar-switch"\),/,
   "a familiar switch is timed until its scope's list is applied (#5448)",
 );
 
