@@ -29,16 +29,16 @@ assert.doesNotMatch(menuBar, /FamiliarQuickSwitch|FamiliarSwitcher/, "the menu b
 // mobile-only, or the same two pickers render twice (cave-fh9so).
 assert.match(
   sidenav,
-  /<SidebarRailHeader[\s\S]*?contextMode="mobile"/,
-  "the rail's scope row is mobile-only",
+  /<SidebarRailHeader[\s\S]*?contextMode=\{mode === "chat" \? "hidden" : "mobile"\}/,
+  "the rail's ambient selectors stay mobile-only outside Chat and are hidden on Chat",
 )
 assert.match(railHeader, /<SidebarScopeSelector/, "the shared header mounts the compact desktop selector");
 assert.match(railHeader, /<WorkspaceContextSwitcher/, "the shared header mounts the project-and-crew context switcher");
 assert.match(contextSwitcher, /<FamiliarSwitcher[\s\S]*?labeled/, "the context switcher mounts the crew switcher in its labeled form");
 assert.match(
   sidenav,
-  /<SidebarRailHeader[\s\S]*?contextMode="mobile"/,
-  "the sidenav header scopes its context row to mobile (desktop reads the title bar)",
+  /<SidebarRailHeader[\s\S]*?contextMode=\{mode === "chat" \? "hidden" : "mobile"\}/,
+  "the sidenav hides ambient selectors on Chat and keeps other mobile contexts",
 )
 assert.match(
   workspace,

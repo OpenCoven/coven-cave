@@ -15,7 +15,7 @@ assert.match(source, /familiars=\{projectId \? projectCrew : allFamiliars\}/);
 assert.match(source, /aggregateLabel=\{projectId \? "Project crew" : "All familiars"\}/);
 assert.match(
   source,
-  /aggregateDescription=\{projectId \? `\$\{projectCrew\.length\} with access` : undefined\}/,
+  /aggregateDescription=\{projectId \? `\$\{projectCrew\.length\} with \$\{fullAccessOnly \? "Full access" : "access"\}` : undefined\}/,
 );
 assert.match(
   source,

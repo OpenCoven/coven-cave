@@ -236,7 +236,9 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const activeSessionId = view.kind === "chat" ? view.sessionId : null;
   const viewProjectRoot = view.kind === "chat"
     ? view.sessionId === null && !view.started
-      ? blankChatProjectRoot(view.projectRoot, view.projectScopeAtOpen, browseScope?.selection, composeProjectRoot)
+      ? browseScope?.familiarIds !== undefined
+        ? view.projectRoot ?? composeProjectRoot ?? undefined
+        : blankChatProjectRoot(view.projectRoot, view.projectScopeAtOpen, browseScope?.selection, composeProjectRoot)
       : view.projectRoot
     : undefined;
   const viewProjectRootRef = useRef(viewProjectRoot);
@@ -334,7 +336,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   retainedFamiliarRef.current = chatFamiliar;
   const {
     projects,
-  } = useProjects({ familiarId: familiar?.id ?? null });
+  } = useProjects({ familiarId: browseScope?.familiarIds !== undefined ? null : familiar?.id ?? null });
   const projectOverrides = useProjectOverrides();
   const browseSessions = useMemo(
     () => scopeChatBrowseSessions(sessions, projects, projectOverrides, browseScope),
@@ -823,7 +825,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   if (view.kind === "list") {
     return (
       <ChatList
-        familiar={familiar}
+        familiar={browseScope?.familiarIds !== undefined ? null : familiar}
         familiars={familiars}
         sessions={browseSessions}
         browseScope={browseScope}

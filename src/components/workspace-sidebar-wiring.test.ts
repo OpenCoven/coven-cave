@@ -182,8 +182,8 @@ assert.doesNotMatch(
 );
 assert.match(
   workspace,
-  /const capturedActiveId = activeIdRef\.current;\s*\n\s*const capturedScopeKey = chatAttentionProjectionScopeKey\(capturedActiveId\);\s*\n\s*const reqId = \+\+loadSessionsReqRef\.current;\s*\n\s*const isCurrent = \(\) => isCurrentSessionListRequest\(\{[\s\S]*?capturedScopeKey,[\s\S]*?currentScopeKey: chatAttentionProjectionScopeKey\(activeIdRef\.current\),/,
-  "loadSessions captures the current familiar and attention projection scope from activeIdRef",
+  /const capturedActiveId = modeRef\.current === "chat" \? null : activeIdRef\.current;\s*\n\s*const capturedScopeKey = chatAttentionProjectionScopeKey\(capturedActiveId\);\s*\n\s*const reqId = \+\+loadSessionsReqRef\.current;\s*\n\s*const isCurrent = \(\) => isCurrentSessionListRequest\(\{[\s\S]*?capturedScopeKey,[\s\S]*?currentScopeKey: chatAttentionProjectionScopeKey\(modeRef\.current === "chat" \? null : activeIdRef\.current\),/,
+  "loadSessions captures operator-wide Chat or familiar-scoped lists and rejects stale responses",
 );
 assert.match(
   workspace,
@@ -192,8 +192,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /useEffect\(\(\) => \{[\s\S]{0,600}?void loadSessions\(\);\s*\n\s*\}, \[activeId, loadSessions\]\);/,
-  "mount and each active familiar scope change explicitly reload sessions once",
+  /useEffect\(\(\) => \{[\s\S]{0,600}?void loadSessions\(\);\s*\n\s*\}, \[activeId, mode, loadSessions\]\);/,
+  "mount, destination and active familiar scope changes explicitly reload sessions once",
 );
 
 console.log("workspace-sidebar-wiring.test.ts passed");

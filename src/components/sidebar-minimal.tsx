@@ -293,7 +293,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         // put the same two controls on screen twice, one above the other. Below
         // 1024px the title bar context is display:none, so the rail keeps its
         // own copy and nothing is lost there.
-        contextMode="mobile"
+        contextMode={mode === "chat" ? "hidden" : "mobile"}
       />
 
       <div className="sidebar-nav-scroll" ref={navScrollRef}>

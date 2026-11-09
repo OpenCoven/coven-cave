@@ -235,7 +235,7 @@ test.describe("chat threads rail", () => {
     expect(new URL(page.url()).hash).toBe("#chat-s9");
   });
 
-  test("the familiar is chosen only at the top of the page, never inside Chat (#5565)", async ({ page }) => {
+  test("Chat offers one optional filter instead of mandatory workspace selection", async ({ page }) => {
     await gotoChat(page);
     const surface = page.locator(".chat-surface");
     const visibleTrigger = (scope: Locator) =>
@@ -247,10 +247,21 @@ test.describe("chat threads rail", () => {
     ]) {
       await page.setViewportSize(viewport);
       await expect(surface).toBeVisible();
-      await expect(visibleTrigger(surface), `no in-chat picker at ${viewport.width}px`).toHaveCount(0);
-      await expect
-        .poll(() => visibleTrigger(page.locator("body")).count(), { message: `a top-of-page picker at ${viewport.width}px` })
-        .toBeGreaterThan(0);
+      await expect(visibleTrigger(page.locator("body")), `no mandatory actor picker at ${viewport.width}px`).toHaveCount(0);
+      const filter = page.getByRole("button", { name: "Filter chats: All chats", exact: true });
+      if (!(await filter.isVisible())) {
+        await page.getByRole("button", { name: "Show chat list", exact: true }).click();
+      }
+      await expect(filter).toBeVisible();
+      await filter.focus();
+      await filter.press("Enter");
+      await expect(page.getByRole("dialog", { name: "Filter chats", exact: true })).toBeVisible();
+      await expect(visibleTrigger(page.locator("body")), `one disclosed familiar filter at ${viewport.width}px`).toHaveCount(1);
+      await page.keyboard.press("Escape");
+      await expect(filter).toBeFocused();
+      if (await page.getByRole("dialog", { name: "Chat threads", exact: true }).isVisible()) {
+        await page.keyboard.press("Escape");
+      }
     }
   });
 
