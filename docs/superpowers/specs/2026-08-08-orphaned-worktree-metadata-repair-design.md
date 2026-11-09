@@ -1,5 +1,7 @@
 # Orphaned Worktree Metadata Repair
 
+**Status: Historical; retired with Beads and lifecycle tooling in #5566.** The metadata fields, managed creator and repair commands below are not current procedures. Use [GitHub work tracking](../../workflows/github-work-tracking.md) and [branch-curator](../../../.agents/skills/branch-curator/SKILL.md); preserve unknown ownership and recovery state rather than manufacturing lifecycle metadata.
+
 **Bead:** `cave-525id`
 
 ## Problem
