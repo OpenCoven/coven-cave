@@ -1224,7 +1224,7 @@ packages:
     engines: {node: '>=24.18.0 <25'}
 
   '@opencoven/research@https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz':
-    resolution: {tarball: https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz}
+    resolution: {integrity: sha512-Q1t+fwEODkY3oY92jSlSfdCTQv6yKjnmvS7v8z6DHCTM3RKForiVwGQ7y3ysonCaNBqjlFgdYhNMMIJPf3Mdrg==, tarball: https://github.com/OpenCoven/research/releases/download/v0.2.0/opencoven-research-0.2.0.tgz}
     version: 0.2.0
     engines: {node: '>=24.18.0 <25'}
     peerDependencies:

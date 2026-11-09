@@ -64,7 +64,7 @@ export async function setup(page: Page, betaFamiliar = "cody", pendingSessions?:
       payload = { ok: true, ...completedBootstrap, boundaries: ONBOARDING_BOOTSTRAP_BOUNDARIES };
     }
     else if (url.pathname === "/api/onboarding/status") payload = { ok: true, complete: true, steps: {}, tools: [] };
-    else if (url.pathname === "/api/familiars") payload = { ok: true, familiars };
+    else if (url.pathname === "/api/familiars") payload = { ok: true, familiars: familiars.map((f) => ({ ...f, projectAccess: "write" })) };
     else if (url.pathname === "/api/projects") payload = { ok: true, projects };
     else if (url.pathname === "/api/sessions/list") {
       if (pendingSessions) await pendingSessions;
@@ -120,7 +120,14 @@ export async function openThread(page: Page, letter: "A" | "B") {
 }
 
 export async function switchProject(page: Page, projectId: "alpha" | "beta") {
-  const switcher = page.locator(".workspace-context-switcher:visible").first();
+  await page.getByRole("button", { name: /^Filter chats:/ }).click();
+  const switcher = page.locator(".chat-browse-filter__panel .workspace-context-switcher");
   await switcher.getByRole("button", { name: /^Switch project:/ }).click();
+  await page.locator(".cave-project-picker__row").filter({ hasText: `Context ${projectId}` }).first().locator(".ui-popover-item").click();
+  await page.keyboard.press("Escape");
+}
+
+export async function switchComposeProject(page: Page, projectId: "alpha" | "beta") {
+  await page.getByTestId("chat-main").getByRole("button", { name: /^Project:/ }).click();
   await page.locator(".cave-project-picker__row").filter({ hasText: `Context ${projectId}` }).first().locator(".ui-popover-item").click();
 }

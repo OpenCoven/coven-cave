@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { now, setup, openThread, switchProject } from "./chat-context-fixture";
+import { now, setup, openThread, switchProject, switchComposeProject } from "./chat-context-fixture";
 
-test("reselecting the composer project preserves its draft across global and local selections", async ({ page }) => {
+test("composer project drafts stay isolated while browse filters preserve the current draft", async ({ page }) => {
   await setup(page);
   await page.keyboard.press("Alt+2");
-  await switchProject(page, "alpha");
+  await switchComposeProject(page, "alpha");
   const main = page.getByTestId("chat-main");
   const composer = main.getByRole("textbox", { name: "Message", exact: true });
   await composer.fill("Alpha draft remains Alpha");
@@ -19,7 +19,7 @@ test("reselecting the composer project preserves its draft across global and loc
   await page.locator(".cave-project-picker__row").filter({ hasText: "Context alpha" }).first().locator(".ui-popover-item").click();
   await expect(composer).toHaveValue("Alpha draft remains Alpha");
   await switchProject(page, "beta");
-  await expect(composer).toHaveValue("Beta stays separate");
+  await expect(composer).toHaveValue("Alpha draft remains Alpha");
   await switchProject(page, "alpha");
   await expect(composer).toHaveValue("Alpha draft remains Alpha");
 });
@@ -61,23 +61,21 @@ for (const clearFirst of [false, true]) {
   });
 }
 
-test("explicit familiar selection navigates even when project browsing already selected it", async ({ page }) => {
+test("familiar filtering preserves the open conversation and draft", async ({ page }) => {
   await setup(page, "sage");
   await openThread(page, "A");
-  await switchProject(page, "beta");
   const main = page.getByTestId("chat-main");
-  await expect(main.locator('[data-turn-id="context-a-999"]')).toBeAttached();
-  const switcher = page.locator(".workspace-context-switcher:visible").first();
-  await expect(switcher.getByRole("button", { name: /^Switch familiar/ })).toContainText("Sage");
-  await switcher.getByRole("button", { name: /^Switch familiar/ }).click();
-  await page.getByRole("dialog", { name: "Familiars", exact: true }).getByRole("option").filter({ hasText: "Sage" }).click();
-  await expect(main.getByRole("textbox", { name: "Message", exact: true })).toHaveAttribute("placeholder", "Message Sage…");
-  await expect(main.locator("[data-turn-id]")).toHaveCount(0);
   const composer = main.getByRole("textbox", { name: "Message", exact: true });
-  await composer.fill("Sage draft survives reselection");
+  await composer.fill("Cody draft survives filtering");
+  await switchProject(page, "beta");
+  await page.getByRole("button", { name: /^Filter chats:/ }).click();
+  const switcher = page.locator(".chat-browse-filter__panel .workspace-context-switcher");
   await switcher.getByRole("button", { name: /^Switch familiar/ }).click();
   await page.getByRole("dialog", { name: "Familiars", exact: true }).getByRole("option").filter({ hasText: "Sage" }).click();
-  await expect(composer).toHaveValue("Sage draft survives reselection");
+  await page.keyboard.press("Escape");
+  await expect(main.locator('[data-turn-id="context-a-999"]')).toBeAttached();
+  await expect(composer).toHaveValue("Cody draft survives filtering");
+  await expect(composer).toHaveAttribute("placeholder", "Message Cody…");
 });
 
 test("palette familiar selection opens a composer from the Projects tab", async ({ page }) => {
@@ -106,8 +104,8 @@ test("project browsing filters the rail without rebinding the open conversation 
   await switchProject(page, "alpha");
   // The project filter lists only Alpha's thread; the still-open Beta thread
   // stays reachable in its own "Outside this project" section (#5585).
-  const outside = page.locator('.chat-inner-rail section[aria-label="Open chat outside this project"]');
-  const filteredTitles = page.locator('.chat-inner-rail section:not([aria-label="Open chat outside this project"]) .cnav__thread-title');
+  const outside = page.locator('.chat-inner-rail section[aria-label="Open chat outside these filters"]');
+  const filteredTitles = page.locator('.chat-inner-rail section:not([aria-label="Open chat outside these filters"]) .cnav__thread-title');
   await expect(filteredTitles).toHaveCount(1);
   await expect(filteredTitles).toHaveAttribute("title", "Context thread A");
   await expect(outside.locator(".cnav__thread-title")).toHaveAttribute("title", "Context thread B");
@@ -233,12 +231,12 @@ test("blank project drafts stay isolated and first-send context freezes before s
   await page.keyboard.press("Alt+2");
   const main = page.getByTestId("chat-main");
   const composer = main.locator("textarea").first();
-  await switchProject(page, "alpha");
+  await switchComposeProject(page, "alpha");
   await composer.fill("Alpha only");
-  await switchProject(page, "beta");
+  await switchComposeProject(page, "beta");
   await expect(composer).toHaveValue("");
   await composer.fill("Beta only");
-  await switchProject(page, "alpha");
+  await switchComposeProject(page, "alpha");
   await expect(composer).toHaveValue("Alpha only");
 
   const roots: string[] = [];
@@ -270,10 +268,7 @@ test("late session recency cannot move an inferred first-send project or its pro
   const pendingSend = new Promise<void>((resolve) => { releaseSend = resolve; });
   const roots: string[] = [];
   await setup(page, "cody", pendingSessions);
-  const switcher = page.locator(".workspace-context-switcher:visible").first();
-  await switcher.getByRole("button", { name: /^Switch project:/ }).click();
-  await page.locator(".ui-popover-item").filter({ hasText: /^All projects$/ }).click();
-  await expect(switcher.getByRole("button", { name: /^Switch project:/ })).toContainText("All projects");
+  await expect(page.getByRole("button", { name: "Filter chats: All chats", exact: true })).toBeVisible();
   await page.route("**/api/chat/send", async (route) => {
     roots.push(route.request().postDataJSON().projectRoot);
     await pendingSend;
