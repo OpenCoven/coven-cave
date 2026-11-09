@@ -835,9 +835,9 @@ export function SidebarChatsSection({
         >
           <nav aria-label="Chat threads">
           {!hasSearch && outOfScopeActiveSession ? (
-            <section aria-label="Open chat outside this project">
+            <section aria-label={browseScope?.familiarIds !== undefined ? "Open chat outside these filters" : "Open chat outside this project"}>
               <div className="cnav__label">
-                <span className="cnav__label-text">Outside this project</span>
+                <span className="cnav__label-text">{browseScope?.familiarIds !== undefined ? "Outside these filters" : "Outside this project"}</span>
                 <span className="cnav__label-rule" aria-hidden />
               </div>
               <ul>

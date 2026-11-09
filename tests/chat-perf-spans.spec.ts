@@ -106,7 +106,8 @@ test("opening a thread and switching project record their latency spans (#5448)"
   await expect(page.getByTestId("chat-main").getByText("scope-a opened")).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => spans(page)).toContain("chat:thread-open");
 
-  const switcher = page.locator(".workspace-context-switcher:visible").first();
+  await page.getByRole("button", { name: /^Filter chats:/ }).click();
+  const switcher = page.locator(".chat-browse-filter__panel .workspace-context-switcher");
   await switcher.getByRole("button", { name: /^Switch project:/ }).click();
   await page.locator(".cave-project-picker__row").filter({ hasText: "Scope beta" }).first().locator(".ui-popover-item").click();
   await expect.poll(() => spans(page)).toContain("chat:project-switch");

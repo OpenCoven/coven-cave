@@ -73,6 +73,7 @@ import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { WorkspacePanePage } from "@/components/workspace-pane-page";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
+import { ChatBrowseFilter } from "@/components/chat-browse-filter";
 import { WorkspaceContextSwitcher } from "@/components/workspace-context-switcher";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
@@ -441,19 +442,23 @@ export function Workspace() {
   } = useProjects();
   const selectedWorkspaceProject =
     registeredProjects.find((project) => project.id === selectedWorkspaceProjectId) ?? null;
-  const chatBrowseScope = useMemo<ChatBrowseScope>(() => {
-    const ready = workspaceContextHydrated && (
-      selectedWorkspaceProjectId === null
-      || (projectsLoadedSuccessfully && !projectsLoading && projectsError === null && selectedWorkspaceProject !== null)
-    );
-    return {
-      selection: selectedWorkspaceProjectId ?? "all",
-      ready,
-      // Still arriving (hydration, the project fetch) rather than failed or
-      // pointing at a project that no longer exists (#5585).
-      loading: !ready && projectsError === null && (!workspaceContextHydrated || projectsLoading || !projectsLoadedSuccessfully),
-    };
-  }, [selectedWorkspaceProjectId, workspaceContextHydrated, projectsLoadedSuccessfully, projectsLoading, projectsError, selectedWorkspaceProject]);
+  // Chat browsing is local and starts at All chats. It never changes the
+  // workspace actor, compose project, saved drafts, or the open chat's identity.
+  const [chatFilterProjectId, setChatFilterProjectId] = useState<string | null>(null);
+  const [chatFilterFamiliarIds, setChatFilterFamiliarIds] = useState<ReadonlySet<string>>(() => new Set());
+  const chatFilterProject = registeredProjects.find((project) => project.id === chatFilterProjectId) ?? null;
+  const chatFilterCrew = useProjectFamiliars({ projectId: chatFilterProject?.id ?? null });
+  const chatFilterWriteCrew = useMemo(
+    () => chatFilterCrew.familiars.filter((familiar) => familiar.projectAccess === "write"),
+    [chatFilterCrew.familiars],
+  );
+  const resolvedChatFilterCrew = useResolvedFamiliars(chatFilterWriteCrew);
+  const chatBrowseScope = useMemo<ChatBrowseScope>(() => ({
+    selection: chatFilterProjectId ?? "all",
+    familiarIds: [...chatFilterFamiliarIds],
+    ready: chatFilterProjectId === null || (projectsLoadedSuccessfully && projectsError === null && chatFilterProject !== null),
+    loading: chatFilterProjectId !== null && projectsError === null && !projectsLoadedSuccessfully,
+  }), [chatFilterProjectId, chatFilterFamiliarIds, projectsLoadedSuccessfully, projectsError, chatFilterProject]);
   // Project-switch latency (#5448): from a project selection change until the
   // chat scope for it is ready. The hydrated initial selection is not timed.
   const projectSwitchSpanRef = useRef<(() => number | null) | null>(null);
@@ -461,10 +466,10 @@ export function Workspace() {
   useEffect(() => {
     if (!workspaceContextHydrated) return;
     const previous = projectSwitchBaselineRef.current;
-    projectSwitchBaselineRef.current = selectedWorkspaceProjectId;
-    if (previous === undefined || previous === selectedWorkspaceProjectId) return;
+    projectSwitchBaselineRef.current = chatFilterProjectId;
+    if (previous === undefined || previous === chatFilterProjectId) return;
     projectSwitchSpanRef.current = startSpan("chat:project-switch");
-  }, [selectedWorkspaceProjectId, workspaceContextHydrated]);
+  }, [chatFilterProjectId, workspaceContextHydrated]);
   useEffect(() => {
     if (!chatBrowseScope.ready || !projectSwitchSpanRef.current) return;
     projectSwitchSpanRef.current();
@@ -2010,22 +2015,22 @@ export function Workspace() {
     // in-flight-promise dedup, which additionally *skipped* the new-scope load
     // while A was still in flight) drops every superseded load's writes, so only
     // the newest scope ever reaches state.
-    const capturedActiveId = activeIdRef.current;
+    const capturedActiveId = modeRef.current === "chat" ? null : activeIdRef.current;
     const capturedScopeKey = chatAttentionProjectionScopeKey(capturedActiveId);
     const reqId = ++loadSessionsReqRef.current;
     const isCurrent = () => isCurrentSessionListRequest({
       requestId: reqId,
       currentRequestId: loadSessionsReqRef.current,
       capturedScopeKey,
-      currentScopeKey: chatAttentionProjectionScopeKey(activeIdRef.current),
+      currentScopeKey: chatAttentionProjectionScopeKey(modeRef.current === "chat" ? null : activeIdRef.current),
     });
 
     return (async () => {
       let baseSessionsApplied = false;
       try {
-        // Scope the session list to the active familiar's granted projects so
-        // every surface fed by `sessions` enforces the familiar→projects map.
-        // With "All familiars" (activeId null) the unscoped list is returned,
+        // Chat browses the operator-wide list; other surfaces retain the active
+        // familiar's project scope. Conversation/send authorization stays on
+        // the server. With no captured actor the unscoped list is returned,
         // but we collapse the per-familiar workspace auto-journal/reflection
         // runs there: they'd otherwise flood the global list and make it look
         // contradictory versus the clean project-scoped familiar homes. Scoped
@@ -2158,7 +2163,8 @@ export function Workspace() {
   // Paint a familiar's last list for its scope in the same frame as the
   // switch. Declared before the load effect below, so it runs first.
   useEffect(() => {
-    const scopeKey = chatAttentionProjectionScopeKey(activeId);
+    const listFamiliarId = mode === "chat" ? null : activeId;
+    const scopeKey = chatAttentionProjectionScopeKey(listFamiliarId);
     const snapshot = sessionsByScopeRef.current.get(scopeKey);
     if (snapshot) {
       const base = filterDeletedSessions(snapshot.base, locallyDeletedSessionIdsRef.current);
@@ -2166,19 +2172,19 @@ export function Workspace() {
       baseSessionScopeKeyByIdRef.current = new Map(base.map((session) => [session.id, scopeKey]));
       const rows = filterDeletedSessions(snapshot.visible, locallyDeletedSessionIdsRef.current);
       setSessions((prev) => (sameSessionList(prev, rows) ? prev : rows));
-      setSessionsScopeFamiliarId(activeId);
+      setSessionsScopeFamiliarId(listFamiliarId);
     }
-  }, [activeId]);
+  }, [activeId, mode]);
   useEffect(() => {
     if (familiarSwitchBaselineRef.current) {
       familiarSwitchSpanRef.current = {
-        scopeKey: chatAttentionProjectionScopeKey(activeId),
+        scopeKey: chatAttentionProjectionScopeKey(mode === "chat" ? null : activeId),
         end: startSpan("chat:familiar-switch"),
       };
     }
     familiarSwitchBaselineRef.current = true;
     void loadSessions();
-  }, [activeId, loadSessions]);
+  }, [activeId, mode, loadSessions]);
   // Composers rebind a familiar's runtime through /api/config (the runtime
   // chip). Surfaces reading the roster's familiar.harness (e.g. the chat
   // empty-state identity line) shouldn't wait for the next natural reload —
@@ -4614,6 +4620,26 @@ export function Workspace() {
       <ChatSurface
         familiars={familiars}
         sessions={sessions}
+        browseFilter={
+          <ChatBrowseFilter
+            projects={registeredProjects}
+            projectId={chatFilterProjectId}
+            project={chatFilterProject}
+            onProjectChange={(id) => { setChatFilterProjectId(id); setChatFilterFamiliarIds(new Set()); announce(id ? "Chats filtered by project" : "Showing all chats"); }}
+            projectLoading={projectsLoading}
+            projectError={projectsError}
+            reloadProjects={reloadProjects}
+            allFamiliars={resolvedFamiliars}
+            projectCrew={resolvedChatFilterCrew}
+            projectCrewLoading={chatFilterCrew.loading}
+            projectCrewError={chatFilterCrew.error}
+            reloadProjectCrew={chatFilterCrew.reload}
+            activeFamiliarId={chatFilterFamiliarIds.size === 1 ? [...chatFilterFamiliarIds][0]! : null}
+            selectedFamiliarIds={chatFilterFamiliarIds}
+            onSelectFamiliar={(id, opts) => { setChatFilterFamiliarIds((previous) => id === null ? new Set() : toggleFamiliarSelection(previous, id, opts?.multi ?? false)); announce(id ? "Chat familiar filter updated" : "Showing all familiars' chats"); }}
+            sessions={sessions}
+          />
+        }
         browseScope={chatBrowseScope}
         composeProjectRoot={selectedWorkspaceProject?.root ?? null}
         activeFamiliar={active}
@@ -5118,7 +5144,7 @@ export function Workspace() {
                   because it swapped the whole sidebar component, it hid the
                   chat list on Home and every non-coding room on Chat. Both are
                   permanent sidebar rows now — see cave-fh9so. */}
-              <WorkspaceContextSwitcher
+              {mode !== "chat" && <WorkspaceContextSwitcher
                 projects={registeredProjects}
                 projectId={selectedWorkspaceProjectId}
                 onProjectChange={selectWorkspaceProject}
@@ -5139,7 +5165,7 @@ export function Workspace() {
                 responseNeeded={responseNeeded}
                 projectOpenRequest={projectPickerOpenRequest}
                 variant="titlebar"
-              />
+              />}
             </div>
             <FamiliarMenuBar
               // Needs you: the bell opens the attention inbox — sessions that
@@ -5208,7 +5234,7 @@ export function Workspace() {
               familiars={familiars}
               activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
               familiarOptions={resolvedFamiliars}
-              onSelectFamiliar={selectFamiliarScope}
+              onSelectFamiliar={mode === "chat" ? undefined : selectFamiliarScope}
               onEnrichTasks={handleEnrichTasks}
               enrichingTasks={enrichingTasks}
               enrichProgress={enrichProgress}
