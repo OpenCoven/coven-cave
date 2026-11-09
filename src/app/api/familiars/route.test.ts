@@ -216,6 +216,7 @@ const configPath = path.join(testCaveHome, "config.json");
 const preferencesPath = path.join(testCaveHome, "preferences.json");
 const familiarsTomlPath = path.join(testCovenHome, "familiars.toml");
 const originalEnv = {
+  CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE,
   COVEN_HOME: process.env.COVEN_HOME,
   COVEN_CAVE_HOME: process.env.COVEN_CAVE_HOME,
   COVEN_SOCKET: process.env.COVEN_SOCKET,
@@ -226,6 +227,7 @@ const originalEnv = {
 
 await mkdir(testCovenHome, { recursive: true });
 await mkdir(testCaveHome, { recursive: true });
+process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = path.join(testRoot, "permissions.json");
 process.env.COVEN_HOME = testCovenHome;
 process.env.COVEN_CAVE_HOME = testCaveHome;
 process.env.COVEN_SOCKET = socketPath;
@@ -264,7 +266,7 @@ after(async () => {
   await rm(testRoot, { recursive: true, force: true });
 });
 
-const { POST } = await import("./route.ts");
+const { GET, POST } = await import("./route.ts");
 
 const existingToml = [
   "# User familiars for this Coven.",
@@ -444,3 +446,23 @@ test("behavior tests used only the controlled empty daemon roster", () => {
 });
 
 console.log("familiars route.test.ts: ok");
+
+test("project rosters report configured effective access without hiding read-only history actors", async () => {
+  const toml = ["writer", "reader", "group-writer", "ungranted"].map((id) => `[[familiar]]\nid = "${id}"\ndisplay_name = "${id}"\nrole = "Familiar"\nharness = "codex"\n`).join("\n");
+  await writeBehaviorFixture({}, { defaultProvider: "", defaultModel: "", defaultVoice: "" }, toml);
+  await writeFile(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE!, JSON.stringify({
+    version: 2,
+    projectGrants: [
+      { familiarId: "writer", projectId: "alpha", access: "write", source: "human", grantedAt: "2026-01-01T00:00:00Z" },
+      { familiarId: "reader", projectId: "alpha", access: "read", source: "human", grantedAt: "2026-01-01T00:00:00Z" },
+    ],
+    accessGroups: [{ id: "writers", name: "Writers", memberFamiliarIds: ["group-writer"], projectGrants: [{ projectId: "alpha", access: "write", grantedAt: "2026-01-01T00:00:00Z" }] }],
+    grantProposals: [], permissionAudit: [],
+  }));
+  const single = await (await GET(new Request("http://test/api/familiars?projectId=alpha"))).json();
+  assert.deepEqual(Object.fromEntries(single.familiars.map((f) => [f.id, f.projectAccess])), { writer: "write", reader: "read", "group-writer": "write" });
+  assert.deepEqual(single.familiars.filter((f) => f.projectAccess === "write").map((f) => f.id).sort(), ["group-writer", "writer"]);
+  const batch = await (await GET(new Request("http://test/api/familiars?projectId=alpha&projectId=beta"))).json();
+  assert.deepEqual(Object.fromEntries(batch.familiarsByProject.alpha.map((f) => [f.id, f.projectAccess])), { writer: "write", reader: "read", "group-writer": "write" });
+  assert.deepEqual(batch.familiarsByProject.beta, []);
+});

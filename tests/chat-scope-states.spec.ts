@@ -93,20 +93,19 @@ async function setup(page: Page, options: { project?: string; scopedProjects?: S
 
 const rail = (page: Page) => page.locator('aside[aria-label="Chat threads"] .chat-sidebar');
 
-test("a project still loading reads as loading, never as unavailable (#5585)", async ({ page }) => {
+test("All chats remains readable while the saved actor project is loading", async ({ page }) => {
   let release!: () => void;
   const released = new Promise<void>((resolve) => { release = resolve; });
   await setup(page, { project: "beta", scopedProjects: "hold", release: released });
-  await expect(rail(page).getByText("Loading this project's chats…")).toBeVisible({ timeout: 30_000 });
-  await expect(rail(page).getByText("Project context is unavailable. Choose another project or retry.")).toHaveCount(0);
-  release();
   await expect(rail(page).locator(".cnav__thread-main").filter({ hasText: "Scope thread B" })).toBeVisible({ timeout: 30_000 });
   await expect(rail(page).getByText("Loading this project's chats…")).toHaveCount(0);
+  release();
 });
 
-test("a failed project fetch reads as unavailable (#5585)", async ({ page }) => {
+test("All chats remains readable when the saved actor project fetch fails", async ({ page }) => {
   await setup(page, { project: "beta", scopedProjects: "fail" });
-  await expect(rail(page).getByText("Project context is unavailable. Choose another project or retry.")).toBeVisible({ timeout: 30_000 });
+  await expect(rail(page).locator(".cnav__thread-main").filter({ hasText: "Scope thread B" })).toBeVisible({ timeout: 30_000 });
+  await expect(rail(page).getByText("Project context is unavailable. Choose another project or retry.")).toHaveCount(0);
 });
 
 test("the open chat stays reachable when the project filter would hide it (#5585)", async ({ page }) => {
@@ -114,12 +113,14 @@ test("the open chat stays reachable when the project filter would hide it (#5585
   await rail(page).locator(".cnav__thread-main").filter({ hasText: "Scope thread A" }).first().click();
   await expect(page.getByTestId("chat-main").getByText("scope-a opened")).toBeVisible({ timeout: 30_000 });
 
-  const switcher = page.locator(".workspace-context-switcher:visible").first();
+  await page.getByRole("button", { name: /^Filter chats:/ }).click();
+  const switcher = page.locator(".chat-browse-filter__panel .workspace-context-switcher");
   await switcher.getByRole("button", { name: /^Switch project:/ }).click();
   await page.locator(".cave-project-picker__row").filter({ hasText: "Scope beta" }).first().locator(".ui-popover-item").click();
 
-  const outside = rail(page).getByRole("region", { name: "Open chat outside this project" });
-  await expect(outside.getByText("Outside this project")).toBeVisible({ timeout: 30_000 });
+  await page.keyboard.press("Escape");
+  const outside = rail(page).getByRole("region", { name: "Open chat outside these filters" });
+  await expect(outside.getByText("Outside these filters")).toBeVisible({ timeout: 30_000 });
   await expect(outside.locator(".cnav__thread-main").filter({ hasText: "Scope thread A" })).toBeVisible();
   await expect(rail(page).locator(".cnav__thread-main").filter({ hasText: "Scope thread B" })).toBeVisible();
 });
