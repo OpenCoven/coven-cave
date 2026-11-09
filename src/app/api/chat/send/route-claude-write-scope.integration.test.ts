@@ -151,6 +151,7 @@ if (noPermission) {
   for (const launch of launches.filter(call=>call.scopeFile)) await assert.rejects(access(launch.scopeFile), "per-turn scope files are retired after the stream");
   // A stale native session makes the route retry within the turn, reusing its authority files.
   const staleFirst = await send();
+  assert.ok(!staleFirst.events.some(e=>e.kind==="progress"&&e.id==="runtime-mcp-servers-excluded"),"no notice without an excluded server");
   const beforeRetry = (await calls()).length;
   process.env.CAVE_6393_STALE_RESUME = "clean";
   const retried = await send({sessionId:staleFirst.done.sessionId});
@@ -170,6 +171,22 @@ if (noPermission) {
   assert.ok(tampered.events.some(e=>e.kind==="error"&&e.code==="runtime_write_scope_unavailable"),tampered.body);
   assert.equal(tampered.done?.isError,true,tampered.body);
   await assert.rejects(access(tamperAttempts[0].scopeFile),"the turn still retires its files");
+  // An MCP server that names a writable folder runs outside the sandbox, so it stays out and the turn says so.
+  process.env.CLAUDE_CONFIG_DIR = path.join(home,"claude-config");
+  await mkdir(process.env.CLAUDE_CONFIG_DIR);
+  await writeFile(path.join(process.env.CLAUDE_CONFIG_DIR,".claude.json"),JSON.stringify({mcpServers:{
+    rewritable:{command:"node",args:[path.join(await realpath(primary),"server.mjs")]},
+    kept:{command:"npx",args:["-y","@acme/server"]},
+  }}));
+  const beforeMcp = (await calls()).length;
+  const withMcp = await send();
+  assert.equal(withMcp.status,200,withMcp.body);
+  const mcpNotice = withMcp.events.find(e=>e.kind==="progress"&&e.id==="runtime-mcp-servers-excluded");
+  assert.equal(mcpNotice?.status,"notice",withMcp.body);
+  assert.match(mcpNotice.detail,/Left out of this turn: rewritable\./);
+  const mcpLaunch = (await calls())[beforeMcp];
+  assert.deepEqual(mcpLaunch.scope.mcpServerNames,["kept"]);
+  delete process.env.CLAUDE_CONFIG_DIR;
   await grantProjectToFamiliar({familiarId:"sage",projectId:project.id,source:"human",access:"read"});
   const before = (await calls()).length;
   const readPrimary = await send();

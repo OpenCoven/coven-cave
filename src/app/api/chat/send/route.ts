@@ -211,7 +211,7 @@ import {
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
-import { buildClaudeWriteScope, ClaudeAuthorityRootGrantedError, loadClaudeFamiliarMcpServers, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
+import { buildClaudeWriteScope, ClaudeAuthorityRootError, loadClaudeFamiliarMcpServers, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
@@ -3471,11 +3471,15 @@ async function postAdmittedChat(
       });
       // A Coven without the flag refuses this launch below, so credentials never reach disk for it.
       if (claudeWriteScopeSupported) {
-        writeScopeFile = prepareClaudeWriteScopeFile(writeScope, await loadClaudeFamiliarMcpServers({ familiarWorkspace: resolvedFamiliarWorkspace }));
+        writeScopeFile = prepareClaudeWriteScopeFile(writeScope, await loadClaudeFamiliarMcpServers({
+          familiarWorkspace: resolvedFamiliarWorkspace,
+          projectRoots: grantedProjectRoots,
+          writableRoots: writeScope.writableRoots,
+        }), { env: localRuntimePlan?.env });
       }
     } catch (error) {
       return Response.json({ ok: false, code: "scoped_write_unavailable",
-        error: error instanceof ClaudeAuthorityRootGrantedError
+        error: error instanceof ClaudeAuthorityRootError
           ? error.message
           : "A granted folder is unavailable. Review project access and retry before writing." }, { status: 409 });
     }
@@ -3806,7 +3810,9 @@ async function postAdmittedChat(
     start: (controller) => startAdmittedChatStream(admission, async () => {
       try {
       // A failed creation retires its own files; runAttempt then refuses the launch.
-      await writeScopeFile?.create().catch(() => console.warn("Could not create an owned runtime scope file."));
+      await writeScopeFile?.create().catch((error: NodeJS.ErrnoException) => {
+        console.warn("Could not create an owned runtime scope file:", error.code ?? "unknown error");
+      });
       let closed = false;
       const displayProjection = new LegacyReasoningStreamProjection();
       const push = (incoming: StreamEvent) => {
@@ -3908,6 +3914,14 @@ async function postAdmittedChat(
           "Read-only for this turn",
           "notice",
           "This version of Coven can't limit Claude's file changes to your project grants, so Claude can read but not edit. To edit files now, switch to another runtime.",
+        );
+      }
+      if (writeScopeFile?.excludedMcpServers.length) {
+        pushProgress(
+          "runtime-mcp-servers-excluded",
+          "MCP servers left out",
+          "notice",
+          `Left out of this turn: ${writeScopeFile.excludedMcpServers.join(", ")}. They use a folder this familiar can write to, and MCP servers can't open those folders while Claude has write access. To use them, move what they reference out of that folder or narrow its access.`,
         );
       }
       // Report what identity context this turn actually loaded. A familiar
@@ -5688,6 +5702,8 @@ async function postAdmittedChat(
           return writeScopeFile.assertIntact().then(
             () => runAttempt(spawnArgs, apiPrompt, true),
             () => {
+              if (runHandle.stopRequested) return;
+              console.warn("Refused a launch: this turn's write access files changed or went missing.");
               const failure = { code: "runtime_write_scope_unavailable",
                 message: "Cave could not verify this familiar's write access files, so the run did not start. Retry, and restart Cave if this continues." };
               launchFailure = failure;

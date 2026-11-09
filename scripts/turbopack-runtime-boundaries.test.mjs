@@ -4,9 +4,12 @@ import test from "node:test";
 
 const expectedBoundaries = new Map([
   ["../src/lib/claude-write-scope.ts", [
-    ['realpathSync.native(/* turbopackIgnore: true */ root)', 1],
+    ['realpathSync.native(/* turbopackIgnore: true */ root)', 2],
     ['path.join(/* turbopackIgnore: true */ caveHome(), "claude-authority")', 1],
-    ['path.join(/* turbopackIgnore: true */ authorityRoot, `${process.pid}-${randomUUID()}`)', 1],
+    ['path.join(/* turbopackIgnore: true */ authorityRoot, directoryName)', 1],
+    ['path.join(/* turbopackIgnore: true */ authorityRoot, "mcp-cwd")', 1],
+    ['path.join(/* turbopackIgnore: true */ parent, ".git")', 1],
+    ['path.join(/* turbopackIgnore: true */ homedir(), ".claude")', 1],
     ['path.join(/* turbopackIgnore: true */ directory, "scope.json")', 1],
     ['fileSystem.open(/* turbopackIgnore: true */ target, "wx", 0o600)', 1],
     ['fileSystem.lstat(/* turbopackIgnore: true */ target)', 1],
