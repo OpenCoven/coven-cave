@@ -22,8 +22,8 @@ assert.doesNotMatch(
 
 assert.match(
   chatRouter,
-  /<ChatList[\s\S]*familiar=\{familiar\}[\s\S]*familiars=\{familiars\}/,
-  "ChatRouter should render ChatList with nullable familiar plus the full familiar list",
+  /<ChatList[\s\S]*familiar=\{browseScope\?\.familiarIds !== undefined \? null : familiar\}[\s\S]*familiars=\{familiars\}/,
+  "All chats removes the actor restriction while legacy scopes retain their actor and the full roster",
 );
 
 assert.match(
