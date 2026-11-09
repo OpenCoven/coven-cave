@@ -159,3 +159,4 @@ __verify-chat-detail.mjs
 # scripts/next-build.mjs's unreadable trace-walk probe (#6101). It is removed after
 # every build; this keeps a killed build's leftover out of commits.
 /trace-walk-probe/
+/.pnpm-store

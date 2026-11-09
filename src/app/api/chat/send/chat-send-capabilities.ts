@@ -715,10 +715,19 @@ export function covenRunSupportsWriteScope(): Promise<boolean> {
   let launch;
   try { launch = covenLaunchCommand(); } catch { return Promise.resolve(false); }
   const { command, fixedArgs } = launch;
-  return (writeScopeFlagProbe ??= probeHelp(
+  if (writeScopeFlagProbe) return writeScopeFlagProbe;
+  const probe = probeHelpOutcome(
     command, [...fixedArgs, "run", "--help"], covenRunSupportsWriteScopeFlag,
     covenWrapperSpawnEnv(harnessSpawnEnv()),
-  ));
+  ).then((outcome) => {
+    if (!outcome.ok) writeScopeFlagProbe = null;
+    return outcome.ok && outcome.matched;
+  }, (error: unknown) => {
+    writeScopeFlagProbe = null;
+    throw error;
+  });
+  writeScopeFlagProbe = probe;
+  return probe;
 }
 
 export function covenRunSupportsAddDir(): Promise<boolean> {
