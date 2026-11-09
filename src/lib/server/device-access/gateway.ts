@@ -138,7 +138,21 @@ export function createDeviceAccessGateway(options: {
     timer = null;
   }
   let managedObserved = false;
-  const actor = `desktop:${userInfo().username}`;
+  let actor: string | null = null;
+
+  function auditActor(): string {
+    if (actor) return actor;
+    try {
+      const username = userInfo().username;
+      if (typeof username === "string" && username.length > 0) {
+        actor = `desktop:${username}`;
+        return actor;
+      }
+    } catch {
+      // Device administration needs a verified audit identity; core startup does not.
+    }
+    throw new DeviceAccessError("unavailable", "The desktop audit identity is unavailable.");
+  }
 
   function closeLegacy() {
     for (const response of legacy) response.destroy();
@@ -234,7 +248,7 @@ export function createDeviceAccessGateway(options: {
             if (!Array.isArray(input.tailnets) || !input.tailnets.every((entry) => typeof entry === "string")) {
               throw new DeviceAccessError("invalid_request", "Expected a list of tailnets.", 400);
             }
-            await store.setAllowedTailnets(input.tailnets, actor);
+            await store.setAllowedTailnets(input.tailnets, auditActor());
             await currentPolicy();
             await revalidateActive();
             json(res, 200, { ok: true });
@@ -245,7 +259,7 @@ export function createDeviceAccessGateway(options: {
             if (input.decision !== "allowed" && input.decision !== "denied" && input.decision !== "revoked") {
               throw new DeviceAccessError("invalid_request", "Invalid device decision.", 400);
             }
-            const device = await store.decide(stringField(input.id), input.decision, actor);
+            const device = await store.decide(stringField(input.id), input.decision, auditActor());
             if (device.status !== "allowed") closeDevice(device.id);
             json(res, 200, { ok: true, device });
             return true;
