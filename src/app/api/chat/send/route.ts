@@ -211,6 +211,7 @@ import {
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
+import { claudeBuildUnavailableMessage } from "@/lib/chat-access-escape";
 import { buildClaudeWriteScope, ClaudeAuthorityRootError, loadClaudeFamiliarMcpServers, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
@@ -5834,9 +5835,7 @@ async function postAdmittedChat(
                 }
                 if (claudeScopedWrite && !claudeWriteScopeSupported) {
                   launchFailure = { code: "scoped_write_unavailable",
-                    message: permissionForwardingEnabled
-                      ? "Full access is unavailable for Claude on this runtime. Choose a runtime that can enforce project write access, then retry."
-                      : "This runtime cannot safely apply project write access. Update Coven and restart Cave, then retry." };
+                    message: claudeBuildUnavailableMessage(permissionForwardingEnabled) };
                   result.is_error = true;
                   pushProgress("harness-start", "Scoped writes unavailable", "error", launchFailure.message);
                   push({ kind: "error", ...launchFailure, harness: binding.harness });

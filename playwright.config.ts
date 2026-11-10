@@ -76,8 +76,10 @@ const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 // composer-environment-popover joins it for the same reason (#5958): the
 // branch chip's Environment popover opens at every width, and the phone
 // cases (rest-state chips, 44px rows, viewport containment) only run there.
+// chat-access-escape joins too (#6445): the access bar and refusal actions
+// must work in the phone composer as well as on desktop.
 const MOBILE_SURFACE_SPECS =
-  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover)\.spec\.ts/;
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|chat-access-escape)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 
