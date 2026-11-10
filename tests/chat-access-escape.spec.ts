@@ -75,6 +75,11 @@ async function setup(page: Page, fixture: Fixture) {
     }
     const body = request.postDataJSON() as Record<string, unknown> | null;
     grantWrites.push({ method: request.method(), body });
+    // Mirrors the route's compare-and-set: a stale precondition changes nothing.
+    if (body && "expectedAccess" in body && body.expectedAccess !== directAccess) {
+      return route.fulfill({ status: 409, json: { ok: false, code: "grant_changed", current: directAccess,
+        error: "This familiar's access to the project changed after it was shown. Review it in Projects, then try again." } });
+    }
     if (request.method() === "POST" && (body?.access === "read" || body?.access === "write")) directAccess = body.access;
     if (request.method() === "DELETE") directAccess = null;
     return route.fulfill({ json: { ok: true } });
@@ -97,7 +102,13 @@ async function setup(page: Page, fixture: Fixture) {
   await page.goto(`/?mode=chat#chat-${SESSION_ID}`, { waitUntil: "domcontentloaded" });
   const chat = page.getByTestId("chat-main");
   await expect(chat.locator(".cave-composer-input")).toBeVisible({ timeout: 45_000 });
-  return { chat, sends, grantWrites, storedAccess: () => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "{}").permissionMode, PREFS_KEY) };
+  return {
+    chat, sends, grantWrites,
+    storedAccess: () => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "{}").permissionMode, PREFS_KEY),
+    /** Someone else changes the grant (another window, Projects, the phone). */
+    changeGrantElsewhere: (next: "read" | "write" | null) => { directAccess = next; },
+    directAccess: () => directAccess,
+  };
 }
 
 async function send(chat: ReturnType<Page["getByTestId"]>, text: string) {
@@ -166,13 +177,13 @@ test("a read-only project keeps the chat and offers write access with undo", asy
   expect(grantWrites).toEqual([]);
   await chat.getByRole("button", { name: "Confirm write access" }).click();
   await expect.poll(() => grantWrites.length).toBe(1);
-  expect(grantWrites[0]).toEqual({ method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "write" } });
+  expect(grantWrites[0]).toEqual({ method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "write", expectedAccess: "read" } });
   await expect.poll(() => sends.length).toBe(2);
   expect(sends[1].prompt).toBe(sends[0].prompt);
   expect(sends[1].permissionMode).toBe("full");
   await chat.getByRole("button", { name: "Undo write access" }).click();
   await expect.poll(() => grantWrites.length).toBe(2);
-  expect(grantWrites[1]).toEqual({ method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "read" } });
+  expect(grantWrites[1]).toEqual({ method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "read", expectedAccess: "write" } });
 });
 
 test("a read-only project can also retry the turn in Explore", async ({ page }) => {
@@ -257,7 +268,32 @@ test("the write-access grant works from the keyboard and keeps focus in the chat
   await expect(chat.getByRole("region", { name: "Chat access" }).getByRole("status")).toHaveText("Nova can now change files in Coven Cave.");
   await page.keyboard.press("Enter");
   await expect.poll(() => grantWrites.length).toBe(2);
-  expect(grantWrites[1]).toEqual({ method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "read" } });
+  expect(grantWrites[1]).toEqual({ method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "read", expectedAccess: "write" } });
   await expect(undo).toHaveCount(0);
   await expect(chat.locator(".cave-composer-input")).toBeFocused();
+});
+
+test("an Undo made stale by another change is refused and says so", async ({ page }) => {
+  const { chat, sends, grantWrites, changeGrantElsewhere, directAccess } = await setup(page, {
+    projectAccess: "read",
+    send: (route, count) => count === 1
+      ? route.fulfill({ status: 403, json: { ok: false, code: "project_write_access_required",
+        error: "This project's access is read-only. Choose Read-only mode or request write access, then retry." } })
+      : ok(route),
+  });
+  await send(chat, "Rename the helper.");
+  await chat.getByRole("button", { name: "Give Nova write access to Coven Cave and retry" }).click();
+  await chat.getByRole("button", { name: "Confirm write access" }).click();
+  await expect.poll(() => sends.length).toBe(2);
+  const undo = chat.getByRole("button", { name: "Undo write access" });
+  await expect(undo).toBeVisible();
+  // The grant is lowered elsewhere before Undo; Undo must not overwrite that.
+  changeGrantElsewhere("read");
+  await undo.click();
+  await expect.poll(() => grantWrites.length).toBe(2);
+  expect(directAccess()).toBe("read");
+  await expect(chat.getByText("Couldn't undo the access change:", { exact: false })).toBeVisible();
+  await expect(chat.getByText("changed after it was shown", { exact: false })).toBeVisible();
+  // Undo no longer applies, so it is withdrawn rather than left to fail again.
+  await expect(undo).toHaveCount(0);
 });

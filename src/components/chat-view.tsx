@@ -86,6 +86,7 @@ import { createChatStreamAccessGuard, invalidateChatAccess, subscribeChatAccessI
 import {
   accessRefusalActions,
   BUILD_PLAN_PROMPT,
+  GrantChangeError,
   grantProjectAccess,
   isAccessRefusalCode,
   parseChatBuildAccess,
@@ -6414,6 +6415,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       announce(`Undid ${undo.familiarName}'s write access to ${undo.projectName}.`, "polite");
       keepFocusInChat(hadFocus);
     } catch (failure) {
+      // Someone changed the grant after this one: Undo no longer applies.
+      if (failure instanceof GrantChangeError && failure.code === "grant_changed") {
+        setGrantUndo(null);
+        priorChatAccessRef.current = null;
+      }
       const message = `Couldn't undo the access change: ${failure instanceof Error ? failure.message : "the request failed"}`;
       setError(message);
       announce(message, "assertive");

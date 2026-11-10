@@ -4,6 +4,7 @@ import {
   accessRefusalActions,
   chatBuildAccessFor,
   claudeBuildUnavailableMessage,
+  GrantChangeError,
   grantProjectAccess,
   isAccessRefusalCode,
   parseChatBuildAccess,
@@ -91,6 +92,8 @@ test("per-chat access round-trips, clears, ignores bad data and stays bounded", 
   assert.equal(JSON.parse(storage.data.get("cave:chat-access-overrides:v1")!).length, 100);
 });
 
+// Mirrors /api/project-grants: an `expectedAccess` precondition that no longer
+// matches the current direct grant is refused whole with 409 grant_changed.
 function grantServer(initial: Array<{ familiarId: string; projectId: string; access: string }>) {
   let grants = [...initial];
   const calls: Array<{ method: string; body: unknown }> = [];
@@ -99,11 +102,15 @@ function grantServer(initial: Array<{ familiarId: string; projectId: string; acc
     if (method === "GET") return new Response(JSON.stringify({ ok: true, grants }));
     const body = JSON.parse(String(init?.body));
     calls.push({ method, body });
+    const current = grants.find((grant) => grant.familiarId === body.targetFamiliarId && grant.projectId === body.projectId)?.access ?? null;
+    if ("expectedAccess" in body && body.expectedAccess !== current) {
+      return new Response(JSON.stringify({ ok: false, code: "grant_changed", error: "access changed after it was shown", current }), { status: 409 });
+    }
     grants = grants.filter((grant) => !(grant.familiarId === body.targetFamiliarId && grant.projectId === body.projectId));
     if (method === "POST") grants.push({ familiarId: body.targetFamiliarId, projectId: body.projectId, access: body.access });
     return new Response(JSON.stringify({ ok: true }));
   }) as typeof fetch;
-  return { fetchImpl, calls };
+  return { fetchImpl, calls, set: (next: typeof initial) => { grants = [...next]; }, grants: () => grants };
 }
 
 const TARGET = { familiarId: "nova", familiarName: "Nova", projectId: "p1", projectName: "Coven Cave" };
@@ -112,10 +119,12 @@ test("a grant from Chat records the previous direct grant, and Undo restores it 
   const fromRead = grantServer([{ familiarId: "nova", projectId: "p1", access: "read" }, { familiarId: "sage", projectId: "p1", access: "write" }]);
   const undo = await grantProjectAccess(fromRead.fetchImpl, TARGET, "write");
   assert.equal(undo.previous, "read");
+  assert.equal(undo.granted, "write");
   await undoProjectGrant(fromRead.fetchImpl, undo);
+  // Each change names the grant it expects to replace.
   assert.deepEqual(fromRead.calls, [
-    { method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "write" } },
-    { method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "read" } },
+    { method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "write", expectedAccess: "read" } },
+    { method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "read", expectedAccess: "write" } },
   ]);
 
   // No direct grant before (for example, read through an access group): Undo revokes.
@@ -123,7 +132,23 @@ test("a grant from Chat records the previous direct grant, and Undo restores it 
   const groupUndo = await grantProjectAccess(fromGroup.fetchImpl, TARGET, "write");
   assert.equal(groupUndo.previous, null);
   await undoProjectGrant(fromGroup.fetchImpl, groupUndo);
-  assert.deepEqual(fromGroup.calls.at(-1), { method: "DELETE", body: { targetFamiliarId: "nova", projectId: "p1" } });
+  assert.deepEqual(fromGroup.calls[0], { method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "write", expectedAccess: null } });
+  assert.deepEqual(fromGroup.calls.at(-1), { method: "DELETE", body: { targetFamiliarId: "nova", projectId: "p1", expectedAccess: "write" } });
+});
+
+test("a stale Undo is refused and leaves the newer grant in place", async () => {
+  const server = grantServer([{ familiarId: "nova", projectId: "p1", access: "read" }]);
+  const undo = await grantProjectAccess(server.fetchImpl, TARGET, "write");
+  // Someone else lowers the grant after Chat's change; Undo must not overwrite it.
+  server.set([{ familiarId: "nova", projectId: "p1", access: "read" }]);
+  await assert.rejects(undoProjectGrant(server.fetchImpl, undo), (error: unknown) =>
+    error instanceof GrantChangeError && error.code === "grant_changed" && error.status === 409);
+  assert.deepEqual(server.grants(), [{ familiarId: "nova", projectId: "p1", access: "read" }]);
+  // Revoked elsewhere: an Undo that would revoke is refused too.
+  const fresh = grantServer([]);
+  const revokeUndo = await grantProjectAccess(fresh.fetchImpl, TARGET, "write");
+  fresh.set([]);
+  await assert.rejects(undoProjectGrant(fresh.fetchImpl, revokeUndo), /changed after it was shown/);
 });
 
 test("a refused grant change surfaces the server's reason and changes nothing locally", async () => {

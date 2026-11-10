@@ -8,7 +8,9 @@
  *   unavailable (Claude without Coven `--write-scope`).
  * - A read-only project -> grant the familiar write access (the person
  *   confirms, the server's grant route logs it, and Undo restores the previous
- *   direct grant), or retry in Explore.
+ *   direct grant), or retry in Explore. Both changes carry the grant the
+ *   person saw as a precondition, so the route refuses either one (409
+ *   `grant_changed`) if someone else changed the grant in between.
  * - A runtime that can't enforce Explore -> retry in Build.
  * - A runtime write-scope blocker -> retry in Explore.
  *
@@ -191,7 +193,21 @@ export type ChatGrantUndo = {
   projectName: string;
   /** The familiar's direct grant before the change; null means none (Undo revokes). */
   previous: "read" | "write" | null;
+  /** The level this change set; Undo applies only while it is still current. */
+  granted: "read" | "write";
 };
+
+/** A grant change the route refused, with its stable code when it sent one. */
+export class GrantChangeError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  constructor(message: string, status: number, code: string | null) {
+    super(message);
+    this.name = "GrantChangeError";
+    this.status = status;
+    this.code = code;
+  }
+}
 
 type Fetch = typeof fetch;
 
@@ -201,9 +217,13 @@ async function grantRequest(fetchImpl: Fetch, method: "POST" | "DELETE", body: R
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: unknown } | null;
+  const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: unknown; code?: unknown } | null;
   if (!res.ok || json?.ok !== true) {
-    throw new Error(typeof json?.error === "string" && json.error ? json.error : `grant change failed (${res.status})`);
+    throw new GrantChangeError(
+      typeof json?.error === "string" && json.error ? json.error : `grant change failed (${res.status})`,
+      res.status,
+      typeof json?.code === "string" ? json.code : null,
+    );
   }
 }
 
@@ -229,17 +249,26 @@ export async function readDirectProjectGrant(
 /** Give the familiar `access` to the project and return what Undo restores. */
 export async function grantProjectAccess(
   fetchImpl: Fetch,
-  target: Omit<ChatGrantUndo, "previous">,
+  target: Omit<ChatGrantUndo, "previous" | "granted">,
   access: "read" | "write",
 ): Promise<ChatGrantUndo> {
   const previous = await readDirectProjectGrant(fetchImpl, target.familiarId, target.projectId);
-  await grantRequest(fetchImpl, "POST", { targetFamiliarId: target.familiarId, projectId: target.projectId, access });
-  return { ...target, previous };
+  await grantRequest(fetchImpl, "POST", {
+    targetFamiliarId: target.familiarId,
+    projectId: target.projectId,
+    access,
+    expectedAccess: previous,
+  });
+  return { ...target, previous, granted: access };
 }
 
-/** Undo a grant made from Chat: restore the previous direct grant, or revoke it if there was none. */
+/**
+ * Undo a grant made from Chat: restore the previous direct grant, or revoke it
+ * if there was none. The route refuses (409 `grant_changed`) when the grant is
+ * no longer the one this change set, so Undo never overwrites a newer decision.
+ */
 export async function undoProjectGrant(fetchImpl: Fetch, undo: ChatGrantUndo): Promise<void> {
-  const target = { targetFamiliarId: undo.familiarId, projectId: undo.projectId };
+  const target = { targetFamiliarId: undo.familiarId, projectId: undo.projectId, expectedAccess: undo.granted };
   if (undo.previous) await grantRequest(fetchImpl, "POST", { ...target, access: undo.previous });
   else await grantRequest(fetchImpl, "DELETE", target);
 }
