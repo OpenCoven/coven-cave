@@ -1420,7 +1420,7 @@ export function HomeComposer({
           three recent resumable sessions as horizontal cards. Only on a blank
           draft and when there is real resume history — stays out of the way
           once you start typing. */}
-      {!overview && !text.trim() ? (
+      {!text.trim() ? (
         <HomeContinue
           sessions={sessions}
           familiarNameById={familiarNameById}

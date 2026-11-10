@@ -12,9 +12,13 @@ The D0-only change from the 7 November review candidate was replayed onto main `
 | Unit suites | App: 1,505 files pass; the two native-supervisor cases skip because their provider binary was not supplied. API: 614 files pass, none skipped. |
 | Browser, production build with `CI=true`, Chromium | 70 cases across `home-overview`, `d0-retired-navigation`, `chat-activity-acceptance` and `chat-header-title-room` pass on the first attempt, with no retries or flakes. |
 | Review walk | Home, Chat, inline Activity, Settings and back to Home, driven by keyboard at 1440 and 390 px in light and dark, with and without reduced motion: 4 of 4 pass. Every focused control shows a 2 px solid outline, and no page errors occur. |
+| Hosted CI, first PR head `7ef7868a5` | [Run 42733676961](https://github.com/OpenCoven/coven-cave/actions/runs/42733676961) failed `Frontend build`. E2E shards 4 and 6 failed 20 Continue carousel cases on desktop, Pixel 5 and iPhone 13, and each failed its retry too. The candidate hid the Continue carousel whenever the overview showed. That retired a shipped surface (#4933) without a recorded decision, and the local D0-only browser run did not include its specs. The carousel now stays below the composer, as on main; whether to retire it is Val's call. |
+| Browser, after restoring Continue | Carousel specs on desktop, Pixel 5 and iPhone 13, plus `home-overview`, `d0-retired-navigation` and the review walk: 60 cases pass on the first attempt. Production build budgets are unchanged. |
 | Budgets, matched to main `fea63da7a` | First-load JS 1,685 KB (main 1,679 KB). Shell 434 KB, root CSS 557 KB and first-load CSS 641 KB are unchanged. Standalone output 7,788 files and 194,823,282 bytes (main 7,784 and 194,798,946). No responsiveness change is claimed. |
 
 Hosted CI for the PR head is recorded on the PR and on #6403, not in this file.
+
+**Continue and the overview overlap.** With Continue restored, Home lists the same recent sessions twice: once as overview rows and again as Continue cards below the composer. Retiring Continue, or narrowing what the overview shows, is a product decision for Val.
 
 **Pre-existing defect found by the walk.** Browser Back from Settings to Home leaves the address at `/` but keeps Settings on screen. It reproduces on main `fea63da7a` through the existing Cmd+, shortcut, so it predates this change. The Overview's "Connection settings" action follows the same path. `clearModeParam()` in `src/lib/workspace-url-state.ts` replaces the Home history entry's state with `null`, and Next's router ignores a popstate whose state is `null`. Returning through navigation works.
 
