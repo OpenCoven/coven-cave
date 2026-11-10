@@ -81,24 +81,29 @@ if (noPermission) {
   const refusal = refused.events.find(e=>e.kind === "error" && e.code === "scoped_write_unavailable");
   assert.ok(refusal,refused.body);
   assert.doesNotMatch(refusal.message,/Update Coven/,"no released Coven has the flag, so updating can't help");
-  assert.match(refusal.message,/Read-only/);
+  assert.match(refusal.message,/runtime that can enforce project write access/);
+  assert.doesNotMatch(refusal.message,/Switch Access to Read-only/);
   await assert.rejects(access(log),"a caller that didn't opt in must never receive a model launch");
   await assert.rejects(access(path.join(process.env.COVEN_CAVE_HOME,"claude-authority")),"a Coven that can't use authority files never gets any written");
-  // A person watching the chat gets the narrower turn and is told about it.
+  // Older Chat clients can still send the retired opt-in flag. A Build turn
+  // must refuse instead of launching Claude in native plan/read-only mode.
   const result = await send({allowReadOnlyFallback:true});
   assert.equal(result.status,200,result.body);
-  assert.ok(!result.events.some(e=>e.kind === "error"),result.body);
-  assert.equal(result.done?.isError,false,result.body);
+  assert.ok(result.events.some(e=>e.kind === "error" && e.code === "scoped_write_unavailable"),result.body);
+  assert.equal(result.done?.isError,true,result.body);
+  assert.ok(!result.events.some(e=>e.kind === "progress" && e.id === "runtime-write-scope-read-only"),result.body);
+  await assert.rejects(access(log),"even stale fallback opt-ins must never launch Claude");
+  // Explicit Explore requests still use the supported read-only boundary.
+  const explore = await send({permissionMode:"read"});
+  assert.equal(explore.done?.isError,false,explore.body);
   const launches = await calls();
   assert.equal(launches.length,1);
-  const {argv} = launches[0];
-  assert.equal(argv[argv.indexOf("--permission")+1],"read-only","the fallback must enforce Read-only");
-  assert.ok(!argv.includes("--write-scope"));
-  const notice = result.events.find(e=>e.kind === "progress" && e.id === "runtime-write-scope-read-only");
-  assert.equal(notice?.status,"notice",result.body);
-  assert.match(notice.detail,/can read but not edit/);
-  const saved = await loadConversation(result.done.sessionId);
-  assert.ok(saved?.turns.some(turn=>turn.progress?.some(p=>p.id==="runtime-write-scope-read-only")),"the notice survives reload");
+  assert.equal(launches[0].argv[launches[0].argv.indexOf("--permission")+1],"read-only");
+  const buildAgain = await send({sessionId:explore.done.sessionId,allowReadOnlyFallback:true});
+  assert.equal(buildAgain.done?.isError,true,buildAgain.body);
+  assert.ok(buildAgain.events.some(e=>e.kind === "error" && e.code === "scoped_write_unavailable"),buildAgain.body);
+  assert.equal((await calls()).length,1,"switching back to Build cannot resume the read-only native session");
+
 } else {
   const first = await send({allowReadOnlyFallback:true});
   assert.equal(first.status,200,first.body);
@@ -148,6 +153,12 @@ if (noPermission) {
   assert.ok(!launches.at(-1).argv.includes("--continue"),"permission-mode changes replace native authority");
   assert.ok(!launches.at(-1).argv.includes("--write-scope"));
   assert.ok(launches.at(-1).argv.includes("read-only"));
+  const buildAgain = await send({sessionId:readMode.done.sessionId});
+  assert.equal(buildAgain.done?.isError,false,buildAgain.body);
+  launches = await calls();
+  assert.ok(launches.at(-1).scope,"switching back to Build applies scoped write authority");
+  assert.ok(!launches.at(-1).argv.includes("--continue"),"Build starts a fresh native session after Explore");
+  assert.ok(!launches.at(-1).argv.includes("read-only"));
   for (const launch of launches.filter(call=>call.scopeFile)) await assert.rejects(access(launch.scopeFile), "per-turn scope files are retired after the stream");
   // A stale native session makes the route retry within the turn, reusing its authority files.
   const staleFirst = await send();

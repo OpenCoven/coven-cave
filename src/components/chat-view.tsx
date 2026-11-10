@@ -5762,12 +5762,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(startNewConversation ? { startNewConversation: true } : {}),
           projectRoot: projectRootForRequest,
           modelControls: controlsOverride?.modelControls ?? modelControls,
-          // Advisory permission mode for the picked access level; the daemon may
-          // ignore it if the harness doesn't support per-turn permission scoping.
+          // Send the selected access level; the server refuses unsupported modes.
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
-          // Someone is watching this chat and will see the notice, so a Claude
-          // turn may run Read-only when Coven can't scope Full access (#6419).
-          allowReadOnlyFallback: true,
           // Composer Host chip: only an explicit pick rides; the server
           // resolves it against the registered-host registry fail-closed.
           ...(fleetHost ? { runtimeHost: fleetHost } : {}),
