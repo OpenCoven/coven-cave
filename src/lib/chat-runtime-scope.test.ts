@@ -261,6 +261,31 @@ assert.equal(
   "runtime scope should wrap the user prompt as explicit startup context",
 );
 
+// Read-only execution is narrower than saved project grants, including the
+// implicit primary root. Build-to-read fallbacks remain refused by the route.
+{
+  const docs = path.join(home, "docs");
+  const scope = {
+    kind: "local" as const,
+    root: repo,
+    allowedProjectRoots: [docs],
+    projectRootAccess: { [docs]: "write" as const },
+    permissionMode: "read" as const,
+  };
+  const preamble = buildRuntimeScopePreamble(scope);
+  assert.match(preamble, /Effective access for this turn: Read-only/);
+  assert.doesNotMatch(preamble, /\(read \+ write\)|You may read, edit/);
+  assert.match(preamble, /Do not edit, create, delete, commit, or push/);
+  const restricted = buildRuntimeScopePreamble({ ...scope, projectRootAccess: { [docs]: "read" }, readOnlyResourceRoots: [path.join(home, "skills")] });
+  assert.equal((restricted.match(/read-only; no shell commands/g) ?? []).length, 2, "read-only project and runtime-resource command restrictions survive");
+  const explicitRead = buildRuntimeScopePreamble(scope);
+  assert.match(explicitRead, /Effective access for this turn: Read-only/);
+  assert.doesNotMatch(explicitRead, /Coven cannot enforce scoped writes/);
+  const primaryOnly = buildRuntimeScopePreamble({ kind: "local", root: repo, permissionMode: "read" });
+  assert.match(primaryOnly, /Effective access for this turn: Read-only/);
+  assert.match(primaryOnly, /Do not edit, create, delete, commit, or push/);
+}
+
 // REGRESSION (#6210): the spawn root arrives realpathed, while a granted
 // project keeps its registered spelling. A project registered through an alias
 // of the spawn directory (macOS /tmp -> /private/tmp) must not be forwarded

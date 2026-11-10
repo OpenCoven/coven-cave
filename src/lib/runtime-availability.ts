@@ -225,9 +225,27 @@ export function localRuntimeLaunchError(
 /** A process that did start but exited unsuccessfully is distinct from a
  * missing or unlaunchable CLI. Its copy is safe to surface without provider
  * output, executable paths, or scoped environment values. */
+export type RuntimeProcessFailureReason = "context_exhausted" | "configuration" | "cli_arguments" | "unknown";
+
+/** Classify private process diagnostics into fixed support-safe categories.
+ * Never return a matched substring: paths, options and config values stay private.
+ * Auth, quota and model rejection retain their existing earlier classifiers. */
+export function classifyRuntimeProcessFailure(text: unknown): RuntimeProcessFailureReason {
+  if (typeof text !== "string") return "unknown";
+  const bounded = text.slice(-16_384);
+  if (/\b(?:ran out of (?:room|space) in (?:the )?(?:model['’]s )?context window|context[_ ]length[_ ]exceeded|(?:maximum )?context (?:window|length) (?:has been |is |was )?exceeded|input exceeds (?:the )?(?:maximum )?context (?:window|length))\b/i.test(bounded)) return "context_exhausted";
+  if (/(?:^|\n)\s*(?:error:\s*)?(?:error loading (?:configuration|config)\b|failed to load (?:configuration|config)\b|TOML parse error\b)/i.test(bounded)) return "configuration";
+  if (/(?:^|\n)\s*(?:error:\s*)?(?:unexpected argument|unrecognized (?:option|subcommand)|unknown option)\b/i.test(bounded)) return "cli_arguments";
+  return "unknown";
+}
+
+function safeRuntimeProcessFailureReason(value: unknown): RuntimeProcessFailureReason {
+  return value === "context_exhausted" || value === "configuration" || value === "cli_arguments" ? value : "unknown";
+}
+
 export function runtimeProcessFailure(
   runner: DirectRunnerId | CovenBackedRunnerId,
-  options: { exitCode?: number | null; emittedDiagnostic?: boolean } = {},
+  options: { exitCode?: number | null; emittedDiagnostic?: boolean; reason?: RuntimeProcessFailureReason } = {},
 ): {
   code: typeof RUNTIME_AVAILABILITY_ERROR_CODES.process_failed;
   message: string;
@@ -239,6 +257,15 @@ export function runtimeProcessFailure(
     };
   }
   const label = runner === "hermes" ? "Hermes" : RUNNER_LABELS[runner];
+  const reason = safeRuntimeProcessFailureReason(options.reason);
+  const guidance = reason === "context_exhausted"
+    ? `${label} reached its context limit. Start a new chat with a shorter message or less attached context.`
+    : reason === "configuration"
+      ? `${label}'s configuration could not be loaded. Check its local configuration in a terminal, then retry.`
+      : reason === "cli_arguments"
+        ? `${label} rejected its launch arguments. Check that Coven and the selected CLI versions are compatible, then retry.`
+        : null;
+  if (guidance) return { code: RUNTIME_AVAILABILITY_ERROR_CODES.process_failed, message: guidance };
   const exitCode =
     typeof options.exitCode === "number" && Number.isInteger(options.exitCode)
       ? ` (exit code ${options.exitCode})`
@@ -277,7 +304,7 @@ export function covenRelayedRunError(error: unknown): string | null {
 export type RuntimeLaunchDiagnostics = {
   schemaVersion: 1;
   runner: DirectRunnerId | CovenBackedRunnerId;
-  failure: { kind: "process-exit"; exitCode: number | null; emittedDiagnostic: boolean };
+  failure: { kind: "process-exit"; exitCode: number | null; emittedDiagnostic: boolean; reason?: RuntimeProcessFailureReason };
   launcher?: RuntimeLaunchDiagnosticCommand;
   adapter?: RuntimeLaunchDiagnosticCommand;
   privacy: "paths-and-environment-values-redacted";
@@ -353,6 +380,7 @@ export function runtimeLaunchDiagnostics(input: {
   runner: DirectRunnerId | CovenBackedRunnerId;
   exitCode?: number | null;
   emittedDiagnostic: boolean;
+  reason?: RuntimeProcessFailureReason;
   launcher?: RuntimeLaunchDiagnosticInput;
   adapter?: RuntimeLaunchDiagnosticInput;
   platform?: NodeJS.Platform;
@@ -365,6 +393,7 @@ export function runtimeLaunchDiagnostics(input: {
       kind: "process-exit",
       exitCode: typeof input.exitCode === "number" && Number.isInteger(input.exitCode) ? input.exitCode : null,
       emittedDiagnostic: input.emittedDiagnostic,
+      ...(input.reason !== undefined ? { reason: safeRuntimeProcessFailureReason(input.reason) } : {}),
     },
     ...(input.launcher ? { launcher: diagnosticCommand(input.launcher, platform) } : {}),
     ...(input.adapter ? { adapter: diagnosticCommand(input.adapter, platform) } : {}),
