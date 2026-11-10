@@ -238,10 +238,10 @@ export function ProjectSettingsModal({
                   <>
                     Chats start only inside{" "}
                     <span className="break-all text-foreground" title={folderPin}>{folderPin}</span>. If you
-                    moved this folder on purpose, confirm it again with Touch ID or your Mac password.
+                    moved this folder on purpose, confirm it again with Touch ID.
                   </>
                 ) : (
-                  "Chats can’t start in this project until you confirm its folder with Touch ID or your Mac password."
+                  "Chats can’t start in this project until you confirm its folder with Touch ID."
                 )}
               </p>
             </div>

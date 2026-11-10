@@ -9,6 +9,13 @@ const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "folde
 process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(base, "projects.json");
 const { createProject, loadProjects } = await import("../cave-projects.ts");
 const { confirmProjectFolderWithHuman } = await import("./project-folder-confirmation.ts");
+await test("native confirmation requires fresh Touch ID without device-owner fallback", () => {
+  const native = fs.readFileSync(new URL("../../../native/confirm-project-folder.swift", import.meta.url), "utf8");
+  assert.match(native, /LAPolicy\.deviceOwnerAuthenticationWithBiometrics\b/);
+  assert.match(native, /touchIDAuthenticationAllowableReuseDuration\s*=\s*0/);
+  assert.match(native, /localizedFallbackTitle\s*=\s*""/);
+  assert.doesNotMatch(native, /LAPolicy\.deviceOwnerAuthentication\b/);
+});
 try {
   const root = path.join(base, "project");
   const other = path.join(base, "other");

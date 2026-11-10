@@ -86,7 +86,7 @@ test("an unconfirmed project explains the block and confirms its folder", async 
   const onConfirmRoot = vi.fn(async () => ({ ok: true }));
   const root = render(legacy, onConfirmRoot);
   expect(text(root)).toContain("Folder not confirmed");
-  expect(text(root)).toContain("Chats can’t start in this project until you confirm its folder with Touch ID or your Mac password.");
+  expect(text(root)).toContain("Chats can’t start in this project until you confirm its folder with Touch ID.");
 
   await act(async () => {
     button(root, "Confirm folder").props.onClick();

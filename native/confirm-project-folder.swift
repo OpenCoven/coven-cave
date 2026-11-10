@@ -2,10 +2,12 @@ import Foundation
 import LocalAuthentication
 
 // This helper has no reusable approval token. Each invocation must complete a
-// fresh OS authentication, for the exact project and realpath shown by Cave.
+// fresh Touch ID authentication, for the exact project and realpath shown by Cave.
+// The broader device-owner policy can succeed without an observed human prompt.
 let context = LAContext()
 context.touchIDAuthenticationAllowableReuseDuration = 0
-let policy = LAPolicy.deviceOwnerAuthentication
+context.localizedFallbackTitle = ""
+let policy = LAPolicy.deviceOwnerAuthenticationWithBiometrics
 var error: NSError?
 guard context.canEvaluatePolicy(policy, error: &error) else { exit(2) }
 if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--check" { exit(0) }

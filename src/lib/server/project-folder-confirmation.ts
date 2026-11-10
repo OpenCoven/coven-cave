@@ -22,7 +22,7 @@ export async function confirmProjectFolderWithHuman(
     const expected = { root: project.root, realpath: realpathSync.native(/* turbopackIgnore: true */ validated.root) };
     const approved = await deps.authenticate(`Confirm ${project.name}’s project folder:\n${expected.realpath}`);
     if (!approved) {
-      return { ok: false as const, status: 403, code: "project_folder_authentication_required", error: "Authenticate on this Mac to confirm the folder. Use Touch ID or your Mac password, then retry." };
+      return { ok: false as const, status: 403, code: "project_folder_authentication_required", error: "Authenticate on this Mac to confirm the folder. Use Touch ID, then retry." };
     }
     const result = await confirmProjectRoot(id, validateCaveProjectRoot, expected);
     if (!result) return { ok: false as const, status: 404, code: "project_not_found", error: "not found" };
