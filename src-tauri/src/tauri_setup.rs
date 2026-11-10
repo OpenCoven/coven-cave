@@ -460,7 +460,7 @@ pub fn run() {
                 // machine-local copy of daemon state and must not follow a
                 // roaming profile onto another machine.
                 app.state::<Arc<offline_cache::OfflineCacheState>>()
-                    .configure(app_local_data_dir.clone());
+                    .configure(app_local_data_dir.clone(), &app.config().identifier);
                 let diagnostics_path =
                     app_local_data_dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME);
                 if let Err(error) =
