@@ -40,6 +40,14 @@ export type CaveProject = {
    * create/patch/delete after an upgrade.
    */
   legacyRoot?: string;
+  /**
+   * The folder a person pinned this project to (#6215): its root's realpath in
+   * on-disk letter case when they registered it, moved its root, or confirmed
+   * it in project settings. Chat refuses a launch that resolves outside it, so
+   * a folder swapped for a symlink cannot carry the project's grant elsewhere.
+   * Absent on records from before pinning until someone confirms the folder.
+   */
+  rootRealpath?: string;
   createdAt: string;
   updatedAt: string;
 };

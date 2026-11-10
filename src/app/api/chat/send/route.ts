@@ -1,3 +1,4 @@
+import { assertPinnedLaunchRoot, pinnedProjectRoot } from "@/lib/server/project-root-pin";
 import { isMetaRunOrigin } from "@/lib/chat-origins";
 import { projectTextOffsets } from "@/lib/project-text-offsets";
 import { projectProgressDetails } from "@/lib/server/chat-display-projection";
@@ -208,6 +209,7 @@ import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
   projectlessGenerationLaunch,
+  projectRootPinIn,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
@@ -883,6 +885,7 @@ async function startAdmittedChatStream(
 
 function openClawChatResponse(args: {
   admission: ChatRunAdmission;
+  assertLaunchFoldersUnchanged: () => void;
   req: Request;
   body: SendBody;
   promptText: string;
@@ -1151,6 +1154,7 @@ function openClawChatResponse(args: {
       const gatewayAuth = openClawGatewayPairedDeviceAuthStatus(
         args.openClawGatewayCredentialStore,
       );
+      args.assertLaunchFoldersUnchanged();
       const gatewayDispatch = gatewayAuth.available
         ? await dispatchOpenClawGatewayTurn({
         sessionKey: gatewaySessionKey,
@@ -1581,6 +1585,7 @@ function openClawChatResponse(args: {
       let localRecoveryAttempted = false;
       let stopChildOnLaunch = false;
       const spawnChild = (mode: "gateway" | "local") => {
+        args.assertLaunchFoldersUnchanged();
         const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode, gatewaySessionKey);
         const launched = spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           windowsHide: true,
@@ -2683,6 +2688,7 @@ async function postAdmittedChat(
               throw error;
             }
           },
+          projectRootPin: projectRootPinIn(projects),
         },
         {
           familiarId: body.familiarId,
@@ -2719,6 +2725,25 @@ async function postAdmittedChat(
         JSON.stringify({ ok: false, error: error.message, code: error.code }),
         { status: error.status, headers: { "content-type": "application/json" } },
       );
+    }
+    throw error;
+  }
+  const assertProjectFoldersUnchanged = () => {
+    if (sshRuntime) return;
+    const primary = projects.find((project) => project.id === authorizedProjectId);
+    if (primary) {
+      if (cwd !== authorizedProjectRoot) {
+        throw new ChatProjectLaunchError("project_root_moved", 409,
+          "The project folder changed while preparing this turn. Confirm its folder in project settings and retry.");
+      }
+      assertPinnedLaunchRoot(primary, cwd);
+    }
+  };
+  try {
+    assertProjectFoldersUnchanged();
+  } catch (error) {
+    if (error instanceof ChatProjectLaunchError) {
+      return Response.json({ ok: false, code: error.code, error: error.message }, { status: error.status });
     }
     throw error;
   }
@@ -3172,14 +3197,28 @@ async function postAdmittedChat(
       accessibleProjects.map((entry) => entry.project.root),
     ),
   );
-  const effectiveAccessibleProjects = accessibleProjects.filter((entry) =>
-    usableProjectRoots.has(entry.project.root.trim())
-  );
+  const effectiveAccessibleProjects = accessibleProjects.flatMap((entry) => {
+    if (!usableProjectRoots.has(entry.project.root.trim())) return [];
+    const pin = pinnedProjectRoot(entry.project);
+    return pin ? [{ ...entry, project: { ...entry.project, root: pin } }] : [];
+  });
   const omittedGrantCount = accessibleProjects.length - effectiveAccessibleProjects.length;
+  const assertLaunchFoldersUnchanged = () => {
+    assertProjectFoldersUnchanged();
+    for (const entry of effectiveAccessibleProjects) {
+      const registered = projects.find((project) => project.id === entry.project.id);
+      if (registered) assertPinnedLaunchRoot(registered, entry.project.root);
+    }
+  };
   const grantedProjectRoots = effectiveAccessibleProjects.map((entry) => entry.project.root.trim());
   const grantedProjectRootAccess: Record<string, ProjectAccessLevel> = Object.fromEntries(
     effectiveAccessibleProjects.map((entry) => [entry.project.root.trim(), entry.access]),
   );
+  // Canonical pins can collapse alias registrations onto one root. Preserve
+  // #6216's most-permissive merge; a later read grant cannot erase a write grant.
+  for (const entry of effectiveAccessibleProjects) {
+    if (entry.access === "write") grantedProjectRootAccess[entry.project.root.trim()] = "write";
+  }
   const runtimeResourceRoots = sshRuntime
     ? []
     : await resolveRuntimeResourceRoots({
@@ -3390,7 +3429,15 @@ async function postAdmittedChat(
     : null;
 
   if (binding.harness === "openclaw" && !sshRuntime) {
+    try {
+      assertLaunchFoldersUnchanged();
+    } catch (error) {
+      if (error instanceof ChatProjectLaunchError) return Response.json(
+        { ok: false, code: error.code, error: error.message }, { status: error.status });
+      throw error;
+    }
     return openClawChatResponse({
+      assertLaunchFoldersUnchanged,
       admission,
       req,
       body,
@@ -3806,6 +3853,13 @@ async function postAdmittedChat(
   // before the child-run registry is installed. Keep this binding available
   // to `announceSession` without putting it in the temporal dead zone.
   let runHandle!: ChatRunHandle;
+  try {
+    assertLaunchFoldersUnchanged();
+  } catch (error) {
+    if (error instanceof ChatProjectLaunchError) return Response.json(
+      { ok: false, code: error.code, error: error.message }, { status: error.status });
+    throw error;
+  }
   const stream = new ReadableStream<Uint8Array>({
     start: (controller) => startAdmittedChatStream(admission, async () => {
       try {
@@ -5729,6 +5783,13 @@ async function postAdmittedChat(
               : openCodeDirect ? undefined : cwd,
           );
           const reportLaunchFailure = (err: NodeJS.ErrnoException) => {
+            if (err instanceof ChatProjectLaunchError) {
+              result.is_error = true;
+              const { code, message } = err;
+              launchFailure = { code, message };
+              push({ kind: "error", code, message });
+              return;
+            }
             let localLaunchError: { code: string; message: string } = localRuntimeLaunchError(
               localRuntimePlan?.runner ?? "coven",
               err.code,
@@ -5788,6 +5849,7 @@ async function postAdmittedChat(
                 });
               })()
             : (() => {
+                assertLaunchFoldersUnchanged();
                 const localPlan = localRuntimePlan;
                 if (!localPlan) {
                   const message =

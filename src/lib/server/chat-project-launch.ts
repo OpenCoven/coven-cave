@@ -1,7 +1,10 @@
 import path from "node:path";
+import fs from "node:fs";
 
+import type { CaveProject } from "../cave-projects-types.ts";
 import type { ProjectPermissionSurface } from "../project-access-levels.ts";
 import type { SessionOrigin } from "../types.ts";
+import { realpathNativeOrResolve } from "./canonical-path.ts";
 
 import {
   isProjectlessGenerationOrigin,
@@ -128,15 +131,17 @@ export type ChatProjectLaunchErrorCode =
   | "project_root_not_directory"
   | "project_root_invalid"
   | "project_not_registered"
-  | "project_access_denied";
+  | "project_access_denied"
+  | "project_root_unconfirmed"
+  | "project_root_moved";
 
 export class ChatProjectLaunchError extends Error {
   readonly code: ChatProjectLaunchErrorCode;
-  readonly status: 400 | 403;
+  readonly status: 400 | 403 | 409;
 
   constructor(
     code: ChatProjectLaunchErrorCode,
-    status: 400 | 403,
+    status: 400 | 403 | 409,
     message: string,
   ) {
     super(message);
@@ -157,7 +162,26 @@ export type ChatProjectLaunchDeps = {
     projectId: string,
     surface: ProjectPermissionSurface,
   ): Promise<boolean>;
+  /**
+   * The registered project's name and the folder a person pinned it to
+   * (#6215), or a null pin when no one has confirmed its folder yet.
+   */
+  projectRootPin(projectId: string): { name: string; pin: string | null; root?: string };
 };
+
+/** {@link ChatProjectLaunchDeps.projectRootPin} over one registry snapshot. */
+export function projectRootPinIn(
+  projects: readonly Pick<CaveProject, "id" | "name" | "root" | "rootRealpath">[],
+): ChatProjectLaunchDeps["projectRootPin"] {
+  return (projectId) => {
+    const project = projects.find((entry) => entry.id === projectId);
+    return {
+      name: project?.name.trim() || "This project",
+      pin: project?.rootRealpath?.trim() || null,
+      root: project?.root,
+    };
+  };
+}
 
 export type ChatProjectLaunchInput = {
   familiarId: string;
@@ -190,7 +214,17 @@ function validationError(error: string): ChatProjectLaunchError {
  *
  * Callers inject the repository-specific root, registry, and permission
  * adapters. Keeping the sequencing pure makes it directly testable and
- * guarantees no route can mint/queue/spawn before all three checks pass.
+ * guarantees no route can mint/queue/spawn before every check passes.
+ *
+ * The last check pins the directory (#6215). Validation follows symlinks, so
+ * a familiar that can write to a registered root's parent could swap the
+ * folder for a symlink, and the project's grant would follow it anywhere. The
+ * launch root must resolve inside the folder a person registered or confirmed.
+ * A `.worktrees/` checkout or Board task worktree sits inside it, so both
+ * follow the pin. The pin is never re-resolved here: that would follow the
+ * swapped symlink too. Both sides are compared in on-disk letter case, as the
+ * pin is stored (#6216). The grant is checked first, so a familiar without
+ * one learns nothing about the folder.
  */
 export async function authorizeChatProjectLaunch(
   deps: ChatProjectLaunchDeps,
@@ -232,8 +266,35 @@ export async function authorizeChatProjectLaunch(
     );
   }
 
+  const { name, pin, root: registeredRoot } = deps.projectRootPin(projectId);
+  if (!pin) {
+    throw new ChatProjectLaunchError(
+      "project_root_unconfirmed",
+      409,
+      `Confirm ${name}’s folder in project settings before starting chat. Projects added before folder pinning need this once.`,
+    );
+  }
+  // Compare the registered folder itself by equality. Containment is only
+  // appropriate for a worktree under an unchanged registered folder.
+  let registeredMatches = true;
+  if (registeredRoot) {
+    try {
+      registeredMatches = fs.realpathSync.native(/* turbopackIgnore: true */ registeredRoot) === pin;
+    } catch {
+      registeredMatches = false;
+    }
+  }
+  const launchRoot = realpathNativeOrResolve(validated.root);
+  if (!registeredMatches || !isInsideRoot(pin, launchRoot)) {
+    throw new ChatProjectLaunchError(
+      "project_root_moved",
+      409,
+      `${name}’s folder now resolves somewhere else, so chat won’t start there. If you moved it on purpose, confirm the folder in project settings.`,
+    );
+  }
+
   return {
-    root: validated.root,
+    root: launchRoot,
     projectId,
   };
 }

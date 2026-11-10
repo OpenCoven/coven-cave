@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { resolvePort } from "./scripts/ports.mjs";
@@ -92,6 +92,9 @@ writeFileSync(
       id: "e2e-project",
       name: "E2E Project",
       root: process.cwd(),
+      // This disposable baseline models an explicitly registered folder;
+      // legacy confirmation is exercised by its own regression fixtures.
+      rootRealpath: realpathSync.native(process.cwd()),
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     }],

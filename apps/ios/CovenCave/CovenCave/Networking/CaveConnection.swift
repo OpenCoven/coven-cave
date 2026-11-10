@@ -360,6 +360,8 @@ enum CaveError: LocalizedError {
             "project_root_invalid",
             "project_not_registered",
             "project_access_denied",
+            "project_root_unconfirmed",
+            "project_root_moved",
         ].contains(code)
     }
 
