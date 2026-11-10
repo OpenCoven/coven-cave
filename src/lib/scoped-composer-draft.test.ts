@@ -23,6 +23,8 @@ test("reused composer restores only its own draft, flushes rapid switches and ig
   const storage = new Map();
   const timers = new Map();
   globalThis.window = {
+      addEventListener() {},
+      removeEventListener() {},
     localStorage: {
       getItem: (key) => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, value),
@@ -85,6 +87,8 @@ for (const followUp of ["", "Newest follow-up"]) {
     const originalWindow = globalThis.window;
     const storage = new Map([["compose", "Already sent prompt"]]);
     globalThis.window = {
+      addEventListener() {},
+      removeEventListener() {},
       localStorage: {
         getItem: (key) => storage.get(key) ?? null,
         setItem: (key, value) => storage.set(key, value),
@@ -112,6 +116,43 @@ for (const followUp of ["", "Newest follow-up"]) {
       });
     } finally {
       await act(async () => { renderer?.unmount(); });
+      globalThis.window = originalWindow;
+    }
+  });
+}
+
+for (const eventName of ["beforeunload", "pagehide"]) {
+  test(`${eventName} flushes the latest draft without waiting for debounce or resurrecting a sent prompt`, async () => {
+    const originalWindow = globalThis.window;
+    const storage = new Map();
+    const lifecycle = new EventTarget();
+    globalThis.window = Object.assign(lifecycle, {
+      localStorage: {
+        getItem: key => storage.get(key) ?? null,
+        setItem: (key, value) => storage.set(key, value),
+        removeItem: key => storage.delete(key),
+      },
+      setTimeout: () => 1,
+      clearTimeout() {},
+    });
+    let current, renderer;
+    function Probe({ draftKey }) { current = useComposerDraft(draftKey, 60_000); return null; }
+    try {
+      await act(async () => { renderer = create(createElement(StrictMode, null, createElement(Probe, { draftKey: "A" }))); });
+      await act(async () => current.setValue("Newest A tail"));
+      assert.equal(storage.has("A"), false, "ordinary typing remains debounced");
+      lifecycle.dispatchEvent(new Event(eventName));
+      assert.equal(storage.get("A"), "Newest A tail");
+      await act(async () => renderer.update(createElement(StrictMode, null, createElement(Probe, { draftKey: "B" }))));
+      await act(async () => current.setValue("Newest B tail"));
+      lifecycle.dispatchEvent(new Event(eventName));
+      assert.equal(storage.get("A"), "Newest A tail", "exit cannot write another scope's text into A");
+      assert.equal(storage.get("B"), "Newest B tail");
+      await act(async () => current.clearNow());
+      lifecycle.dispatchEvent(new Event(eventName));
+      assert.equal(storage.has("B"), false, "an explicit send/clear stays cleared on exit");
+    } finally {
+      await act(async () => renderer?.unmount());
       globalThis.window = originalWindow;
     }
   });

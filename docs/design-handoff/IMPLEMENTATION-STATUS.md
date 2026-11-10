@@ -29,6 +29,8 @@ and its hashed source documents. This is not the original `(WIP) Chat` corpus:
 its three named v2 frames are absent. The exception does not replace the live
 roster for other projects or reopen implementation deferred by #5414.
 
+**Scoped source handoff (#6403, 2026-11-04):** Val supplied `cave-handoff.zip`, `cave-fully-realized.html` and the Revision 2 path-forward PDF for D0 under #6396. The [dashboard adoption record](dashboard-2026-11-04/README.md) and [hash manifest](dashboard-2026-11-04/manifest.json) preserve the inspected snapshot (HTML v8, CSS v12, JS v9), production adaptations and remaining integration/acceptance gates. The ZIP is the inspectable source; the standalone HTML is a saved host frame. This handoff does not replace the live roster or establish production delivery, visual sign-off, backend authority or native acceptance.
+
 Regenerate the live side with:
 
 ```bash
@@ -91,6 +93,8 @@ tests), so when a project gains or loses a frame, update this table by hand.
 | `Coven Cave App.dc.html` (iOS) | `apps/ios/CovenCave` | Canonical direction: `docs/ios-current-direction.md`. Lineage: `157dee8d5d` (#3736), `d4f619b6c8` (`cave-4bsu`), `01a3d91bc8` (`cave-32fp`), `cave-122mp` — gated by `scripts/ios-claude-design-fidelity.test.mjs`. The supplied July archive's familiar rail + unified recents and persistent bottom tab bar were intentionally superseded by the approved familiars-first IA and drawer shell. The native Terminal destination and its PTY/WebView stack were retired on 2026-08-18; the iOS drawer keeps Chats and Tasks primary, groups Projects and Familiars as contextual workspace resources, and reaches Settings through the profile avatar. Desktop and web terminal surfaces remain unchanged. The compatible app-wide search and truthful project activity metadata cover both local and server-only conversations; validated linked PR/issue context remains readable through accessibility text sizes. |
 
 ## Outstanding
+
+**D0 #6403:** The supplied `Cave, fully realized` dashboard snapshot is preserved and reconciled in [dashboard-2026-11-04](dashboard-2026-11-04/README.md). Source availability is established. The local, uncommitted inline Activity/Home candidate consumes published T1 #6410 and canonical T2 #6408 with bound production-browser evidence; [the acceptance audit](dashboard-2026-11-04/ACCEPTANCE.md) and [review packet](dashboard-2026-11-04/DELIVERY.md) retain the default-production profile, tested focus/draft boundaries and unresolved producer, delivery, visual and device gates. Chat and inline Run Details/Activity remain; #6358/#6200 ownership is preserved. Do not import sample receipts, six new modes, host CSS, a replacement Salem assistant or local approval state as production behavior.
 
 Ordered by size of the unbuilt frame, which is a decent proxy for how much
 surface it describes.

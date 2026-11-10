@@ -41,6 +41,7 @@ export function useAttachmentStaging(opts?: {
   notice: string | null;
   dismissNotice: () => void;
   isReading: boolean;
+  resetDropTarget: () => void;
   dropHandlers: {
     onDragEnter: (e: DragEvent) => void;
     onDragOver: (e: DragEvent) => void;
@@ -53,8 +54,8 @@ export function useAttachmentStaging(opts?: {
   const onAdded = opts?.onAdded;
   const focus = opts?.focus;
 
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const pendingRef = useRef(0);
   const pendingNonImageRef = useRef(0);
   const generationRef = useRef(0);
@@ -63,6 +64,10 @@ export function useAttachmentStaging(opts?: {
   const dismissNotice = useCallback(() => setNotice(null), []);
   const [dropActive, setDropActive] = useState(false);
   const dragDepthRef = useRef(0);
+  const resetDropTarget = useCallback(() => {
+    dragDepthRef.current = 0;
+    setDropActive(false);
+  }, []);
   useEffect(() => () => { generationRef.current += 1; }, []);
 
   const addFiles = useCallback(
@@ -187,5 +192,5 @@ export function useAttachmentStaging(opts?: {
     },
   };
 
-  return { attachments, addFiles, removeAttachment, clearAttachments, handlePaste, dropActive, dropHandlers, notice, dismissNotice, isReading };
+  return { attachments, addFiles, removeAttachment, clearAttachments, handlePaste, dropActive, dropHandlers, notice, dismissNotice, isReading, resetDropTarget };
 }

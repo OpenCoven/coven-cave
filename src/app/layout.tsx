@@ -29,6 +29,7 @@ import { PreferencesBootstrapController } from "@/components/preferences-bootstr
 import { DaemonReleaseAlignmentTrigger } from "@/components/update-available";
 import { createDefaultPreferences } from "@/lib/preferences-schema";
 import { SettingsSaveToast } from "@/components/ui/settings-save-toast";
+import { HomeAttachmentDraftProvider } from "@/components/home/home-attachment-draft";
 
 export const metadata: Metadata = {
   title: "CovenCave",
@@ -113,7 +114,7 @@ export default function RootLayout({
             <FileEditDraftGuard />
             <WebVitalsReporter />
             <PerfOverlay />
-            {children}
+            <HomeAttachmentDraftProvider>{children}</HomeAttachmentDraftProvider>
             <SettingsSaveToast />
             </ConfirmProvider>
           </LiveRegionProvider>

@@ -447,6 +447,7 @@ export const SUITES = {
     "src/lib/home-feed.test.ts",
     "src/lib/home-greeting.test.ts",
     "src/lib/home-continue-paging.test.ts",
+    "src/lib/home-overview.test.ts",
     "src/lib/secret-validators.test.ts",
     "src/lib/session-pr-status.test.ts",
     "src/lib/merged-chat-auto-archive.test.ts",

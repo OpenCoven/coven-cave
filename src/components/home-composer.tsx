@@ -13,6 +13,7 @@ import "@/styles/home-composer.css";
 
 import {
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useId,
@@ -48,6 +49,7 @@ import { HOME_DRAFT_KEY, readComposerDraft, useDraftPersistence } from "@/lib/us
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useDictation } from "@/lib/voice/use-dictation";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
+import { useHomeAttachmentDraft } from "@/components/home/home-attachment-draft";
 import { ComposerAttachmentFeedback } from "@/components/composer-attachment-feedback";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { canonicalize, inlineSlashCommandPrompt, splitSlashCommandPrompt } from "@/lib/slash-commands";
@@ -90,6 +92,8 @@ import {
 export type { Destination } from "@/components/home/home-destinations";
 
 type Props = {
+  /** D0 oversight consumes the shell's existing observations; no extra read. */
+  overview?: ReactNode;
   familiars: ResolvedFamiliar[];
   /** True once the shell's roster fetch has settled successfully, so an
    *  empty `familiars` means "none exist" rather than "still loading". */
@@ -153,6 +157,7 @@ const HOME_COMPOSER_MAX_HEIGHT = 332;
 // ─── HomeComposer ─────────────────────────────────────────────────────────────
 
 export function HomeComposer({
+  overview,
   familiars,
   rosterReady = false,
   project,
@@ -231,12 +236,16 @@ export function HomeComposer({
       textarea.setSelectionRange(nextCaret, nextCaret);
     });
   }, []);
-  // Attachments staged in the composer (50 total, at most 10 non-images);
-  // handed to the opened chat on submit. Shared hook — home adds the limit
-  // toast + SR announce and defers refocus a tick.
+  // The document owns the Home draft through client navigation. A standalone
+  // composer falls back to the same staging hook with its original local life.
+  const sharedAttachments = useHomeAttachmentDraft();
+  const localAttachments = useAttachmentStaging({
+    onLimit: () => onToast(`Attachment limit reached (${MAX_CHAT_ATTACHMENTS} total, ${MAX_CHAT_NON_IMAGE_ATTACHMENTS} other files).`),
+    onAdded: (count) => announce(`Attached ${count} file${count === 1 ? "" : "s"}`, "polite"),
+  });
   const {
     attachments,
-    addFiles,
+    addFiles: stageFiles,
     removeAttachment,
     clearAttachments,
     handlePaste,
@@ -245,11 +254,19 @@ export function HomeComposer({
     notice: attachmentNotice,
     dismissNotice: dismissAttachmentNotice,
     isReading: attachmentsReading,
-  } = useAttachmentStaging({
-    onLimit: () => onToast(`Attachment limit reached (${MAX_CHAT_ATTACHMENTS} total, ${MAX_CHAT_NON_IMAGE_ATTACHMENTS} other files).`),
-    onAdded: (count) => announce(`Attached ${count} file${count === 1 ? "" : "s"}`, "polite"),
-    focus: () => setTimeout(() => textareaRef.current?.focus(), 0),
-  });
+    resetDropTarget,
+  } = sharedAttachments ?? localAttachments;
+  useEffect(() => () => resetDropTarget(), [resetDropTarget]);
+  const addFiles = useCallback(async (files: FileList | File[] | null) => {
+    const textarea = textareaRef.current;
+    const focused = document.activeElement;
+    await stageFiles(files);
+    // A completed read must not move focus from evidence or Settings opened
+    // while it was pending, even if Home has since mounted a new textarea.
+    if (textarea?.isConnected && (document.activeElement === focused || document.activeElement === document.body)) {
+      textarea.focus({ preventScroll: true });
+    }
+  }, [stageFiles]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedFamiliar = useMemo(
     () => familiars.find((familiar) => familiar.id === actingFamiliarId) ?? null,
@@ -917,7 +934,8 @@ export function HomeComposer({
   );
 
   return (
-    <div className="home-composer-root">
+    <div className="home-composer-root" data-overview={overview ? true : undefined}>
+      {overview}
 
       {/* The hearth card (chat revamp 1a): one centered panel holding the
           greeting, the composer, and the resume/work/snippet sections. */}
@@ -926,11 +944,11 @@ export function HomeComposer({
       {/* Headline — presence kicker over the display face, then a one-line
           live-context subtitle (familiar · role · model). */}
       <div className="home-composer-hero">
-        <p className={`home-composer-eyebrow${greeting ? " is-ready" : ""}`}>
+        {!overview ? <p className={`home-composer-eyebrow${greeting ? " is-ready" : ""}`}>
           <span className="home-composer-eyebrow-dot" aria-hidden />
           {greeting ?? "\u00A0"}
-        </p>
-        <h1 className="home-composer-headline">What are we casting today?</h1>
+        </p> : null}
+        {overview ? <h2 className="home-composer-headline">Start a conversation</h2> : <h1 className="home-composer-headline">What are we casting today?</h1>}
         {contextLine ? <p className="home-composer-sub">{contextLine}</p> : null}
         <p className="home-composer-guidance" id={guidanceId}>
           {noFamiliars
@@ -1061,6 +1079,10 @@ export function HomeComposer({
         <div
           className={`home-composer-card cave-composer-panel${dropActive ? " is-drop-active" : ""}`}
           {...dropHandlers}
+          onDrop={(event) => {
+            dropHandlers.onDrop(event);
+            if (event.defaultPrevented) textareaRef.current?.focus({ preventScroll: true });
+          }}
         >
           {dropActive ? (
             <div className="hc-drop-overlay" aria-hidden="true">
@@ -1398,7 +1420,7 @@ export function HomeComposer({
           three recent resumable sessions as horizontal cards. Only on a blank
           draft and when there is real resume history — stays out of the way
           once you start typing. */}
-      {!text.trim() ? (
+      {!overview && !text.trim() ? (
         <HomeContinue
           sessions={sessions}
           familiarNameById={familiarNameById}

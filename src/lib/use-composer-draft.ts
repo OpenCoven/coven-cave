@@ -77,6 +77,21 @@ export function useDraftPersistence(
     [key],
   );
 
+  // A document reload does not run React's unmount cleanup. Flush the latest
+  // restored text before leaving, including the tail still in the debounce.
+  useEffect(() => {
+    const flush = () => {
+      const latest = latestRef.current;
+      if (latest?.key === key) writeComposerDraft(key, latest.value);
+    };
+    window.addEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
+    };
+  }, [key]);
+
   const clearNow = useCallback(() => {
     // A null latestRef means persistence is disabled, not that some other key
     // owns the draft — only an actual mismatch is a stale caller.

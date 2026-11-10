@@ -184,6 +184,7 @@ import {
 } from "@/components/lazy-surfaces";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectFocusPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
+import { homeOverviewConnection, type HomeConnectionObservation, type HomeOverviewObservation } from "@/lib/home-overview";
 import { AutoMissionSupervisor } from "@/components/auto-mission-supervisor";
 import { RightChatPanel, type RightChatLaunchRequest } from "@/components/right-chat-panel";
 import { nativeNotify } from "@/lib/native-notify";
@@ -330,6 +331,7 @@ function splitTargetRendersMode(target: WorkspacePaneRequest, mode: WorkspaceMod
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
+const HomeOverview = lazy(() => import("./home/home-overview").then((module) => ({ default: module.HomeOverview })));
 const FlowExecutionLink = lazy(() => import("./flow-execution-link").then((module) => ({
   default: module.FlowExecutionLink,
 })));
@@ -772,6 +774,10 @@ export function Workspace() {
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [sessionsScopeFamiliarId, setSessionsScopeFamiliarId] = useState<string | null | undefined>(undefined);
+  const [homeObservation, setHomeObservation] = useState<HomeOverviewObservation>({ loaded: false, error: false, complete: false, scopeFamiliarId: undefined, checkedAt: null });
+  const [homeConnection, setHomeConnection] = useState<HomeConnectionObservation | null>(null);
+  const homeObservationRef = useRef(homeObservation);
+  const homeConnectionRef = useRef<HomeConnectionObservation | null>(null);
   // false until the first /api/sessions/list fetch settles — lets the chat
   // list show a skeleton instead of flashing its empty state on boot.
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
@@ -850,6 +856,19 @@ export function Workspace() {
   const primaryPaneRequestRef = useRef(primaryPaneRequest);
   primaryPaneRequestRef.current = primaryPaneRequest;
   const modeRef = useRef<CaveMode>("home");
+  // Observe existing reads without making an unchanged Chat rerender every
+  // poll just to update a Home-only checked-at label.
+  const publishHomeObservation = useCallback((update: HomeOverviewObservation | ((previous: HomeOverviewObservation) => HomeOverviewObservation)) => {
+    const next = typeof update === "function" ? update(homeObservationRef.current) : update;
+    homeObservationRef.current = next;
+    if (modeRef.current === "home") setHomeObservation(next);
+  }, []);
+  useEffect(() => {
+    if (mode === "home") {
+      setHomeObservation(homeObservationRef.current);
+      setHomeConnection(homeConnectionRef.current);
+    }
+  }, [mode]);
   const navigationRestoreRef = useRef(false);
   const suppressInitialChatHistoryPushRef = useRef(false);
   const navigationHistoryRef = useRef(createWorkspaceNavigationHistory<CaveMode>("home"));
@@ -1449,6 +1468,9 @@ export function Workspace() {
       daemonTravelReconcileRequesterRef.current?.observeHubState("inactive");
     }
     const result = classifyDaemonStatusPoll(poll);
+    const observation = homeOverviewConnection(result, new Date().toISOString());
+    homeConnectionRef.current = observation;
+    if (modeRef.current === "home") setHomeConnection(observation);
     // The coordinator pins this first accepted decision. Later polls may update
     // live UI state, but can never turn into a delayed automatic restart.
     daemonAutoStartCoordinatorRef.current!.observeStatus(result);
@@ -2025,6 +2047,8 @@ export function Workspace() {
       currentScopeKey: chatAttentionProjectionScopeKey(modeRef.current === "chat" ? null : activeIdRef.current),
     });
 
+    publishHomeObservation((previous) => previous.scopeFamiliarId === capturedActiveId ? previous : { loaded: false, error: false, complete: false, scopeFamiliarId: capturedActiveId, checkedAt: null });
+
     return (async () => {
       let baseSessionsApplied = false;
       try {
@@ -2046,6 +2070,21 @@ export function Workspace() {
           signal: AbortSignal.timeout(15_000),
           ...(cachedList ? { headers: { "If-None-Match": cachedList.etag } } : {}),
         });
+        if (!sessionsResult.ok && sessionsResult.status !== 304) {
+          if (isCurrent() && (sessionsResult.status === 401 || sessionsResult.status === 403)) {
+            // A refusal is not an offline cache policy. Clear only UI read
+            // snapshots; records, drafts and admitted execution stay owned by
+            // their existing consumers and producers.
+            baseSessionsRef.current = [];
+            baseSessionScopeKeyByIdRef.current.clear();
+            sessionsByScopeRef.current.clear();
+            sessionsListEtagRef.current = null;
+            setSessions([]);
+            setSessionsScopeFamiliarId(capturedActiveId);
+            publishHomeObservation({ loaded: true, error: true, complete: false, scopeFamiliarId: capturedActiveId, checkedAt: null, accessDenied: true });
+          }
+          throw new Error("Session list read failed");
+        }
         let json;
         if (sessionsResult.status === 304 && cachedList) {
           json = cachedList.payload;
@@ -2060,6 +2099,7 @@ export function Workspace() {
           // render a truthful can't-load state instead of the first-run
           // empty state (cave-x6k5). The poll retries, backing off.
           setSessionsError(true);
+          publishHomeObservation((previous) => ({ ...previous, loaded: true, error: true, complete: false }));
           setSessionsAuthoritative(false);
           setSessionsFailureStreak((streak) => streak + 1);
           return;
@@ -2102,6 +2142,7 @@ export function Workspace() {
         // every sessions consumer (chat list, rails, badges) for nothing.
         setSessions((prev) => (sameSessionList(prev, visibleSessions) ? prev : visibleSessions));
         setSessionsScopeFamiliarId(capturedActiveId);
+        publishHomeObservation({ loaded: true, error: false, complete: !degraded, scopeFamiliarId: capturedActiveId, checkedAt: new Date().toISOString() });
         setSessionsLoaded(true);
         baseSessionsApplied = true;
         if (!degraded) {
@@ -2118,6 +2159,7 @@ export function Workspace() {
         if (isCurrent()) {
           // Transient — the poll retries, backing off.
           setSessionsError(true);
+          publishHomeObservation((previous) => ({ ...previous, loaded: true, error: true, complete: false }));
           setSessionsAuthoritative(false);
           setSessionsFailureStreak((streak) => streak + 1);
         }
@@ -2125,7 +2167,7 @@ export function Workspace() {
         if (!baseSessionsApplied && isCurrent()) setSessionsLoaded(true);
       }
     })();
-  }, []);
+  }, [publishHomeObservation]);
 
   const handleSessionsDeleted = useCallback((sessionIds: readonly string[]) => {
     const confirmedIds = recordDeletedSessionIds(locallyDeletedSessionIdsRef.current, sessionIds);
@@ -4804,6 +4846,21 @@ export function Workspace() {
         rosterReady={familiarsLoaded && familiarRosterLoadedSuccessfully}
         project={selectedWorkspaceProject}
         onRequestProject={requestProjectForHome}
+        overview={<Suspense fallback={<p>Loading overview…</p>}><HomeOverview
+          key={JSON.stringify([activeId, [...scopeIds].sort(), selectedWorkspaceProject?.root ?? null])}
+          sessions={sessions}
+          observation={homeObservation}
+          connection={homeConnection}
+          scopeFamiliarId={activeId}
+          dataScopeFamiliarId={sessionsScopeFamiliarId}
+          familiarIds={scopeIds.size ? [...scopeIds] : activeId ? [activeId] : []}
+          familiars={resolvedFamiliars}
+          project={selectedWorkspaceProject}
+          onOpenSession={openFamiliarSession}
+          onOpenSessions={() => setMode("chat")}
+          onOpenSettings={() => nextRouter.push("/settings")}
+          onRefresh={() => { void loadSessions(); void refreshDaemonStatus({ fresh: true }); }}
+        /></Suspense>}
         taskOrigin={homeTaskOrigin}
         actingFamiliarId={
           actingFamiliar.kind === "resolved" ? actingFamiliar.familiarId : null
