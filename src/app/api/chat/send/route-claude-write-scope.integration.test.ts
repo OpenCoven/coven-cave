@@ -112,6 +112,7 @@ if (noPermission) {
   assert.ok(!launches[0].argv.includes("--permission"),"a Coven with the flag keeps Full access even when the fallback is allowed");
   assert.ok(!first.events.some(e=>e.kind==="progress"&&e.id==="runtime-write-scope-read-only"),first.body);
   assert.ok(scope,"the real route must forward a separate scope document");
+  assert.doesNotMatch(launches[0].argv.at(-1),/Effective access for this turn: Read-only/);
   const authorityDirectory = path.dirname(launches[0].scopeFile);
   assert.equal(path.dirname(authorityDirectory),await realpath(path.join(process.env.COVEN_CAVE_HOME,"claude-authority")),"authority files live under Cave's home, not temp");
   assert.ok(scope.protectedRoots.includes(authorityDirectory),"a launch denies its own authority directory to its own sandbox");
@@ -153,6 +154,8 @@ if (noPermission) {
   assert.ok(!launches.at(-1).argv.includes("--continue"),"permission-mode changes replace native authority");
   assert.ok(!launches.at(-1).argv.includes("--write-scope"));
   assert.ok(launches.at(-1).argv.includes("read-only"));
+  assert.match(launches.at(-1).argv.at(-1),/Effective access for this turn: Read-only/);
+  assert.doesNotMatch(launches.at(-1).argv.at(-1),/You may read, edit|\(read \+ write\)/);
   const buildAgain = await send({sessionId:readMode.done.sessionId});
   assert.equal(buildAgain.done?.isError,false,buildAgain.body);
   launches = await calls();
