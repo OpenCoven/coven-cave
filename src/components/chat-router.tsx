@@ -10,6 +10,7 @@ import { ChatView, DEFAULT_CHAT_COMPOSER_DRAFT_KEY } from "@/components/chat-vie
 import { ChatSplitHost, CHAT_SPLIT_PANE_ATTR, type ChatSplitTile } from "@/components/chat-split-host";
 import { NewChatLaunch } from "@/components/new-chat-launch";
 import { FamiliarChatoutCodexSurface } from "@/components/familiar-chatout-codex";
+import { pushHistoryUrl, replaceHistoryUrl } from "@/lib/history-url";
 import { caveChatoutCodex } from "@/lib/feature-flags";
 import { useIsMobile } from "@/lib/use-viewport";
 import {
@@ -404,7 +405,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     if (view.kind === "chat" && view.sessionId) {
       const next = `#chat-${encodeURIComponent(view.sessionId)}`;
       if (hash !== next) {
-        window.history.pushState(null, "", next);
+        pushHistoryUrl(next);
         window.dispatchEvent(new Event("cave:chat-history-push"));
       }
       return;
@@ -413,7 +414,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     // before workspace's restore effect has had a chance to open the session.
     if (isFirstRun) return;
     if (hash.startsWith("#chat-")) {
-      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      replaceHistoryUrl(window.location.pathname + window.location.search);
       window.dispatchEvent(new Event("cave:chat-history-replace"));
     }
   }, [syncUrlHash, view]);

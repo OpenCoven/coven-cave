@@ -32,6 +32,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import dynamic from "next/dynamic";
+import { replaceHistoryUrl } from "@/lib/history-url";
 import { Icon } from "@/lib/icon";
 import {
   codeReviewQueue,
@@ -153,7 +154,7 @@ export function CodeView({
     params.delete("ctab");
     params.delete("wtab");
     const query = params.toString();
-    window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
+    replaceHistoryUrl(window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
   }, []);
   const [topTab, setTopTab] = useState<CodeTopTab>(
     pendingOpen

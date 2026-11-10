@@ -1,4 +1,5 @@
 import { GRIMOIRE_HASH_PREFIX } from "../lib/grimoire-link.ts";
+import { replaceHistoryUrl } from "../lib/history-url.ts";
 import { knowledgeDocKey } from "./grimoire-helpers.ts";
 
 export type GrimoireSelection =
@@ -63,12 +64,12 @@ export function writeGrimoireHash(sel: GrimoireSelection | null) {
   const base = window.location.pathname + window.location.search;
   if (!sel || sel.kind === "knowledge-new" || sel.kind === "stitch-new") {
     if (window.location.hash.startsWith(GRIMOIRE_HASH_PREFIX)) {
-      window.history.replaceState(null, "", base);
+      replaceHistoryUrl(base);
     }
     return;
   }
   const id = sel.kind === "knowledge" ? knowledgeDocKey(sel.id, sel.collection) : sel.kind === "memory" ? sel.path : journalId(sel);
-  window.history.replaceState(null, "", `${base}${GRIMOIRE_HASH_PREFIX}${sel.kind}:${encodeURIComponent(id)}`);
+  replaceHistoryUrl(`${base}${GRIMOIRE_HASH_PREFIX}${sel.kind}:${encodeURIComponent(id)}`);
 }
 
 const TABS_STORAGE_KEY = "cave:grimoire:tabs";

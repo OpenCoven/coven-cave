@@ -1,5 +1,7 @@
 "use client";
 
+import { replaceHistoryUrl } from "./history-url.ts";
+
 /**
  * Cross-surface deep links into the Grimoire.
  *
@@ -33,6 +35,6 @@ export function grimoireHash(kind: GrimoireDocKind, id: string): string {
 export function openGrimoireDoc(kind: GrimoireDocKind, id: string): void {
   if (typeof window === "undefined") return;
   const base = window.location.pathname + window.location.search;
-  window.history.replaceState(null, "", `${base}${grimoireHash(kind, id)}`);
+  replaceHistoryUrl(`${base}${grimoireHash(kind, id)}`);
   window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "grimoire" } }));
 }
