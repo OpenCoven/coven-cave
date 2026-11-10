@@ -1,6 +1,26 @@
 # D0 local review and delivery packet
 
-Status: prepared locally for review, uncommitted, no D0 PR. Canonical outcome: [#6403](https://github.com/OpenCoven/coven-cave/issues/6403) under #6396. This packet complements the [full acceptance audit](ACCEPTANCE.md) and [source/adoption record](README.md); it does not close either issue or qualify an installed client.
+## Rebuilt on main — 9 November 2026
+
+Status: draft PR for Val's review, not merged. Canonical outcome: [#6403](https://github.com/OpenCoven/coven-cave/issues/6403) under #6396. This section supersedes the status lines of the 7 November packet below, which describe the earlier uncommitted candidate and remain its record.
+
+The D0-only change from the 7 November review candidate was replayed onto main `fea63da7a524d7a78e22b63e414ef9e6023ffe3c`. That main already carries T1 (#6410), T2 (#6408), the Submissions slices (#6412) and the startup identity fix (#6426), so none of them is repeated here. Where main had changed the same lines, main's version was kept. The candidate's Webpack dev fallback was a host workaround and is not included. The vendored handoff source is not published in this repository; the [manifest](manifest.json) digests identify it, and its bytes remain in the D0 owner and review worktrees.
+
+| Evidence | Result |
+| --- | --- |
+| Static gates | Typecheck, full lint, conflict markers, test wiring (2,234 files) and UI consistency pass. |
+| Unit suites | App: 1,505 files pass; the two native-supervisor cases skip because their provider binary was not supplied. API: 614 files pass, none skipped. |
+| Browser, production build with `CI=true`, Chromium | 70 cases across `home-overview`, `d0-retired-navigation`, `chat-activity-acceptance` and `chat-header-title-room` pass on the first attempt, with no retries or flakes. |
+| Review walk | Home, Chat, inline Activity, Settings and back to Home, driven by keyboard at 1440 and 390 px in light and dark, with and without reduced motion: 4 of 4 pass. Every focused control shows a 2 px solid outline, and no page errors occur. |
+| Budgets, matched to main `fea63da7a` | First-load JS 1,685 KB (main 1,679 KB). Shell 434 KB, root CSS 557 KB and first-load CSS 641 KB are unchanged. Standalone output 7,788 files and 194,823,282 bytes (main 7,784 and 194,798,946). No responsiveness change is claimed. |
+
+Hosted CI for the PR head is recorded on the PR and on #6403, not in this file.
+
+**Pre-existing defect found by the walk.** Browser Back from Settings to Home leaves the address at `/` but keeps Settings on screen. It reproduces on main `fea63da7a` through the existing Cmd+, shortcut, so it predates this change. The Overview's "Connection settings" action follows the same path. `clearModeParam()` in `src/lib/workspace-url-state.ts` replaces the Home history entry's state with `null`, and Next's router ignores a popstate whose state is `null`. Returning through navigation works.
+
+## 7 November candidate record
+
+Historical status: prepared locally for review, uncommitted, no D0 PR. Canonical outcome: [#6403](https://github.com/OpenCoven/coven-cave/issues/6403) under #6396. This packet complements the [full acceptance audit](ACCEPTANCE.md) and [source/adoption record](README.md); it does not close either issue or qualify an installed client.
 
 ## Candidate and scope
 

@@ -177,3 +177,7 @@ New default-profile build `rma4i2D7Gu_Ba-8qzZdoH` passes TypeScript and budgets;
 The first current-main app run passed 798 files before the unchanged arcade test failed `a tap shorter than one frame still fires`. Both the game and test match current main and have no D0 delta. The isolated original command then passed, with no test/product edit or bypass. One new canonical app run is now in progress after the other browser processes finished; neither the isolated pass nor the older full pass is substituted for that result. The exact first failure and manual rerun remain retained.
 
 The publication question requests authority only for preserving dependency commits, committing the reviewed D0 delta, pushing the owned D0 branch and opening a draft PR. It grants no merge, release, contributor approval or owner takeover. The actual Project 9 item `293235848` for #6403 was read through scoped REST fields and is already Todo; no queue field was changed. The canonical issue remains open, private execution coverage remains partial, and all native/human/producer gates retain their existing owners.
+
+## Rebuilt on main — 9 November 2026
+
+The D0 delta now sits on main `fea63da7a` as a draft PR for Val's review. The [delivery packet](DELIVERY.md) records its evidence, matched budgets and a pre-existing Settings Back defect. The vendored `source/` copies stay out of this repository until Val decides whether to publish them.

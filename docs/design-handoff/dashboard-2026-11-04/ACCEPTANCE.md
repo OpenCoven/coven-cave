@@ -1,5 +1,7 @@
 # D0 acceptance audit
 
+**Current status, 9 November 2026:** rebuilt on main `fea63da7a` as a draft PR awaiting Val's review; see [the delivery packet](DELIVERY.md). The table below is the 7 November audit of the earlier uncommitted candidate. Its dispositions still hold, except that the current-main app and API gates now pass (1,505 and 614 files) and the dependency PRs it mentions are merged. Producer, device, human and visual sign-off rows remain open.
+
 Status: incomplete. The [current review and delivery packet](DELIVERY.md) records the default-production-profile and focus correction checkpoint. This audit preserves the full #6403 outcome; a locally green integration candidate does not establish protected delivery or the remaining human/producer/device criteria. The [adoption record](README.md) identifies the inspected source, decisions and exact evidence checkpoints.
 
 Original source base: `29ed5f5a61b5fcff90132bce31a7da9bbaf92e4b`. Current production base: `c03576014863a54ad31d17f6628f105d83a77ab3`, copied into the owned candidate without changing branch HEAD. Current local candidate: D0 plus T1 #6410 at `9b30a48b0e94005fdd8c9c660ae56f1981697d93` and canonical T2 #6408 at `3426588f7b7eccd155fd286adf3a2ff6449849cc`, with the recorded D0 and integration corrections. Build: `rma4i2D7Gu_Ba-8qzZdoH`. No D0 commit, PR, merge, installed update or release is claimed.

@@ -29,7 +29,7 @@ and its hashed source documents. This is not the original `(WIP) Chat` corpus:
 its three named v2 frames are absent. The exception does not replace the live
 roster for other projects or reopen implementation deferred by #5414.
 
-**Scoped source handoff (#6403, 2026-11-04):** Val supplied `cave-handoff.zip`, `cave-fully-realized.html` and the Revision 2 path-forward PDF for D0 under #6396. The [dashboard adoption record](dashboard-2026-11-04/README.md) and [hash manifest](dashboard-2026-11-04/manifest.json) preserve the inspected snapshot (HTML v8, CSS v12, JS v9), production adaptations and remaining integration/acceptance gates. The ZIP is the inspectable source; the standalone HTML is a saved host frame. This handoff does not replace the live roster or establish production delivery, visual sign-off, backend authority or native acceptance.
+**Scoped source handoff (#6403, 2026-11-04):** Val supplied `cave-handoff.zip`, `cave-fully-realized.html` and the Revision 2 path-forward PDF for D0 under #6396. The [dashboard adoption record](dashboard-2026-11-04/README.md) and [hash manifest](dashboard-2026-11-04/manifest.json) identify the inspected snapshot (HTML v8, CSS v12, JS v9) by digest, production adaptations and remaining integration/acceptance gates. The ZIP is the inspectable source; the standalone HTML is a saved host frame. This handoff does not replace the live roster or establish production delivery, visual sign-off, backend authority or native acceptance.
 
 Regenerate the live side with:
 
@@ -94,7 +94,7 @@ tests), so when a project gains or loses a frame, update this table by hand.
 
 ## Outstanding
 
-**D0 #6403:** The supplied `Cave, fully realized` dashboard snapshot is preserved and reconciled in [dashboard-2026-11-04](dashboard-2026-11-04/README.md). Source availability is established. The local, uncommitted inline Activity/Home candidate consumes published T1 #6410 and canonical T2 #6408 with bound production-browser evidence; [the acceptance audit](dashboard-2026-11-04/ACCEPTANCE.md) and [review packet](dashboard-2026-11-04/DELIVERY.md) retain the default-production profile, tested focus/draft boundaries and unresolved producer, delivery, visual and device gates. Chat and inline Run Details/Activity remain; #6358/#6200 ownership is preserved. Do not import sample receipts, six new modes, host CSS, a replacement Salem assistant or local approval state as production behavior.
+**D0 #6403:** The supplied `Cave, fully realized` dashboard snapshot is preserved and reconciled in [dashboard-2026-11-04](dashboard-2026-11-04/README.md). Source availability is established. The Home overview and inline Activity refinements are rebuilt on main, which already carries T1 #6410 and T2 #6408, and await Val's review as a draft PR; [the acceptance audit](dashboard-2026-11-04/ACCEPTANCE.md) and [review packet](dashboard-2026-11-04/DELIVERY.md) retain the default-production profile, tested focus/draft boundaries and unresolved producer, delivery, visual and device gates. Chat and inline Run Details/Activity remain; #6358/#6200 ownership is preserved. Do not import sample receipts, six new modes, host CSS, a replacement Salem assistant or local approval state as production behavior.
 
 Ordered by size of the unbuilt frame, which is a decent proxy for how much
 surface it describes.
