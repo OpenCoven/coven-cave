@@ -2174,6 +2174,9 @@ function conciseStreamError(error: unknown, fallback: string): string {
 
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
+/** How long an access action waits for its pressed control to unmount before it stops returning focus. */
+const ACCESS_FOCUS_RETURN_MS = 5000;
+
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
@@ -2536,9 +2539,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const pendingDraftAccessRef = useRef<CommandPermissionMode | null>(null);
   /** This chat's Access before a grant from Chat switched it to Build; Undo restores it. */
   const priorChatAccessRef = useRef<CommandPermissionMode | null>(null);
+  /** The session this draft's own turn just minted: the same chat, so its grant Undo stays. */
+  const grantUndoCarryRef = useRef<string | null>(null);
   useEffect(() => {
     setAccessRefusal(null);
-    setGrantUndo(null);
+    const carried = sessionId !== null && grantUndoCarryRef.current === sessionId;
+    grantUndoCarryRef.current = null;
+    if (!carried) setGrantUndo(null);
     if (!sessionId) {
       setDraftAccessOverride(null);
       setStoredAccessOverride(null);
@@ -2912,8 +2919,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       pendingDraftAccessRef.current = mode;
     }
   }
-  /** A draft chat's Access follows it onto the session its first turn mints. */
+  /** A draft chat's Access, and any grant Undo, follow it onto the session its first turn mints. */
   function adoptDraftAccess(newSessionId: string) {
+    grantUndoCarryRef.current = newSessionId;
     const mode = pendingDraftAccessRef.current;
     if (!mode) return;
     writeChatAccessOverride(typeof window === "undefined" ? null : window.localStorage, newSessionId, mode);
@@ -3446,6 +3454,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Focus return for an access action's own control (#6445). It runs in the
+  // commit that removes that control, before the next paint or keystroke, so
+  // an immediate paste or Enter lands in the composer. A one-frame check
+  // raced that commit, and in WebKit a focused button that turns disabled
+  // keeps focus until it unmounts.
+  const focusReturnRef = useRef<{ from: HTMLElement; until: number } | null>(null);
+  useLayoutEffect(() => {
+    const pending = focusReturnRef.current;
+    if (!pending) return;
+    if (Date.now() > pending.until) {
+      focusReturnRef.current = null;
+      return;
+    }
+    if (pending.from.isConnected) return;
+    focusReturnRef.current = null;
+    const active = document.activeElement;
+    if (!active || active === document.body) inputRef.current?.focus({ preventScroll: true });
+  });
   // Native UI tier: a coven:ui Button may PREFILL the composer for review. It
   // never sends; an existing draft is kept and the text is appended below it.
   const prefillComposerFromUiBlock = useCallback((text: string) => {
@@ -4135,10 +4161,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       value: effectivePermissionMode,
       options: [
         { value: "read", label: "Explore · read only" },
-        { value: "full", label: "Build · full access" },
+        // The same capability report as the access bar: a Build this runtime
+        // refuses is shown, with its reason, but can't be chosen (#6445).
+        { value: "full", label: "Build · full access", disabled: buildAccess?.available === false },
       ],
+      ...(buildAccess?.available === false ? { note: `Build isn't available here: ${buildAccess.message}` } : {}),
       onChange: (value: string) => {
         if (value !== "read" && value !== "full") return;
+        if (value === "full" && buildAccess?.available === false) return;
         // The menu keeps its shared-default meaning; a pick here also ends
         // this chat's in-place override so the two never disagree.
         setPermissionMode(value);
@@ -6335,17 +6365,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Return focus to the composer only when that control held focus (keyboard
   // use) and the focus was then lost. A tap that never moved focus leaves it
   // alone, so a phone keyboard doesn't open unasked.
-  function focusInAccessControls() {
-    if (typeof document === "undefined") return false;
+  function focusedAccessControl(): HTMLElement | null {
+    if (typeof document === "undefined") return null;
     const active = document.activeElement;
-    return active instanceof HTMLElement && Boolean(active.closest(".cave-chat-access-bar, .cave-chat-error-strip"));
+    return active instanceof HTMLElement && active.closest(".cave-chat-access-bar, .cave-chat-error-strip") ? active : null;
   }
-  function keepFocusInChat(hadFocus = focusInAccessControls()) {
-    if (typeof window === "undefined" || !hadFocus) return;
-    window.requestAnimationFrame(() => {
-      const active = document.activeElement;
-      if (!active || active === document.body) inputRef.current?.focus({ preventScroll: true });
-    });
+  function keepFocusInChat(pressed: HTMLElement | null = focusedAccessControl()) {
+    if (!pressed) return;
+    focusReturnRef.current = { from: pressed, until: Date.now() + ACCESS_FOCUS_RETURN_MS };
   }
 
   function retryWithAccess(mode: CommandPermissionMode) {
@@ -6404,7 +6431,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   async function undoChatGrant() {
     const undo = grantUndo;
     if (!undo || accessActionBusy) return;
-    const hadFocus = focusInAccessControls();
+    const pressed = focusedAccessControl();
     setAccessActionBusy(true);
     try {
       await undoProjectGrant(fetch, undo);
@@ -6413,7 +6440,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       priorChatAccessRef.current = null;
       reloadProjects();
       announce(`Undid ${undo.familiarName}'s write access to ${undo.projectName}.`, "polite");
-      keepFocusInChat(hadFocus);
+      keepFocusInChat(pressed);
     } catch (failure) {
       // Someone changed the grant after this one: Undo no longer applies.
       if (failure instanceof GrantChangeError && failure.code === "grant_changed") {

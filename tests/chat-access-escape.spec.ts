@@ -20,6 +20,8 @@ type Fixture = {
   projectAccess?: "read" | "write";
   turns?: Turn[];
   buildUnavailable?: string;
+  /** Open a new chat (no session yet) instead of the saved one. */
+  draft?: boolean;
   send: (route: Route, count: number) => Promise<void> | void;
 };
 
@@ -60,7 +62,7 @@ async function setup(page: Page, fixture: Fixture) {
   } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: {
     ok: true,
-    sessions: [{ id: SESSION_ID, title: "Access chat", status: "idle", project_root: "/tmp/coven-cave", harness: "claude", familiarId: "nova", model: null, runtime: "local:/tmp/coven-cave", exit_code: null, archived_at: null, created_at: ISO, updated_at: ISO }],
+    sessions: fixture.draft ? [] : [{ id: SESSION_ID, title: "Access chat", status: "idle", project_root: "/tmp/coven-cave", harness: "claude", familiarId: "nova", model: null, runtime: "local:/tmp/coven-cave", exit_code: null, archived_at: null, created_at: ISO, updated_at: ISO }],
   } }));
   await page.route("**/api/projects**", (route) => route.fulfill({ json: {
     ok: true, projects: [{ id: "p1", name: "Coven Cave", root: "/tmp/coven-cave", access: directAccess ?? "read" }],
@@ -99,7 +101,7 @@ async function setup(page: Page, fixture: Fixture) {
     sends.push(route.request().postDataJSON());
     return fixture.send(route, sends.length);
   });
-  await page.goto(`/?mode=chat#chat-${SESSION_ID}`, { waitUntil: "domcontentloaded" });
+  await page.goto(fixture.draft ? "/?mode=chat" : `/?mode=chat#chat-${SESSION_ID}`, { waitUntil: "domcontentloaded" });
   const chat = page.getByTestId("chat-main");
   await expect(chat.locator(".cave-composer-input")).toBeVisible({ timeout: 45_000 });
   return {
@@ -125,8 +127,12 @@ test("Explore says it is read only, and one press switches this chat to Build", 
   // composer rather than on the page. (A tap doesn't move focus; see #6445.)
   await bar.getByRole("button", { name: "Switch to Build" }).focus();
   await page.keyboard.press("Enter");
+  // Typing straight away lands in the composer: focus moves in the same
+  // commit that removes the button, not a frame later.
+  await page.keyboard.type("Rename");
   await expect(bar).toHaveCount(0);
   await expect(chat.locator(".cave-composer-input")).toBeFocused();
+  await expect(chat.locator(".cave-composer-input")).toHaveValue("Rename");
   await send(chat, "Rename the helper.");
   await expect.poll(() => sends.length).toBe(1);
   expect(sends[0].permissionMode).toBe("full");
@@ -153,6 +159,19 @@ test("a runtime that cannot apply Build explains why instead of offering it", as
   await expect(bar).toContainText(reason);
   await expect(bar.getByRole("button", { name: "Switch to Build" })).toHaveCount(0);
   await expect(bar.getByRole("button", { name: "Build this plan" })).toHaveCount(0);
+  // Tools → Response options follows the same report: Build is shown with
+  // its reason but can't be chosen, and Explore stays selected.
+  await chat.getByRole("button", { name: "Tools" }).click();
+  await page.getByRole("menuitem", { name: /Response options/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Response options" });
+  await expect(dialog).toBeVisible();
+  const access = dialog.getByRole("radiogroup", { name: "Access" });
+  const build = access.getByRole("radio", { name: "Build · full access" });
+  await expect(build).toHaveAttribute("aria-disabled", "true");
+  await expect(access).toHaveAccessibleDescription(`Build isn't available here: ${reason}`);
+  await build.dispatchEvent("click");
+  await expect(access.getByRole("radio", { name: "Explore · read only" })).toHaveAttribute("aria-checked", "true");
+  await expect(build).toHaveAttribute("aria-checked", "false");
 });
 
 test("a read-only project keeps the chat and offers write access with undo", async ({ page }) => {
@@ -295,5 +314,36 @@ test("an Undo made stale by another change is refused and says so", async ({ pag
   await expect(chat.getByText("Couldn't undo the access change:", { exact: false })).toBeVisible();
   await expect(chat.getByText("changed after it was shown", { exact: false })).toBeVisible();
   // Undo no longer applies, so it is withdrawn rather than left to fail again.
+  await expect(undo).toHaveCount(0);
+});
+
+test("a grant made in a new chat keeps its Undo once the retry starts the chat", async ({ page }, testInfo) => {
+  // A phone opens Chat on its list, and in this daemon-less fixture its New
+  // session button opens no draft composer. Carrying Undo onto the minted
+  // session doesn't depend on layout, so this one runs on desktop.
+  test.skip(testInfo.project.name !== "desktop", "No draft composer on a phone in the daemon-less fixture");
+  const { chat, sends, grantWrites } = await setup(page, {
+    draft: true,
+    projectAccess: "read",
+    send: (route, count) => count === 1
+      ? route.fulfill({ status: 403, json: { ok: false, code: "project_write_access_required",
+        error: "This project's access is read-only. Choose Read-only mode or request write access, then retry." } })
+      : route.fulfill(stream([
+        { kind: "session", sessionId: "minted-chat" },
+        { kind: "text", text: "Done." },
+        { kind: "done", sessionId: "minted-chat" },
+      ])),
+  });
+  await send(chat, "Rename the helper.");
+  await chat.getByRole("button", { name: "Give Nova write access to Coven Cave and retry" }).click();
+  await chat.getByRole("button", { name: "Confirm write access" }).click();
+  await expect.poll(() => sends.length).toBe(2);
+  // The retry's first turn starts the chat. It is the same chat, so Undo stays.
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#chat-minted-chat");
+  const undo = chat.getByRole("button", { name: "Undo write access" });
+  await expect(undo).toBeVisible();
+  await undo.click();
+  await expect.poll(() => grantWrites.length).toBe(2);
+  expect(grantWrites[1]).toEqual({ method: "POST", body: { targetFamiliarId: "nova", projectId: "p1", access: "read", expectedAccess: "write" } });
   await expect(undo).toHaveCount(0);
 });

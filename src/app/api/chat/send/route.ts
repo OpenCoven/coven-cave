@@ -381,6 +381,9 @@ import {
 import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
 export const dynamic = "force-dynamic";
+
+const PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE =
+  "This project's access is read-only. Choose Read-only mode or request write access, then retry.";
 export const runtime = "nodejs";
 
 // A transport drop no longer kills the harness (deliberate Stop goes through
@@ -3167,6 +3170,18 @@ async function postAdmittedChat(
   const grantedProjectRootAccess: Record<string, ProjectAccessLevel> = Object.fromEntries(
     effectiveAccessibleProjects.map((entry) => [entry.project.root.trim(), entry.access]),
   );
+  // A read-only project grant bounds Build on every local harness, not only
+  // Claude's scoped write (#6445). Codex, OpenCode, Hermes and the others run
+  // Build inside their own sandbox, which can be writable, so the grant is
+  // admitted here before any launch. Cave narrows a harness sandbox this way
+  // but never widens one (#3297, #6096). SSH runtimes have no local grants.
+  const primaryProjectAccess = authorizedProjectId
+    ? accessibleProjects.find((entry) => entry.project.id === authorizedProjectId)?.access
+    : undefined;
+  if (!sshRuntime && body.permissionMode !== "read" && primaryProjectAccess === "read") {
+    return Response.json({ ok: false, code: "project_write_access_required",
+      error: PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE }, { status: 403 });
+  }
   const runtimeResourceRoots = sshRuntime
     ? []
     : await resolveRuntimeResourceRoots({
@@ -3448,7 +3463,7 @@ async function postAdmittedChat(
       : projectlessLaunch.kind === "workspace" ? "write" : undefined;
     if (primaryAccess !== "write") {
       return Response.json({ ok: false, code: "project_write_access_required",
-        error: "This project's access is read-only. Choose Read-only mode or request write access, then retry." }, { status: 403 });
+        error: PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE }, { status: 403 });
     }
     try {
       const writeScope = buildClaudeWriteScope({

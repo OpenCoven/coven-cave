@@ -10,7 +10,7 @@ import "@/styles/cave-composer.css";
 // (the shared Popover treats a portaled child popover's clicks as "outside" and
 // would close — see ui/popover.tsx).
 
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Icon } from "@/lib/icon";
 import { Popover, PopoverBody, usePopoverInitialFocus } from "@/components/ui/popover";
 import {
@@ -20,7 +20,12 @@ import {
 } from "@/components/composer-host-chip";
 import { LOCAL_HOST_ID, type ChatHostOption } from "@/lib/chat-hosts";
 
-export type ComposerOptionChoice = { value: string; label: string };
+export type ComposerOptionChoice = {
+  value: string;
+  label: string;
+  /** Shown but not choosable (aria-disabled); the section's `note` says why. */
+  disabled?: boolean;
+};
 
 export type ComposerOptionSection = {
   /** Stable id (React key) — accessible name comes from `label`. */
@@ -30,6 +35,8 @@ export type ComposerOptionSection = {
   options: ComposerOptionChoice[];
   /** Keep a persisted model visible while scoped discovery is loading/degraded. */
   showUnlistedValue?: boolean;
+  /** One line under the choices, such as why a choice is unavailable. */
+  note?: string;
   onChange: (value: string) => void;
 };
 
@@ -41,9 +48,11 @@ export function ComposerOptionRadioGroup({
   value,
   options,
   showUnlistedValue = false,
+  note,
   onChange,
 }: ComposerOptionSection) {
   const groupRef = useRef<HTMLDivElement | null>(null);
+  const noteId = useId();
   const visibleOptions =
     showUnlistedValue && value && !options.some((option) => option.value === value)
       ? [{ value, label: `Current selection · ${value} (not in current inventory)` }, ...options]
@@ -54,9 +63,14 @@ export function ComposerOptionRadioGroup({
     e.preventDefault();
     const idx = Math.max(0, visibleOptions.findIndex((o) => o.value === value));
     const dir = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
-    const nextIdx = (idx + dir + visibleOptions.length) % visibleOptions.length;
+    // Arrow keys skip unavailable choices, as they do disabled radios.
+    let nextIdx = idx;
+    for (let step = 0; step < visibleOptions.length; step += 1) {
+      nextIdx = (nextIdx + dir + visibleOptions.length) % visibleOptions.length;
+      if (!visibleOptions[nextIdx]?.disabled) break;
+    }
     const next = visibleOptions[nextIdx];
-    if (!next) return;
+    if (!next || next.disabled) return;
     onChange(next.value);
     groupRef.current
       ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
@@ -71,6 +85,7 @@ export function ComposerOptionRadioGroup({
         className="composer-options__choices"
         role="radiogroup"
         aria-label={label}
+        aria-describedby={note ? noteId : undefined}
         onKeyDown={onKeyDown}
       >
         {visibleOptions.map((opt) => {
@@ -81,15 +96,23 @@ export function ComposerOptionRadioGroup({
               type="button"
               role="radio"
               aria-checked={checked}
+              aria-disabled={opt.disabled || undefined}
               tabIndex={checked ? 0 : -1}
-              className={`composer-options__choice focus-ring${checked ? " is-selected" : ""}`}
-              onClick={() => onChange(opt.value)}
+              className={`composer-options__choice focus-ring${checked ? " is-selected" : ""}${opt.disabled ? " cursor-not-allowed opacity-40" : ""}`}
+              onClick={() => {
+                if (!opt.disabled) onChange(opt.value);
+              }}
             >
               {opt.label}
             </button>
           );
         })}
       </div>
+      {note ? (
+        <p id={noteId} className="mt-1.5 text-[length:var(--text-2xs)] leading-snug text-[var(--text-secondary)]">
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }
