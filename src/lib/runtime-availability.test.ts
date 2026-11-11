@@ -12,6 +12,7 @@ import path from "node:path";
 
 import {
   covenRelayedRunError,
+  classifyRuntimeProcessFailure,
   evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
@@ -533,6 +534,19 @@ try {
     /stderr|token|path/i,
     "runtime process diagnostics report only that output was withheld, never its contents",
   );
+  for (const [text, expected] of [
+    ["Codex ran out of room in the model's context window at /private/secret", "context_exhausted"],
+    ["Your input exceeds the context window of this model.", "context_exhausted"],
+    ["Error loading configuration: TOML parse error /private/secret", "configuration"],
+    ["error: unexpected argument '--private-option' found", "cli_arguments"],
+    ["error reading /private/context-window/config.toml", "unknown"],
+    ["The documentation says unexpected argument and context window.", "unknown"],
+    ["failed reading /private/secret", "unknown"],
+  ] as const) assert.equal(classifyRuntimeProcessFailure(text), expected);
+  assert.equal(classifyRuntimeProcessFailure(null), "unknown");
+  assert.equal(runtimeLaunchDiagnostics({runner:"codex", emittedDiagnostic:true, reason:"configuration"}).failure.reason,"configuration");
+  assert.equal(runtimeLaunchDiagnostics({runner:"codex", emittedDiagnostic:true, reason:"PRIVATE_SECRET" as never}).failure.reason,"unknown");
+  assert.doesNotMatch(JSON.stringify(runtimeProcessFailure("codex",{reason:"PRIVATE_SECRET" as never})),/PRIVATE_SECRET/);
   // Coven's result frame relays the child's failure reason. Its own bare
   // exit wrapper restates the exit code and is not a runtime diagnostic.
   assert.equal(covenRelayedRunError("Codex exited with 1"), null);

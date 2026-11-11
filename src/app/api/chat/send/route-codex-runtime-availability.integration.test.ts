@@ -51,7 +51,7 @@ const shim = [
   "const { appendFileSync } = require('node:fs');",
   "appendFileSync(process.env.COVEN_TEST_LOG, `${JSON.stringify(process.argv.slice(2))}\\n`);",
   "if (process.argv[2] === 'adapter' && process.argv[3] === 'list' && process.argv[4] === '--json') {",
-  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'auth-stderr', 'auth-key', 'result-auth-login', 'result-auth-key', 'result-error', 'result-error-exit-0', 'result-bare-exit', 'result-model-rejected', 'result-usage-limit', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-multi', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
+  "  process.stdout.write(JSON.stringify([{ id: 'codex', executable: 'codex', available: ['post-start', 'silent-exit', 'silent-stderr', 'auth-stderr', 'auth-key', 'result-auth-login', 'result-auth-key', 'result-error', 'result-config', 'result-cli-arguments', 'result-unknown', 'result-context-exit-0', 'result-error-exit-0', 'result-bare-exit', 'result-model-rejected', 'result-usage-limit', 'assistant-envelope', 'assistant-envelope-exit-1', 'assistant-envelope-multi', 'assistant-envelope-reasoning', 'cancel', 'cancel-partial-attention'].includes(process.env.COVEN_TEST_MODE) }]));",
   "  process.exit(0);",
   "}",
   "if (process.argv[2] === 'run' && process.argv[3] === '--help') {",
@@ -67,6 +67,10 @@ const shim = [
   "    'result-auth-login': 'Not logged in. Run codex login. /private/fixture/secret',",
   "    'result-auth-key': 'Invalid API key: /private/fixture/secret',",
   "    'result-error': \"Codex ran out of room in the model's context window at /private/fixture/secret\",",
+  "    'result-config': 'Codex exited with 1: Error loading configuration: TOML parse error at /private/fixture/secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL',",
+  "    'result-cli-arguments': \"Codex exited with 2: error: unexpected argument '--private-fixture-option' found at /private/fixture/secret\",",
+  "    'result-unknown': 'Codex exited with 1: failed reading /private/fixture/secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL',",
+  "    'result-context-exit-0': \"Codex ran out of room in the model's context window at /private/fixture/secret\",",
   "    'result-error-exit-0': 'Codex failed reading /private/fixture/secret with ' + ['ghp', '1234567890abcdefghijklmnopqrstuv'].join('_'),",
   "    'result-bare-exit': 'Codex exited with 1',",
   "    'result-model-rejected': \"Codex exited with 1: The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account.\",",
@@ -79,7 +83,7 @@ const shim = [
   "      { type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 1, session_id: session, harness_session_id: null, error: resultErrors[process.env.COVEN_TEST_MODE] },",
   "    ];",
   "    process.stdout.write(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n');",
-  "    process.exit(process.env.COVEN_TEST_MODE === 'result-error-exit-0' ? 0 : 1);",
+  "    process.exit(['result-error-exit-0','result-context-exit-0'].includes(process.env.COVEN_TEST_MODE) ? 0 : 1);",
   "  }",
   "  if (process.env.COVEN_TEST_MODE === 'auth-stderr') { console.error('Not logged in. Run `codex login` to continue. secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL'); process.exit(1); }",
   "  if (process.env.COVEN_TEST_MODE === 'auth-key') { console.error('Invalid API key for this familiar. secret SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL'); process.exit(1); }",
@@ -466,8 +470,8 @@ try {
     const { body, events } = await postResultFailure("result-error", "relayed failure");
     const error = events.find((event) => event.kind === "error");
     assert.equal(error?.code, "runtime_process_failed");
-    assert.match(error?.message ?? "", /exit code 1/);
-    assert.match(error?.message ?? "", /diagnostic output, which Cave withheld/);
+    assert.equal(JSON.parse(progressDetail(events,"runtime-launch-diagnostics")).failure.exitCode,1);
+    assert.match(error?.message ?? "", /reached its context limit/);
     assert.doesNotMatch(error?.message ?? "", /did not emit an error message/);
     assert.equal(
       progressDetail(events, "runtime-process"),
@@ -479,8 +483,53 @@ try {
       "the support record no longer says Codex emitted nothing",
     );
     assert.doesNotMatch(body, /\/private\/fixture|context window/i, "the relayed reason is never rendered");
+    assert.equal(JSON.parse(progressDetail(events,"runtime-launch-diagnostics")).failure.reason,"context_exhausted");
     assert.equal(events.findLast((event) => event.kind === "done")?.isError, true);
     assert.equal(events.findLast((event) => event.kind === "done")?.responseMetadata?.modelApplicationState, "pending");
+  }
+  for (const [mode,reason,copy] of [
+    ["result-config","configuration",/configuration could not be loaded/],
+    ["result-cli-arguments","cli_arguments",/rejected its launch arguments/],
+    ["result-unknown","unknown",/diagnostic output, which Cave withheld/],
+    ["result-context-exit-0","context_exhausted",/reached its context limit/],
+  ]) {
+    const {body,events} = await postResultFailure(mode,"controlled startup failure");
+    const error = events.find(event=>event.kind==="error");
+    assert.equal(error?.code,"runtime_process_failed");
+    assert.match(error?.message??"",copy);
+    assert.equal(JSON.parse(progressDetail(events,"runtime-launch-diagnostics")).failure.reason,reason);
+    assert.doesNotMatch(body,/SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL|private-fixture-option|\/private\/fixture|TOML parse error/);
+    const done=events.findLast(event=>event.kind==="done");
+    assert.equal(done?.isError,true);
+    const saved=await loadConversation(done.sessionId);
+    assert.doesNotMatch(JSON.stringify(saved),/SYNTHETIC_PRIVATE_DIAGNOSTIC_SENTINEL|private-fixture-option|\/private\/fixture|TOML parse error/);
+    assert.equal(saved?.turns.findLast(turn=>turn.role==="assistant")?.isError,true);
+    if (mode === "result-config") {
+      process.env.COVEN_TEST_MODE = "assistant-envelope";
+      const retry = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiarId: "opal",
+          sessionId: done.sessionId,
+          prompt: "retry the controlled startup failure",
+          modelOverride: "openai/gpt-5.6-sol",
+          modelOverrideScope: "next-message",
+          projectRoot: familiarWorkspace,
+        }),
+      })));
+      const retryDone = retry.events.findLast((event) => event.kind === "done");
+      assert.equal(retryDone?.isError, false);
+      assert.equal(retryDone?.sessionId, done.sessionId, "retry retains the conversation identity");
+      const retried = await loadConversation(done.sessionId);
+      const assistantTurns = retried.turns.filter((turn) => turn.role === "assistant");
+      assert.deepEqual(assistantTurns.map((turn) => turn.isError), [true, false]);
+      assert.match(assistantTurns[0].text, /configuration could not be loaded/);
+      assert.equal(assistantTurns[1].text, "Coven envelope response");
+      assert.equal(assistantTurns[1].responseMetadata.forwardedModel, "openai/gpt-5.6-sol");
+      assert.equal(progressDetail(retry.events, "runtime-launch-diagnostics"), undefined,
+        "a successful retry does not inherit the first attempt's diagnostic");
+    }
   }
   {
     // A relayed error that exits 0 (as an SSH run also does) skips the
