@@ -115,6 +115,7 @@ import { applyLocalCodexSpawnEnv, preflightLocalCodex } from "@/lib/server/local
 import { codexReasoningForwardable } from "@/lib/server/direct-transport-reasoning-gates";
 import {
   covenRelayedRunError,
+  classifyRuntimeProcessFailure,
   evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
@@ -478,11 +479,6 @@ type SendBody = {
    *  only when the installed CLI advertises it; "full" is left implicit so the
    *  harness keeps its default sandbox rather than being widened. */
   permissionMode?: string;
-  /** Lets a Claude turn in Full access run Read-only, with a visible notice,
-   *  when Coven can't apply a write scope. Only a chat someone is watching
-   *  sets this: an unattended run that can't edit must not report success. It
-   *  can only narrow access, never widen it (#6419). */
-  allowReadOnlyFallback?: boolean;
   /** Composer Host chip: "local" or a REGISTERED ssh host id from /api/hosts.
    *  Resolved against the server-side registry (config.remoteHosts ∪ familiar
    *  runtime bindings) — an unregistered host is rejected fail-closed, and the
@@ -2923,17 +2919,8 @@ async function postAdmittedChat(
     binding.harness !== "grok" &&
     binding.harness !== "hermes" &&
     ((await probeCovenCapability(covenRunSupportsPermission)) ?? false);
-  // Full access for Claude needs Coven's `--write-scope` (#6356), and no Coven
-  // release has it yet. Without it Claude never gets Full access. A person
-  // watching the chat gets a Read-only turn and a notice instead of a dead end.
-  const writeScopeReadOnlyFallback =
-    body.allowReadOnlyFallback === true &&
-    !sshRuntime &&
-    binding.harness === "claude" &&
-    body.permissionMode !== "read" &&
-    permissionForwardingEnabled &&
-    !((await probeCovenCapability(covenRunSupportsWriteScope)) ?? false);
-  if (writeScopeReadOnlyFallback) body.permissionMode = "read";
+  // Honor the requested access level. Unsupported Full access is refused at
+  // launch admission; never turn a Build request into Claude's native plan mode.
   const directReadOnlyEnforcement =
     !sshRuntime &&
     (Boolean(copilotStream) || grokDirect || (codexDirect && codexDirectCapabilities?.sandbox === true));
@@ -3235,6 +3222,7 @@ async function postAdmittedChat(
     : {
         kind: "local",
         root: cwd,
+        permissionMode: body.permissionMode === "read" ? "read" : "full",
         allowedProjectRoots: grantedProjectRoots,
         projectRootAccess: grantedProjectRootAccess,
         readOnlyResourceRoots: runtimeResourceRoots,
@@ -3960,14 +3948,6 @@ async function postAdmittedChat(
           "Unavailable project grants skipped",
           "notice",
           `${omittedGrantCount} registered project ${omittedGrantCount === 1 ? "directory was" : "directories were"} unavailable on this host.`,
-        );
-      }
-      if (writeScopeReadOnlyFallback) {
-        pushProgress(
-          "runtime-write-scope-read-only",
-          "Read-only for this turn",
-          "notice",
-          "This version of Coven can't limit Claude's file changes to your project grants, so Claude can read but not edit. To edit files now, switch to another runtime.",
         );
       }
       if (writeScopeFile?.excludedMcpServers.length) {
@@ -5917,11 +5897,9 @@ async function postAdmittedChat(
                   return null;
                 }
                 if (claudeScopedWrite && !claudeWriteScopeSupported) {
-                  // Only a Coven too old to enforce Read-only can be fixed by updating:
-                  // no release has `--write-scope` yet (#6419).
                   launchFailure = { code: "scoped_write_unavailable",
                     message: permissionForwardingEnabled
-                      ? "Full access for Claude needs a newer Coven than this one. Switch Access to Read-only or choose another runtime, then retry."
+                      ? "Full access is unavailable for Claude on this runtime. Choose a runtime that can enforce project write access, then retry."
                       : "This runtime cannot safely apply project write access. Update Coven and restart Cave, then retry." };
                   result.is_error = true;
                   pushProgress("harness-start", "Scoped writes unavailable", "error", launchFailure.message);
@@ -6544,7 +6522,14 @@ async function postAdmittedChat(
         push({ kind: "error", code, message, harness: binding.harness, model: selectedModel ?? null });
       }
 
-      if (!launchFailure && !runtimeUsageLimit && covenBackedProcessFailed && !assistantText.trim()) {
+      // Coven may relay a failed native turn and itself exit 0. A recognized
+      // failure still needs safe guidance; unknown zero-exit reports keep the
+      // existing redacted empty-response path. Never classify assistant prose.
+      const runtimeProcessReason = binding.harness === "codex" && !codexDirect && !sshRuntime
+        ? classifyRuntimeProcessFailure([...stderrTail, ...relayedErrTail].join("\n"))
+        : "unknown";
+      if (!launchFailure && !runtimeUsageLimit && !assistantText.trim()
+          && (covenBackedProcessFailed || (result.is_error && runtimeProcessReason !== "unknown"))) {
         const failedRunner = binding.harness === "codex"
           ? "codex"
           : binding.harness === "claude"
@@ -6561,6 +6546,7 @@ async function postAdmittedChat(
         const failure = runtimeProcessFailure(failedRunner, {
           exitCode: covenBackedExitCode,
           emittedDiagnostic,
+          reason: runtimeProcessReason,
         });
         launchFailure = failure;
         result.is_error = true;
@@ -6570,6 +6556,7 @@ async function postAdmittedChat(
           runner: failedRunner,
           exitCode: covenBackedExitCode,
           emittedDiagnostic,
+          reason: runtimeProcessReason,
           ...(localRuntimePlan
             ? {
                 launcher: {
@@ -6849,11 +6836,13 @@ async function postAdmittedChat(
       settleUnfinishedTools();
       // Preflight/spawn failures never produced a real assistant response, so
       // preserve the established no-transcript behavior for them. A Coven
-      // child that did start and then exited non-zero is different: persist a
+      // child that did start and then failed is different: persist a
       // clearly marked failure when the conversation already has an id, so a
       // reload retains the safe exit diagnostics instead of looking complete.
       const persistCovenProcessFailure = Boolean(
-        finalSessionId && launchFailure && covenBackedProcessFailed,
+        finalSessionId && launchFailure && (
+          covenBackedProcessFailed || (result.is_error && runtimeProcessReason !== "unknown")
+        ),
       );
       let persistedTurnId: string | undefined;
       if (finalSessionId && (!launchFailure || persistCovenProcessFailure)) {
