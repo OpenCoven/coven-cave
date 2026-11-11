@@ -103,7 +103,9 @@ test("dismissal commits URL cleanup even when the Next server navigation never c
   await act(async () => renderer.root.findByProps({ "data-flow-dialog": true }).props.onClose());
   expect(window.location.search).toBe("?keep=one");
   expect(window.location.hash).toBe("#keep");
-  expect(window.history.replaceState).toHaveBeenCalledExactlyOnceWith(null, "", "/?keep=one#keep");
+  // The stub's replaceState is an own property, like Next's installed wrapper,
+  // so history-url passes the entry's own keys and lets Next add its markers.
+  expect(window.history.replaceState).toHaveBeenCalledExactlyOnceWith({}, "", "/?keep=one#keep");
   expect(navigation.replace).toHaveBeenCalledExactlyOnceWith("/?keep=one#keep", { scroll: false });
   await act(async () => renderer.update(createElement(FlowExecutionLink, props)));
   expect(renderer.root.findAllByProps({ "data-flow-dialog": true })).toHaveLength(0);

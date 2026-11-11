@@ -76,8 +76,10 @@ const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 // composer-environment-popover joins it for the same reason (#5958): the
 // branch chip's Environment popover opens at every width, and the phone
 // cases (rest-state chips, 44px rows, viewport containment) only run there.
+// history-state-restore joins too (#6442): browser Back must restore the page
+// on phones as well as desktop.
 const MOBILE_SURFACE_SPECS =
-  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover)\.spec\.ts/;
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 

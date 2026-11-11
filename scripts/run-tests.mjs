@@ -87,6 +87,8 @@ export const SUITES = {
     "src/lib/workspace-pane-request.test.ts",
     "src/lib/workspace-pane-error.test.ts",
     "src/lib/workspace-url-state.test.ts",
+    "src/lib/history-url.test.ts",
+    "src/lib/history-url-sites.test.ts",
     "src/lib/workspace-context.test.ts",
     "src/lib/workspace-context-storage.test.ts",
     "src/lib/pending-code-navigation.test.ts",
