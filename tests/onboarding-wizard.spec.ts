@@ -874,9 +874,9 @@ for (const scenario of ["foreground", "background", "unavailable"] as const) {
       }
       await route.fulfill({ json: payload(current) });
     }, { dismissed: true, openOnboarding: false });
-    // This route supersedes baseRoutes after Workspace has mounted; a verified
-    // running transition must refetch its dependent roster.
-    await page.route("**/api/familiars**", (route) => {
+    // Count the global roster refreshed by a verified running transition;
+    // unrelated project-crew queries keep the baseRoutes fixture.
+    await page.route("**/api/familiars", (route) => {
       familiarReads += 1;
       return route.fulfill({ json: { ok: true, familiars: [] } });
     });

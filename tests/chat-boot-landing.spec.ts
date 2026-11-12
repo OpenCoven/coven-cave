@@ -88,6 +88,10 @@ const ACCESSIBLE_PROJECT = {
 async function seedWithoutActiveFamiliar(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    // An explicit browsing choice keeps this fixture actor-free even when the
+    // installation has a configured default familiar for new work.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [] }));
   });
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: FAMILIARS_TWO }));
   await page.route("**/api/board**", (route) => route.fulfill({ json: BOARD }));
@@ -263,10 +267,9 @@ test.describe("chat boot landing", () => {
   });
 });
 
-// Boot with NO active familiar — a first run, or after clearing storage or
-// deleting the active familiar. This used to open a composer silently bound to
-// whichever familiar sorted first, so the user's FIRST message went to it.
-// It must ask instead.
+// Boot with NO active familiar in an explicitly saved All projects / All
+// familiars overview. The configured launch default must not replace that
+// browsing choice with a composer bound to one actor. It must ask instead.
 test("booting with no active familiar asks which one instead of picking", async ({ page }) => {
   await seedWithoutActiveFamiliar(page);
   // Armed BEFORE navigating so the response cannot be missed. The gate policy
@@ -280,6 +283,12 @@ test("booting with no active familiar asks which one instead of picking", async 
     { timeout: 45_000 },
   );
   await page.goto("/?mode=chat", { waitUntil: "domcontentloaded" });
+
+  // Let saved introduction state restore before asserting that it did not
+  // replace the explicit actor-free browsing choice with its configured actor.
+  await expect(page.getByRole("complementary", { name: "Working with familiars" }).getByRole("button", {
+    name: /^(Working with familiars|Review default context)$/,
+  })).toBeVisible({ timeout: 45_000 });
 
   // The chat-first landing still happens — we did not fall back to the list.
   const launch = page.locator(".cave-launch");

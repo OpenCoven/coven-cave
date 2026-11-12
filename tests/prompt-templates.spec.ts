@@ -35,6 +35,8 @@ async function seed(page: Page): Promise<PromptStore> {
   };
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": ["nova"] }));
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   await page.route("**/api/familiars**", (route) =>
@@ -76,6 +78,9 @@ async function openHomeDraft(page: Page) {
   await page.goto("/?mode=home");
   const draft = page.getByRole("textbox", { name: "Chat message" });
   await expect(draft).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole("complementary", { name: "Working with familiars" }).getByRole("button", {
+    name: /^(Working with familiars|Review default context)$/,
+  })).toBeVisible({ timeout: 45_000 });
   return draft;
 }
 
