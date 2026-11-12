@@ -293,6 +293,7 @@ import {
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
+  describePrivateStateWriteOverlap,
   listAccessibleProjects,
 } from "@/lib/project-permissions";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
@@ -3459,6 +3460,22 @@ async function postAdmittedChat(
       });
       // A Coven without the flag refuses this launch below, so credentials never reach disk for it.
       if (claudeWriteScopeSupported) {
+        // Name the folder and the grant behind an overlap, so the person can
+        // narrow the right one. prepareClaudeWriteScopeFile still refuses it.
+        const overlap = await describePrivateStateWriteOverlap({
+          familiarId: body.familiarId,
+          familiarName: binding.display_name?.trim() || body.familiarId,
+          writableProjects: effectiveAccessibleProjects
+            .filter(entry => entry.access === "write")
+            .map(entry => entry.project),
+          primaryProjectId: authorizedProjectId,
+          familiarWorkspace: resolvedFamiliarWorkspace,
+          primaryRoot: cwd,
+        });
+        if (overlap) {
+          return Response.json({ ok: false, code: "scoped_write_unavailable",
+            reason: "cave_private_state_overlap", overlap, error: overlap.message }, { status: 409 });
+        }
         writeScopeFile = prepareClaudeWriteScopeFile(writeScope, await loadClaudeFamiliarMcpServers({
           familiarWorkspace: resolvedFamiliarWorkspace,
           projectRoots: grantedProjectRoots,

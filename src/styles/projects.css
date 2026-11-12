@@ -1098,6 +1098,17 @@
   background: currentColor;
 }
 
+/* Write on a folder that holds Cave's private state (issue 6451). */
+.projects-access-pill.is-write.is-private-state {
+  color: var(--color-warning);
+  border-color: color-mix(in oklch, var(--color-warning) 55%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+}
+
+.projects-access-pill .projects-access-warning {
+  flex: none;
+}
+
 /* Command-palette focus flash. */
 
 .projects-access-card.is-flash,

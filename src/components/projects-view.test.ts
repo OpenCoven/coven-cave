@@ -59,7 +59,11 @@ test("rows cycle a direct grant against /api/project-grants", () => {
   assert.match(view, /fetch\("\/api\/project-grants", \{ cache: "no-store" \}\)/, "grants snapshot comes from the console API");
   assert.match(view, /method: op\.op === "grant" \? "POST" : "DELETE"/, "grant/revoke map to POST/DELETE");
   assert.match(view, /targetFamiliarId: familiarId/, "mutations target the picked familiar");
-  assert.match(view, /nextAccessState\(row\.state\)/, "click advances the none → read → full cycle");
+  assert.match(
+    view,
+    /nextAccessState\(row\.state, writeBlocked\.has\(row\.project\.id\)\)/,
+    "click advances the none → read → full cycle, skipping Full on Cave's private state (#6451)",
+  );
   assert.match(view, /resolveEffectiveAccess\(\{/, "pills show the effective level (direct ∪ groups)");
   assert.match(view, /setOptimistic\(/, "mutations render optimistically");
   assert.match(view, /await loadGrants\(\)/, "server snapshot is re-fetched after a mutation");
@@ -155,7 +159,11 @@ test("cards disclose what a level actually permits", () => {
 test("bulk select sets several projects at once", () => {
   assert.match(view, /const \[bulk, setBulk\] = useState\(false\)/, "selection mode is off until asked for");
   assert.match(view, /setSelectedAccess\(target\)/, "the band applies one level to the checked set");
-  assert.match(view, /setAllOps\(ids, directByProject, target\)/, "bulk writes compute the minimal op set");
+  assert.match(
+    view,
+    /setAllOps\(ids, directByProject, target, writeBlocked\)/,
+    "bulk writes compute the minimal op set, giving Cave's private state Read at most (#6451)",
+  );
   assert.match(view, /selectionLabel\(selected\.size\)/, "the band counts the selection");
   assert.match(view, /disabled=\{selected\.size === 0 \|\| controlsDisabled\}/, "an empty selection can't fire a write");
   assert.match(
@@ -218,7 +226,7 @@ test("access controls retain semantic headings and visible keyboard focus", () =
   );
   assert.match(
     view,
-    /className=\{`projects-access-pill is-\$\{row\.state\}\$\{pending \? " is-pending" : ""\} focus-ring`\}/,
+    /className=\{`projects-access-pill is-\$\{row\.state\}\$\{pending \? " is-pending" : ""\}\$\{risky \? " is-private-state" : ""\} focus-ring`\}/,
     "row access pills use the shared visible focus ring",
   );
   assert.match(

@@ -201,6 +201,47 @@ if (noPermission) {
   const mcpLaunch = (await calls())[beforeMcp];
   assert.deepEqual(mcpLaunch.scope.mcpServerNames,["kept"]);
   delete process.env.CLAUDE_CONFIG_DIR;
+  // #6451: a Write grant made before the grant-time rule, on a folder that
+  // holds Cave's private state, is named in the refusal with how it was given.
+  const stateProject = await createProject({ name: "Cave state", root: process.env.COVEN_CAVE_HOME });
+  const permissionsFile = path.join(process.env.COVEN_CAVE_HOME, "project-permissions.json");
+  const original = await readFile(permissionsFile, "utf8");
+  const seedGrant = async ({ group = false, direct = false }) => {
+    const file = JSON.parse(original);
+    if (direct) file.projectGrants.push({ familiarId: "sage", projectId: stateProject.id, access: "write", source: "human", grantedAt: "2026-08-20T00:00:00.000Z" });
+    if (group) file.accessGroups = [...(file.accessGroups ?? []), { id: "coders", name: "Coders", memberFamiliarIds: ["sage"], projectGrants: [{ projectId: stateProject.id, access: "write", grantedAt: "2026-08-20T00:00:00.000Z" }], createdAt: "2026-08-20T00:00:00.000Z", updatedAt: "2026-08-20T00:00:00.000Z" }];
+    await writeFile(permissionsFile, JSON.stringify(file));
+  };
+  const authorityEntries = async () => (await import("node:fs/promises")).readdir(path.join(process.env.COVEN_CAVE_HOME, "claude-authority"));
+  for (const [seedWith, via, fix] of [
+    [{ group: true }, /through the Coders access group/, /change Cave state to Read in Coders, then retry/],
+    [{ direct: true }, /through its own grant,/, /change Cave state to Read for .+, then retry/],
+    [{ group: true, direct: true }, /through its own grant and the Coders access group/, /to Read for .+ and in Coders, then retry/],
+  ]) {
+    await seedGrant(seedWith);
+    const beforeOverlap = (await calls()).length;
+    const entriesBefore = (await authorityEntries()).sort();
+    const overlapped = await send();
+    assert.equal(overlapped.status, 409, overlapped.body);
+    const refusal = JSON.parse(overlapped.body);
+    assert.equal(refusal.code, "scoped_write_unavailable");
+    assert.equal(refusal.reason, "cave_private_state_overlap");
+    assert.equal(refusal.overlap.source, "project");
+    assert.equal(refusal.overlap.projectId, stateProject.id);
+    assert.equal(refusal.overlap.root, stateProject.root);
+    assert.equal(refusal.overlap.relation, "contains");
+    assert.equal(refusal.overlap.direct, Boolean(seedWith.direct));
+    assert.deepEqual(refusal.overlap.groups, seedWith.group ? [{ id: "coders", name: "Coders" }] : []);
+    assert.match(refusal.error, /can write to Cave state \(.+\)/);
+    assert.match(refusal.error, via);
+    assert.match(refusal.error, /contains Cave’s private state, so Cave won’t start a Full access turn/);
+    assert.match(refusal.error, fix);
+    assert.equal((await calls()).length, beforeOverlap, "a refused turn never launches");
+    assert.deepEqual((await authorityEntries()).sort(), entriesBefore, "and writes no authority files");
+  }
+  await writeFile(permissionsFile, original);
+  const cleared = await send();
+  assert.equal(cleared.done?.isError, false, "once the grant is narrowed the turn runs: " + cleared.body);
   await grantProjectToFamiliar({familiarId:"sage",projectId:project.id,source:"human",access:"read"});
   const before = (await calls()).length;
   const readPrimary = await send();

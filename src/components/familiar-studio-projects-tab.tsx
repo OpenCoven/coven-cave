@@ -45,6 +45,7 @@ import {
 } from "@/lib/permissions-console";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 import { publishProjectAccessChanged } from "@/lib/project-access-events";
+import { privateStateRefusal } from "@/lib/private-state-access";
 
 /**
  * Which half of the protocol to render.
@@ -232,6 +233,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
         else copy.delete(key);
         return copy;
       });
+      let refusal: string | null = null;
       try {
         const res = await fetch("/api/project-grants", {
           method: next ? "POST" : "DELETE",
@@ -242,6 +244,9 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
               : { targetFamiliarId: familiar.id, projectId },
           ),
         });
+        // A Write grant on a folder holding Cave's private state is refused
+        // with a reason worth showing as it is (#6451).
+        refusal = res.ok ? null : await privateStateRefusal(res);
         if (!res.ok) throw new Error(String(res.status));
         publishProjectAccessChanged(projectId);
         setError(null);
@@ -255,7 +260,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
           else copy.add(key);
           return copy;
         });
-        setError("Couldn’t update that grant.");
+        setError(refusal ?? "Couldn’t update that grant.");
       } finally {
         setPending((p) => {
           const copy = new Set(p);

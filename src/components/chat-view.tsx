@@ -67,10 +67,13 @@ import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
 import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
+  CHAT_FOCUS_PROJECT_EVENT,
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
   markCovenGroupPending,
   markCovenTabPending,
+  markProjectFocusPending,
+  markProjectsTabPending,
 } from "@/lib/chat-tab-events";
 import { addableFamiliars, promoteSessionToCoven } from "@/lib/coven-promotion";
 import {
@@ -2592,6 +2595,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // send 400s with code project_root_unavailable and Retry can never succeed —
   // the recovery is re-pointing the project, not retrying (cave-ivcc).
   const [projectRootMissing, setProjectRootMissing] = useState(false);
+  // A project whose Write grant overlaps Cave's private state: Projects is
+  // where that grant changes, so the error offers to open it there (#6451).
+  const [privateStateProjectRoot, setPrivateStateProjectRoot] = useState<string | null>(null);
   // 409 chat_run_active: the server still runs an earlier turn of this chat
   // that this view no longer tracks. Holds that chat's id so the error strip
   // can stop the earlier run; Retry then sends the preserved message.
@@ -5562,6 +5568,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setLastFailedSend(null);
     setProjectAccessRoot(null);
     setProjectRootMissing(false);
+    setPrivateStateProjectRoot(null);
     setProjectRootRequired(false);
     setEarlierRunSessionId(null);
     setEarlierRunId(null);
@@ -5877,6 +5884,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           surfacedMessage = blockingRunId
             ? "This chat is still running an earlier turn, so your message was not sent. Stop the earlier turn, or wait for it to finish, then retry."
             : "This chat is still running an earlier turn, so your message was not sent. Wait for it to finish, then retry.";
+        }
+        // The message names the folder and the grant behind it; Projects is
+        // where a project's grant changes.
+        const overlapRefusal = refusal as {
+          error?: unknown;
+          reason?: unknown;
+          overlap?: { source?: unknown; root?: unknown } | null;
+        } | null;
+        if (res.status === 409 && overlapRefusal?.reason === "cave_private_state_overlap") {
+          if (typeof overlapRefusal.error === "string" && overlapRefusal.error.trim()) surfacedMessage = overlapRefusal.error;
+          if (overlapRefusal.overlap?.source === "project" && typeof overlapRefusal.overlap.root === "string") {
+            setPrivateStateProjectRoot(overlapRefusal.overlap.root);
+          }
         }
         setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
@@ -8938,7 +8958,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onOpenProjects={
             projectRootMissing
               ? () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT))
-              : undefined
+              : privateStateProjectRoot
+                ? () => {
+                    const root = privateStateProjectRoot;
+                    // Latches cover a Projects tab that hasn't mounted yet.
+                    markProjectsTabPending();
+                    markProjectFocusPending(root);
+                    window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+                    window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root } }));
+                  }
+                : undefined
           }
           pickProjectOptions={
             projectRootRequired
@@ -8964,6 +8993,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setDebugError(null);
             setProjectAccessRoot(null);
             setProjectRootMissing(false);
+            setPrivateStateProjectRoot(null);
             setProjectRootRequired(false);
             setEarlierRunSessionId(null);
             setEarlierRunId(null);

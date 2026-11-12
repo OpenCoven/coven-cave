@@ -313,6 +313,7 @@ export const SUITES = {
     "src/lib/session-finished-inbox.test.ts",
     "src/lib/session-finished-inbox-emit.test.ts",
     "src/lib/project-permissions.test.ts",
+    "src/lib/cave-private-state-grants.test.ts",
     "src/lib/project-grant-audit.test.ts",
     "src/lib/project-access-levels.test.ts",
     "src/lib/project-icon-prompt.test.ts",
@@ -2062,6 +2063,7 @@ export const SUITES = {
     "src/app/api/project-file/route-behaviour.test.ts",
     "src/app/api/project-tree/route.test.ts",
     "src/app/api/project-grants/route.test.ts",
+    "src/app/api/project-grants/route-private-state.test.ts",
     "src/lib/server/trusted-grant-mutation.test.ts",
     "src/lib/server/project-permission-symlink.test.ts",
     "src/app/api/flows/runs/route.test.ts",
@@ -2312,6 +2314,7 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/project-grants/route-private-state.test.ts",
   "src/app/api/salem/retirement.test.ts",
   "src/components/salem/salem-retirement.test.ts",
   "src/lib/surface-preferences-lifecycle.test.ts",

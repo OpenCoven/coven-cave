@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   AccessGroupNotFoundError,
+  CavePrivateStateGrantError,
   deleteAccessGroup,
   updateAccessGroup,
 } from "@/lib/project-permissions";
@@ -88,6 +89,12 @@ export async function PATCH(
   } catch (error) {
     if (error instanceof AccessGroupNotFoundError) {
       return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
+    }
+    if (error instanceof CavePrivateStateGrantError) {
+      return NextResponse.json(
+        { ok: false, code: error.code, error: error.message, projectId: error.project.id },
+        { status: error.status },
+      );
     }
     throw error;
   }

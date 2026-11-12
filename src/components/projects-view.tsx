@@ -47,6 +47,7 @@ import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { publishProjectAccessChanged } from "@/lib/project-access-events";
+import { PRIVATE_STATE_WRITE_NOTE, privateStateProjectIdsFrom, privateStateRefusal } from "@/lib/private-state-access";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -98,7 +99,14 @@ type GrantsSnapshot = {
     proposals: number;
     orphanProjectIds: string[];
   };
+  /** Projects whose folder holds Cave's private state: never Write (#6451). */
+  privateStateProjectIds: ReadonlySet<string>;
 };
+
+const NO_PROJECT_IDS: ReadonlySet<string> = new Set();
+
+/** The server refused the change and said why, in words for the person. */
+class AccessOpRefusal extends Error {}
 
 type RowModel = {
   project: CaveProject;
@@ -122,7 +130,10 @@ async function runAccessOp(familiarId: string, op: AccessOp): Promise<void> {
         : { targetFamiliarId: familiarId, projectId: op.projectId },
     ),
   });
-  if (!res.ok) throw new Error(String(res.status));
+  if (!res.ok) {
+    const refusal = await privateStateRefusal(res);
+    throw refusal ? new AccessOpRefusal(refusal) : new Error(String(res.status));
+  }
 }
 
 /** View preference: "grid" (default) | "rows" | "tree". Replaces the older
@@ -174,6 +185,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             ? data.integrity.orphanProjectIds.filter((id: unknown): id is string => typeof id === "string")
             : [],
         },
+        privateStateProjectIds: privateStateProjectIdsFrom(data),
       });
       setGrantsError(null);
     } catch {
@@ -202,6 +214,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     [familiars, pickedFamiliarId],
   );
   const supreme = familiar ? isSupreme(familiar.id, grantsData?.supremeFamiliarId ?? null) : false;
+  const writeBlocked = grantsData?.privateStateProjectIds ?? NO_PROJECT_IDS;
 
   // The Groups and Activity panes render familiar-shaped UI (avatars, glyphs,
   // display-name overrides), so they need the resolved roster rather than the
@@ -550,7 +563,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   const cycleRow = useCallback(
     async (row: RowModel) => {
       if (!familiar || supreme || pendingIds.has(row.project.id)) return;
-      const next = nextAccessState(row.state);
+      const next = nextAccessState(row.state, writeBlocked.has(row.project.id));
       if (next === "none" && !row.direct) {
         // Nothing to revoke — the level is inherited from a group.
         announce(
@@ -570,8 +583,10 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         setMutateError(null);
         await loadGrants();
         announce(`${row.project.name}: ${accessStateMeta(next).label}`);
-      } catch {
-        setMutateError(`Couldn’t update access for ${row.project.name}.`);
+      } catch (error) {
+        setMutateError(error instanceof AccessOpRefusal
+          ? error.message
+          : `Couldn’t update access for ${row.project.name}.`);
       } finally {
         // Drop the optimistic layer either way — the snapshot (fresh on
         // success, unchanged on failure) is the truth again.
@@ -587,7 +602,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         });
       }
     },
-    [familiar, supreme, pendingIds, announce, loadGrants],
+    [familiar, supreme, pendingIds, announce, loadGrants, writeBlocked],
   );
 
   const applyOps = useCallback(
@@ -601,6 +616,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         return copy;
       });
       let failed = 0;
+      let refusal: string | null = null;
       const succeededProjectIds: string[] = [];
       // Sequential on purpose: the grants store is a single document, so
       // parallel writes could interleave.
@@ -608,8 +624,9 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         try {
           await runAccessOp(familiar.id, op);
           succeededProjectIds.push(op.projectId);
-        } catch {
+        } catch (error) {
           failed += 1;
+          if (error instanceof AccessOpRefusal) refusal ??= error.message;
         }
       }
       for (const projectId of succeededProjectIds) {
@@ -619,7 +636,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       setOptimistic(new Map());
       setPendingIds(new Set());
       setBusyAll(false);
-      if (failed > 0) setMutateError(`Couldn’t update ${failed} of ${ops.length} projects.`);
+      if (failed > 0) setMutateError(`Couldn’t update ${failed} of ${ops.length} projects.${refusal ? ` ${refusal}` : ""}`);
       else {
         setMutateError(null);
         announce(doneMessage);
@@ -628,37 +645,49 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     [familiar, busyAll, loadGrants, announce],
   );
 
+  /** Says when "Set all to Full" gave a folder holding Cave's private state Read instead. */
+  const privateStateNote = useCallback(
+    (ids: readonly string[], target: AccessState) => {
+      if (target !== "write") return "";
+      const names = projects.filter((project) => ids.includes(project.id) && writeBlocked.has(project.id))
+        .map((project) => project.name);
+      if (names.length === 0) return "";
+      return ` ${names.join(", ")} can’t get Full, because ${names.length === 1 ? "it holds" : "they hold"} Cave’s private state.`;
+    },
+    [projects, writeBlocked],
+  );
+
   const setAllInSection = useCallback(
     (projectsInSection: readonly CaveProject[], label: string, target: AccessState) => {
       const ids = projectsInSection.map((project) => project.id);
-      const ops = setAllOps(ids, directByProject, target);
+      const ops = setAllOps(ids, directByProject, target, writeBlocked);
       if (ops.length === 0) {
         announce("Nothing to change.");
         return;
       }
       void applyOps(
         ops,
-        `${label}: ${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.`,
+        `${label}: ${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.${privateStateNote(ids, target)}`,
       );
     },
-    [directByProject, applyOps, announce],
+    [directByProject, applyOps, announce, writeBlocked, privateStateNote],
   );
 
   /** Bulk band: apply one level to every checked project. */
   const setSelectedAccess = useCallback(
     (target: AccessState) => {
       const ids = [...selected];
-      const ops = setAllOps(ids, directByProject, target);
+      const ops = setAllOps(ids, directByProject, target, writeBlocked);
       if (ops.length === 0) {
         announce("Nothing to change.");
         return;
       }
       void applyOps(
         ops,
-        `${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.`,
+        `${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.${privateStateNote(ids, target)}`,
       ).then(() => setSelected(new Set()));
     },
-    [selected, directByProject, applyOps, announce],
+    [selected, directByProject, applyOps, announce, writeBlocked, privateStateNote],
   );
 
   const resetAll = useCallback(async () => {
@@ -711,23 +740,31 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
 
   /** Access pill — the one control that mutates a row, in every view. */
   const renderPill = (row: (typeof viewRows)[number]) => {
-    const meta = accessStateMeta(row.state);
+    const blocked = writeBlocked.has(row.id);
+    const meta = accessStateMeta(row.state, blocked);
     const pending = pendingIds.has(row.id);
     const viaGroups = row.groupNames.length > 0 && !supreme ? ` — via ${row.groupNames.join(", ")}` : "";
+    // An existing Write grant here blocks Claude Build turns (#6451).
+    const risky = blocked && row.state === "write";
+    const note = risky ? ` ${PRIVATE_STATE_WRITE_NOTE}` : "";
     return (
       <button
         type="button"
-        className={`projects-access-pill is-${row.state}${pending ? " is-pending" : ""} focus-ring`}
+        className={`projects-access-pill is-${row.state}${pending ? " is-pending" : ""}${risky ? " is-private-state" : ""} focus-ring`}
         disabled={pending || supreme}
         onClick={() => void cycleRow(row)}
         title={
           supreme
-            ? `${row.name} — Full (supreme familiar)`
-            : `${row.name} — ${meta.label}${viaGroups}. Click to ${meta.action}.`
+            ? `${row.name} — Full (supreme familiar)${note}`
+            : `${row.name} — ${meta.label}${viaGroups}. Click to ${meta.action}.${note}`
         }
-        aria-label={`${row.name}: ${meta.label}${viaGroups}. ${supreme ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}`}
+        aria-label={`${row.name}: ${meta.label}${viaGroups}. ${supreme ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}${note}`}
       >
-        <span className="projects-access-dot" aria-hidden />
+        {risky ? (
+          <Icon name="ph:warning-fill" width={11} className="projects-access-warning" aria-hidden />
+        ) : (
+          <span className="projects-access-dot" aria-hidden />
+        )}
         {meta.label}
       </button>
     );
@@ -757,6 +794,12 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                   : "not granted"}
           </dd>
         </div>
+        {writeBlocked.has(row.id) ? (
+          <div>
+            <dt>write</dt>
+            <dd>{PRIVATE_STATE_WRITE_NOTE}</dd>
+          </div>
+        ) : null}
       </dl>
       <ul className={`projects-access-grants is-${row.state}`}>
         {grantChips(row.state).map((chip) => (
@@ -976,7 +1019,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                       className={`projects-access-chip${flashId === row.id ? " is-flash" : ""} focus-ring`}
                       disabled={pendingIds.has(row.id) || supreme}
                       onClick={() => void cycleRow(row)}
-                      title={`${row.name} — ${accessStateMeta(row.state).label}. Click to ${accessStateMeta(row.state).action}.`}
+                      title={`${row.name} — ${accessStateMeta(row.state, writeBlocked.has(row.id)).label}. Click to ${accessStateMeta(row.state, writeBlocked.has(row.id)).action}.${writeBlocked.has(row.id) && row.state === "write" ? ` ${PRIVATE_STATE_WRITE_NOTE}` : ""}`}
                     >
                       <span className={`projects-access-kind is-${row.kind}`} aria-hidden>
                         <Icon name={row.kind === "workspace" ? "ph:folder" : "ph:github-logo"} width={11} />

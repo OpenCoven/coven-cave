@@ -25,6 +25,7 @@ import {
 } from "@/lib/permissions-console";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 import { publishProjectAccessChanged } from "@/lib/project-access-events";
+import { PRIVATE_STATE_WRITE_NOTE, privateStateProjectIdsFrom, privateStateRefusal } from "@/lib/private-state-access";
 
 /**
  * Settings → Familiars → Access groups — manage named groups of familiars that
@@ -42,6 +43,8 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
   const [groups, setGroups] = useState<ConsoleAccessGroup[]>([]);
   const [projects, setProjects] = useState<ConsoleProject[]>([]);
   const [supremeFamiliarId, setSupremeFamiliarId] = useState<string | null>(null);
+  // Projects whose folder holds Cave's private state: never Write (#6451).
+  const [writeBlocked, setWriteBlocked] = useState<ReadonlySet<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -74,6 +77,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
       setSupremeFamiliarId(
         typeof grantRes?.supremeFamiliarId === "string" ? grantRes.supremeFamiliarId : null,
       );
+      setWriteBlocked(privateStateProjectIdsFrom(grantRes));
       setError(null);
     } catch {
       setError("Couldn’t load access groups. Is the desktop reachable?");
@@ -95,7 +99,15 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
       setBusy((prev) => new Set(prev).add(groupId));
       try {
         const res = await run();
-        if (!res.ok) throw new Error(String(res.status));
+        if (!res.ok) {
+          // The server says why it refused a Write grant; keep its words.
+          const refusal = await privateStateRefusal(res);
+          if (refusal) {
+            setError(refusal);
+            return;
+          }
+          throw new Error(String(res.status));
+        }
         setError(null);
         for (const projectId of new Set(affectedProjectIds)) {
           publishProjectAccessChanged(projectId);
@@ -154,7 +166,8 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
     [withBusy],
   );
 
-  // Off → Read → Write → Off, one click per step.
+  // Off → Read → Write → Off, one click per step. A folder holding Cave's
+  // private state skips Write: Off → Read → Off.
   const cycleProjectGrant = useCallback(
     (group: ConsoleAccessGroup, projectId: string) => {
       const current = group.projectGrants.find((grant) => grant.projectId === projectId);
@@ -164,7 +177,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
           : "write"
         : null;
       const nextLevel: ProjectAccessLevel | null =
-        currentLevel === null ? "read" : currentLevel === "read" ? "write" : null;
+        currentLevel === null ? "read" : currentLevel === "read" && !writeBlocked.has(projectId) ? "write" : null;
       const projectGrants = group.projectGrants
         .filter((grant) => grant.projectId !== projectId)
         .map((grant) => ({ projectId: grant.projectId, access: grant.access ?? "write" }));
@@ -177,7 +190,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
         }),
       );
     },
-    [withBusy],
+    [withBusy, writeBlocked],
   );
 
   const deleteGroup = useCallback(
@@ -368,6 +381,9 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                               : "write"
                             : null;
                           const meta = level ? accessLevelMeta(level) : null;
+                          // An existing Write grant here blocks Claude Build turns (#6451).
+                          const risky = level === "write" && writeBlocked.has(project.id);
+                          const note = risky ? ` ${PRIVATE_STATE_WRITE_NOTE}` : "";
                           return (
                             <div key={project.id} className="access-groups__grant">
                               <span className="access-groups__project">
@@ -384,12 +400,13 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                                 type="button"
                                 disabled={groupBusy}
                                 data-level={level ?? "off"}
-                                title={meta ? meta.title : "Not granted — click to grant read access"}
-                                aria-label={`${project.name} access for ${group.name}: ${meta ? meta.label : "off"}. Click to change.`}
+                                data-private-state={risky ? "true" : undefined}
+                                title={`${meta ? meta.title : "Not granted — click to grant read access"}${note}`}
+                                aria-label={`${project.name} access for ${group.name}: ${meta ? meta.label : "off"}. Click to change.${note}`}
                                 onClick={() => cycleProjectGrant(group, project.id)}
                                 className="focus-ring access-groups__level"
                               >
-                                {meta && <Icon name={meta.icon} width={11} height={11} aria-hidden />}
+                                {meta && <Icon name={risky ? "ph:warning-fill" : meta.icon} width={11} height={11} aria-hidden />}
                                 {meta ? meta.label : "Off"}
                               </button>
                             </div>

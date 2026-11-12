@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
 import {
+  CavePrivateStateGrantError,
   ProjectAccessDeniedError,
   createGrantProposal,
   listGrantProposals,
@@ -49,6 +50,12 @@ export async function POST(req: Request) {
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {
       return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
+    }
+    if (error instanceof CavePrivateStateGrantError) {
+      return NextResponse.json(
+        { ok: false, code: error.code, error: error.message, projectId: error.project.id },
+        { status: error.status },
+      );
     }
     throw error;
   }

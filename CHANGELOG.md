@@ -8,6 +8,16 @@ breaking config changes; patch releases stay additive.
 ## [Unreleased]
 
 ### Changed
+- **Projects won't give a familiar Write access to a folder that holds Cave's
+  private state** (#6451). That folder holds the grants file and each Claude
+  turn's authority files, so Write there would let a familiar change its own
+  access. The rule covers direct grants, access groups, members added to a
+  group, and Supreme's proposals. Read still works, and folders such as
+  Research Missions are unaffected. Write grants made before this stay as they
+  are, but Projects and Access groups now flag them. When one stops a Claude
+  turn in Full access, Chat names the folder and says whether the access comes
+  from the familiar's own grant or an access group, and offers **Open
+  projects**.
 - **Full-access Claude will take its permissions only from your project
   grants** (#6393). This needs a Coven release with the updated `--write-scope`
   and Claude Code 2.1.318 or later. A familiar can then run shell commands and
