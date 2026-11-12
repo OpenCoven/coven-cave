@@ -264,7 +264,7 @@ export function QuickChatComposer({
   draft: string;
   onDraftChange: (value: string) => void;
   /** Send the trimmed draft with the staged files (already id-stripped). */
-  onSend: (attachments: ChatAttachment[]) => void;
+  onSend: (attachments: ChatAttachment[], onAccepted: () => void) => void;
   sending: boolean;
   /** Blocks sending while true (e.g. the roster is still loading). */
   disabled?: boolean;
@@ -348,7 +348,6 @@ export function QuickChatComposer({
   const {
     attachments,
     removeAttachment,
-    clearAttachments,
     handlePaste,
     dropActive,
     dropHandlers,
@@ -574,12 +573,13 @@ export function QuickChatComposer({
     promptEnhance.reset();
     // ComposerAttachment carries a local `id` for the chip row — strip it from
     // the outgoing payload (mirrors the chat composer's send).
-    onSend(attachments.map(({ id: _id, ...attachment }) => attachment));
-    clearAttachments();
+    onSend(attachments.map(({ id: _id, ...attachment }) => attachment), () => {
+      for (const attachment of attachments) removeAttachment(attachment.id);
+    });
   }, [
     attachments,
     attachmentsReading,
-    clearAttachments,
+    removeAttachment,
     draft,
     launchReady,
     onSend,

@@ -710,6 +710,37 @@ async function appendAudit(entry: Omit<PermissionAuditEntry, "id" | "at">): Prom
   }));
 }
 
+/**
+ * A direct grant change whose caller-supplied precondition no longer holds:
+ * someone changed the familiar's grant after the caller looked (#6445). The
+ * change is refused whole, so a stale Undo never overwrites a newer decision.
+ */
+export class StaleGrantError extends Error {
+  readonly current: ProjectAccessLevel | null;
+  constructor(current: ProjectAccessLevel | null) {
+    super("project access changed since this request was made");
+    this.name = "StaleGrantError";
+    this.current = current;
+  }
+}
+
+/** The familiar's current direct grant level on the project, or null for none. */
+function directAccessIn(file: ProjectPermissionsFile, familiarId: string, projectId: string): ProjectAccessLevel | null {
+  const grant = file.projectGrants.find(
+    (entry) => entry.familiarId === familiarId && entry.projectId === projectId,
+  );
+  return grant ? normalizeAccessLevel(grant.access) : null;
+}
+
+function assertExpectedAccess(
+  file: ProjectPermissionsFile,
+  input: { familiarId: string; projectId: string; expectedAccess?: ProjectAccessLevel | null },
+): void {
+  if (input.expectedAccess === undefined) return;
+  const current = directAccessIn(file, input.familiarId, input.projectId);
+  if (current !== input.expectedAccess) throw new StaleGrantError(current);
+}
+
 export async function grantProjectToFamiliar(input: {
   familiarId: string;
   projectId: string;
@@ -717,9 +748,15 @@ export async function grantProjectToFamiliar(input: {
   access?: ProjectAccessLevel;
   /** Who is making the change; defaults to the app itself. */
   actor?: GrantChangeActor;
+  /**
+   * The direct grant the caller saw (null = none). When given, a different
+   * current grant refuses the change with {@link StaleGrantError}.
+   */
+  expectedAccess?: ProjectAccessLevel | null;
 }): Promise<void> {
   await withProjectPermissionsStore(() => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked();
+    assertExpectedAccess(file, input);
     // Read the prior level first — ensureProjectGrant mutates in place, so
     // after it runs the "from" side of the change is gone.
     const before =
@@ -746,9 +783,12 @@ export async function revokeProjectFromFamiliar(input: {
   projectId: string;
   /** Who is making the change; defaults to the app itself. */
   actor?: GrantChangeActor;
+  /** As for {@link grantProjectToFamiliar}: the direct grant the caller expects to revoke. */
+  expectedAccess?: ProjectAccessLevel | null;
 }): Promise<boolean> {
   return withProjectPermissionsStore(() => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked();
+    assertExpectedAccess(file, input);
     const removed = file.projectGrants.find(
       (grant) => grant.familiarId === input.familiarId && grant.projectId === input.projectId,
     );

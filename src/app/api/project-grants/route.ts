@@ -16,6 +16,7 @@ import {
   inspectProjectPermissionIntegrity,
   repairOrphanProjectPermissions,
   revokeProjectFromFamiliar,
+  StaleGrantError,
 } from "@/lib/project-permissions";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +56,39 @@ function accessInput(payload: Record<string, unknown>): "read" | "write" | null 
   if (payload.access === undefined) return "write";
   if (payload.access === "read" || payload.access === "write") return payload.access;
   return null;
+}
+
+/**
+ * Optional compare-and-set precondition (#6445): the direct grant the caller
+ * saw, or null for none. Absent means no precondition (unchanged behavior);
+ * anything other than read, write or null is malformed.
+ */
+function expectedAccessInput(
+  payload: Record<string, unknown>,
+): { expectedAccess?: "read" | "write" | null } | null {
+  if (!Object.prototype.hasOwnProperty.call(payload, "expectedAccess")) return {};
+  const value = payload.expectedAccess;
+  if (value === null || value === "read" || value === "write") return { expectedAccess: value };
+  return null;
+}
+
+function invalidExpectedAccess(): Response {
+  return NextResponse.json(
+    { ok: false, error: "expectedAccess must be \"read\", \"write\" or null" },
+    { status: 400 },
+  );
+}
+
+function staleGrantResponse(error: StaleGrantError): Response {
+  return NextResponse.json(
+    {
+      ok: false,
+      code: "grant_changed",
+      error: "This familiar's access to the project changed after it was shown. Review it in Projects, then try again.",
+      current: error.current,
+    },
+    { status: 409 },
+  );
 }
 
 export async function GET() {
@@ -112,6 +146,8 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  const expected = expectedAccessInput(payload);
+  if (!expected) return invalidExpectedAccess();
   const target = await resolveProjectGrantTarget(input);
   if (!target.ok) {
     return NextResponse.json(
@@ -119,13 +155,19 @@ export async function POST(req: Request) {
       { status: target.status },
     );
   }
-  await grantProjectToFamiliar({
-    familiarId: target.familiarId,
-    projectId: target.projectId,
-    source: "human",
-    access,
-    actor: isVerifiedMobileRequest(req) ? "mobile" : "loopback",
-  });
+  try {
+    await grantProjectToFamiliar({
+      familiarId: target.familiarId,
+      projectId: target.projectId,
+      source: "human",
+      access,
+      actor: isVerifiedMobileRequest(req) ? "mobile" : "loopback",
+      ...expected,
+    });
+  } catch (error) {
+    if (error instanceof StaleGrantError) return staleGrantResponse(error);
+    throw error;
+  }
   return NextResponse.json({ ok: true });
 }
 
@@ -143,9 +185,18 @@ export async function DELETE(req: Request) {
       { status: 400 },
     );
   }
-  const revoked = await revokeProjectFromFamiliar({
-    ...input,
-    actor: isVerifiedMobileRequest(req) ? "mobile" : "loopback",
-  });
+  const expected = expectedAccessInput(payload);
+  if (!expected) return invalidExpectedAccess();
+  let revoked: boolean;
+  try {
+    revoked = await revokeProjectFromFamiliar({
+      ...input,
+      actor: isVerifiedMobileRequest(req) ? "mobile" : "loopback",
+      ...expected,
+    });
+  } catch (error) {
+    if (error instanceof StaleGrantError) return staleGrantResponse(error);
+    throw error;
+  }
   return NextResponse.json({ ok: true, revoked });
 }

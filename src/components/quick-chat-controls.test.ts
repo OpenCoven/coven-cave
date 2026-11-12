@@ -457,8 +457,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onSend\(attachments\.map\(\(\{ id: _id, \.\.\.attachment \}\) => attachment\)\);\s*\n\s*clearAttachments\(\)/,
-  "send strips the local chip id and clears staging (mirrors the chat composer)",
+  /onSend\(attachments\.map\(\(\{ id: _id, \.\.\.attachment \}\) => attachment\), \(\) => \{\s*for \(const attachment of attachments\) removeAttachment\(attachment\.id\)/,
+  "send strips local chip IDs and removes only accepted attachments after context validation",
 );
 assert.match(
   source,

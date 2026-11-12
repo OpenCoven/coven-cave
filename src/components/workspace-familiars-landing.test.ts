@@ -218,11 +218,7 @@ assert.match(
   /import \{[\s\S]*resolveLoadedActiveFamiliarId,[\s\S]*resolveWorkspaceActiveFamiliarId,[\s\S]*\} from "@\/lib\/active-familiar";[\s\S]*const loadedActiveId = resolveLoadedActiveFamiliarId\(requestedActiveId, visibleFamiliars\);[\s\S]*const activeId = resolveWorkspaceActiveFamiliarId\(\s*requestedActiveId,\s*visibleFamiliars,\s*familiarsLoaded,\s*familiarRosterLoadedSuccessfully,\s*\);/,
   "workspace keeps the requested familiar through roster hydration and clears it only after a successful roster proves it stale",
 );
-assert.match(
-  workspace,
-  /useEffect\(\(\) => \{\s*if \(\s*!activeFamiliarHydrated\s*\|\|\s*!familiarsLoaded\s*\|\|\s*!familiarRosterLoadedSuccessfully\s*\|\|\s*requestedActiveId === null\s*\|\|\s*requestedActiveId === loadedActiveId\s*\) return;\s*setScopeIds\(loadedActiveId \? new Set\(\[loadedActiveId\]\) : new Set\(\)\);\s*\}, \[activeFamiliarHydrated, familiarsLoaded, familiarRosterLoadedSuccessfully, requestedActiveId, loadedActiveId\]\);/,
-  "Workspace only clears and persists a stale single-familiar selection after the async roster has loaded successfully",
-);
+
 assert.match(
   workspace,
   /const active = visibleFamiliars\.find\(\(f\) => f\.id === activeId\) \?\? null;/,
@@ -235,7 +231,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const \{[\s\S]*open: firstProjectGateOpen,[\s\S]*familiarId: projectGateFamiliarId,[\s\S]*blockChatLaunch: chatProjectBlocked,[\s\S]*\} = resolveFirstProjectGatePolicy\(\{[\s\S]*visibleFamiliars,[\s\S]*familiarRosterLoadedSuccessfully,[\s\S]*\}\);/,
+  /const \{[\s\S]*open: legacyFirstProjectGateOpen,[\s\S]*familiarId: projectGateFamiliarId,[\s\S]*blockChatLaunch: chatProjectBlocked,[\s\S]*\} = resolveFirstProjectGatePolicy\(\{[\s\S]*visibleFamiliars,[\s\S]*familiarRosterLoadedSuccessfully,[\s\S]*\}\);/,
   "the first-project gate target, visibility, and chat-block state are derived together from the loaded non-archived roster through the shared policy helper",
 );
 assert.match(
@@ -303,11 +299,7 @@ assert.match(
   /useProjectFamiliars\(\{ projectId: selectedWorkspaceProject\?\.id \?\? null \}\)/,
   "workspace starts useProjectFamiliars from the verified project ID only — stale/unverified persisted IDs do not trigger a fetch",
 );
-assert.match(
-  workspace,
-  /reconcileCrewForProject\([\s\S]*scopeIds[\s\S]*projectCrewRecords\.map\(\(familiar\) => familiar\.id\)/,
-  "workspace removes ineligible selected familiars only after verified eligibility",
-);
+
 assert.match(
   workspace,
   /resolveActingFamiliar\(workspaceFamiliarScope, eligibleFamiliarIds\)/,
@@ -445,30 +437,7 @@ assert.match(
   /const eligibleFamiliarIds = eligibleWorkspaceFamiliars\.map\(\(familiar\) => familiar\.id\)/,
   "actor resolution and the chooser share one verified eligible list",
 );
-// ── stale project reset: restores All-projects crew before clearing ───────────
-// Without this, setScopeIds would remain at the stale project's crew and then
-// writeWorkspaceContext (which fires on scopeIds/selectedWorkspaceProjectId change)
-// would persist that crew under the null key, corrupting All-projects state.
-assert.match(
-  workspace,
-  /let crewReadFailed = storage === null;/,
-  "stale project reset treats a missing browser storage adapter as a read failure",
-);
-assert.match(
-  workspace,
-  /if \(storage === null\) \{[\s\S]*?setWorkspaceContextPersistenceBlocked\(true\)[\s\S]*?\} else \{[\s\S]*?readWorkspaceCrew\(storage, null\)/,
-  "stale project reset blocks versioned persistence and falls back to the aggregate crew when browser storage is missing",
-);
-assert.match(
-  workspace,
-  /announce\(crewReadFailed\s*\?[\s\S]*?Couldn't restore project context[\s\S]*?: "Selected project is no longer available\. Showing all projects\."\)/,
-  "stale project reset emits one combined message instead of a separate restore failure announcement",
-);
-assert.match(
-  workspace,
-  /setScopeIds\(new Set\(allProjectsCrew \?\? \[\]\)\)[\s\S]{0,100}setSelectedWorkspaceProjectId\(null\)/,
-  "stale project reset falls back to the aggregate crew and clears the project ID even when storage is missing",
-);
+// Missing project and revoked scope repair is covered by first-use behavior tests.
 // ── required props: both sidebar components prove full wiring via tsc ─────────
 // Both only mount inside Workspace, which provides every context value, so tsc
 // can verify complete wiring. asserting the absence of `?` in the prop block
@@ -645,27 +614,12 @@ assert.match(
   /if \(storage === null\) \{[\s\S]*?setWorkspaceContextPersistenceBlocked\(true\)[\s\S]*?\} else \{[\s\S]*?readWorkspaceCrew\(storage, projectId\)/,
   "selectWorkspaceProject blocks persistence and falls back to the aggregate crew when storage is missing",
 );
-// Stale reset readWorkspaceCrew failure treats null storage as a read failure.
-assert.match(
-  workspace,
-  /let crewReadFailed = storage === null;/,
-  "stale reset marks a missing adapter as a crew read failure",
-);
-assert.match(
-  workspace,
-  /if \(storage === null\) \{[\s\S]*?setWorkspaceContextPersistenceBlocked\(true\)[\s\S]*?\} else \{[\s\S]*?readWorkspaceCrew\(storage, null\)/,
-  "stale reset blocks persistence and falls back to the aggregate crew when storage is missing",
-);
 // No double-announce: both callbacks now emit one combined message after branching.
 assert.match(
   workspace,
   /announce\(crewReadFailed\s*\?[\s\S]*?Couldn't restore project context[\s\S]*?: changeMessage\)/,
   "selectWorkspaceProject emits a single combined project-context message",
 );
-assert.match(
-  workspace,
-  /announce\(crewReadFailed\s*\?[\s\S]*?Couldn't restore project context[\s\S]*?: "Selected project is no longer available\. Showing all projects\."\)/,
-  "stale reset emits a single combined project-context message",
-);
+
 
 console.log("workspace-familiars-landing: all assertions passed");

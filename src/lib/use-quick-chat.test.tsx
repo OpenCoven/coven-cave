@@ -2,6 +2,8 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { FirstUseProvider } from "@/components/first-use-provider";
+import { LiveRegionProvider } from "@/components/ui/live-region";
 import { resetProjectsCacheForTests } from "./use-projects.ts";
 import { useQuickChat, type UseQuickChat } from "./use-quick-chat.ts";
 
@@ -106,6 +108,10 @@ class QuickChatFetch {
         ? input.toString()
         : input.url;
 
+    if (url === "/api/onboarding/journey") {
+      const defaults = { projectId: PROJECT.id, familiarIds: [FAMILIAR.id], actingFamiliarId: FAMILIAR.id };
+      return Response.json({ ok: true, state: { version: 1, revision: 8, step: "complete", outcome: "plan", defaults, practice: { approvalHeld: true, stopped: true, retried: true, verified: true }, completedAt: "2026-11-11T00:00:00.000Z" }, resolution: { kind: "ready", context: defaults }, project: PROJECT, access: [] });
+    }
     if (url === "/api/familiars") {
       return Response.json({ familiars: [FAMILIAR] });
     }
@@ -156,9 +162,13 @@ class QuickChatFetch {
   };
 }
 
-function Probe({ onState }: { onState: (state: UseQuickChat) => void }) {
+function QuickChatProbe({ onState }: { onState: (state: UseQuickChat) => void }) {
   onState(useQuickChat());
   return null;
+}
+
+function Probe({ onState }: { onState: (state: UseQuickChat) => void }) {
+  return <LiveRegionProvider><FirstUseProvider><QuickChatProbe onState={onState} /></FirstUseProvider></LiveRegionProvider>;
 }
 
 async function waitFor(assertion: () => boolean): Promise<void> {
@@ -180,6 +190,7 @@ describe("useQuickChat send cancellation", () => {
   let renderer: ReactTestRenderer | null = null;
 
   beforeEach(() => {
+    vi.stubGlobal("window", new EventTarget());
     resetProjectsCacheForTests();
   });
 
@@ -192,6 +203,32 @@ describe("useQuickChat send cancellation", () => {
     resetProjectsCacheForTests();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  test("a pending default validation preserves newer draft text and only acknowledges the accepted brief", async () => {
+    const requests = new QuickChatFetch();
+    globalThis.fetch = requests.fetch as typeof fetch;
+    let state: UseQuickChat | null = null;
+    await act(async () => { renderer = create(<Probe onState={(next) => { state = next; }} />); });
+    await waitFor(() => state?.projectLaunchReady === true);
+    await act(async () => state!.setDraft("Original brief"));
+    let release!: () => void;
+    const heldRead = new Promise<void>((resolve) => { release = resolve; });
+    globalThis.fetch = async (input, init) => {
+      if (input === "/api/onboarding/journey") await heldRead;
+      return requests.fetch(input, init);
+    };
+    let accepted = 0;
+    let send!: Promise<void>;
+    await act(async () => { send = state!.send([], () => { accepted++; }); });
+    expect(requests.sends).toHaveLength(0);
+    await act(async () => state!.setDraft("Newer draft while checking"));
+    await act(async () => { release(); });
+    await waitFor(() => requests.sends.length === 1);
+    expect(accepted).toBe(1);
+    expect(requests.sends[0].body.prompt).toBe("Original brief");
+    expect(state!.draft).toBe("Newer draft while checking");
+    await act(async () => { requests.sends[0].complete("Done"); await send; });
   });
 
   test("accepted Stop waits for server acknowledgement before aborting and cancelling", async () => {

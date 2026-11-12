@@ -1,6 +1,7 @@
 "use client";
 
 import { runAutoReflectionIfMissing } from "@/lib/auto-thread-reflection";
+import { useFirstUse } from "@/components/first-use-provider";
 
 import { mergeReasoningBlock, normalizeReasoningBlock, normalizeReasoningBlocks } from "@/lib/chat-reasoning-blocks";
 import { ResponseRunDetails } from "@/components/response-run-details";
@@ -123,7 +124,7 @@ import {
   chatFoldLabel,
   chatTranscriptFold,
 } from "@/lib/chat-transcript-fold";
-import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
+import { CHAT_COMPOSER_PREFS_CHANGED_EVENT, readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import { shouldShowDockedComposer } from "@/lib/chat-composer-visibility";
 import { isFlowSession, useFlowDiscussion } from "@/lib/flow-discussion";
 import {
@@ -2131,6 +2132,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
 ) {
+  const firstUse = useFirstUse();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [streamHealth, dispatchStreamHealth] = useReducer(
     chatStreamHealthReducer,
@@ -2469,6 +2471,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
   const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode);
+  useEffect(() => {
+    if (sessionId) return;
+    const updateUnsentChoice = () => setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode);
+    window.addEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
+    return () => window.removeEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
+  }, [sessionId]);
   // Composer Host chip: null = auto — the conversation's recorded host, else
   // the familiar's own runtime binding. Only an explicit pick rides the send
   // body (deliberately per-session, not a sticky global pref: a forgotten
@@ -2638,6 +2646,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // pre-session (voice new-chat) creates the conversation first, then the
   // router promotes it and re-enters through the openVoiceNonce effect.
   const openVoiceCall = useCallback(async () => {
+    if (!firstUse.ensureIntroduction()) return;
     const launch = projectLaunchRef.current;
     if (!launch.ready) {
       setError(launch.message);
@@ -2679,7 +2688,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setVoiceCallPending(false);
     }
-  }, [sessionId, busy, voiceCallPending, familiar.id, scopedDraftKey, announce, freezeComposeContext, onVoiceSessionCreated, promoteDraft, raiseDebugError]);
+  }, [firstUse, sessionId, busy, voiceCallPending, familiar.id, scopedDraftKey, announce, freezeComposeContext, onVoiceSessionCreated, promoteDraft, raiseDebugError]);
   // Composer dictation (voice new-chat): finals append to the draft for
   // review — never auto-sent. The mic hides when no ears engine exists.
   const dictation = useDictation(
@@ -3880,10 +3889,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     if (!openVoiceNonce || openVoiceNonce === openVoiceNonceRef.current) return;
     if (!sessionId || sessionId !== openVoiceSessionId) return;
+    if (!firstUse.ensureIntroduction()) return;
     openVoiceNonceRef.current = openVoiceNonce;
     voiceAutoCreatedRef.current = sessionId;
-    setVoiceCallOpen(true);
-  }, [openVoiceNonce, sessionId, openVoiceSessionId]);
+    void openVoiceCall();
+  }, [firstUse, openVoiceCall, openVoiceNonce, sessionId, openVoiceSessionId]);
 
   // ⌘F/Ctrl+F is scoped to the chat section via this React keydown handler
   // on the section root — NOT a window-level listener — so ChatList's ⌘F
@@ -5351,6 +5361,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     allowBusy = false,
     submission?: { canSend: () => boolean; onPersisted: () => void },
   ) => {
+    if (!firstUse.ensureIntroduction()) return;
     // A runtime picker writes the familiar binding through /api/config. Wait
     // for that read-modify-write before resolving the send body; otherwise an
     // immediate send can launch the old harness even though the chip already
@@ -6485,7 +6496,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     const text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
-    if (attachments.length === 0 && intentFromSlash(text)) return;
     // Global stop phrases (cave-uf2x): while a task is running, typing any
     // configured phrase is a command — halt the turn (same path as the Stop
     // button) instead of leaving the draft stranded behind the busy bail.
@@ -6495,6 +6505,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearDraft();
       return;
     }
+    if (!firstUse.ensureIntroduction()) return;
+    if (attachments.length === 0 && intentFromSlash(text)) return;
     if (attachmentsReading) return;
     if (!projectLaunchReady) {
       setError(projectLaunchMessage);
@@ -6677,6 +6689,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       return;
     }
     if (!projectLaunchReady) return;
+    if (!firstUse.ensureIntroduction()) return;
     if (initialPromptSentRef.current || (sessionId && !autoSendInitialPrompt)) return;
     // A caller that can remount this view under a live handoff (the Task Work
     // cockpit, whose Group is keyed by the visible pane set) supplies a stable
@@ -6749,7 +6762,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSendInitialPrompt, initialPrompt, initialPromptHandoffId, projectLaunchReady, sessionId]);
+  }, [autoSendInitialPrompt, initialPrompt, initialPromptHandoffId, projectLaunchReady, sessionId, firstUse.payload?.state.step]);
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -7775,7 +7788,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         },
         retry: { disabled: !lastFailedSend || busy, onSelect: retryLastSend },
         summarize: { disabled: busy, onSelect: summarizeSession },
-        call: { disabled: !sessionId, onSelect: () => setVoiceCallOpen(true) },
+        call: { disabled: !sessionId, onSelect: () => void openVoiceCall() },
       } : undefined}
     />
   );
@@ -8070,7 +8083,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onStop={cancelSend}
               onSummarize={summarizeSession}
               onAttach={() => fileInputRef.current?.click()}
-              onVoice={() => setVoiceCallOpen(true)}
+              onVoice={() => void openVoiceCall()}
             />
 
             <div
@@ -8520,7 +8533,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <VoiceCallButton
                 familiar={familiar}
                 voiceActive={voiceCallOpen}
-                onOpenVoice={() => setVoiceCallOpen(true)}
+                onOpenVoice={() => void openVoiceCall()}
               />
             ) : null}
             {sessionId && session && !offlineReadOnly ? (

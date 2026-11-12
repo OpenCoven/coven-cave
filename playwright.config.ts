@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { resolvePort } from "./scripts/ports.mjs";
@@ -79,7 +79,7 @@ const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 // history-state-restore joins too (#6442): browser Back must restore the page
 // on phones as well as desktop.
 const MOBILE_SURFACE_SPECS =
-  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore)\.spec\.ts/;
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore|first-use-journey)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 
@@ -120,6 +120,16 @@ writeFileSync(
 // configured baseline; dedicated onboarding tests still mock no/stale-project
 // responses explicitly.
 writeFileSync(E2E_QUEUE_PROJECT_PATH, JSON.stringify({ version: 1, projectId: "e2e-project" }));
+// Ordinary browser specs exercise an already-introduced installation. The
+// dedicated journey spec overrides this API with fresh/interrupted state.
+// Seed real durable progress rather than adding a production test bypass.
+mkdirSync(E2E_CAVE_HOME, { recursive: true });
+writeFileSync(join(E2E_CAVE_HOME, "first-use.json"), JSON.stringify({
+  version: 1, revision: 8, step: "complete", outcome: "plan",
+  defaults: { projectId: "e2e-project", familiarIds: ["nova"], actingFamiliarId: "nova" },
+  practice: { approvalHeld: true, stopped: true, retried: true, verified: true },
+  completedAt: "2026-01-01T00:00:00.000Z",
+}));
 
 export default defineConfig({
   testDir: "./tests",

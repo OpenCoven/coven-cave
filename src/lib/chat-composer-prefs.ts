@@ -10,6 +10,8 @@ import {
 } from "./command-controls.ts";
 
 const CHAT_COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
+/** Explicit user changes in the guide can update an unsent draft's controls. */
+export const CHAT_COMPOSER_PREFS_CHANGED_EVENT = "cave:chat-composer-prefs-changed";
 
 export type ChatComposerPrefs = {
   thinkingEffort: CommandThinkingEffort;
@@ -47,4 +49,17 @@ export function writeChatComposerPrefs(storage: Pick<Storage, "setItem"> | null,
   } catch {
     /* best effort */
   }
+}
+
+/** Restore the reviewed host default only when this origin has no saved mode. */
+export function restoreReviewedPermissionMode(storage: Pick<Storage, "getItem" | "setItem"> | null, permissionMode: CommandPermissionMode): boolean {
+  if (!storage) return false;
+  try {
+    const raw = storage.getItem(CHAT_COMPOSER_PREFS_KEY);
+    let saved: Partial<ChatComposerPrefs> | null = null;
+    try { saved = raw ? JSON.parse(raw) as Partial<ChatComposerPrefs> : null; } catch { /* A malformed local preference cannot override the reviewed host mode. */ }
+    if (saved?.permissionMode === "read" || saved?.permissionMode === "full") return false;
+    writeChatComposerPrefs(storage, { ...readChatComposerPrefs(storage), permissionMode });
+    return true;
+  } catch { return false; }
 }

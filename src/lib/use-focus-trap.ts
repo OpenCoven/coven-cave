@@ -25,6 +25,10 @@ type Options = {
   /** Recapture native Tab focus escapes. Callers with portaled
    *  controls must register them through portalLayers. Defaults to false. */
   containTabFocus?: boolean;
+  /** Cycle known controls directly in dialogs without native media controls.
+   * WebKit can otherwise send Tab from an interior button to browser chrome
+   * without firing focusin, leaving no native focus transition to recapture. */
+  cycleTabFocus?: boolean;
   /** Late-bound restoration gate for transitions directly into another layer. */
   restoreFocus?: () => boolean;
   /** Body-portaled descendants that remain part of this trap's focus boundary. */
@@ -285,6 +289,7 @@ export function useFocusTrap(
     onEscape,
     focusFirst = true,
     containTabFocus = false,
+    cycleTabFocus = false,
     restoreFocus = () => true,
     portalLayers,
     portalRootId,
@@ -404,6 +409,15 @@ export function useFocusTrap(
         const first = focusables[0];
         const last = focusables[focusables.length - 1];
         const activeEl = document.activeElement as HTMLElement | null;
+        if (cycleTabFocus) {
+          e.preventDefault();
+          const index = activeEl ? focusables.indexOf(activeEl) : -1;
+          const nextIndex = index < 0
+            ? e.shiftKey ? focusables.length - 1 : 0
+            : (index + (e.shiftKey ? -1 : 1) + focusables.length) % focusables.length;
+          focusables[nextIndex].focus();
+          return;
+        }
         // Recapture: if focus escaped the container (a late autofocus
         // elsewhere, a click on the backdrop, a removed element), Tab must
         // pull it back in — otherwise every subsequent Tab silently walks
@@ -475,6 +489,7 @@ export function useFocusTrap(
     containerRef,
     focusFirst,
     containTabFocus,
+    cycleTabFocus,
     portalLayers,
     ownerLayerDepth,
     trapRootId,
