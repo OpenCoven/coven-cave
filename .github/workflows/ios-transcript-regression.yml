@@ -72,11 +72,11 @@ jobs:
       # full on the retry, so a consistent regression still fails the job.
       - name: Debug scroll state and existing long-chat UI regressions
         if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
-        timeout-minutes: 13
+        timeout-minutes: 16
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ios-native-command.py run --timeout-seconds 720 \
+          python3 scripts/ios-native-command.py run --timeout-seconds 900 \
             --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-debug.receipt.json" -- \
             xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \

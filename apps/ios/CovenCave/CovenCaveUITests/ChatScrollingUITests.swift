@@ -4,6 +4,7 @@ final class ChatScrollingUITests: XCTestCase {
     private let latestRichReply = "Latest rich reply bottom marker p7h8u"
     private let topMarker = "Top scroll marker p7h8u"
     private let latestBubble = "Message bubble scroll-latest-rich"
+    private var tracePath = ""
 
     override func setUp() {
         super.setUp()
@@ -14,6 +15,7 @@ final class ChatScrollingUITests: XCTestCase {
         let app = XCUIApplication()
         app.terminate()
         _ = app.wait(for: .notRunning, timeout: 5)
+        if let trace = try? String(contentsOfFile: tracePath, encoding: .utf8) { print("INITIAL SCROLL TRACE\n\(trace)\nEND INITIAL TRACE") }
         super.tearDown()
     }
 
@@ -23,6 +25,8 @@ final class ChatScrollingUITests: XCTestCase {
         _ = app.wait(for: .notRunning, timeout: 5)
         app.launchArguments = arguments
         app.launchEnvironment["CAVE_OPEN_THREAD"] = openThread
+        tracePath = NSTemporaryDirectory() + "cave-initial-trace-\(UUID().uuidString).log"
+        app.launchEnvironment["CAVE_SCROLL_TRACE_PATH"] = tracePath
         app.launch()
         return app
     }
@@ -30,7 +34,13 @@ final class ChatScrollingUITests: XCTestCase {
     private func waitForLatest(_ app: XCUIApplication, timeout: TimeInterval = 15) -> XCUIElement {
         let bubble = app.descendants(matching: .any)[latestBubble].firstMatch
         XCTAssertTrue(bubble.waitForExistence(timeout: timeout), "latest rich reply bubble exists")
-        XCTAssertTrue(bubble.isHittable, "latest rich reply bubble is on screen")
+        let initiallyHittable = bubble.isHittable
+        if !initiallyHittable {
+            print("INITIAL BUBBLE FALSE frame=\(bubble.frame) all=\(app.descendants(matching: .any)[latestBubble].debugDescription)")
+            print("INITIAL FULL HIERARCHY\n\(app.debugDescription)")
+            let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "Initial bubble failed hittability"; capture.lifetime = .keepAlways; add(capture)
+        }
+        XCTAssertTrue(initiallyHittable, "latest rich reply bubble is on screen")
         let link = app.links["Scroll fixture link"].firstMatch
         XCTAssertTrue(link.waitForExistence(timeout: timeout), "the real WebView exposes its rendered link")
         let visible = XCTNSPredicateExpectation(

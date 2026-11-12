@@ -390,6 +390,9 @@ struct MessageBubble: View {
 
             if !isUser { Spacer(minLength: 48) }
         }
+        // Keep the message identity on this visible native container rather
+        // than inheriting it onto a preloading one-point WebView.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("Message bubble \(message.id)")
     }
 
