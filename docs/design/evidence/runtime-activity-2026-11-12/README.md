@@ -1,4 +1,4 @@
-# Goldens 13 and 15: browser, packaged-sidecar and real-route rows (2026-11-12)
+# Goldens 13 and 15: browser, packaged-sidecar, real-route and native rows (2026-11-12)
 
 Supports [#6066](https://github.com/OpenCoven/coven-cave/issues/6066) (golden-15,
 preference and legacy transcript hydration) and
@@ -63,8 +63,13 @@ the URL-token handoff are not exercised, and the harness presents the sidecar
 token as a request header.
 
 Every run, with its command, identities, per-test outcome and the SHA-256 of
-its raw log and report, is in [browser-receipts.json](browser-receipts.json).
-The raw files stay outside the repository.
+its raw log and report, is in [receipts.json](receipts.json). The raw files
+stay outside the repository.
+
+Native rows ran `CovenCaveTests` classes with `xcodebuild build-for-testing`
+and `test-without-building` (ad-hoc signing, as CI does) on an iPhone 17
+simulator, iOS 27.2, created for each run and deleted afterwards. Xcode 27.2
+(27B52).
 
 ## Golden-15 rows
 
@@ -110,6 +115,39 @@ failed at the API assertion, and a page-only copy with the API assertions
 removed failed 8 of 8 at the per-frame sampler
 (`head-legacy-route-probe-mutated-r2`). The mutation was reverted.
 
+## Golden-13 rows
+
+The shared sentinels are a tool argument, a tool result and an opaque payload
+signature (`reasoningPrivacySentinels.tool` in the cross-language corpus). The
+argument and result may appear inside an authorized tool card only; the
+signature never.
+
+| # | Row | Candidate `58f015cd9` | Branch | Result |
+| --- | --- | --- | --- | --- |
+| 1 | Tool card, production build, both engines, route fixtures: argument and lazy result stay in the card; the copied answer, the reader's Markdown export and web storage hold none; the signature is never in the page; revocation removes both at request time | 2 of 2, first attempt (`cand-58f015cd9-r1`) | 2 of 2 (`head-db435727c-r1`, `head-golden13-fixes-r1`) | **passed** |
+| 2 | The same against the packaged sidecar | Chromium 1 of 1 on both runs; WebKit failed on `cand-sidecar-r1` and passed on `-r2` | not run | **passed** after the harness correction above |
+| 3 | Server side: display projections, stored-tool projection, lazy tool-output route, send-route disclosure and log fingerprint. 48 test files chosen by reference to the sentinel corpus or those functions, one process per file | 48 of 48 (`cand-disclosure-units`) | `pnpm test:api`, 616 files (`unit2`) | **passed** |
+| 4 | History mapping keeps only the tool display fields, so Debug "Copy turn", "Copy all" and the debug download cannot carry a signature or encrypted content from a payload that has them | **failed**: the mapping spreads every tool field at the candidate (`src/lib/chat-turn-state.ts:147`) | red, then green, in `src/lib/cave-conversations.test.ts` | **failed on the candidate**; fixed on the branch (finding 4) |
+| 5 | The desktop offline cache drops opaque provider state | **failed**: the candidate's key list drops `signature` and keeps `encrypted_content` and provider metadata | red, then green, in `src/lib/offline-cache.test.ts` | **failed on the candidate**; fixed on the branch (finding 4) |
+| 6 | Chat search over stored turns | golden-15 row 7 | golden-15 row 7 | **failed on the candidate**; fixed on the branch |
+| 7 | Native final-reply banner and Live Activity state hold no tool sentinel | `ChatNotificationsTests` 19 of 19 and `ActivityCorpusTests` 5 of 5 (`cand-native-notifications-r1`) | 19 of 19 and 5 of 5 (`head-native-golden13-r1`) | **passed** on a simulator, at unit level |
+| 8 | Native thread cache (`cave-threads.json`): a successful tool's result and a payload signature are not written | passed, with the test appended to the candidate's test file for the run (`cand-native-thread-cache-probe-r1`) | `ThreadSnapshotStoreTests` 9 of 9 with the new test (`head-native-golden13-r1`) | **passed**; see finding 5 for what the cache does keep |
+| 9 | Analytics | not run | not run | **omitted**: nothing to exercise. A source scan found no analytics or telemetry sender in the web client, server or iOS app; `src/lib/coven-analytics.ts` aggregates local rows and does no I/O. Inspection only |
+| 10 | Prompt Enhance, tool-card Copy, Debug copy of tool arguments and results | not run | not run | **omitted**: each is a policy question for Val (findings 6 to 8) |
+| 11 | Lock-screen banner and Live Activity on a physical phone; VoiceOver | not run | not run | **omitted**: needs a device and a person |
+| 12 | Split secret through a real provider turn | not run | not run | **omitted**: needs provider authorization |
+| 13 | Packaged Tauri window | not run | not run | **omitted**: as golden-15 row 10 |
+
+### First failure, kept as it happened
+
+- **`cand-unit`: `pnpm test:api` on the candidate stopped at its 125th file.**
+  The lane fails fast. `src/lib/server/client-v1/discovery.test.ts` asserts that
+  an error stack does not contain the word "private", and the candidate clone
+  sat under `/private/tmp`, so the test file's own path matched. That is the
+  clone's location, not candidate behaviour, and the suite was not rerun from
+  another path. Row 3 uses the 48 selected files instead, run one process per
+  file so a single failure could not hide the rest.
+
 ## Findings
 
 1. **On the production path, legacy reasoning is withheld, not hidden behind
@@ -133,14 +171,60 @@ removed failed 8 of 8 at the per-frame sampler
    the service worker install.** The CI production server is not affected in
    the runs above. Specs that must run that way should block service workers,
    as several already do.
+4. **Two client paths kept opaque tool state that the server withholds.** The
+   server's stored-tool projection selects its fields, so no released server
+   sends a signature or encrypted content with a tool (row 3). The client did
+   not repeat that: history mapping spread every field into the turn that the
+   Debug pane copies, and the offline cache dropped `signature` only. Both now
+   select or drop the same fields as the server. This is a second line of
+   defence; no leak from a real server was observed.
+5. **The iPhone thread cache keeps a bounded tool argument summary.** Each
+   activity step is saved with its `detail` (up to 140 characters of the tool
+   argument) and, for a failed tool, an output tail (up to 300 characters, by
+   source reading; not exercised). The file is in the app's own container.
+   Nothing found in the source removes it when access to a conversation is
+   revoked. Whether that is an unauthorized cache under golden-13 is for Val.
+6. **Prompt Enhance sends recent tool results.** The composer's Enhance request
+   includes the last three settled tool results that the page holds, up to 320
+   characters each, and the last four messages
+   (`src/components/chat-view.tsx`, `src/lib/prompt-enhancer.ts`). A lazily
+   loaded private result can therefore leave the tool card. Not exercised.
+7. **A tool card's code blocks have a Copy button.** It copies the argument or
+   result the authorized card is showing. Not exercised.
+8. **The Debug pane copies and downloads tool arguments and loaded results by
+   design.** With finding 4 fixed it no longer carries opaque fields.
 
-## Checks on the branch with the search fix
+## Checks on the branch
 
 `pnpm test:api` (616 files) and `pnpm test:app` (1,509 files) passed under an
-isolated `HOME`, as did `pnpm typecheck`, `pnpm lint` and
-`pnpm check:tests-wired`. The new spec also passed under the repository's own
+isolated `HOME`, once on the search fix (`unit`) and again on the golden-13
+fixes (`unit2`), as did `pnpm test:mobile` (106 files), `pnpm typecheck`,
+`pnpm lint` and `pnpm check:tests-wired`. The new spec also passed under the repository's own
 `playwright.config.ts` with `CI=true` and the `desktop` project, which is how
 hosted CI runs it.
+
+## Decisions waiting for Val
+
+1. **Legacy reasoning (finding 1).** Accept "the answer is preserved and legacy
+   reasoning is withheld" as meeting golden-15, or require legacy reasoning to
+   be shown under the preference. Recommended: accept; the server projection
+   is deliberate and tested.
+2. **Candidate.** `58f015cd9` fails golden-15 row 7 and golden-13 rows 4 and 5.
+   Nominate a newer commit that contains these fixes once this branch merges,
+   or record the three as known gaps on `58f015cd9`. Recommended: nominate a
+   newer commit and rerun both matrices on it.
+3. **Thread cache (finding 5).** Accept the bounded argument summary on the
+   phone, or drop it from the saved snapshot and purge on revocation.
+   Recommended: keep the summary, add a purge when a conversation's access is
+   revoked, as a separate change.
+4. **Prompt Enhance (finding 6).** Keep tool results in the Enhance context,
+   or send tool names and outcomes only. Recommended: names and outcomes only.
+5. **Copy from a tool card and from Debug (findings 7 and 8).** Accept as a
+   deliberate copy of content the person is authorized to see. Recommended:
+   accept, and say so in the golden.
+6. **Packaged Tauri window.** Accept the packaged sidecar in a browser engine
+   as its stand-in, or require a human pass. Recommended: a human pass on one
+   release build.
 
 ## Not covered
 
