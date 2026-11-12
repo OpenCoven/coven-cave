@@ -68,6 +68,7 @@ jobs:
             -only-testing:CovenCaveTests/ChatScrollStateTests \
             -only-testing:CovenCaveTests/ChatViewportRecoveryTests \
             -only-testing:CovenCaveTests/MarkdownReflowTests \
+            -only-testing:CovenCaveTests/MarkdownPaintedReflowTests \
             -only-testing:CovenCaveTests/MessageBubbleAppearanceTests \
             -only-testing:CovenCaveUITests/ChatScrollingUITests \
             | tee "$RUNNER_TEMP/scroll-debug.log"
