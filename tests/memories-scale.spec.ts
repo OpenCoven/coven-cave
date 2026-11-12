@@ -40,7 +40,12 @@ test("large Memories corpus remains searchable and traversable without query res
     observations.push({ operation, elapsedMs: Math.round((performance.now() - start) * 100) / 100, requests: { ...requests } });
   };
 
-  await page.addInitScript(() => localStorage.setItem("cave:onboarding:dismissed", "1"));
+  await page.addInitScript(() => {
+    localStorage.setItem("cave:onboarding:dismissed", "1");
+    // Start with the full corpus before narrowing to each familiar below.
+    localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [] }));
+  });
   // Milestone notifications are unrelated to corpus rendering. Their toast
   // can cover the graph toolbar and add its dismissal timeout to click timing.
   await page.route("**/api/milestones**", (route) => route.fulfill({ json: { ok: true, awarded: [], keys: [] } }));

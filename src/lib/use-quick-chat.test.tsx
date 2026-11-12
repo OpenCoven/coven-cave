@@ -32,7 +32,7 @@ type ControlledSend = {
   truncate: (text: string) => void;
 };
 
-function controlledSse(sessionId: string): {
+function controlledSse(sessionId: string, emitInitialSession = true): {
   response: Response;
   close: () => void;
   complete: (text: string) => void;
@@ -55,7 +55,7 @@ function controlledSse(sessionId: string): {
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       streamController = controller;
-      enqueue({ kind: "session", sessionId });
+      if (emitInitialSession) enqueue({ kind: "session", sessionId });
     },
   });
   return {
@@ -84,6 +84,7 @@ class QuickChatFetch {
   failStop = false;
   stopFailureError = "stop registry unavailable";
   delayStops = false;
+  emitInitialSession = true;
   stopOutcome = { stopped: true, queued: false };
   private readonly stopReleases: Array<(() => void) | undefined> = [];
 
@@ -125,6 +126,7 @@ class QuickChatFetch {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       const stream = controlledSse(
         typeof body.sessionId === "string" ? body.sessionId : "session-1",
+        this.emitInitialSession,
       );
       this.sends.push({
         body,
@@ -229,6 +231,144 @@ describe("useQuickChat send cancellation", () => {
     expect(requests.sends[0].body.prompt).toBe("Original brief");
     expect(state!.draft).toBe("Newer draft while checking");
     await act(async () => { requests.sends[0].complete("Done"); await send; });
+  });
+
+  test.each([
+    { name: "normal Stop", cleanup: false, outcome: { stopped: true, queued: false } },
+    { name: "early queued Stop", cleanup: false, outcome: { stopped: false, queued: true } },
+    { name: "BFCache Stop", cleanup: true, outcome: { stopped: true, queued: false } },
+  ])("an accepted $name refuses a follow-up still validating defaults before the first session", async ({ cleanup, outcome }) => {
+    const requests = new QuickChatFetch();
+    requests.emitInitialSession = false;
+    requests.delayStops = true;
+    requests.stopOutcome = outcome;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    let state: UseQuickChat | null = null;
+    await act(async () => { renderer = create(<Probe onState={(next) => { state = next; }} />); });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let firstSend!: Promise<void>;
+    await act(async () => { firstSend = state!.sendText("First question"); });
+    await waitFor(() => requests.sends.length === 1);
+    expect(state!.sessionId).toBeNull();
+    await act(async () => { await state!.sendText("Already queued"); });
+    expect(state!.queued.map((item) => item.text)).toEqual(["Already queued"]);
+
+    const files = [{ name: "brief.txt", type: "text/plain", text: "Preserved brief" }];
+    let stagedFiles = files;
+    let accepted = 0;
+    let validationStarted = false;
+    let releaseValidation!: () => void;
+    const heldValidation = new Promise<void>((resolve) => { releaseValidation = resolve; });
+    globalThis.fetch = async (input, init) => {
+      if (input === "/api/onboarding/journey") {
+        validationStarted = true;
+        await heldValidation;
+      }
+      return requests.fetch(input, init);
+    };
+    await act(async () => { state!.setDraft("Follow-up with files"); });
+    let followUpSettled = false;
+    let followUp!: Promise<void>;
+    const onAccepted = () => { accepted++; stagedFiles = []; };
+    await act(async () => {
+      followUp = state!.send(stagedFiles, onAccepted);
+      void followUp.then(() => { followUpSettled = true; });
+    });
+    expect(validationStarted).toBe(true);
+    expect(followUpSettled).toBe(false);
+    await act(async () => {
+      if (cleanup) window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      else state!.cancel();
+    });
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    expect(accepted).toBe(0);
+    await act(async () => { requests.releaseNextStop(); });
+    await waitFor(() => requests.sends[0]!.signal?.aborted === true);
+    await act(async () => { requests.sends[0]!.close(); await firstSend; });
+    await act(async () => { releaseValidation(); });
+    await waitFor(() => followUpSettled || requests.sends.length > 1);
+
+    expect(requests.sends).toHaveLength(1);
+    await followUp;
+    expect(state!.draft).toBe("Follow-up with files");
+    expect(stagedFiles).toEqual([{ name: "brief.txt", type: "text/plain", text: "Preserved brief" }]);
+    expect(accepted).toBe(0);
+    expect(state!.queued.map((item) => item.text)).toEqual(["Already queued"]);
+    expect(state!.messages).toHaveLength(2);
+    expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
+    expect(state!.sendState).toBe("idle");
+
+    let retry!: Promise<void>;
+    await act(async () => { retry = state!.send(stagedFiles, onAccepted); });
+    await waitFor(() => requests.sends.length === 2);
+    expect(requests.sends[1]!.body).toMatchObject({ prompt: "Follow-up with files", attachments: files });
+    expect(accepted).toBe(1);
+    expect(stagedFiles).toEqual([]);
+    await act(async () => { requests.sends[1]!.complete("Follow-up answer"); });
+    await waitFor(() => requests.sends.length === 3);
+    expect(requests.sends[2]!.body.prompt).toBe("Already queued");
+    await act(async () => { requests.sends[2]!.complete("Queued answer"); await retry; });
+  });
+
+  test.each([
+    { name: "failed Stop", failStop: true, finishBeforeValidation: false },
+    { name: "settled Stop", failStop: false, finishBeforeValidation: false },
+    { name: "natural completion", failStop: false, finishBeforeValidation: true },
+  ])("$name preserves a follow-up still validating defaults before the first session", async ({ failStop, finishBeforeValidation }) => {
+    const requests = new QuickChatFetch();
+    requests.emitInitialSession = false;
+    requests.failStop = failStop;
+    requests.stopOutcome = { stopped: false, queued: false };
+    globalThis.fetch = requests.fetch as typeof fetch;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let state: UseQuickChat | null = null;
+    await act(async () => { renderer = create(<Probe onState={(next) => { state = next; }} />); });
+    await waitFor(() => state?.projectLaunchReady === true);
+    let firstSend!: Promise<void>;
+    await act(async () => { firstSend = state!.sendText("First question"); });
+    await waitFor(() => requests.sends.length === 1);
+    expect(state!.sessionId).toBeNull();
+
+    let validationStarted = false;
+    let releaseValidation!: () => void;
+    const heldValidation = new Promise<void>((resolve) => { releaseValidation = resolve; });
+    globalThis.fetch = async (input, init) => {
+      if (input === "/api/onboarding/journey") {
+        validationStarted = true;
+        await heldValidation;
+      }
+      return requests.fetch(input, init);
+    };
+    await act(async () => { state!.setDraft("Follow-up"); });
+    let accepted = 0;
+    let followUp!: Promise<void>;
+    await act(async () => { followUp = state!.send([], () => { accepted++; }); });
+    expect(validationStarted).toBe(true);
+
+    if (finishBeforeValidation) {
+      await act(async () => { requests.sends[0]!.complete("First answer"); await firstSend; });
+    } else {
+      await act(async () => { state!.cancel(); });
+      if (failStop) await waitFor(() => state?.error?.includes("stop registry unavailable") === true);
+    }
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    await act(async () => { releaseValidation(); });
+    await waitFor(() => accepted === 1);
+    expect(state!.draft).toBe("");
+    if (!finishBeforeValidation) {
+      await followUp;
+      expect(requests.sends).toHaveLength(1);
+      expect(state!.queued.map((item) => item.text)).toEqual(["Follow-up"]);
+      await act(async () => { requests.sends[0]!.complete("First answer"); });
+    }
+    await waitFor(() => requests.sends.length === 2);
+    expect(requests.sends[1]!.body).toMatchObject({ prompt: "Follow-up", sessionId: "session-1" });
+    await act(async () => {
+      requests.sends[1]!.complete("Follow-up answer");
+      await Promise.all([firstSend, followUp]);
+    });
+    expect(state!.sendState).toBe("done");
   });
 
   test("accepted Stop waits for server acknowledgement before aborting and cancelling", async () => {

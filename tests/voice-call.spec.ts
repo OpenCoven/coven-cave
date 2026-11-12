@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 // Production service workers otherwise forward mocked POSTs to the real server.
 test.use({ serviceWorkers: "block" });
@@ -63,6 +64,7 @@ async function openVoiceCall(page: Page, failFirst = false) {
     expect(route.request().postDataJSON().format).toBe("pcm");
     return route.fulfill({ contentType: "audio/pcm", body: Buffer.alloc(24_000 * 2 * 8) });
   });
+  await installCompletedFirstUse(page, { project: { id: "p1", name: "Queue", root: "/repo/queue" }, familiarIds: ["voice-acceptance"], actingFamiliarId: "voice-acceptance", permissionMode: "full", seedWorkspaceScope: true });
   await page.goto("/?mode=chat");
   const call = page.getByTestId("chat-main").getByRole("button", { name: "Voice call", exact: true });
   await expect(call).toBeVisible({ timeout: 45_000 });

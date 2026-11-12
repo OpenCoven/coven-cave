@@ -1656,7 +1656,7 @@ export function Workspace() {
       blockWorkspaceContextPersistence("Couldn't restore saved workspace context. Using your familiar scope.");
     } else {
       try {
-        restored = readWorkspaceContext(storage, getFamiliarScope());
+        restored = readWorkspaceContext(storage, getFamiliarScope(), firstUse.payload?.state.defaults);
       } catch (err) {
         blockWorkspaceContextPersistence(
           "Couldn't restore saved workspace context. Using your familiar scope.",
@@ -1665,21 +1665,11 @@ export function Workspace() {
         );
       }
     }
-    if (restored.projectId === null && firstUse.payload?.state.defaults) {
-      restored = { projectId: firstUse.payload.state.defaults.projectId, familiarIds: [...firstUse.payload.state.defaults.familiarIds] };
-    }
     setSelectedWorkspaceProjectId(restored.projectId);
     setScopeIds(new Set(restored.familiarIds));
     setActiveFamiliarHydrated(true);
     setWorkspaceContextHydrated(true);
   }, [blockWorkspaceContextPersistence, firstUse.loaded, firstUse.payload, workspaceContextHydrated]);
-
-  useEffect(() => {
-    const defaults = firstUse.payload?.state.defaults;
-    if (!workspaceContextHydrated || selectedWorkspaceProjectId !== null || activeChatSessionId || !defaults) return;
-    setSelectedWorkspaceProjectId(defaults.projectId);
-    setScopeIds(new Set(defaults.familiarIds));
-  }, [firstUse.payload, workspaceContextHydrated, selectedWorkspaceProjectId, activeChatSessionId]);
 
   useEffect(() => {
     if (!workspaceContextHydrated) return;
@@ -3276,9 +3266,28 @@ export function Workspace() {
     const currentAccessGeneration = current.selectedWorkspaceProjectId === null
       ? projectAccessGenerationRef.current.all
       : projectAccessGenerationRef.current.byProject.get(current.selectedWorkspaceProjectId) ?? 0;
-    return current.contextKey === authority.contextKey
-      && currentAccessGeneration === authority.accessGeneration;
-  }, [firstUse.ensureIntroduction]);
+    if (current.contextKey !== authority.contextKey || currentAccessGeneration !== authority.accessGeneration) return false;
+    const saved = firstUse.payload?.state.defaults;
+    const usingSavedScope = saved?.projectId === current.selectedWorkspaceProjectId
+      && saved.familiarIds.length === current.scopeIds.length
+      && saved.familiarIds.every((id) => current.scopeIds.includes(id));
+    if (usingSavedScope) {
+      const requestGeneration = homeActionRequestGenerationRef.current;
+      const latest = await firstUse.refresh();
+      if (!workspaceMountedRef.current || homeActionRequestGenerationRef.current !== requestGeneration
+        || actingFamiliarAuthorityRef.current.contextKey !== current.contextKey) return false;
+      if (!latest || latest.resolution.kind !== "ready" || JSON.stringify(latest.state.defaults) !== JSON.stringify(saved)) {
+        firstUse.openGuide();
+        announce(latest?.resolution.kind === "repair" ? latest.resolution.message : "Couldn't verify the saved default context. Review it before starting; your draft is kept.", "assertive");
+        return false;
+      }
+      const afterReadAccessGeneration = current.selectedWorkspaceProjectId === null
+        ? projectAccessGenerationRef.current.all
+        : projectAccessGenerationRef.current.byProject.get(current.selectedWorkspaceProjectId) ?? 0;
+      if (afterReadAccessGeneration !== authority.accessGeneration) return false;
+    }
+    return true;
+  }, [announce, firstUse]);
 
   const startWorkspaceChat = useCallback((request: AgentsNewChatRequest = {}) => {
     shellRef.current?.dismissNavMobile();
@@ -4294,7 +4303,7 @@ export function Workspace() {
       !accessibleGateProjectsLoading && !accessibleGateProjectsError && accessibleGateProjectsLoadedSuccessfully,
   });
   const firstProjectGateOpen = legacyFirstProjectGateOpen && firstUse.loaded
-    && firstUse.payload?.state.step === "complete" && firstUse.payload.state.defaults === null;
+    && firstUse.payload?.state.step === "complete";
   const chatProjectBlockedRef = useRef(chatProjectBlocked);
   chatProjectBlockedRef.current = chatProjectBlocked;
 
@@ -4995,7 +5004,7 @@ export function Workspace() {
             setPendingAgentsNewChat(revised);
             setPendingChatProblem(null);
           }}>Use saved default context for this brief</Button><Button variant="ghost" size="xs" onClick={() => { clearPendingAgentsNewChat(); setPendingAgentsNewChat(null); setPendingChatProblem(null); }}>Discard pending chat</Button></section> : null}
-          {mode === "home" || mode === "chat" ? <FirstUseNudge /> : null}
+          {mode === "home" || (mode === "chat" && !activeChatSessionId) ? <FirstUseNudge /> : null}
           {detailContent}
         </div>
       </div>

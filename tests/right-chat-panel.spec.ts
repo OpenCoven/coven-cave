@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 const FAMILIARS = [
   { id: "cody", display_name: "Cody", role: "Implementer", status: "active", icon: "ph:code" },
@@ -71,6 +72,9 @@ async function boot(page: Page) {
     id: "panel-project", name: "Panel project", root: "/repo", access: "write",
     createdAt: "2026-08-01T10:00:00.000Z", updatedAt: "2026-08-01T10:00:00.000Z",
   };
+  await installCompletedFirstUse(page, {
+    project, familiarIds: ["cody"], actingFamiliarId: "cody", permissionMode: "full",
+  });
   await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [project] } }));
   await page.route("**/api/queue/project", (route) => route.fulfill({
     json: { ok: true, projectId: project.id, project },
@@ -78,6 +82,10 @@ async function boot(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "cody");
+    // This journey browses All projects and explicitly changes familiar scope;
+    // a concrete saved launch default must not replace that browsing choice.
+    localStorage.setItem("cave:workspace:project-scope:v1", JSON.stringify(null));
+    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": ["cody"] }));
     if (!sessionStorage.getItem("cave:e2e:right-chat-pref-seeded")) {
       localStorage.setItem("cave:shell:right-chat-open", "0");
       localStorage.setItem("cave:shell:right-chat-width", "360");
@@ -357,6 +365,10 @@ test("full-bleed right drawer's close control is reachable by keyboard", async (
 
 async function bootFixThread(page: Page, options: { selectedProjectId?: string | null; denyNovaAlpha?: boolean } = {}) {
   await isolateRuntime(page);
+  await installCompletedFirstUse(page, {
+    project: { id: "fix-project", name: "Fix project", root: "/repo" },
+    familiarIds: ["cody"], actingFamiliarId: "cody", permissionMode: "full",
+  });
   const selectedProjectId = options.selectedProjectId === undefined ? "fix-project" : options.selectedProjectId;
   const sends: Array<Record<string, unknown>> = [];
   const projectAuthorityReads: Array<string | null> = [];

@@ -70,7 +70,7 @@ test("chat-view: voice nonce effect opens the overlay for the routed session", (
   );
 });
 
-test("chat-view: voice nonce effect checks the target session before consuming the nonce", () => {
+test("chat-view: voice nonce effect checks the target session and project access before consuming the nonce", () => {
   // Guard order matters: consuming the nonce (marking it fired) before the
   // session checks would permanently lose the request across the one-render
   // gap while session promotion lands. The sessionId !== openVoiceSessionId
@@ -80,9 +80,9 @@ test("chat-view: voice nonce effect checks the target session before consuming t
   assert.match(chatView, /openVoiceSessionId\?: string;/);
   assert.match(
     chatView,
-    /if \(!sessionId \|\| sessionId !== openVoiceSessionId\) return;\s*if \(!firstUse\.ensureIntroduction\(\)\) return;\s*openVoiceNonceRef\.current = openVoiceNonce/,
+    /if \(!sessionId \|\| sessionId !== openVoiceSessionId\) return;\s*if \(!firstUse\.ensureIntroduction\(\)\) return;\s*if \(!projectLaunchReady\) return;\s*openVoiceNonceRef\.current = openVoiceNonce/,
   );
-  assert.match(chatView, /\}, \[firstUse, openVoiceCall, openVoiceNonce, sessionId, openVoiceSessionId\]\);/);
+  assert.match(chatView, /\}, \[firstUse, openVoiceCall, openVoiceNonce, projectLaunchReady, sessionId, openVoiceSessionId\]\);/);
 });
 
 const workspace = read("./workspace.tsx");

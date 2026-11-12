@@ -23,3 +23,28 @@ test("the reviewed host mode restores on a new origin without replacing a saved 
   assert.equal(readChatComposerPrefs(storage).permissionMode, "full");
   assert.equal(readChatComposerPrefs(storage).thinkingEffort, "high");
 });
+
+test("automatic composer initialization cannot turn its fallback mode into a saved choice before host restoration", () => {
+  const data = new Map<string, string>();
+  const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => data.set(key, value) };
+  writeChatComposerPrefs(storage, { thinkingEffort: "low", responseSpeed: "careful", permissionMode: "full" }, "automatic");
+  assert.equal(restoreReviewedPermissionMode(storage, "read"), true);
+  assert.deepEqual(readChatComposerPrefs(storage), { thinkingEffort: "low", responseSpeed: "careful", permissionMode: "read" });
+});
+
+test("automatic updates from a bound chat preserve the restored mode for future chats", () => {
+  const data = new Map<string, string>();
+  const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => data.set(key, value) };
+  assert.equal(restoreReviewedPermissionMode(storage, "read"), true);
+  writeChatComposerPrefs(storage, { thinkingEffort: "medium", responseSpeed: "balanced", permissionMode: "full" }, "automatic");
+  assert.deepEqual(readChatComposerPrefs(storage), { thinkingEffort: "medium", responseSpeed: "balanced", permissionMode: "read" });
+});
+
+test("automatic updates preserve an explicit local Build choice across a reviewed Explore host default", () => {
+  const data = new Map<string, string>();
+  const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => data.set(key, value) };
+  writeChatComposerPrefs(storage, { thinkingEffort: "high", responseSpeed: "fast", permissionMode: "full" });
+  writeChatComposerPrefs(storage, { thinkingEffort: "low", responseSpeed: "balanced", permissionMode: "read" }, "automatic");
+  assert.equal(restoreReviewedPermissionMode(storage, "read"), false);
+  assert.equal(readChatComposerPrefs(storage).permissionMode, "full");
+});

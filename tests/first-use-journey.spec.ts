@@ -1,14 +1,35 @@
+import { writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { advanceFirstUse, createFirstUseState, type FirstUseState } from "../src/lib/first-use";
 
 test.use({ serviceWorkers: "block" });
+const browserErrors = new WeakMap<Page, string[]>();
+test.beforeEach(({ page }) => {
+  const errors: string[] = [];
+  browserErrors.set(page, errors);
+  page.on("pageerror", (error) => errors.push(JSON.stringify({ name: error.name, message: error.message, stack: error.stack, text: String(error) })));
+  page.on("requestfailed", (request) => {
+    if (request.url().includes("/_next/")) errors.push(`${request.url()}: ${request.failure()?.errorText}`);
+  });
+});
+test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus) {
+    const target = info.outputPath("browser-runtime-errors.json");
+    await writeFile(target, JSON.stringify(browserErrors.get(page) ?? [], null, 2));
+    await info.attach("browser-runtime-errors", { path: target, contentType: "application/json" });
+  }
+});
 const PROJECT = { id: "first-project", name: "Practice garden", root: "/synthetic/garden", createdAt: "2026-11-11T00:00:00.000Z", updatedAt: "2026-11-11T00:00:00.000Z", access: "read" };
 const FAMILIARS = [{ id: "nova", display_name: "Nova", role: "Planner", harness: "codex", status: "active" }];
 
 async function fixture(page: Page, initial: FirstUseState = createFirstUseState()) {
+  // Installation dismissal is separate from the host-owned methodology journey.
+  const host = new URL(test.info().project.use.baseURL ?? "http://127.0.0.1").hostname;
+  await page.context().addCookies([{ name: "cave_onboarding_dismissed", value: "1", domain: host, path: "/" }]);
   await page.route("**/api/**", (route) => route.fulfill({ status: 503, json: { ok: false, error: "Outside the isolated first-use fixture" } }));
   let state = initial;
   let revoked = false;
+  let revokedMember: string | null = null;
   let runtime = true;
   let accessLevel: "read" | "write" = "read";
   const sends: unknown[] = [];
@@ -18,6 +39,7 @@ async function fixture(page: Page, initial: FirstUseState = createFirstUseState(
   await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [PROJECT] } }));
   await page.route("**/api/project-grants**", (route) => route.fulfill({ json: { ok: true, grants: revoked ? [] : [{ familiarId: "nova", projectId: PROJECT.id, access: accessLevel }], accessGroups: [], supremeFamiliarId: null } }));
   await page.route("**/api/harnesses**", (route) => route.fulfill({ json: { ok: true, harnesses: [{ id: "codex", label: "Codex", installed: runtime, chatSupported: true }] } }));
+  await page.route("**/api/onboarding/journey?runtimeFamiliarId=*", (route) => route.fulfill({ json: { ok: true, runtime: { familiarId: new URL(route.request().url()).searchParams.get("runtimeFamiliarId"), harness: "codex", transport: "local", state: runtime ? "ready" : "unavailable" } } }));
   await page.route("**/api/chat/model-state**", (route) => route.fulfill({ json: { ok: true, state: { familiarId: "nova", runtime: null, harness: "codex", effectiveModel: "unknown", source: "runtime-default", applicationState: "saved", reason: "Synthetic runtime" } } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
   await page.route("**/api/board**", (route) => route.fulfill({ json: { ok: true, cards: [] } }));
@@ -29,13 +51,13 @@ async function fixture(page: Page, initial: FirstUseState = createFirstUseState(
       actions.push(body.action);
       state = advanceFirstUse(state, body.action);
     }
-    const resolution = !state.defaults || revoked
-      ? { kind: "repair", context: state.defaults, reason: revoked ? "access" : "missing", message: revoked ? "A saved familiar no longer has project access. Review access or choose another scope." : "Choose a default project and familiar scope to start new work." }
+    const resolution = !state.defaults || revoked || revokedMember
+      ? { kind: "repair", context: state.defaults, reason: revoked || revokedMember ? "access" : "missing", message: revoked || revokedMember ? "A saved familiar no longer has project access. Review access or choose another scope." : "Choose a default project and familiar scope to start new work." }
       : { kind: "ready", context: state.defaults };
-    return route.fulfill({ json: { ok: true, state, resolution, project: state.defaults ? PROJECT : null, access: state.defaults ? state.defaults.familiarIds.map((familiarId) => ({ familiarId, level: revoked ? null : familiarId === "nova" ? accessLevel : "read", direct: revoked ? null : familiarId === "nova" ? accessLevel : "read", groups: [], supreme: false })) : [], starterRoot: "/synthetic/cave-starter" } });
+    return route.fulfill({ json: { ok: true, state, resolution, project: state.defaults ? PROJECT : null, access: state.defaults ? state.defaults.familiarIds.map((familiarId) => ({ familiarId, level: revoked || familiarId === revokedMember ? null : familiarId === "nova" ? accessLevel : "read", direct: revoked || familiarId === revokedMember ? null : familiarId === "nova" ? accessLevel : "read", groups: [], supreme: false })) : [], starterRoot: "/synthetic/cave-starter" } });
   });
   await page.route("**/api/chat/send", (route) => { sends.push(route.request().postDataJSON()); return route.fulfill({ contentType: "text/event-stream", body: 'data: {"kind":"done","sessionId":"practice-real-chat"}\n\n' }); });
-  return { getState: () => state, actions, sends, revoke: () => { revoked = true; }, restore: () => { revoked = false; }, disableRuntime: () => { runtime = false; }, allowWrite: () => { accessLevel = "write"; }, changeInOtherWindow: () => { state = { ...state, revision: state.revision + 1 }; } };
+  return { getState: () => state, actions, sends, revoke: () => { revoked = true; }, revokeMember: (id: string) => { revokedMember = id; }, restore: () => { revoked = false; }, disableRuntime: () => { runtime = false; }, allowWrite: () => { accessLevel = "write"; }, changeInOtherWindow: () => { state = { ...state, revision: state.revision + 1 }; } };
 }
 
 test("the introduction resumes after dismissal and teaches the full method before execution", async ({ page }) => {
@@ -186,7 +208,11 @@ for (const entry of ["live", "persisted-panel", "persisted-missing-project"] as 
     }, { entry, request });
     await page.goto("/?mode=home");
     await expect(page.getByRole("button", { name: "Continue introduction", exact: true })).toBeVisible();
-    if (entry === "live") await page.evaluate((request) => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: request })), request);
+    if (entry === "live") {
+      // Live UI events require a hydrated listener; pre-hydration handoffs use the persisted cases above.
+      await expect(page.getByRole("complementary", { name: "Working with familiars", exact: true })).toContainText("Learn the method before your first run. Your progress is kept.");
+      await page.evaluate((request) => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: request })), request);
+    }
     await expect(page.getByRole("dialog", { name: /Start with an outcome/ })).toBeVisible();
     expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("cave:pending-agents-new-chat") ?? "null"))).toMatchObject(request);
     expect(f.sends).toEqual([]);
@@ -392,7 +418,8 @@ test("an existing conversation keeps its different actor, project, mode and draf
   const input = chat.getByRole("textbox", { name: "Message", exact: true });
   await expect(input).toBeVisible({ timeout: 30_000 });
   await input.fill("Keep the existing conversation context");
-  await page.getByRole("button", { name: "Review default context", exact: true }).click();
+  await chat.getByRole("button", { name: (page.viewportSize()?.width ?? 0) < 768 ? "Tools" : "Session options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Review default context", exact: true }).click();
   await page.getByRole("dialog", { name: /Start with an outcome/ }).getByRole("button", { name: "Continue later", exact: true }).click();
   await expect(input).toHaveValue("Keep the existing conversation context");
   await page.evaluate(() => { localStorage.setItem("cave:chat-composer-controls:v1", JSON.stringify({ permissionMode: "read" })); window.dispatchEvent(new Event("cave:chat-composer-prefs-changed")); });
@@ -484,3 +511,152 @@ test(`a compact skill invocation preserves the ${outcome === "failed" ? "origina
   }
 });
 }
+
+
+test("Home retains its draft and files when a non-acting default-scope member loses access", async ({ page }) => {
+  const initial: FirstUseState = { version: 1, revision: 8, step: "complete", outcome: "plan", defaults: { projectId: PROJECT.id, familiarIds: ["nova", "sage"], actingFamiliarId: "nova" }, practice: { approvalHeld: true, stopped: true, retried: true, verified: true }, completedAt: "2026-11-11T12:00:00.000Z" };
+  const f = await fixture(page, initial);
+  await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars: [...FAMILIARS.map((f) => ({ ...f, projectAccess: "read" })), { ...FAMILIARS[0], id: "sage", display_name: "Sage", projectAccess: "read" }] } }));
+  await page.goto("/?mode=home");
+  await expect(page.getByRole("button", { name: "Working with familiars", exact: true })).toBeVisible();
+  const home = page.locator(".home-composer-root");
+  const input = home.getByRole("textbox", { name: "Chat message" });
+  await input.fill("Keep the entire saved scope before starting");
+  await home.locator('input[type="file"]').setInputFiles({ name: "scope-evidence.txt", mimeType: "text/plain", buffer: Buffer.from("Scope evidence") });
+  await expect(home).toContainText("scope-evidence.txt");
+  f.revokeMember("sage"); // Registry/roster remain cached; Nova retains Read access.
+  await home.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: /Start with an outcome/ })).toBeVisible();
+  await page.getByRole("dialog", { name: /Start with an outcome/ }).getByRole("button", { name: "Continue later", exact: true }).click();
+  await expect(input).toHaveValue("Keep the entire saved scope before starting");
+  await expect(home).toContainText("scope-evidence.txt");
+  expect(f.sends).toEqual([]);
+});
+
+test("an explicit All projects overview survives hydration with configured defaults", async ({ page }) => {
+  const initial: FirstUseState = { version: 1, revision: 8, step: "complete", outcome: "plan", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, practice: { approvalHeld: true, stopped: true, retried: true, verified: true }, completedAt: "2026-11-11T12:00:00.000Z" };
+  const f = await fixture(page, initial);
+  await page.addInitScript(() => {
+    localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": ["nova"] }));
+  });
+  await page.goto("/?mode=home");
+  await expect(page.getByRole("button", { name: "Working with familiars", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("cave:workspace:project-scope:v1"))).toBe("null");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Working with familiars", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("cave:workspace:project-scope:v1"))).toBe("null");
+  expect(f.sends).toEqual([]);
+});
+
+
+test("host Explore restores after a bound-chat deep link writes automatic composer preferences", async ({ page }) => {
+  const initial: FirstUseState = { version: 1, revision: 8, step: "complete", outcome: "plan", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, permissionMode: "read", practice: { approvalHeld: true, stopped: true, retried: true, verified: true }, completedAt: "2026-11-11T12:00:00.000Z" };
+  const f = await fixture(page, initial);
+  const session = { id: "bound-mode", title: "Bound Build chat", familiarId: "nova", project_root: PROJECT.root, harness: "codex", status: "completed", hasLocalConversation: true, created_at: "2026-11-11T00:00:00.000Z", updated_at: "2026-11-11T00:00:00.000Z" };
+  await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [session] } }));
+  await page.route("**/api/chat/conversation/bound-mode**", (route) => route.fulfill({ json: { ok: true, conversation: { sessionId: session.id, familiarId: "nova", harness: "codex", turns: [], createdAt: session.created_at, updatedAt: session.updated_at }, context: null } }));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/onboarding/journey", async (route) => { await gate; await route.fallback(); });
+  await page.goto("/?mode=chat#chat-bound-mode");
+  const boundInput = page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true });
+  await expect(boundInput).toBeVisible({ timeout: 30_000 });
+  release();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("cave:chat-composer-controls:v1") ?? "{}").permissionMode)).toBe("read");
+  await boundInput.fill("Bound mode remains independent");
+  await boundInput.press("Enter");
+  await expect.poll(() => f.sends.length).toBe(1);
+  expect(f.sends[0]).toMatchObject({ sessionId: "bound-mode", permissionMode: "full" });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: {} })));
+  const newChat = page.getByTestId("chat-main");
+  await expect(newChat.getByRole("main", { name: "Work board", exact: true })).toBeVisible();
+  await expect(newChat.locator(".cave-composer-panel")).toHaveAttribute("data-access-mode", "read");
+  const input = newChat.getByRole("textbox", { name: "Message", exact: true });
+  await input.fill("New work uses reviewed Explore");
+  await expect(input).toHaveValue("New work uses reviewed Explore");
+  await expect(newChat.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
+  await input.press("Enter");
+  await expect.poll(() => f.sends.length).toBe(2);
+  expect(f.sends[1]).toMatchObject({ permissionMode: "read", projectRoot: PROJECT.root, prompt: "New work uses reviewed Explore", sessionId: null });
+});
+
+for (const leave of [false, true]) {
+  test(`automatic voice ${leave ? "stays closed after leaving its target" : "waits for project access before opening once"}`, async ({ page }) => {
+    const initial: FirstUseState = { version: 1, revision: 8, step: "complete", outcome: "plan", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, practice: { approvalHeld: true, stopped: true, retried: true, verified: true }, completedAt: "2026-11-11T12:00:00.000Z" };
+    const f = await fixture(page, initial);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => new MediaStream() } });
+      Object.assign(window, { SpeechRecognition: class { start() {} stop() {} } });
+    });
+    await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars: FAMILIARS.map((f) => ({ ...f, projectAccess: "read", voiceProvider: "elevenlabs" })) } }));
+    const session = { id: "voice-race", title: "Voice context", familiarId: "nova", project_root: PROJECT.root, harness: "codex", status: "completed", hasLocalConversation: true, created_at: "2026-11-11T00:00:00.000Z", updated_at: "2026-11-11T00:00:00.000Z" };
+    let minted = false;
+    let held = 0;
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    await page.route("**/api/projects**", async (route) => {
+      if (minted && new URL(route.request().url()).searchParams.get("familiarId") === "nova") { held++; await gate; }
+      return route.fulfill({ json: { ok: true, projects: [PROJECT] } });
+    });
+    await page.route("**/api/chat/conversation", async (route) => {
+      minted = true;
+      // Model a slow mint beyond the 2.5s actor-project cache lifetime.
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      return route.fulfill({ json: { ok: true, sessionId: session.id } });
+    });
+    await page.route("**/api/chat/conversation/voice-race**", (route) => route.fulfill({ json: { ok: true, conversation: { sessionId: session.id, familiarId: "nova", harness: "codex", turns: [], createdAt: session.created_at, updatedAt: session.updated_at }, context: null } }));
+    await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: minted ? [session] : [] } }));
+    await page.route("**/api/voice/session", (route) => { calls++; return route.fulfill({ status: 503, json: { ok: false, error: "provider_error", hint: "Synthetic voice service" } }); });
+    await page.goto("/?mode=home");
+    const home = page.locator(".home-composer-root");
+    await home.getByRole("button", { name: "Composer actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Voice call", exact: true }).click();
+    await expect(page.getByTestId("chat-main")).toBeVisible();
+    await expect.poll(() => held).toBeGreaterThan(0);
+    await expect(page.getByRole("dialog", { name: "Nova", exact: true })).toHaveCount(0);
+    if (leave) {
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: {} })));
+      await expect(page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true })).toBeVisible();
+    }
+    release();
+    if (leave) {
+      await expect(page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true })).toBeEnabled();
+      await expect(page.getByRole("dialog", { name: "Nova", exact: true })).toHaveCount(0);
+      expect(calls).toBe(0);
+    } else {
+      await expect(page.getByRole("dialog", { name: "Nova", exact: true })).toBeVisible();
+      await expect.poll(() => calls).toBe(1);
+    }
+    expect(f.sends).toEqual([]);
+  });
+}
+
+
+test("a completed bound chat keeps its transcript space and opens guidance from Session options", async ({ page }) => {
+  const initial: FirstUseState = { version: 1, revision: 8, step: "complete", outcome: "plan", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, practice: { approvalHeld: true, stopped: true, retried: true, verified: true }, completedAt: "2026-11-11T12:00:00.000Z" };
+  const f = await fixture(page, initial);
+  const session = { id: "bound-guide", title: "Bound guidance", familiarId: "nova", project_root: PROJECT.root, harness: "codex", status: "completed", hasLocalConversation: true, created_at: "2026-11-11T00:00:00.000Z", updated_at: "2026-11-11T00:00:00.000Z" };
+  await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [session] } }));
+  await page.route("**/api/chat/conversation/bound-guide**", (route) => route.fulfill({ json: { ok: true, conversation: { sessionId: session.id, familiarId: "nova", harness: "codex", turns: [], createdAt: session.created_at, updatedAt: session.updated_at }, context: null } }));
+  await page.goto("/?mode=chat#chat-bound-guide");
+  const chat = page.getByTestId("chat-main");
+  const input = chat.getByRole("textbox", { name: "Message", exact: true });
+  await expect(input).toBeVisible();
+  await input.fill("Retain this bound draft while checking guidance");
+  await expect(page.locator(".first-use-nudge")).toHaveCount(0);
+  const guidanceMenu = chat.getByRole("button", { name: (page.viewportSize()?.width ?? 0) < 768 ? "Tools" : "Session options", exact: true });
+  await guidanceMenu.click();
+  await expect(page.getByRole("menuitem", { name: "Working with familiars", exact: true })).toBeVisible();
+  await page.screenshot({ animations: "disabled", path: `artifacts/issue-6458/approval-guidance-menu-${test.info().project.name}.png` });
+  await page.getByRole("menuitem", { name: "Working with familiars", exact: true }).click();
+  const guide = page.getByRole("dialog", { name: /Start with an outcome/ });
+  await expect(guide).toBeVisible();
+  await expect(guide).toHaveCSS("opacity", "1");
+  await page.screenshot({ animations: "disabled", path: `artifacts/issue-6458/approval-guidance-open-${test.info().project.name}.png` });
+  await guide.getByRole("button", { name: "Continue later", exact: true }).click();
+  await expect(input).toHaveValue("Retain this bound draft while checking guidance");
+  await expect(guidanceMenu).toBeFocused();
+  expect(f.sends).toEqual([]);
+});

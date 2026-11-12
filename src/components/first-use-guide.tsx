@@ -55,6 +55,7 @@ export function FirstUseGuide({ familiars, canShow = true, onManageFamiliars, on
   const actor = familiars.find((entry) => entry.id === (contextStep ? actorId : savedDefaults?.actingFamiliarId));
   const actorRuntimeId = actor?.id;
   const actorHarness = actor?.harness;
+  const runtimeProjectId = contextStep ? projectId : savedDefaults?.projectId;
   const example = state?.outcome === "inspect"
     ? { outcome: "Explain the welcome export", criterion: "Name the source file and explain the exported value.", plan: "Read the sample welcome.ts, then explain its exported value with the file as evidence.", result: "The sample welcome.ts exports welcome with the string value ‘Welcome’. A caller can import that named value.", check: "The explanation names welcome.ts and matches the exported value shown in the sample." }
     : { outcome: "Plan clearer welcome copy", criterion: "Name one small edit and a check that would verify it.", plan: "Propose a clearer greeting in the sample welcome.ts and name the check needed before accepting the change.", result: "Change welcome in the sample welcome.ts to ‘Welcome home’. After editing, check that the exported value equals ‘Welcome home’.", check: "The plan names the file, one concrete edit and a check. It does not claim the edit or check has run." };
@@ -88,23 +89,21 @@ export function FirstUseGuide({ familiars, canShow = true, onManageFamiliars, on
   }, [open, canShow, permissionEpoch]);
 
   useEffect(() => {
-    if (!open || !canShow || !actorRuntimeId) { setRuntimeReady(null); return; }
+    if (!open || !canShow || !actorRuntimeId || !runtimeProjectId) { setRuntimeReady(null); return; }
     let cancelled = false;
     setRuntimeReady(null);
-    void fetch("/api/harnesses", { cache: "no-store", signal: AbortSignal.timeout(15_000) })
+    void fetch(`/api/onboarding/journey?runtimeFamiliarId=${encodeURIComponent(actorRuntimeId)}&projectId=${encodeURIComponent(runtimeProjectId)}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) })
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error("Couldn't verify this familiar’s runtime. Open setup or retry.");
-        const report = (data.harnesses ?? []).find((entry: { id: string }) => entry.id === actorHarness);
-        if (!cancelled) setRuntimeReady(Boolean(report?.installed && report?.chatSupported));
+        if (!cancelled) setRuntimeReady(data.runtime?.familiarId === actorRuntimeId && data.runtime?.state === "ready");
       }).catch((cause) => { if (!cancelled) { setRuntimeReady(false); setLocalError(cause instanceof Error ? cause.message : "Couldn't verify the runtime."); } });
     return () => { cancelled = true; };
-  }, [open, canShow, actorRuntimeId, actorHarness, permissionEpoch]);
+  }, [open, canShow, actorRuntimeId, actorHarness, runtimeProjectId, permissionEpoch]);
 
   function accessFor(familiarId: string) {
     if (!permissions || !projectId) return null;
-    if (permissions.supremeFamiliarId === familiarId) return { level: "write" as const, direct: null, groups: [], supreme: true };
-    return { ...resolveEffectiveAccess({ directGrants: permissions.grants, groups: permissions.accessGroups, familiarId, projectId }), supreme: false };
+    return { ...resolveEffectiveAccess({ directGrants: permissions.grants, groups: permissions.accessGroups, familiarId, projectId }), supreme: permissions.supremeFamiliarId === familiarId };
   }
 
   async function createStarter() {
@@ -198,7 +197,7 @@ export function FirstUseGuide({ familiars, canShow = true, onManageFamiliars, on
       </> : null}
       {contextStep ? <>
         <h2>2. Choose the project and familiar scope</h2>
-        {formRevision !== state?.revision ? <div role="alert" className="first-use-guide__error"><p>The saved context changed in another window. Reload it to review the current choice; this replaces unsaved context choices.</p><Button onClick={() => void reloadSavedContext()}>Reload saved context</Button></div> : null}
+        {formSeeded.current && formRevision !== state?.revision ? <div role="alert" className="first-use-guide__error"><p>The saved context changed in another window. Reload it to review the current choice; this replaces unsaved context choices.</p><Button onClick={() => void reloadSavedContext()}>Reload saved context</Button></div> : null}
         <p>A project names the folder for the work. Selecting it grants no access. Save a default for new work; explicit project choices and existing chats keep their own context.</p>
         {projects.error ? <div role="alert">Couldn’t load projects. <Button onClick={projects.reload}>Retry projects</Button></div> : null}
         <label htmlFor="first-use-project">Default project</label>
@@ -226,7 +225,7 @@ export function FirstUseGuide({ familiars, canShow = true, onManageFamiliars, on
       </> : null}
       {state && !contextStep && state.step === "access" ? <>
         <h2>3. Review effective access</h2><p><strong>{payload?.project?.name}</strong> · <code>{payload?.project?.root}</code></p>
-        {payload?.access.map((entry) => <p key={entry.familiarId} className="first-use-guide__review">{familiars.find((familiar) => familiar.id === entry.familiarId)?.display_name ?? entry.familiarId}: {entry.level === "read" ? "Read access" : "Full access"}{entry.supreme ? " through supreme-familiar policy" : entry.groups.length ? ` through ${entry.groups.map((group) => group.groupName).join(", ")}` : " through a direct grant"}</p>)}
+        {payload?.access.map((entry) => <p key={entry.familiarId} className="first-use-guide__review">{familiars.find((familiar) => familiar.id === entry.familiarId)?.display_name ?? entry.familiarId}: {entry.level === "write" ? "Full access" : entry.level === "read" ? "Read access" : "No project access"}{entry.groups.length ? ` through ${entry.groups.map((group) => group.groupName).join(", ")}` : entry.direct ? " through a direct grant" : ""}{entry.supreme ? " · supreme familiar" : ""}</p>)}
         <p>Explore is read-only. Build uses the familiar’s effective project access and its runtime’s own limits. A project selection never changes either. Review an access request before granting it; model output cannot approve it for you.</p>
         <fieldset><legend>Access for new chats</legend><p>This updates the shared composer default only when you continue. Existing chats keep their current choice.</p><label className="first-use-guide__choice"><input type="radio" name="first-use-access" checked={accessChoice === "read"} onChange={() => setAccessChoice("read")} />Explore · read only</label><label className="first-use-guide__choice"><input type="radio" name="first-use-access" checked={accessChoice === "full"} onChange={() => setAccessChoice("full")} disabled={payload?.access.find((entry) => entry.familiarId === savedDefaults?.actingFamiliarId)?.level !== "write"} />Build · full access</label></fieldset>
         <div className="first-use-guide__actions"><Button variant="primary" onClick={() => void reviewAccess()} disabled={disabled || !accessChoice || (accessChoice === "full" && !canBuild)}>Continue to approvals</Button><Button variant="ghost" onClick={() => setEditingContext(true)}>Change context</Button></div>

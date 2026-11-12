@@ -1,9 +1,17 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { openFirstProjectGate } from "../fixtures/first-project-gate";
+import { installCompletedFirstUse } from "../fixtures/first-use";
 
 // #5528: on a phone the mobile chat chrome used to cover the gate's title and
 // its Create button. Each must own the pixel at its own centre, the device's
 // own height and a taller 390×844 frame alike.
+
+test.beforeEach(async ({ page }) => {
+  await installCompletedFirstUse(page, {
+    project: { id: "removed-project", name: "Removed project", root: "/tmp/removed-project" },
+    familiarIds: ["cody"], actingFamiliarId: "cody", repairReason: "project",
+  });
+});
 
 /** The element at the target's own centre is the target (or inside it).
  *  The whole measurement is retried for a few seconds: on WebKit in CI the

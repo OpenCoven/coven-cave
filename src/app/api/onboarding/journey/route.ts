@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { parseFirstUseDefaults, type FirstUseAction } from "@/lib/first-use";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
-import { inspectFirstUseContext } from "@/lib/server/first-use-context";
+import { inspectFirstUseContext, inspectFirstUseRuntime } from "@/lib/server/first-use-context";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { FirstUseRevisionError, readFirstUseState, updateFirstUseState } from "@/lib/server/first-use-store";
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -14,8 +15,20 @@ function failure(error: unknown, status = 503) {
   return NextResponse.json({ ok: false, code: "first_use_unavailable", error: error instanceof Error ? error.message : "Couldn't load the introduction. Retry to restore your progress." }, { status });
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const searchParams = new URL(req.url).searchParams;
+    const runtimeFamiliarId = searchParams.get("runtimeFamiliarId");
+    if (runtimeFamiliarId !== null) {
+      const denied = rejectNonLocalRequest(req);
+      if (denied) return denied;
+      if (!isValidFamiliarId(runtimeFamiliarId)) return failure(new Error("Invalid familiar id"), 400);
+      const projectId = searchParams.get("projectId");
+      if (!projectId?.trim() || projectId !== projectId.trim()) return failure(new Error("Choose a project before checking its runtime."), 400);
+      const runtime = await inspectFirstUseRuntime(runtimeFamiliarId, projectId);
+      if (!runtime) return failure(new Error("Familiar unavailable. Choose another familiar."), 404);
+      return NextResponse.json({ ok: true, runtime });
+    }
     const state = await readFirstUseState();
     let inspection;
     try { inspection = await inspectFirstUseContext(state.defaults); }

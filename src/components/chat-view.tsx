@@ -3143,7 +3143,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [refreshUsagePlan]);
 
   useEffect(() => {
-    writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode });
+    writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode }, "automatic");
   }, [thinkingEffort, responseSpeed, permissionMode]);
 
   // Persist a model choice through the existing channels: session scope when a
@@ -3890,10 +3890,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!openVoiceNonce || openVoiceNonce === openVoiceNonceRef.current) return;
     if (!sessionId || sessionId !== openVoiceSessionId) return;
     if (!firstUse.ensureIntroduction()) return;
+    if (!projectLaunchReady) return;
     openVoiceNonceRef.current = openVoiceNonce;
     voiceAutoCreatedRef.current = sessionId;
     void openVoiceCall();
-  }, [firstUse, openVoiceCall, openVoiceNonce, sessionId, openVoiceSessionId]);
+  }, [firstUse, openVoiceCall, openVoiceNonce, projectLaunchReady, sessionId, openVoiceSessionId]);
 
   // ⌘F/Ctrl+F is scoped to the chat section via this React keydown handler
   // on the section root — NOT a window-level listener — so ChatList's ⌘F
@@ -4046,7 +4047,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         { value: "full", label: "Build · full access" },
       ],
       onChange: (value: string) => {
-        if (value === "read" || value === "full") setPermissionMode(value);
+        if (value === "read" || value === "full") {
+          writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode: value });
+          setPermissionMode(value);
+        }
       },
     },
     ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0 || composerModelInventory.loading
@@ -7648,6 +7652,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
+  const guidanceLabel = firstUse.payload?.state.step !== "complete" ? "Continue introduction" : firstUse.payload.resolution.kind === "repair" ? "Review default context" : "Working with familiars";
   const offlineReadOnly = historyState === "offline" || flowBackedSession;
   // Native UI tier host: opts this chat's transcript into coven:ui rendering.
   // Memoized so the context value is stable across composer keystrokes.
@@ -7789,6 +7794,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         retry: { disabled: !lastFailedSend || busy, onSelect: retryLastSend },
         summarize: { disabled: busy, onSelect: summarizeSession },
         call: { disabled: !sessionId, onSelect: () => void openVoiceCall() },
+        guidance: { label: guidanceLabel, onSelect: firstUse.openGuide },
       } : undefined}
     />
   );
@@ -8566,6 +8572,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 sessionId={sessionId}
                 hasTurns={turns.length > 0}
                 onOpenDebug={openDebug}
+                onOpenGuidance={firstUse.openGuide}
+                guidanceLabel={guidanceLabel}
                 promotableFamiliars={promotableFamiliars}
                 onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}

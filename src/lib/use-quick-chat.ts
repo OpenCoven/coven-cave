@@ -403,6 +403,9 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
   const settleAcceptedStop = useCallback((activeSend: ActiveQuickChatSend): boolean => {
     if (activeSendRef.current !== activeSend) return false;
+    // Follow-ups may still be validating defaults before a session is known.
+    // An accepted Stop must refuse those pending admissions with the run.
+    threadGenerationRef.current++;
     activeSendRef.current = null;
     activeSend.suppressSettlementUi = true;
     activeSend.controller.abort();

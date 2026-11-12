@@ -64,6 +64,7 @@ export function readWorkspaceCrew(storage: StorageLike, projectId: string | null
 export function readWorkspaceContext(
   storage: StorageLike,
   legacyFamiliarIds: readonly string[],
+  defaults?: PersistedWorkspaceContext | null,
 ): PersistedWorkspaceContext {
   const rawProject = storage.getItem(PROJECT_SCOPE_KEY);
   let projectId: string | null = null;
@@ -72,6 +73,7 @@ export function readWorkspaceContext(
   }
 
   const crew = readWorkspaceCrew(storage, projectId);
+  if (rawProject === null && defaults) return { projectId: defaults.projectId, familiarIds: [...defaults.familiarIds] };
   const familiarIds = crew !== null ? crew : normalizedIds([...legacyFamiliarIds]);
   return { projectId, familiarIds };
 }

@@ -24,7 +24,8 @@ test("the real journey route persists practice, revalidates revoked access and r
     const req = (body: unknown, host = "localhost") => new Request(`http://${host}/api/onboarding/journey`, {
       method: "POST", headers: { host, "content-type": "application/json" }, body: JSON.stringify(body),
     });
-    const fresh = await (await GET()).json();
+    const get = () => GET(new Request("http://localhost/api/onboarding/journey", { headers: { host: "localhost" } }));
+    const fresh = await (await get()).json();
     assert.equal(fresh.state.completedAt, null);
     assert.equal(fresh.resolution.kind, "repair");
     const projectsBeforeStarter = await loadProjects();
@@ -34,7 +35,7 @@ test("the real journey route persists practice, revalidates revoked access and r
     assert.deepEqual(await loadProjects(), projectsBeforeStarter, "creating the folder does not register or select it");
     assert.deepEqual(await listProjectGrants(), [], "creating the folder grants no access");
     assert.equal((await POST(req({ kind: "starter" }))).status, 200, "retry reuses the dedicated folder");
-    assert.equal((await (await GET()).json()).state.revision, 0);
+    assert.equal((await (await get()).json()).state.revision, 0);
     assert.equal((await POST(req({ revision: 0, action: { kind: "outcome", outcome: "plan" } }, "phone.example"))).status, 403);
     assert.equal((await POST(req({ revision: 0, familiarId: "nova", action: { kind: "outcome", outcome: "plan" } }))).status, 403);
     let response = await POST(req({ revision: 0, action: { kind: "outcome", outcome: "plan" } }));
@@ -45,14 +46,14 @@ test("the real journey route persists practice, revalidates revoked access and r
     await grantProjectToFamiliar({ familiarId: "nova", projectId: project.id, source: "human", access: "read" });
     response = await POST(req({ revision: 1, action: { kind: "context", defaults } }));
     assert.equal(response.status, 200, await response.clone().text());
-    const saved = await (await GET()).json();
+    const saved = await (await get()).json();
     assert.equal(saved.state.step, "access");
     assert.equal(saved.resolution.kind, "ready");
     assert.equal(saved.access[0].level, "read");
     assert.equal((await POST(req({ revision: 2, action: { kind: "review-access", permissionMode: "full" } }))).status, 409, "the access review cannot save Build against a Read actor");
     assert.equal((await POST(req({ revision: 1, action: { kind: "review-access" } }))).status, 409);
     await revokeProjectFromFamiliar({ familiarId: "nova", projectId: project.id });
-    const revoked = await (await GET()).json();
+    const revoked = await (await get()).json();
     assert.equal(revoked.resolution.kind, "repair");
     assert.deepEqual(revoked.state.defaults, defaults);
     assert.equal((await POST(req({ revision: 2, action: { kind: "review-access" } }))).status, 409);
@@ -67,7 +68,7 @@ test("the real journey route persists practice, revalidates revoked access and r
       const result = await POST(req({ revision, action }));
       assert.equal(result.status, 200, await result.clone().text());
     }
-    const completed = await (await GET()).json();
+    const completed = await (await get()).json();
     assert.equal(completed.state.step, "complete");
     assert.equal(completed.state.permissionMode, "read", "the reviewed mode is durable across browser origins");
     assert.ok(completed.state.completedAt);

@@ -27,6 +27,7 @@ import { fileURLToPath } from "node:url";
 export const SUITES = {
   app: [
     "src/lib/first-use-execution.test.ts",
+    "src/components/first-use-guide.behavior.test.tsx",
     "src/components/first-use-provider.behavior.test.tsx",
     "src/lib/first-use.test.ts",
     "src/lib/server/first-use-store.test.ts",
@@ -1546,6 +1547,7 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
   ],
   api: [
+    "src/app/api/onboarding/journey/route.behavior.test.ts",
     "src/app/api/project-grants/route-chat-grant.integration.test.ts",
     "src/app/api/onboarding/journey/route.integration.test.ts",
     "src/app/api/chat/send/route-read-project-admission.integration.test.ts",
@@ -2819,6 +2821,8 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/first-use-guide.behavior.test.tsx",
+  "src/app/api/onboarding/journey/route.behavior.test.ts",
   "src/components/first-use-provider.behavior.test.tsx",
   "src/lib/inbox-scheduler.behavior.test.ts",
   "src/lib/server/scheduled-chat-store-drain.behavior.test.ts",
