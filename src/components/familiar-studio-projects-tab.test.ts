@@ -116,7 +116,7 @@ assert.match(tab, /import \{ useAddProjectFlow \} from "@\/components\/project-p
 assert.match(tab, /import \{ ProjectSettingsModal \} from "@\/components\/project-settings-modal"/, "opens the shared project settings modal");
 assert.match(
   tab,
-  /createProject,\s*createProjectOrThrow,\s*renameProject,\s*deleteProject,\s*updateRepoUrl,\s*\} = useProjects\(\{ familiarId: familiar\.id \}\)/,
+  /createProject,\s*createProjectOrThrow,\s*renameProject,\s*deleteProject,\s*updateRepoUrl,\s*confirmRoot,\s*\} = useProjects\(\{ familiarId: familiar\.id \}\)/,
   "the registry mutations come from useProjects",
 );
 assert.match(tab, /useAddProjectFlow\(\{[\s\S]{0,220}createProjectOrThrow,/, "the shared add flow preserves local-only creation guidance");
@@ -126,8 +126,8 @@ assert.match(tab, /\{addFlow\.addProjectModal\}/, "the add-project directory bro
 assert.match(tab, /icon="ph:gear-six"[\s\S]{0,220}onClick=\{\(\) => setSettingsProjectId\(project\.id\)\}/, "each row opens per-project settings");
 assert.match(
   tab,
-  /<ProjectSettingsModal[\s\S]{0,240}onRename=\{renameRegistryProject\}[\s\S]{0,60}onDelete=\{removeRegistryProject\}/,
-  "the modal carries rename + remove handlers",
+  /<ProjectSettingsModal[\s\S]{0,240}onRename=\{renameRegistryProject\}[\s\S]{0,60}onConfirmRoot=\{confirmRoot\}[\s\S]{0,60}onDelete=\{removeRegistryProject\}/,
+  "the modal carries rename, confirm-folder (#6215) and remove handlers",
 );
 assert.match(tab, /const ok = await deleteProject\(id\);\s*if \(ok\) void load\(\);/, "removing a project reloads the access snapshot");
 

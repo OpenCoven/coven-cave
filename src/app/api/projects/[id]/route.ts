@@ -1,6 +1,9 @@
+import { realpathSync } from "node:fs";
+import { authenticateProjectFolder } from "@/lib/server/native-folder-authentication";
+import { confirmProjectFolderWithHuman } from "@/lib/server/project-folder-confirmation";
 import { NextResponse } from "next/server";
 
-import { deleteProject, patchProject } from "@/lib/cave-projects";
+import { deleteProject, loadProjects, patchProject } from "@/lib/cave-projects";
 import { revokeAllGrantsForProject } from "@/lib/project-permissions";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
@@ -23,7 +26,30 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
 
+  if (body.confirmRoot !== undefined) {
+    // Apply the grant routes' familiar-relay refusal at the server boundary.
+    // A claimed human approval never supplies authority for a familiar.
+    if (body.familiarId != null || body.proposedBy != null || body.claimedHumanApproval === true) {
+      return NextResponse.json(
+        { ok: false, error: "folder confirmation must come directly from the human" },
+        { status: 403 },
+      );
+    }
+    // Confirm folder (#6215): a person pins the project to the folder its root
+    // resolves to now. It stands alone so a pin never rides along another edit.
+    if (body.confirmRoot !== true || Object.keys(body).length !== 1) {
+      return NextResponse.json(
+        { ok: false, error: "confirmRoot must be true and sent on its own" },
+        { status: 400 },
+      );
+    }
+    const confirmed = await confirmProjectFolderWithHuman(id);
+    if (!confirmed.ok) return NextResponse.json(confirmed, { status: confirmed.status });
+    return NextResponse.json({ ok: true, project: confirmed.project });
+  }
+
   const patch: { name?: string; root?: string; color?: string | null; repoUrl?: string | null } = {};
+  let confirmedChange: { previousRoot: string; realpath: string } | undefined;
   if (typeof body.name === "string") {
     const trimmed = body.name.trim();
     if (trimmed.length === 0) {
@@ -52,6 +78,19 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (!validatedRoot.ok) {
       return NextResponse.json({ ok: false, error: validatedRoot.error }, { status: 400 });
     }
+    // Changing a root also changes its pin, so it must not bypass the native
+    // confirmation ceremony by spelling the operation as an ordinary edit.
+    if (body.familiarId != null || body.proposedBy != null || body.claimedHumanApproval === true) {
+      return NextResponse.json({ ok: false, error: "folder changes must come directly from the human" }, { status: 403 });
+    }
+    const current = (await loadProjects()).find((entry) => entry.id === id);
+    if (!current) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+    const realpath = realpathSync.native(/* turbopackIgnore: true */ validatedRoot.root);
+    if (!await authenticateProjectFolder(`Change ${current.name}’s project folder to:\n${realpath}`)) {
+      return NextResponse.json({ ok: false, code: "project_folder_authentication_required",
+        error: "Authenticate on this Mac to change the folder. Use Touch ID or your Mac password, then retry." }, { status: 403 });
+    }
+    confirmedChange = { previousRoot: current.root, realpath };
     patch.root = validatedRoot.root;
   }
   if (typeof body.color === "string") {
@@ -85,10 +124,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ ok: false, error: "nothing to update" }, { status: 400 });
   }
 
-  const project = await patchProject(id, patch);
+  const project = await patchProject(id, patch, confirmedChange);
+  if (!project && confirmedChange) return NextResponse.json({ ok: false, code: "project_root_moved",
+    error: "The folder changed during confirmation. Review the folder and retry." }, { status: 409 });
   if (!project) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   return NextResponse.json({ ok: true, project });
 }
+
+// Keep the existing PUT client contract and expose the root PATCH operation
+// through the same authenticated handler.
+export const PATCH = PUT;
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = rejectNonLocalRequest(req);

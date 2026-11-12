@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { realpathSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
@@ -350,6 +351,14 @@ try {
     source: "human",
     access: "write",
   });
+  // #6215/#6216: two registrations for the same confirmed directory must
+  // merge their access levels, so a later read grant cannot erase a write grant.
+  const newlyGrantedAlias = path.join(home, "newly-granted-alias");
+  const { symlink: createDirectoryAlias } = await import("node:fs/promises");
+  await createDirectoryAlias(realpathSync.native(newlyGrantedRoot), newlyGrantedAlias, "junction");
+  const readAliasProject = await createProject({ name: "Read alias fixture", root: newlyGrantedAlias });
+  await grantProjectToFamiliar({ familiarId: "opal", projectId: readAliasProject.id, source: "human", access: "read" });
+
   const grantRefreshResponse = await POST(new Request("http://localhost/api/chat/send", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -375,7 +384,7 @@ try {
   assert.equal(refreshedExec.includes("resume"), false, "the stale native sandbox is not resumed");
   assert.deepEqual(
     refreshedExec.slice(refreshedExec.indexOf("--add-dir"), refreshedExec.indexOf("--add-dir") + 2),
-    ["--add-dir", newlyGrantedRoot],
+    ["--add-dir", realpathSync.native(newlyGrantedRoot)],
     "the fresh sandbox receives the newly approved root",
   );
   assert.match(
@@ -504,6 +513,36 @@ try {
     ),
     "the fallback turn runs the existing `coven run codex --stream-json` path",
   );
+  // #6215: neither a fresh turn nor a resume may carry this project's grant
+  // through a root replaced after registration. No child may be launched.
+  const { rename, symlink } = await import("node:fs/promises");
+  const originalFolder = familiarWorkspace + "-original";
+  const redirectedFolder = path.join(home, "redirected");
+  await mkdir(redirectedFolder);
+  const beforeRedirectCalls = (await loggedCalls(codexLog)).length + (await loggedCalls(covenLog)).length;
+  await rename(familiarWorkspace, originalFolder);
+  await symlink(redirectedFolder, familiarWorkspace, "dir");
+  try {
+    for (const turn of [
+      { projectRoot: familiarWorkspace },
+      { sessionId: done.sessionId },
+      { sessionId: done.sessionId, origin: "canvas" },
+    ]) {
+      const denied = await POST(new Request("http://localhost/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ familiarId: "opal", prompt: "refuse redirected folder", ...turn }),
+      }));
+      assert.equal(denied.status, 409, `a redirected folder refuses ${JSON.stringify(turn)}`);
+      assert.equal((await denied.json()).code, "project_root_moved");
+    }
+    assert.equal((await loggedCalls(codexLog)).length + (await loggedCalls(covenLog)).length,
+      beforeRedirectCalls, "a refused redirect never probes or launches a harness");
+  } finally {
+    await rm(familiarWorkspace);
+    await rename(originalFolder, familiarWorkspace);
+  }
+  assert.equal(realpathSync.native(familiarWorkspace), project.rootRealpath);
 } finally {
   if (previousHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = previousHome;

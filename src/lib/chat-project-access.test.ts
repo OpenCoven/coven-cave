@@ -707,3 +707,50 @@ console.log("chat-project-access alias identity tests passed");
 }
 
 console.log("chat-project-access case-variant identity tests passed");
+
+// #6215: persisted cwd identity survives a redirect of the registered spelling.
+// Otherwise hidden-generation resume can misread a pinned project as workspace.
+{
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "pinned-resume-")));
+  try {
+    const original = path.join(base, "original");
+    const other = path.join(base, "other");
+    const alias = path.join(base, "alias");
+    fs.mkdirSync(original);
+    fs.mkdirSync(other);
+    fs.symlinkSync(original, alias);
+    const projects = [{ id: "pinned", name: "Pinned", root: alias, rootRealpath: original }];
+    fs.unlinkSync(alias);
+    fs.symlinkSync(other, alias);
+    assert.equal(chatProjectAccessId({ projects, resumeCwd: original, resolvedCwd: original }), "pinned");
+    assert.equal(resumeRootIsRegisteredProject({ projects, resumeCwd: original, resolvedCwd: original }), true);
+    assert.equal(chatProjectAccessId({ projects, requestedProjectRoot: other, resolvedCwd: other }), `unregistered:${other}`);
+    const twinAlias = path.join(base, "twin-alias");
+    fs.symlinkSync(original, twinAlias, "junction");
+    const twins = [...projects, { id: "twin", name: "Twin", root: twinAlias, rootRealpath: original }];
+    assert.equal(chatProjectAccessId({ projects: twins, resumeCwd: original, resolvedCwd: original }),
+      `unregistered:${original}`, "saved pins must preserve the ambiguous-twin refusal from #6210");
+    assert.equal(resumeRootIsRegisteredProject({ projects: twins, resumeCwd: original, resolvedCwd: original }), true,
+      "ambiguity does not make the registered directory workspace-exempt");
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+}
+
+// A pin must not weaken the existing worktree containment check: a symlink
+// under .worktrees that escapes into a sibling inside the project still misses.
+{
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "pinned-worktree-")));
+  try {
+    const project = path.join(base, "project");
+    const sibling = path.join(project, "private");
+    const link = path.join(project, ".worktrees", "escape");
+    fs.mkdirSync(sibling, { recursive: true });
+    fs.mkdirSync(path.dirname(link));
+    fs.symlinkSync(sibling, link);
+    const projects = [{ id: "pinned", name: "Pinned", root: project, rootRealpath: project }];
+    assert.equal(chatProjectAccessId({ projects, requestedProjectRoot: link, resolvedCwd: sibling }), `unregistered:${link}`);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+}
