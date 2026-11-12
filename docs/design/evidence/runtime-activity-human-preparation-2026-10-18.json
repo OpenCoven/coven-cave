@@ -1,0 +1,43 @@
+{
+  "passed": true,
+  "providerRequests": 1,
+  "advanced": [
+    "parallel-running",
+    "failure",
+    "retry-running"
+  ],
+  "tools": [
+    [
+      "read-a",
+      "error"
+    ],
+    [
+      "read-b",
+      "ok"
+    ],
+    [
+      "read-a-retry",
+      "ok"
+    ]
+  ],
+  "humanAcceptance": "UNTESTED",
+  "scope": "Actual send handler, HTTP provider, persistence and replay; no browser/native renderer",
+  "baseCommit": "2d623fcf3744ef0ca960cc7ffd22256e2860e9a8",
+  "candidate": "uncommitted human-fixture preparation",
+  "fixtureStartup": "NOT RUN",
+  "productionBuild": "Interrupted during compilation because the shared volume approached exhaustion; not passed",
+  "browserRendering": "NOT RUN",
+  "nativeShell": "NOT RUN",
+  "detailViewDecision": "PENDING VAL",
+  "sourceSha256": {
+    "scripts/runtime-activity-browser-fixture.mjs": "c521c3632931ae65db917d0267a9b1e119d441fca6ede976af3d8c700e13ea87",
+    "scripts/runtime-activity-human-scenario.json": "6a56a84e6c0b4747584726301c328009ad4bf6c30778271344b9d71352164927"
+  },
+  "localRouteEvidence": "/var/folders/sz/mtdd9q6j3z5_8jq7xsm876600000gn/T/cave-5765-route-I7N5lG",
+  "routeProbeSourceSha256": "168dfb526fc96a329c0e58871120d024b636d9d9b2e96aa3921d4cc83aae93e5",
+  "notes": [
+    "Provider calls are controlled observations with no real file/tool effects.",
+    "The earlier coven run hermes CLI probe tested the wrong path; it establishes no regression in Cave HTTP transport.",
+    "Owned temporary provider processes stopped. Dependency installation and incomplete build output removed; source and worktree preserved."
+  ]
+}

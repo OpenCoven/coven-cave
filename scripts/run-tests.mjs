@@ -101,6 +101,7 @@ export const SUITES = {
     "src/lib/surface-preferences-lifecycle.test.ts",
     "src/lib/surface-warm-cache.test.ts",
     "scripts/test-alias-loader.test.mjs",
+    "scripts/runtime-activity-fixture-keepalive.test.mjs",
     "scripts/research-package-config.test.mjs",
     "scripts/submissions-build-config.test.mjs",
     "scripts/check-version-continuity.test.mjs",
