@@ -20,6 +20,10 @@ Use **GitHub Issues** as the development queue and the existing
 [GitHub work tracking](docs/workflows/github-work-tracking.md) is the canonical
 guide for ownership, status, worktrees, handoff, and completion.
 
+`pnpm work:queue --ready` lists what can be started now. Keep each issue's
+`lane:*` and `state:*` labels and its work block current; `pnpm work:lint`
+checks them.
+
 Keep one issue per outcome. Record the acting familiar, scope, branch/worktree,
 evidence, blocker, and imperative next step on that issue. GitHub assignment
 and comments are not execution leases. Preserve human-authored dependencies

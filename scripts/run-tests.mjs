@@ -117,6 +117,7 @@ export const SUITES = {
     "scripts/pdf-worker-asset.test.mjs",
     "scripts/onboarding-feedback-report.test.mjs",
     "scripts/work-continuity-contract.test.mjs",
+    "scripts/work-queue.test.mjs",
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-status.test.mjs",
     "scripts/worktree-session-exit-retirement.test.mjs",
