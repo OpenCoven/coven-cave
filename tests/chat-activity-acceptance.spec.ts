@@ -283,6 +283,64 @@ for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
   });
 }
 
+test("Retry keeps a stationary press through deferred input highlighting", async ({ page }, info) => {
+  let releaseHighlighting!: () => void;
+  const highlightingGate = new Promise<void>((resolve) => { releaseHighlighting = resolve; });
+  let holdHighlighting = false;
+  let heldGrammars = 0;
+  await page.route("**/_next/static/chunks/*.js", async (route) => {
+    const response = await route.fetch();
+    const body = await response.body();
+    if (holdHighlighting && body.includes(Buffer.from('"scopeName":"source.json"'))) {
+      heldGrammars += 1;
+      await highlightingGate;
+    }
+    await route.fulfill({ response, body });
+  });
+  try {
+    let input: object = { file_path: "/tmp/deferred-input" };
+    for (let depth = 0; depth < 2; depth++) input = { nested: input };
+    const tool = { id: "deferred-input", name: "Read", status: "ok", input: JSON.stringify(input), outputChars: 64,
+      textOffset: 0, activity: activity("deferred-input", "ok", 1) };
+    const { main, complete } = await setup(page, true, false, false, [tool]);
+    let allowed = false;
+    const requests: boolean[] = [];
+    await page.route("**/api/chat/conversation/*/tool-output?*", async (route) => {
+      requests.push(allowed);
+      await route.fulfill({ status: allowed ? 200 : 404, json: { ok: true, output: allowed ? "AUTHORIZED_AFTER_HIGHLIGHT" : "PRIVATE_REFUSED_OUTPUT" } });
+    });
+    complete();
+    await page.reload();
+    const card = main.locator(".cave-tool-block").first();
+    holdHighlighting = true;
+    await card.locator(":scope > summary").click();
+    await expect(card.getByRole("alert")).toContainText("Couldn't load this output.");
+    await expect.poll(() => heldGrammars).toBeGreaterThan(0);
+    const retry = card.getByRole("button", { name: "Retry", exact: true });
+    await retry.scrollIntoViewIfNeeded();
+    const before = await retry.boundingBox();
+    expect(before).not.toBeNull();
+    // Hold the next animation frame: a real release can arrive after the
+    // highlight commit and before the transcript's rAF scroll correction.
+    const frozen = new Date("2026-11-12T12:00:00.000Z");
+    await page.clock.install({ time: frozen });
+    await page.clock.pauseAt(new Date(frozen.getTime() + 1000));
+    await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
+    allowed = true;
+    await page.mouse.down();
+    releaseHighlighting();
+    await expect(card.locator(".cave-syntax-block").first()).toBeVisible();
+    const after = await retry.boundingBox();
+    await page.mouse.up();
+    await info.attach("deferred-highlight-press", { body: JSON.stringify({ before, after, requests }), contentType: "application/json" });
+    await expect(card).toContainText("AUTHORIZED_AFTER_HIGHLIGHT");
+    expect(requests).toEqual([false, true]);
+    await expect(main).not.toContainText("PRIVATE_REFUSED_OUTPUT");
+  } finally {
+    releaseHighlighting();
+  }
+});
+
 
 test("hostile prose, reasoning and tool results never become execution authority", async ({ page }) => {
   const { main, tools, metadata, summaryBlock, complete } = await setup(page, true, false, true);

@@ -85,6 +85,7 @@ import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { createChatStreamAccessGuard, invalidateChatAccess, subscribeChatAccessInvalidation } from "@/lib/chat-access-invalidation";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { useToolOutput } from "@/lib/use-tool-output";
+import { ToolOutputRetry } from "@/components/tool-output-retry";
 import { deleteOfflineCacheEntry } from "@/lib/offline-cache";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
@@ -10810,7 +10811,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
       {fetchedOutput.status === "error" ? (
         <p role="alert" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {tool.outputSessionId ? <>Couldn&apos;t load this output.{" "}
-            <button type="button" onClick={fetchedOutput.retry} className="focus-ring underline">Retry</button>
+            <ToolOutputRetry onRetry={fetchedOutput.retry} />
           </> : "Reload this chat to load its saved output."}
         </p>
       ) : (
