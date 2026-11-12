@@ -211,6 +211,17 @@ test("large trace production measurements", async ({ page }, info) => {
 
 for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
   test(`lazy output ${refusal} withholds bodies and rechecks or revokes access`, async ({ page }, info) => {
+    await page.addInitScript(() => {
+      const events: object[] = [];
+      Object.assign(window, { lazyOutputPointerEvents: events });
+      for (const type of ["pointerdown", "pointerup", "click"]) {
+        document.addEventListener(type, (event) => {
+          const target = event.target;
+          if (!(target instanceof Element) || !target.closest(".cave-tool-block")) return;
+          events.push({ type, tag: target.tagName, retry: target.closest("button")?.textContent === "Retry" });
+        }, { capture: true, passive: true });
+      }
+    });
     const privateMarker = `PRIVATE_LAZY_BODY_${refusal}`;
     const authorizedMarker = `AUTHORIZED_LAZY_BODY_${refusal}`;
     let deepInput: object = { file_path: "/tmp/deep-input" };
@@ -247,8 +258,15 @@ for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
       await expect(main).not.toContainText(privateMarker);
       expect(requests).toHaveLength(1);
       allowed = true;
-      await card.getByRole("button", { name: "Retry", exact: true }).click();
-      await expect(card).toContainText(authorizedMarker);
+      try {
+        await card.getByRole("button", { name: "Retry", exact: true }).click();
+        await expect(card).toContainText(authorizedMarker);
+      } finally {
+        await info.attach("lazy-output-retry-attempt", { body: JSON.stringify({ refusal, requests,
+          events: await page.evaluate(() => (window as unknown as { lazyOutputPointerEvents: object[] }).lazyOutputPointerEvents)
+            .catch(() => ({ unavailable: true, reason: "Page unavailable during diagnostic collection" })),
+        }), contentType: "application/json" });
+      }
       expect(requests).toHaveLength(2);
       await toggle.click();
       allowed = false;
