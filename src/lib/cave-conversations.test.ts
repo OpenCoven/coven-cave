@@ -843,6 +843,17 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
     "utf8",
   );
   await writeFile(path.join(CONV_DIR, "search-corrupt.json"), "{ not json", "utf8");
+  // Legacy <thinking>/<reasoning> content is withheld from the transcript
+  // (projectLegacyAssistantText), so search must not find or quote it either.
+  // A user's own literal tags are their words and stay searchable.
+  await writeFile(
+    path.join(CONV_DIR, "search-legacy.json"),
+    fixture("search-legacy", "2026-06-11T00:30:00.000Z", [
+      "why does <thinking>madeira</thinking> show up",
+      "<thinking>The private lisbon detour stays hidden.</thinking>\nWe settled on the Porto route. <reasoning>lisbon again</reasoning>",
+    ]),
+    "utf8",
+  );
 
   // Body match → one hit per conversation, with snippet + match count;
   // the corrupt file alongside must be skipped, not thrown on.
@@ -853,6 +864,16 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
   assert.match(hits[0].snippet, /Kyoto ryokan/, "snippet centers on the first match");
   assert.doesNotMatch(hits[0].snippet, /\n/, "snippet is single-line");
   assert.ok(hits[0].snippet.length <= 100, "snippet stays excerpt-sized");
+
+  // golden-15 (#6066): withheld legacy reasoning is neither matched nor quoted.
+  assert.deepEqual(await searchConversations("lisbon"), [], "reasoning-only terms do not match");
+  const legacyHits = await searchConversations("porto");
+  assert.equal(legacyHits.length, 1);
+  assert.equal(legacyHits[0].sessionId, "search-legacy");
+  assert.equal(legacyHits[0].matchCount, 1);
+  assert.match(legacyHits[0].snippet, /Porto route/);
+  assert.doesNotMatch(legacyHits[0].snippet, /lisbon|thinking|reasoning/i, "snippet never quotes withheld reasoning");
+  assert.equal((await searchConversations("madeira")).length, 1, "a user's literal tags stay searchable");
 
   // No match → empty; never an error.
   assert.deepEqual(await searchConversations("zanzibar"), []);
