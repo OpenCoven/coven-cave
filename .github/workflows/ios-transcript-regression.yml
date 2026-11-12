@@ -45,10 +45,12 @@ jobs:
           node --test scripts/ios-native-command.test.mjs
           node scripts/build-ios-markdown.mjs
       - name: Generate project and select available iPhone simulator
-        timeout-minutes: 1
+        id: destination
+        timeout-minutes: 3
         shell: bash
         run: |
           set -euo pipefail
+          exec > >(tee "$RUNNER_TEMP/scroll-setup.log") 2>&1
           xcodebuild -version
           command -v xcodegen >/dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
           (cd apps/ios/CovenCave && xcodegen generate)
@@ -66,6 +68,7 @@ jobs:
       # A retry re-runs only a failed test, and every assertion must pass in
       # full on the retry, so a consistent regression still fails the job.
       - name: Debug scroll state and existing long-chat UI regressions
+        if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
         timeout-minutes: 13
         shell: bash
         run: |
@@ -88,11 +91,11 @@ jobs:
       # same head, so a retry could pass by luck. Every iteration must pass.
       - name: Latest-reply bounce, three full runs without retries
         timeout-minutes: 39
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ios-native-command.py run --timeout-seconds 2280 \
+          python3 scripts/ios-native-command.py run --timeout-seconds 2190 \
             --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-bounce.receipt.json" -- \
             xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
@@ -104,7 +107,7 @@ jobs:
             | tee "$RUNNER_TEMP/scroll-bounce.log"
       - name: Release shrink and independent no-shrink repeated opens
         timeout-minutes: 13
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail

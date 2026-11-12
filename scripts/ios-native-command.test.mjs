@@ -135,6 +135,11 @@ await test('transcript workflow owns deadlines and uploads logs separately from 
   const steps = job.steps;
   const native = steps.filter((s) => String(s.run).includes('xcodebuild test '));
   assert.equal(native.length, 3);
+  const destination = steps.find((s) => s.id === 'destination');
+  assert.ok(destination, 'native execution requires an identified simulator-selection prerequisite');
+  assert.ok(destination['timeout-minutes'] >= 3, 'cold CoreSimulator selection needs its own bounded setup budget');
+  assert.match(destination.run, /scroll-setup\.log/, 'retain setup output independently of native results');
+  for (const s of native) assert.match(String(s.if), /steps\.destination\.outcome == 'success'/, 'never launch native stages without a selected destination');
   let nativeSeconds = 0;
   for (const s of native) {
     const command = String(s.run);
