@@ -17,7 +17,10 @@ breaking config changes; patch releases stay additive.
   are, but Projects and Access groups now flag them. When one stops a Claude
   turn in Full access, Chat names the folder and says whether the access comes
   from the familiar's own grant or an access group, and offers **Open
-  projects**.
+  projects**. That opens the Access pane for the chat's familiar at the
+  project, and puts the refused message back in the composer. A project's
+  folder also can't be moved onto Cave's private state while anyone can write
+  to the project.
 - **Full-access Claude will take its permissions only from your project
   grants** (#6393). This needs a Coven release with the updated `--write-scope`
   and Claude Code 2.1.318 or later. A familiar can then run shell commands and

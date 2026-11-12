@@ -53,6 +53,8 @@ vi.mock("@/components/ui/select", () => ({
 }));
 vi.mock("@/components/project-settings-modal", () => ({ ProjectSettingsModal: () => null }));
 vi.mock("@/lib/icon", () => ({ Icon: () => <span /> }));
+// The Groups pane is only where the last test starts; its contents are not under test.
+vi.mock("@/components/access-groups-section", () => ({ AccessGroupsSection: () => null }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -148,4 +150,38 @@ test("a latched root this user cannot see is dropped, not left pending", async (
     await settle();
   });
   expect(scrolled, "a dropped request does not resurrect later").toEqual([]);
+});
+
+test("a request about one familiar's access opens the Access pane for that familiar", async () => {
+  // #6451: Chat's "Open projects" on a refused turn. The person last used the
+  // Groups pane, and the sidebar's familiar isn't the one whose chat was
+  // refused. The row to change is on Access, under the chat's familiar.
+  const familiars = [
+    { id: "nova", display_name: "Nova" },
+    { id: "sage", display_name: "Sage" },
+  ];
+  window.localStorage.getItem = (key: string) => (key === "cave:projects:pane" ? "groups" : null);
+  const stored: string[] = [];
+  window.localStorage.setItem = (key: string) => { stored.push(key); };
+  markProjectFocusPending(PROJECT.root, "sage");
+
+  let renderer;
+  await act(async () => {
+    renderer = create(<ProjectsView familiars={familiars} activeFamiliarId="nova" />);
+    await settle();
+  });
+  const picker = () => renderer.root.findAll((node) => node.type === "select" && node.props.label === "Familiar");
+  expect(picker().length, "the Groups pane has no Access toolbar").toBe(0);
+
+  await act(async () => {
+    state.loading = false;
+    state.projects = [PROJECT];
+    renderer.update(<ProjectsView familiars={familiars} activeFamiliarId="nova" />);
+    await settle();
+  });
+
+  expect(picker().length, "the Access pane is showing").toBeGreaterThan(0);
+  expect(picker()[0].props.value, "for the familiar the request named").toBe("sage");
+  expect(scrolled).toEqual([`project-access-row:${PROJECT.id}`]);
+  expect(stored, "the saved pane preference is left alone").not.toContain("cave:projects:pane");
 });

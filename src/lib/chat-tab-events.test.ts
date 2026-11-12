@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 import {
   consumeProjectFocusPending,
+  consumeProjectFocusRequest,
   markProjectFocusPending,
 } from "./chat-tab-events.ts";
 
@@ -41,6 +42,20 @@ test("the newest request wins rather than queueing", () => {
   assert.equal(consumeProjectFocusPending(), null);
 });
 
+test("a request can name whose access it is about, and both parts clear together", () => {
+  // #6451: a refused chat can belong to a different familiar from the
+  // sidebar's. The familiar rides with the root and never outlives it.
+  markProjectFocusPending("/tmp/home", " sage ");
+  assert.deepEqual(consumeProjectFocusRequest(), { root: "/tmp/home", familiarId: "sage" });
+  assert.equal(consumeProjectFocusRequest(), null);
+  markProjectFocusPending("/tmp/home", "sage");
+  markProjectFocusPending("/tmp/other");
+  assert.deepEqual(consumeProjectFocusRequest(), { root: "/tmp/other", familiarId: null }, "a later request without a familiar doesn't inherit one");
+  markProjectFocusPending("/tmp/home", "sage");
+  assert.equal(consumeProjectFocusPending(), "/tmp/home");
+  assert.equal(consumeProjectFocusRequest(), null, "the root-only reader clears the familiar too");
+});
+
 // ── the consumer ─────────────────────────────────────────────────────────────
 
 const projectsView = await readFile(
@@ -54,7 +69,7 @@ test("ProjectsView waits for its rows before consuming the latch", () => {
   // the fetch has settled.
   assert.match(
     projectsView,
-    /if \(projectsLoading\) return;[\s\S]{0,200}?consumeProjectFocusPending\(\)/,
+/if \(projectsLoading\) return;[\s\S]{0,200}?consumeProjectFocusRequest\(\)/,
     "the latch is consumed only after the project list has loaded",
   );
 });
@@ -64,7 +79,7 @@ test("a direct event hit clears the latch too", () => {
   // set, and the next Projects mount scrolls somewhere the user never asked for.
   assert.match(
     projectsView,
-    /focusProjectRoot\(detail\.root\)\) consumeProjectFocusPending\(\)/,
+/focusProjectRoot\(detail\.root, detail\.familiarId\)\) consumeProjectFocusPending\(\)/,
     "the event path clears the latch so it cannot fire again later",
   );
 });

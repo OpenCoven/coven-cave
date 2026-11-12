@@ -10,6 +10,10 @@ export const PRIVATE_STATE_WRITE_CODE = "cave_private_state_write";
 export const PRIVATE_STATE_WRITE_NOTE =
   "This folder holds Cave’s private state, so familiars can’t get write access to it. While one can write here, its Claude Build turns are refused. Change it to Read.";
 
+/** Why a folder that nobody writes to yet only offers Read. */
+export const PRIVATE_STATE_READ_ONLY_NOTE =
+  "This folder holds Cave’s private state, so access here is Read only.";
+
 /** The server's reason when it refused a Write grant, or null for any other failure. */
 export async function privateStateRefusal(res: Response): Promise<string | null> {
   if (res.status !== 409) return null;

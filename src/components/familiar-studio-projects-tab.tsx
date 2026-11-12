@@ -45,7 +45,12 @@ import {
 } from "@/lib/permissions-console";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 import { publishProjectAccessChanged } from "@/lib/project-access-events";
-import { privateStateRefusal } from "@/lib/private-state-access";
+import {
+  PRIVATE_STATE_READ_ONLY_NOTE,
+  PRIVATE_STATE_WRITE_NOTE,
+  privateStateProjectIdsFrom,
+  privateStateRefusal,
+} from "@/lib/private-state-access";
 
 /**
  * Which half of the protocol to render.
@@ -123,6 +128,8 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
   const [granted, setGranted] = useState<Set<string>>(new Set());
   const [grantMeta, setGrantMeta] = useState<Map<string, ConsoleGrant>>(new Map());
   const [accessGroups, setAccessGroups] = useState<ConsoleAccessGroup[]>([]);
+  // Projects whose folder holds Cave's private state: Read only (#6451).
+  const [writeBlocked, setWriteBlocked] = useState<ReadonlySet<string>>(new Set());
   const [supremeFamiliarId, setSupremeFamiliarId] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ConsoleProposal[]>([]);
   const [audit, setAudit] = useState<ConsoleAuditEntry[]>([]);
@@ -152,6 +159,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
       setSupremeFamiliarId(
         typeof grantRes?.supremeFamiliarId === "string" ? grantRes.supremeFamiliarId : null,
       );
+      setWriteBlocked(privateStateProjectIdsFrom(grantRes));
       setAudit(Array.isArray(grantRes?.audit) ? (grantRes.audit as ConsoleAuditEntry[]) : []);
       setGrantChanges(
         Array.isArray(grantRes?.grantChanges) ? (grantRes.grantChanges as ConsoleGrantChange[]) : [],
@@ -225,6 +233,9 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
   const toggle = useCallback(
     async (projectId: string, next: boolean, access: ProjectAccessLevel = "write") => {
       const key = grantKey(familiar.id, projectId);
+      // A level change keeps the grant on, so a failure restores what was
+      // there, not the opposite of what was asked for.
+      const wasGranted = granted.has(key);
       setPending((p) => new Set(p).add(key));
       // Optimistic.
       setGranted((g) => {
@@ -256,8 +267,8 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
         // Revert on failure.
         setGranted((g) => {
           const copy = new Set(g);
-          if (next) copy.delete(key);
-          else copy.add(key);
+          if (wasGranted) copy.add(key);
+          else copy.delete(key);
           return copy;
         });
         setError(refusal ?? "Couldn’t update that grant.");
@@ -269,7 +280,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
         });
       }
     },
-    [familiar.id, load],
+    [familiar.id, granted, load],
   );
 
   // Re-granting at a different level moves the direct grant read⇄write.
@@ -281,17 +292,21 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
   const resolveProposal = useCallback(
     async (id: string, decision: "accepted" | "rejected" | "undo") => {
       setResolving((s) => new Set(s).add(id));
+      let refusal: string | null = null;
       try {
         const res = await fetch(`/api/grant-proposals/${id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ decision }),
         });
+        // Accepting a Write request on a folder holding Cave's private state
+        // is refused with a reason that names the folder (#6451).
+        refusal = res.ok ? null : await privateStateRefusal(res);
         if (!res.ok) throw new Error(String(res.status));
         setError(null);
         await load();
       } catch {
-        setError("Couldn’t record that decision.");
+        setError(refusal ?? "Couldn’t record that decision.");
       } finally {
         setResolving((s) => {
           const copy = new Set(s);
@@ -483,6 +498,11 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
             const source = on && meta ? grantSourceMeta(meta.source, userDisplayName(profileSnapshot?.profile)) : null;
             const level: ProjectAccessLevel = meta?.access === "read" ? "read" : "write";
             const groupSources = effectiveByProject.get(project.id)?.groups ?? [];
+            // A folder holding Cave's private state can be read, never
+            // written. A Write grant made before that rule is flagged, and
+            // stays for a person to narrow (#6451).
+            const readOnly = writeBlocked.has(project.id);
+            const risky = readOnly && on && level === "write";
             return (
               <div key={project.id} className="flex items-center justify-between gap-4 px-4 py-3">
                 <div className="flex min-w-0 items-center gap-3">
@@ -512,6 +532,23 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
                         </>
                       )}
                     </p>
+                    {readOnly && (
+                      <p
+                        data-private-state={risky ? "write" : "read-only"}
+                        className={`mt-1 flex items-start gap-1 text-[length:var(--text-xs)] ${
+                          risky ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"
+                        }`}
+                      >
+                        <Icon
+                          name={risky ? "ph:warning-fill" : "ph:lock-simple"}
+                          width={12}
+                          height={12}
+                          className="mt-0.5 shrink-0"
+                          aria-hidden
+                        />
+                        <span>{risky ? PRIVATE_STATE_WRITE_NOTE : PRIVATE_STATE_READ_ONLY_NOTE}</span>
+                      </p>
+                    )}
                     {groupSources.length > 0 && (
                       <p className="mt-1 flex flex-wrap items-center gap-1.5">
                         {groupSources.map((g) => {
@@ -542,7 +579,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
                   {on && (
                     <div className={busy ? "pointer-events-none opacity-60" : ""}>
                       <Segmented
-                        options={["read", "write"] as const}
+                        options={readOnly && !risky ? (["read"] as const) : (["read", "write"] as const)}
                         value={level}
                         onChange={(candidate) => {
                           if (!busy && candidate !== level) void setAccess(project.id, candidate);
@@ -558,7 +595,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
                     aria-checked={on}
                     aria-label={`${on ? "Revoke" : "Grant"} ${project.name} for ${familiar.display_name}`}
                     disabled={busy}
-                    onClick={() => toggle(project.id, !on)}
+                    onClick={() => toggle(project.id, !on, readOnly ? "read" : "write")}
                     className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-[var(--radius-pill)] transition-colors duration-150 ${
                       on ? "bg-[var(--accent-presence)]" : "bg-[var(--bg-elevated)]"
                     } ${busy ? "opacity-60" : ""}`}

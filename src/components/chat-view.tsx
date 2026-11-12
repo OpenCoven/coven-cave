@@ -1031,15 +1031,18 @@ function ChatErrorStrip({
       className="cave-chat-error-strip shrink-0 border-t border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
     >
       <div className="mx-auto w-full max-w-[var(--cave-chat-measure)]">
-      <div className="flex items-center gap-2 px-5 py-2 text-xs">
+      {/* The row wraps so the code badge and buttons never squeeze the
+          reason to zero width in a phone composer (#6445). */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-5 py-2 text-xs">
         <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
+        <span className="min-w-0 flex-1 basis-56 line-clamp-6 break-words font-medium">{message}</span>
         {code && code !== "harness_auth_required" && code !== "harness_auth_configuration_required" && !usageLimit ? (
           <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]">
             {code}
           </span>
         ) : null}
-        <div className="flex shrink-0 items-center gap-1">
+        {/* Six buttons are wider than a phone: they wrap, so Dismiss stays reachable. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           {hasDetail ? (
             <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={btn}>
               <Icon name={open ? "ph:caret-down-bold" : "ph:caret-right-bold"} width={11} aria-hidden />
@@ -8961,11 +8964,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : privateStateProjectRoot
                 ? () => {
                     const root = privateStateProjectRoot;
+                    // Projects replaces this chat, and Retry goes with it. Put
+                    // the refused message back in the composer, whose draft
+                    // survives the trip, unless something newer is typed there.
+                    const failed = lastFailedSend;
+                    if (failed && !failed.promptOverride && failed.text.trim() && !input.trim()) {
+                      setInput(failed.text);
+                      writeComposerDraft(scopedDraftKey, failed.text);
+                    }
                     // Latches cover a Projects tab that hasn't mounted yet.
+                    // This chat's familiar goes along: a split or side chat
+                    // can belong to a different one from the sidebar's.
                     markProjectsTabPending();
-                    markProjectFocusPending(root);
-                    window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
-                    window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root } }));
+                    markProjectFocusPending(root, familiar.id);
+                    // A side chat sits beside Home or Tasks, where nothing is
+                    // listening for the Projects tab. Go to Chat first.
+                    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+                    window.setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+                      window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root, familiarId: familiar.id } }));
+                    }, 0);
                   }
                 : undefined
           }

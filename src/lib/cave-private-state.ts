@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
@@ -21,12 +21,40 @@ function isWithin(candidate: string, root: string): boolean {
  * `/tmp/x` still compares equal to `/private/tmp/x` before it exists.
  */
 export function canonicalPathForOverlap(target: string): string {
+  return resolveForOverlap(target) ?? path.resolve(/* turbopackIgnore: true */ target);
+}
+
+/** More links than any real path passes through; past this it is a loop. */
+const MAX_LINK_HOPS = 40;
+
+/**
+ * `canonicalPathForOverlap`, or null when the path runs through links that
+ * can't be resolved. A link whose target is missing still points somewhere,
+ * so it is followed by hand: the private state folder isn't made until the
+ * first Claude turn, and a link to it must not read as an ordinary new folder.
+ */
+function resolveForOverlap(target: string, hops = 0): string | null {
   let existing = path.resolve(/* turbopackIgnore: true */ target);
   const missing: string[] = [];
   for (;;) {
     try {
       return path.join(/* turbopackIgnore: true */ realpathSync.native(/* turbopackIgnore: true */ existing), ...missing);
     } catch {
+      let link: string | null = null;
+      try {
+        if (lstatSync(/* turbopackIgnore: true */ existing).isSymbolicLink()) {
+          link = readlinkSync(/* turbopackIgnore: true */ existing);
+        }
+      } catch {
+        // Not there at all: an ordinary missing folder.
+      }
+      if (link !== null) {
+        if (hops >= MAX_LINK_HOPS) return null;
+        return resolveForOverlap(
+          path.resolve(/* turbopackIgnore: true */ path.dirname(existing), link, ...missing),
+          hops + 1,
+        );
+      }
       const parent = path.dirname(existing);
       if (parent === existing) return path.resolve(/* turbopackIgnore: true */ target);
       missing.unshift(path.basename(existing));
@@ -39,13 +67,15 @@ export function canonicalPathForOverlap(target: string): string {
  * True when write access to `root` reaches Cave's private state: the folder
  * holds it, or sits inside it. A Claude Build turn is refused on this test, so
  * grants are refused on it too. Folders elsewhere in Cave's home, such as
- * Research Missions, don't overlap.
+ * Research Missions, don't overlap. A folder behind links that can't be
+ * resolved counts as overlapping: where it leads is unknown.
  */
 export function overlapsCavePrivateState(
   root: string,
   privateState: string = canonicalPathForOverlap(cavePrivateStatePath()),
 ): boolean {
-  const candidate = canonicalPathForOverlap(root);
+  const candidate = resolveForOverlap(root);
+  if (candidate === null) return true;
   return isWithin(privateState, candidate) || isWithin(candidate, privateState);
 }
 
@@ -127,6 +157,31 @@ export function findPrivateStateOverlap(input: {
 function listWords(words: readonly string[]): string {
   if (words.length <= 1) return words.join("");
   return `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
+}
+
+/** Who can write to a project: what a folder move onto the private state would hand over. */
+export type ProjectWriters = {
+  familiarIds: readonly string[];
+  groupNames: readonly string[];
+  /** Familiars whose accepted Write request hasn't become a grant yet. */
+  acceptedFor: readonly string[];
+};
+
+/** Why a project's folder can't move onto the private state, and the fix. */
+export function privateStateMoveMessage(
+  project: { name: string },
+  nextRoot: string,
+  writers: ProjectWriters,
+): string {
+  const where = privateStateRelation(nextRoot) === "contains"
+    ? "contains Cave’s private state" : "is inside Cave’s private state";
+  const who = listWords([
+    ...writers.familiarIds,
+    ...(writers.groupNames.length
+      ? [`the ${listWords(writers.groupNames)} access group${writers.groupNames.length === 1 ? "" : "s"}`] : []),
+    ...writers.acceptedFor.map((familiarId) => `an accepted request for ${familiarId}`),
+  ]);
+  return `${project.name} can’t move to ${displayFolder(nextRoot)}: that folder ${where}, and ${who} can write to ${project.name}. Change that access to Read in Projects first.`;
 }
 
 /** The refusal in words: which folder, how the familiar can write there, and the fix. */

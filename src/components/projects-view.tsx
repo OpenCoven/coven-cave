@@ -13,7 +13,7 @@ import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-type
 import type { Familiar, SessionRow } from "@/lib/types";
 import { useProjects } from "@/lib/use-projects";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
-import { CHAT_FOCUS_PROJECT_EVENT, consumeProjectFocusPending } from "@/lib/chat-tab-events";
+import { CHAT_FOCUS_PROJECT_EVENT, consumeProjectFocusPending, consumeProjectFocusRequest } from "@/lib/chat-tab-events";
 import { gitHubRepoSlug } from "@/lib/github-repo-link";
 import { isSupreme, type ConsoleAccessGroup, type ConsoleGrant } from "@/lib/permissions-console";
 import {
@@ -160,6 +160,8 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   const [grantsLoading, setGrantsLoading] = useState(true);
   const [grantsError, setGrantsError] = useState<string | null>(null);
   const [mutateError, setMutateError] = useState<string | null>(null);
+  // Why a bulk change left some projects at Read. Shown, not only announced.
+  const [bulkNote, setBulkNote] = useState<string | null>(null);
   const [repairingOrphans, setRepairingOrphans] = useState(false);
 
   const loadGrants = useCallback(async () => {
@@ -367,7 +369,10 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     }));
     const groups = grantsData?.groups ?? [];
     for (const project of projects) {
-      if (supreme) {
+      // The supreme familiar reads as Full everywhere, except on a folder
+      // that holds Cave's private state: there its real grant shows, so a
+      // Read grant isn't flagged as Write and an old Write can be narrowed.
+      if (supreme && !writeBlocked.has(project.id)) {
         map.set(project.id, { project, state: "write", direct: "write", groupNames: [] });
         continue;
       }
@@ -385,7 +390,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       });
     }
     return map;
-  }, [projects, familiar, directByProject, grantsData, supreme]);
+  }, [projects, familiar, directByProject, grantsData, supreme, writeBlocked]);
 
   // Toolbar tally always spans the whole map, never the filtered subset.
   const counts = useMemo(
@@ -517,26 +522,44 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
 
   // Command palette "Open project" → scroll the row into view and flash it.
   const [flashId, setFlashId] = useState<string | null>(null);
-  const focusProjectRoot = useCallback((root: string): boolean => {
+  const focusProjectRoot = useCallback((root: string, familiarId?: string | null): boolean => {
     const rootKey = normalizeProjectRoot(root);
     const match = projects.find((p) => normalizeProjectRoot(p.root) === rootKey);
     if (!match) return false;
     setQuery("");
+    // The row lives on the Access pane, inside its organization's section.
+    // Show both, for this visit only: the saved pane preference is untouched.
+    setPane("access");
+    const section = projectOrganizationGroups(projects)
+      .find((group) => group.items.some((project) => project.id === match.id));
+    if (section) {
+      setCollapsed((prev) => {
+        if (!prev.has(section.organization.key)) return prev;
+        const next = new Set(prev);
+        next.delete(section.organization.key);
+        return next;
+      });
+    }
+    // A request about one familiar's access shows that familiar's grants.
+    if (familiarId && familiars.some((candidate) => candidate.id === familiarId)) {
+      setPickedFamiliarId(familiarId);
+    }
     setFlashId(match.id);
-    window.requestAnimationFrame(() => {
+    // Two frames: the pane and section may have to render the row first.
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       document
         .getElementById(`project-access-row:${match.id}`)
         ?.scrollIntoView({ block: "center", behavior: smoothScrollBehavior() });
-    });
+    }));
     return true;
-  }, [projects]);
+  }, [projects, familiars]);
   useEffect(() => {
     const onFocus = (e: Event) => {
-      const detail = (e as CustomEvent<{ root?: string }>).detail;
+      const detail = (e as CustomEvent<{ root?: string; familiarId?: string | null }>).detail;
       if (!detail?.root) return;
       // A direct hit clears the latch too, so an already-mounted surface does
       // not leave a pending root behind to fire again on the next mount.
-      if (focusProjectRoot(detail.root)) consumeProjectFocusPending();
+      if (focusProjectRoot(detail.root, detail.familiarId)) consumeProjectFocusPending();
     };
     window.addEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
     return () => window.removeEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
@@ -550,8 +573,8 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   // for an unrelated later mount.
   useEffect(() => {
     if (projectsLoading) return;
-    const pending = consumeProjectFocusPending();
-    if (pending) focusProjectRoot(pending);
+    const pending = consumeProjectFocusRequest();
+    if (pending) focusProjectRoot(pending.root, pending.familiarId);
   }, [projectsLoading, focusProjectRoot]);
   useEffect(() => {
     if (!flashId) return;
@@ -562,8 +585,9 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   // ── Mutations ──────────────────────────────────────────────────────────
   const cycleRow = useCallback(
     async (row: RowModel) => {
-      if (!familiar || supreme || pendingIds.has(row.project.id)) return;
-      const next = nextAccessState(row.state, writeBlocked.has(row.project.id));
+      const blocked = writeBlocked.has(row.project.id);
+      if (!familiar || (supreme && !blocked) || pendingIds.has(row.project.id)) return;
+      const next = nextAccessState(row.state, blocked);
       if (next === "none" && !row.direct) {
         // Nothing to revoke — the level is inherited from a group.
         announce(
@@ -575,6 +599,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         next === "none"
           ? { projectId: row.project.id, op: "revoke" }
           : { projectId: row.project.id, op: "grant", access: next };
+      setBulkNote(null);
       setPendingIds((prev) => new Set(prev).add(row.project.id));
       setOptimistic((prev) => new Map(prev).set(row.project.id, next === "none" ? null : next));
       try {
@@ -606,8 +631,9 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   );
 
   const applyOps = useCallback(
-    async (ops: AccessOp[], doneMessage: string) => {
+    async (ops: AccessOp[], doneMessage: string, note = "") => {
       if (!familiar || ops.length === 0 || busyAll) return;
+      setBulkNote(null);
       setBusyAll(true);
       setPendingIds(new Set(ops.map((op) => op.projectId)));
       setOptimistic((prev) => {
@@ -639,7 +665,8 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       if (failed > 0) setMutateError(`Couldn’t update ${failed} of ${ops.length} projects.${refusal ? ` ${refusal}` : ""}`);
       else {
         setMutateError(null);
-        announce(doneMessage);
+        setBulkNote(note || null);
+        announce(`${doneMessage}${note ? ` ${note}` : ""}`);
       }
     },
     [familiar, busyAll, loadGrants, announce],
@@ -652,7 +679,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       const names = projects.filter((project) => ids.includes(project.id) && writeBlocked.has(project.id))
         .map((project) => project.name);
       if (names.length === 0) return "";
-      return ` ${names.join(", ")} can’t get Full, because ${names.length === 1 ? "it holds" : "they hold"} Cave’s private state.`;
+      return `${names.join(", ")} can’t get Full, because ${names.length === 1 ? "it holds" : "they hold"} Cave’s private state.`;
     },
     [projects, writeBlocked],
   );
@@ -661,13 +688,16 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     (projectsInSection: readonly CaveProject[], label: string, target: AccessState) => {
       const ids = projectsInSection.map((project) => project.id);
       const ops = setAllOps(ids, directByProject, target, writeBlocked);
+      const note = privateStateNote(ids, target);
       if (ops.length === 0) {
-        announce("Nothing to change.");
+        setBulkNote(note || null);
+        announce(`Nothing to change.${note ? ` ${note}` : ""}`);
         return;
       }
       void applyOps(
         ops,
-        `${label}: ${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.${privateStateNote(ids, target)}`,
+        `${label}: ${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.`,
+        note,
       );
     },
     [directByProject, applyOps, announce, writeBlocked, privateStateNote],
@@ -678,13 +708,16 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     (target: AccessState) => {
       const ids = [...selected];
       const ops = setAllOps(ids, directByProject, target, writeBlocked);
+      const note = privateStateNote(ids, target);
       if (ops.length === 0) {
-        announce("Nothing to change.");
+        setBulkNote(note || null);
+        announce(`Nothing to change.${note ? ` ${note}` : ""}`);
         return;
       }
       void applyOps(
         ops,
-        `${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.${privateStateNote(ids, target)}`,
+        `${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.`,
+        note,
       ).then(() => setSelected(new Set()));
     },
     [selected, directByProject, applyOps, announce, writeBlocked, privateStateNote],
@@ -743,7 +776,9 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     const blocked = writeBlocked.has(row.id);
     const meta = accessStateMeta(row.state, blocked);
     const pending = pendingIds.has(row.id);
-    const viaGroups = row.groupNames.length > 0 && !supreme ? ` — via ${row.groupNames.join(", ")}` : "";
+    // Locked at Full for the supreme familiar, except on a private-state folder.
+    const locked = supreme && !blocked;
+    const viaGroups = row.groupNames.length > 0 && !locked ? ` — via ${row.groupNames.join(", ")}` : "";
     // An existing Write grant here blocks Claude Build turns (#6451).
     const risky = blocked && row.state === "write";
     const note = risky ? ` ${PRIVATE_STATE_WRITE_NOTE}` : "";
@@ -751,14 +786,14 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       <button
         type="button"
         className={`projects-access-pill is-${row.state}${pending ? " is-pending" : ""}${risky ? " is-private-state" : ""} focus-ring`}
-        disabled={pending || supreme}
+        disabled={pending || locked}
         onClick={() => void cycleRow(row)}
         title={
-          supreme
-            ? `${row.name} — Full (supreme familiar)${note}`
+          locked
+            ? `${row.name} — Full (supreme familiar)`
             : `${row.name} — ${meta.label}${viaGroups}. Click to ${meta.action}.${note}`
         }
-        aria-label={`${row.name}: ${meta.label}${viaGroups}. ${supreme ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}${note}`}
+        aria-label={`${row.name}: ${meta.label}${viaGroups}. ${locked ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}${note}`}
       >
         {risky ? (
           <Icon name="ph:warning-fill" width={11} className="projects-access-warning" aria-hidden />
@@ -785,7 +820,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         <div>
           <dt>held</dt>
           <dd>
-            {supreme
+            {supreme && !writeBlocked.has(row.id)
               ? "supreme familiar"
               : row.groupNames.length > 0
                 ? `via ${row.groupNames.join(", ")}`
@@ -1011,24 +1046,36 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             </header>
             {group.items.length > 0 ? (
               <ul className="projects-access-chips">
-                {group.items.map((row) => (
-                  <li key={row.id}>
-                    <button
-                      type="button"
-                      id={`project-access-row:${row.id}`}
-                      className={`projects-access-chip${flashId === row.id ? " is-flash" : ""} focus-ring`}
-                      disabled={pendingIds.has(row.id) || supreme}
-                      onClick={() => void cycleRow(row)}
-                      title={`${row.name} — ${accessStateMeta(row.state, writeBlocked.has(row.id)).label}. Click to ${accessStateMeta(row.state, writeBlocked.has(row.id)).action}.${writeBlocked.has(row.id) && row.state === "write" ? ` ${PRIVATE_STATE_WRITE_NOTE}` : ""}`}
-                    >
-                      <span className={`projects-access-kind is-${row.kind}`} aria-hidden>
-                        <Icon name={row.kind === "workspace" ? "ph:folder" : "ph:github-logo"} width={11} />
-                      </span>
-                      {row.name}
-                      <span className="projects-access-chip-meta">{row.meta}</span>
-                    </button>
-                  </li>
-                ))}
+                {group.items.map((row) => {
+                  const blocked = writeBlocked.has(row.id);
+                  const meta = accessStateMeta(row.state, blocked);
+                  // An existing Write grant here blocks Claude Build turns (#6451).
+                  const risky = blocked && row.state === "write";
+                  const label = `${row.name} — ${meta.label}. Click to ${meta.action}.${risky ? ` ${PRIVATE_STATE_WRITE_NOTE}` : ""}`;
+                  return (
+                    <li key={row.id}>
+                      <button
+                        type="button"
+                        id={`project-access-row:${row.id}`}
+                        className={`projects-access-chip${risky ? " is-private-state" : ""}${flashId === row.id ? " is-flash" : ""} focus-ring`}
+                        disabled={pendingIds.has(row.id) || (supreme && !blocked)}
+                        onClick={() => void cycleRow(row)}
+                        title={label}
+                        aria-label={risky ? label : undefined}
+                      >
+                        {risky ? (
+                          <Icon name="ph:warning-fill" width={12} className="projects-access-warning" aria-hidden />
+                        ) : (
+                          <span className={`projects-access-kind is-${row.kind}`} aria-hidden>
+                            <Icon name={row.kind === "workspace" ? "ph:folder" : "ph:github-logo"} width={11} />
+                          </span>
+                        )}
+                        {row.name}
+                        <span className="projects-access-chip-meta">{row.meta}</span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
           </section>
@@ -1314,6 +1361,13 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         {mutateError && pane === "access" ? (
           <p className="projects-access-error" role="alert">
             {mutateError}
+          </p>
+        ) : null}
+        {/* Already announced when it was set, so no live role here. */}
+        {bulkNote && !mutateError && pane === "access" ? (
+          <p className="projects-access-notice">
+            <Icon name="ph:lock-simple" width={13} aria-hidden />
+            {bulkNote}
           </p>
         ) : null}
         {orphanPermissionRecords > 0 && pane !== "groups" ? (

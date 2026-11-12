@@ -772,6 +772,7 @@ export const SUITES = {
     "src/components/projects-view.test.ts",
     "src/components/projects-view-repair-behavior.test.tsx",
     "src/components/projects-view-focus-latch.behavior.test.tsx",
+    "src/components/familiar-studio-projects-tab-private-state.behavior.test.tsx",
     "src/components/project-settings-modal.test.ts",
     "src/lib/projects/access-page.test.ts",
     "src/lib/projects/access-views.test.ts",
@@ -2890,6 +2891,7 @@ const VITEST_TESTS = new Set([
   "src/components/dashboard/dashboard-loading.test.tsx",
   "src/components/projects-view-repair-behavior.test.tsx",
   "src/components/projects-view-focus-latch.behavior.test.tsx",
+  "src/components/familiar-studio-projects-tab-private-state.behavior.test.tsx",
   "src/components/familiar-x-section-behavior.test.tsx",
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.

@@ -9,6 +9,7 @@ import {
   displayFolder,
   findPrivateStateOverlap,
   overlapsCavePrivateState,
+  privateStateMoveMessage,
   privateStateOverlapMessage,
   privateStateRelation,
   type PrivateStateOverlap,
@@ -16,7 +17,7 @@ import {
 import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
-import { loadProjects, projectForRoot, withProjectRegistryMutex } from "./cave-projects.ts";
+import { loadProjects, projectForRoot, withProjectRegistryMutex, type ProjectRootChangeGuard } from "./cave-projects.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
 import {
   accessLevelSatisfies,
@@ -254,6 +255,24 @@ function withWriteMutex<T>(fn: () => Promise<T>): Promise<T> {
 function withProjectPermissionsStore<T>(operation: () => Promise<T>): Promise<T> {
   if (process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE) return operation();
   return withCaveHomeReconciledStore("cave-project-permissions.json", operation);
+}
+
+const permissionStores = (): string[] =>
+  process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE ? [] : ["cave-project-permissions.json"];
+
+/**
+ * One transaction over the project registry and the grants. The registry
+ * mutex is held while the grants are read, checked and saved, so a project's
+ * folder can't move between a check that read it and the write that relied
+ * on it (#6451). The lock order is registry, then grants, everywhere.
+ */
+function withRegistryAndGrants<T>(operation: (projects: CaveProject[]) => Promise<T>): Promise<T> {
+  const run = () => withProjectRegistryMutex((projects) => withWriteMutex(() => operation(projects)));
+  const stores = [
+    ...(process.env.CAVE_PROJECTS_PATH_OVERRIDE ? [] : ["cave-projects.json"]),
+    ...permissionStores(),
+  ];
+  return stores.length === 0 ? run() : withCaveHomeReconciledStores(stores, run);
 }
 
 async function loadHumanPermissionConfigUnlocked(): Promise<HumanPermissionConfigFile> {
@@ -564,17 +583,20 @@ export class ProjectAccessDeniedError extends Error {
 }
 
 /**
- * The registered projects among `projectIds` whose folder overlaps Cave's
- * private state. Write access there would let a familiar change its own
- * grants, so no grant may newly give it. Read before taking the permissions
- * lock: the project registry has its own.
+ * The projects among `projectIds` whose folder overlaps Cave's private state.
+ * Write access there would let a familiar change its own grants, so no grant
+ * may newly give it. A grant change passes the registry it holds locked
+ * (`withRegistryAndGrants`), so the folders can't move under the check.
  */
-async function privateStateProjects(projectIds: Iterable<string>): Promise<Map<string, CaveProject>> {
+function privateStateProjects(
+  projects: readonly CaveProject[],
+  projectIds: Iterable<string>,
+): Map<string, CaveProject> {
   const wanted = new Set(projectIds);
   if (wanted.size === 0) return new Map();
   const privateState = canonicalPathForOverlap(cavePrivateStatePath());
   const overlapping = new Map<string, CaveProject>();
-  for (const project of await loadProjects()) {
+  for (const project of projects) {
     if (wanted.has(project.id) && overlapsCavePrivateState(project.root, privateState)) {
       overlapping.set(project.id, project);
     }
@@ -585,8 +607,39 @@ async function privateStateProjects(projectIds: Iterable<string>): Promise<Map<s
 /** Registered projects whose folder overlaps Cave's private state. */
 export async function listPrivateStateProjectIds(): Promise<string[]> {
   const projects = await loadProjects();
-  return [...(await privateStateProjects(projects.map((project) => project.id))).keys()];
+  return [...privateStateProjects(projects, projects.map((project) => project.id)).keys()];
 }
+
+/**
+ * Refuses moving a project's folder onto Cave's private state while anyone
+ * can write to the project: the move would hand them that folder with no
+ * grant changing (#6451). An accepted request inside its undo window counts,
+ * since it becomes a grant without another check. Pass to `patchProject`.
+ */
+export const privateStateRootChangeGuard: ProjectRootChangeGuard = {
+  stores: permissionStores,
+  check: (project, nextRoot) => withWriteMutex(async () => {
+    if (!overlapsCavePrivateState(nextRoot)) return;
+    const file = await loadProjectPermissionsUnlocked();
+    const writers = {
+      familiarIds: file.projectGrants
+        .filter((grant) => grant.projectId === project.id && grant.access === "write")
+        .map((grant) => grant.familiarId),
+      groupNames: file.accessGroups
+        .filter((group) => group.projectGrants.some((grant) => grant.projectId === project.id && grant.access === "write"))
+        .map((group) => group.name),
+      acceptedFor: file.grantProposals
+        .filter((proposal) => proposal.projectId === project.id && proposal.status === "accepting"
+          && normalizeAccessLevel(proposal.access) === "write")
+        .map((proposal) => proposal.targetFamiliarId),
+    };
+    if (writers.familiarIds.length + writers.groupNames.length + writers.acceptedFor.length === 0) return;
+    throw new CavePrivateStateGrantError(
+      { id: project.id, name: project.name, root: nextRoot },
+      privateStateMoveMessage(project, nextRoot, writers),
+    );
+  }),
+};
 
 /**
  * When a Full access turn would be refused because a folder the familiar can
@@ -822,9 +875,9 @@ export async function grantProjectToFamiliar(input: {
   /** Who is making the change; defaults to the app itself. */
   actor?: GrantChangeActor;
 }): Promise<void> {
-  const overlapping = normalizeAccessLevel(input.access) === "write"
-    ? await privateStateProjects([input.projectId]) : new Map<string, CaveProject>();
-  await withProjectPermissionsStore(() => withWriteMutex(async () => {
+  await withRegistryAndGrants(async (projects) => {
+    const overlapping = normalizeAccessLevel(input.access) === "write"
+      ? privateStateProjects(projects, [input.projectId]) : new Map<string, CaveProject>();
     const file = await loadProjectPermissionsUnlocked();
     // Read the prior level first — ensureProjectGrant mutates in place, so
     // after it runs the "from" side of the change is gone.
@@ -847,7 +900,7 @@ export async function grantProjectToFamiliar(input: {
       });
       await saveProjectPermissions(file);
     }
-  }));
+  });
 }
 
 export async function revokeProjectFromFamiliar(input: {
@@ -979,27 +1032,20 @@ export async function inspectProjectPermissionIntegrity(): Promise<ProjectPermis
  * idempotent and reviewable.
  */
 export async function repairOrphanProjectPermissions(): Promise<ProjectPermissionIntegrityReport> {
-  const operation = () => withProjectRegistryMutex((projects) => {
+  return withRegistryAndGrants(async (projects) => {
     const knownProjectIds = new Set(projects.map((project) => project.id));
-    return withWriteMutex(async () => {
-      const file = await loadProjectPermissionsUnlocked();
-      const report = orphanProjectIntegrity(file, knownProjectIds);
-      if (report.directGrants + report.groupGrants + report.proposals === 0) return report;
-      file.projectGrants = file.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
-      for (const group of file.accessGroups) {
-        group.projectGrants = group.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
-      }
-      file.grantProposals = file.grantProposals.filter((proposal) => knownProjectIds.has(proposal.projectId));
-      file.repairAudit.push({ at: new Date().toISOString(), kind: "orphan-project-repair", ...report });
-      await saveProjectPermissions(file);
-      return report;
-    });
+    const file = await loadProjectPermissionsUnlocked();
+    const report = orphanProjectIntegrity(file, knownProjectIds);
+    if (report.directGrants + report.groupGrants + report.proposals === 0) return report;
+    file.projectGrants = file.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
+    for (const group of file.accessGroups) {
+      group.projectGrants = group.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
+    }
+    file.grantProposals = file.grantProposals.filter((proposal) => knownProjectIds.has(proposal.projectId));
+    file.repairAudit.push({ at: new Date().toISOString(), kind: "orphan-project-repair", ...report });
+    await saveProjectPermissions(file);
+    return report;
   });
-  const legacies = [
-    ...(process.env.CAVE_PROJECTS_PATH_OVERRIDE ? [] : ["cave-projects.json"]),
-    ...(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE ? [] : ["cave-project-permissions.json"]),
-  ];
-  return legacies.length === 0 ? operation() : withCaveHomeReconciledStores(legacies, operation);
 }
 
 export async function bootstrapSupremeProjectGrants(projects: CaveProject[]): Promise<void> {
@@ -1041,12 +1087,12 @@ export async function createGrantProposal(input: {
   if (input.claimedHumanApproval) {
     throw new ProjectAccessDeniedError("relayed human approval is not accepted");
   }
-  if (normalizeAccessLevel(input.access) === "write") {
-    const overlap = (await privateStateProjects([input.projectId])).get(input.projectId);
-    if (overlap) throw new CavePrivateStateGrantError(overlap);
-  }
 
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+  return withRegistryAndGrants(async (projects) => {
+    if (normalizeAccessLevel(input.access) === "write") {
+      const overlap = privateStateProjects(projects, [input.projectId]).get(input.projectId);
+      if (overlap) throw new CavePrivateStateGrantError(overlap);
+    }
     const file = await loadProjectPermissionsUnlocked();
     const proposal: GrantProposal = {
       id: randomUUID(),
@@ -1060,19 +1106,14 @@ export async function createGrantProposal(input: {
     file.grantProposals.push(proposal);
     await saveProjectPermissions(file);
     return proposal;
-  }));
+  });
 }
 
 export async function resolveGrantProposal(input: {
   proposalId: string;
   decision: "accepted" | "rejected";
 }): Promise<GrantProposal> {
-  const pending = input.decision === "accepted"
-    ? (await loadProjectPermissions()).grantProposals.find((proposal) => proposal.id === input.proposalId)
-    : undefined;
-  const overlapping = pending && normalizeAccessLevel(pending.access) === "write"
-    ? await privateStateProjects([pending.projectId]) : new Map<string, CaveProject>();
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+  return withRegistryAndGrants(async (projects) => {
     const file = await loadProjectPermissionsUnlocked();
     const grantProposal = file.grantProposals.find((proposal) => proposal.id === input.proposalId);
     if (!grantProposal) {
@@ -1081,9 +1122,9 @@ export async function resolveGrantProposal(input: {
     if (grantProposal.status !== "pending") {
       throw new ProjectAccessDeniedError("grant proposal is already resolved");
     }
-    const overlap = overlapping.get(grantProposal.projectId);
-    if (input.decision === "accepted" && overlap && normalizeAccessLevel(grantProposal.access) === "write") {
-      throw new CavePrivateStateGrantError(overlap);
+    if (input.decision === "accepted" && normalizeAccessLevel(grantProposal.access) === "write") {
+      const overlap = privateStateProjects(projects, [grantProposal.projectId]).get(grantProposal.projectId);
+      if (overlap) throw new CavePrivateStateGrantError(overlap);
     }
     if (input.decision === "accepted") {
       // Delayed acceptance: no grant yet — the proposal parks in `accepting`
@@ -1100,7 +1141,7 @@ export async function resolveGrantProposal(input: {
     }
     await saveProjectPermissions(file);
     return grantProposal;
-  }));
+  });
 }
 
 /**
@@ -1199,10 +1240,11 @@ export async function createAccessGroup(input: {
 }): Promise<FamiliarAccessGroup> {
   const name = input.name.trim();
   if (!name) throw new Error("access group name is required");
-  const overlapping = await privateStateProjects(
-    (input.projectGrants ?? []).map((grant) => grant?.projectId?.trim?.() ?? ""),
-  );
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+  return withRegistryAndGrants(async (projects) => {
+    const overlapping = privateStateProjects(
+      projects,
+      (input.projectGrants ?? []).map((grant) => grant?.projectId?.trim?.() ?? ""),
+    );
     const file = await loadProjectPermissionsUnlocked();
     const now = new Date().toISOString();
     const group: FamiliarAccessGroup = {
@@ -1223,7 +1265,7 @@ export async function createAccessGroup(input: {
     recordGroupEffectiveChanges(file, pairs, before, group.id, input.actor ?? "system");
     await saveProjectPermissions(file);
     return group;
-  }));
+  });
 }
 
 export async function updateAccessGroup(input: {
@@ -1235,17 +1277,16 @@ export async function updateAccessGroup(input: {
   /** Who is making the change; defaults to the app itself. */
   actor?: GrantChangeActor;
 }): Promise<FamiliarAccessGroup> {
-  // Every project the group could grant after this edit: new members inherit
-  // its existing grants too.
-  const current = (await loadProjectPermissions()).accessGroups.find((candidate) => candidate.id === input.groupId);
-  const overlapping = await privateStateProjects([
-    ...(current?.projectGrants ?? []).map((grant) => grant.projectId),
-    ...(input.projectGrants ?? []).map((grant) => grant?.projectId?.trim?.() ?? ""),
-  ]);
-  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+  return withRegistryAndGrants(async (projects) => {
     const file = await loadProjectPermissionsUnlocked();
     const group = file.accessGroups.find((candidate) => candidate.id === input.groupId);
     if (!group) throw new AccessGroupNotFoundError();
+    // Every project the group could grant after this edit: new members inherit
+    // its existing grants too.
+    const overlapping = privateStateProjects(projects, [
+      ...group.projectGrants.map((grant) => grant.projectId),
+      ...(input.projectGrants ?? []).map((grant) => grant?.projectId?.trim?.() ?? ""),
+    ]);
     // Snapshot BEFORE the in-place edit — members and grants are rewritten
     // wholesale, so the prior side is otherwise unrecoverable.
     const priorShape = {
@@ -1284,7 +1325,7 @@ export async function updateAccessGroup(input: {
     recordGroupEffectiveChanges(file, pairs, before, group.id, input.actor ?? "system");
     await saveProjectPermissions(file);
     return group;
-  }));
+  });
 }
 
 export async function deleteAccessGroup(

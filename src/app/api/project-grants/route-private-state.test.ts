@@ -84,7 +84,40 @@ try {
   await writeFile(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, JSON.stringify(stored));
   await refused(proposal.PATCH(request("PATCH", { decision: "accepted" }), params("old")), "accepting an old Write proposal");
   await ok(proposal.PATCH(request("PATCH", { decision: "rejected" }), params("old")), "rejecting it");
-  await ok(proposals.POST(request("POST", { proposedBy: "supreme", targetFamiliarId: "nova", projectId: "app" })), "a Write proposal elsewhere");
+  const elsewhere = await ok(proposals.POST(request("POST", { proposedBy: "supreme", targetFamiliarId: "nova", projectId: "app" })), "a Write proposal elsewhere");
+
+  // Moving a project's folder onto the private state would hand everyone who
+  // can write to the project that folder, with no grant changing. Refused
+  // while anyone can write: a group, an accepted request, a direct grant.
+  const project = await import("../projects/[id]/route.ts");
+  const registered = async () => JSON.parse(await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8")).projects.find((entry) => entry.id === "app");
+  const moveRefused = async (pattern, label) => {
+    const response = await project.PUT(request("PUT", { root: caveHomeForTest }), params("app"));
+    const json = await response.json();
+    assert.equal(response.status, 409, `${label}: ${JSON.stringify(json)}`);
+    assert.equal(json.code, "cave_private_state_write", label);
+    assert.equal(json.projectId, "app", label);
+    assert.match(json.error, pattern, label);
+    assert.equal((await registered()).root, path.join(tmp, "app"), `${label}: the folder is unchanged`);
+  };
+  await moveRefused(/^App can’t move to .+: that folder contains Cave’s private state, and the Makers access group can write to App\. Change that access to Read in Projects first\.$/, "a group with Write");
+  await ok(project.PUT(request("PUT", { name: "App two" }), params("app")), "renaming still works");
+  await ok(group.PATCH(request("PATCH", { projectGrants: [{ projectId: "home", access: "read" }, { projectId: "app", access: "read" }] }), params(id)), "narrowing the group");
+  await ok(proposal.PATCH(request("PATCH", { decision: "accepted" }), params(elsewhere.proposal.id)), "accepting the Write request");
+  await moveRefused(/and an accepted request for nova can write to App two\./, "an accepted request inside its undo window");
+  await ok(proposal.PATCH(request("PATCH", { decision: "undo" }), params(elsewhere.proposal.id)), "undoing the acceptance");
+  const direct = JSON.parse(await readFile(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, "utf8"));
+  direct.projectGrants.push({ familiarId: "sage", projectId: "app", access: "write", source: "human", grantedAt: "now" });
+  await writeFile(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, JSON.stringify(direct));
+  await moveRefused(/and sage can write to App two\./, "a direct Write grant");
+  direct.projectGrants.at(-1).access = "read";
+  await writeFile(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, JSON.stringify(direct));
+  const moved = await ok(project.PUT(request("PUT", { root: caveHomeForTest }), params("app")), "moving once nobody can write");
+  assert.equal(moved.project.root, caveHomeForTest);
+  // The pending request is still there. Accepting it now is refused.
+  const late = await proposal.PATCH(request("PATCH", { decision: "accepted" }), params(elsewhere.proposal.id));
+  assert.equal(late.status, 409);
+  assert.equal((await late.json()).code, "cave_private_state_write");
 
   // The direct-grant route maps the same refusal: its target lookup needs the
   // daemon's roster, so its mapping is pinned here and its rule by the store test.

@@ -62,6 +62,19 @@ try {
     true,
     "an alias spelling of a folder inside the private state can't dodge the test",
   );
+  // The private state folder isn't made until the first Claude turn, so a
+  // link to it can dangle. It still points there.
+  await symlink(path.join(caveHomeForTest, "claude-authority"), path.join(tmp, "dangling"), process.platform === "win32" ? "junction" : "dir");
+  await symlink("dangling", path.join(tmp, "dangling-twice"), process.platform === "win32" ? "junction" : "dir");
+  await symlink("loop-b", path.join(tmp, "loop-a"));
+  await symlink("loop-a", path.join(tmp, "loop-b"));
+  await symlink(path.join(tmp, "nowhere"), path.join(tmp, "dangling-elsewhere"), process.platform === "win32" ? "junction" : "dir");
+  assert.equal(overlapsCavePrivateState(path.join(tmp, "dangling")), true, "a dangling link to the private state overlaps it");
+  assert.equal(overlapsCavePrivateState(path.join(tmp, "dangling-twice")), true, "so does a link to that link");
+  assert.equal(overlapsCavePrivateState(path.join(tmp, "dangling", "turn")), true, "and a folder under it");
+  assert.equal(overlapsCavePrivateState(path.join(tmp, "dangling-elsewhere")), false, "a dangling link elsewhere stays grantable");
+  assert.equal(overlapsCavePrivateState(path.join(tmp, "loop-a")), true, "a link that can't be resolved is refused, not guessed at");
+  assert.equal(overlapsCavePrivateState(path.join(tmp, "never-made", "child")), false, "an ordinary missing folder stays grantable");
 
   // ── Fixtures ───────────────────────────────────────────────────────────
   const projects = [
@@ -228,6 +241,21 @@ try {
     "home-2",
     "the chat's own project is named first",
   );
+
+  // A request accepted before the rule, whose undo window has passed, was
+  // already a Write grant on every read. It stays one, for Projects to flag
+  // and a person to narrow. Inside the window the folder can't move onto the
+  // private state instead: the route test covers that.
+  await seed({
+    projectGrants: [], accessGroups: [],
+    grantProposals: [{
+      id: "old", proposedBy: "supreme", targetFamiliarId: "echo", projectId: "home",
+      access: "write", status: "accepting", createdAt: at, acceptedAt: at, finalizesAt: at,
+    }],
+  });
+  grants = await listProjectGrants();
+  assert.equal(level("echo", "home"), "write", "a grant finalized before the rule is an existing grant");
+  assert.deepEqual(await listPrivateStateProjectIds(), ["home"], "and its project is still listed for the flag");
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
   await seed({ projectGrants: [], accessGroups: [], grantProposals: [] });

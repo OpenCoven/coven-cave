@@ -25,7 +25,16 @@ const OVERLAP_MESSAGE =
 type Grant = { familiarId: string; projectId: string; access: "read" | "write" };
 type Group = { id: string; name: string; memberFamiliarIds: string[]; projectGrants: { projectId: string; access: "read" | "write" }[] };
 
-async function setup(page: Page, options: { send?: (route: Route) => Promise<void> | void; groupReadsState?: boolean } = {}) {
+async function setup(page: Page, options: {
+  send?: (route: Route) => Promise<void> | void;
+  groupReadsState?: boolean;
+  /** Nova is the supreme familiar. */
+  supreme?: boolean;
+  /** The Projects pane the person last used. */
+  pane?: "groups" | "activity";
+  /** Supreme asked for Write on the private-state folder before the rule. */
+  requests?: boolean;
+} = {}) {
   const grants: Grant[] = [{ familiarId: "nova", projectId: "home", access: "write" }];
   const groups: Group[] = [{
     id: "coders", name: "Coders", memberFamiliarIds: ["nova"],
@@ -37,12 +46,13 @@ async function setup(page: Page, options: { send?: (route: Route) => Promise<voi
   const writes: Array<{ url: string; method: string; body: Record<string, unknown> | null }> = [];
   // A server refusal the listing didn't predict, as after a stale fetch.
   let refuseNextWrite = false;
-  await page.addInitScript(() => {
+  await page.addInitScript((pane) => {
     localStorage.setItem("cave:active-familiar", "nova");
     localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:chat-composer-controls:v1", JSON.stringify({ permissionMode: "full" }));
-  });
+    if (pane) localStorage.setItem("cave:projects:pane", pane);
+  }, options.pane ?? null);
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: {
     ok: true,
     familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", harness: "claude", icon: "ph:sparkle-fill" }],
@@ -59,7 +69,7 @@ async function setup(page: Page, options: { send?: (route: Route) => Promise<voi
     if (request.method() === "GET") {
       return route.fulfill({ json: {
         ok: true, grants: grants.map((grant) => ({ ...grant, source: "human", grantedAt: ISO })),
-        accessGroups: groups, supremeFamiliarId: null, audit: [], grantChanges: [],
+        accessGroups: groups, supremeFamiliarId: options.supreme ? "nova" : null, audit: [], grantChanges: [],
         privateStateProjectIds: PRIVATE_STATE,
       } });
     }
@@ -90,7 +100,14 @@ async function setup(page: Page, options: { send?: (route: Route) => Promise<voi
     if (body?.projectGrants) groups[0].projectGrants = body.projectGrants;
     return route.fulfill({ json: { ok: true, group: groups[0] } });
   });
-  await page.route("**/api/grant-proposals**", (route) => route.fulfill({ json: { ok: true, proposals: [] } }));
+  const proposals = options.requests
+    ? [{ id: "old-request", proposedBy: "supreme", targetFamiliarId: "nova", projectId: "home", access: "write", status: "pending", createdAt: ISO }]
+    : [];
+  await page.route("**/api/grant-proposals**", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { ok: true, proposals } });
+    return route.fulfill({ status: 409, json: { ok: false, code: "cave_private_state_write", projectId: "home",
+      error: "Coven home (/home/cave/.coven) contains Cave’s private state, so no familiar can have Write access to it. Choose Read instead." } });
+  });
   await page.route("**/api/chat/conversation/**", (route) => route.fulfill({ json: {
     ok: true,
     conversation: { activeLeafId: "a1", turns: [{ id: "a1", parentId: null, role: "assistant", text: "Ready for a message.", createdAt: ISO }] },
@@ -155,6 +172,63 @@ test("Projects flags an existing Write grant on Cave's private state and never o
   await expect(appPill).toHaveText(/^Read$/);
 });
 
+test("A bulk change and the tree view say why a private-state folder stays below Full", async ({ page }) => {
+  const { writes } = await setup(page);
+  await openProjects(page);
+
+  // "Set all: Full" gives the ungranted private-state folder Read, and says
+  // so where a sighted person reads it, not only to a screen reader.
+  const section = card(page, "Cave state").locator("xpath=ancestor::section[1]");
+  const setAllFull = section.locator(".projects-access-setall-btn.is-write");
+  await setAllFull.click();
+  const notice = page.locator(".projects-access-notice");
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText(/Cave state can’t get Full, because (it holds|they hold) Cave’s private state\./);
+  await expect(card(page, "Cave state").locator(".projects-access-pill")).toHaveText(/^Read$/);
+  expect(writes.filter((write) => PRIVATE_STATE.includes(String(write.body?.projectId))).map((write) => write.body?.access)).toEqual(["read"]);
+  // Asked again there is nothing left to change, and the reason still shows.
+  await setAllFull.click();
+  await expect(notice).toContainText("Cave’s private state.");
+  expect(writes.filter((write) => PRIVATE_STATE.includes(String(write.body?.projectId)))).toHaveLength(1);
+
+  // The tree view has no pill. Its chip carries the warning and the reason.
+  await page.getByRole("group", { name: "View mode" }).getByRole("button", { name: "Tree" }).click();
+  const chip = page.locator(".projects-access-chip", { hasText: "Coven home" });
+  await expect(chip).toHaveClass(/is-private-state/);
+  await expect(chip.locator(".projects-access-warning")).toBeVisible();
+  await expect(chip).toHaveAccessibleName(/While one can write here, its Claude Build turns are refused\. Change it to Read\.$/);
+  await expect(page.locator(".projects-access-chip", { hasText: "Cave state" })).not.toHaveClass(/is-private-state/);
+});
+
+test("The supreme familiar's real access shows on a private-state folder and can be narrowed", async ({ page }) => {
+  const { grants } = await setup(page, { supreme: true });
+  await openProjects(page);
+
+  // Everywhere else the supreme familiar is locked at Full.
+  const appPill = card(page, "Coven Cave").locator(".projects-access-pill");
+  await expect(appPill).toHaveText(/^Full$/);
+  await expect(appPill).toBeDisabled();
+  // No grant on this folder: it reads as none, not as a Write to worry about.
+  const statePill = card(page, "Cave state").locator(".projects-access-pill");
+  await expect(statePill).toHaveText(/No access/);
+  await expect(statePill).not.toHaveClass(/is-private-state/);
+  // The Write grant made before the rule is flagged, and a person can remove it.
+  const homePill = card(page, "Coven home").locator(".projects-access-pill");
+  await expect(homePill).toHaveClass(/is-private-state/);
+  await expect(homePill).toBeEnabled();
+  await homePill.click();
+  await expect.poll(() => grants.some((grant) => grant.projectId === "home")).toBe(false);
+});
+
+test("Accepting an old Write request on a private-state folder is refused in the server's words", async ({ page }) => {
+  await setup(page, { requests: true });
+  await openProjects(page);
+  await page.getByRole("tab", { name: "Activity" }).click();
+  await page.getByRole("button", { name: "Accept granting Coven home to Nova" }).click();
+  await expect(page.getByText("Coven home (/home/cave/.coven) contains Cave’s private state, so no familiar can have Write access to it. Choose Read instead.")).toBeVisible();
+  await expect(page.getByText("Couldn’t record that decision.")).toHaveCount(0);
+});
+
 test("Access groups flag the same grant and skip Write for it", async ({ page }) => {
   const { groups, writes } = await setup(page, { groupReadsState: true });
   await openProjects(page);
@@ -176,7 +250,8 @@ test("Access groups flag the same grant and skip Write for it", async ({ page })
 });
 
 test("Chat names the folder and grant behind a refused Full access turn, and opens Projects there", async ({ page }) => {
-  await setup(page);
+  // The person last used Groups: the handoff still lands on Access.
+  await setup(page, { pane: "groups" });
   await page.goto(`/?mode=chat#chat-${SESSION_ID}`, { waitUntil: "domcontentloaded" });
   const chat = page.getByTestId("chat-main");
   await expect(chat.locator(".cave-composer-input")).toBeVisible({ timeout: 45_000 });
@@ -187,9 +262,48 @@ test("Chat names the folder and grant behind a refused Full access turn, and ope
   const strip = chat.getByRole("alert").filter({ hasText: OVERLAP_MESSAGE });
   await expect(strip).toBeVisible();
   await expect(strip).not.toContainText("request failed");
-  // Retry stays for after the grant is narrowed.
+  // The whole sentence is readable: it wraps instead of being cut off, so
+  // the folder, the grant and the fix all show at phone width too.
+  const reason = strip.getByText(OVERLAP_MESSAGE);
+  expect(await reason.evaluate((el) => el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  const box = await strip.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box && viewport && box.x >= 0 && box.x + box.width <= viewport.width + 1).toBe(true);
+  // Retry stays for after the grant is narrowed. With Open projects there
+  // are six buttons: every one stays on screen, down to Dismiss.
   await expect(strip.getByRole("button", { name: "Retry" })).toBeVisible();
+  for (const button of await strip.getByRole("button").all()) {
+    const edge = await button.boundingBox();
+    expect(edge && viewport && edge.x >= 0 && edge.x + edge.width <= viewport.width + 1, await button.innerText() || "Dismiss").toBe(true);
+  }
 
+  await strip.getByRole("button", { name: "Open projects" }).click();
+  await expect(page.locator(".projects-access")).toBeVisible({ timeout: 180_000 });
+  const home = page.locator(".projects-access-card", { hasText: "Coven home" });
+  await expect(home).toBeInViewport();
+  await expect(home.locator(".projects-access-pill")).toHaveClass(/is-private-state/);
+
+  // Projects replaced the chat, and its Retry with it. Reopened from the
+  // list, the refused message is in the composer to send again.
+  await page.getByTestId("detail").getByRole("tab", { name: "Chats" }).click();
+  await page.getByRole("button", { name: /^Reorder chat Private state chat Private state chat/ }).click();
+  await expect(page.getByTestId("chat-main").locator(".cave-composer-input")).toHaveValue("resume the restyle", { timeout: 45_000 });
+});
+
+test("Open projects works from the Chat panel beside Home", async ({ page }) => {
+  // Nothing listens for the Projects tab outside Chat, so the action has to
+  // go there first. A desktop layout: phones have no side panel.
+  test.skip((page.viewportSize()?.width ?? 0) < 1024, "the side Chat panel is a desktop layout");
+  await setup(page);
+  await page.goto("/?mode=home", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Open Chat panel" }).click();
+  const panel = page.getByRole("complementary", { name: "Chat panel" });
+  await expect(panel.getByRole("textbox", { name: "Message" })).toBeVisible({ timeout: 45_000 });
+  await panel.getByRole("textbox", { name: "Message" }).fill("resume the restyle");
+  await panel.getByRole("button", { name: "Send message" }).click();
+
+  const strip = panel.getByRole("alert").filter({ hasText: OVERLAP_MESSAGE });
+  await expect(strip).toBeVisible();
   await strip.getByRole("button", { name: "Open projects" }).click();
   await expect(page.locator(".projects-access")).toBeVisible({ timeout: 180_000 });
   const home = page.locator(".projects-access-card", { hasText: "Coven home" });
