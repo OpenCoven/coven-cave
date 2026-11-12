@@ -158,9 +158,11 @@ function mutateCache<T>(operation: () => Promise<T>): Promise<T> {
 /**
  * Key names that must never reach disk. Matched against the key with
  * separators stripped, so `api_key`, `apiKey`, and `API-KEY` are one rule.
+ * The last three are the opaque provider state the display projection
+ * withholds (OPAQUE_KEYS in server/chat-display-projection.ts).
  */
 const SECRET_KEY_PATTERN =
-  /^(token|accesstoken|refreshtoken|idtoken|bearertoken|apikey|apisecret|secret|clientsecret|password|passphrase|credential|credentials|authorization|authheader|cookie|setcookie|sessionkey|sessiontoken|privatekey|signingkey|signature|jwt|otp|pin)$/;
+  /^(token|accesstoken|refreshtoken|idtoken|bearertoken|apikey|apisecret|secret|clientsecret|password|passphrase|credential|credentials|authorization|authheader|cookie|setcookie|sessionkey|sessiontoken|privatekey|signingkey|signature|jwt|otp|pin|encryptedcontent|redactedthinking|providermetadata)$/;
 
 /**
  * Key names whose values are file bytes rather than text. A conversation
