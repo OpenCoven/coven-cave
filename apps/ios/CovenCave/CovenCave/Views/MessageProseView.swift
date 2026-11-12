@@ -166,6 +166,9 @@ struct MessageProseView: View {
             .buttonStyle(.plain)
             .padding(6)
             .accessibilityLabel("Open response in reader")
+            // Preserve the real reader action identity when the message owns
+            // an explicit accessibility container instead of inheriting IDs.
+            .accessibilityIdentifier("Message bubble \(message.id)")
         }
     }
 
