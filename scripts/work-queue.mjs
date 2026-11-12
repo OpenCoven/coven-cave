@@ -164,7 +164,12 @@ export function proposeEntry(issue, overrides = {}, { today }) {
   return {
     number: issue.number,
     title: issue.title,
-    observed: { body: bodyDigest(issue.body), labels: [...issue.labels].sort(), comments: issue.comments },
+    observed: {
+      body: bodyDigest(issue.body),
+      labels: [...issue.labels].sort(),
+      comments: issue.comments,
+      archived: Boolean(issue.archived),
+    },
     labels: { add: wanted.filter((name) => !issue.labels.includes(name)).sort(), remove: stale.sort() },
     block: {
       lane,
@@ -194,7 +199,9 @@ export function planActions(entry, live, { includeClosures = false } = {}) {
   const ours = new Set([...entry.labels.add, ...entry.labels.remove]);
   const foreign = (labels) => labels.filter((name) => !ours.has(name)).sort().join();
   const bodyMoved = bodyDigest(live.body) !== entry.observed.body && live.body !== replaced.body;
-  const commentsMoved = live.comments !== entry.observed.comments + (live.archived ? 1 : 0);
+  // An archive comment posted after the manifest was generated is our own write.
+  const ownArchive = live.archived && !entry.observed.archived ? 1 : 0;
+  const commentsMoved = live.comments !== entry.observed.comments + ownArchive;
   if (bodyMoved || commentsMoved || foreign(live.labels) !== foreign(entry.observed.labels)) {
     return { skip: "changed since the manifest was generated", actions: [] };
   }
@@ -550,10 +557,16 @@ export async function main(argv, { log = console.log, github } = {}) {
   if (options.command === "propose") {
     const overrides = options.overrides ? JSON.parse(readFileSync(options.overrides, "utf8")) : {};
     const today = new Date().toISOString().slice(0, 10);
+    // The listing carries no comment bodies. An archive comment can exist only
+    // once the goals block has left the body, so look those issues up singly.
+    const issues = [];
+    for (const issue of api.fetchOpenIssues()) {
+      issues.push(GOALS.test(issue.body) ? issue : { ...issue, archived: (await api.fetchIssue(issue.number)).archived });
+    }
     const manifest = {
       repository: options.repo ?? DEFAULT_REPOSITORY,
       generated: new Date().toISOString(),
-      issues: api.fetchOpenIssues().map((issue) => proposeEntry(issue, overrides[issue.number] ?? {}, { today })),
+      issues: issues.map((issue) => proposeEntry(issue, overrides[issue.number] ?? {}, { today })),
     };
     const output = options.table ? manifestTable(manifest) : JSON.stringify(manifest, null, 2);
     if (options.out) writeFileSync(options.out, `${output}\n`);
