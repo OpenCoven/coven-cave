@@ -58,6 +58,6 @@ Interfaces: uses Tasks 1–2’s public API and UI; produces exact candidate ide
 
 - [x] Run fresh/existing/interrupted/restored/default-switch/revoked/runtime/deep-link/draft scenarios using synthetic state, preserving first failures and controls.
 - [x] Inspect the rendered journey in the default browser with keyboard and narrow layouts, dark/light and an alternate theme; classify browser/native/human evidence separately.
-- [ ] Run appropriate full app/API/mobile suites, typecheck, lint, token/UI/test-wiring checks and production build. Address failures at their cause and record environment limits precisely.
+- [x] Run appropriate full app/API/mobile suites, typecheck, lint, token/UI/test-wiring checks and production build. Address failures at their cause and record environment limits precisely.
 - [ ] Review the full branch against the spec and explicit brief, repair important findings, commit and push the exact candidate, then open one draft PR with evidence and remaining acceptance gaps.
 - [ ] Refresh PR head/check state, read back published issue/PR payloads, record intentionally preserved worktree ownership and give one next action. Do not merge or close the issue.
