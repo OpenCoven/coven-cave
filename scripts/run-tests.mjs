@@ -2176,6 +2176,7 @@ export const SUITES = {
     "src/lib/desktop-reachability.test.ts",
     "src/lib/server/mobile-paired.test.ts",
     "scripts/ios-build-ci.test.mjs",
+    "scripts/ios-native-command.test.mjs",
     "scripts/ios-dsym-coverage.test.mjs",
     "scripts/ios-xctest-summary.test.mjs",
     "scripts/ios-select-simulator.test.mjs",
