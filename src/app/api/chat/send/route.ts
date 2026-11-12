@@ -207,6 +207,7 @@ import {
 } from "@/lib/chat-project-access";
 import {
   authorizeChatProjectLaunch,
+  PROJECT_ACCESS_REVOKED_MESSAGE,
   ChatProjectLaunchError,
   projectlessGenerationLaunch,
 } from "@/lib/server/chat-project-launch";
@@ -3179,6 +3180,14 @@ async function postAdmittedChat(
   const primaryProjectAccess = authorizedProjectId
     ? accessibleProjects.find((entry) => entry.project.id === authorizedProjectId)?.access
     : undefined;
+  // The project was authorized above from an earlier read of the grants.
+  // Projects can revoke it in between, so a project with no grant in this
+  // snapshot is refused the way authorization refuses it: nothing launches
+  // in a project the familiar can no longer open, in any mode.
+  if (!sshRuntime && authorizedProjectId && !primaryProjectAccess) {
+    return Response.json({ ok: false, code: "project_access_denied",
+      error: PROJECT_ACCESS_REVOKED_MESSAGE }, { status: 403 });
+  }
   if (!sshRuntime && body.permissionMode !== "read" && primaryProjectAccess === "read") {
     return Response.json({ ok: false, code: "project_write_access_required",
       error: PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE }, { status: 403 });

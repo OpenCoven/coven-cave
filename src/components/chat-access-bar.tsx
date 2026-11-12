@@ -101,12 +101,14 @@ export function ChatAccessBar({
   const projectReadOnly = projectAccess === "read" && projectName !== null;
 
   let body: string;
+  // A plan made before the grant is still waiting: the grant sends nothing.
+  const planAfterGrant = !explore && Boolean(grantUndo) && !buildBlocked && planReady;
   if (!explore && grantUndo) {
-    body = `${grantUndo.familiarName} can now change files in ${grantUndo.projectName}.`;
+    body = `${grantUndo.familiarName} can now change files in ${grantUndo.projectName}.${planAfterGrant ? " The plan is ready to build." : ""}`;
   } else if (buildBlocked) {
     body = `Build isn't available here: ${buildBlocked}`;
   } else if (projectReadOnly) {
-    body = `${projectName} is read only for ${familiarName}. Give ${familiarName} write access to use Build here.`;
+    body = `${projectName} is read only for ${familiarName}. Give ${familiarName} write access to ${planReady ? "build the plan" : "use Build here"}.`;
   } else if (planReady) {
     body = `${familiarName} has a plan ready. Build it to let ${familiarName} make the changes.`;
   } else {
@@ -153,6 +155,11 @@ export function ChatAccessBar({
           {explore && !buildBlocked && !projectReadOnly && !planReady ? (
             <Button size="sm" variant="secondary" leadingIcon="ph:hammer" disabled={busy} onClick={onSwitchToBuild}>
               Switch to Build
+            </Button>
+          ) : null}
+          {!explore && grantUndo && !buildBlocked && planReady ? (
+            <Button size="sm" variant="primary" leadingIcon="ph:hammer" disabled={busy} onClick={onBuildPlan}>
+              Build this plan
             </Button>
           ) : null}
           {!explore && grantUndo ? (

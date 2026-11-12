@@ -20,6 +20,8 @@ type Fixture = {
   projectAccess?: "read" | "write";
   turns?: Turn[];
   buildUnavailable?: string;
+  /** The chat's runtime; Claude unless set. */
+  harness?: string;
   /** Open a new chat (no session yet) instead of the saved one. */
   draft?: boolean;
   send: (route: Route, count: number) => Promise<void> | void;
@@ -58,7 +60,7 @@ async function setup(page: Page, fixture: Fixture) {
   }, { access: fixture.access ?? "full", key: PREFS_KEY });
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: {
     ok: true,
-    familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", harness: "claude", icon: "ph:sparkle-fill" }],
+    familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", harness: fixture.harness ?? "claude", icon: "ph:sparkle-fill" }],
   } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: {
     ok: true,
@@ -92,7 +94,7 @@ async function setup(page: Page, fixture: Fixture) {
   await page.route("**/api/vault**", (route) => route.fulfill({ json: { ok: true, mappings: [] } }));
   await page.route("**/api/chat/model-state**", (route) => route.fulfill({ json: {
     ok: true,
-    state: { familiarId: "nova", runtime: null, harness: "claude", effectiveModel: null, source: "runtime-default", applicationState: "saved", reason: "e2e", familiarDefaultModel: null },
+    state: { familiarId: "nova", runtime: null, harness: fixture.harness ?? "claude", effectiveModel: null, source: "runtime-default", applicationState: "saved", reason: "e2e", familiarDefaultModel: null },
     ...(fixture.buildUnavailable
       ? { access: { build: { available: false, code: "scoped_write_unavailable", message: fixture.buildUnavailable } } }
       : { access: { build: { available: true } } }),
@@ -149,6 +151,36 @@ test("a ready Claude plan offers Build this plan", async ({ page }) => {
   expect(sends[0].permissionMode).toBe("full");
   expect(String(sends[0].prompt)).toContain("plan");
   await expect(bar).toHaveCount(0);
+});
+
+test("a plan made on a read-only project can still be built after the grant", async ({ page }) => {
+  const { chat, sends, grantWrites } = await setup(page, { access: "read", projectAccess: "read", turns: [PLANNED], send: ok });
+  const bar = chat.getByRole("region", { name: "Chat access" });
+  // Build needs write access first, and the bar says what the grant is for.
+  await expect(bar.getByRole("status")).toHaveText("Coven Cave is read only for Nova. Give Nova write access to build the plan.");
+  await expect(bar.getByRole("button", { name: "Build this plan" })).toHaveCount(0);
+  await bar.getByRole("button", { name: "Give write access…" }).click();
+  await chat.getByRole("button", { name: "Confirm write access" }).click();
+  await expect.poll(() => grantWrites.length).toBe(1);
+  // The grant sends nothing by itself. The plan is still one press away.
+  expect(sends).toEqual([]);
+  await expect(bar.getByRole("status")).toHaveText("Nova can now change files in Coven Cave. The plan is ready to build.");
+  await expect(bar.getByRole("button", { name: "Undo write access" })).toBeVisible();
+  await bar.getByRole("button", { name: "Build this plan" }).click();
+  await expect.poll(() => sends.length).toBe(1);
+  expect(sends[0].permissionMode).toBe("full");
+  expect(sends[0].prompt).toBe("Go ahead and build the plan above.");
+  // Sent once: the cue goes, Undo stays.
+  await expect(bar.getByRole("button", { name: "Build this plan" })).toHaveCount(0);
+  await expect(bar.getByRole("button", { name: "Undo write access" })).toBeVisible();
+});
+
+test("a plan-shaped tool trail on another runtime is not a Claude plan", async ({ page }) => {
+  const { chat } = await setup(page, { access: "read", harness: "codex", turns: [PLANNED], send: ok });
+  const bar = chat.getByRole("region", { name: "Chat access" });
+  await expect(bar.getByRole("button", { name: "Switch to Build" })).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Build this plan" })).toHaveCount(0);
+  await expect(bar).not.toContainText("plan");
 });
 
 test("a runtime that cannot apply Build explains why instead of offering it", async ({ page }) => {
@@ -257,6 +289,27 @@ test("a runtime write-scope blocker offers Explore, never a Build that cannot ru
   expect(sends[1].permissionMode).toBe("read");
 });
 
+test("a read-only project on a runtime that cannot apply Build offers Explore, not a grant", async ({ page }) => {
+  const { chat, sends, grantWrites } = await setup(page, {
+    projectAccess: "read",
+    buildUnavailable: "This runtime cannot safely apply project write access. Update Coven and restart Cave, then retry.",
+    send: (route, count) => count === 1
+      ? route.fulfill({ status: 403, json: { ok: false, code: "project_write_access_required",
+        error: "This project's access is read-only. Choose Read-only mode or request write access, then retry." } })
+      : ok(route),
+  });
+  await send(chat, "Rename the helper.");
+  await expect.poll(() => sends.length).toBe(1);
+  const explore = chat.getByRole("button", { name: "Use Explore and retry" });
+  await expect(explore).toBeVisible();
+  // Write access wouldn't make Build run here, so the retry would be refused again.
+  await expect(chat.getByRole("button", { name: /Give Nova write access/ })).toHaveCount(0);
+  await explore.click();
+  await expect.poll(() => sends.length).toBe(2);
+  expect(sends[1].permissionMode).toBe("read");
+  expect(grantWrites).toEqual([]);
+});
+
 test("the write-access grant works from the keyboard and keeps focus in the chat", async ({ page }) => {
   const { chat, sends, grantWrites } = await setup(page, {
     projectAccess: "read",
@@ -308,13 +361,16 @@ test("an Undo made stale by another change is refused and says so", async ({ pag
   await expect(undo).toBeVisible();
   // The grant is lowered elsewhere before Undo; Undo must not overwrite that.
   changeGrantElsewhere("read");
-  await undo.click();
+  await undo.focus();
+  await page.keyboard.press("Enter");
   await expect.poll(() => grantWrites.length).toBe(2);
   expect(directAccess()).toBe("read");
   await expect(chat.getByText("Couldn't undo the access change:", { exact: false })).toBeVisible();
   await expect(chat.getByText("changed after it was shown", { exact: false })).toBeVisible();
   // Undo no longer applies, so it is withdrawn rather than left to fail again.
   await expect(undo).toHaveCount(0);
+  // The button that had focus is gone: focus moves to the composer, not the page.
+  await expect(chat.locator(".cave-composer-input")).toBeFocused();
 });
 
 test("a grant made in a new chat keeps its Undo once the retry starts the chat", async ({ page }, testInfo) => {

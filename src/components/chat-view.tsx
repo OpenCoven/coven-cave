@@ -1063,7 +1063,7 @@ function ChatErrorStrip({
           reason to zero width in a phone composer (#6445). */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-5 py-2 text-xs">
         <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
-        <span className="min-w-0 flex-1 basis-56 line-clamp-3 break-words font-medium">{message}</span>
+        <span className="min-w-0 flex-1 basis-56 line-clamp-6 break-words font-medium">{message}</span>
         {code && code !== "harness_auth_required" && code !== "harness_auth_configuration_required" && !usageLimit ? (
           <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]">
             {code}
@@ -6446,6 +6446,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (failure instanceof GrantChangeError && failure.code === "grant_changed") {
         setGrantUndo(null);
         priorChatAccessRef.current = null;
+        keepFocusInChat(pressed);
       }
       const message = `Couldn't undo the access change: ${failure instanceof Error ? failure.message : "the request failed"}`;
       setError(message);
@@ -8052,8 +8053,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
 
   // A settled Claude plan in Explore is the cue for "Build this plan" (#6445).
+  // Other runtimes can show the same tool names, and the continuation is
+  // Claude's, so only a Claude chat gets the cue.
   const latestPathTurn = activePath.at(-1);
   const latestPlanReady = Boolean(
+    modelHarness === "claude" &&
     latestPathTurn &&
     latestPathTurn.role === "assistant" &&
     !latestPathTurn.pending &&

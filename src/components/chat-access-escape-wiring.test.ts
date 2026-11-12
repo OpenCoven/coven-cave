@@ -67,6 +67,15 @@ for (const label of ["Build this plan", "Switch to Build", "Give write access…
   const guard = bar.slice(bar.lastIndexOf("{explore && !buildBlocked", index), index);
   assert.ok(guard.startsWith("{explore && !buildBlocked"), `${label} is gated on Explore and an available Build`);
 }
+// A grant made while a plan is waiting keeps the plan one press away.
+assert.match(bar, /\{!explore && grantUndo && !buildBlocked && planReady \? \(\s*<Button[^>]*onClick=\{onBuildPlan\}>\s*Build this plan/);
+// The plan cue belongs to a Claude chat: other runtimes can show the same tool names.
+assert.match(source, /const latestPlanReady = Boolean\(\s*modelHarness === "claude" &&/);
+// A refused stale Undo unmounts the focused button, so focus returns to the composer.
+assert.match(
+  source,
+  /failure\.code === "grant_changed"\) \{\s*setGrantUndo\(null\);\s*priorChatAccessRef\.current = null;\s*keepFocusInChat\(pressed\);/,
+);
 // Outcomes are announced.
 assert.match(bar, /role="status"/);
 assert.match(source, /announce\(`\$\{familiar\.display_name\} can now change files in \$\{project\.name\}\.`, "polite"\)/);

@@ -54,6 +54,13 @@ test("each refusal maps to actions that can clear it, and never a Build that can
   const base = { requested: "full" as const, buildAccess: { available: true } as const, projectAccess: "write" as const, canGrant: true };
   assert.deepEqual(accessRefusalActions({ ...base, code: "project_write_access_required", projectAccess: "read" }), ["grant-write-retry", "retry-explore"]);
   assert.deepEqual(accessRefusalActions({ ...base, code: "project_write_access_required", projectAccess: "read", canGrant: false }), ["retry-explore"]);
+  // A grant can't make Build run on a runtime that can't apply it: the retry
+  // would be refused again, so only Explore is offered.
+  assert.deepEqual(accessRefusalActions({
+    ...base, code: "project_write_access_required", projectAccess: "read",
+    buildAccess: { available: false, code: "scoped_write_unavailable", message: "Needs a newer Coven." },
+  }), ["retry-explore"]);
+  assert.deepEqual(accessRefusalActions({ ...base, code: "project_write_access_required", projectAccess: "read", buildAccess: null }), ["grant-write-retry", "retry-explore"]);
   assert.deepEqual(accessRefusalActions({ ...base, code: "read_only_unavailable", requested: "read" }), ["retry-build"]);
   assert.deepEqual(accessRefusalActions({ ...base, code: "read_only_unavailable", requested: "read", projectAccess: "read" }), []);
   assert.deepEqual(accessRefusalActions({

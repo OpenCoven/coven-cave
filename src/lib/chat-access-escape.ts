@@ -127,7 +127,9 @@ export function accessRefusalActions(input: {
   const buildRunnable = input.buildAccess?.available !== false;
   switch (input.code) {
     case "project_write_access_required":
-      return [...(input.canGrant ? ["grant-write-retry" as const] : []), "retry-explore"];
+      // A grant only helps where Build can run. Elsewhere the retry would be
+      // refused again by the runtime, so Explore is the one working action.
+      return [...(input.canGrant && buildRunnable ? ["grant-write-retry" as const] : []), "retry-explore"];
     case "read_only_unavailable":
       // Build is an escalation the person chooses; offer it only when it can run.
       return buildRunnable && input.projectAccess !== "read" ? ["retry-build"] : [];

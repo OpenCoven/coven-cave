@@ -16,15 +16,17 @@ breaking config changes; patch releases stay additive.
   confirm first, can undo, and is logged as a desktop grant change. It is
   refused if the grant changed in the meantime. You can also retry in Explore.
   When a runtime can't run Build, Chat and the Access menu say why instead of
-  offering it.
+  offering it, and a read-only project there offers only Explore. A plan made
+  before you give write access keeps **Build this plan** after the grant.
 
 ### Security
 - **A read-only project grant now limits Full access on every runtime**
   (#6445). Codex, OpenCode and the other harnesses could start a Full access
   turn in a project the familiar could only read. With Codex's `sandbox_mode`
   set to `workspace-write`, that turn could write there. Cave now refuses it
-  before launch, as it already did for Claude. Cave still never widens a
-  runtime's own sandbox.
+  before launch, as it already did for Claude. A turn is also refused when
+  the project's grant is removed while the turn is starting. Cave still never
+  widens a runtime's own sandbox.
 
 ### Changed
 - **Full-access Claude will take its permissions only from your project
