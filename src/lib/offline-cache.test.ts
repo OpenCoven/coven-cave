@@ -65,6 +65,24 @@ test("credential-shaped keys never reach the payload", () => {
   ]);
 });
 
+// golden-13 (#6061): the display projection withholds opaque provider state
+// (OPAQUE_KEYS in server/chat-display-projection.ts). A payload that still
+// carries it must not be written to the durable cache either.
+test("opaque provider state never reaches the payload", () => {
+  const corpus = JSON.parse(readFileSync(new URL("../../apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-v1.json", import.meta.url), "utf8"));
+  const sentinel = corpus.reasoningPrivacySentinels.tool.payloadSignature;
+  const tool = {
+    id: "golden13-read", name: "Read", status: "ok",
+    signature: sentinel, encrypted_content: sentinel, encryptedContent: sentinel,
+    redacted_thinking: sentinel, providerMetadata: { state: sentinel }, provider_metadata: { state: sentinel },
+  };
+  const { value, dropped } = sanitizeForOfflineCache({ conversation: { turns: [{ id: "a", role: "assistant", text: "Done", tools: [tool] }] } });
+
+  assert.equal(JSON.stringify(value).includes(sentinel), false);
+  assert.deepEqual(value.conversation.turns[0].tools[0], { id: "golden13-read", name: "Read", status: "ok" });
+  assert.equal(dropped.length, 6);
+});
+
 test("attachment bytes are dropped while ordinary prose survives", () => {
   const long = "A".repeat(9000);
   const { value, dropped } = sanitizeForOfflineCache({

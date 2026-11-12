@@ -795,6 +795,30 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
   assert.equal(await deleteConversation("inline-images-5587"), true);
 }
 
+// ── golden-13 (#6061): history mapping selects the tool display schema ───────
+// The server projects stored tools to a fixed set of fields. The client does
+// the same when it maps a history payload, so opaque provider state from a
+// payload that still carries it never reaches the turn that Debug copy, the
+// reader and the prompt enhancer read.
+{
+  const { readFileSync } = await import("node:fs");
+  const corpus = JSON.parse(readFileSync(new URL("../../apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-v1.json", import.meta.url), "utf8"));
+  const { argument, result, payloadSignature } = corpus.reasoningPrivacySentinels.tool;
+  const [mapped] = mapConversationHistoryTurns([{
+    id: "golden13-answer", role: "assistant", text: "Done", createdAt: "2026-10-18T12:00:00.000Z",
+    tools: [{
+      id: "golden13-read", name: "Read", status: "ok", input: JSON.stringify({ note: argument }), output: result,
+      outputChars: 64, durationMs: 12, textOffset: 0,
+      signature: payloadSignature, encrypted_content: payloadSignature, providerMetadata: { state: payloadSignature },
+    }],
+  }], "golden13-session");
+  assert.equal(JSON.stringify(mapped).includes(payloadSignature), false, "opaque tool siblings are not carried into the turn");
+  assert.deepEqual(mapped.tools, [{
+    id: "golden13-read", name: "Read", status: "ok", input: JSON.stringify({ note: argument }), output: result,
+    outputChars: 64, durationMs: 12, textOffset: 0, outputSessionId: "golden13-session",
+  }], "the display fields a tool card reads are kept");
+}
+
 // ── CHAT-D9-02: conversation content search ──────────────────────────────────
 // Appended section — searchConversations over fixture transcripts written
 // directly into CONV_DIR (still pointing at the temp HOME from above).
