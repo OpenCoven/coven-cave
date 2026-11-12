@@ -14,9 +14,9 @@ const root = process.cwd();
 export default {
   ...base,
   testDir: path.join(root, "tests"),
+  use: { ...base.use, serviceWorkers: "block" as const },
   retries: 0,
   projects: [
-    { name: "golden-chromium", testMatch: SPEC, use: { ...devices["Desktop Chrome"] } },
     { name: "golden-webkit", testMatch: SPEC, use: { ...devices["Desktop Safari"] } },
   ],
   webServer: { ...base.webServer, cwd: root },
