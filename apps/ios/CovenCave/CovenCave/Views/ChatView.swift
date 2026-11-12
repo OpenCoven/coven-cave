@@ -27,6 +27,7 @@ private struct EmptyChatSuggestion: Identifiable {
 struct ChatView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var thread: ChatThread
@@ -1296,6 +1297,8 @@ struct ChatView: View {
                 : nil
             MessageBubble(message: message,
                           isGroup: thread.isGroup,
+                          colorScheme: colorScheme,
+                          chrome: chrome,
                           familiar: bubbleFamiliar,
                           isLast: message.id == thread.messages.last?.id,
                           onDelete: bubbleDelete,

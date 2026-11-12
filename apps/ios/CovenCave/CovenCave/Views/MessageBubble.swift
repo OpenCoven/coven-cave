@@ -4,6 +4,9 @@ import UIKit
 struct MessageBubble: View {
     let message: DisplayMessage
     var isGroup: Bool
+    /// Resolved by the installed parent, including when equality is evaluated.
+    let colorScheme: ColorScheme
+    let chrome: ChromePalette
     var familiar: Familiar?
     var isLast: Bool = false
     var onDelete: (() -> Void)?
@@ -36,14 +39,6 @@ struct MessageBubble: View {
 
     /// Horizontal offset while swiping right to reply.
     @State private var replyDrag: CGFloat = 0
-
-    // The bubble's WebView is transparent over a system-coloured bubble, so its
-    // prose must follow the app's light/dark appearance (the WebView doesn't
-    // pick up `prefers-color-scheme` on its own).
-    @Environment(\.colorScheme) private var colorScheme
-    // The desktop theme palette: its accent drives inline-code / link colours in
-    // the markdown so they match the selected theme instead of a fixed lavender.
-    @Environment(\.chrome) private var chrome
 
     /// Brief "copied" confirmation on the action row (design: copy → check).
     @State private var justCopied = false
@@ -702,7 +697,7 @@ struct SuggestionPills: View {
 // every bubble (each hosts a WKWebView) — the cause of slow typing on long
 // threads. Closures are excluded (they capture fresh state each render but
 // don't change what's drawn); optional-action closures are compared by presence
-// since that toggles which buttons appear. Environment values and the complete
+// since that toggles which buttons appear. Resolved appearance inputs and the complete
 // familiar model are included because they directly control colours, markdown
 // styling, and the familiar attribution row.
 extension MessageBubble: Equatable {

@@ -44,6 +44,15 @@ assert.match(
   "theme palette changes should invalidate an equatable bubble",
 );
 
+assert.match(chatView, /@Environment\(\\\.colorScheme\) private var colorScheme/,
+  "The installed parent resolves appearance before creating equatable children");
+assert.match(chatView, /MessageBubble\(message: message,[\s\S]*?colorScheme: colorScheme,/,
+  "The bubble receives the active resolved appearance");
+assert.match(messageBubble, /let colorScheme: ColorScheme/,
+  "Appearance must remain a resolved equality input");
+assert.doesNotMatch(messageBubble, /@Environment\(\\\.(?:chrome|colorScheme)\)/,
+  "Equatable bubble inputs must not access uninstalled environment wrappers");
+
 assert.doesNotMatch(
   messageBubble,
   /lhs\.familiar\?\.id == rhs\.familiar\?\.id/,

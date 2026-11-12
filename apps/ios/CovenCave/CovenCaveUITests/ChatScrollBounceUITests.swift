@@ -181,10 +181,35 @@ final class ChatScrollBounceUITests: XCTestCase {
         let (_, transcript) = openRich("--ui-preview-rich-streaming-chat-scroll",
                                        thread: "ui-preview-rich-streaming-chat-scroll", needle: streamingTail)
         for _ in 0..<4 { transcript.swipeDown() }
+        attachScreenshot("Streaming flick: after history gestures")
         XCTAssertFalse(isDrawn(streamingTail), "the reader left the latest reply")
         assertReturnsAndStays(streamingTail, transcript, attempts: 40, "Streaming flick") {
             transcript.swipeUp()
         }
+    }
+
+    /// Finishing a stream introduces the reader control and narrows the prose.
+    /// The last line must remain drawn after that width-only layout change.
+    @MainActor
+    func testStreamingCompletionKeepsTheReflowedTailVisible() {
+        let (app, _) = openRich("--ui-preview-rich-completing-chat-scroll",
+                               thread: "ui-preview-rich-completing-chat-scroll", needle: "completion marker n8v2")
+        // SwiftUI propagates this row identifier to its accessible children;
+        // the first match is the WebView, not a container for the sibling button.
+        let reader = app.buttons.matching(identifier: "Message bubble rich-latest")
+            .matching(NSPredicate(format: "label == %@", "Open response in reader")).firstMatch
+        XCTAssertTrue(reader.waitForExistence(timeout: 30), "the fixture finishes streaming and exposes its real reader action")
+        XCTAssertTrue(waitUntilDrawn("completion marker n8v2"), "the reflowed latest line remains drawn after streaming completes")
+        attachScreenshot("Streaming completion: reflowed tail")
+        var lost = 0
+        for sample in 0..<12 {
+            Thread.sleep(forTimeInterval: 0.5)
+            if !isDrawn("completion marker n8v2") {
+                lost += 1
+                attachScreenshot("Streaming completion: lost at sample \(sample)")
+            }
+        }
+        XCTAssertEqual(lost, 0, "settling streaming controls does not clip or move away the latest line")
     }
 
     @MainActor

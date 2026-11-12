@@ -2504,6 +2504,17 @@ final class AppModel {
             return
         }
 
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-completing-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-rich-completing-chat-scroll", title: "Completing Rich Chat",
+                streamsLatest: true, streamTicks: 4, completionMarker: "Completion marker n8v2"
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-streaming-chat-scroll") {
             isConnectingPreview = true
             configureRichChatScrollPreview(
@@ -2801,7 +2812,8 @@ final class AppModel {
     /// #6090: history whose replies are much taller than the 12-line loading
     /// placeholder, so rows change height as WebKit measures them while the
     /// reader scrolls back to the latest reply. Optionally keeps streaming.
-    private func configureRichChatScrollPreview(id: String, title: String, streamsLatest: Bool, historyCount: Int = 40) {
+    private func configureRichChatScrollPreview(id: String, title: String, streamsLatest: Bool, historyCount: Int = 40,
+                                                 streamTicks: Int = 240, completionMarker: String? = nil) {
         configureEmptyChatPreview()
         let base = Date(timeIntervalSince1970: 1_786_000_000)
         var messages: [DisplayMessage] = []
@@ -2846,12 +2858,18 @@ final class AppModel {
 
         guard streamsLatest else { return }
         Task { @MainActor [weak thread] in
-            for tick in 0..<240 {
+            for tick in 0..<streamTicks {
                 try? await Task.sleep(for: .milliseconds(400))
                 guard let thread, let last = thread.messages.indices.last else { return }
-                thread.messages[last].text += "\n\nStreaming tail line \(tick) tail q3k9z"
+                // Keep the sentinel unique to the newest line. Older lines
+                // retain an equal-length token so the fixture's rich workload
+                // and wrapping are not reduced while scrolling through history.
+                thread.messages[last].text = thread.messages[last].text
+                    .replacingOccurrences(of: "tail q3k9z", with: "tail q3k9x")
+                    + "\n\nStreaming tail line \(tick) tail q3k9z"
             }
             guard let thread, let last = thread.messages.indices.last else { return }
+            if let completionMarker { thread.messages[last].text += "\n\n" + completionMarker }
             thread.messages[last].streaming = false
         }
     }
