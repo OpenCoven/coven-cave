@@ -35,3 +35,23 @@ test("an older eligibility response cannot roll back progress saved while that r
   await act(async () => { staleRead.resolve(Response.json({ ok: true, ...payload(8) })); await read; });
   expect(context.payload?.state.revision).toBe(9);
 });
+
+test("a superseded validation read cannot return cached readiness as fresh admission evidence", async () => {
+  const requests: Array<{ resolve: (response: Response) => void }> = [];
+  vi.stubGlobal("window", new EventTarget());
+  vi.stubGlobal("fetch", () => new Promise<Response>((resolve) => requests.push({ resolve })));
+  await act(async () => { renderer = create(createElement(LiveRegionProvider, null, createElement(FirstUseProvider, null, createElement(Probe)))); });
+  await act(async () => requests.shift()!.resolve(Response.json({ ok: true, ...payload(8) })));
+  let validating!: ReturnType<typeof context.refresh>;
+  let focusRefresh!: ReturnType<typeof context.refresh>;
+  await act(async () => { validating = context.refresh(); });
+  const validationRequest = requests.shift()!;
+  await act(async () => { focusRefresh = context.refresh(); });
+  const focusRequest = requests.shift()!;
+  const repair = { ...payload(8), resolution: { kind: "repair", context: defaults, reason: "access", message: "A scope member lost access" } };
+  let admissionEvidence: FirstUsePayload | null = null;
+  await act(async () => { validationRequest.resolve(Response.json({ ok: true, ...repair })); admissionEvidence = await validating; });
+  await act(async () => { focusRequest.resolve(Response.json({ ok: true, ...repair })); await focusRefresh; });
+  expect(admissionEvidence).toBeNull();
+  expect(context.payload?.resolution.kind).toBe("repair");
+});

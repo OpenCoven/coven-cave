@@ -2,6 +2,8 @@
 
 > For agentic workers: use superpowers:executing-plans to implement this plan task by task. The current brief supplies implementation authority; execute inline.
 
+Checkbox state is not evidence of completion. Use issue #6458, the reviewed PR head and retained verification receipts as authority; a draft PR is not merge or release acceptance.
+
 **Goal:** Deliver one resumable methodology introduction and persisted concrete launch defaults in issue #6458’s implementation unit.
 
 **Architecture:** A host-owned first-use store and API own progress/default identities. A shared client provider gates execution and renders the guide; existing workspace and chat launch paths retain their own access, runtime and conversation authority.

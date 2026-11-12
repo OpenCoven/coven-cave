@@ -449,3 +449,38 @@ test("compact default-derived drafts wait when another scope member needs repair
   expect(f.sends).toEqual([]);
   expect(f.getState().defaults?.familiarIds).toEqual(["nova", "sage"]);
 });
+
+for (const outcome of ["failed", "newer"] as const) {
+test(`a compact skill invocation preserves the ${outcome === "failed" ? "original brief on failed validation" : "newer draft while validation finishes"}`, async ({ page }) => {
+  const initial: FirstUseState = { version: 1, revision: 8, step: "complete", outcome: "plan", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, practice: { approvalHeld: true, stopped: true, retried: true, verified: true }, completedAt: "2026-11-11T12:00:00.000Z" };
+  const f = await fixture(page, initial);
+  await page.route("**/api/skills/local", (route) => route.fulfill({ json: { ok: true, skills: [{ id: "review", name: "Review", description: "Review the chosen project" }] } }));
+  await page.goto("/quick-chat");
+  const pane = page.getByRole("tabpanel");
+  await expect(pane).toContainText(PROJECT.name);
+  const input = pane.getByRole("combobox", { name: "Message", exact: true });
+  await input.fill("/skill review");
+  await expect(pane.getByRole("listbox", { name: "Skills", exact: true })).toBeVisible();
+  await input.fill("/skill review --check");
+  let release!: () => void;
+  const pendingRead = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/onboarding/journey", async (route) => {
+    await pendingRead;
+    if (outcome === "failed") return route.fulfill({ status: 503, json: { ok: false, error: "Saved context unavailable" } });
+    return route.fallback();
+  });
+  await input.press("Enter");
+  await expect(input).toHaveValue("/skill review --check");
+  if (outcome === "newer") await input.fill("A newer unsent thought");
+  release();
+  if (outcome === "failed") {
+    await expect(pane).toContainText("Couldn't verify the saved default context");
+    await expect(input).toHaveValue("/skill review --check");
+    expect(f.sends).toEqual([]);
+  } else {
+    await expect.poll(() => f.sends.length).toBe(1);
+    await expect(input).toHaveValue("A newer unsent thought");
+    expect((f.sends[0] as { prompt: string }).prompt).toContain("--check");
+  }
+});
+}

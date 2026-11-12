@@ -414,7 +414,7 @@ export function QuickChatTabPane({
         // composer dispatches; these hand it the thread-owning hook methods.
         onNewThread={newThread}
         onLocalNote={note}
-        onSendText={(text) => void sendText(text)}
+        onSendText={(text, onAccepted) => void sendText(text, [], undefined, onAccepted)}
         modelOverride={modelOverride}
         onModelOverrideChange={setModelOverride}
         modelCapabilities={modelCapabilities}

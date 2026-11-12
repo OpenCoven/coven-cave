@@ -50,17 +50,16 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error ?? "Couldn't restore the introduction. Retry.");
       const next: FirstUsePayload = { ...data, state: parseFirstUseState(data.state) };
-      if (generation === requestId.current && next.state.revision >= (payloadRef.current?.state.revision ?? -1)) {
-        payloadRef.current = next;
-        publishFirstUseExecutionState(next.state);
-        try { if (restoreReviewedPermissionMode(window.localStorage, next.state.permissionMode ?? "read")) window.dispatchEvent(new Event(CHAT_COMPOSER_PREFS_CHANGED_EVENT)); } catch { /* The guide reports unavailable persistence before access review. */ }
-        setPayload(next);
-        setError(null);
-        setLoaded(true);
-        if (firstLoad.current && next.state.revision === 0) setOpen(true);
-        firstLoad.current = false;
-      }
-      return payloadRef.current;
+      if (generation !== requestId.current || next.state.revision < (payloadRef.current?.state.revision ?? -1)) return null;
+      payloadRef.current = next;
+      publishFirstUseExecutionState(next.state);
+      try { if (restoreReviewedPermissionMode(window.localStorage, next.state.permissionMode ?? "read")) window.dispatchEvent(new Event(CHAT_COMPOSER_PREFS_CHANGED_EVENT)); } catch { /* The guide reports unavailable persistence before access review. */ }
+      setPayload(next);
+      setError(null);
+      setLoaded(true);
+      if (firstLoad.current && next.state.revision === 0) setOpen(true);
+      firstLoad.current = false;
+      return next;
     } catch (cause) {
       if (generation === requestId.current) {
         setError(cause instanceof Error ? cause.message : "Couldn't restore the introduction. Retry.");

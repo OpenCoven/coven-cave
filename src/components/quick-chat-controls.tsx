@@ -298,7 +298,7 @@ export function QuickChatComposer({
   /** Append a local assistant-styled note (slash output like /help). */
   onLocalNote?: (text: string) => void;
   /** Send an explicit text through the quick-chat pipeline (skill runs). */
-  onSendText?: (text: string) => void;
+  onSendText?: (text: string, onAccepted: () => void) => void;
   /** Current /model override (for the bare `/model` listing). */
   modelOverride?: string | null;
   /** /model pick — set the thread's model override. */
@@ -317,6 +317,8 @@ export function QuickChatComposer({
   // internally so every quick-chat surface (dropdown, tray tab, standalone
   // window) gets Enhance with zero consumer wiring.
   const { announce } = useAnnouncer();
+  const latestDraftRef = useRef(draft);
+  latestDraftRef.current = draft;
   const promptEnhance = usePromptEnhance({
     draft,
     setDraft: onDraftChange,
@@ -443,8 +445,9 @@ export function QuickChatComposer({
         return;
       }
       if (!launchReady) return;
-      onDraftChange("");
-      onSendText?.(buildComposerSkillPrompt(skill, draft, args));
+      onSendText?.(buildComposerSkillPrompt(skill, draft, args), () => {
+        if (latestDraftRef.current === draft) onDraftChange("");
+      });
     },
     [draft, launchReady, onDraftChange, composerRef, onSendText],
   );
