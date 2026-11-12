@@ -27,8 +27,17 @@ struct ChatScrollState {
         isFollowingLatest = false
     }
 
-    mutating func endUserScroll() {
+    mutating func endUserScroll(currentGeometry: ChatScrollGeometry? = nil,
+                                previousGeometry: ChatScrollGeometry? = nil) {
         guard isUserScrolling else { return }
+        // Idle can arrive before the latest row's geometry callback. Sample
+        // the native viewport while this is still the reader's gesture.
+        if let currentGeometry {
+            let movedAway = previousGeometry.map {
+                currentGeometry.visibleBottom < $0.visibleBottom
+            } ?? false
+            updateGeometry(atBottom: currentGeometry.isAtBottom, movedAway: movedAway)
+        }
         isUserScrolling = false
         isFollowingLatest = isAtBottom || returnedToBottomDuringGesture
         returnedToBottomDuringGesture = false

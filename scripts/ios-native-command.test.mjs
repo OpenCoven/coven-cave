@@ -166,6 +166,6 @@ await test('transcript workflow owns deadlines and uploads logs separately from 
   for (const s of uploads) assert.match(String(s.if), /always\(\)/);
   const nonNative = steps.filter((s) => !native.includes(s) && !uploads.includes(s)).reduce((n, s) => n + (s['timeout-minutes'] ?? 0), 0);
   const uploadsMinutes = uploads.reduce((n, s) => n + s['timeout-minutes'], 0);
-  assert.ok(nativeSeconds / 60 + nonNative + uploadsMinutes <= job['timeout-minutes'] - 1, 'retain at least one minute inside the original job budget');
-  assert.equal(job['timeout-minutes'], 75);
+  assert.ok(nativeSeconds / 60 + nonNative + uploadsMinutes <= job['timeout-minutes'] - 1, 'retain at least one minute inside the bounded job budget');
+  assert.equal(job['timeout-minutes'], 100, 'allow the complete measured native matrix plus independent failure collection');
 });

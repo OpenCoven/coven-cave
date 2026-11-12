@@ -23,7 +23,10 @@ concurrency:
 jobs:
   transcript:
     runs-on: macos-latest
-    timeout-minutes: 75
+    # Retained Xcode26.6 run: 15 strict executions take ~28 minutes before
+    # three long-history and three accessibility audits. Keep failure collection
+    # independent while allowing the complete unchanged native test matrix.
+    timeout-minutes: 100
     steps:
       - timeout-minutes: 1
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -90,12 +93,12 @@ jobs:
       # The latest-reply bounce (#6090) appeared in only some attempts on the
       # same head, so a retry could pass by luck. Every iteration must pass.
       - name: Latest-reply bounce, three full runs without retries
-        timeout-minutes: 39
+        timeout-minutes: 56
         if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ios-native-command.py run --timeout-seconds 2190 \
+          python3 scripts/ios-native-command.py run --timeout-seconds 3300 \
             --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-bounce.receipt.json" -- \
             xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
@@ -106,12 +109,12 @@ jobs:
             -only-testing:CovenCaveUITests/TranscriptAccessibilityUITests \
             | tee "$RUNNER_TEMP/scroll-bounce.log"
       - name: Release shrink and independent no-shrink repeated opens
-        timeout-minutes: 13
+        timeout-minutes: 16
         if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ios-native-command.py run --timeout-seconds 720 \
+          python3 scripts/ios-native-command.py run --timeout-seconds 900 \
             --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-release.receipt.json" -- \
             xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCavePerformance \

@@ -40,6 +40,83 @@ final class ChatScrollStateTests: XCTestCase {
             streaming: false, voiceOver: false, nearby: false))
     }
 
+    func testIdleUsesFreshGeometryWhenTheRowCallbackArrivesLate() {
+        var state = ChatScrollState()
+        state.beginUserScroll()
+        state.endUserScroll(
+            currentGeometry: ChatScrollGeometry(contentHeight: 500, visibleBottom: 300),
+            previousGeometry: ChatScrollGeometry(contentHeight: 500, visibleBottom: 500))
+        XCTAssertFalse(state.isAtBottom)
+        XCTAssertFalse(state.isFollowingLatest, "a delayed row callback must not pull a history reader back to latest")
+    }
+
+    func testFreshIdleGeometryKeepsAReturnWhenOnlyTheLatestReplyGrew() {
+        var state = ChatScrollState()
+        state.beginUserScroll()
+        state.updateGeometry(atBottom: false, movedAway: true)
+        state.updateGeometry(atBottom: true)
+        state.endUserScroll(
+            currentGeometry: ChatScrollGeometry(contentHeight: 700, visibleBottom: 500),
+            previousGeometry: ChatScrollGeometry(contentHeight: 500, visibleBottom: 500))
+        XCTAssertFalse(state.isAtBottom)
+        XCTAssertTrue(state.isFollowingLatest, "growth after reaching the tail still preserves the return intent")
+    }
+
+    func testFreshIdleGeometryCancelsAReturnWhenTheReaderMovesAwayAgain() {
+        var state = ChatScrollState()
+        state.beginUserScroll()
+        state.updateGeometry(atBottom: false, movedAway: true)
+        state.updateGeometry(atBottom: true)
+        state.endUserScroll(
+            currentGeometry: ChatScrollGeometry(contentHeight: 500, visibleBottom: 300),
+            previousGeometry: ChatScrollGeometry(contentHeight: 500, visibleBottom: 500))
+        XCTAssertFalse(state.isFollowingLatest)
+    }
+
+    @MainActor
+    func testIdleReconcilesTheCurrentNativeViewportBeforeLateRowCallbacks() {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        scrollView.contentSize = CGSize(width: 390, height: 2_000)
+        scrollView.contentOffset.y = 700
+        let coordinator = ChatScrollAnchorCoordinator()
+        coordinator.scrollView = scrollView
+        coordinator.note("latest", ChatScrollAnchor.Row(minY: 1_000, maxY: 1_500), preserving: { false })
+        coordinator.noteLatestGeometry("latest", ChatScrollGeometry(contentHeight: 500, visibleBottom: 500))
+        var state = ChatScrollState()
+        state.beginUserScroll()
+        state.endUserScroll(currentGeometry: coordinator.geometry(for: "latest"),
+                            previousGeometry: coordinator.reportedGeometry(for: "latest"))
+        XCTAssertFalse(state.isAtBottom)
+        XCTAssertFalse(state.isFollowingLatest)
+    }
+
+    @MainActor
+    func testNativeRowGeometryKeepsViewportBoundsWithBottomContentInsets() {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        scrollView.contentSize = CGSize(width: 390, height: 2_000)
+        scrollView.contentInset.bottom = 120
+        scrollView.contentOffset.y = 900
+        let coordinator = ChatScrollAnchorCoordinator()
+        coordinator.scrollView = scrollView
+        coordinator.note("latest", ChatScrollAnchor.Row(minY: 1_000, maxY: 1_500), preserving: { false })
+        XCTAssertEqual(coordinator.geometry(for: "latest"), ChatScrollGeometry(contentHeight: 500, visibleBottom: 500))
+    }
+
+    @MainActor
+    func testNativeRowGeometryUsesPendingLayoutAndResetsItsReportedBaseline() {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        scrollView.contentSize = CGSize(width: 390, height: 3_000)
+        scrollView.contentOffset.y = 1_400
+        let coordinator = ChatScrollAnchorCoordinator()
+        coordinator.scrollView = scrollView
+        coordinator.note("latest", ChatScrollAnchor.Row(minY: 1_500, maxY: 2_000), preserving: { false })
+        coordinator.noteLatestGeometry("latest", ChatScrollGeometry(contentHeight: 500, visibleBottom: 500))
+        XCTAssertEqual(coordinator.geometry(for: "latest"), ChatScrollGeometry(contentHeight: 500, visibleBottom: 500))
+        coordinator.reset()
+        XCTAssertNil(coordinator.geometry(for: "latest"))
+        XCTAssertNil(coordinator.reportedGeometry(for: "latest"))
+    }
+
     func testInitialAndDelayedLayoutKeepFollowing() {
         var state = ChatScrollState()
         state.updateGeometry(atBottom: false)

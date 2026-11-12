@@ -33,6 +33,8 @@ struct ChatScrollAnchor {
         pending[id] = nil
     }
 
+    func row(_ id: String) -> Row? { pending[id] ?? settled[id] }
+
     /// Absorbs one layout pass and returns how far the offset must move to keep
     /// the anchor row still. Every row below a growing row reports the same
     /// move, so a pass yields one correction from one row rather than one per row.
@@ -89,6 +91,27 @@ final class ChatScrollAnchorCoordinator {
     /// matching scrollable extent. Keep any bounded-out movement until that
     /// native extent arrives, even if no row reports another position.
     private var unappliedCorrection: CGFloat = 0
+    private var latestReportedGeometry: (id: String, geometry: ChatScrollGeometry)?
+
+    func noteLatestGeometry(_ id: String, _ geometry: ChatScrollGeometry) {
+        latestReportedGeometry = (id, geometry)
+    }
+
+    func reportedGeometry(for id: String) -> ChatScrollGeometry? {
+        guard latestReportedGeometry?.id == id else { return nil }
+        return latestReportedGeometry?.geometry
+    }
+
+    /// Row positions use stable content coordinates. Native bounds advance
+    /// synchronously with scrolling, even if SwiftUI delivers row callbacks late.
+    func geometry(for id: String) -> ChatScrollGeometry? {
+        guard let scrollView, let row = anchor.row(id),
+              scrollView.bounds.height > 0, scrollView.contentSize.height > 0 else { return nil }
+        let height = row.maxY - row.minY
+        let visibleBottom = scrollView.bounds.maxY - row.minY
+        guard height.isFinite, height > 0, visibleBottom.isFinite else { return nil }
+        return ChatScrollGeometry(contentHeight: height, visibleBottom: visibleBottom)
+    }
 
     func note(_ id: String, _ row: ChatScrollAnchor.Row, preserving: @escaping @MainActor () -> Bool) {
         anchor.note(id, row)
@@ -107,9 +130,11 @@ final class ChatScrollAnchorCoordinator {
 
     fileprivate func remove(_ id: String) {
         anchor.remove(id)
+        if latestReportedGeometry?.id == id { latestReportedGeometry = nil }
     }
 
     func reset() {
+        latestReportedGeometry = nil
         anchor = ChatScrollAnchor()
         cancelPendingCorrection()
         preserving = nil

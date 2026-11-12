@@ -1078,6 +1078,7 @@ struct ChatView: View {
                                 )
                             } action: { previous, geometry in
                                 guard row.id == rows.last?.id, let geometry else { return }
+                                scrollAnchor.noteLatestGeometry(row.id, geometry)
                                 if previous?.contentHeight != geometry.contentHeight {
                                     // Only the latest reply's own shrink may arm
                                     // offset recovery (#5613), never a lazy
@@ -1185,7 +1186,17 @@ struct ChatView: View {
                     scrollState.beginUserScroll()
                     streamScroll.cancel()
                 case .idle:
-                    scrollState.endUserScroll()
+                    let latestID = thread.transcriptRows.last?.id
+                    let currentGeometry = latestID.flatMap { scrollAnchor.geometry(for: $0) }
+                    let previousGeometry = latestID.flatMap { scrollAnchor.reportedGeometry(for: $0) }
+                    #if DEBUG
+                    if scrollState.isUserScrolling, let currentGeometry {
+                        ChatScrollTrace.shared.note("idleGeometry height=\(currentGeometry.contentHeight) "
+                            + "visibleBottom=\(currentGeometry.visibleBottom) "
+                            + "previousBottom=\(previousGeometry?.visibleBottom ?? .nan)")
+                    }
+                    #endif
+                    scrollState.endUserScroll(currentGeometry: currentGeometry, previousGeometry: previousGeometry)
                     recoverTranscriptViewportIfNeeded(proxy)
                 default: break
                 }
