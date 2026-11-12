@@ -289,6 +289,7 @@ const contracts: RouteContract[] = [
   { route: "/omnigent/status", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/onboarding/bootstrap", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/onboarding/install", methods: ["GET", "DELETE", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/onboarding/journey", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/onboarding/prerequisites", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/onboarding/setup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/onboarding/codex-port-preflight", methods: ["POST"], kind: "json" },

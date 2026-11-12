@@ -119,6 +119,9 @@ async function gotoJournal(page: Page, scenario: JournalScenario = {}) {
   };
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    // The day rail deliberately includes entries written by every familiar.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [] }));
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({

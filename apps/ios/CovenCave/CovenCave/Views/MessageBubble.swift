@@ -4,6 +4,9 @@ import UIKit
 struct MessageBubble: View {
     let message: DisplayMessage
     var isGroup: Bool
+    /// Resolved by the installed parent, including when equality is evaluated.
+    let colorScheme: ColorScheme
+    let chrome: ChromePalette
     var familiar: Familiar?
     var isLast: Bool = false
     var onDelete: (() -> Void)?
@@ -36,14 +39,6 @@ struct MessageBubble: View {
 
     /// Horizontal offset while swiping right to reply.
     @State private var replyDrag: CGFloat = 0
-
-    // The bubble's WebView is transparent over a system-coloured bubble, so its
-    // prose must follow the app's light/dark appearance (the WebView doesn't
-    // pick up `prefers-color-scheme` on its own).
-    @Environment(\.colorScheme) private var colorScheme
-    // The desktop theme palette: its accent drives inline-code / link colours in
-    // the markdown so they match the selected theme instead of a fixed lavender.
-    @Environment(\.chrome) private var chrome
 
     /// Brief "copied" confirmation on the action row (design: copy → check).
     @State private var justCopied = false
@@ -395,6 +390,9 @@ struct MessageBubble: View {
 
             if !isUser { Spacer(minLength: 48) }
         }
+        // Keep the message identity on this visible native container rather
+        // than inheriting it onto a preloading one-point WebView.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("Message bubble \(message.id)")
     }
 
@@ -448,6 +446,7 @@ struct MessageBubble: View {
 
     private func bubble(_ projection: AssistantResponseProjection) -> some View {
         MessageProseView(message: message, projection: projection, isLast: isLast,
+                         deferOffscreenMessage: !isLast,
                          onOpenReader: onOpenReader, onContentHeightChange: onContentHeightChange)
     }
 
@@ -477,6 +476,7 @@ struct MessageBubble: View {
         return MessageProseView(message: span, projection: projection, isLast: isLast,
                                 preferNativePlainText: true,
                                 deferOffscreenMarkdown: deferOffscreenMarkdown,
+                                deferOffscreenMessage: !isLast,
                                 onOpenReader: message.streaming ? nil : onOpenReader.map { open in { _ in open(parsed.visible) } },
                                 onContentHeightChange: onContentHeightChange)
     }
@@ -489,10 +489,12 @@ private struct MessageAttachmentImage: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var zoomTask: Task<Void, Never>?
+    @State private var isNearViewport = false
+    @State private var thumbnailSize = CGSize(width: 240, height: 240)
 
     var body: some View {
         CachedImageView(
-            source: .dataURL(dataURL),
+            source: isNearViewport ? .dataURL(dataURL) : nil,
             targetSize: CGSize(width: 240, height: 240)
         ) { thumbnail in
             Image(uiImage: thumbnail)
@@ -505,9 +507,18 @@ private struct MessageAttachmentImage: View {
                 .onTapGesture { presentZoom(fallback: thumbnail) }
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint("Tap to enlarge")
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                    if size.width > 0, size.height > 0 { thumbnailSize = size }
+                }
         } placeholder: {
-            EmptyView()
+            Color.clear.frame(width: thumbnailSize.width, height: thumbnailSize.height)
+                .accessibilityLabel("Image attachment")
+                .accessibilityAddTraits(.isImage)
         }
+        .onGeometryChange(for: Bool.self) { geometry in
+            ChatResourceViewport.isNearby(size: geometry.size,
+                viewport: geometry.bounds(of: .scrollView))
+        } action: { isNearViewport = $0 }
         .onDisappear {
             zoomTask?.cancel()
             zoomTask = nil
@@ -689,7 +700,7 @@ struct SuggestionPills: View {
 // every bubble (each hosts a WKWebView) — the cause of slow typing on long
 // threads. Closures are excluded (they capture fresh state each render but
 // don't change what's drawn); optional-action closures are compared by presence
-// since that toggles which buttons appear. Environment values and the complete
+// since that toggles which buttons appear. Resolved appearance inputs and the complete
 // familiar model are included because they directly control colours, markdown
 // styling, and the familiar attribution row.
 extension MessageBubble: Equatable {

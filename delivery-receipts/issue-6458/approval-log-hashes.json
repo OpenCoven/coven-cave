@@ -1,0 +1,631 @@
+{
+  "approvalBaseCommit": "880247b44a9560443042e588543b7f3f4e17a202",
+  "recordedAt": "2026-11-12T13:27:37.684871+00:00",
+  "localLogs": [
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-api.log",
+      "bytes": 394008,
+      "sha256": "a18f5c678a3062233235b5a38906b71fd3479e08701981d5f70690a3219dfccc"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-app-qualified.log",
+      "bytes": 652173,
+      "sha256": "c0729e343e25833e92007dbbf802e09b624cbf77d154cd40060a33fe10c76225"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-app.log",
+      "bytes": 652704,
+      "sha256": "d5ad8a872a50fb50fe19a8940e392ed4baec78ff8b3b895667558e3e876b1ad2"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-browser-final.log",
+      "bytes": 20928,
+      "sha256": "ba2bbb7b9dec1bd14911d68bf4277c20d0d196d546d3988006037553bed1f34f"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-browser-integrated.log",
+      "bytes": 35811,
+      "sha256": "340c9d80aa4c0eb36849f5c9110f6c91b808e4544944d5b96f292638db35b7aa"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-browser-publish.log",
+      "bytes": 1742,
+      "sha256": "e468b8e25f298fb5096222e9eddd808bfc07c0e03bf693e67d4ded9c188bd410"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-browser-qualified.log",
+      "bytes": 22400,
+      "sha256": "4bb1ff13080823038a6d2bfbe61e3d9274276f93dce7184634cc9464ba9f2bd2"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-browser-ready.log",
+      "bytes": 25262,
+      "sha256": "2f4c12bfe5ae5c775f8520693385a8f9f505927c524bbe35a5cbf0ec41dbdd3e"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-browser-stable.log",
+      "bytes": 24269,
+      "sha256": "796dba02bca1f8fc6a8d21ba21b4bf8b959cd471da61f6df9a53cb341a000e12"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-browser.log",
+      "bytes": 23822,
+      "sha256": "d995180b627dcd58ea4f3471a2256bfa50dfc3a9ab8e4379aaabefaf4715b9c4"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-build-all-rooms.log",
+      "bytes": 15790,
+      "sha256": "ae5e34a9351c175cc50b18f2f636d31c8b85a07612b6187ba965d986ad7fa2c6"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-build-final-reader-green.log",
+      "bytes": 15787,
+      "sha256": "81ac2d5d332ffb22bc0687c952873ce47b666a376e240c0ba0febd1e599448bc"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-build-final-reader.log",
+      "bytes": 2634,
+      "sha256": "8011ad7b66532e5702a8b8a3e94f54c84531d48adb5c9870ce2fe27a7b2900e7"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-build-final.log",
+      "bytes": 16331,
+      "sha256": "d5359f2950bb82b5f23db1dcc6ff83353555da896c9f176fed1640c5eae7be42"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-build-integration.log",
+      "bytes": 15790,
+      "sha256": "9f45af36fe8a5d32f18edbf15eade9334c46c30c0298171ea084a0383da910d9"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-build-publish.log",
+      "bytes": 15789,
+      "sha256": "3972bcb92f38184406a889d3330d98e31199882d8e25152249eef3ac17edfa34"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-build.log",
+      "bytes": 15789,
+      "sha256": "49cbca559528c3152d728da3557334d975b5a0dd19ddd82a12ae790287a115ed"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-code-desk.log",
+      "bytes": 5689,
+      "sha256": "bf10d1a9f7ea90237643ee1aeed019e1df8e40d5148d7da0b784190a701d9b9f"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-guidance-contracts-final.log",
+      "bytes": 3090,
+      "sha256": "601e7b249f2763365c78c9b6e8866b4f1e61145ef94bae8ab8afa0c176291536"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-guidance-contracts.log",
+      "bytes": 3094,
+      "sha256": "7de2e259cff9fd0f42ee2c875ba03953ce82f8db4df0881fa865a22e6228eae5"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-layout-red.log",
+      "bytes": 10495,
+      "sha256": "7966ec201f8f9c0c646357c6f321f78a509908ccbef7109aac5fce9611ff0b30"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-lint-final-menu.log",
+      "bytes": 1361,
+      "sha256": "d58cb411467c4f63a0d3538ff6bb176115d86354f6b49921f6f2037ff1c2baff"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-lint-final.log",
+      "bytes": 1361,
+      "sha256": "d58cb411467c4f63a0d3538ff6bb176115d86354f6b49921f6f2037ff1c2baff"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-lint-integration.log",
+      "bytes": 1361,
+      "sha256": "d58cb411467c4f63a0d3538ff6bb176115d86354f6b49921f6f2037ff1c2baff"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-lint-qualified.log",
+      "bytes": 1361,
+      "sha256": "d58cb411467c4f63a0d3538ff6bb176115d86354f6b49921f6f2037ff1c2baff"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-lint.log",
+      "bytes": 1361,
+      "sha256": "d58cb411467c4f63a0d3538ff6bb176115d86354f6b49921f6f2037ff1c2baff"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-mobile-menu-red.log",
+      "bytes": 4516,
+      "sha256": "3fa1e4df22c4cc6e1213cdfb8ceb38a443c898baf8398edbaa72f57a41c93d29"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-mobile-qualified.log",
+      "bytes": 15803,
+      "sha256": "f6c9250a24eba7733976573994cc21a274085a1f6f05356a00799f2a92dde6ce"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-mobile.log",
+      "bytes": 15807,
+      "sha256": "e2ccd86d60757e9e3ce160d2434761ac8321ea3ed8e67cb7531a31e8ad06973f"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-source-review.log",
+      "bytes": 673,
+      "sha256": "0172bca2343d1f07451672c171cff37f70d824b09bc0c71aed3f764bc27af9ca"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-typecheck-final.log",
+      "bytes": 136,
+      "sha256": "0a5df44f4e391b2621d645f8a443df4dab6eb999814b9a142255ad16ef554782"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-typecheck-qualified.log",
+      "bytes": 136,
+      "sha256": "0a5df44f4e391b2621d645f8a443df4dab6eb999814b9a142255ad16ef554782"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-typecheck-ready.log",
+      "bytes": 1352,
+      "sha256": "2a62078ad3f9adc0f44dff7c57d7b19452bee1a46afc73dcfbbb0de9954868fe"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-typecheck.log",
+      "bytes": 2042,
+      "sha256": "7a6e6c2b03019559cbdb0f4390f58ee3ebc3423c5d323395a6fc4400c6c7c798"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-types-pre-publish.log",
+      "bytes": 136,
+      "sha256": "0a5df44f4e391b2621d645f8a443df4dab6eb999814b9a142255ad16ef554782"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-ui-contracts-final.log",
+      "bytes": 3055,
+      "sha256": "331a6ddc7c9a26b2222cc8d6c941abd58333f305ac96c77d0d97f3889714dee4"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-ui-contracts.log",
+      "bytes": 3060,
+      "sha256": "116e578471ef8737bf276af58215df6f3cdce9bf8c0761da83c50d02d1982cad"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-ui-final-menu.log",
+      "bytes": 240,
+      "sha256": "7d226c90e532799b988c962069c951b993f628b5d61a6025a2ef5885d86d7766"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-ui.log",
+      "bytes": 240,
+      "sha256": "7d226c90e532799b988c962069c951b993f628b5d61a6025a2ef5885d86d7766"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-wired-final-menu.log",
+      "bytes": 204,
+      "sha256": "e18bcde8b77fad4d7f75a023f03110f7d3bffacf495c87a1eab644898eab4f0d"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-wired-final.log",
+      "bytes": 204,
+      "sha256": "e18bcde8b77fad4d7f75a023f03110f7d3bffacf495c87a1eab644898eab4f0d"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-wired-ready.log",
+      "bytes": 204,
+      "sha256": "e18bcde8b77fad4d7f75a023f03110f7d3bffacf495c87a1eab644898eab4f0d"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-approval-wired.log",
+      "bytes": 204,
+      "sha256": "e18bcde8b77fad4d7f75a023f03110f7d3bffacf495c87a1eab644898eab4f0d"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-chat-all.log",
+      "bytes": 20661,
+      "sha256": "25067074f71d170ed2580ffc73e8a6c916728a646d2ae4b25a693f941a7f6320"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-chat-entry-final.log",
+      "bytes": 2280,
+      "sha256": "b134cbda1ac33a4424dadfd587786098112466a0084c124bac9af0b07bd98ba3"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-chat-focused.log",
+      "bytes": 1230,
+      "sha256": "7c558dc34687b2852ca33e683b0ac6d68906529fabb6476a1e690419489f2766"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-chat-lint.log",
+      "bytes": 1280,
+      "sha256": "4ef413e6bd391990ec3a7ee108853c89ece5ebac9485e385f5d6faac58ebbc15"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-chat-red.log",
+      "bytes": 8208,
+      "sha256": "d4de18413f9e4234bb011d8305ecd5a8fc062783405c44de3bf8b72c2199ce35"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-chat-types.log",
+      "bytes": 136,
+      "sha256": "0a5df44f4e391b2621d645f8a443df4dab6eb999814b9a142255ad16ef554782"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-code-desk-repeat.log",
+      "bytes": 1447,
+      "sha256": "6242d59ec1adb08e1a5c9a0eecd36e37f37b1edb23ef1be55b30cbfa1fe87d97"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-code-desk-selected.log",
+      "bytes": 2866,
+      "sha256": "b3c93bcd18d84f24c63828bf045caf4bee975c988bc4539612e598c4788b4e98"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-context-collected.log",
+      "bytes": 10577,
+      "sha256": "6ee669642babfb1e6fac6a70b15930bc6eb65cbf6bdafbe386c696afb8fe6d61"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-context-final.log",
+      "bytes": 13639,
+      "sha256": "1f4e69a3fd05c7e6fa3307aea32a88f254c053ee4fdb020eac9be563984517df"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-context-first-project-red.log",
+      "bytes": 1896,
+      "sha256": "2c4afb889f24104fb7d556ab5962349acc1f7181e9352b379b138d702f635e19"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-context-green.log",
+      "bytes": 14635,
+      "sha256": "376e3b50c429af159222c24e75497be72c2de9c1d83d43390c110c432cf73d5e"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-context-queue-collected.log",
+      "bytes": 2816,
+      "sha256": "1990900db8bda03f85afee84a9edc39523ec99fe37ebd7a940a4bf4acd8f504a"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-context-right-panel-green.log",
+      "bytes": 761,
+      "sha256": "90937e8d1e6e9a271195a5c5824dc5d401f2c0b152ae78e520a05349e56f91b5"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-entry2-all.log",
+      "bytes": 5807,
+      "sha256": "17df4f5b0a7b9b8bf720e7e15f0e9463e86a33dcb15cf3d3ffb866946196942a"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-entry2-focus-corrected.log",
+      "bytes": 2700,
+      "sha256": "9dd1165ea8ceb5924d561a33c72fbcd6399dabf5f020f1df28d6975b66933b7b"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-entry2-focused.log",
+      "bytes": 4837,
+      "sha256": "147703b8490777dac571b3902d43a3c326fe1b781891e2b867e7f92b856c8115"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-entry2-list.log",
+      "bytes": 2286,
+      "sha256": "544f775403272015467486a76a6c09b307521eabd546d183308e5b5659cbb4db"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-entry2-markdown-final.log",
+      "bytes": 1045,
+      "sha256": "10c5a689c4fb66ef7c90ed4b205de7d3b89997261f3d25186d509650251b5b2b"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-entry2-qualified.log",
+      "bytes": 4445,
+      "sha256": "015c785585fc32800fde42719592864636006c6a872b64a50b9c1fa1f915478f"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-entry2-red.log",
+      "bytes": 6399,
+      "sha256": "7d4ef3da39d8637c443570a096febbaaa5197cca72923842466de8f16e26e37f"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-entry2-types-final.log",
+      "bytes": 136,
+      "sha256": "0a5df44f4e391b2621d645f8a443df4dab6eb999814b9a142255ad16ef554782"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-entry2-types.log",
+      "bytes": 136,
+      "sha256": "0a5df44f4e391b2621d645f8a443df4dab6eb999814b9a142255ad16ef554782"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-grimoire-green.log",
+      "bytes": 2679,
+      "sha256": "4f1313440a0a5785c66f6a5b39ea0070597405c1ecc31ed6f855814fb48ee9de"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-grimoire-red.log",
+      "bytes": 3856,
+      "sha256": "e6258846739af8f8c6ad52e6c3a6ea986a7f01037114f3c91cf194a414181dc6"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-memory-collected.log",
+      "bytes": 1345,
+      "sha256": "2fb7c6ac5e9686b729dcfa441138a12c8be436f264d3b359c09db8a3283bfdec"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-memory-full.log",
+      "bytes": 2316,
+      "sha256": "fa387413c9220961bb56a87da65bc68f961c3b67c347f6e765debdbce7fe711c"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-memory-representative.log",
+      "bytes": 1217,
+      "sha256": "6a89b768238f38cd09e63018f358bbfc0e93d14ee9e6ebce4b92fa5ddca3f2fd"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-prefs-admission.log",
+      "bytes": 3668,
+      "sha256": "74979ba3b1a683a4cde8abd217a2ab0b33255c653a9cf61a8bb48b78f529a8fd"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-prefs-enter-admission.log",
+      "bytes": 3668,
+      "sha256": "e4f9264fa50dfb6868a5aaf8051c8eafc810388f5455d2ace750d8063a11acdd"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-reader-publish-green.log",
+      "bytes": 4846,
+      "sha256": "72d469029fef4552ae19426252c1b60c775579bdf805ddfa596fb2975c26bff0"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-reader-publish-red.log",
+      "bytes": 4415,
+      "sha256": "c44a1aa90b1f4099f109c4556b0d24d55bb6df5a0dde4de43fd731f76c2be900"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-research-green.log",
+      "bytes": 3879,
+      "sha256": "6e44cf5fe7b293b99e1345d41cdec42d330a13e44d12e4623aa7b858ef9df21c"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-ci-fixture-research-red.log",
+      "bytes": 2549,
+      "sha256": "294c44a6e3c509c5989fa94bae81b05e732a5b168f04dadc280d9f3be05dcad7"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-diagnostic.log",
+      "bytes": 5758,
+      "sha256": "41c6ddb58505853947e8f4b3d72466a035b12219e24cb728ab4b98ef692dbee4"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-errors.log",
+      "bytes": 5847,
+      "sha256": "fcda4817db10a0e18019a6155673e78dbd691672dab0d594671908fe910d93a4"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-guide-eslint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-guide-green.log",
+      "bytes": 272,
+      "sha256": "bef3476e2d8fabb299a72af69dc5f8ad3eaf7b3dcf69ec6bfa14a8183f4ba382"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-guide-red.log",
+      "bytes": 1470,
+      "sha256": "e9c17f1b326a9a84e0710a778408782e5c5f0f67b93f9f1c4bfd2a9650307700"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-guide-route-green.log",
+      "bytes": 274,
+      "sha256": "3af28d2afaaf1b3a065eb0c015bca0a16fe6f6df66b81d1bd4d4bb7b280b8a8d"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-keyboard-green.log",
+      "bytes": 10101,
+      "sha256": "092a98357050fda4af015448ea3a616a5d2b7e0da07ea72fec665b6336a87564"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-loading.log",
+      "bytes": 12325,
+      "sha256": "8f6f4e361de571734294f750ea8b2386fcde721401366b84be249aa196413092"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-plain.log",
+      "bytes": 26793,
+      "sha256": "17f127d84b5c83604aa598a1bea43894b678349879d4ca1fd77d1fedb2b1488c"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-repair-receipt.log",
+      "bytes": 2185,
+      "sha256": "053f174fc04ba787a3b8b0a87cc6eb55e90252855349fcb1c56a690516ee56ff"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-focus-trap.log",
+      "bytes": 15435,
+      "sha256": "f9ab66101980442ffe44cbc35b88f5fd1025b48b2c52b014b7fa9dc3e8f46ad1"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-live-bridge-commit.log",
+      "bytes": 189025,
+      "sha256": "d22f0f7234004f6f893e6c7d0bb58e9a52b047c4bebe5e9d3194edc23ec94a08"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-live-bridge-diagnostic.log",
+      "bytes": 82026,
+      "sha256": "adedc3fd64038677b22ee3414b1ac3ae2449d0051f454f5658bcb4ed880c5344"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-live-bridge-hydrated.log",
+      "bytes": 195196,
+      "sha256": "65d6a92a2b50b59abde5fcc98bd3d04b2500d3a13afd881efc50400562f22a32"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-live-bridge-postcommit-control.log",
+      "bytes": 21596,
+      "sha256": "a1e4da56081364989015c987e5ffc3a5c9dfdfd81e3a2f7fc216b22a245e83fe"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-live-bridge-postcommit-red.log",
+      "bytes": 21596,
+      "sha256": "a1e4da56081364989015c987e5ffc3a5c9dfdfd81e3a2f7fc216b22a245e83fe"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-2-green.log",
+      "bytes": 1963,
+      "sha256": "62f3d5cc8c941345b203e39e6144965bf92e7fb22dd7ff1a4295a8b8d1ff60e0"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-2-red.log",
+      "bytes": 6771,
+      "sha256": "5c33212c656098207468d38be0d3c40fa414dfba1d15b67f1676ace4e21f26db"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-3-green.log",
+      "bytes": 275,
+      "sha256": "01fedf3f3ba3b97c5b90a98c053c8a97ee9faf667350f7dd21006441208ba1dd"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-3-provider-red.log",
+      "bytes": 2140,
+      "sha256": "c54913d07930109d0599ea6246ce41dac46266b7b0418bfe9372e404155f5f3b"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-3-skill-red.log",
+      "bytes": 2342,
+      "sha256": "743cb80e20cf64ece0d5ef39b8931b84e00dbfd27165c6e0a29625a237651166"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-home-red.log",
+      "bytes": 5466,
+      "sha256": "85657ac9b6959ed930dccb42a145ff47fb1379e5de057ca87fe43b081c15d6f1"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-mode-voice-red.log",
+      "bytes": 6738,
+      "sha256": "ce81a779f4584e2f076ce795e33fa631840f757ea9ae1be419079a87fc178fed"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-prefs-eslint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-prefs-green.log",
+      "bytes": 653,
+      "sha256": "123124be94e3a139b693216f0f0dd0476fe58e6b2d951c6918cf86b78c5f0a2e"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-prefs-red.log",
+      "bytes": 3883,
+      "sha256": "c998c84d4c1cdf1c971cb429ec71eaad6049995e4fe15d74f9dcd26d7947b19e"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-prefs-voice-baseline.log",
+      "bytes": 1948,
+      "sha256": "deb2bc06ce0e785c58d874b6072d04847cd677e29e72996f330bf0decc09a4cb"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-prefs-voice-contract-red.log",
+      "bytes": 25673,
+      "sha256": "753000883433f9b6ab42c1f9dd2fa8566e7dd162ec87d6ac3c3604f7a5ccdb18"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-prefs-voice-green.log",
+      "bytes": 2511,
+      "sha256": "b69d26843867756e45ad95e374739b9df2f7fb797eed3dcebb6252ac7159980b"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-green.log",
+      "bytes": 275,
+      "sha256": "cd67441dcd4b6861128aab549bbf038acaa5c1ac394c13e2c65537860ce6028c"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-integration.log",
+      "bytes": 233,
+      "sha256": "a68b43d0a31c8a891d6e9f482a1ecc3c1af2b3e24e9c8a433cd390ae76087462"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-lint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-parity-green.log",
+      "bytes": 275,
+      "sha256": "a5697c95ebbe033ba21974a8af2bcad72b4272d134fe9ccad290793065f67bb5"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-parity-integration.log",
+      "bytes": 231,
+      "sha256": "1604987b2570fff14636b8a9729f8bcd26203a09a3a0e206b0e517acacf204f5"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-parity-lint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-parity-red.log",
+      "bytes": 6258,
+      "sha256": "928a93b834379f37576f960c921c0fe0ab2310b87c8141aa012e7ba748eb416f"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-parity-types.log",
+      "bytes": 136,
+      "sha256": "0a5df44f4e391b2621d645f8a443df4dab6eb999814b9a142255ad16ef554782"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-red-confirmed.log",
+      "bytes": 22555,
+      "sha256": "73dd1cc1f8e4678029dd08c4f6c2cb03dc3fe0d35abeed16e1c274e0f1a95afb"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-red.log",
+      "bytes": 23795,
+      "sha256": "efae15929f8a90beb6359509f1e2d41ce18efcef2cd839f0d70c3629934f6598"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-types-green.log",
+      "bytes": 136,
+      "sha256": "0a5df44f4e391b2621d645f8a443df4dab6eb999814b9a142255ad16ef554782"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-runtime-types.log",
+      "bytes": 2448,
+      "sha256": "94aa4f287746f55fffc44950e148aa2243d783677d7d7eadff4a43cb7070dd37"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-stop-controls.log",
+      "bytes": 286,
+      "sha256": "3eaa3f969d97a44034f0110c38466733c2c17b33ff5291f0fe451c9ecc3dcd03"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-stop-green.log",
+      "bytes": 275,
+      "sha256": "29eeed7c938fc378802695cf0d286a26a8fc7c33751678490a0cc6adb43b1d67"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-stop-red.log",
+      "bytes": 2599,
+      "sha256": "9e7cc13a20917757c288c386c5a26fe00f51e32e012d474236f9016e526ccf5d"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-voice-home-red.log",
+      "bytes": 5435,
+      "sha256": "33e601fb696cce6974afb16b8c99c575c9b1255a2add09fb911b007220696a90"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-voice-red-confirmed.log",
+      "bytes": 2290,
+      "sha256": "b53de62899383902cb89c4b6245b3f7256c090138c7fc3f4c27dcdcc6161c92c"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-workspace-green.log",
+      "bytes": 264,
+      "sha256": "159583e6487a95dab7a7ec1049f99da72bebd514d83b52481d7333264e3d56e4"
+    },
+    {
+      "file": "artifacts/issue-6458/approval-logs/cave-6458-review-workspace-red.log",
+      "bytes": 1388,
+      "sha256": "de58c44003c2979fc1f52dbc2904a38dd41cc3ca88c7a30eda76567f03564e3d"
+    }
+  ]
+}

@@ -26,6 +26,11 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/first-use-execution.test.ts",
+    "src/components/first-use-guide.behavior.test.tsx",
+    "src/components/first-use-provider.behavior.test.tsx",
+    "src/lib/first-use.test.ts",
+    "src/lib/server/first-use-store.test.ts",
     "src/lib/github-watcher.behavior.test.ts",
     "src/lib/chat-tool-milestones.test.ts",
     "src/app/api/chat/scheduled/route.test.ts",
@@ -1543,6 +1548,10 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
   ],
   api: [
+    "src/app/api/onboarding/journey/route.behavior.test.ts",
+    "src/app/api/project-grants/route-chat-grant.integration.test.ts",
+    "src/app/api/onboarding/journey/route.integration.test.ts",
+    "src/app/api/chat/send/route-read-project-admission.integration.test.ts",
     "src/app/api/research-automation-import/route.test.ts",
     "src/app/api/proposals/submit/route.test.ts",
     "src/lib/server/proposal-submission.test.ts",
@@ -2177,6 +2186,7 @@ export const SUITES = {
     "src/lib/desktop-reachability.test.ts",
     "src/lib/server/mobile-paired.test.ts",
     "scripts/ios-build-ci.test.mjs",
+    "scripts/ios-native-command.test.mjs",
     "scripts/ios-dsym-coverage.test.mjs",
     "scripts/ios-xctest-summary.test.mjs",
     "scripts/ios-select-simulator.test.mjs",
@@ -2318,6 +2328,9 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/project-grants/route-chat-grant.integration.test.ts",
+  "src/app/api/onboarding/journey/route.integration.test.ts",
+  "src/app/api/chat/send/route-read-project-admission.integration.test.ts",
   "src/app/api/salem/retirement.test.ts",
   "src/components/salem/salem-retirement.test.ts",
   "src/lib/surface-preferences-lifecycle.test.ts",
@@ -2810,6 +2823,9 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/first-use-guide.behavior.test.tsx",
+  "src/app/api/onboarding/journey/route.behavior.test.ts",
+  "src/components/first-use-provider.behavior.test.tsx",
   "src/lib/inbox-scheduler.behavior.test.ts",
   "src/lib/server/scheduled-chat-store-drain.behavior.test.ts",
   "src/lib/server/backup-sync-scheduler.behavior.test.ts",

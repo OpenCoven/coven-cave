@@ -1,4 +1,5 @@
 import { NotchQuickChat } from "@/components/notch-quick-chat";
+import { FirstUseProvider } from "@/components/first-use-provider";
 import { TrayQuickChat } from "@/components/tray-quick-chat";
 
 // One route, two presentations: the floating tray window loads /quick-chat
@@ -13,5 +14,5 @@ export default async function QuickChatPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  return params.notch === "1" ? <NotchQuickChat /> : <TrayQuickChat />;
+  return <FirstUseProvider>{params.notch === "1" ? <NotchQuickChat /> : <TrayQuickChat />}</FirstUseProvider>;
 }
