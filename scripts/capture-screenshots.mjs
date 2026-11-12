@@ -1,148 +1,186 @@
-// Drive a headed Chromium against http://localhost:3000 and capture
-// each of the README-referenced screenshots. Requires the dev server
-// to already be running against a daemon (or mocked APIs) so sidebar + sample
-// activity are populated.
+#!/usr/bin/env node
+// Capture the screenshots the README shows, from screenshots/manifest.json.
 //
-// Run: node scripts/capture-screenshots.mjs
+//   pnpm screenshots:readme                       # every capture
+//   pnpm screenshots:readme --only home.png       # one capture
+//   pnpm screenshots:readme --origin http://127.0.0.1:3412
+//
+// Without --origin this starts its own production server (`pnpm build` must
+// have run) on a free loopback port with an empty temporary home, and stops it
+// afterwards. What the images show comes from screenshots/fixtures.json, which
+// answers the API reads with synthetic data; nothing from the real ~/.coven
+// can reach an image. With --origin, the server is the caller's to vouch for.
+//
+// A capture fails, and writes no file, when its `waitFor` selector never
+// appears: a screenshot of a loading state is worse than no screenshot.
+// See docs/workflows/release-train.md, step 11.
 
-import { chromium } from "playwright";
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { createServer } from "node:net";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const ROOT = resolve(import.meta.dirname, "..");
-const OUT = resolve(ROOT, "screenshots");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const READY_TIMEOUT_MS = 90_000;
+const SURFACE_TIMEOUT_MS = 30_000;
 
-// Logical viewport for marketing-clean shots. Playwright captures at the
-// configured deviceScaleFactor, so 2 gives a 2× retina export.
-const VIEWPORT = { width: 1440, height: 900 };
-const DPR = 2;
-
-// Sidebar IA after the redesign (commit 040e7be): "Familiars" / "Tasks"
-// modes were folded into Chat / Board respectively. "Floor" no longer has
-// its own tab — it's an ambient surface inside HomeComposer. The capture
-// loop falls through to "home" for floor and just captures the shell with
-// the floor mini visible.
-const CAPTURES = [
-  { file: "home.png",     label: "HomeComposer cold-start",      click: "Home" },
-  { file: "shell.png",    label: "Three-pane shell + chat",      click: "Chat" },
-  { file: "chat.png",     label: "Chat view",                    click: "Chat" },
-  { file: "board.png",    label: "Tasks view",                   click: "Tasks" },
-  { file: "calendar.png", label: "Calendar (week view)",         click: "Calendar" },
-  { file: "floor.png",    label: "Coven Floor (Home ambient)",   click: "Home" },
-];
-
-async function main() {
-  await mkdir(OUT, { recursive: true });
-  const browser = await chromium.launch({ headless: true });
-  const ctx = await browser.newContext({
-    viewport: VIEWPORT,
-    deviceScaleFactor: DPR,
-    colorScheme: "dark",
-  });
-  const page = await ctx.newPage();
-  page.on("pageerror", (err) => console.warn("[pageerror]", err.message));
-  page.on("console", (msg) => {
-    if (msg.type() === "error") console.warn("[console.error]", msg.text());
-  });
-
-  // Intercept the onboarding-status endpoint so the setup overlay doesn't
-  // mount over the views we want to capture. With no `coven` daemon
-  // running, the real endpoint reports daemon/familiars/binding as missing
-  // and the overlay blocks the entire workspace.
-  await ctx.route("**/api/onboarding/status", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ok: true,
-        complete: true,
-        steps: {
-          covenCli: { ok: true, detail: "/usr/local/bin/coven" },
-          covenHome: { ok: true, detail: "~/.coven" },
-          adapters: { ok: true, detail: "Codex, Claude Code" },
-          daemon: { ok: true },
-          familiars: { ok: true },
-          binding: { ok: true },
-        },
-      }),
-    });
-  });
-
-  console.log("→ navigating to http://localhost:3000");
-  await page.goto("http://localhost:3000", { waitUntil: "domcontentloaded", timeout: 60_000 });
-  // Allow client hydration + initial data fetch.
-  await page.waitForTimeout(3500);
-
-  // If the overlay still mounted before our intercept took effect, click
-  // its "Open Cave" / dismiss button.
-  const openCave = page.getByRole("button", { name: /open cave/i }).first();
-  if (await openCave.count()) {
-    await openCave.click().catch(() => {});
-    await page.waitForTimeout(500);
+// Local screenshots the README embeds, in HTML or Markdown form.
+export function readmeImages(readme) {
+  const images = [];
+  const pattern = /<img\s[^>]*?src="screenshots\/([^"]+)"[^>]*?alt="([^"]*)"|!\[([^\]]*)\]\(screenshots\/([^)\s]+)\)/g;
+  for (const match of readme.matchAll(pattern)) {
+    images.push(match[1] ? { file: match[1], alt: match[2] } : { file: match[4], alt: match[3] });
   }
-
-  for (const cap of CAPTURES) {
-    console.log(`→ ${cap.file} (${cap.label})`);
-    try {
-      // Click the sidebar folder row for this mode. The row contains an
-      // icon + label + optional <kbd>⌘N</kbd>, so the accessible name is
-      // "Home ⌘1" rather than just "Home" — match by CSS class + visible
-      // label instead of role+exact-name.
-      const btn = page
-        .locator(`.sidebar-folder-row:has(.sidebar-folder-label:text-is("${cap.click}"))`)
-        .first();
-      const hit = await btn.count();
-      if (hit > 0) {
-        await btn.click({ timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(800);
-      } else {
-        console.warn(`  no sidebar folder row "${cap.click}" — capturing current state`);
-      }
-
-      // Surface-specific tweaks
-      if (cap.file === "chat.png") {
-        // After landing on Chat, click the first session row in the chat
-        // list so the right pane shows a real conversation thread.
-        // The session rows are buttons with the session title; any text
-        // works since we just want SOMETHING populated.
-        const firstChat = page
-          .locator(".cave-mode-fade button:has-text('Codex'), .cave-mode-fade button:has-text('Chat'), main [role='button']:has-text('Codex')")
-          .first();
-        if (await firstChat.count()) {
-          await firstChat.click({ timeout: 3000 }).catch(() => {});
-          await page.waitForTimeout(1500);
-        } else {
-          // Fallback: click the first session row by its session title.
-          const anyRow = page
-            .locator("main button, [role='main'] button")
-            .filter({ hasText: /update|task|hello|Patch|please|context|why|what|how|fix|feat/i })
-            .first();
-          if (await anyRow.count()) {
-            await anyRow.click({ timeout: 3000 }).catch(() => {});
-            await page.waitForTimeout(1500);
-          } else {
-            console.warn("  no chat row matched");
-          }
-        }
-      }
-
-      await page.screenshot({
-        path: resolve(OUT, cap.file),
-        fullPage: false,
-        type: "png",
-        animations: "disabled",
-      });
-      console.log(`  OK ${cap.file}`);
-    } catch (err) {
-      console.error(`  ERR ${cap.file}: ${err.message}`);
-    }
-  }
-
-  await browser.close();
-  console.log("done.");
+  return images;
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+function parseArgs(argv) {
+  const options = { only: [] };
+  const args = [...argv];
+  while (args.length > 0) {
+    const arg = args.shift();
+    if (!["--origin", "--only", "--out", "--manifest"].includes(arg)) throw new Error(`unknown option ${arg}`);
+    if (args.length === 0) throw new Error(`${arg} needs a value`);
+    if (arg === "--only") options.only.push(args.shift());
+    else options[arg.slice(2)] = args.shift();
+  }
+  return options;
+}
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+// A production server this run owns: empty home, demo data only.
+async function startServer(log) {
+  if (!existsSync(path.join(ROOT, "server.mjs"))) throw new Error("server.mjs is missing; run `pnpm build` first");
+  // Short path: the server keeps sockets under its home, and macOS caps their length.
+  const home = realpathSync(mkdtempSync("/tmp/cave-shots-"));
+  const port = await freePort();
+  const origin = `http://127.0.0.1:${port}`;
+  const env = { ...process.env, NODE_ENV: "production", COVEN_CAVE_PORT: String(port), PORT: String(port), HOME: home, USERPROFILE: home };
+  delete env.COVEN_HOME;
+  const child = spawn(process.execPath, ["server.mjs"], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
+  let output = "";
+  child.stdout.on("data", (chunk) => (output += chunk));
+  child.stderr.on("data", (chunk) => (output += chunk));
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  const stop = async () => {
+    child.kill("SIGTERM");
+    await exited;
+    rmSync(home, { recursive: true, force: true });
+  };
+
+  log(`starting a production server on ${origin} with an empty home`);
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) break;
+    const ready = await fetch(`${origin}/api/onboarding/status`).then((response) => response.ok, () => false);
+    if (ready) return { origin, stop };
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  await stop();
+  throw new Error(`the server did not become ready:\n${output.slice(-2000)}`);
+}
+
+// Serve the synthetic fixture for a GET whose path is a fixture key or sits
+// under one. Every other request reaches the server and its empty home.
+async function routeFixtures(context, fixtures) {
+  const keys = Object.keys(fixtures);
+  await context.route("**/api/**", async (route) => {
+    const { pathname } = new URL(route.request().url());
+    const key = keys.find((candidate) => pathname === candidate || pathname.startsWith(`${candidate}/`));
+    if (key && route.request().method() === "GET") await route.fulfill({ json: fixtures[key] });
+    else await route.continue();
+  });
+}
+
+async function capture({ origin, manifest, fixtures, only, outDir, log }) {
+  const { chromium } = await import("@playwright/test");
+  const wanted = manifest.captures.filter((entry) => only.length === 0 || only.includes(entry.file));
+  const unknown = only.filter((file) => !manifest.captures.some((entry) => entry.file === file));
+  if (unknown.length > 0) throw new Error(`not in the manifest: ${unknown.join(", ")}`);
+
+  await mkdir(outDir, { recursive: true });
+  const browser = await chromium.launch();
+  const failures = [];
+  try {
+    for (const entry of wanted) {
+      const context = await browser.newContext({
+        viewport: manifest.viewport,
+        deviceScaleFactor: manifest.deviceScaleFactor,
+        colorScheme: manifest.colorScheme,
+      });
+      await context.addCookies([{ name: "cave_onboarding_dismissed", value: "1", url: origin }]);
+      await context.addInitScript((storage) => {
+        for (const [key, value] of Object.entries(storage)) localStorage.setItem(key, value);
+      }, { "cave:onboarding:dismissed": "1", ...manifest.storage, ...entry.storage });
+      await routeFixtures(context, fixtures);
+      const page = await context.newPage();
+      try {
+        await page.goto(new URL(entry.path ?? manifest.path, origin).href, { waitUntil: "domcontentloaded", timeout: 60_000 });
+        await page.waitForSelector(manifest.ready, { timeout: SURFACE_TIMEOUT_MS });
+        // A capture with its own path is already on its surface.
+        if (!entry.path) {
+          await page.evaluate((mode) => {
+            window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
+          }, entry.mode);
+        }
+        await page.waitForSelector(entry.waitFor, { state: "visible", timeout: SURFACE_TIMEOUT_MS });
+        for (const selector of entry.click ?? []) {
+          await page.locator(selector).first().click({ timeout: SURFACE_TIMEOUT_MS });
+        }
+        await page.waitForTimeout(entry.settleMs ?? 1200);
+        await page.screenshot({ path: path.join(outDir, entry.file), type: "png", animations: "disabled" });
+        log(`  ok    ${entry.file}  (${entry.mode})`);
+      } catch (error) {
+        failures.push(entry.file);
+        log(`  FAIL  ${entry.file}: ${error.message.split("\n")[0]}`);
+      } finally {
+        await context.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+  return failures;
+}
+
+export async function main(argv, { log = console.log } = {}) {
+  const options = parseArgs(argv);
+  const manifest = JSON.parse(readFileSync(options.manifest ?? path.join(ROOT, "screenshots", "manifest.json"), "utf8"));
+  const manifestPath = options.manifest ?? path.join(ROOT, "screenshots", "manifest.json");
+  const fixtures = manifest.fixtures ? JSON.parse(readFileSync(path.resolve(path.dirname(manifestPath), manifest.fixtures), "utf8")) : {};
+  const outDir = path.resolve(options.out ?? path.join(ROOT, "screenshots"));
+  const server = options.origin ? { origin: options.origin, stop: async () => {} } : await startServer(log);
+  try {
+    const failures = await capture({ origin: server.origin, manifest, fixtures, only: options.only, outDir, log });
+    if (failures.length > 0) {
+      log(`\n${failures.length} capture(s) failed. No file was written for them.`);
+      return 1;
+    }
+    log(`\nWrote to ${outDir}. Look at each image before committing it.`);
+    return 0;
+  } finally {
+    await server.stop();
+  }
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main(process.argv.slice(2)).then(
+    (code) => process.exit(code),
+    (error) => {
+      console.error(`capture-screenshots: ${error.message}`);
+      process.exit(2);
+    },
+  );
+}

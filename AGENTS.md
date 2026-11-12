@@ -58,6 +58,8 @@ marked active.
   A chat approval does not expand filesystem access. De-registration is not
   directory deletion, and neither is justified by missing ownership evidence.
 - Before release or TestFlight work, reconcile and verify from clean `main`.
+  Follow the [release train](docs/workflows/release-train.md); `pnpm
+  release:train` reports the current step and prints the next command.
 
 Use the existing Git-only secret and attribution hooks, installed with
 `bash scripts/install-git-hooks.sh`; never replace safety hooks with an empty
