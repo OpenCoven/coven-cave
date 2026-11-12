@@ -4,6 +4,7 @@ import "@/styles/dashboard.css";
 import "@/styles/settings-familiars.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { replaceHistoryUrl } from "@/lib/history-url";
 import { observeSettingsTarget } from "@/lib/settings-search-target";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -139,7 +140,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   function backToPicker() {
     setPickerView(true);
     if (!embedded && typeof window !== "undefined") {
-      window.history.replaceState(null, "", window.location.pathname);
+      replaceHistoryUrl(window.location.pathname);
     }
   }
 
@@ -153,7 +154,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     if (embedded || typeof window === "undefined" || !hashHydrated || pickerView) return;
     if (window.location.hash === `#${section}`) return;
-    window.history.replaceState(null, "", `#${section}`);
+    replaceHistoryUrl(`#${section}`);
   }, [embedded, hashHydrated, pickerView, section]);
 
   // Support hash-based deep-linking. Read it after hydration so SSR and the

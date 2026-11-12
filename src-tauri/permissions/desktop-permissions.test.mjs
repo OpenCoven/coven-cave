@@ -884,8 +884,8 @@ test("the offline read cache is registered, instance-scoped, and served read-onl
   // on every read.
   assert.match(
     tauriSetupRust,
-    /app\.state::<Arc<offline_cache::OfflineCacheState>>\(\)\s*\.configure\(app_local_data_dir\.clone\(\)\)/,
-    "the cache must be configured from the local data dir",
+    /app\.state::<Arc<offline_cache::OfflineCacheState>>\(\)\s*\.configure\(app_local_data_dir\.clone\(\),\s*&app\.config\(\)\.identifier\)/,
+    "the cache must use the local data dir and actual application identifier",
   );
 
   assert.match(

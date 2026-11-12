@@ -16,8 +16,8 @@ const runner = fs.readFileSync(path.join(root, "scripts/run-tests.mjs"), "utf8")
 
 assert.match(
   chatView,
-  /transcriptRow\(row, proxy: proxy\)[\s\S]{0,80}?\.id\(row\.id\)[\s\S]*?MessageBubble\([\s\S]*?\)\s*\.equatable\(\)/,
-  "ChatView should give rows stable scroll identity and skip re-rendering unchanged bubbles",
+  /transcriptRow\(row, proxy: proxy\)\s*\}\s*\.accessibilityElement\(children: \.contain\)\s*\.id\(row\.id\)[\s\S]*?MessageBubble\([\s\S]*?\)\s*\.equatable\(\)/,
+  "ChatView should retain accessible row groups, stable scroll identity and unchanged-bubble equality",
 );
 
 assert.match(
@@ -43,6 +43,15 @@ assert.match(
   /lhs\.chrome == rhs\.chrome/,
   "theme palette changes should invalidate an equatable bubble",
 );
+
+assert.match(chatView, /@Environment\(\\\.colorScheme\) private var colorScheme/,
+  "The installed parent resolves appearance before creating equatable children");
+assert.match(chatView, /MessageBubble\(message: message,[\s\S]*?colorScheme: colorScheme,/,
+  "The bubble receives the active resolved appearance");
+assert.match(messageBubble, /let colorScheme: ColorScheme/,
+  "Appearance must remain a resolved equality input");
+assert.doesNotMatch(messageBubble, /@Environment\(\\\.(?:chrome|colorScheme)\)/,
+  "Equatable bubble inputs must not access uninstalled environment wrappers");
 
 assert.doesNotMatch(
   messageBubble,

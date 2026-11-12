@@ -2,6 +2,7 @@
 
 import "@/styles/board.css";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { replaceHistoryUrl } from "@/lib/history-url";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
@@ -357,7 +358,7 @@ export function BoardView({
       const id = decodeURIComponent(match[1]);
       if (!cards.some((c) => c.id === id)) return;
       setSelectedCardId(id);
-      history.replaceState(null, "", window.location.pathname + window.location.search);
+      replaceHistoryUrl(window.location.pathname + window.location.search);
     };
     apply();
     window.addEventListener("hashchange", apply);

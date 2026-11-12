@@ -114,6 +114,7 @@ import { applyLocalCodexSpawnEnv, preflightLocalCodex } from "@/lib/server/local
 import { codexReasoningForwardable } from "@/lib/server/direct-transport-reasoning-gates";
 import {
   covenRelayedRunError,
+  classifyRuntimeProcessFailure,
   evaluateCovenBackedRuntimeAvailability,
   evaluateRuntimeAvailability,
   localRuntimeLaunchError,
@@ -3198,6 +3199,7 @@ async function postAdmittedChat(
     : {
         kind: "local",
         root: cwd,
+        permissionMode: body.permissionMode === "read" ? "read" : "full",
         allowedProjectRoots: grantedProjectRoots,
         projectRootAccess: grantedProjectRootAccess,
         readOnlyResourceRoots: runtimeResourceRoots,
@@ -6472,7 +6474,14 @@ async function postAdmittedChat(
         push({ kind: "error", code, message, harness: binding.harness, model: selectedModel ?? null });
       }
 
-      if (!launchFailure && !runtimeUsageLimit && covenBackedProcessFailed && !assistantText.trim()) {
+      // Coven may relay a failed native turn and itself exit 0. A recognized
+      // failure still needs safe guidance; unknown zero-exit reports keep the
+      // existing redacted empty-response path. Never classify assistant prose.
+      const runtimeProcessReason = binding.harness === "codex" && !codexDirect && !sshRuntime
+        ? classifyRuntimeProcessFailure([...stderrTail, ...relayedErrTail].join("\n"))
+        : "unknown";
+      if (!launchFailure && !runtimeUsageLimit && !assistantText.trim()
+          && (covenBackedProcessFailed || (result.is_error && runtimeProcessReason !== "unknown"))) {
         const failedRunner = binding.harness === "codex"
           ? "codex"
           : binding.harness === "claude"
@@ -6489,6 +6498,7 @@ async function postAdmittedChat(
         const failure = runtimeProcessFailure(failedRunner, {
           exitCode: covenBackedExitCode,
           emittedDiagnostic,
+          reason: runtimeProcessReason,
         });
         launchFailure = failure;
         result.is_error = true;
@@ -6498,6 +6508,7 @@ async function postAdmittedChat(
           runner: failedRunner,
           exitCode: covenBackedExitCode,
           emittedDiagnostic,
+          reason: runtimeProcessReason,
           ...(localRuntimePlan
             ? {
                 launcher: {
@@ -6777,11 +6788,13 @@ async function postAdmittedChat(
       settleUnfinishedTools();
       // Preflight/spawn failures never produced a real assistant response, so
       // preserve the established no-transcript behavior for them. A Coven
-      // child that did start and then exited non-zero is different: persist a
+      // child that did start and then failed is different: persist a
       // clearly marked failure when the conversation already has an id, so a
       // reload retains the safe exit diagnostics instead of looking complete.
       const persistCovenProcessFailure = Boolean(
-        finalSessionId && launchFailure && covenBackedProcessFailed,
+        finalSessionId && launchFailure && (
+          covenBackedProcessFailed || (result.is_error && runtimeProcessReason !== "unknown")
+        ),
       );
       let persistedTurnId: string | undefined;
       if (finalSessionId && (!launchFailure || persistCovenProcessFailure)) {
