@@ -63,4 +63,3 @@ The issue and full outcome remain open. The isolated `fix/issue-6064-webkit-retr
 ![Synthetic WebKit Retry failure 1, showing the refused output and remaining Retry control.](failed-retry-1.png)
 
 ![Synthetic WebKit Retry failure 2, showing the refused output and remaining Retry control.](failed-retry-2.png)
-
