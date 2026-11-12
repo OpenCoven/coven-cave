@@ -157,8 +157,8 @@ async function capture({ origin, manifest, fixtures, only, outDir, log }) {
 
 export async function main(argv, { log = console.log } = {}) {
   const options = parseArgs(argv);
-  const manifest = JSON.parse(readFileSync(options.manifest ?? path.join(ROOT, "screenshots", "manifest.json"), "utf8"));
   const manifestPath = options.manifest ?? path.join(ROOT, "screenshots", "manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const fixtures = manifest.fixtures ? JSON.parse(readFileSync(path.resolve(path.dirname(manifestPath), manifest.fixtures), "utf8")) : {};
   const outDir = path.resolve(options.out ?? path.join(ROOT, "screenshots"));
   const server = options.origin ? { origin: options.origin, stop: async () => {} } : await startServer(log);
