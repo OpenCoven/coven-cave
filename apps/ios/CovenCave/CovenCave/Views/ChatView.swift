@@ -1066,6 +1066,7 @@ struct ChatView: View {
                         VStack(spacing: 10) {
                             transcriptRow(row, proxy: proxy)
                         }
+                        .accessibilityElement(children: .contain)
                         .id(row.id)
                         .modifier(scrollAnchorRow(row.id))
                             .onGeometryChange(for: ChatScrollGeometry?.self) { geometry in

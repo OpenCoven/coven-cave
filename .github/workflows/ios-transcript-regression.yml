@@ -6,6 +6,8 @@ on:
       - apps/ios/**
       - packages/ios-markdown/**
       - scripts/build-ios-markdown.mjs
+      - scripts/ios-native-command.py
+      - scripts/ios-native-command.test.mjs
       - package.json
       - pnpm-lock.yaml
       - .github/workflows/ios-transcript-regression.yml
@@ -23,20 +25,27 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - timeout-minutes: 1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - timeout-minutes: 1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
       - name: Install locked renderer dependencies
+        timeout-minutes: 2
         run: |
           corepack enable
           corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
           pnpm install --frozen-lockfile --ignore-scripts
       - name: Require bundled WebKit markdown rather than native fallback
-        run: node scripts/build-ios-markdown.mjs
+        timeout-minutes: 1
+        run: |
+          node --test scripts/ios-native-command.test.mjs
+          node scripts/build-ios-markdown.mjs
       - name: Generate project and select available iPhone simulator
+        timeout-minutes: 1
         shell: bash
         run: |
           set -euo pipefail
@@ -57,11 +66,14 @@ jobs:
       # A retry re-runs only a failed test, and every assertion must pass in
       # full on the retry, so a consistent regression still fails the job.
       - name: Debug scroll state and existing long-chat UI regressions
-        timeout-minutes: 10
+        timeout-minutes: 13
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
+          python3 scripts/ios-native-command.py run --timeout-seconds 720 \
+            --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
+            --receipt "$RUNNER_TEMP/scroll-debug.receipt.json" -- \
+            xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
             -destination "$CAVE_TEST_DESTINATION" -derivedDataPath "$RUNNER_TEMP/CaveDerived" \
             -resultBundlePath "$RUNNER_TEMP/scroll-debug.xcresult" CODE_SIGNING_ALLOWED=NO \
             -retry-tests-on-failure -test-iterations 3 \
@@ -75,40 +87,66 @@ jobs:
       # The latest-reply bounce (#6090) appeared in only some attempts on the
       # same head, so a retry could pass by luck. Every iteration must pass.
       - name: Latest-reply bounce, three full runs without retries
-        timeout-minutes: 40
+        timeout-minutes: 39
         if: ${{ !cancelled() }}
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
+          python3 scripts/ios-native-command.py run --timeout-seconds 2280 \
+            --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
+            --receipt "$RUNNER_TEMP/scroll-bounce.receipt.json" -- \
+            xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
             -destination "$CAVE_TEST_DESTINATION" -derivedDataPath "$RUNNER_TEMP/CaveDerived" \
             -resultBundlePath "$RUNNER_TEMP/scroll-bounce.xcresult" CODE_SIGNING_ALLOWED=NO \
             -test-iterations 3 \
             -only-testing:CovenCaveUITests/ChatScrollBounceUITests \
+            -only-testing:CovenCaveUITests/TranscriptAccessibilityUITests \
             | tee "$RUNNER_TEMP/scroll-bounce.log"
       - name: Release shrink and independent no-shrink repeated opens
-        timeout-minutes: 10
+        timeout-minutes: 13
         if: ${{ !cancelled() }}
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCavePerformance \
+          python3 scripts/ios-native-command.py run --timeout-seconds 720 \
+            --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
+            --receipt "$RUNNER_TEMP/scroll-release.receipt.json" -- \
+            xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCavePerformance \
             -destination "$CAVE_TEST_DESTINATION" -derivedDataPath "$RUNNER_TEMP/CaveDerived" \
             -resultBundlePath "$RUNNER_TEMP/scroll-release.xcresult" CODE_SIGNING_ALLOWED=NO \
             -retry-tests-on-failure -test-iterations 3 \
             -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess \
             -only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink \
             | tee "$RUNNER_TEMP/scroll-release.log"
-      # Bound the native commands above so failures leave room to collect
-      # evidence within the unchanged job budget. Preserve cancelled-step logs
-      # too; hard runner loss can still prevent artifact retention.
-      - name: Retain test logs and screenshot-bearing results
+      # The wrapper waits for owned shutdown before these snapshots. Upload
+      # logs independently so a partial result can never lose the first failure.
+      - name: Freeze native evidence after owned commands finish
+        timeout-minutes: 1
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python3 scripts/ios-native-command.py freeze --root "$RUNNER_TEMP" \
+            --output "$RUNNER_TEMP/transcript-evidence" > "$RUNNER_TEMP/transcript-collection.log" 2>&1
+      - name: Retain native logs and command receipts independently
+        timeout-minutes: 1
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: transcript-regression-${{ github.run_id }}
+          name: transcript-logs-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/scroll-*.log
-            ${{ runner.temp }}/scroll-*.xcresult
+            ${{ runner.temp }}/scroll-*.receipt.json
+            ${{ runner.temp }}/transcript-collection.log
+            ${{ runner.temp }}/transcript-evidence/manifest.json
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Retain frozen screenshot-bearing native results
+        timeout-minutes: 2
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: transcript-results-${{ github.run_id }}
+          path: ${{ runner.temp }}/transcript-evidence/results
+          compression-level: 0
           retention-days: 7
           if-no-files-found: warn

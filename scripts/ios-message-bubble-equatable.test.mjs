@@ -16,8 +16,8 @@ const runner = fs.readFileSync(path.join(root, "scripts/run-tests.mjs"), "utf8")
 
 assert.match(
   chatView,
-  /transcriptRow\(row, proxy: proxy\)[\s\S]{0,80}?\.id\(row\.id\)[\s\S]*?MessageBubble\([\s\S]*?\)\s*\.equatable\(\)/,
-  "ChatView should give rows stable scroll identity and skip re-rendering unchanged bubbles",
+  /transcriptRow\(row, proxy: proxy\)\s*\}\s*\.accessibilityElement\(children: \.contain\)\s*\.id\(row\.id\)[\s\S]*?MessageBubble\([\s\S]*?\)\s*\.equatable\(\)/,
+  "ChatView should retain accessible row groups, stable scroll identity and unchanged-bubble equality",
 );
 
 assert.match(
