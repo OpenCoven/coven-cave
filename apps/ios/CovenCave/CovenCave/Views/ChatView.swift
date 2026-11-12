@@ -1084,8 +1084,10 @@ struct ChatView: View {
                                     viewportRecovery.noteLatestRow(id: row.id, height: geometry.contentHeight)
                                     recoverTranscriptViewportIfNeeded(proxy)
                                 }
-                                if scrollState.isAtBottom != geometry.isAtBottom {
-                                    scrollState.updateGeometry(atBottom: geometry.isAtBottom)
+                                let movedAway = previous.map { geometry.visibleBottom < $0.visibleBottom } ?? false
+                                if scrollState.isAtBottom != geometry.isAtBottom
+                                    || (scrollState.isUserScrolling && movedAway) {
+                                    scrollState.updateGeometry(atBottom: geometry.isAtBottom, movedAway: movedAway)
                                 }
                                 if scrollState.isFollowingLatest, !geometry.isAtBottom {
                                     streamScroll.request { scrollToLatest(proxy) }

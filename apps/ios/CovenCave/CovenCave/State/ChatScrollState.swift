@@ -6,15 +6,23 @@ struct ChatScrollState {
     private(set) var isAtBottom = true
     private(set) var isFollowingLatest = true
     private(set) var isUserScrolling = false
+    private var returnedToBottomDuringGesture = false
 
-    mutating func updateGeometry(atBottom: Bool) {
+    mutating func updateGeometry(atBottom: Bool, movedAway: Bool = false) {
         isAtBottom = atBottom
-        if atBottom && !isUserScrolling {
+        if isUserScrolling {
+            // A streamed line can grow between reaching the tail and idle.
+            // Keep that return intent unless the reader moves away again.
+            if atBottom && !movedAway { returnedToBottomDuringGesture = true }
+            if !atBottom && movedAway { returnedToBottomDuringGesture = false }
+        } else if atBottom {
             isFollowingLatest = true
         }
     }
 
     mutating func beginUserScroll() {
+        // Tracking, interaction and deceleration belong to the same gesture.
+        if !isUserScrolling { returnedToBottomDuringGesture = false }
         isUserScrolling = true
         isFollowingLatest = false
     }
@@ -22,10 +30,12 @@ struct ChatScrollState {
     mutating func endUserScroll() {
         guard isUserScrolling else { return }
         isUserScrolling = false
-        isFollowingLatest = isAtBottom
+        isFollowingLatest = isAtBottom || returnedToBottomDuringGesture
+        returnedToBottomDuringGesture = false
     }
 
     mutating func followLatest() {
+        returnedToBottomDuringGesture = false
         isFollowingLatest = true
         isUserScrolling = false
     }

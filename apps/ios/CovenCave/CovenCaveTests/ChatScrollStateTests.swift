@@ -72,6 +72,54 @@ final class ChatScrollStateTests: XCTestCase {
         XCTAssertTrue(state.isFollowingLatest)
     }
 
+    func testReturningToBottomSurvivesStreamingGrowthBeforeGestureIdle() {
+        var state = ChatScrollState()
+        state.beginUserScroll()
+        state.updateGeometry(atBottom: false)
+        state.endUserScroll()
+        state.beginUserScroll()
+        state.updateGeometry(atBottom: true)
+        // A streamed line grows after reaching the tail but before deceleration ends.
+        state.updateGeometry(atBottom: false)
+        state.endUserScroll()
+        XCTAssertTrue(state.isFollowingLatest, "streaming growth must not erase the reader's return to latest")
+    }
+
+    func testMovingAwayAfterReturningCancelsFollowEvenAfterGrowth() {
+        var state = ChatScrollState()
+        state.beginUserScroll()
+        state.updateGeometry(atBottom: false, movedAway: true)
+        state.updateGeometry(atBottom: true)
+        state.updateGeometry(atBottom: false)
+        state.updateGeometry(atBottom: false, movedAway: true)
+        state.endUserScroll()
+        XCTAssertFalse(state.isFollowingLatest, "reader reversal keeps history under reader control")
+    }
+
+    func testBeginningToReadHistoryNearBottomDoesNotLatchAReturn() {
+        var state = ChatScrollState()
+        state.beginUserScroll()
+        state.updateGeometry(atBottom: true, movedAway: true)
+        state.updateGeometry(atBottom: false, movedAway: true)
+        state.endUserScroll()
+        XCTAssertFalse(state.isFollowingLatest)
+    }
+
+    func testDecelerationDoesNotResetTheSameGestureReturn() {
+        var state = ChatScrollState()
+        state.beginUserScroll()
+        state.updateGeometry(atBottom: false, movedAway: true)
+        state.updateGeometry(atBottom: true)
+        state.beginUserScroll()
+        state.updateGeometry(atBottom: false)
+        state.endUserScroll()
+        XCTAssertTrue(state.isFollowingLatest)
+        state.beginUserScroll()
+        state.updateGeometry(atBottom: false, movedAway: true)
+        state.endUserScroll()
+        XCTAssertFalse(state.isFollowingLatest, "the next gesture cannot inherit the previous return")
+    }
+
     func testExplicitJumpResumesFollowingWithoutPretendingItArrived() {
         var state = ChatScrollState()
         state.beginUserScroll()
