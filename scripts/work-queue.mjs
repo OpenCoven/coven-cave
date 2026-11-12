@@ -519,6 +519,10 @@ function printQueue(rows, log) {
 
 export async function main(argv, { log = console.log, github } = {}) {
   const options = parseArgs(argv);
+  // Only `apply` takes a file. A stray path elsewhere is a mistyped option.
+  if (options.command !== "apply" && options.positional.length > 0) {
+    throw new Error(`${options.command} takes no argument: ${options.positional.join(" ")}`);
+  }
   const api = github ?? createGitHub(options.repo);
 
   if (options.command === "list") {

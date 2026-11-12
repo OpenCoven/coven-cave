@@ -9,6 +9,7 @@ import {
   applyManifest,
   bodyDigest,
   lintIssue,
+  main,
   manifestTable,
   parseWorkBlock,
   planActions,
@@ -338,4 +339,15 @@ test("lintIssue questions an in-progress claim that has not been refreshed for a
 test("queueRows --ready leaves out work another session has in progress", () => {
   const body = BLOCK.replace("state: needs-device", "state: in-progress");
   assert.deepEqual(queueRows([issue({ body, labels: ["lane:native", "state:in-progress"] })], { ready: true }), []);
+});
+
+test("main refuses a stray argument instead of writing the wrong output", async () => {
+  // `propose --table manifest-table.md --out manifest.json` once wrote the table
+  // over the JSON manifest: --table takes no value, and the path was ignored.
+  const github = { fetchOpenIssues: () => assert.fail("must not read GitHub"), fetchOpenPulls: () => [] };
+  for (const command of ["list", "lint", "propose"]) {
+    await assert.rejects(main([command, "--table", "manifest-table.md"], { log: () => {}, github }), {
+      message: `${command} takes no argument: manifest-table.md`,
+    });
+  }
 });
