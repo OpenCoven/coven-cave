@@ -20,6 +20,10 @@ Use **GitHub Issues** as the development queue and the existing
 [GitHub work tracking](docs/workflows/github-work-tracking.md) is the canonical
 guide for ownership, status, worktrees, handoff, and completion.
 
+`pnpm work:queue --ready` lists what can be started now. Keep each issue's
+`lane:*` and `state:*` labels and its work block current; `pnpm work:lint`
+checks them.
+
 Keep one issue per outcome. Record the acting familiar, scope, branch/worktree,
 evidence, blocker, and imperative next step on that issue. GitHub assignment
 and comments are not execution leases. Preserve human-authored dependencies
@@ -58,6 +62,8 @@ marked active.
   A chat approval does not expand filesystem access. De-registration is not
   directory deletion, and neither is justified by missing ownership evidence.
 - Before release or TestFlight work, reconcile and verify from clean `main`.
+  Follow the [release train](docs/workflows/release-train.md); `pnpm
+  release:train` reports the current step and prints the next command.
 
 Use the existing Git-only secret and attribution hooks, installed with
 `bash scripts/install-git-hooks.sh`; never replace safety hooks with an empty
