@@ -15,6 +15,9 @@ test("touch long-press drag moves a card between columns", async ({ page }) => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
     window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
+    // The dragged card is unassigned, so browse All projects and All familiars.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [] }));
   });
   await page.goto("/"); await page.waitForSelector(".shell-frame", { timeout: 60000 });
   // The app boots into Chat (cave-hsa6), where the sidebar is the thread list —

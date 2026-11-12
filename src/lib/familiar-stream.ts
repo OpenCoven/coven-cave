@@ -3,6 +3,7 @@ import type { ChatResponseMetadata } from "./chat-response-metadata";
 import type { ModelControlValues } from "./model-control-capabilities";
 import type { SessionOrigin } from "./types";
 import { isProjectlessGenerationOrigin } from "@/lib/chat-origins";
+import { firstUseAllowsExecution, FIRST_USE_REQUIRED_MESSAGE } from "./first-use-execution.ts";
 // Client helper: stream a one-shot prompt to a familiar through the chat bridge
 // (`/api/chat/send`, SSE) and return the concatenated assistant text. This is the
 // sanctioned client-side LLM path — the same bridge evals, workflow-generate, and
@@ -67,6 +68,7 @@ export async function streamFamiliarText(opts: {
   sessionId?: string;
   responseMetadata?: ChatResponseMetadata;
 }> {
+  if (!(await firstUseAllowsExecution())) return { text: "", error: FIRST_USE_REQUIRED_MESSAGE };
   let res: Response;
   try {
     // Server-owned provenance (cave-cst0g): a projectless generation origin

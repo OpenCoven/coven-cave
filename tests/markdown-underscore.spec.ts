@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createOnboardingBootstrapState, ONBOARDING_BOOTSTRAP_BOUNDARIES } from "../src/lib/onboarding-bootstrap";
+import { installCompletedFirstUse } from "./fixtures/first-use";
+
+test.use({ serviceWorkers: "block" });
 
 const ISO = "2026-11-08T09:00:00.000Z";
 const ANSWER = "Set MAX_RETRY_COUNT to 3; use snake_case_name here; file_a and file_b.\n\n_real emphasis_ and __real bold__ with `inline_code_name`.\n\n| Identifier | Value |\n| --- | --- |\n| MAX_RETRY_COUNT | snake_case_name |";
@@ -13,6 +16,7 @@ async function setup(page: Page) {
     localStorage.setItem("cave:active-familiar", "nova");
     localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     let controller: ReadableStreamDefaultController<Uint8Array>;
+    Object.assign(window, { underscoreStreamReady: false });
     Object.assign(window, { underscoreFrame(frame: { kind: string }) {
       controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
       if (frame.kind === "done") controller.close();
@@ -22,7 +26,7 @@ async function setup(page: Page) {
       const input = args[0];
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (new URL(url, location.href).pathname === "/api/chat/send") {
-        return new Response(new ReadableStream<Uint8Array>({ start(value) { controller = value; } }), { headers: { "content-type": "text/event-stream" } });
+        return new Response(new ReadableStream<Uint8Array>({ start(value) { controller = value; Object.assign(window, { underscoreStreamReady: true }); } }), { headers: { "content-type": "text/event-stream" } });
       }
       return original(...args);
     };
@@ -39,7 +43,7 @@ async function setup(page: Page) {
       const bootstrap = createOnboardingBootstrapState(true);
       payload = { ...bootstrap, ok: true, complete: true, needsSetup: false, status: "complete", stages: bootstrap.stages.map((stage) => ({ ...stage, status: "complete" })), boundaries: ONBOARDING_BOOTSTRAP_BOUNDARIES };
     } else if (path === "/api/onboarding/status") payload = { ok: true, complete: true, steps: {}, tools: [] };
-    else if (path === "/api/familiars") payload = { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] };
+    else if (path === "/api/familiars") payload = { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", harness: "hermes", icon: "ph:sparkle-fill" }] };
     else if (path === "/api/projects") payload = { ok: true, projects: [project] };
     else if (path === "/api/queue/project") payload = { ok: true, projectId: project.id, project };
     else if (path === "/api/daemon/connection") payload = { ok: true, running: true, connected: true, target: { mode: "local" } };
@@ -53,6 +57,7 @@ async function setup(page: Page) {
     ] } };
     await route.fulfill({ json: payload });
   });
+  await installCompletedFirstUse(page, { project, familiarIds: ["nova"], actingFamiliarId: "nova", permissionMode: "full", harness: "hermes" });
   await page.goto("/?mode=chat#chat-underscore-6391", { waitUntil: "domcontentloaded" });
   const main = page.getByTestId("chat-main");
   await expect(main.getByText("Ready for identifiers.")).toBeVisible({ timeout: 45_000 });
@@ -60,6 +65,7 @@ async function setup(page: Page) {
 }
 
 async function emit(page: Page, frame: object) {
+  await expect.poll(() => page.evaluate(() => (window as unknown as { underscoreStreamReady: boolean }).underscoreStreamReady)).toBe(true);
   await page.evaluate((value) => (window as unknown as { underscoreFrame(frame: object): void }).underscoreFrame(value), frame);
 }
 

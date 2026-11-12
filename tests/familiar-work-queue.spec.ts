@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 // Familiar Work Queue (cave-hlv.4) — the issues + PR control tower surface.
 // Drives the mode entirely off mocked /api/queue/issues (ready issues) and
@@ -34,6 +35,12 @@ const QUEUE_PROJECT_B = { id: "queue-test-project-b", name: "Queue test project 
 const QUEUE_READINESS = { ok: true, message: "Queue project is ready.", project: QUEUE_PROJECT };
 
 test.beforeEach(async ({ page }) => {
+  await installCompletedFirstUse(page, {
+    project: QUEUE_PROJECT, familiarIds: ["kitty"], actingFamiliarId: "kitty",
+  });
+  await page.route("**/api/projects**", (route) => route.request().method() === "GET"
+    ? route.fulfill({ json: { ok: true, projects: [{ ...QUEUE_PROJECT, access: "write" }] } })
+    : route.fallback());
   await page.route("**/api/queue/readiness", (route) =>
     route.fulfill({ json: { ok: true, readiness: QUEUE_READINESS } }),
   );
@@ -42,7 +49,10 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-async function gotoWorkQueue(page: Page, onQueueRequest?: (request: import("@playwright/test").Request) => void) {
+async function gotoWorkQueue(page: Page, onQueueRequest?: (request: import("@playwright/test").Request) => void, registeredProjects = [QUEUE_PROJECT]) {
+  await installCompletedFirstUse(page, {
+    project: QUEUE_PROJECT, familiarIds: ["kitty"], actingFamiliarId: "kitty",
+  });
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "kitty");
@@ -59,6 +69,11 @@ async function gotoWorkQueue(page: Page, onQueueRequest?: (request: import("@pla
     }),
   );
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+  await page.route("**/api/projects**", (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    const scoped = new URL(route.request().url()).searchParams.has("familiarId");
+    return route.fulfill({ json: { ok: true, projects: registeredProjects.map((project) => ({ ...project, ...(scoped ? { access: "write" } : {}) })) } });
+  });
   // Regex matchers (not globs): glob `?` matches any char, so `/api/queue/issues?…`
   // would also catch `/api/queue/prs`. These are unambiguous — /prs vs the
   // ?-queried ready list.
@@ -128,7 +143,7 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect(noPr.getByRole("button", { name: "Claim", exact: true })).toBeVisible();
 
     // Filtering by Nova drops Kitty-owned lanes (checks-failing was Kitty's).
-    await page.getByRole("button", { name: /Nova/ }).click();
+    await fwq.getByRole("button", { name: /Nova/ }).click();
     await expect(fwq.getByRole("region", { name: "Checks failing" })).toHaveCount(0);
     await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible(); // cave-bb2 is Nova's
   });
@@ -302,10 +317,6 @@ test.describe("familiar work queue (PR control tower)", () => {
       message: "Queue project is ready.",
       project,
     });
-    await page.route("**/api/projects", (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      return route.fulfill({ json: { ok: true, projects: [QUEUE_PROJECT, QUEUE_PROJECT_B] } });
-    });
     await page.route("**/api/queue/readiness", (route) => {
       const request = route.request();
       if (request.method() === "POST") {
@@ -324,7 +335,7 @@ test.describe("familiar work queue (PR control tower)", () => {
       }
       return route.fulfill({ json: { ok: true, readiness: readinessFor(selectedProject) } });
     });
-    await gotoWorkQueue(page);
+    await gotoWorkQueue(page, undefined, [QUEUE_PROJECT, QUEUE_PROJECT_B]);
 
     const fwq = page.locator(".fwq");
     await expect(fwq.getByText("Queue needs a project")).toBeVisible();

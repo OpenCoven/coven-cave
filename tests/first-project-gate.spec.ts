@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { openFirstProjectGate } from "./fixtures/first-project-gate";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 // #5528: the first-project gate is a dialog scoped to the detail pane. Keyboard
 // focus stays inside it (it used to Tab out to the top bar and toasts), and
@@ -8,6 +9,15 @@ import { openFirstProjectGate } from "./fixtures/first-project-gate";
 
 test.describe("first-project gate", () => {
   test.describe.configure({ timeout: 120_000 });
+
+  test.beforeEach(async ({ page }) => {
+    // An existing installation retains its completed introduction and saved
+    // identities after its only project is removed from the registry.
+    await installCompletedFirstUse(page, {
+      project: { id: "removed-project", name: "Removed project", root: "/tmp/removed-project" },
+      familiarIds: ["cody"], actingFamiliarId: "cody", repairReason: "project",
+    });
+  });
 
   test("Tab stays inside the gate", async ({ page }) => {
     const gate = await openFirstProjectGate(page);

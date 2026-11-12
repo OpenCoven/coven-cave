@@ -156,6 +156,7 @@ export type AddMenuPhoneActions = {
   retry: { disabled?: boolean; onSelect: () => void };
   summarize: { disabled?: boolean; onSelect: () => void };
   call: { disabled?: boolean; onSelect: () => void };
+  guidance?: { label: string; onSelect: () => void };
 };
 
 export function ComposerAddMenu({
@@ -258,6 +259,7 @@ export function ComposerAddMenu({
               phoneActions.call.onSelect();
             }}
           />
+          {phoneActions.guidance ? <AddMenuRow icon="ph:info" label={phoneActions.guidance.label} onSelect={() => { onClose(); phoneActions.guidance!.onSelect(); }} /> : null}
           <PopoverSeparator />
         </>
       ) : null}
