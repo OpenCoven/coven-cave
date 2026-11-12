@@ -6,26 +6,45 @@ struct ChatScrollState {
     private(set) var isAtBottom = true
     private(set) var isFollowingLatest = true
     private(set) var isUserScrolling = false
+    private var returnedToBottomDuringGesture = false
 
-    mutating func updateGeometry(atBottom: Bool) {
+    mutating func updateGeometry(atBottom: Bool, movedAway: Bool = false) {
         isAtBottom = atBottom
-        if atBottom && !isUserScrolling {
+        if isUserScrolling {
+            // A streamed line can grow between reaching the tail and idle.
+            // Keep that return intent unless the reader moves away again.
+            if atBottom && !movedAway { returnedToBottomDuringGesture = true }
+            if !atBottom && movedAway { returnedToBottomDuringGesture = false }
+        } else if atBottom {
             isFollowingLatest = true
         }
     }
 
     mutating func beginUserScroll() {
+        // Tracking, interaction and deceleration belong to the same gesture.
+        if !isUserScrolling { returnedToBottomDuringGesture = false }
         isUserScrolling = true
         isFollowingLatest = false
     }
 
-    mutating func endUserScroll() {
+    mutating func endUserScroll(currentGeometry: ChatScrollGeometry? = nil,
+                                previousGeometry: ChatScrollGeometry? = nil) {
         guard isUserScrolling else { return }
+        // Idle can arrive before the latest row's geometry callback. Sample
+        // the native viewport while this is still the reader's gesture.
+        if let currentGeometry {
+            let movedAway = previousGeometry.map {
+                currentGeometry.visibleBottom < $0.visibleBottom
+            } ?? false
+            updateGeometry(atBottom: currentGeometry.isAtBottom, movedAway: movedAway)
+        }
         isUserScrolling = false
-        isFollowingLatest = isAtBottom
+        isFollowingLatest = isAtBottom || returnedToBottomDuringGesture
+        returnedToBottomDuringGesture = false
     }
 
     mutating func followLatest() {
+        returnedToBottomDuringGesture = false
         isFollowingLatest = true
         isUserScrolling = false
     }
@@ -215,5 +234,21 @@ struct ChatViewportRecovery {
             rowsRemoved = false
             followCorrectionTaken = false
         }
+    }
+}
+
+/// Deferred transcript resources must wait for a real viewport. During the
+/// first layout pass SwiftUI may have no scroll bounds (or zero-sized bounds);
+/// treating that as visible eagerly mounts every historical renderer.
+enum ChatResourceViewport {
+    nonisolated static func isNearby(size: CGSize, viewport: CGRect?) -> Bool {
+        guard let viewport,
+              viewport.origin.x.isFinite, viewport.origin.y.isFinite,
+              viewport.width.isFinite, viewport.height.isFinite,
+              viewport.width > 0, viewport.height > 0,
+              size.width.isFinite, size.height.isFinite,
+              size.width > 0, size.height > 0 else { return false }
+        return CGRect(origin: .zero, size: size)
+            .intersects(viewport.insetBy(dx: 0, dy: -viewport.height))
     }
 }

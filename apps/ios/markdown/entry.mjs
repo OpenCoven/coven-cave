@@ -199,10 +199,23 @@ function applyStyle(opts = {}) {
 // Heading elements from the last render, in document order, so the reader's TOC
 // can scroll to one by index without round-tripping coordinates.
 let lastHeadingEls = [];
+// Native reply height must track reflow after the render completes, including
+// width changes when streaming controls settle and delayed rich content.
+let lastReportedHeight = 0;
+function reportHeightIfChanged() {
+  const h = Math.ceil(document.body.getBoundingClientRect().height);
+  if (!Number.isFinite(h) || h <= 0 || h === lastReportedHeight) return;
+  lastReportedHeight = h;
+  window.webkit?.messageHandlers?.cave?.postMessage({ type: "height", height: h });
+}
+if (typeof ResizeObserver === "function") {
+  new ResizeObserver(reportHeightIfChanged).observe(document.body);
+}
 function reportLayout() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const h = Math.ceil(document.body.getBoundingClientRect().height);
+      lastReportedHeight = h;
       window.webkit?.messageHandlers?.cave?.postMessage({ type: "height", height: h });
       const root = document.getElementById("root");
       lastHeadingEls = root ? [...root.querySelectorAll("h1,h2,h3,h4,h5,h6")] : [];
