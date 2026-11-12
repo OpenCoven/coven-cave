@@ -156,4 +156,43 @@ final class ThreadSnapshotStoreTests: XCTestCase {
         let reloaded = try await store.load()
         XCTAssertEqual(reloaded, original)
     }
+
+    // MARK: - golden-13 (#6061): tool payloads in the on-device thread cache
+
+    /// The shared tool sentinels, folded through the real stream decoder and
+    /// saved with the thread. A successful tool's result and an opaque payload
+    /// signature never reach the file. The bounded argument summary shown on
+    /// the activity step is cached with it; that is not asserted here.
+    func testThreadCacheNeverHoldsAToolResultOrPayloadSignature() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "runtime-activity-v1", withExtension: "json"))
+        let corpus = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let section = try XCTUnwrap(corpus["reasoningPrivacySentinels"] as? [String: Any])
+        let tool = try XCTUnwrap(section["tool"] as? [String: String])
+        let argument = try XCTUnwrap(tool["argument"])
+        let result = try XCTUnwrap(tool["result"])
+        let signature = try XCTUnwrap(tool["payloadSignature"])
+        let input = String(decoding: try JSONSerialization.data(withJSONObject: ["note": argument]), as: UTF8.self)
+        let frames: [[String: Any]] = [
+            ["kind": "tool_use", "id": "golden13", "name": "Read", "status": "running", "input": input,
+             "signature": signature, "encrypted_content": signature],
+            ["kind": "tool_use", "id": "golden13", "name": "Read", "status": "ok", "input": input, "output": result,
+             "signature": signature, "encrypted_content": signature],
+        ]
+        var steps: [ActivityStep] = []
+        for frame in frames {
+            let json = String(decoding: try JSONSerialization.data(withJSONObject: frame), as: UTF8.self)
+            steps = try XCTUnwrap(ActivityFold.fold(steps, event: try XCTUnwrap(StreamEvent.decode(json))))
+        }
+        var reply = DisplayMessage(role: .assistant, familiarId: "nova", text: "The comparison is complete.")
+        reply.activity = steps
+        var snapshot = makeSnapshot(title: "Golden thirteen")
+        snapshot.messages = [DisplayMessage(role: .user, familiarId: nil, text: "Compare the files"), reply]
+
+        let store = ThreadSnapshotStore(url: fileURL)
+        try await store.save([snapshot])
+        let saved = String(decoding: try Data(contentsOf: fileURL), as: UTF8.self)
+
+        XCTAssertFalse(saved.contains(result), "a successful tool's result is not cached")
+        XCTAssertFalse(saved.contains(signature), "an opaque payload signature is not cached")
+    }
 }
