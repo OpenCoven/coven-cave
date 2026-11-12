@@ -159,6 +159,13 @@ function daemonStartPayload(value: unknown): DaemonStartPayload {
   return value && typeof value === "object" ? value as DaemonStartPayload : {};
 }
 
+const AUTOMATIC_DEFERRAL_CODES: ReadonlySet<unknown> = new Set([
+  "owner_unreachable",
+  "address_in_use",
+  "mutation_in_flight",
+  "duplicate_after_timeout",
+]);
+
 /** Shared automatic/manual Workspace start behavior with injectable effects. */
 export async function runWorkspaceDaemonStart(input: {
   automatic?: boolean;
@@ -184,11 +191,12 @@ export async function runWorkspaceDaemonStart(input: {
     );
     const payload = daemonStartPayload(await response.json().catch(() => ({})));
     if (!response.ok || payload.ok === false) {
-      // Both codes mean someone else holds the daemon: an unconfirmed
-      // lifecycle owner, or a process already bound to its address. Neither is
-      // ours to displace, and retrying spends revive budget on a refusal that
-      // cannot change until that owner goes away.
-      if (input.automatic && (payload.code === "owner_unreachable" || payload.code === "address_in_use")) {
+      // These codes mean someone else holds the daemon or its mutation: an
+      // unconfirmed lifecycle owner, a process already bound to its address,
+      // or the mutation owner running (or settling) another start (#6298).
+      // None is ours to displace, and retrying spends revive budget on a
+      // refusal that cannot change until that owner finishes or goes away.
+      if (input.automatic && AUTOMATIC_DEFERRAL_CODES.has(payload.code)) {
         await input.refreshStatus();
         return "deferred";
       }

@@ -1,13 +1,13 @@
 [package]
 name = "app"
-version = "0.5.14"
+version = "0.5.20"
 description = "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions."
 authors = ["OpenCoven contributors"]
 license = "MIT OR AGPL-3.0-only"
 repository = "https://github.com/OpenCoven/coven-cave"
 homepage = "https://github.com/OpenCoven/coven-cave"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.90"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,7 +16,7 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.2", features = [] }
+tauri-build = { version = "2.7.4", features = [] }
 # build.rs generates MAX_FILE_COUNT from scripts/sidecar-runtime-budget.json.
 serde_json = "1.0"
 
@@ -27,7 +27,7 @@ log = "0.4"
 # tray-icon moved to the desktop-only target block below — mobile (iOS/
 # Android) doesn't have a tray and trying to enable the feature there
 # breaks the build.
-tauri = { version = "2.11.2", features = ["unstable", "macos-private-api"] }
+tauri = { version = "2.12.5", features = ["unstable", "macos-private-api"] }
 tauri-plugin-log = "2"
 # tauri-plugin-notification supports iOS and Android out of the box, so
 # this stays cross-platform; the JS-side `native-notify` wrapper handles
@@ -49,7 +49,7 @@ tauri-plugin-os = "2"
 # Spelling it as "not(ios) and not(android)" is equivalent to
 # `cfg(desktop)` for the platforms we care about.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
-tauri = { version = "2.11.2", features = ["tray-icon", "macos-private-api"] }
+tauri = { version = "2.12.5", features = ["tray-icon", "macos-private-api"] }
 portable-pty = "0.8"
 # Desktop auto-update: the updater plugin checks/downloads/installs signed
 # release artifacts; process gives us relaunch() after an install. Both are

@@ -122,20 +122,12 @@ struct AgentActivityView: View {
     }
 
     private var accessibilitySummary: String {
-        inlineTool ? "Tool activity: \(chipLabel)\(repeatCount > 1 ? ", repeated \(repeatCount) times" : "")" : streaming ? "Agent activity: \(steps.currentStep?.status == .requested ? "requested" : "running") \(steps.currentStep?.title ?? "step")"
+        inlineTool ? "Tool activity: \(chipLabel)\(repeatCount > 1 ? ", repeated \(repeatCount) times" : "")" : streaming ? "Agent activity: \(steps.currentStep.map { inlineStatus($0) } ?? "Running") \(steps.currentStep?.title ?? "step")"
                   : "Agent activity: \(steps.summaryLabel)"
     }
 
     private func inlineStatus(_ step: ActivityStep) -> String {
-        switch step.status {
-        case .requested: "Requested"
-        case .running: streaming ? "Running" : "Outcome unknown"
-        case .ok: "Succeeded"
-        case .error: "Failed"
-        case .rejected: "Rejected"
-        case .notice: "Notice"
-        case .unknown: "Outcome unknown"
-        }
+        step.status == .running && !streaming ? "Outcome unknown" : step.status.label
     }
 
     // MARK: - Expanded steps
@@ -164,18 +156,8 @@ struct AgentActivityView: View {
                 Text(step.title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                if step.status == .requested {
-                    Text("Requested")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if step.status == .rejected {
-                    Text("Rejected")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if step.status == .unknown {
-                    Text("Outcome unknown")
+                if step.status.isRequested || step.status.isRejected || step.status == .cancelRequested || step.status == .cancelled || step.status == .unknown {
+                    Text(step.status.label)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -230,18 +212,20 @@ struct AgentActivityView: View {
 
     @ViewBuilder private func statusGlyph(_ step: ActivityStep) -> some View {
         switch step.status {
-        case .requested:
+        case .requested, .approvalRequested:
             Image(systemName: "clock")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-                .accessibilityLabel("Requested")
-        case .running where streaming:
+                .accessibilityLabel(step.status.label)
+        case .running where streaming, .cancelRequested where streaming:
             ProgressView().controlSize(.mini).tint(chrome.textSecondary)
-        case .running:
+                .accessibilityLabel(step.status.label)
+        case .running, .cancelRequested:
             // Stream over but never settled (transport drop mid-step).
             Image(systemName: "clock")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+                .accessibilityLabel(step.status.label)
         case .ok:
             Image(systemName: "checkmark.circle.fill")
                 .font(.caption2)
@@ -257,11 +241,16 @@ struct AgentActivityView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Outcome unknown")
-        case .rejected:
+        case .rejected, .policyRejected, .userRejected:
             Image(systemName: "nosign")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-                .accessibilityLabel("Rejected")
+                .accessibilityLabel(step.status.label)
+        case .cancelled:
+            Image(systemName: "xmark.circle")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(step.status.label)
         case .error:
             Image(systemName: "xmark.circle.fill")
                 .font(.caption2)

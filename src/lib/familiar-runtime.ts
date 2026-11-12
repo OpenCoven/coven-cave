@@ -45,7 +45,7 @@ export function isSshRuntime(
   return !!host && SAFE_SSH_HOST_RE.test(host) && !!cwd && !!command;
 }
 
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 

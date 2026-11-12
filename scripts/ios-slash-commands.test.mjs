@@ -130,7 +130,7 @@ assert.match(composerIntent, /command\.availability == \.native,\s*command\.argC
   "argument pickers open only for native commands that declare one");
 assert.match(iosSlash, /name: "\/model"[\s\S]{0,200}argCompletion: \.model/, "/model declares the model argument picker");
 assert.match(iosSlash, /name: "\/familiar"[\s\S]{0,200}argCompletion: \.familiar/, "/familiar declares the familiar argument picker");
-assert.match(chatView, /ComposerIntent\.detect\(draft, allowsMentions: thread\.isGroup\)/,
+assert.match(chatView, /ComposerIntent\.detect\(draft, allowsMentions: thread\.isGroup \|\| fileMentionRoot != nil\)/,
   "the composer should derive its suggestion surface from ComposerIntent");
 assert.match(chatView, /if let suggestionList \{[\s\S]{0,200}SuggestionMenu\(list: suggestionList/,
   "the composer renders one suggestion menu for commands, arguments and mentions (#5879)");

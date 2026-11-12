@@ -162,6 +162,18 @@ function readPanelCollapsed(panel: PanelImperativeHandle): boolean | undefined {
   }
 }
 
+// `.resize()` throws "Layout not found for Panel <id>" in the same
+// not-yet-registered window. Skip it the same way: when the Panel arrives with
+// a group change, the destination-layout restore sizes it once registered.
+function resizePanel(panel: PanelImperativeHandle | null, size: string) {
+  if (!panel) return;
+  try {
+    panel.resize(size);
+  } catch {
+    // not registered with its Group yet
+  }
+}
+
 function togglePanel(panel: PanelImperativeHandle | null) {
   if (!panel) return;
   const collapsed = readPanelCollapsed(panel);
@@ -411,7 +423,7 @@ function ShellInner({
     if (isMobile) {
       setMobileDrawer(open ? "right-chat" : null);
     } else {
-      if (open) rightChatRef.current?.resize(`${width}px`);
+      if (open) resizePanel(rightChatRef.current, `${width}px`);
       applyPanelOpenState(rightChatRef.current, open);
     }
   }, [hasRightChat, isMobile, mounted]);
@@ -976,7 +988,7 @@ function ShellInner({
       // detail split throw off) while the Panel itself still reports
       // collapsed. See cave-ltl38.4 shipping-gate investigation.
       applyPreferredRightChatWidth();
-      rightChatRef.current?.resize(`${preferredRightChatWidth}px`);
+      resizePanel(rightChatRef.current, `${preferredRightChatWidth}px`);
     }
     applyPanelOpenState(rightChatRef.current, rightChatOpen);
   }, [applyPreferredRightChatWidth, desktopRightChat, groupId, preferredRightChatWidth, rightChatOpen, settled]);

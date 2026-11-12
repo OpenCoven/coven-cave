@@ -1202,6 +1202,44 @@ describe("StreamingTurnResponse", () => {
     );
   });
 
+  it("shows a settled coven:ui block in Quick Chat as readable lines, and copies them (#6060)", async () => {
+    const text = [
+      "Here is the status.",
+      "",
+      "```coven:ui",
+      '<Card title="Service status"><Badge tone="success">4 healthy</Badge><Button prefill="Restart exports">Restart</Button></Card>',
+      "```",
+      "",
+      "Closing prose",
+    ].join("\n");
+    const renderer = await render(
+      <QuickChatThread
+        familiar={null}
+        messages={[{ id: "quick-ui", role: "assistant", lifecycle: "complete", text }]}
+      />,
+    );
+    await flushMarkdown();
+
+    const readable = renderer.root.findAllByProps({ "data-ui-block-readable": "" });
+    expect(readable).toHaveLength(1);
+    expect(readable[0].findAllByType("p").map((line) => line.children.join(""))).toEqual([
+      "Service status",
+      "4 healthy",
+      "[Restart]",
+    ]);
+    expect(readable[0].findAll((node) => node.type === "button")).toHaveLength(0);
+    const serialized = JSON.stringify(renderer.toJSON());
+    expect(serialized).not.toContain("coven:ui");
+    expect(serialized).not.toContain("<Card");
+    expect(serialized.indexOf("Here is the status.")).toBeLessThan(serialized.indexOf("Service status"));
+    expect(serialized.indexOf("[Restart]")).toBeLessThan(serialized.indexOf("Closing prose"));
+
+    await act(async () => buttons(renderer, "Copy completed response")[0]!.props.onClick());
+    expect(clipboard.copyText).toHaveBeenCalledWith(
+      "Here is the status.\n\nService status\n4 healthy\n[Restart]\n\nClosing prose",
+    );
+  });
+
   it("gives Quick Chat exactly one live region across failed history and a new stream", async () => {
     const renderer = await render(
       <QuickChatThread

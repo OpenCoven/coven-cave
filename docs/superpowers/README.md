@@ -1,20 +1,14 @@
 # Approved specs and plans
 
-Beads cite files here as the authoritative approved design for a piece of work.
-`specs/` holds the design; `plans/` holds the implementation plan derived from
-it.
+GitHub issues cite approved designs here. `specs/` holds the design; `plans/` holds the implementation plan derived from it. Use [GitHub work tracking](../workflows/github-work-tracking.md) for current ownership, execution and delivery.
 
 ## These are point-in-time records
 
-Each document describes the repository **as it was on the date in its
-filename**. Read the design and the requirements as authoritative; read the
-operational details as history.
+Each document describes the repository **as it was on the date in its filename**. Preserve its original design intent and requirements, then read the current issue and newer explicit decisions to determine which parts remain active. A dated plan does not establish current operation-specific authority, ownership or completion.
 
 In particular, do not follow these as live runbooks:
 
-- **Required-check lists.** Several plans list `CodeQL` among the required
-  status checks. That was true when they were written; CodeQL was retired on
-  2026-07-31 (cave-yp21x). `CLAUDE.md` carries the current list.
+- **Required-check lists.** Historical required contexts and CodeQL policy can differ from current configuration. Refresh branch protection, the exact-head check results and [CLAUDE.md](../../CLAUDE.md); do not treat a dated list or an earlier-head pass as the current gate.
 - **Absolute paths.** Some plans hard-code a machine-local checkout or worktree
   path such as `/Users/<someone>/…/coven-cave/.worktrees/<branch>`. Those were
   the author's paths, not portable instructions. Everything is repo-relative
@@ -22,9 +16,7 @@ In particular, do not follow these as live runbooks:
 - **Branch and worktree names.** Named branches and worktrees in these plans are
   long since merged, renamed, or deleted.
 
-They have deliberately not been rewritten. A plan is a record of what was
-approved and how it was carried out; editing it later to match today's
-repository would make it a worse record, not a better one.
+Keep the original implementation sequence as history. Correct status annotations and supersession links when needed, without rewriting the approved design into a claim about what shipped. In particular, old Beads repair commands, automatic retirement hooks and recency windows do not override current [branch-curator](../../.agents/skills/branch-curator/SKILL.md) or [worktree policy](../workflows/github-work-tracking.md#worktrees).
 
 ## Why this directory is versioned
 
@@ -45,15 +37,9 @@ different thing — remains ignored.
 
 ## Durability
 
-Committing a design here makes it survive the authoring machine, which is what
-this directory is for. It does not make it survive a checkout that is never
-pushed. If a design matters, get it onto `origin`, and consider also pasting it
-into the bead's `DESIGN` field, which syncs through Dolt independently of git.
+Committing a design here makes it recoverable in that checkout. Durable approved documents must reach `origin/main` through the protected PR workflow and be linked from the canonical GitHub issue. Beads and Dolt references in older records describe the former tracker; do not recreate that metadata or rely on it as a second durability channel.
 
-Approval is the durability boundary. Once a spec or plan is approved, land it
-on `main` through a docs-only PR even if its implementation is deferred,
-reworked, or abandoned. A Bead may cite an approved design only by a path that
-resolves on `main`.
+Approval is the durability boundary. Once a spec or plan is approved, land it on `main` through a docs-only PR even if its implementation is deferred, reworked or abandoned. Cite the path that resolves on `main`; a published plan is not proof of implementation, acceptance or release.
 
 Archive tags remain valuable recovery evidence, but they are not the canonical
 home of an approved design: a reader should not need to discover a retired

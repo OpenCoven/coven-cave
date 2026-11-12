@@ -1,7 +1,7 @@
 //! Recovery for a declined or failed Windows update install (#5981).
 //!
-//! `tauri-plugin-updater` 2.10.1 starts `msiexec` with `ShellExecuteW`,
-//! ignores the result and calls `std::process::exit(0)`. The per-machine MSI
+//! `tauri-plugin-updater` 2.14.1 starts `msiexec` with `ShellExecuteW` and
+//! calls `std::process::exit(0)` once it launches. The per-machine MSI
 //! relaunches Cave only after a successful `InstallFinalize`, so a declined
 //! UAC prompt or a failed install used to leave Cave closed.
 //!
@@ -284,11 +284,23 @@ mod native {
         Some(0)
     }
 
+    /// How far the updater's pre-exit teardown got when `install()` returned.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum InstallTeardown {
+        /// No teardown ran, so the app is intact and only needs to show the error.
+        Intact,
+        /// Teardown ran and the watcher is waiting for this process to exit.
+        Watching,
+        /// Teardown ran but no watcher started, so nothing will relaunch Cave.
+        Unwatched,
+    }
+
     pub(crate) struct UpdateInstallWatch {
         watch_dir: PathBuf,
         outcome_path: PathBuf,
         msi_log_path: PathBuf,
         armed: Mutex<Option<PathBuf>>,
+        teardown: Mutex<InstallTeardown>,
     }
 
     impl UpdateInstallWatch {
@@ -306,6 +318,7 @@ mod native {
                 outcome_path: app_local_data_dir.join(OUTCOME_FILE_NAME),
                 msi_log_path,
                 armed: Mutex::new(None),
+                teardown: Mutex::new(InstallTeardown::Intact),
             }
         }
 
@@ -342,7 +355,7 @@ mod native {
             Ok(())
         }
 
-        pub(crate) fn disarm(&self) {
+        pub(crate) fn disarm(&self) -> InstallTeardown {
             if let Some(copy) = self
                 .armed
                 .lock()
@@ -351,23 +364,40 @@ mod native {
             {
                 let _ = fs::remove_file(copy);
             }
+            *self
+                .teardown
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
         }
 
-        fn spawn_if_armed(&self) {
+        fn record_teardown(&self) {
+            let watching = self.spawn_if_armed();
+            *self
+                .teardown
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = if watching {
+                InstallTeardown::Watching
+            } else {
+                InstallTeardown::Unwatched
+            };
+        }
+
+        /// True when a watcher is now waiting for this process to exit.
+        fn spawn_if_armed(&self) -> bool {
             let Some(copy) = self
                 .armed
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .take()
             else {
-                return;
+                return false;
             };
             let (Ok(installed_exe), Some(parent_created)) = (
                 std::env::current_exe(),
                 creation_time(unsafe { GetCurrentProcess() }),
             ) else {
                 log::warn!("[cave] could not describe this process for install recovery");
-                return;
+                return false;
             };
             let request = WatchRequest {
                 parent_pid: std::process::id(),
@@ -384,7 +414,9 @@ mod native {
                 .spawn();
             if let Err(error) = spawned {
                 log::warn!("[cave] could not start update install recovery: {error}");
+                return false;
             }
+            true
         }
     }
 
@@ -396,7 +428,7 @@ mod native {
 
     impl Drop for UpdateInstallWatchGuard {
         fn drop(&mut self) {
-            self.0.spawn_if_armed();
+            self.0.record_teardown();
         }
     }
 }
@@ -412,9 +444,18 @@ pub(crate) fn arm_update_install_recovery(
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub(crate) fn disarm_update_install_recovery(
+    app: tauri::AppHandle,
     state: tauri::State<'_, std::sync::Arc<UpdateInstallWatch>>,
 ) {
-    state.disarm();
+    // Since updater 2.14, a failed installer launch returns an error after
+    // the pre-exit teardown instead of exiting. The sidecar is already stopped
+    // by then, so this process cannot carry on. The watcher relaunches Cave with
+    // a recorded outcome once this process exits.
+    match state.disarm() {
+        InstallTeardown::Intact => {}
+        InstallTeardown::Watching => std::process::exit(0),
+        InstallTeardown::Unwatched => app.restart(),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -439,6 +480,19 @@ mod tests {
 
     fn absolute(name: &str) -> PathBuf {
         std::env::temp_dir().join(name)
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn disarm_reports_whether_the_pre_exit_teardown_already_ran() {
+        let dir =
+            std::env::temp_dir().join(format!("cave-install-teardown-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let watch = std::sync::Arc::new(UpdateInstallWatch::new(&dir, dir.join("msi.log")));
+        assert_eq!(watch.disarm(), InstallTeardown::Intact);
+        drop(UpdateInstallWatchGuard(std::sync::Arc::clone(&watch)));
+        assert_eq!(watch.disarm(), InstallTeardown::Unwatched);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -115,13 +115,13 @@ jobs:
           cargo test --locked
 
   e2e:
-    name: Validate candidate E2E (${{ matrix.shard }}/8)
+    name: Validate candidate E2E (${{ matrix.shard }}/6)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -133,11 +133,35 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-          cache: pnpm
+          # No pnpm cache: this job executes the release ref it checked out,
+          # and a cache written here would be restored on main (#6290).
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
+      # Inside the official Playwright image for the installed version, as PR
+      # CI does (#6191): it carries both engines and their system packages, so
+      # a stalled apt mirror can no longer cancel a release shard (#6290). The
+      # pull is bounded and retried.
+      - run: bash scripts/playwright-ci-image.sh pull
+      - name: Load evidence checker from the workflow revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          timeout --kill-after=5s 60s gh api \
+            "repos/$GITHUB_REPOSITORY/contents/scripts/playwright-ci-evidence.mjs?ref=$GITHUB_WORKFLOW_SHA" \
+            --jq .content | base64 --decode > "$RUNNER_TEMP/playwright-ci-evidence.mjs"
+      - run: node "$RUNNER_TEMP/playwright-ci-evidence.mjs" --shard=${{ matrix.shard }}/6 --workers=1
+
+      - name: Preserve Playwright execution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-evidence-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: playwright-evidence/
+          if-no-files-found: warn
+          retention-days: 7
 
   e2e-agentic:
     name: Validate candidate E2E (agentic)
@@ -156,19 +180,44 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
-          cache: pnpm
+          # No pnpm cache: this job executes the release ref it checked out,
+          # and a cache written here would be restored on main (#6290).
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+      # Inside the official Playwright image for the installed version, as PR
+      # CI does (#6191): it carries both engines and their system packages, so
+      # a stalled apt mirror can no longer cancel a release shard (#6290). The
+      # pull is bounded and retried.
+      - run: bash scripts/playwright-ci-image.sh pull
+      - name: Load evidence checker from the workflow revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          timeout --kill-after=5s 60s gh api \
+            "repos/$GITHUB_REPOSITORY/contents/scripts/playwright-ci-evidence.mjs?ref=$GITHUB_WORKFLOW_SHA" \
+            --jq .content | base64 --decode > "$RUNNER_TEMP/playwright-ci-evidence.mjs"
+      - run: node "$RUNNER_TEMP/playwright-ci-evidence.mjs" tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+
+      - name: Preserve Playwright execution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-evidence-agentic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: playwright-evidence/
+          if-no-files-found: warn
+          retention-days: 7
 
   runtime:
     name: Validate candidate runtime (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # 90, not 60: on macos-15 this job builds three times (two Client v1
-    # fixtures, then the sidecar bundle, which keeps Next's TypeScript pass),
-    # and that pass now takes ~33 min there (#6036). Lower it when that's fixed.
-    timeout-minutes: 90
+    # On macos-15 this job builds three times: two Client v1 fixtures, then the
+    # sidecar bundle, which keeps the TypeScript pass. Since #6217 that pass runs
+    # before compiling and takes about 1-1.5 min there instead of 17-35 (#6036).
+    # Recent macOS runs took 33-50 min before it; 60 leaves a third in reserve.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

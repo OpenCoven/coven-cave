@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { accessSync, constants, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -198,6 +198,19 @@ export function summarizeSamples(samples) {
   return { pass: samples.length > 0 && passedSamples === samples.length, sampleCount: samples.length, passedSamples, operations };
 }
 
+// The daemon's own pid came from its status document; a kill observed only by
+// that document is not yet proof it is gone. Poll until status stops saying
+// "running", bounded like every other wait here.
+async function waitForDaemonGone(status, timeoutMs = 2000) {
+  const deadline = performance.now() + timeoutMs;
+  for (;;) {
+    const observed = await status();
+    if (observed.status !== "running") return observed;
+    if (performance.now() >= deadline) throw new Error("daemon_survived_kill");
+    await delay(50);
+  }
+}
+
 async function runSample(binary, index, signal) {
   // Short paths are necessary for Darwin's Unix socket length bound.
   const root = realpathSync(mkdtempSync(path.join("/tmp", "cave-life-")));
@@ -259,6 +272,30 @@ async function runSample(binary, index, signal) {
       assert.notEqual(current.pid, concurrent.pid);
       assert.equal(readFileSync(marker, "utf8"), "synthetic lifecycle marker\n");
     });
+    await operation("revive-after-kill", async () => {
+      // The fault-matrix row "child dies after ready" (#6298): the instance is
+      // killed outright, so its socket file stays behind as a stale endpoint
+      // and nothing cleans up. A start must notice the dead owner, reclaim
+      // the endpoint, and come back with a new instance, data intact.
+      const before = await ready();
+      process.kill(before.pid, "SIGKILL");
+      // Sample the endpoint before any CLI command runs: `daemon status` may
+      // itself reclaim a dead owner's socket, which is evidence of a different
+      // kind (recorded as socketAfterStatus).
+      const staleSocket = existsSync(env.COVEN_SOCKET);
+      const gone = await waitForDaemonGone(status);
+      sample.revive = {
+        killedPid: before.pid,
+        staleSocket,
+        observedAfterKill: gone.status,
+        socketAfterStatus: existsSync(env.COVEN_SOCKET),
+      };
+      requireCommand(await command(["daemon", "start"]));
+      const revived = await ready();
+      assert.notEqual(revived.pid, before.pid);
+      assert.equal(readFileSync(marker, "utf8"), "synthetic lifecycle marker\n");
+      return revived;
+    });
     await operation("shutdown", async () => {
       requireCommand(await command(["daemon", "stop"]));
       assert.equal((await status()).status, "stopped");
@@ -297,6 +334,7 @@ export async function runDaemonLifecycleProbe({ binary, samples = 5, signal }) {
       cpu: os.cpus()[0]?.model, cpuCount: os.cpus().length, memoryBytes: os.totalmem() },
     limitations: ["CLI lifecycle smoke, not packaged-app or native-supervisor recovery",
       "Synthetic empty profiles; no provider, migrated data, durable execution, sleep/wake or soak coverage",
+      "Revive after kill exercises the CLI start path against a stale endpoint, not Cave's automatic recovery",
       "Median/range include failures; no p95 or population reliability claim",
       "Fixture directories retained; process cleanup is verified separately"] };
   if (!["darwin", "linux"].includes(process.platform)) return { ...report, error: "unsupported_platform" };

@@ -74,9 +74,17 @@ assert.match(
   /cave-chat-settle-flare 700ms var\(--ease-decelerate\) forwards/,
   "settle flare speaks the 700ms decelerate one-shot vocabulary",
 );
+// The meta line is `display: contents` inside the two-row header grid, so the
+// flare paints on the header row that wraps it (#6201); a boxless element has
+// no box-shadow to animate.
 assert.match(
   activityCss,
-  /@media \(prefers-reduced-motion: reduce\) \{\n\s*\.cave-chat-meta-line--reward \{ animation: none; \}/,
+  /\.cave-chat-header-row:has\(> \.cave-chat-meta-line--reward\) \{\n\s*border-radius: var\(--radius-md\);\n\s*animation: cave-chat-settle-flare/,
+  "the settle flare animates the painted header row, not the boxless meta line",
+);
+assert.match(
+  activityCss,
+  /@media \(prefers-reduced-motion: reduce\) \{\n\s*\.cave-chat-header-row:has\(> \.cave-chat-meta-line--reward\) \{ animation: none; \}/,
   "reduced motion collapses the settle flare entirely",
 );
 assert.match(

@@ -12,11 +12,15 @@ import {
   extractSkillMarkers,
   type SkillStageUpdate,
 } from "./skill-blocks.ts";
+import { sliceReadableUiBlocks, type UiReadablePiece } from "./ui-block-readable.ts";
+
+/** Prose, GitHub cards and actions, and coven:ui blocks as readable lines (#6060). */
+export type QuickChatPiece = GitHubTextPiece | UiReadablePiece;
 
 export type QuickChatAssistantMessage = {
   copyText: string;
   visibleProse: string;
-  pieces: GitHubTextPiece[];
+  pieces: QuickChatPiece[];
   skillUpdates: SkillStageUpdate[];
   researchRuns: ResearchRunMarker[];
   authoredResults: ReturnType<typeof extractChatResultMarkers>["results"];
@@ -34,24 +38,30 @@ export function formatQuickChatAssistantMessage(
   });
   const nextPaths = extractNextPaths(resultSplit.visible);
   const markerSafeText = stripIncompleteGitHubMarker(nextPaths.visible);
-  const copyText = stripGitHubMarkers(markerSafeText).trimEnd();
+  // Quick Chat has no native UI tier: a coven:ui block reads as plain lines
+  // once the reply settles, and stays out of the text while it streams.
+  const readableText = (readable: QuickChatPiece[]) =>
+    readable
+      .map((piece) => piece.kind === "text" ? piece.text : piece.kind === "ui" && !streaming ? piece.lines.join("\n") : "")
+      .join("");
+  const copyText = readableText(sliceReadableUiBlocks(stripGitHubMarkers(markerSafeText), { streaming })).trimEnd();
   const slicedPieces = sliceGitHubBlocks(markerSafeText, {
     unfurlBareUrls: !streaming,
   });
-  const pieces = slicedPieces.map((piece, index) =>
+  const pieces = slicedPieces.flatMap((piece, index): QuickChatPiece[] =>
     piece.kind === "text"
-      ? {
-          ...piece,
-          text: index === slicedPieces.length - 1
+      ? sliceReadableUiBlocks(
+          index === slicedPieces.length - 1
             ? stripGitHubMarkers(piece.text).trimEnd()
             : stripGitHubMarkers(piece.text),
-        }
-      : piece,
+          { streaming },
+        )
+      : [piece],
   );
-  const visibleProse = pieces
-    .filter((piece): piece is Extract<GitHubTextPiece, { kind: "text" }> => piece.kind === "text")
-    .map((piece) => piece.text)
-    .join("");
+  // A block held back while streaming can leave its blank lines at the end.
+  const last = pieces[pieces.length - 1];
+  if (last?.kind === "text") pieces[pieces.length - 1] = { ...last, text: last.text.trimEnd() };
+  const visibleProse = readableText(pieces);
 
   return {
     copyText,

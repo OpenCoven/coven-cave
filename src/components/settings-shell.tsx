@@ -4,8 +4,10 @@ import "@/styles/dashboard.css";
 import "@/styles/settings-familiars.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { replaceHistoryUrl } from "@/lib/history-url";
 import { observeSettingsTarget } from "@/lib/settings-search-target";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Icon } from "@/lib/icon";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { relativeTime } from "@/lib/relative-time";
@@ -138,7 +140,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   function backToPicker() {
     setPickerView(true);
     if (!embedded && typeof window !== "undefined") {
-      window.history.replaceState(null, "", window.location.pathname);
+      replaceHistoryUrl(window.location.pathname);
     }
   }
 
@@ -152,7 +154,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     if (embedded || typeof window === "undefined" || !hashHydrated || pickerView) return;
     if (window.location.hash === `#${section}`) return;
-    window.history.replaceState(null, "", `#${section}`);
+    replaceHistoryUrl(`#${section}`);
   }, [embedded, hashHydrated, pickerView, section]);
 
   // Support hash-based deep-linking. Read it after hydration so SSR and the
@@ -241,11 +243,15 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
         >
           {isMobile && !pickerView ? "Settings" : "Back"}
         </Button>
-        <div className="min-w-0">
-          <span className="surface-compact-title block truncate">
-            {isMobile && !pickerView ? (activeSection?.label ?? "CovenCave control room") : "CovenCave control room"}
-          </span>
-        </div>
+        {/* The mobile picker is already titled "Settings" by the app top bar,
+            so the band keeps only Back there (#6243). */}
+        {showPicker ? null : (
+          <div className="min-w-0">
+            <span className="surface-compact-title block truncate">
+              {isMobile && !pickerView ? (activeSection?.label ?? "CovenCave control room") : "CovenCave control room"}
+            </span>
+          </div>
+        )}
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -256,11 +262,18 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
         <nav
           hidden={isMobile && !showPicker}
           className="settings-shell__sidebar shrink-0 py-3 md:w-[200px] md:border-r md:border-[var(--border-hairline)]"
-          style={showPicker ? { flex: "1 1 auto", width: "100%" } : undefined}
+          // minHeight 0 lets the full-screen picker shrink below its rows and
+          // scroll, instead of overflowing under the footer hint (#6241).
+          style={showPicker ? { flex: "1 1 auto", width: "100%", minHeight: 0, overflowY: "auto" } : undefined}
         >
-          <p className="mb-1 px-4 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-            Settings
-          </p>
+          {/* The eyebrow labels the desktop rail. The full-screen mobile
+              picker is already titled by the top bar, so it would be a third
+              "Settings" (#6243). */}
+          {showPicker ? null : (
+            <p className="mb-1 px-4 text-[length:var(--text-2xs)] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+              Settings
+            </p>
+          )}
           <div className={`mb-2 ${showPicker ? "px-3" : "px-2"}`}>
             <SearchInput
               value={query}
@@ -377,6 +390,20 @@ function GeneralSection() {
         <SetupStatusRow />
       </SettingsGroup>
       <BackupSettingsGroup />
+      <SettingsGroup label="Installed capabilities" variant="ruled" panel={false}>
+        <SettingsRow
+          label="Skills, tools and connectors"
+          description="Check health and compatibility, change access, or uninstall."
+          variant="sheet"
+        >
+          {/* Settings is its own route with no Workspace listening for
+              cave:navigate-mode, so this is a real navigation to the saved-link
+              form of the surface. */}
+          <Link className="ui-btn ui-btn--secondary focus-ring" href="/?mode=marketplace">
+            Manage installed items
+          </Link>
+        </SettingsRow>
+      </SettingsGroup>
     </SettingsPage>
     </GeneralSettingsDataProvider>
   );
@@ -689,7 +716,7 @@ function BackupSettingsGroup() {
 function ScheduledSyncSettings() {
   const { announce } = useAnnouncer();
   const { sync: syncResource } = useGeneralSettingsData()!;
-  const { value: overview, status: syncLoadState, refresh: loadOverview, publish: setOverview } = syncResource;
+  const { value: overview, status: syncLoadState, error: syncError, refresh: loadOverview, publish: setOverview } = syncResource;
   const [directoryDraft, setDirectoryDraft] = useState<string | null>(null);
   const [retainDraft, setRetainDraft] = useState<string | null>(null);
   const [passphraseDraft, setPassphraseDraft] = useState("");
@@ -757,7 +784,7 @@ function ScheduledSyncSettings() {
         <ErrorState
           compact
           headline="Couldn't load scheduled sync"
-          subtitle="Retry after the Cave sidecar is available."
+          subtitle={syncError ?? "Retry after the Cave sidecar is available."}
           actions={<Button size="sm" onClick={() => void loadOverview()}>Retry</Button>}
         />
       </section>
@@ -776,7 +803,7 @@ function ScheduledSyncSettings() {
       aria-labelledby="settings-backup-sync-title"
     >
       {syncLoadState === "error" ? (
-        <ErrorState compact headline="Scheduled sync details couldn't refresh" subtitle="Showing the last loaded settings."
+        <ErrorState compact headline="Scheduled sync details couldn't refresh" subtitle={syncError ?? "Showing the last loaded settings."}
           actions={<Button size="sm" onClick={() => void loadOverview()}>Retry</Button>} />
       ) : null}
       <div className="settings-backup-sync__header">

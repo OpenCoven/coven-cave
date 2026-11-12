@@ -5,7 +5,7 @@ import {
   readConversationForPaint,
   recordOfflineConversationWrite,
 } from "../conversation-cache.ts";
-import { readOfflineCache, writeOfflineCache } from "../offline-cache.ts";
+import { deleteOfflineCacheEntry, readOfflineCache, writeOfflineCache } from "../offline-cache.ts";
 import type { ConversationHistoryPayload } from "../chat-turn-state.ts";
 import type { ChatHistorySources } from "./history-load.ts";
 
@@ -24,9 +24,19 @@ async function loadFlowSessionTranscript(sessionId: string): Promise<string | nu
 }
 
 /** Reuse existing authorization, shared request and encrypted storage contracts. */
-export const chatHistorySources: ChatHistorySources = {
+export const chatHistorySources: Omit<ChatHistorySources, "subscribeInvalidation"> = {
   readMemory: (sessionId) => readConversationForPaint(sessionId) as ConversationHistoryPayload | null,
-  loadNetwork: (sessionId) => loadConversation(sessionId) as Promise<ConversationHistoryPayload | null>,
+  loadNetwork: (sessionId) => {
+    const pending = loadConversation(sessionId) as Promise<ConversationHistoryPayload | null>;
+    void pending.catch((error: unknown) => {
+      if (error instanceof ConversationLoadError && error.status === 404) {
+        // After a window restart there may be only a durable copy. Absence
+        // invalidates it too, without aborting a new, not-yet-saved stream.
+        void deleteOfflineCacheEntry("conversation", sessionId);
+      }
+    });
+    return pending;
+  },
   loadDurable: async (sessionId) => {
     const cached = await readOfflineCache<ConversationHistoryPayload>("conversation", sessionId);
     return cached?.data.ok && cached.data.conversation ? cached.data : null;
@@ -45,4 +55,5 @@ export const chatHistorySources: ChatHistorySources = {
   },
   loadFlowTranscript: loadFlowSessionTranscript,
   isMissingError: (error) => error instanceof ConversationLoadError && error.status === 404,
+  isAccessDeniedError: (error) => error instanceof ConversationLoadError && (error.status === 401 || error.status === 403),
 };

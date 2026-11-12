@@ -234,6 +234,29 @@ final class PerformanceBaselineUITests: XCTestCase {
         }
     }
 
+    /// VoiceOver names the enlarged image by its markdown alt text (#5314)
+    /// instead of landing on a bare, nameless image.
+    @MainActor
+    func testZoomedImageIsNamedByItsAltText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--performance-instrumentation", "--performance-fixture", "--image-zoom-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["Open navigation"].waitForExistence(timeout: 60))
+        openDrawer(in: app)
+        let thread = app.buttons["Fixture chat 2"]
+        XCTAssertTrue(thread.waitForExistence(timeout: 10))
+        thread.tap()
+        let inline = app.webViews.images["Zoom fixture image A"].firstMatch
+        let reachable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: inline)
+        XCTAssertEqual(XCTWaiter.wait(for: [reachable], timeout: 60), .completed, "The fixture image must render in WebKit")
+        inline.tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 15), "Zoom must present")
+        let zoomed = app.images["Zoomed image"]
+        XCTAssertTrue(zoomed.waitForExistence(timeout: 10), "The enlarged image must be in the accessibility tree")
+        XCTAssertEqual(zoomed.label, "Zoom fixture image A")
+    }
+
     @MainActor
     private func launchRecoveryFixture() -> XCUIApplication {
         let app = XCUIApplication()

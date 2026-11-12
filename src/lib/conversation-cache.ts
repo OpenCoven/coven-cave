@@ -18,6 +18,7 @@
 // so prefetch, treat it as absent), but it still paints on reopen through
 // readConversationForPaint while that revalidation runs.
 
+import { invalidateChatAccess, subscribeChatAccessInvalidation } from "./chat-access-invalidation.ts";
 import { startSpan } from "./perf/marks.ts";
 
 /** Shape callers care about; the payload is stored as parsed JSON verbatim. */
@@ -171,6 +172,11 @@ export function clearConversationCache(): void {
   cancelHoverPrefetch();
 }
 
+subscribeChatAccessInvalidation((change) => {
+  if (change.sessionId === undefined) clearConversationCache();
+  else invalidateConversation(change.sessionId);
+});
+
 export const CONVERSATION_FETCH_TIMEOUT_MS = 20_000;
 const CONVERSATION_RETRY_DELAY_MS = 400;
 
@@ -224,8 +230,10 @@ export function loadConversation(
       // Exactly one retry, outside the try: its own failure surfaces as is.
       if (!res || res.status >= 500) {
         await sleep(CONVERSATION_RETRY_DELAY_MS);
+        if (!requestEpochIsCurrent(sessionId, epoch)) return null;
         res = await request();
       }
+      if (!requestEpochIsCurrent(sessionId, epoch)) return null;
       if (res.status === 304 && kept) {
         // Unchanged (#5607): the same payload object, so a view that painted
         // it sees an identical revision and does not rebuild the transcript.
@@ -235,7 +243,15 @@ export function loadConversation(
       const json = (await res.json().catch(() => null)) as CachedConversationPayload & {
         error?: string;
       } | null;
+      if (!requestEpochIsCurrent(sessionId, epoch)) return null;
       if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          invalidateChatAccess({ sessionId, reason: "denied" });
+        } else if (res.status === 410 || (res.status === 404 && kept?.payload.conversation)) {
+          // A previously saved transcript disappearing is authoritative.
+          // A brand-new stream can legitimately precede its first saved file.
+          invalidateChatAccess({ sessionId, reason: "missing" });
+        }
         throw new ConversationLoadError(
           json?.error ?? `Request failed (${res.status})`,
           res.status,

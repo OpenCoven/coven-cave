@@ -7,6 +7,440 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changed
+- **Full-access Claude will take its permissions only from your project
+  grants** (#6393). This needs a Coven release with the updated `--write-scope`
+  and Claude Code 2.1.318 or later. A familiar can then run shell commands and
+  owner-configured MCP tools without `settings.json` allow rules, and the OS
+  sandbox limits shell writes to folders it can write to. A repository's own
+  `.mcp.json` is never loaded, including at a workspace inside a repository.
+  Local MCP servers and header helpers run outside Claude's sandbox, so on macOS
+  they start outside your project folders and can't read, write or run anything
+  in a folder the familiar can write to. A server that references one is left
+  out of the turn with a notice. A tool that starts its own sandbox, such as
+  Chromium, needs its no-sandbox option to run inside an MCP server. A writable
+  grant that overlaps Cave's own state folder is refused. No
+  Coven release has this yet, so a Claude chat in Full access still runs
+  Read-only.
+
+## [0.5.20] - 2026-11-07
+
+> GitHub actions that admit an unknown outcome, service calls that heal on their own, and a shorter sidebar.
+
+Patch release on top of v0.5.19. Headline: **a GitHub action that may have
+gone through says so** instead of inviting a duplicate, and calls to GitHub
+and other services recover on their own once the service is back (#6360,
+#6380). Until a Coven release can limit Claude's file changes to your project
+grants, **a local Claude chat in Full access runs Read-only** (#6364, #6420).
+
+### Changed
+- **Claude edits wait for a Coven that can scope them** (#6364). In Full
+  access, Cave now asks Coven to limit Claude's file changes to the projects
+  you granted write access, and no longer passes a read-only project as
+  writable. No Coven release can apply that limit yet. A conversation in Chat
+  falls back to Read-only (see Fixed). Quick Chat, group chat and voice don't
+  yet, so a Claude turn there in Full access stops and suggests Read-only or
+  another runtime (#6420).
+- **A shorter sidebar** (#6410). Marketplace leaves the sidebar. Open it from
+  Settings → General → Installed capabilities, ⌘K, a skill link in the
+  composer or on a familiar, or a saved link. The familiar Feed tab is gone
+  too: a saved Feed choice opens Memory and stays stored, so it returns if
+  Feed does. Both are hidden, not removed.
+- **Quick Chat says why Send is held** (#6421). When a message can't launch
+  until you choose a project, the composer says so under the message box,
+  screen readers hear it once, and the project picker is outlined. Choosing a
+  project keeps your draft and returns focus to it. `/` commands still send
+  without a project.
+- **Tidier Quick Chat tray** (#6421). The Enhance control matches the height of
+  Send on desktop; before, a phone-width rule made it 46px tall in the 580px
+  tray. "Open in CovenCave" appears once there is a conversation to open,
+  instead of sitting disabled. The footer chips are labelled (Model, Thinking,
+  Speed), and the empty thread lists its `@`, `/` and Enter shortcuts as keys.
+- **Familiar analytics agree** (#6361). The roster, share card and analytics
+  dock count "Coven sessions · 90d" the same way, leaving out the familiar's
+  automatic journal and reflection runs, and the all-time count is labelled.
+  The share card shows the roster's memory count, or "unavailable". One model
+  spelled several ways is one row, with its provider in its own column.
+  Colour marks problems only: "0 critical" is muted, and success bars hatch
+  the failed share. Renown and Contract open a breakdown of how they were
+  reached, and Telemetry coverage says how many attempts lack each field.
+- **The Chart Room reads dependencies from the board only** (#6330). v0.5.19
+  copied each browser's old local links onto the cards; this release stops
+  reading the local copy, and Clear legacy links is gone. A browser that never
+  opened the Chart Room on v0.5.19 keeps those links in its storage, but they
+  no longer show. A blocked card from before dependency tracking asks you to
+  name what blocks it or move it out of Blocked.
+- **Submissions is left out of the default build** (#6412). It already had no
+  launcher. A saved Submissions link opens a page that says it isn't
+  included, with Export and a two-step Delete for saved data, which stays as
+  it was. Building with `COVEN_CAVE_INCLUDE_SUBMISSIONS=1` brings it back.
+- **Setup diagnostics name the local-service failure** (#6416). When
+  first-run setup can't start the Coven service, the diagnostics window and
+  copied report show the failure code, launch mode, readiness attempts,
+  elapsed time and exit code, and the recovery advice fits that failure
+  instead of a generic restart. Raw errors and process output stay out. A
+  report saved earlier gains these after a retry.
+- **Settings → Daemon diagnostics include third-party services** (#6360):
+  failure counts and cooldowns for GitHub, Asana and the rest, never URLs,
+  headers, bodies or tokens.
+
+### Fixed
+- **A Claude chat answers instead of failing outright** (#6419). No Coven
+  release can yet limit Claude's file changes to your project grants, so a turn
+  in Full access now runs Read-only and says so. Scheduled and other unattended
+  runs still refuse rather than report success without editing anything.
+- **Retry uses the runtime and model you just picked** (#6419). It used to
+  resend the failed model, so after moving a Claude chat to Codex every Retry
+  was refused with the same error.
+- **A GitHub action that may have gone through says so** (#6379, #6380,
+  #6409, #6418). If a comment, reply, review, reaction, workflow dispatch,
+  rerun, thread resolve or merge gets a missing, malformed or cut-off answer,
+  or the connection drops partway, the proposal card shows "This may have gone
+  through" with **Check on GitHub**, and its button reads **Send again
+  anyway**. The composer offers **Refresh to check**. Before, these could read
+  as a success with nothing in it, or as a plain failure that invited a
+  duplicate. An unconfirmed merge never retries or cleans up the branch.
+  Unusable reads show an error instead of a blank profile, "no runs" or an
+  invented commit, and step enrichment no longer wipes a Board card's labels.
+- **Outages at GitHub and other services clear on the next try** (#6360,
+  #6394, #6417). Calls to GitHub, Asana, voice providers, skills.sh and the
+  docs now have a deadline, and the first call after a service recovers
+  reaches it again. A GitHub or Asana token check during an outage or rate
+  limit says it couldn't verify the token right now, instead of calling it
+  invalid. A voice preview that came back empty, not as MP3 or broken partway
+  isn't kept as the sample, and ElevenLabs speech in the wrong format or with
+  no audio is an error. A failed skills search or SKILL.md preview can be
+  retried at once, and Ask Salem no longer fails for an hour after an empty
+  answer from docs.opencoven.ai.
+- **Revoked tokens and rate limits are told apart** (#6406). GitHub and Asana
+  errors say when a token was revoked and needs reconnecting, or when you're
+  rate-limited and for how long. A provider's stated wait is honoured to the
+  end, even past an hour. A newly pasted token is checked at once during a
+  host's cooldown, and saving it clears the cooldown.
+- **Fewer false daemon warnings** (#6317, #6389). One slow or failed status
+  read no longer shows "The Coven daemon didn't answer in time"; it takes two
+  in a row. Once the daemon has answered as running, a slow Cave server takes
+  about a minute of missed reads and then shows "Cave's server is taking too
+  long to answer", instead of blaming the daemon.
+- **On a phone, a tap on a reply control works while you're typing** (#6323).
+  Focusing the composer lifts the transcript, and the composer dropped back
+  mid-tap, so the tap missed: More response actions or a skill's details
+  didn't open. The composer now settles only after the tap.
+- **Automation occurrences** keep the newest page and at most one older one
+  (#6322). A read that has been replaced can no longer change the list, and
+  keyboard focus stays on the control you used; at the last page it moves to
+  **Re-read now**.
+- **Quitting Cave** lets a GitHub notification that is being written to the
+  inbox finish instead of cutting it off (#6351).
+
+### Security
+- **minimatch 11.0.1** (#6381) clears a medium denial-of-service alert. Only
+  development tools such as ESLint use it; it isn't in the installed app.
+  ESLint still asks for 10.x, so an override sets the version.
+- **One-shot familiar runs stay in the familiars folder** (#6376). Board card
+  Enhance, step enrichment and the reader's Rewrite run Coven in the
+  familiar's workspace. A workspace that is a symlink out of the familiars
+  folder, or to the folder itself, is now refused, as chat sends already were.
+- **Submissions answers only this machine** (#6412). In a build that includes
+  it, a request from a paired phone or another remote device is refused
+  before anything loads. Before, an authenticated phone request reached it.
+- **ElevenLabs errors can't echo your API key** (#6417). Error text from
+  ElevenLabs is scrubbed of the configured key and other recognised secrets
+  before Cave shows it.
+
+### Under the hood
+- **Upstream services:** every third-party call the server makes is declared
+  in one registry, and tests inject outages, timeouts, rate limits and
+  malformed answers into each one and check that the next call heals (#6360,
+  #6394, #6418). A failure while reading a response body now counts in
+  diagnostics (#6418), and the X feed and RSS routes keep their last good
+  answer (#6417).
+- **Research:** a local route can turn Research off while Cave runs, and its
+  routes then refuse at once (#6335).
+- **Startup and shutdown:** the runtime startup supervision page matches the
+  shipped lifecycle and workers, with a test that keeps it current (#6337),
+  and shutdown tests register workers through one helper (#6355).
+- **CI and releases:** signing jobs no longer restore shared caches, and a
+  test keeps every job that reads secrets cache-free (#6373). Each of the six
+  E2E shards must show executed tests (#6414).
+- **Performance lane:** warm and offline shell boot to interactive and
+  `coven doctor` are measured against their budgets, so none is left pending
+  (#6336, #6348). The lane gains a rooms-absent baseline (#6339) and a
+  production soak that samples memory and descriptor growth (#6349, #6354).
+  Reports record their host (#6342), and a benchmark teardown race is fixed
+  (#6345).
+- **Dependencies:** transitive packages refreshed within their ranges (#6363,
+  and a direct lockfile update). The Research archive checksum and the
+  tweet-thread validator's Babel runtime pin that the refresh dropped are
+  restored (#6384).
+- **Tests and docs:** the daemon banner spec waits out the two-read retry
+  (#6375), the native harness records a late write instead of crashing
+  (#6343), the first real-provider runtime canaries (#6390), and the
+  automations policy for external callers (#6365).
+
+## [0.5.19] - 2026-10-30
+
+> Wide windows filled, account switching from the Runtime menu, and the first Authenticode-signed Windows MSI.
+
+Patch release on top of v0.5.18. **The Windows MSI is Authenticode-signed**
+for the first time (#5986). The release workflow checks the signature, signer
+and timestamp before it uploads the MSI. Every MSI through v0.5.18 is unsigned.
+
+### Changed
+- **Pages fill the pane on wide windows** (#6319, #6321). Chat conversations,
+  assistant replies, the Familiar and Coven tabs, Familiar Growth, the daily
+  report, the dashboard, Home and Settings → Profile no longer sit in fixed
+  centered columns. The Medium and Narrow reading widths now narrow replies;
+  before, replies ignored them.
+- **Switch Claude account… and Switch Codex account…** (#6112, #6315). The
+  local Runtime menu in Home and Chat opens a sign-in terminal for that CLI.
+  CLI sign-in is machine-wide, running sessions keep their account, and API
+  keys or Vault credentials can still override it. Remote, unknown and busy
+  composers don't offer it.
+- **Run details, tool cards and reasoning disclosures share one look**
+  (#6275): the same summary rows, chevrons, focus rings and spacing.
+- **Chat headers stay at two rows**, including in narrow split panes, and the
+  Code pull tab no longer reserves a full-height column (#6220).
+- **Settings → Daemon can export diagnostics** (#6304): the redacted bundle,
+  now with the daemon's lifecycle state, as a file or a copy.
+- **Daemon status reads one lifecycle state** (#6299, #6301, #6302). Settings
+  shows states such as "Starting…", "Reconnecting…" and "Runtime missing", a
+  second start or restart joins the one in progress instead of racing it, and
+  a launcher that can't run is reported at once instead of after the whole
+  readiness wait.
+- **iOS supports iPhone Duo** (#6206): book pose keeps the list before the
+  hinge, the upright inner display stacks like a phone, and the outer display
+  no longer scrolls back and forth on a long newest reply (#6205).
+
+### Fixed
+- **Chart Room dependency edits keep each other's work** (#6287, #6292).
+  Importing the old per-browser dependency overlay, linking, cutting and undo
+  now apply to the current card, so an edge another device, familiar or
+  person added in the meantime is no longer dropped.
+- **Find jumps to its first match** even when a scroll to the latest reply
+  was already queued (#6291).
+- **Quitting the packaged app** drains scheduled chat, backup sync and inbox
+  reminders on Windows too, and reports a worker that never registered
+  instead of a clean exit (#6294, #6297, #6300).
+- **Linux:** a task the kernel is reaping counts as gone, not as a cleanup
+  failure (#6284).
+
+### Under the hood
+- **Automations:** `COVEN_CAVE_AUTOMATIONS_ENABLED=0` turns off Cave-local
+  reminders and scheduled chat without touching stored records (#6297).
+- **Remote access:** the device-access check runs only while a remote
+  connection is live (#6311).
+- **Research:** the optional package is detected only in the project's own
+  `node_modules` (#6313).
+- **Releases:** the release-object job can create the release (#6289), and
+  release E2E runs inside the Playwright image so a stalled apt mirror can't
+  cancel it (#6293).
+- **Dependencies:** rustls 0.23.46 (#6296).
+- **Contributors:** familiar provenance is recorded without a co-author line
+  (#6306).
+- **Tests and docs:** the runtime capability matrix and Hermes authorization
+  boundaries (#6307, #6308), the narrowing spec (#6285), and living docs
+  (#6282).
+
+## [0.5.18] - 2026-10-26
+
+> Security updates for Next.js and DOMPurify, and local models checked on every launch.
+
+Patch release on top of v0.5.17. As in v0.5.17, **the Windows MSI is not
+Authenticode-signed in this cut**. Its checksum and updater signature are
+separate from Windows code signing.
+
+### Security
+- **Next.js 16.4.3 and DOMPurify 3.4.17** (#6267). v0.5.17 bundled Next.js
+  16.3.8 and DOMPurify 3.4.16, which have critical advisories. Cave does not
+  enable image optimization, `use cache` or Server Actions, the features the
+  Next.js advisories target, but this release removes the affected versions.
+  A release bundle below Next.js 16.4.1 is now refused, and v0.5.17 is no
+  longer offered as a rollback target (#6264).
+
+### Changed
+- **Local models are checked on every launch** (#6263). Board, workflow, flow,
+  rewrite, Research topic discovery and offline replay now run the same local
+  server, model and tool checks as Chat, with the familiar's saved model and
+  address. Ollama cloud models are marked Cloud in Settings and are never
+  offered or launched as local models.
+- **Coven history** can export the page you are reading as a bounded,
+  redacted metadata file for diagnostics (#6255).
+- **`coven:ui` blocks read as plain text outside the chat transcript**
+  (#6274, #6278, #6279). Quick Chat, the expanded reader and the iOS app show
+  a block as readable lines instead of raw markup, and every Copy hands back
+  those lines. A fence indented under a list item stays a literal example. The
+  chat transcript still renders blocks natively.
+
+### Fixed
+- **VoiceOver** names an enlarged chat image by its alt text, or "Enlarged
+  image" when it has none (#6262).
+- **Switching runtime in the composer** no longer fails with "invalid model",
+  including in a chat with no saved conversation yet (#6271).
+
+### Under the hood
+- **Releases:** one job creates the GitHub release before the build legs
+  upload, so a tag can no longer get two releases (#6254).
+- **Automations:** every Codex-automations facade route is now checked against
+  a released Coven daemon, with a staged deprecation plan. No route changes
+  at runtime (#6266).
+- **Windows:** the bundled server no longer carries 244 unused Next.js build
+  files that only the Windows trace kept after the Next.js update (#6276).
+- **Tests:** a picked @ file is proven to reach the turn through a real Cave
+  (#6253), and session-list fixtures stay outside the Git checkout (#6256).
+- **Docs:** plan documents point at the issues and outcomes from the plans
+  audit (#6260).
+
+## [0.5.17] - 2026-10-25
+
+> Pick project files with @ on iOS, and tell Needs you from notifications at a glance.
+
+Patch release on top of v0.5.16. As in v0.5.16, **the Windows MSI is not
+Authenticode-signed in this cut**. Its checksum and updater signature are
+separate from Windows code signing.
+
+### Added
+- **@ file mentions on iOS** (#6105). In a one-to-one chat with a project,
+  typing `@` lists the project's files and picking one inserts its path, as on
+  the desktop. Only picked files are sent, and a retry or queued reply sends
+  the same files. A path typed into prose stays text.
+
+### Changed
+- **Needs you** uses a raised hand, so it no longer looks like the
+  notification bell beside it (#6250).
+- **Model label:** until the runtime reports its model, the composer reads
+  "Runtime default (not reported yet)", on web and iOS (#6250).
+- **Mobile Settings** is titled once: the section picker no longer repeats
+  "CovenCave control room" under the top bar (#6250).
+
+### Under the hood
+- **Docs:** iOS priorities, run worktrees and push guidance follow the
+  documentation audit (#6249).
+
+## [0.5.16] - 2026-10-25
+
+> Settings fits the phone, and chat UI blocks gain tabs and text input.
+
+Patch release on top of v0.5.15. As in v0.5.15, **the Windows MSI is not
+Authenticode-signed in this cut**. Its checksum and updater signature are
+separate from Windows code signing.
+
+### Added
+- **Tabs and text input in chat UI blocks** (#6238). A `coven:ui` block can
+  show tabs and a labelled text field. Typed text stays in the block's own
+  state or a prefill, and nothing is sent on its own.
+
+### Changed
+- **Tool outcomes on iOS** (#6228). iOS keeps approval-requested,
+  cancel-requested, rejected and cancelled tool states instead of showing
+  "Outcome unknown", matching the web.
+
+### Fixed
+- **Mobile Settings** (#6242, #6245). The section picker scrolls its last row
+  clear of the footer hint, and it is no longer titled three times.
+- **Settings › General** (#6244). The header shows the workspace path compactly,
+  with `~` for home, and keeps the full path on hover.
+
+### Under the hood
+- **macOS validation:** the runtime-validation ceilings are back to 60 minutes
+  now that the build-time TypeScript pass is fast (#6223).
+
+## [0.5.15] - 2026-10-24
+
+> Codex runs on local models, and Windows setup and startup recover on their own.
+
+Patch release on top of v0.5.14. Headline: a Codex chat can run on a local
+Ollama or LM Studio model (#6049). As in v0.5.14, **the Windows MSI is not
+Authenticode-signed in this cut**. Its checksum and updater signature are
+separate from Windows code signing.
+
+### Added
+- **Local models for Codex** (#6088, #6092, #6106, #6143). Run a Codex chat on
+  a local Ollama or LM Studio model, and configure local model servers in
+  Settings. LM Studio's LM Link models no longer pass as local, and the docs
+  explain how Full access follows Codex's `sandbox_mode`.
+- **Automations oversight** (#6048, #6055, #6077, #6081). Automations show a
+  canonical lifecycle, a schedule preview, and occurrence, run and attempt
+  views, with each cron's current occurrence on the overview rows. An edit that
+  meets a newer revision shows the conflict for review before it re-applies.
+- **Update release notes** (#6155). The updater shows what changed, and its
+  recovery links open in the system browser.
+- **Windows sidecar recovery** (#6158). When the local runtime can't start, the
+  shell shows the recovery banner with a native Retry.
+
+### Changed
+- **Chat layout** (#6204, #6109, #6227, #6053). Chat headers stay within three
+  rows, the sidechat header is just the title and overflow menu, and the chat
+  sidebar lists sessions as compact outlined rows that keep their interactions.
+- **Run details** (#6041, #6043, #6046). One Model row and plain-language
+  activity labels. iOS matches the web's rows and folds Run details into a
+  collapsed disclosure.
+- **Tool activity and reasoning** (#6050, #6056, #6176, #6185, #6141). Tool
+  lifecycle states are preserved and milestones are announced. Rejected and
+  cancelled calls no longer read as running or as a clean run. Withheld
+  reasoning shows without an invented summary length, and a local refusal no
+  longer gains a "detail withheld" line.
+- **Native chat UI** (#6073, #6175, #6229). Token-bound `coven:ui` blocks render
+  natively with their state kept through settlement, with readable fallback
+  text, and the catalog gains layout and text entries.
+- **Windows windows** (#6167). The main window opens centred and clamped to the
+  usable monitor, the title bar follows the app theme, Quick Chat opens near the
+  tray, and the tray icon stays legible.
+- **Windows startup and updates** (#6159, #6183, #6181). Startup failures show a
+  dialog and keep their diagnostics, Cave relaunches after a declined or failed
+  update install, and the current and previous runtime generations are kept
+  with process leases.
+- **Local setup** (#6165, #6157, #6171, #6168, #6117). Setup uses the
+  lightweight reviewed Coven CLI, tells an unverified install from an old one,
+  recovers from a transient Node verification failure, reconciles daemon health
+  when it finishes, and guides daemon failures into repeatable recovery.
+- **Research** (#6145, #6151, #6202, #6212). Research styles load only with the
+  enabled room, optional runtime failures are actionable, and automation
+  consumers use typed Coven commands (Research host contract v2).
+- **Settings** opens with the left siderail collapsed (#6084).
+
+### Fixed
+- **Shell:** widening past the mobile breakpoint with the right Chat panel open no
+  longer crashes the shell (#6222).
+- **iOS:** the transcript lands on the latest reply instead of scrolling back
+  up (#6214), and trace titles stay off Live Activities (#6080).
+- **Drafts and caches:** prompt enhancement keeps your draft when it fails
+  (#6203). Revoked chat caches are invalidated and delayed updates are fenced
+  (#6190), and cached chats stay quiet during refresh failures (#6028).
+- **Projects:** a project registered through an alias keeps its identity when a
+  chat resumes, and the remaining project-root comparisons use the on-disk path
+  (#6219, #6233). File mentions resolve against the authorized runtime directory
+  (#6133).
+- **Data preservation:** unreadable or newer backup settings are preserved, with
+  recovery guidance in Settings (#6174). Inbox data survives invalid or
+  unreadable storage, and reminder work stays bounded during storage stalls
+  (#6154, #6162). Memories keeps drafts, its graph controls stay reachable,
+  and traversal recovers (#6146, #6134).
+- **Errors:** access-group load failures show an error instead of empty data
+  (#6161).
+- **GitHub:** the Board inspector no longer shows duplicate attachments (#6131).
+  The watcher stops polling after stalled reads and when subscriptions change
+  (#6132, #6136), and daemon status polling resumes after stalled reads
+  (#6123).
+- **Branding:** Coven skills use OpenCoven branding in the Marketplace (#6030).
+
+### Security
+- npm and Rust dependency alerts are resolved (#6140). A release bundle whose
+  Next is below the #5339 floor is refused, and rollback never names a target
+  below it (#6051, #6079).
+
+### Under the hood
+- **macOS builds:** Next's TypeScript pass now runs before compiling (#6217).
+  On the macos-15 runner it fell from 19.3 min to about 1.2 min.
+- **Build traces:** traces no longer walk `node_modules`, the checkout or
+  `.worktrees`, and CI gates that (#6085, #6091, #6097, #6100, #6102).
+  Deterministic build-gate failures are no longer retried (#6089).
+- **E2E:** tests run inside the Playwright image (#6192) against production
+  fixtures (#6115).
+- **Runtime tests:** forged decisions and stale or replayed approvals are pinned
+  as never runtime authority (#6180, #6184), and the 10,000-event stream budget
+  is enforced (#6138).
+
 ## [0.5.14] - 2026-10-15
 
 > Discord presence recovers on its own, and Chat fits narrow windows.

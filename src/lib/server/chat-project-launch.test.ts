@@ -348,3 +348,151 @@ test("an unresolvable resume root is gated, never dropped back to the workspace"
     { kind: "gated" },
   );
 });
+
+// REGRESSION (#6210): the send route resolves a resumed turn's project id from
+// the realpathed cwd the first turn persisted. Composed the way the route
+// wires it (real fs, the real registry lookup), an alias-registered project
+// must keep its identity on resume while every grant, registration and
+// existence check still decides the launch.
+test("an alias-registered project keeps its identity on resume and still needs its grant", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { chatProjectAccessId } = await import("../chat-project-access.ts");
+
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpl-alias-")));
+  try {
+    const realParent = path.join(base, "real");
+    const realProject = path.join(realParent, "cave");
+    fs.mkdirSync(realProject, { recursive: true });
+    fs.symlinkSync(realParent, path.join(base, "alias"));
+    const aliasProject = path.join(base, "alias", "cave");
+    const projects = [{
+      id: "proj-alias",
+      name: "Cave",
+      root: aliasProject,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }];
+    const grants = new Set(["milo:proj-alias"]);
+    const deps = {
+      // validateCaveProjectRoot's contract: an existing directory, realpathed.
+      validateProjectRoot: (root) => {
+        try {
+          if (!fs.statSync(root).isDirectory()) return { ok: false, error: "root must be a directory" };
+        } catch {
+          return { ok: false, error: "root does not exist" };
+        }
+        return { ok: true, root: fs.realpathSync(root) };
+      },
+      resolveProjectId: (requestedRoot, resolvedRoot) =>
+        chatProjectAccessId({ projects, requestedProjectRoot: requestedRoot, resolvedCwd: resolvedRoot }),
+      isProjectRegistered: (projectId) => projects.some((project) => project.id === projectId),
+      hasProjectAccess: async (familiarId, projectId) => grants.has(`${familiarId}:${projectId}`),
+    };
+    const resume = (familiarId, projectRoot) =>
+      authorizeChatProjectLaunch(deps, { familiarId, projectRoot, surface: "chat" });
+
+    assert.deepEqual(
+      await resume("milo", aliasProject),
+      { root: realProject, projectId: "proj-alias" },
+      "turn 1 names the registered spelling and launches at its canonical root",
+    );
+    assert.deepEqual(
+      await resume("milo", realProject),
+      { root: realProject, projectId: "proj-alias" },
+      "the resumed turn from the persisted canonical cwd is the same project",
+    );
+
+    await assert.rejects(
+      resume("nova", realProject),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_access_denied",
+      "a familiar without a grant is still denied",
+    );
+    grants.delete("milo:proj-alias");
+    await assert.rejects(
+      resume("milo", realProject),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_access_denied",
+      "a revoked grant still denies the resumed turn",
+    );
+    grants.add("milo:proj-alias");
+
+    const sibling = path.join(realParent, "cave-evil");
+    fs.mkdirSync(sibling);
+    await assert.rejects(
+      resume("milo", sibling),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_not_registered",
+      "a different root sharing the project's prefix is not registered",
+    );
+    await assert.rejects(
+      resume("milo", path.join(realParent, "gone")),
+      (error) => error instanceof ChatProjectLaunchError && error.code === "project_root_unavailable",
+      "a nonexistent resume root never reaches the registry",
+    );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// REGRESSION (#6210): the hidden-generation workspace exemption covers only a
+// root that is NOT a registered project (cave-g8fqc). Composed with the
+// registry answer the send route derives, a project registered through an
+// alias spelling inside the familiar's workspace — or one that two records
+// name — must stay gated, while an unregistered workspace directory keeps the
+// auth-free exemption.
+test("an alias-registered project inside the familiar workspace is gated, not exempt", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { resumeRootIsRegisteredProject } = await import("../chat-project-access.ts");
+
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpl-ws-")));
+  try {
+    const workspace = path.join(base, "workspaces", "milo");
+    const registered = path.join(workspace, "notes");
+    const scratch = path.join(workspace, "scratch");
+    fs.mkdirSync(registered, { recursive: true });
+    fs.mkdirSync(scratch);
+    fs.symlinkSync(path.join(base, "workspaces"), path.join(base, "alias"));
+    fs.symlinkSync(path.join(base, "workspaces"), path.join(base, "twin"));
+    const record = (id, root) => ({
+      id,
+      name: id,
+      root,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const decide = (projects, resumeCwd) => {
+      const resumeCwdResolved = fs.realpathSync(resumeCwd);
+      return launch({
+        familiarWorkspace: workspace,
+        resumeCwd,
+        resumeCwdResolved,
+        resumeCwdIsRegisteredProject: resumeRootIsRegisteredProject({
+          projects,
+          resumeCwd,
+          resolvedCwd: resumeCwdResolved,
+        }),
+      });
+    };
+    const aliasNotes = path.join(base, "alias", "milo", "notes");
+
+    assert.deepEqual(
+      decide([record("notes", aliasNotes)], registered),
+      { kind: "gated" },
+      "an alias-registered project inside the workspace needs its grant",
+    );
+    assert.deepEqual(
+      decide([record("notes", aliasNotes), record("notes-twin", path.join(base, "twin", "milo", "notes"))], registered),
+      { kind: "gated" },
+      "two records naming the directory leave it registered, so it stays gated",
+    );
+    assert.deepEqual(
+      decide([record("notes", aliasNotes)], scratch),
+      { kind: "workspace", root: scratch },
+      "an unregistered workspace directory keeps the auth-free exemption",
+    );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

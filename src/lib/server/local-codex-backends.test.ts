@@ -93,6 +93,41 @@ test("Ollama: chat models with their tool support and context; embedding models 
   });
 });
 
+test("an Ollama cloud model is listed as cloud and never runs locally, whatever the remote permission", async () => {
+  // Shapes recorded from Ollama 0.40.6 after `ollama pull gpt-oss:20b-cloud`:
+  // /api/tags carries remote_host, /api/show doesn't.
+  const routes = ollamaRoutes({
+    "http://127.0.0.1:11434/api/tags": () => ({ json: { models: [
+      { name: "gpt-oss:20b-cloud", remote_model: "gpt-oss:20b", remote_host: "https://ollama.com" },
+      { name: "qwen3:8b" },
+    ] } }),
+    "http://127.0.0.1:11434/api/show": (init?: RequestInit) => {
+      const model = JSON.parse(String(init?.body)).model;
+      if (model === "gpt-oss:20b-cloud") return { json: { capabilities: ["completion", "tools", "thinking"], model_info: { "gptoss.context_length": 131072 } } };
+      return { json: { capabilities: ["completion", "tools"], model_info: { "qwen3.context_length": 40960 } } };
+    },
+  });
+  clearLocalCodexProbeCache();
+  const { fetchImpl } = server(routes);
+  const probe = await probeLocalCodexBackend(ollama, { env: {}, fetchImpl });
+  assert.ok(probe.kind === "available");
+  assert.deepEqual(probe.models, [
+    { name: "gpt-oss:20b-cloud", tools: true, contextLength: 131072, cloud: { host: "ollama.com" } },
+    { name: "qwen3:8b", tools: true, contextLength: 40960 },
+  ]);
+  for (const allowRemote of [false, true]) {
+    clearLocalCodexProbeCache();
+    const refused = await preflightLocalCodex("codex-ollama", "ollama/gpt-oss:20b-cloud", { env: {}, fetchImpl, settings: { endpoints: {}, allowRemote } });
+    assert.deepEqual(refused, {
+      ok: false, code: "local_model_cloud",
+      message: "gpt-oss:20b-cloud is an Ollama cloud model: it runs on ollama.com, not on this computer. Codex · Ollama runs only models on your computers. Choose a model Ollama runs locally.",
+    }, `refused with allowRemote=${allowRemote}`);
+  }
+  clearLocalCodexProbeCache();
+  const local = await preflightLocalCodex("codex-ollama", "ollama/qwen3:8b", { env: {}, fetchImpl, settings: EMPTY_LOCAL_MODEL_SETTINGS });
+  assert.equal(local?.ok, true, "a local model on the same server runs as before");
+});
+
 test("LM Studio: llm and vlm models with tool_use; embeddings left out", async () => {
   clearLocalCodexProbeCache();
   // Shape recorded from LM Studio 0.4.21's /api/v0/models.
@@ -311,7 +346,7 @@ test("Settings status reports both servers, where each address came from, and wh
   assert.equal(first.endpoint, "http://127.0.0.1:11434");
   assert.deepEqual(first.server, {
     state: "running", version: "0.21.0",
-    models: [{ name: "llama2:7b", tools: false, contextLength: 4096, lmLink: null }, { name: "qwen3:8b", tools: true, contextLength: 40960, lmLink: null }],
+    models: [{ name: "llama2:7b", tools: false, contextLength: 4096, lmLink: null, cloud: null }, { name: "qwen3:8b", tools: true, contextLength: 40960, lmLink: null, cloud: null }],
     deviceCheck: "not-needed",
   });
   assert.equal(second.backend, "lmstudio");

@@ -2,7 +2,7 @@
 import { createElement, useState } from "react";
 import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { usePromptEnhance } from "./use-prompt-enhance";
+import { PROMPT_ENHANCE_NO_FAMILIAR_REASON, usePromptEnhance } from "./use-prompt-enhance";
 import { prepareChatPromptEnhancement, applyChatPromptEnhancement } from "./chat-prompt-enhance";
 
 const { announce } = vi.hoisted(() => ({ announce: vi.fn() }));
@@ -18,6 +18,11 @@ const FIRST_TOKEN_BUDGET_MS = 30_000;
 const GENERATION_BUDGET_MS = 120_000;
 const PROJECT_ROOT = "/Users/example/Documents/GitHub/OpenCoven";
 const PROJECT_CONTEXT = { activeProject: { name: "OpenCoven", root: PROJECT_ROOT } };
+const KEPT = "Your draft was kept.";
+const FIRST_TOKEN_TIMEOUT_MESSAGE = `Couldn't enhance the prompt: the familiar didn't start responding within 30 seconds. ${KEPT}`;
+const GENERATION_TIMEOUT_MESSAGE = `Couldn't enhance the prompt: the familiar didn't finish within 2 minutes. ${KEPT}`;
+// Assembled at runtime so the fixture is not a literal credential in source.
+const FAKE_KEY = ["sk", "ant", "api03", "A".repeat(40)].join("-");
 
 describe("prompt enhancement generation", () => {
   let renderer;
@@ -26,13 +31,13 @@ describe("prompt enhancement generation", () => {
   let streams;
   let fetchMock;
 
-  function Probe({ context = null, overrideDraft = null }) {
+  function Probe({ context = null, overrideDraft = null, familiarId = "cody" }) {
     const [draft, setDraft] = useState(overrideDraft === null ? ORIGINAL : `/improve ${ORIGINAL}`);
     editDraft = setDraft;
     const enhance = usePromptEnhance({
       draft,
       setDraft,
-      familiarId: "cody",
+      familiarId,
       mode: "code",
       context,
     });
@@ -103,7 +108,25 @@ describe("prompt enhancement generation", () => {
     });
   }
 
+  async function fail(stream = streams.at(-1), message = "the harness exited unexpectedly") {
+    await act(async () => {
+      stream.frame({ kind: "error", message });
+      stream.close();
+    });
+  }
+
   const stopRequests = () => fetchMock.mock.calls.filter(([url]) => url === "/api/chat/stop");
+  const enhanceRequests = () => fetchMock.mock.calls.filter(([url]) => url === "/api/chat/generate/enhance");
+  const enhancedAnnouncements = () =>
+    announce.mock.calls.filter(([message]) => /^Prompt enhanced|^Enhanced prompt/.test(message));
+
+  /** Every failure keeps the composer exactly as the user left it. */
+  function expectDraftKept(message, draft = ORIGINAL) {
+    expect(current.state).toEqual({ phase: "error", message, retryable: true });
+    expect(current.draft).toBe(draft);
+    expect(enhancedAnnouncements()).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  }
 
   it("keeps a changed alias and uses the original prefix only after explicit Apply", async () => {
     function CommandProbe() {
@@ -190,7 +213,7 @@ describe("prompt enhancement generation", () => {
     expect(current.draft).toBe(ORIGINAL);
   });
 
-  it("keeps a healthy 19-second cold start alive and applies the model rewrite", async () => {
+  it("keeps a healthy 19-second cold start alive and applies exactly the model rewrite", async () => {
     await begin();
     // The reported run completed in 18,591 ms but was cancelled by the 8 s cutoff.
     await act(async () => vi.advanceTimersByTimeAsync(18_591));
@@ -198,8 +221,12 @@ describe("prompt enhancement generation", () => {
     expect(streams[0].signal.aborted).toBe(false);
     expect(current.state.phase).toBe("loading");
     await finish();
-    expect(current.state).toMatchObject({ phase: "applied", original: ORIGINAL, offline: false });
+    expect(current.state).toMatchObject({ phase: "applied", original: ORIGINAL });
+    // Success carries no offline/scripted marker: only model output applies.
+    expect(current.state).not.toHaveProperty("offline");
+    expect(current.state.recommendation.payload).not.toHaveProperty("offline");
     expect(current.draft).toBe(ENHANCED);
+    expect(announce).toHaveBeenCalledWith("Prompt enhanced.", "polite");
     await act(async () => current.revert());
     expect(current.draft).toBe(ORIGINAL);
     await act(async () => vi.advanceTimersByTimeAsync(GENERATION_BUDGET_MS));
@@ -207,22 +234,19 @@ describe("prompt enhancement generation", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("uses the labelled offline fallback only after the startup budget expires", async () => {
+  it("keeps the draft and reports the startup timeout instead of a scripted rewrite", async () => {
     await begin();
     await act(async () => vi.advanceTimersByTimeAsync(FIRST_TOKEN_BUDGET_MS - 1));
     expect(current.state.phase).toBe("loading");
     expect(stopRequests()).toHaveLength(0);
     await act(async () => vi.advanceTimersByTimeAsync(1));
-    expect(current.state).toMatchObject({ phase: "applied", offline: true, original: ORIGINAL });
-    expect(current.draft).toContain(ORIGINAL);
-    expect(announce).toHaveBeenCalledWith("Prompt enhanced offline.", "polite");
+    expectDraftKept(FIRST_TOKEN_TIMEOUT_MESSAGE);
     expect(stopRequests()).toHaveLength(1);
     expect(JSON.parse(stopRequests()[0][1].body).runId).toBe(streams[0].request.runId);
     expect(streams[0].signal.aborted).toBe(true);
-    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("bounds a stream that starts but never finishes", async () => {
+  it("keeps the draft and reports a stream that starts but never finishes", async () => {
     await begin();
     await act(async () => {
       streams[0].frame({ kind: "assistant_chunk", text: "<enhanced>Review" });
@@ -231,10 +255,86 @@ describe("prompt enhancement generation", () => {
     expect(current.state.phase).toBe("loading");
     expect(stopRequests()).toHaveLength(0);
     await act(async () => vi.advanceTimersByTimeAsync(1));
-    expect(current.state).toMatchObject({ phase: "applied", offline: true });
+    expectDraftKept(GENERATION_TIMEOUT_MESSAGE);
     expect(stopRequests()).toHaveLength(1);
     expect(streams[0].signal.aborted).toBe(true);
-    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps the draft when the familiar reports a stream error", async () => {
+    await begin();
+    await fail(streams[0], "the harness exited unexpectedly");
+    expectDraftKept(`Couldn't enhance the prompt: the harness exited unexpectedly. ${KEPT}`);
+    // A failed generation is not retried behind the user's back.
+    expect(streams).toHaveLength(1);
+  });
+
+  it("keeps the draft when the generation surface rejects the request", async () => {
+    fetchMock.mockImplementationOnce(async () => Response.json({ ok: false }, { status: 503 }));
+    await act(async () => {
+      renderer = create(createElement(Probe));
+    });
+    await act(async () => renderer.root.findByType("button").props.onClick());
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(enhanceRequests()).toHaveLength(1);
+    expectDraftKept(`Couldn't enhance the prompt: chat bridge 503. ${KEPT}`);
+  });
+
+  it("keeps the draft when the request throws before streaming", async () => {
+    fetchMock.mockImplementationOnce(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    await act(async () => {
+      renderer = create(createElement(Probe));
+    });
+    await act(async () => renderer.root.findByType("button").props.onClick());
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expectDraftKept(`Couldn't enhance the prompt: failed to fetch. ${KEPT}`);
+  });
+
+  it("discards a rewrite that may contain sensitive values instead of substituting a template", async () => {
+    await begin();
+    await finish(streams[0], `<enhanced>Use ${FAKE_KEY} to call the API.</enhanced>`);
+    expectDraftKept(
+      `Couldn't enhance the prompt: the rewrite may contain sensitive values, so it was discarded. ${KEPT}`,
+    );
+    expect(current.draft).not.toContain(FAKE_KEY);
+  });
+
+  it("keeps the newer draft when a run fails after the user kept typing", async () => {
+    await begin();
+    await act(async () => editDraft("Keep my new constraint."));
+    await fail(streams[0], "the harness exited unexpectedly");
+    expectDraftKept(
+      `Couldn't enhance the prompt: the harness exited unexpectedly. ${KEPT}`,
+      "Keep my new constraint.",
+    );
+    // Typing again clears the error without touching the text.
+    await act(async () => editDraft("Keep my new constraint, please."));
+    expect(current.state.phase).toBe("idle");
+    expect(current.draft).toBe("Keep my new constraint, please.");
+  });
+
+  it("keeps the newer draft when a run times out after the user kept typing", async () => {
+    await begin();
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    await act(async () => editDraft("Keep my new constraint."));
+    await act(async () => vi.advanceTimersByTimeAsync(FIRST_TOKEN_BUDGET_MS - 10_000));
+    expectDraftKept(FIRST_TOKEN_TIMEOUT_MESSAGE, "Keep my new constraint.");
+  });
+
+  it("retries a failed run on request and applies the model rewrite", async () => {
+    await begin();
+    await fail(streams[0]);
+    expect(current.state).toMatchObject({ phase: "error", retryable: true });
+    await act(async () => current.retry());
+    expect(current.state.phase).toBe("loading");
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(streams).toHaveLength(2);
+    await finish(streams[1]);
+    expect(current.state).toMatchObject({ phase: "applied", original: ORIGINAL });
+    expect(current.draft).toBe(ENHANCED);
+    await act(async () => current.revert());
+    expect(current.draft).toBe(ORIGINAL);
   });
 
   it("preserves edits made while a slow rewrite is pending", async () => {
@@ -243,7 +343,7 @@ describe("prompt enhancement generation", () => {
     await act(async () => editDraft("Keep my new constraint."));
     await finish();
     expect(current.draft).toBe("Keep my new constraint.");
-    expect(current.state).toMatchObject({ phase: "suggested", enhanced: ENHANCED, offline: false });
+    expect(current.state).toMatchObject({ phase: "suggested", enhanced: ENHANCED });
     await act(async () => current.apply());
     expect(current.draft).toBe(ENHANCED);
     await act(async () => current.revert());
@@ -254,16 +354,15 @@ describe("prompt enhancement generation", () => {
     await begin(PROJECT_CONTEXT);
     const enhanced = `Use \`${PROJECT_ROOT}\` as project context. ${ENHANCED}`;
     await finish(streams[0], `<enhanced>${enhanced}</enhanced>`);
-    expect(current.state).toMatchObject({ phase: "applied", offline: false });
+    expect(current.state).toMatchObject({ phase: "applied" });
     expect(current.draft).toBe(enhanced);
   });
 
-  it("can use the offline fallback with a long project path", async () => {
+  it("keeps the draft when a run with a long project path times out", async () => {
     await begin(PROJECT_CONTEXT);
     await act(async () => vi.advanceTimersByTimeAsync(FIRST_TOKEN_BUDGET_MS));
-    expect(current.state).toMatchObject({ phase: "applied", offline: true });
-    expect(current.draft).toContain(PROJECT_ROOT);
-    expect(current.draft).toContain(ORIGINAL);
+    expectDraftKept(FIRST_TOKEN_TIMEOUT_MESSAGE);
+    expect(current.draft).not.toContain(PROJECT_ROOT);
   });
 
   it("uses the current selected file paths when parsing a new generation", async () => {
@@ -278,7 +377,7 @@ describe("prompt enhancement generation", () => {
     expect(streams).toHaveLength(2);
     const enhanced = `Review \`${selectedFile}\`. ${ENHANCED}`;
     await finish(streams[1], `<enhanced>${enhanced}</enhanced>`);
-    expect(current.state).toMatchObject({ phase: "applied", offline: false });
+    expect(current.state).toMatchObject({ phase: "applied" });
     expect(current.draft).toBe(enhanced);
   });
 
@@ -298,11 +397,11 @@ describe("prompt enhancement generation", () => {
     await begin();
     await act(async () => streams[0].frame({ kind: "assistant_chunk", text: "" }));
     await act(async () => vi.advanceTimersByTimeAsync(FIRST_TOKEN_BUDGET_MS));
-    expect(current.state).toMatchObject({ phase: "applied", offline: true });
+    expectDraftKept(FIRST_TOKEN_TIMEOUT_MESSAGE);
     expect(stopRequests()).toHaveLength(1);
   });
 
-  it("cancels immediately without applying a fallback or leaving timers", async () => {
+  it("cancels immediately without applying a rewrite, reporting an error, or leaving timers", async () => {
     await begin();
     await act(async () => current.cancel());
     expect(current.state.phase).toBe("idle");
@@ -310,6 +409,11 @@ describe("prompt enhancement generation", () => {
     expect(stopRequests()).toHaveLength(1);
     expect(streams[0].signal.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
+    // The cancelled run's budgets can no longer surface a timeout error.
+    await act(async () => vi.advanceTimersByTimeAsync(GENERATION_BUDGET_MS));
+    expect(current.state.phase).toBe("idle");
+    expect(current.draft).toBe(ORIGINAL);
+    expect(enhancedAnnouncements()).toEqual([]);
   });
 
   it("discards generation when the selected context changes", async () => {
@@ -324,13 +428,46 @@ describe("prompt enhancement generation", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("still rejects malformed model output after its single retry", async () => {
+  it("still rejects malformed model output after its single retry and keeps the draft", async () => {
     await begin();
     await finish(streams[0], "This is an answer, not a framed rewrite.");
     expect(streams).toHaveLength(2);
     await finish(streams[1], "<enhanced>Unfinished");
-    expect(current.state.phase).toBe("error");
+    expectDraftKept(`Couldn't enhance the prompt: the familiar's reply wasn't a usable rewrite. ${KEPT}`);
+  });
+
+  it("without a familiar, reports why and never generates or rewrites", async () => {
+    await act(async () => {
+      renderer = create(createElement(Probe, { familiarId: null }));
+    });
+    expect(current.unavailableReason).toBe(PROMPT_ENHANCE_NO_FAMILIAR_REASON);
+    expect(PROMPT_ENHANCE_NO_FAMILIAR_REASON).toBe("Choose a familiar to enhance this prompt.");
+    await act(async () => renderer.root.findByType("button").props.onClick());
+    await act(async () => vi.advanceTimersByTimeAsync(FIRST_TOKEN_BUDGET_MS));
+    expect(enhanceRequests()).toHaveLength(0);
+    expect(current.state).toEqual({
+      phase: "error",
+      message: PROMPT_ENHANCE_NO_FAMILIAR_REASON,
+      retryable: false,
+    });
     expect(current.draft).toBe(ORIGINAL);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(enhancedAnnouncements()).toEqual([]);
+    // Retry cannot bypass the missing familiar either.
+    await act(async () => current.retry());
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(enhanceRequests()).toHaveLength(0);
+    expect(current.draft).toBe(ORIGINAL);
+
+    // Choosing a familiar makes the same control generate with it.
+    await act(async () => {
+      renderer.update(createElement(Probe, { familiarId: "cody" }));
+    });
+    expect(current.unavailableReason).toBeNull();
+    await act(async () => renderer.root.findByType("button").props.onClick());
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(streams).toHaveLength(1);
+    expect(streams[0].request.familiarId).toBe("cody");
+    await finish(streams[0]);
+    expect(current.draft).toBe(ENHANCED);
   });
 });

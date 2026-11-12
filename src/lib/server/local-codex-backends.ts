@@ -120,6 +120,8 @@ export type LocalModel = {
   contextLength: number | null;
   /** LM Studio serves this model from another computer through LM Link. */
   lmLink?: { deviceName: string | null };
+  /** Ollama forwards this model to its cloud service; `host` is where prompts go. */
+  cloud?: { host: string };
 };
 
 export type LocalBackendProbe =
@@ -165,11 +167,30 @@ function positiveInt(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
+/** The host name of an Ollama `remote_host`, for copy; the raw value if it isn't a URL. */
+function cloudHostLabel(remoteHost: string): string {
+  try {
+    return new URL(remoteHost).hostname || remoteHost.slice(0, 100);
+  } catch {
+    return remoteHost.slice(0, 100);
+  }
+}
+
 async function probeOllama(endpoint: string, fetchImpl: FetchLike): Promise<LocalBackendProbe> {
   const version = await getJson(fetchImpl, `${endpoint}/api/version`);
   const tags = await getJson(fetchImpl, `${endpoint}/api/tags`);
   if (!record(tags) || !Array.isArray(tags.models)) throw new ProbeError("invalid-response");
-  const names = tags.models.map((entry) => modelName(record(entry) ? entry.name : null)).filter((name): name is string => name !== null).slice(0, MAX_MODELS);
+  const names: string[] = [];
+  // Ollama lists its cloud models (`gpt-oss:20b-cloud`) beside local ones.
+  // Only /api/tags says so, with `remote_host`; /api/show doesn't (#6049).
+  const cloudHosts = new Map<string, string>();
+  for (const entry of tags.models.slice(0, MAX_MODELS)) {
+    if (!record(entry)) continue;
+    const name = modelName(entry.name);
+    if (!name) continue;
+    names.push(name);
+    if (typeof entry.remote_host === "string" && entry.remote_host.trim()) cloudHosts.set(name, cloudHostLabel(entry.remote_host));
+  }
   const models: LocalModel[] = [];
   let next = 0;
   const worker = async () => {
@@ -187,7 +208,13 @@ async function probeOllama(endpoint: string, fetchImpl: FetchLike): Promise<Loca
         if (!capabilities.includes("completion")) continue;
         const info = record(show.model_info) ? show.model_info : {};
         const contextKey = Object.keys(info).find((key) => key.endsWith(".context_length"));
-        models.push({ name, tools: capabilities.includes("tools"), contextLength: contextKey ? positiveInt(info[contextKey]) : null });
+        const cloudHost = cloudHosts.get(name);
+        models.push({
+          name,
+          tools: capabilities.includes("tools"),
+          contextLength: contextKey ? positiveInt(info[contextKey]) : null,
+          ...(cloudHost ? { cloud: { host: cloudHost } } : {}),
+        });
       } catch (error) {
         if (error instanceof ProbeError && error.kind === "unreachable") throw error;
         // One model the server cannot describe is left out, not guessed at.
@@ -231,9 +258,12 @@ async function probeLmStudio(endpoint: string, fetchImpl: FetchLike, lms?: LmsRu
 
 /**
  * Whether a chat may run `model`: one served from another computer through LM
- * Link needs the same permission as a server on another computer.
+ * Link needs the same permission as a server on another computer. An Ollama
+ * cloud model never runs: local runtimes don't send prompts to a cloud
+ * service, whatever the remote permission says.
  */
 export function localModelRunsHere(model: LocalModel, allowRemote: boolean): boolean {
+  if (model.cloud) return false;
   return !model.lmLink || allowRemote;
 }
 
@@ -327,6 +357,13 @@ export async function preflightLocalCodex(
   if (!model.tools) {
     return { ok: false, code: "local_model_no_tools", message: `${nativeModel} doesn't support tool calling, which Codex needs to work. Choose a model ${info.product} marks as tool-capable.` };
   }
+  if (model.cloud) {
+    return {
+      ok: false,
+      code: "local_model_cloud",
+      message: `${nativeModel} is an ${info.product} cloud model: it runs on ${model.cloud.host}, not on this computer. ${info.label} runs only models on your computers. Choose a model ${info.product} runs locally.`,
+    };
+  }
   if (!localModelRunsHere(model, localModelsAllowRemote(options.env, settings).value)) {
     return {
       ok: false,
@@ -398,7 +435,7 @@ export async function readLocalModelsStatus(options: {
         ? {
           state: "running",
           version: probe.version,
-          models: probe.models.map(({ name, tools, contextLength, lmLink }) => ({ name, tools, contextLength, lmLink: lmLink ?? null })),
+          models: probe.models.map(({ name, tools, contextLength, lmLink, cloud }) => ({ name, tools, contextLength, lmLink: lmLink ?? null, cloud: cloud ?? null })),
           deviceCheck: probe.deviceCheck,
         }
         : probe.kind === "unreachable" ? { state: "stopped" }

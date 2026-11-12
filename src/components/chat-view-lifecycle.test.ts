@@ -48,7 +48,7 @@ assert.match(
 );
 assert.match(
   source,
-  /function MetaLine[\s\S]*className="cave-chat-meta-line__meta"[^>]*role="status"[^>]*aria-live="polite"/,
+  /function MetaLine[\s\S]*className="cave-chat-meta-line__meta(?: [^"]*)?"[^>]*role="status"[^>]*aria-live="polite"/,
   "…and the meta text is the live region that announces it",
 );
 
@@ -454,7 +454,7 @@ assert.match(
 
 assert.match(
   source,
-  /function regenerateFor\(turn: Turn\)[\s\S]*?const prevUser = precedingUserTurn\(turn\);[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?retryTurnModelRequest\(prevUser, turn\)[\s\S]*?modelControls: prevUser\.modelControls \?\? \{\}/,
+  /function regenerateFor\(turn: Turn\)[\s\S]*?const prevUser = precedingUserTurn\(turn\);[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?retryTurnModelRequest\(prevUser, turn, modelStateRef\.current\?\.harness\)[\s\S]*?modelControls: prevUser\.modelControls \?\? \{\}/,
   "Regenerate reuses the preceding user turn's controls and the assistant's authoritative retry model (CHAT-D6-02)",
 );
 

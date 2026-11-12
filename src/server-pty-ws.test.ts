@@ -23,6 +23,16 @@ assert.match(
   "remote sockets are registered in the actual noServer upgrade callback, not an un-emitted connection event",
 );
 assert.match(src, /for \(const client of remotePtyClients\) client\.terminate\(\);/, "policy activation immediately terminates remote PTY sockets");
+assert.match(
+  src,
+  /remotePtyClients\.add\(ws\);\s*const releaseRemote = deviceAccess\.holdRemoteConnection\(\);\s*ws\.once\("close", \(\) => \{ remotePtyClients\.delete\(ws\); releaseRemote\(\); \}\);/,
+  "a remote PTY socket keeps device-access revalidation running until it closes (#6119)",
+);
+assert.match(
+  src,
+  /const releaseRemote = remote \? deviceAccess\.holdRemoteConnection\(\) : null;[\s\S]+?remoteEventClients\.delete\(ws\);\s*releaseRemote\?\.\(\);/,
+  "a remote event-plane socket keeps device-access revalidation running until it closes (#6119)",
+);
 assert.match(src, /const UPGRADE_URL_BASE = "http:\/\/localhost"/, "upgrade parsing uses a fixed internal URL base");
 assert.match(
   src,

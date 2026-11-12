@@ -161,6 +161,7 @@ export const LOCAL_CODEX_REFUSAL_CODES = [
   "local_model_missing",
   "local_model_no_tools",
   "local_model_other_computer",
+  "local_model_cloud",
 ] as const;
 export type LocalCodexRefusalCode = typeof LOCAL_CODEX_REFUSAL_CODES[number];
 
@@ -178,6 +179,8 @@ export type LocalModelSummary = {
   contextLength: number | null;
   /** Served from another computer through LM Studio's LM Link (#6094), with that computer's name when known. */
   lmLink: { deviceName: string | null } | null;
+  /** An Ollama cloud model, which runs on `host`. Local runtimes never offer it. */
+  cloud: { host: string } | null;
 };
 
 /**

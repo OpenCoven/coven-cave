@@ -42,7 +42,7 @@ function errorMessage(value: unknown, fallback: string): string {
 export function serverStatusLine(backend: LocalModelsBackendStatus): { tone: Tone; text: string } {
   const { server } = backend;
   if (server.state === "running") {
-    const usable = server.models.filter((model) => model.tools).length;
+    const usable = server.models.filter((model) => model.tools && !model.cloud).length;
     const version = server.version ? ` · version ${server.version}` : "";
     return usable > 0
       ? { tone: "success", text: `Running${version} · ${usable} ${usable === 1 ? "model" : "models"} with tool support` }
@@ -93,6 +93,7 @@ function BackendCard({
   const models = backend.server.state === "running" ? backend.server.models : null;
   const deviceCheck = backend.server.state === "running" ? backend.server.deviceCheck : "not-needed";
   const linked = models?.some((model) => model.lmLink) ?? false;
+  const cloud = models?.some((model) => model.cloud) ?? false;
   return (
     <div className="settings-local-models__card">
       <div className="settings-local-models__status-row">
@@ -135,10 +136,15 @@ function BackendCard({
             {models.map((model) => {
               const context = contextLabel(model.contextLength);
               return (
-                <li key={model.name} className="settings-local-models__model" data-tools={model.tools || undefined}>
+                <li key={model.name} className="settings-local-models__model" data-tools={(model.tools && !model.cloud) || undefined}>
                   <span className="settings-local-models__model-name">{model.name}</span>
                   <span className="settings-local-models__model-meta">
                     {context ? <span>{context}</span> : null}
+                    {model.cloud ? (
+                      <span className="settings-local-models__badge" data-link>
+                        Cloud · {model.cloud.host} · not offered
+                      </span>
+                    ) : null}
                     {model.lmLink ? (
                       <span className="settings-local-models__badge" data-link>
                         LM Link · {model.lmLink.deviceName ?? "another computer"}
@@ -161,6 +167,11 @@ function BackendCard({
           {allowRemote
             ? "Models marked LM Link run on another computer, which receives your prompts. Chats offer them because servers on other computers are allowed."
             : "Models marked LM Link run on another computer. Chats don't offer them while servers on other computers are off."}
+        </p>
+      ) : null}
+      {cloud ? (
+        <p className="settings-local-models__help">
+          {`Cloud models run on ${backend.product}'s service, not on this computer, so chats never offer them.`}
         </p>
       ) : null}
       {deviceCheck === "unavailable" ? (

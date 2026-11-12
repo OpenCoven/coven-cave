@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listRoutineRuns } from "@/lib/server/coven-automations-client";
+import { listRoutineRuns } from "@/lib/server/automation-consumer-reads";
 import { parseLastRunIds, readLastRuns } from "@/lib/server/automation-last-runs";
 
 export const dynamic = "force-dynamic";

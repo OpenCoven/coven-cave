@@ -1,3 +1,5 @@
+import { invalidateChatAccess } from "./chat-access-invalidation.ts";
+
 /** Read one projected output on demand. Each open rechecks the current server
  * authorization; completed results never enter a shared client cache. */
 const TIMEOUT_MS = 15_000;
@@ -34,6 +36,9 @@ export async function fetchToolOutput(
     const res = await fetchImpl(url, { cache: "no-store", credentials: "same-origin", mode: "same-origin", redirect: "error", signal: requestSignal });
     requestSignal.throwIfAborted();
     if (res.status !== 200 || res.redirected || (res.url && typeof location !== "undefined" && res.url !== new URL(url, location.href).href)) {
+      if (res.status === 401 || res.status === 403) {
+        invalidateChatAccess({ sessionId, reason: "denied" });
+      }
       await res.body?.cancel();
       throw new ToolOutputFetchError(res.status === 200 ? 0 : res.status);
     }

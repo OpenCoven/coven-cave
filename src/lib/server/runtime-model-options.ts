@@ -168,8 +168,11 @@ export async function listRuntimeModelInventory(
       const probe = await (dependencies.probeLocalBackend ?? probeLocalCodexBackend)(info);
       if (probe.kind === "invalid-endpoint") return { ...degraded, discoveryIssue: "local-endpoint-invalid" };
       if (probe.kind !== "available") return { ...degraded, discoveryIssue: "local-server-unavailable" };
-      const usable = probe.models.filter((model) => model.tools);
-      if (usable.length === 0) return { ...degraded, discoveryIssue: "local-no-tool-models" };
+      const toolCapable = probe.models.filter((model) => model.tools);
+      if (toolCapable.length === 0) return { ...degraded, discoveryIssue: "local-no-tool-models" };
+      // An Ollama cloud model runs on Ollama's service, so it is never a local choice.
+      const usable = toolCapable.filter((model) => !model.cloud);
+      if (usable.length === 0) return { ...degraded, discoveryIssue: "local-models-in-cloud" };
       // A model LM Link serves from another computer is offered only with
       // the permission that a server on another computer needs.
       const allowRemote = usable.some((model) => model.lmLink)

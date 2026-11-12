@@ -1737,3 +1737,142 @@ fn capacity_guidance_rounds_available_down_and_required_up() {
     let maximum = insufficient_runtime_space_message(0, u64::MAX);
     assert!(maximum.contains("18446744073710 MB required"), "{maximum}");
 }
+
+// Windows normal quit closes the sidecar's private stdin pipe before the Job
+// fallback (#6209). The test binary re-executes itself as the stand-in child so
+// the contract is exercised without PowerShell start-up latency eating the
+// drain window.
+#[cfg(target_os = "windows")]
+const WINDOWS_PIPE_FIXTURE_MARKER_ENV: &str = "CAVE_LIFECYCLE_PIPE_FIXTURE_MARKER";
+#[cfg(target_os = "windows")]
+const WINDOWS_PIPE_FIXTURE_IGNORE_EOF_ENV: &str = "CAVE_LIFECYCLE_PIPE_FIXTURE_IGNORE_EOF";
+
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_private_pipe_fixture() {
+    // Only the re-executed child acts; an ordinary test run returns at once.
+    let Some(marker) = std::env::var_os(WINDOWS_PIPE_FIXTURE_MARKER_ENV) else {
+        return;
+    };
+    if std::env::var_os(WINDOWS_PIPE_FIXTURE_IGNORE_EOF_ENV).is_some() {
+        thread::sleep(Duration::from_secs(30));
+        return;
+    }
+    let mut drained = Vec::new();
+    let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut drained);
+    std::fs::write(marker, b"eof").expect("write pipe fixture marker");
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_windows_pipe_fixture(
+    marker: &Path,
+    ignore_eof: bool,
+) -> (Child, windows_process_job::ProcessJob) {
+    let mut command = Command::new(std::env::current_exe().expect("current test executable"));
+    command
+        .args([
+            "--exact",
+            "app_lifecycle_tests::windows_private_pipe_fixture",
+            "--test-threads=1",
+        ])
+        .env(WINDOWS_PIPE_FIXTURE_MARKER_ENV, marker)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if ignore_eof {
+        command.env(WINDOWS_PIPE_FIXTURE_IGNORE_EOF_ENV, "1");
+    }
+    // The same configuration the packaged launcher receives.
+    configure_windows_sidecar_parent_watchdog(&mut command);
+    let child = command.spawn().expect("spawn windows pipe fixture");
+    let job = windows_process_job::ProcessJob::new().expect("create fixture process job");
+    job.assign_child(&child).expect("assign fixture to process job");
+    (child, job)
+}
+
+#[cfg(target_os = "windows")]
+fn windows_pipe_fixture_marker(name: &str) -> PathBuf {
+    let marker = std::env::temp_dir().join(format!("cave-pipe-{name}-{}.marker", std::process::id()));
+    let _ = std::fs::remove_file(&marker);
+    marker
+}
+
+#[cfg(target_os = "windows")]
+fn wait_for_windows_pid_exit(pid: u32, timeout: Duration) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+    use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+
+    let process = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
+    if process.is_null() {
+        return true;
+    }
+    let timeout_ms = timeout.as_millis().min(u32::MAX as u128) as u32;
+    let result = unsafe { WaitForSingleObject(process, timeout_ms) };
+    unsafe { CloseHandle(process) };
+    result == WAIT_OBJECT_0
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_normal_quit_requests_drain_over_the_private_pipe_before_the_job_fallback() {
+    let marker = windows_pipe_fixture_marker("drain");
+    let (child, job) = spawn_windows_pipe_fixture(&marker, false);
+    let pid = child.id();
+
+    let started = Instant::now();
+    stop_sidecar_child(SidecarProcess::from_gated(child, job)).expect("normal stop succeeds");
+    let elapsed = started.elapsed();
+
+    assert!(wait_for_windows_pid_exit(pid, Duration::from_secs(3)));
+    assert_eq!(
+        std::fs::read(&marker).expect("the child saw EOF and finished its own cleanup"),
+        b"eof",
+        "the child exited on the pipe, not on the Job"
+    );
+    assert!(
+        elapsed < WINDOWS_SIDECAR_DRAIN_WINDOW,
+        "a drained child returns before the fallback window ends: {elapsed:?}"
+    );
+    let _ = std::fs::remove_file(&marker);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_normal_quit_keeps_the_job_fallback_when_the_child_ignores_eof() {
+    let marker = windows_pipe_fixture_marker("ignore");
+    let (child, job) = spawn_windows_pipe_fixture(&marker, true);
+    let pid = child.id();
+
+    let started = Instant::now();
+    stop_sidecar_child(SidecarProcess::from_gated(child, job)).expect("fallback stop succeeds");
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed >= WINDOWS_SIDECAR_DRAIN_WINDOW && elapsed < Duration::from_millis(1_000),
+        "the fallback fires at the end of the bounded window, within the close deadline: {elapsed:?}"
+    );
+    assert!(wait_for_windows_pid_exit(pid, Duration::from_secs(3)));
+    assert!(!marker.exists(), "a Job-terminated child never ran its own cleanup");
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_startup_failure_terminates_immediately_without_a_drain_window() {
+    let marker = windows_pipe_fixture_marker("startup-failure");
+    let (child, job) = spawn_windows_pipe_fixture(&marker, true);
+    let pid = child.id();
+    let slot = Arc::new(Mutex::new(Some(SidecarProcess::from_gated(child, job))));
+    let state = SidecarState(Arc::clone(&slot));
+
+    let started = Instant::now();
+    state
+        .stop_after_startup_attempt()
+        .expect("startup-failure stop succeeds");
+
+    assert!(
+        started.elapsed() < Duration::from_millis(300),
+        "a failed start is not a quit and offers no drain window"
+    );
+    assert!(slot.lock().expect("sidecar slot").is_none());
+    assert!(wait_for_windows_pid_exit(pid, Duration::from_secs(3)));
+    assert!(!marker.exists());
+}

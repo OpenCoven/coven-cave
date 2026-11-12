@@ -26,7 +26,9 @@ Expected lifecycle:
 3. Make the diff PR-shaped: focused scope, relevant tests, and no unrelated churn.
 4. Open a PR with the verification performed and any known follow-up work.
 5. Merge through the protected PR path after checks pass.
-6. Delete the remote branch and remove the local worktree/branch.
+6. GitHub deletes the merged head branch (`delete_branch_on_merge`). Record the
+   worktree disposition on the issue, and retire it only through
+   [branch-curator](../../.agents/skills/branch-curator/SKILL.md).
 
 Branches should not remain open as:
 
@@ -36,16 +38,30 @@ Branches should not remain open as:
 - backups for unreviewed changes
 - coordination substitutes for docs, issues, or PR text
 
+## Refresh and rebase an owned unit
+
+Rebase only the authorized branch in its own worktree. Preserve its original head and any local evidence first, refresh the exact main OID, and leave other sessions' edits in the shared checkout untouched. If the branch was already squash-merged, compare every path from its unique commits with the delivered source before dropping or replaying those commits; do not carry duplicate repairs into a new docs-only diff.
+
+A local recovery ref or verified bundle makes the rebase reversible. It does not satisfy branch-curator's remote-retention proof for deletion. Record the exact base, old head, resulting head and any fetch failure. An authenticated API observation can corroborate an available local commit, but does not replace a deletion guard's required Git transport, ownership, lease or recovery checks.
+
+Inspect `coven maintenance --help` and `coven maintenance status --json` for the local lease and Coven writer intents, scoped to Git's common directory across linked worktrees. Follow branch-curator's selected profile, keeping its ownership, process, shared-claim and recovery proofs alongside that lease. Execution metadata must be scoped by its producer before retrieval.
+
 ## WIP Preservation
 
 Before removing a stale branch or worktree, inspect it.
 
-- If the work is merged or patch-equivalent to `main`, delete the branch.
-- If it has useful unmerged commits, archive them with `git format-patch` before deleting.
-- If it has uncommitted work, preserve it with a named stash or archive patch before cleanup.
-- Prefer moving generated leftover directories to Trash over permanent deletion.
+Follow [Preserve before retirement](github-work-tracking.md#preserve-before-retirement) and
+branch-curator: exact OIDs, a head retained on a verified remote ref (a merged
+PR's `refs/pull/<#>/head`, or a pushed `archive/` or `retention/` tag; never a
+local patch or tag), clean state, and no live owner. Preserve dirty or
+uncertain units rather than archiving them locally.
 
 ## Release And TestFlight
+
+[Release train](release-train.md) is the ordered runbook: `pnpm release:train`
+reports which of these steps a release is at and prints the next command. It
+continues after step 10 with the README screenshots, the docs review and the
+handoff record.
 
 Release work should start only after branch consolidation:
 

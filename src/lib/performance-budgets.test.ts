@@ -38,6 +38,43 @@ test("the stream ceiling delegates to the browser gate without grading list-run 
   assert.equal(report.enforcedCount, 0);
 });
 
+test("the shell ceilings delegate to the shell boot browser gate and keep their approved values", () => {
+  const entries = PERFORMANCE_BUDGETS.filter((entry) => entry.surface === "shell" && entry.unit === "ms");
+  assert.deepEqual(
+    entries.map((entry) => [entry.id, entry.limit, entry.gate, entry.source]),
+    [
+      ["shell.warm-boot.p95-ms", 3_000, "browser-performance", "tests/shell-boot-performance.spec.ts"],
+      ["shell.offline-boot.p95-ms", 5_000, "browser-performance", "tests/shell-boot-performance.spec.ts"],
+    ],
+  );
+  const report = evaluatePerformanceBudgets(entries.map((entry) => ({ id: entry.id, value: 1 })), entries);
+  assert.ok(report.results.every((result) => result.verdict === "delegated" && result.value === null));
+  assert.equal(report.enforcedCount, 0);
+  assert.equal(report.pendingCount, 0);
+});
+
+test("every browser-performance source is a Playwright spec that exists and reads its ceiling from here", async () => {
+  // A delegated source is the only tie between the catalogue and the gate that
+  // enforces it. The spec has to exist, and it has to import the catalogue
+  // (directly or through its fixture) so the number cannot be restated there.
+  const delegated = PERFORMANCE_BUDGETS.filter((entry) => entry.gate === "browser-performance");
+  assert.ok(delegated.length >= 4, "the stream, both shell and the doctor ceilings delegate to browser gates");
+  for (const entry of delegated) {
+    assert.match(entry.source, /^tests\/[\w.-]+\.spec\.ts$/, `${entry.id}: source must name one Playwright spec`);
+    const spec = await readFile(new URL(`../../${entry.source}`, import.meta.url), "utf8");
+    const fixtureImport = /from "\.\/fixtures\/([\w-]+)"/.exec(spec);
+    assert.ok(fixtureImport, `${entry.id}: ${entry.source} imports no tests/fixtures module`);
+    const fixture = await readFile(new URL(`../../tests/fixtures/${fixtureImport[1]}.ts`, import.meta.url), "utf8");
+    assert.match(fixture, /PERFORMANCE_BUDGETS/, `${entry.id}: its fixture must read the catalogue`);
+    // Either the literal id or the shell fixture's per-mode template.
+    const template = entry.id.replace(/^shell\.(?:warm|offline)-/, "shell.${mode}-");
+    assert.ok(
+      fixture.includes(entry.id) || fixture.includes(template),
+      `${entry.id}: its fixture must look up this id`,
+    );
+  }
+});
+
 test("every surface named by the hardening plan carries at least one budget", () => {
   for (const surface of PERFORMANCE_BUDGET_SURFACES) {
     assert.ok(
@@ -245,7 +282,7 @@ test("every delegated budget names a constant its gate really owns", async () =>
   }
 });
 
-test("a pending budget derived from repository code is pinned to that constant", async () => {
+test("a budget derived from repository code is pinned to that constant", async () => {
   // The last source that was asserted against nothing. `cli.doctor.p95-ms` read
   // "cave-o8gc4: matches EXEC_TIMEOUT_MS in src/app/api/coven/exec/route.ts" —
   // a claim about a specific constant, in prose, with no gate to notice when
@@ -255,16 +292,19 @@ test("a pending budget derived from repository code is pinned to that constant",
   //
   // So: prose is allowed only for a number nothing in this repository owns. The
   // moment a source names a repository file it must use the resolvable form,
-  // and the limit must equal what that file actually declares.
+  // and the limit must equal what that file actually declares. Since #6346 the
+  // doctor ceiling is measured by a spec, so the pin moved to `derivedFrom`;
+  // the check is the same, and it still has to find at least one entry.
   const repositoryFile = /[\w./-]+\.(?:mjs|cjs|js|ts|tsx)\b/;
   let checked = 0;
   for (const entry of PERFORMANCE_BUDGETS) {
-    if (entry.gate !== "pending") continue;
-    const derivation = budgetSourceDerivation(entry.source);
+    const pinned = entry.derivedFrom ?? (entry.gate === "pending" ? entry.source : null);
+    if (pinned === null) continue;
+    const derivation = budgetSourceDerivation(pinned);
     if (!derivation) {
       assert.ok(
-        !repositoryFile.test(entry.source),
-        `${entry.id}: source names a repository file in prose (${entry.source}); ` +
+        entry.derivedFrom === undefined && !repositoryFile.test(pinned),
+        `${entry.id}: ${entry.derivedFrom ? "derivedFrom" : "source"} names a repository file in prose (${pinned}); ` +
           `write it as "<file> (<CONSTANT>)" so this test can resolve it`,
       );
       continue;
@@ -287,7 +327,7 @@ test("a pending budget derived from repository code is pinned to that constant",
     );
     checked += 1;
   }
-  assert.ok(checked > 0, "no pending budget resolves a constant; the check above proves nothing");
+  assert.ok(checked > 0, "no budget resolves a constant; the check above proves nothing");
 });
 
 test("a measurement inside the limit passes with positive headroom", () => {

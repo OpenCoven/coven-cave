@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { researchPackageConfig } from "./scripts/research-package-config.mjs";
+import { submissionsBuildConfig } from "./scripts/submissions-build-config.mjs";
 import bundleAnalyzer from "@next/bundle-analyzer";
 import { MAX_PROXY_BODY_BYTES } from "./src/lib/request-body-limit.ts";
 
@@ -20,7 +21,15 @@ const daemonlessE2E = process.env.COVEN_CAVE_E2E === "1";
 // including every packaged release artifact, keeps it.
 const skipBuildTypecheck = process.env.COVEN_CAVE_SKIP_BUILD_TYPECHECK === "1";
 
+// scripts/next-build.mjs runs that same pass before compiling, where it does
+// not compete with Turbopack's retained memory, and sets this only on the
+// `next build` that follows a successful check (#6036). The check still runs
+// once per build; it is not repeated after compiling.
+const typecheckedBeforeCompile =
+  process.env.COVEN_CAVE_TYPECHECKED_BEFORE_COMPILE === "1";
+
 const researchPackage = researchPackageConfig();
+const submissionsBuild = submissionsBuildConfig();
 
 const nextConfig: NextConfig = {
   transpilePackages: researchPackage.available ? ["@opencoven/research"] : [],
@@ -31,7 +40,9 @@ const nextConfig: NextConfig = {
     COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL_ENABLED:
       process.env.COVEN_CAVE_CLIENT_V1_COMPATIBILITY_CONTROL === "1" ? "1" : "0",
   },
-  typescript: { ignoreBuildErrors: skipBuildTypecheck },
+  typescript: {
+    ignoreBuildErrors: skipBuildTypecheck || typecheckedBeforeCompile,
+  },
   // The Next.js dev tools launcher renders in a portal at bottom-left by
   // default, which intercepts taps on Cave's mobile bottom tabs in local dev.
   devIndicators: false,
@@ -44,7 +55,7 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: process.cwd(),
   turbopack: {
     root: process.cwd(),
-    resolveAlias: researchPackage.aliases,
+    resolveAlias: { ...researchPackage.aliases, ...submissionsBuild.aliases },
   },
   // Standalone output produces a self-contained Node server at
   // .next/standalone/ that we can bundle as a Tauri sidecar.
@@ -124,6 +135,37 @@ const nextConfig: NextConfig = {
       // `path.join(caveHome(), "config.json")`; the instrumentation graph no
       // longer does, so the #6082 leak guard holds (#6093).
       "./tsconfig.json",
+    ],
+    // Next's own server trace reaches its dev bundler, whose hot reloaders
+    // import `next build`, webpack and Babel modules. Next 16.4 prunes them in
+    // an order-dependent pass: Linux and macOS drop all of them, but Windows
+    // kept 244 files and overflowed the sidecar budget (#6276). Exclude each
+    // one by name: none is a file the Linux or macOS server ships. Naming
+    // them, not the 25 runtime files under dist/build, fails safe; a new
+    // build module can only cost budget, never a runtime file.
+    "next-server": [
+      "**/next/dist/server/dev/hot-reloader-rspack.js",
+      "**/next/dist/server/dev/hot-reloader-turbopack.js",
+      "**/next/dist/server/dev/hot-reloader-webpack.js",
+      "**/next/dist/server/dev/on-demand-entry-handler.js",
+      "**/next/dist/build/{analysis,analyze,babel,jest,manifests,polyfills,templates}/**/*",
+      "**/next/dist/build/{turbopack-analyze,turbopack-build,turborepo-access-trace}/**/*",
+      "**/next/dist/build/{webpack,webpack-build,webpack-config-rules}/**/*",
+      "**/next/dist/build/segment-config/{middleware,pages}/**/*",
+      "**/next/dist/build/adapter/{build-complete,fallback-shell-runs,synthetic-symlinks}.js",
+      "**/next/dist/build/{output/index,output/store,static-paths/types}.js",
+      "**/next/dist/build/{after-production-compile,browser-variant-modules,build-context}.js",
+      "**/next/dist/build/{collect-build-traces,compiler,create-compiler-aliases,entries}.js",
+      "**/next/dist/build/{file-classifier,generate-build-id,generate-routes-manifest}.js",
+      "**/next/dist/build/{get-babel-config-file,get-babel-loader-config}.js",
+      "**/next/dist/build/{get-convention-file-base-name,get-static-info-including-layouts}.js",
+      "**/next/dist/build/{handle-entrypoints,handle-externals,index,is-writeable}.js",
+      "**/next/dist/build/{load-entrypoint,load-jsconfig,lockfile,next-dir-paths}.js",
+      "**/next/dist/build/{normalize-catchall-routes,page-extensions-type,preview-key-utils}.js",
+      "**/next/dist/build/{print-build-errors,progress,rendering-mode,route-bundle-stats}.js",
+      "**/next/dist/build/{route-discovery,sort-by-page-exts,spinner,type-check}.js",
+      "**/next/dist/build/{validate-app-paths,warn-about-edge-runtime,webpack-config}.js",
+      "**/next/dist/build/{worker,write-build-id}.js",
     ],
   },
   // No `outputFileTracingIncludes` (#6093). Turbopack 16.3 resolves an include

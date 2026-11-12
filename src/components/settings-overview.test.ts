@@ -170,4 +170,22 @@ test("the shell sources sections from settings-sections and renders the overview
   assert.doesNotMatch(shell, /section="addons"|AddonsSection|Add-ons/, "Add-ons is not a settings section");
 });
 
+test("the General summary shows a compact workspace path and keeps the full one on hover (#6243)", () => {
+  assert.match(
+    overview,
+    /import \{ compactPath \} from "@\/components\/familiars-memory-utils";/,
+    "the summary reuses the shared compactPath helper rather than another copy",
+  );
+  assert.match(
+    overview,
+    /summary\?\.workspacePath \? compactPath\(summary\.workspacePath\) : null/,
+    "the header summary shows the compact path, not the raw absolute one",
+  );
+  assert.match(
+    overview,
+    /<span title=\{summary\?\.workspacePath \|\| undefined\}>\{summaryMessage\}<\/span>/,
+    "the full path stays available as the summary's title",
+  );
+});
+
 console.log("settings-overview.test.ts: ok");

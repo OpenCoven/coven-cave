@@ -11,7 +11,9 @@ import {
   covenHelpSupportsAdapterList,
   covenRunSupportsModelFlag,
   covenRunSupportsAddDirFlag,
+  covenRunSupportsWriteScopeFlag,
   isBindableRuntimeChoice,
+  isHostOnlyHarness,
   isSummonableLocalHarness,
   isTrustedChatHarness,
   isTrustedOnboardingHarness,
@@ -19,6 +21,11 @@ import {
   canonicalHarnessId,
   runtimeDisplayLabel,
 } from "./harness-adapters.ts";
+
+assert.equal(covenRunSupportsWriteScopeFlag("--permission <MODE> full read-only --add-dir <DIR>"), false,
+  "legacy Full or add-dir support does not establish scoped-write support");
+assert.equal(covenRunSupportsWriteScopeFlag("  --write-scope <FILE> Explicit Claude scoped-write v1 authority document"), true);
+assert.equal(covenRunSupportsWriteScopeFlag("--write-scope-unsafe"), false);
 
 // Model-parity gating probe: forwarding `--model` must stay off until the
 // installed `coven run` advertises the flag.
@@ -105,7 +112,7 @@ const curatedIds = ["codex", "codex-ollama", "codex-lmstudio", "claude", "copilo
 
 assert.deepEqual(
   SUMMONABLE_LOCAL_HARNESS_IDS,
-  ["codex", "claude", "copilot", "hermes", "grok"],
+  ["codex", "codex-ollama", "codex-lmstudio", "claude", "copilot", "hermes", "grok"],
   "the summoning circle's local/SSH runtime choices must only include creation-ready local runtimes",
 );
 assert.equal(isSummonableLocalHarness("codex"), true);
@@ -113,6 +120,13 @@ assert.equal(isSummonableLocalHarness("claude"), true);
 assert.equal(isSummonableLocalHarness("copilot"), true);
 assert.equal(isSummonableLocalHarness("hermes"), true);
 assert.equal(isSummonableLocalHarness("grok"), true);
+assert.equal(isSummonableLocalHarness("codex-ollama"), true, "Codex local mode can be chosen when a familiar is created (#6049)");
+assert.equal(isSummonableLocalHarness("codex-lmstudio"), true);
+assert.equal(isHostOnlyHarness("grok"), true);
+assert.equal(isHostOnlyHarness("codex-ollama"), true, "a local inference server belongs to the Cave host, so SSH can't use it");
+assert.equal(isHostOnlyHarness("codex-lmstudio"), true);
+assert.equal(isHostOnlyHarness("codex"), false);
+assert.equal(isHostOnlyHarness("claude"), false);
 assert.equal(isSummonableLocalHarness("openclaw"), false, "OpenClaw is summoned through the dedicated agent vessel");
 assert.equal(isSummonableLocalHarness("coven-code"), false, "Coven Code is an app/tool install, not a familiar runtime choice");
 assert.equal(isSummonableLocalHarness("opencode"), false, "registry runtimes stay hidden until the creation flow has explicit support");

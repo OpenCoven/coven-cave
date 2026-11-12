@@ -81,6 +81,13 @@ export type OnboardingSetupDiagnostics = {
     covenCli: OnboardingComponentReadiness;
     localService: OnboardingComponentReadiness;
   };
+  service?: {
+    code: "spawn_failed" | "runner_exited" | "readiness_timeout" | "runtime_incompatible" | "restart_throttled" | "owner_unreachable" | "address_in_use";
+    launchMode: "none" | "shell" | "direct" | "service";
+    readinessAttempts: number | null;
+    elapsedMs: number | null;
+    exitCode: number | null;
+  };
   installer?: {
     target: "managed-node" | "coven-cli";
     status: "idle" | "running" | "done" | "busy" | "unavailable";

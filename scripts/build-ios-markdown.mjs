@@ -19,6 +19,8 @@ const outHtml = resolve(root, "apps/ios/CovenCave/CovenCave/Resources/markdown.h
 const outCss = resolve(root, "apps/ios/CovenCave/CovenCave/Resources/markdown.css");
 const outMermaid = resolve(dirname(outHtml), "markdown-mermaid.js");
 const outHighlight = resolve(dirname(outHtml), "markdown-highlight.js");
+// The coven:ui readable projection for native Copy, run in JavaScriptCore.
+const outReadable = resolve(dirname(outHtml), "ui-block-readable.js");
 
 const result = await build({
   entryPoints: [resolve(srcDir, "entry.mjs")],
@@ -53,6 +55,17 @@ const highlightResult = await build({
   legalComments: "none",
 });
 
+const readableResult = await build({
+  entryPoints: [resolve(srcDir, "readable.mjs")],
+  bundle: true,
+  format: "iife",
+  platform: "neutral",
+  target: "safari16",
+  minify: true,
+  write: false,
+  legalComments: "none",
+});
+
 const html = `<!doctype html>
 <html><head>
 <meta charset="utf-8">
@@ -71,3 +84,5 @@ writeFileSync(outMermaid, diagramResult.outputFiles[0].contents);
 console.log(`wrote ${outMermaid} (${(diagramResult.outputFiles[0].contents.byteLength / 1024).toFixed(0)} KB, lazy)`);
 writeFileSync(outHighlight, highlightResult.outputFiles[0].contents);
 console.log(`wrote ${outHighlight} (${(highlightResult.outputFiles[0].contents.byteLength / 1024).toFixed(0)} KB, lazy)`);
+writeFileSync(outReadable, readableResult.outputFiles[0].contents);
+console.log(`wrote ${outReadable} (${(readableResult.outputFiles[0].contents.byteLength / 1024).toFixed(0)} KB, Copy)`);

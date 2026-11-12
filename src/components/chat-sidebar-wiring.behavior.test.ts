@@ -232,7 +232,7 @@ test("running rail chats retain runtime, work state and PR actions beneath a sin
   ).toBe("Improve the rail");
   expect(row.findAll((node) => node.props.className === "chat-row-title__tail")).toHaveLength(0);
   expect(findClass("cnav__thread-branch").props.title).toBe("Branch feat/issue-5790-chat-siderail");
-  expect(textContent(findClass("cnav__thread-branch").children)).toMatch(/^·feat\/issue…hat-siderail$/);
+  expect(textContent(findClass("cnav__thread-branch").children)).toMatch(/^feat\/issue…hat-siderail$/);
   expect(textContent(findClass("cnav__thread-pr-number").children)).toBe("#5790");
   expect(findClass("cnav__runtime").props.title).toBe("Runtime: Claude Code");
   const prButton = row.find((node) => node.type === "button"

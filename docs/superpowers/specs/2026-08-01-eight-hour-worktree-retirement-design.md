@@ -1,8 +1,6 @@
 # Eight-Hour Worktree Retirement Design
 
-> Historical policy record. Superseded on 2026-08-25 by `cave-0pu26`, which
-> reduces the mandatory retirement recency window to 15 minutes while preserving
-> the maintenance gate and deletion proof.
+> Historical policy record. Both the eight-hour window and its later fifteen-minute replacement are retired. Current [branch-curator](../../../.agents/skills/branch-curator/SKILL.md) has no age wait; current ownership, retention, clean-state, exclusion and strict-guard proofs still apply. Follow [GitHub work tracking](../../workflows/github-work-tracking.md), not the historical policy below.
 
 ## Goal
 

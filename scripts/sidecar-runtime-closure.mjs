@@ -328,6 +328,16 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // instrumentation +1, marketplace plugins -785, payload index +1. Traced
   // packages and native subtrees are unchanged. Keep the 150-file headroom
   // over the observed Windows count; the byte ceiling is unchanged.
+  //
+  // 2026-10-25 (v0.5.15-rc.1, #6225): CI observed 8,895 files on Windows,
+  // 8,887 on Linux and 8,889 on macOS, +159, +155 and +161 over the v0.5.14
+  // release run. A same-machine macOS inventory diff accounts for its +161:
+  // server chunks +107, server app +40, static chunks +13, and #6030's
+  // marketplace logo +1. Nine new routes (seven for #5217's Automations, the
+  // Research automation import, and #6049's local models) less #6203's
+  // removed prompt-enhance route are the 368 -> 376 trace increase. The
+  // bundled node_modules set is unchanged. Keep the 150-file headroom over the
+  // observed Windows count; the byte ceiling is unchanged (147.9 MB on macOS).
   fileCount: readSidecarFileCountBudget(),
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });

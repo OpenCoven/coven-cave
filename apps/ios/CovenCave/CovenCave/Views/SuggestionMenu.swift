@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The composer's one suggestion surface (#5879): the `/command` list, a
-/// command's argument picker, and `@mention`s share this view. It floats above
+/// command's argument picker, and `@mention`s (familiars, or project files in a
+/// one-to-one chat, #6104) share this view. It floats above
 /// the composer in the same glass chrome the three separate menus used.
 ///
 /// `selection` is the row a hardware keyboard has highlighted. ↑/↓ move it,
@@ -51,6 +52,12 @@ struct SuggestionMenu: View {
         HStack(spacing: 10) {
             if let familiar = item.familiar {
                 AvatarView(familiar: familiar, source: avatarSource(familiar), size: 32)
+            } else if let systemImage = item.systemImage {
+                Image(systemName: systemImage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20)
+                    .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: item.monospaced ? 2 : 1) {
                 HStack(spacing: 6) {

@@ -17,7 +17,7 @@ const sidebarFooter = readFileSync(new URL("./sidebar-footer.tsx", import.meta.u
 
 assert.deepEqual(
   sidebarDestinations().map(({ id }) => id),
-  ["home", "chat", "board", "inbox", "canvas", "marketplace", "grimoire"],
+  ["home", "chat", "board", "inbox", "canvas", "grimoire"],
   "sidebar destinations stay policy-driven, in one flat list with Chat under Home",
 );
 assert.match(
@@ -75,7 +75,7 @@ assert.doesNotMatch(
 
 assert.deepEqual(
   paletteDestinations().map(({ id }) => id),
-  ["chat", "home", "inbox", "board", "salem", "browser", "canvas", "marketplace", "grimoire"],
+  ["chat", "home", "inbox", "board", "browser", "canvas", "marketplace", "grimoire"],
   "Palette destinations stay policy-driven",
 );
 assert.match(

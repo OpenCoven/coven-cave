@@ -14,6 +14,19 @@ The retained core contracts are:
 
 Acceptance requires: core launches with Research absent; ordinary chat, Flow, GitHub, security, and backup tests pass in that configuration; enabling Research restores existing missions/resources without migration loss; startup and idle work are measured before claiming a lag reduction. Removing the speculative surface warmup and blanket route preload is the immediate responsiveness change in #5993.
 
+Current proof (2026-10-30, #6334): absence, startup disablement and
+reinstallation were re-proved on one commit with one persistent synthetic home
+in [#6312](https://github.com/OpenCoven/coven-cave/issues/6312) (PR #6313).
+Absent and disabled refuse with 503 `research-not-installed` or
+`research-disabled`, start no Research timer, and exit 0 on SIGTERM; a link
+stored before removal returns after reinstall; the absent standalone output is
+about 13 MiB and 1,146 files smaller. Build-time detection reads only the
+project's own `node_modules`, so a parent checkout cannot make a nested
+worktree look installed. The hot-disable teardown contract is #6332. The
+startup and idle measurements that would support a lag claim are the #6119
+baselines, not the historical
+[extraction report](research-extraction-verification.md).
+
 
 ## Persistence retained by the optional package boundary
 
@@ -37,3 +50,10 @@ existing scoped native-media ticket and validated run-stream GET credentials;
 other endpoints retain the ordinary local-request guard. Handler-level HTTP
 contracts live with Research, while Cave checks route inventory, exact dispatch,
 authorization before loading, and absent/disabled responses.
+
+Activation is Cave's as well. One process-local owner starts the runtime once,
+drains it at process shutdown beside the other startup workers, and can disable
+it while the server runs: admission closes before the package stops, and the
+stop outcome is retained. The package-side stop is optional under host
+contract 2 and absent from the shipped 0.2.0 package. See the
+[host contract](research-host-contract.md#activation-and-hot-disable) (#6332).

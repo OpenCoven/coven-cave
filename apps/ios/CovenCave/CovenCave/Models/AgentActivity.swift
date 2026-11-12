@@ -17,9 +17,33 @@ struct ActivityStep: Codable, Hashable, Identifiable {
     /// decode as `running` or it spins for the rest of the turn.
     enum Status: String, Codable {
         case requested, running, ok, error, rejected, notice, unknown
+        case approvalRequested = "approval-requested"
+        case cancelRequested = "cancel-requested"
+        case policyRejected = "policy-rejected"
+        case userRejected = "user-rejected"
+        case cancelled
 
-        var isActive: Bool { self == .requested || self == .running }
-        var isKnownOutcome: Bool { self == .ok || self == .error || self == .rejected }
+        var isRequested: Bool { self == .requested || self == .approvalRequested }
+        var isRejected: Bool { self == .rejected || self == .policyRejected || self == .userRejected }
+        var isActive: Bool { isRequested || self == .running || self == .cancelRequested }
+        var isKnownOutcome: Bool { self == .ok || self == .error || isRejected || self == .cancelled }
+
+        var label: String {
+            switch self {
+            case .requested: "Requested"
+            case .approvalRequested: "Approval requested"
+            case .cancelRequested: "Cancellation requested"
+            case .running: "Running"
+            case .ok: "Succeeded"
+            case .error: "Failed"
+            case .rejected: "Rejected"
+            case .policyRejected: "Rejected by policy"
+            case .userRejected: "Rejected by user"
+            case .cancelled: "Cancelled"
+            case .notice: "Notice"
+            case .unknown: "Outcome unknown"
+            }
+        }
 
         init(from decoder: Decoder) throws {
             let value = try decoder.singleValueContainer().decode(String.self)
@@ -129,7 +153,9 @@ enum ActivityFold {
             // known outcome; a later result can resolve an unknown outcome.
             let knownOutcome = step.status.isKnownOutcome
             let staleStart = (step.status == .unknown && parsedStatus.isActive)
-                || (step.status == .running && parsedStatus == .requested)
+                || (step.status == .cancelRequested && parsedStatus.isActive && parsedStatus != .cancelRequested)
+                || (step.status == .running && parsedStatus == .approvalRequested)
+                || ((step.status == .running || step.status == .approvalRequested) && parsedStatus == .requested)
             if !knownOutcome && !staleStart && step.status != parsedStatus {
                 step.status = parsedStatus
                 changed = true
@@ -276,8 +302,10 @@ extension Array where Element == ActivityStep {
         let tools = filter { $0.kind == .tool }
         let failed = filter { $0.status == .error }.count
         let unknown = tools.filter { $0.status == .unknown }.count
-        let requested = tools.filter { $0.status == .requested }.count
-        let rejected = tools.filter { $0.status == .rejected }.count
+        let requested = tools.filter { $0.status.isRequested }.count
+        let rejected = tools.filter { $0.status.isRejected }.count
+        let cancelling = tools.filter { $0.status == .cancelRequested }.count
+        let cancelled = tools.filter { $0.status == .cancelled }.count
         var label: String
         if tools.isEmpty {
             label = count == 1 ? "1 step" : "\(count) steps"
@@ -288,6 +316,8 @@ extension Array where Element == ActivityStep {
         if unknown > 0 { label += " · \(unknown) outcome unknown" }
         if requested > 0 { label += " · \(requested) requested" }
         if rejected > 0 { label += " · \(rejected) rejected" }
+        if cancelling > 0 { label += " · \(cancelling) cancellation requested" }
+        if cancelled > 0 { label += " · \(cancelled) cancelled" }
         return label
     }
 }

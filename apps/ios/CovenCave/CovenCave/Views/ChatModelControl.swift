@@ -201,7 +201,7 @@ struct ChatModelBar: View {
 
     private var label: String {
         guard let state = presentedState else { return "Model" }
-        let model = state.effectiveModel.isEmpty ? "Runtime default (unresolved)" : state.effectiveModel
+        let model = state.effectiveModel.isEmpty ? "Runtime default (not reported yet)" : state.effectiveModel
         return "\(state.harness) · \(model)"
     }
 
@@ -406,7 +406,7 @@ struct ModelPickerSheet: View {
                     }
                 } else if allowsRuntimeDefault {
                     Section("Current") {
-                        Label("Runtime default (unresolved)", systemImage: "cpu")
+                        Label("Runtime default (not reported yet)", systemImage: "cpu")
                             .font(.body.weight(.semibold))
                             .accessibilityLabel("Current model: Runtime default")
                     }

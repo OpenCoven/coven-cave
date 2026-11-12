@@ -153,7 +153,7 @@ const defaultE2e = ciWorkflow.jobs["frontend-e2e"].steps.find(
   (step) => step.name === "Validate end-to-end behavior",
 );
 assert.ok(defaultE2e, "CI keeps default-off end-to-end coverage");
-assert.deepEqual(ciWorkflow.jobs["frontend-e2e"].strategy.matrix.shard, [1, 2, 3, 4, 5, 6, 7, 8]);
+assert.deepEqual(ciWorkflow.jobs["frontend-e2e"].strategy.matrix.shard, [1, 2, 3, 4, 5, 6]);
 assert.equal(ciWorkflow.jobs["frontend-e2e"].strategy["fail-fast"], false);
 assert.deepEqual(
   defaultE2e.env,
@@ -162,7 +162,7 @@ assert.deepEqual(
 );
 assert.match(
   defaultE2e.run,
-  /pnpm exec playwright test \\\n\s+--shard="\$PLAYWRIGHT_SHARD\/8" \\\n\s+--workers=1 \\\n\s+--reporter="github,line"/,
+  /node scripts\/playwright-ci-evidence\.mjs \\\n\s+--shard="\$PLAYWRIGHT_SHARD\/6" \\\n\s+--workers=1/,
   "default end-to-end coverage is distributed across named, independently retryable runners",
 );
 assert.match(
@@ -192,9 +192,20 @@ assert.equal(
 );
 assert.equal(
   agenticE2e.run,
-  "bash scripts/playwright-ci-image.sh run pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+  "node scripts/playwright-ci-evidence.mjs tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
   "the enabled journeys run in a separate desktop server with only their necessary flags",
 );
+for (const jobName of ["frontend-e2e", "frontend-e2e-agentic"]) {
+  const job = ciWorkflow.jobs[jobName];
+  const evidence = job.steps.find(step => step.name === "Preserve Playwright execution evidence");
+  assert.equal(evidence?.if, "always()", `${jobName} preserves zero-test and failed evidence too`);
+  assert.equal(evidence?.with?.path, "playwright-evidence/");
+  assert.equal(evidence?.with?.["retention-days"], 7);
+  assert.match(evidence?.with?.name, /github\.run_id/);
+  assert.match(evidence?.with?.name, /github\.run_attempt/);
+  const execution = job.steps.find(step => step.run?.includes("node scripts/playwright-ci-evidence.mjs"));
+  assert.equal(execution["continue-on-error"], undefined, "execution evidence cannot be advisory");
+}
 const bundleRun = ciWorkflow.jobs["frontend-bundle"].steps.at(-1)?.run;
 assert.ok(bundleRun, "the frontend bundle job ends with a build script");
 // The retry, its terminal message and the build-gate stop live in one script
@@ -404,6 +415,7 @@ assert.deepEqual(
     "release-web-validation",
     "release-platform-validation",
     "release-windows-native",
+    "release-object",
   ],
   "artifact builds wait for release validation without depending on TestFlight publication",
 );

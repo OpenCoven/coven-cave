@@ -15,6 +15,8 @@ import { resolveGitHubToken } from "@/lib/github-token";
 import { parseGitHubDiffRevision, validateGitHubReviewBody } from "@/lib/github-review";
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, resourceId, writeThrew, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -71,36 +73,49 @@ export async function POST(req: Request) {
   try {
     await assertCurrentGitHubRevision(repo, number, token, headSha, reviewedRevision);
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/reviews`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-      body: JSON.stringify({ event, ...(text ? { body: text } : {}), ...(headSha ? { commit_id: headSha } : {}) }),
-    });
-    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    let res: Response;
+    try {
+      res = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}/reviews`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        body: JSON.stringify({ event, ...(text ? { body: text } : {}), ...(headSha ? { commit_id: headSha } : {}) }),
+      });
+    } catch (e) {
+      // The request may have reached GitHub before this failed; only a
+      // write that provably never left is a plain, retryable failure (#6369).
+      return writeThrew("GitHub", "review", e, "failed to submit review");
+    }
+    // A 5xx after GitHub received the write leaves its outcome unknown (#6369).
+    if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", "review");
+    const raw: unknown = await res.json().catch(() => null);
+    // GitHub accepted the review; an answer without a review id leaves it
+    // unconfirmed, and a blind retry could submit it twice (#6368).
+    if (res.ok && !(isRecord(raw) && resourceId(raw.id))) return ambiguousWrite("GitHub", "review");
+    const data = isRecord(raw) ? raw : null;
     if (!res.ok || !data) {
       // Surface GitHub's own message verbatim (e.g. "Can not approve your own
       // pull request") — the card renders it as the actionable error.
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamFailureResponse(res, "GitHub", message, res.status === 403 ? 403 : 502);
     }
     return NextResponse.json({
       ok: true,
       review: {
-        id: String(data.id ?? ""),
-        state: String(data.state ?? event),
+        id: resourceId(data.id) as string,
+        state: typeof data.state === "string" && data.state ? data.state : event,
         url: typeof data.html_url === "string" ? data.html_url : null,
       },
     });
   } catch (e) {
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "failed to submit review" },
-      { status: e instanceof GitHubRevisionError ? e.status : 502 },
+      { ok: false, error: e instanceof Error ? e.message : "failed to submit review", ...(e instanceof GitHubRevisionError ? e.fields : {}) },
+      { status: e instanceof GitHubRevisionError ? e.status : 502, headers: e instanceof GitHubRevisionError ? e.headers : undefined },
     );
   }
 }

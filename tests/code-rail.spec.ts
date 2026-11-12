@@ -123,7 +123,7 @@ test.describe("code rail beside chat", () => {
     await expect(page.locator(".workspace-rail")).toHaveCount(0);
   });
 
-  test("new code nudges the 28px labeled tab twice without opening; controls stay visible", async ({ page }, testInfo) => {
+  test("collapsed Code overlays only a discreet tab; hover and focus reveal details and updates stay bounded", async ({ page }, testInfo) => {
     const filesRef = { count: 0, insertions: 1 };
     await routeChanges(page, filesRef);
     const initialChangesResponse = waitForChangesListResponse(page, REPO_PROJECT.root);
@@ -142,6 +142,21 @@ test.describe("code rail beside chat", () => {
     await expect(page.locator(".workspace-rail")).toHaveCount(0);
     await expect(reopen.locator(".workspace-rail-reopen__label")).toHaveText("Code");
     expect((await reopen.boundingBox())?.width).toBe(28);
+    expect((await reopen.boundingBox())?.height).toBeLessThanOrEqual(64);
+    await expect(reopen).toHaveCSS("position", "absolute");
+    await expect(reopen).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    const label = reopen.locator(".workspace-rail-reopen__label");
+    await expect(label).toHaveCSS("opacity", "0");
+    await reopen.hover();
+    await expect(label).toHaveCSS("opacity", "1");
+    await page.mouse.move(0, 0);
+    await expect(label).toHaveCSS("opacity", "0");
+    await page.keyboard.press("Tab");
+    await reopen.focus();
+    await expect(label).toHaveCSS("opacity", "1");
+    await expect(reopen).toBeFocused();
+    await reopen.evaluate(el => el.blur());
+    await expect(label).toHaveCSS("opacity", "0");
     const cue = reopen.locator(".workspace-rail-reopen__tab");
     await expect(cue).not.toHaveAttribute("data-notifying", "true");
     await page.screenshot({ path: testInfo.outputPath("code-pull-tab.png") });

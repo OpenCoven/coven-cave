@@ -706,8 +706,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /import \{ chatProjectAccessId, taskWorktreeProjectAccessId \} from "@\/lib\/chat-project-access";/,
-  "Chat send should resolve exact, worktree, and Board handoff roots through the shared chat-project-access helpers",
+  /import \{[^}]*\bchatProjectAccessId,[^}]*\bresumeRootIsRegisteredProject,[^}]*\btaskWorktreeProjectAccessId,?[^}]*\} from "@\/lib\/chat-project-access";/,
+  "Chat send should resolve exact, worktree, and Board handoff roots, and the workspace exemption's registry check, through the shared chat-project-access helpers",
 );
 
 assert.match(

@@ -94,7 +94,7 @@ export function createScheduledChatStore(file: string) {
           sessions.add(item.message.sessionId);
           return true;
         });
-      await Promise.all(due.map(async candidate => {
+      const results = await Promise.allSettled(due.map(async candidate => {
         const key = createHash('sha256').update(candidate.message.sessionId).digest('hex');
         try { await withProcessIntentLock({
           intentsDirectory: `${file}.${key}.dispatch`, label: 'scheduled chat session', timeoutMs: 2_000,
@@ -123,6 +123,10 @@ export function createScheduledChatStore(file: string) {
           if (!(error instanceof Error) || error.message !== 'timed out waiting for scheduled chat session lock') throw error;
         }
       }));
+      // A persistence failure in one chat cannot release another admitted
+      // send from the pass's drain. Keep every child until it settles.
+      const failures = results.filter(result => result.status === 'rejected');
+      if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Scheduled replies could not all be persisted.');
     },
   };
 }

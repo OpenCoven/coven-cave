@@ -28,7 +28,7 @@ marketplace/pack-sources/worldbuilding/
 └── templates/*.md                         # 9 entity templates (frontmatter + body)
 ```
 
-`scripts/sync-marketplace.py` validates the block (slug ids, template →
+OpenCoven/marketplace's `scripts/sync-marketplace.py` (moved there in #5996) validates the block (slug ids, template →
 folder references, path-safe `sourcePath`s under `pack-sources/`, workflow
 files existing) and compiles it into the generated plugin:
 

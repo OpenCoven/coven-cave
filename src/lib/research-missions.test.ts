@@ -1494,3 +1494,23 @@ test("a zero source target reports the count alone, never \"N/0 src\"", () => {
   });
   assert.equal(longModel.ok, false);
 }
+
+test("pending automation intent survives mission serialization for exact retry", () => {
+  const attempt = {
+    generation: 1, state: "pending", request: '{"rrule":"RRULE:FREQ=DAILY;BYHOUR=9"}',
+    input: { name: "Original title", rrule: "RRULE:FREQ=DAILY;BYHOUR=9", prompt: "Original prompt", cwds: ["/fixture"], familiars: ["sage"], tags: ["research-mission:m-1"], model: "", reasoningEffort: "", executionEnvironment: "", skillPath: null, timezone: "America/Chicago" },
+    checkpointFingerprint: "before", checkpointToken: "token",
+  };
+  const input = { ...validMission(), automationScheduleAttempt: attempt };
+  const parsed = parseResearchMission(JSON.parse(JSON.stringify(input)));
+  assert.deepEqual(parsed?.automationScheduleAttempt, attempt);
+  assert.equal(parseResearchMission({ ...input, automationScheduleAttempt: { ...attempt, generation: 0 } }), null);
+  assert.equal(parseResearchMission({ ...input, automationScheduleAttempt: { ...attempt, input: { ...attempt.input, timezone: undefined } } }), null);
+});
+
+
+test("the reviewed automation revision survives mission serialization", () => {
+  const automation = { id: "research-id", status: "PAUSED", rrule: "RRULE:FREQ=DAILY", checkpointFingerprint: "fingerprint", revision: 5 };
+  assert.equal(parseResearchMission({ ...validMission(), automation })?.automation?.revision, 5);
+  assert.equal(parseResearchMission({ ...validMission(), automation: { ...automation, revision: -1 } }), null);
+});

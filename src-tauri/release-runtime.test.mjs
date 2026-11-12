@@ -708,12 +708,12 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   }
   assert.match(
     workflow,
-    /if ! gh release create "\$RELEASE_TAG"[\s\S]*for attempt in 1 2 3; do[\s\S]*if gh release view "\$RELEASE_TAG"/,
-    "macOS release creation must tolerate the other matrix leg winning the race",
+    /- name: Claim the release for the macOS upload[\s\S]*- name: Upload macOS DMG to GitHub Release/,
+    "the macOS legs upload to the release release-object made instead of racing to create one (#6248)",
   );
   assert.match(workflow, /windows_diagnostics_only:/);
   assert.match(workflow, /Validate Windows diagnostics mode/);
-  const publishStart = workflow.indexOf("- name: Publish validated Windows MSI");
+  const publishStart = workflow.indexOf("- name: Publish verified signed Windows MSI");
   const signStart = workflow.indexOf("- name: Sign Linux/Windows updater artifact");
   assert.ok(publishStart >= 0 && signStart > publishStart);
   const publishBlock = workflow.slice(publishStart, signStart);
@@ -740,7 +740,7 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   assert.match(updaterManifestHeader, /!inputs\.windows_diagnostics_only/);
   assert.match(
     workflow,
-    /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish validated Windows MSI/,
+    /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish verified signed Windows MSI/,
     "the MSI must pass its budget before it becomes a release asset",
   );
   const buildOnlyStart = workflow.indexOf("- name: Build Windows MSI without publishing");
@@ -750,6 +750,13 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
     windowsBuildBlock,
     /tagName:|releaseName:|releaseId:/,
     "the pre-budget Windows build must not give tauri-action release upload inputs",
+  );
+  const linuxBuildStart = workflow.indexOf("- name: Build Linux AppImage without publishing");
+  assert.ok(linuxBuildStart >= 0 && linuxBuildStart < buildOnlyStart);
+  assert.doesNotMatch(
+    workflow.slice(linuxBuildStart, buildOnlyStart),
+    /tagName:|releaseName:|releaseId:/,
+    "the Linux build must not give tauri-action inputs that create a release (#6248)",
   );
 });
 
@@ -766,7 +773,7 @@ test("release builds require the configured OpenCoven X app before platform buil
   assert.match(xAppConfiguration, /^\s+run: node scripts\/check-x-app-release\.mjs$/m);
   const guardIndex = buildJob.indexOf("- name: Require OpenCoven X app configuration");
   for (const platformBuildStep of [
-    "Build with tauri-action",
+    "Build Linux AppImage without publishing",
     "Build Windows MSI without publishing",
     "Build macOS DMG with custom release script",
   ]) {
@@ -1223,7 +1230,7 @@ test("Windows startup PRs compile native code without release authority", async 
   assert.match(workflow, /Invoke-NativeTest 'sidecar_archive::tests' 24/);
   assert.match(workflow, /Invoke-NativeTest 'sidecar_runtime_retention::tests' 5/);
   // Declined or failed msiexec recovery (#5981) must compile and run on Windows for every PR.
-  assert.match(workflow, /Invoke-NativeTest 'windows_update_recovery::tests' 5/);
+  assert.match(workflow, /Invoke-NativeTest 'windows_update_recovery::tests' 6/);
   assert.match(workflow, /if \(\$testExitCode -ne 0\) \{ throw/);
   assert.match(workflow, /if \(\(\$output -join "`n"\) -notmatch \$summary\) \{ throw/);
   assert.doesNotMatch(workflow, /pull_request_target|secrets:|contents: write|workflow_dispatch|release\.yml|release-candidate\.yml/);

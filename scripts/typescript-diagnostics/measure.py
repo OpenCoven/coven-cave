@@ -22,23 +22,29 @@ def processes():
     return rows
 
 
-def run(command, cwd, output, timeout, interval):
+def run(command, cwd, output, timeout, interval, *, observe_node=False):
     original = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
-        return _run(command, cwd, output, timeout, interval)
+        return _run(command, cwd, output, timeout, interval, observe_node=observe_node)
     finally:
         for sig, handler in original.items(): signal.signal(sig, handler)
 
 
-def _run(command, cwd, output, timeout, interval):
+def _run(command, cwd, output, timeout, interval, *, observe_node=False):
     output.mkdir(parents=True, exist_ok=False)
     home = output / 'home'
     home.mkdir()
     env = {k: v for k, v in os.environ.items() if k in ('PATH', 'LANG', 'LC_ALL', 'TMPDIR')}
     env.update(CI='true', HOME=str(home), COVEN_HOME=str(home/'coven'), COVEN_CAVE_HOME=str(home/'cave'),
                NODE_OPTIONS='--max-old-space-size=4096', NODE_ENV='production', NEXT_TELEMETRY_DISABLED='1')
+    if observe_node:
+        observations=output/'node-observations'
+        observations.mkdir()
+        observer=pathlib.Path(__file__).with_name('node_observer.cjs').resolve()
+        env['NODE_OPTIONS'] += ' --require ' + json.dumps(str(observer))
+        env['COVEN_TS_OBSERVATION_DIR']=str(observations.resolve())
     start = time.monotonic()
-    record = dict(command=command, cwd=str(cwd), started_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    record = dict(node_observation=observe_node, command=command, cwd=str(cwd), started_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                   stop_reason=None, exit_code=None, cleanup_scope='direct child only; descendant observations are not ownership', descendant_cleanup='unknown')
     stopped = []
     previous = {}
@@ -102,7 +108,8 @@ def _run(command, cwd, output, timeout, interval):
             supervisor_started = True
             while True:
                 sample = dict(elapsed=time.monotonic()-start, processes=members(),
-                              swap=capture(['sysctl', 'vm.swapusage']), vm_stat=capture(['vm_stat']))
+                              swap=capture(['sysctl', 'vm.swapusage']), vm_stat=capture(['vm_stat']),
+                              log_bytes=os.fstat(log.fileno()).st_size)
                 samples.write(json.dumps(sample)+'\n'); samples.flush(); os.fsync(samples.fileno())
                 if completed.is_set() or stopped:
                     break

@@ -1,10 +1,14 @@
 "use client";
 
+import { pendingIntentMap } from "@/lib/automations/pending-intent-store";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import type { ReviewedAutomationSource } from "@/lib/server/automation-consumer-commands";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { relativeTime } from "@/lib/daily-report";
 import {
@@ -18,7 +22,7 @@ import {
 } from "@/lib/journal-automation";
 
 /** The routine fields this card reads from GET/PUT /api/journal/automation. */
-type RoutineView = { id: string; status: "ACTIVE" | "PAUSED"; hour: number | null; minute: number | null; runtime?: string };
+type RoutineView = { id: string; status: "ACTIVE" | "PAUSED" | "DISABLED"; hour: number | null; minute: number | null; runtime?: string; revision?: number; reviewedSource?: ReviewedAutomationSource };
 type RunView = { id: string; status: "running" | "succeeded" | "failed" | "cancelled"; startedAt: string; finishedAt?: string; sessionId?: string };
 /** Whether the last succeeded run actually wrote the day's entry (server-checked). */
 type RunEntryView = { date: string; written: boolean } | null;
@@ -31,6 +35,7 @@ type CardState =
       kind: "ready";
       routine: RoutineView | null;
       lastRun: RunView | null;
+      lastRunUnavailable: boolean;
       lastRunEntry: RunEntryView;
       lastRunFailure: RunFailureView;
       /** The routine was saved with older reflection instructions. */
@@ -96,6 +101,9 @@ export function JournalAutomationCard({
   onRunFinished?: (entry: RunEntryView) => void;
 }) {
   const { announce } = useAnnouncer();
+  const confirm = useConfirm();
+  const pendingSaves = useRef(pendingIntentMap<{ body: string; intent: string }>("journal-save"));
+  const pendingActivations = useRef(pendingIntentMap<{ id: string; body: string }>("journal-activate"));
   const [state, setState] = useState<CardState>({ kind: "loading" });
   const [hour, setHour] = useState<number>(() => suggestedJournalHour(familiarId));
   const [runtime, setRuntime] = useState<string>(DEFAULT_JOURNAL_RUNTIME);
@@ -107,6 +115,7 @@ export function JournalAutomationCard({
   const [watchingRun, setWatchingRun] = useState(false);
   const watchRef = useRef<{ startedAfter: string; tries: number } | null>(null);
   const mountedRef = useRef(true);
+  const familiarGeneration = useRef(0);
   const reqRef = useRef(0);
   const onRunFinishedRef = useRef(onRunFinished);
   useEffect(() => {
@@ -120,12 +129,13 @@ export function JournalAutomationCard({
     };
   }, []);
 
-  const applyBody = useCallback((json: { routine?: RoutineView | null; lastRun?: RunView | null; lastRunEntry?: RunEntryView; lastRunFailure?: RunFailureView; promptOutdated?: boolean }) => {
+  const applyBody = useCallback((json: { routine?: RoutineView | null; lastRun?: RunView | null; lastRunUnavailable?: boolean; lastRunEntry?: RunEntryView; lastRunFailure?: RunFailureView; promptOutdated?: boolean }) => {
     const routine = json.routine ?? null;
     setState({
       kind: "ready",
       routine,
       lastRun: json.lastRun ?? null,
+      lastRunUnavailable: json.lastRunUnavailable === true,
       lastRunEntry: json.lastRunEntry ?? null,
       lastRunFailure: json.lastRunFailure ?? null,
       promptOutdated: json.promptOutdated === true,
@@ -157,6 +167,7 @@ export function JournalAutomationCard({
         kind: "ready",
         routine: json.routine ?? null,
         lastRun: json.lastRun ?? null,
+        lastRunUnavailable: json.lastRunUnavailable === true,
         lastRunEntry: json.lastRunEntry ?? null,
         lastRunFailure: json.lastRunFailure ?? null,
         promptOutdated: json.promptOutdated === true,
@@ -170,10 +181,45 @@ export function JournalAutomationCard({
   }, [familiarId, applyBody]);
 
   useEffect(() => {
+    familiarGeneration.current += 1;
+    setBusy(null);
     setActionError(null);
     setRunNote(null);
     void load();
   }, [load]);
+
+  const activate = useCallback(async (routine?: RoutineView) => {
+    const generation = familiarGeneration.current;
+    const current = () => mountedRef.current && generation === familiarGeneration.current;
+    let pending = pendingActivations.current.get(familiarId);
+    if (!pending) {
+      if (!routine?.reviewedSource || !routine.revision || routine.status !== "PAUSED") throw new Error("The paused revision could not be confirmed. Refresh before activating.");
+      const source = routine.reviewedSource.routine;
+      if (!(await confirm({ title: `Activate ${familiarName}'s daily reflection?`,
+        body: `Review revision ${routine.revision}: ${source.rrule}, timezone ${source.timezone}, runtime ${source.runtime}. Instructions: ${source.prompt}`,
+        confirmLabel: "Activate daily reflection" }))) return;
+      if (!current()) return;
+      pending = { id: routine.id, body: JSON.stringify({ command: "activate", expectedRevision: routine.revision,
+        adoptionKey: `journal-activate:${routine.id}:${routine.revision}` }) };
+      pendingActivations.current.set(familiarId, pending);
+    }
+    const res = await fetch(`/api/coven-automations/${encodeURIComponent(pending.id)}/lifecycle`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: pending.body,
+    });
+    const json = await res.json().catch(() => null);
+    if (!current()) return;
+    if (json?.kind !== "committed") {
+      if (json?.kind === "conflict" || json?.kind === "rejected" || json?.kind === "invalid") {
+        pendingActivations.current.delete(familiarId);
+        await load(true);
+        throw new Error("Activation was refused. Review the current schedule before trying again.");
+      }
+      throw new Error("Activation is unconfirmed. Toggle again to retry the original activation request.");
+    }
+    pendingActivations.current.delete(familiarId);
+    await load(true);
+    announce(`Daily reflection activated for ${familiarName}.`);
+  }, [familiarId, familiarName, confirm, load, announce]);
 
   const save = useCallback(async (
     enabled: boolean,
@@ -181,28 +227,51 @@ export function JournalAutomationCard({
     nextRuntime: string | undefined,
     reason: "toggle" | "time" | "runtime" | "prompt",
   ) => {
+    const generation = familiarGeneration.current;
+    const current = () => mountedRef.current && generation === familiarGeneration.current;
     setBusy(reason);
     setActionError(null);
     // A refresh already in flight was read before this save; drop it so it
     // can't put the old setting back on screen.
     reqRef.current += 1;
     try {
+      if (pendingActivations.current.has(familiarId)) { await activate(); return; }
+      if (state.kind !== "ready") throw new Error("Refresh the schedule before changing it.");
+      const intent = JSON.stringify({ enabled, nextHour, nextRuntime, reason });
+      let pending = pendingSaves.current.get(familiarId);
+      if (!pending) {
+        if (state.routine && (!state.routine.reviewedSource || !state.routine.revision)) throw new Error("Refresh to load the reviewed schedule revision before saving.");
+        pending = { intent, body: JSON.stringify({ familiar: familiarId, enabled, hour: nextHour, runtime: nextRuntime, familiarName,
+          mutation: { adoptionKey: `journal-save:${crypto.randomUUID()}`, source: state.routine?.reviewedSource ?? null,
+            ...(state.routine ? { expectedRevision: state.routine.revision } : {}), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } }) };
+        pendingSaves.current.set(familiarId, pending);
+      }
       // hour null keeps a custom schedule; an omitted runtime keeps the
       // routine's harness (which may have been picked in Rituals).
       const res = await fetch("/api/journal/automation", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ familiar: familiarId, enabled, hour: nextHour, runtime: nextRuntime, familiarName }),
+        body: pending.body,
       });
       const json = await res.json().catch(() => ({}));
-      if (!mountedRef.current) return;
+      if (!current()) return;
       reqRef.current += 1;
-      if (json.available === false || res.status === 503) {
-        setState({ kind: "unavailable", error: json.error ?? `HTTP ${res.status}` });
+      if (!res.ok || !json.ok) {
+        if (res.status >= 400 && res.status < 500 && json.uncertain !== true) pendingSaves.current.delete(familiarId);
+        if (json.conflict) await load(true);
+        throw new Error(json.error ?? "The save is unconfirmed. Retry the original change.");
+      }
+      pendingSaves.current.delete(familiarId);
+      applyBody(json);
+      if (pending.intent !== intent) {
+        setActionError("The previous change is confirmed. Your newer selection was not applied; review it and choose again.");
         return;
       }
-      if (!res.ok || !json.ok) throw new Error(json.error ?? "Couldn't save the daily reflection.");
-      applyBody(json);
+      if (enabled && reason === "toggle" && json.routine?.status === "PAUSED") {
+        announce(`Daily reflection saved paused for ${familiarName}.`);
+        await activate(json.routine);
+        return;
+      }
       announce(
         reason === "prompt"
           ? `${familiarName}'s daily reflection now uses the latest instructions.`
@@ -215,11 +284,11 @@ export function JournalAutomationCard({
             : `Daily reflection paused for ${familiarName}.`,
       );
     } catch (err) {
-      if (mountedRef.current) setActionError(err instanceof Error ? err.message : "Couldn't save the daily reflection.");
+      if (current()) setActionError(err instanceof Error ? err.message : "Couldn't save the daily reflection.");
     } finally {
-      if (mountedRef.current) setBusy(null);
+      if (current()) setBusy(null);
     }
-  }, [familiarId, familiarName, runtime, applyBody, announce]);
+  }, [familiarId, familiarName, runtime, applyBody, announce, activate, state, load]);
 
   const stopWatching = useCallback(() => {
     watchRef.current = null;
@@ -420,7 +489,7 @@ export function JournalAutomationCard({
                   {` · ${relativeTime(lastRun.finishedAt ?? lastRun.startedAt)}`}
                 </>
               ) : (
-                "No runs yet."
+                state.kind === "ready" && state.lastRunUnavailable ? "Recent runs could not be read. Refresh to check again." : "No runs yet."
               )}
             </p>
           ) : null}

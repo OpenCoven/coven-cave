@@ -150,13 +150,13 @@ assert.match(
 );
 assert.match(
   source,
-  /v\.kind === "ssh" && harness === "grok"\) setHarness\(null\)/,
-  "switching a selected local Grok runtime to SSH clears the unsupported selection",
+  /v\.kind === "ssh" && harness && isHostOnlyHarness\(harness\)\) setHarness\(null\)/,
+  "switching a selected host-only runtime (Grok, Codex local mode) to SSH clears the unsupported selection",
 );
 assert.match(
   source,
-  /harness !== null &&\s*harness !== "grok" &&\s*sshHost\.trim\(\)\.length > 0/,
-  "a persisted SSH draft cannot submit an unsupported Grok runtime",
+  /harness !== null &&\s*!isHostOnlyHarness\(harness\) &&\s*sshHost\.trim\(\)\.length > 0/,
+  "a persisted SSH draft cannot submit a host-only runtime (Grok, Codex local mode)",
 );
 assert.match(
   source,

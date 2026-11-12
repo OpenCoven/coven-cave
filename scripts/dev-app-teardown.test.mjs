@@ -184,7 +184,10 @@ async function assertTeardown(signal) {
     });
     await waitFor(() => {
       pids = readPids(pidFile);
-      return Boolean(pids.tauri && pids.server);
+      // The fixture writes the child PID and token on separate lines. Wait
+      // for the complete record before asserting token identity below.
+      return Boolean(pids.tauri && pids.server &&
+        pids.tauri_token !== undefined && pids.server_token !== undefined);
     }, {
       label: "the launcher to complete HTTP readiness and start the Tauri child",
     });

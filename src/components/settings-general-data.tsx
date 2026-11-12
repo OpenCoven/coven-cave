@@ -26,12 +26,12 @@ export type BackupSyncOverview = {
   due: boolean;
 };
 
-type ResourceState<T> = { value: T | null; status: "loading" | "ready" | "error" };
+type ResourceState<T> = { value: T | null; status: "loading" | "ready" | "error"; error: string | null };
 
 // Each resource owns its request generation. A successful save invalidates any
 // older read before publishing to every consumer; background reads keep values.
 function useGeneralResource<T>(endpoint: string, valid: (value: T) => boolean, eventName: string) {
-  const [state, setState] = useState<ResourceState<T>>({ value: null, status: "loading" });
+  const [state, setState] = useState<ResourceState<T>>({ value: null, status: "loading", error: null });
   const request = useRef<AbortController | null>(null);
   const active = useRef(false);
   const source = useRef({});
@@ -41,18 +41,22 @@ function useGeneralResource<T>(endpoint: string, valid: (value: T) => boolean, e
     setState((current) => current.value ? current : { ...current, status: "loading" });
     const controller = new AbortController();
     request.current = controller;
+    let error: string | null = null;
     try {
       const response = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
-      const value = await response.json() as T & { ok?: boolean };
-      if (!response.ok || !value?.ok || !valid(value)) throw new Error("Settings unavailable");
-      if (!controller.signal.aborted) setState({ value, status: "ready" });
+      const value = await response.json() as T & { ok?: boolean; error?: unknown };
+      if (!response.ok || !value?.ok || !valid(value)) {
+        error = typeof value?.error === "string" && value.error.trim() ? value.error : null;
+        throw new Error("Settings unavailable");
+      }
+      if (!controller.signal.aborted) setState({ value, status: "ready", error: null });
     } catch {
-      if (!controller.signal.aborted) setState((current) => ({ ...current, status: "error" }));
+      if (!controller.signal.aborted) setState((current) => ({ ...current, status: "error", error }));
     }
   }, [endpoint, valid]);
   const publish = useCallback((value: T) => {
     request.current?.abort();
-    if (active.current) setState({ value, status: "ready" });
+    if (active.current) setState({ value, status: "ready", error: null });
     // A save may finish after this provider unmounts. Notify a newly opened
     // General instance, while this instance keeps the returned value directly.
     window.dispatchEvent(new CustomEvent(eventName, { detail: { source: source.current } }));

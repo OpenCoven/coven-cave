@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { UI_BLOCK_FALLBACK_CASES } from "../src/lib/ui-block-fallback-fixtures";
+import { STATUS_TABLE, uiBlockFence } from "../src/lib/ui-block-fixtures";
+
 // The Expand reader (Reader.dc.html frame 3a), asserted by RENDERING it.
 //
 // Why this spec exists: two visibly broken things shipped in the reader —
@@ -168,7 +171,9 @@ async function openReader(page: Page, turn: TurnSpec) {
   // Waiting on the answer's own text is the same rule the artifact wait above
   // follows, and it is fixture-agnostic — both CITED_ANSWER and BARE_ANSWER open
   // with prose, so this settles for every caller rather than only the cited one.
-  await expect(page.locator(".cave-reader-doc .cave-md")).toContainText(marker.slice(0, 24), {
+  // `.first()`: a coven:ui block splits the body into one markdown segment
+  // either side of its readable lines (#6060), and the answer opens in the first.
+  await expect(page.locator(".cave-reader-doc .cave-md").first()).toContainText(marker.slice(0, 24), {
     timeout: 30_000,
   });
 
@@ -413,4 +418,22 @@ test("the rail describes what is on screen, not the original", async ({ page }) 
   // And it comes back with the original.
   await page.locator(".cave-reader-rewrite").getByRole("button", { name: /^Rewrite: Full$/ }).click();
   await expect(page.locator(".cave-reader-rail__link")).not.toHaveCount(0);
+});
+
+test("a coven:ui block reads as plain lines in the reader, and copies that way (#6060)", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const readable = UI_BLOCK_FALLBACK_CASES.find((c) => c.id === "status-table")!.readable;
+  const text = `Here is the service status.\n\n${uiBlockFence(STATUS_TABLE)}\n\nExports needs attention.`;
+  await openReader(page, { text });
+
+  const doc = page.locator(".cave-reader-doc");
+  await expect(doc.locator("[data-ui-block-readable] p")).toHaveText(readable.split("\n"));
+  await expect(doc).toContainText("Exports needs attention.");
+  await expect(doc).not.toContainText("coven:ui");
+  await expect(doc).not.toContainText("<Card");
+
+  await page.getByRole("button", { name: "Copy answer" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
+    `Here is the service status.\n\n${readable}\n\nExports needs attention.`,
+  );
 });

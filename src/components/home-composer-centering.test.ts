@@ -136,14 +136,19 @@ assert.doesNotMatch(
   "old --hc-asymmetry narrowing removed from CSS",
 );
 
-// --hc-max-shift is bounded to the slack around the 1200px content cap only, so
-// the composer can never overflow the detail panel into an open side panel.
-// When a side panel is wide enough that the detail panel is under 1200px, the
-// slack is zero and the composer centers in the detail panel at full width.
+// Home content fills the pane (--hc-content-max: 100%). --hc-max-shift is
+// bounded to the slack around that cap only, so the composer can never
+// overflow the detail panel into an open side panel; at full width the slack
+// is zero and the composer stays centered in the detail panel.
 assert.match(
   css,
-  /--hc-max-shift:\s*max\(0px,\s*calc\(\(100% - 1200px\) \/ 2\)\)/,
-  "--hc-max-shift is bounded to the 1200px-cap slack only (no panel overflow)",
+  /--hc-content-max:\s*100%;/,
+  "Home content fills the pane",
+);
+assert.match(
+  css,
+  /--hc-max-shift:\s*max\(0px,\s*calc\(\(100% - var\(--hc-content-max\)\) \/ 2\)\)/,
+  "--hc-max-shift is bounded to the content-cap slack only (no panel overflow)",
 );
 
 // --hc-ideal-shift is zero in one-sided layouts and (right - left) / 2 when
@@ -175,18 +180,18 @@ assert.match(
   "centering transition enabled only under .shell-frame[data-settled]",
 );
 
-// Composer card wrap + suggestions cap at 1200px but otherwise fill the detail
+// Composer card wrap + suggestions share the content cap and fill the detail
 // panel's available width, so a wide side panel yields a full-width centered
 // composer rather than a narrowed sliver.
 assert.match(
   css,
-  /\.home-composer-card-wrap\s*\{[\s\S]*?max-width:\s*min\(1200px,\s*100%\)/,
-  ".home-composer-card-wrap caps at 1200px and fills available width",
+  /\.home-composer-card-wrap\s*\{[\s\S]*?max-width:\s*var\(--hc-content-max\)/,
+  ".home-composer-card-wrap uses the shared content cap",
 );
 assert.match(
   css,
-  /\.home-composer-suggestions\s*\{[\s\S]*?max-width:\s*min\(1200px,\s*100%\)/,
-  ".home-composer-suggestions caps at 1200px and fills available width",
+  /\.home-composer-suggestions\s*\{[\s\S]*?max-width:\s*var\(--hc-content-max, 100%\)/,
+  ".home-composer-suggestions uses the shared content cap",
 );
 
 // The card itself inherits the constraint from its wrap — must NOT subtract

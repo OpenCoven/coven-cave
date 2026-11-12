@@ -6,9 +6,8 @@
  * Course-plotting over the Cave's real board. Every step in this room is a real
  * card from `/api/board`, every lane is a real board lane, and every move is a
  * real write — dependencies included: they are canonical on the card
- * (`Card.dependencies`), every link and cut here writes the card, and the old
- * per-familiar overlay survives only as a read-side legacy store whose edges
- * are imported onto the cards on load (idempotent — see `overlayImportPlan`).
+ * (`Card.dependencies`), and every link and cut here writes the card. The old
+ * per-familiar overlay is no longer read (#6258).
  *
  * Four readings of the same work — Flow (the lanes), Graph (dependency depth),
  * Orchestration (who and what it draws on), Table (sortable, editable, plus a
@@ -29,7 +28,8 @@ import {
 } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon, type IconName } from "@/lib/icon";
-import type { Card, CardStatus, TaskDependency } from "@/lib/cave-board-types";
+import type { Card, CardStatus } from "@/lib/cave-board-types";
+import type { DependencyOp } from "@/lib/board-card-ops";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
@@ -56,7 +56,6 @@ import { ChartRoomTable, type TableMode } from "./chart-room-table";
 import { ChartRoomStepSheet } from "./chart-room-step-sheet";
 import {
   CHART_STAGES,
-  EMPTY_OVERLAY,
   chainOf,
   chainSummary,
   chartProposals,
@@ -64,19 +63,14 @@ import {
   dependencyDepth,
   filterSteps,
   flowLayout,
-  forgetStep,
   graphLayout,
   lockedSteps,
-  normalizeOverlay,
-  overlayImportPlan,
   routeSet,
-  setDependency,
   sortSteps,
   stageName,
   toChartSteps,
   type ChartCapability,
   type ChartLock,
-  type ChartOverlay,
   type ChartProposal,
   type ChartProposalAction,
   type ChartSortKey,
@@ -109,8 +103,6 @@ export type NavigatorState = {
   expandedNodes: string[];
   collapsedColumns: ChartStageId[];
   dismissedProposals: string[];
-  /** The operator's chart: which card waits on which. */
-  overlay: ChartOverlay;
   /** Latest lane counts — read by the registration manifest's status chip. */
   lastCounts: { running: number; blocked: number } | null;
 };
@@ -127,7 +119,6 @@ export const NAVIGATOR_INITIAL_STATE: NavigatorState = {
   expandedNodes: [],
   collapsedColumns: [],
   dismissedProposals: [],
-  overlay: EMPTY_OVERLAY,
   lastCounts: null,
 };
 
@@ -185,14 +176,12 @@ const HELP: Record<ChartRoomLens, Array<[IconName, string, string]>> = {
 };
 
 type UndoEntry =
-  | { kind: "overlay"; overlay: ChartOverlay; label: string }
   | { kind: "stage"; id: string; stage: ChartStageId; label: string }
   | {
       kind: "deps";
       id: string;
-      dependencies: TaskDependency[];
-      primaryBlockerId: string | null;
-      primaryBlockerPinned: boolean;
+      /** The ops that reverse this edit against the CURRENT card (#6286). */
+      undo: DependencyOp[];
       label: string;
     };
 
@@ -300,13 +289,8 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
   // ── Derived chart ──────────────────────────────────────────────────────────
 
   const today = new Date().toISOString().slice(0, 10);
-  const liveIds = useMemo(() => (cards ?? []).map((card) => card.id), [cards]);
 
-  // Cards get archived and deleted underneath the chart, so every read prunes
-  // edges that no longer point at a real card rather than drawing to nowhere.
-  const overlay = useMemo(() => normalizeOverlay(state.overlay, liveIds), [state.overlay, liveIds]);
-
-  const allSteps = useMemo(() => toChartSteps(cards ?? [], overlay, today), [cards, overlay, today]);
+  const allSteps = useMemo(() => toChartSteps(cards ?? [], today), [cards, today]);
   const scoped = useMemo(
     () =>
       state.scope.length === 0
@@ -394,17 +378,6 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     setAudit((entries) => [{ id: `edit-${auditSeq.current}`, iconName, text }, ...entries].slice(0, 12));
   }, []);
 
-  // ── Legacy overlay writes (prunes only — dependency edits write the card) ──
-
-  const writeOverlay = useCallback(
-    (next: ChartOverlay, label: string, iconName: IconName) => {
-      setHistory((entries) => [{ kind: "overlay" as const, overlay, label }, ...entries].slice(0, 25));
-      patch({ overlay: next });
-      note(iconName, label);
-    },
-    [note, overlay, patch],
-  );
-
   // ── Board writes (real cards) ──────────────────────────────────────────────
 
   const patchCard = useCallback(
@@ -461,19 +434,20 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       if (!step || !target || !card) return;
       const existing = card.dependencies ?? [];
       if (existing.some((dep) => dep.kind === "task" && dep.taskId === parentId)) return;
-      const addition: TaskDependency = {
+      // An op, not the whole array (#6286): the server adds the edge to the
+      // current card, so an edge another browser added since this snapshot
+      // survives.
+      const addition: DependencyOp = {
+        op: "addTask",
         id: crypto.randomUUID(),
-        kind: "task",
         label: target.title,
         taskId: parentId,
-        state: "unresolved",
         origin: "human",
-        createdAt: new Date().toISOString(),
       };
       const label = `Linked — “${step.title}” now waits on “${target.title}”`;
       const ok = await patchCard(
         stepId,
-        { dependencies: [...existing, addition] },
+        { ops: { dependencyOps: [addition] } },
         `${step.title} now waits on ${target.title}.`,
         "Link failed — the board didn't accept the dependency.",
       );
@@ -483,9 +457,9 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
             {
               kind: "deps" as const,
               id: stepId,
-              dependencies: existing,
-              primaryBlockerId: card.primaryBlockerId ?? null,
-              primaryBlockerPinned: card.primaryBlockerPinned === true,
+              // Undo removes only this exact edge; if the server deduplicated
+              // it into an existing one, there is nothing of ours to remove.
+              undo: [{ op: "remove" as const, id: addition.id ?? "" }],
               label,
             },
             ...entries,
@@ -505,44 +479,33 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       if (!step || !card) return;
       const existing = card.dependencies ?? [];
       const removed = existing.filter((dep) => dep.kind === "task" && dep.taskId === parentId);
-      const kept = existing.filter((dep) => !(dep.kind === "task" && dep.taskId === parentId));
       const label = `Unlinked — “${step.title}” no longer waits on “${target?.title ?? parentId}”`;
+      if (removed.length === 0) return;
 
-      // An edge that only ever lived in the legacy overlay (its import was
-      // refused, or has not landed yet) is cut by pruning the overlay store —
-      // otherwise the union would resurrect it on the next read.
-      const overlayHasEdge = overlay.dependsOn[stepId] === parentId;
-      if (removed.length === 0) {
-        if (overlayHasEdge) {
-          writeOverlay(setDependency(overlay, stepId, null), label, "ph:scissors");
-          announce(`Unlinked ${step.title}.`);
-        }
-        return;
-      }
-
-      const body: Record<string, unknown> = { dependencies: kept };
-      // Cutting the primary blocker re-points it deterministically rather than
-      // leaving a dangling reference for the validator to refuse.
-      if (card.primaryBlockerId != null && removed.some((dep) => dep.id === card.primaryBlockerId)) {
-        body.primaryBlockerId = kept.find((dep) => dep.state === "unresolved")?.id ?? null;
-        if (card.primaryBlockerPinned === true) body.primaryBlockerPinned = false;
-      }
+      // An op, not the kept array (#6286): the server cuts the edge from the
+      // current card, so an edge another browser added since this snapshot
+      // survives. A cut primary blocker re-points to the next unresolved
+      // dependency there too, rather than from this snapshot.
       const ok = await patchCard(
         stepId,
-        body,
+        { ops: { dependencyOps: [{ op: "removeTask", taskId: parentId }] } },
         `Unlinked ${step.title}.`,
         "Cut failed — the board didn't accept the change.",
       );
       if (ok) {
-        if (overlayHasEdge) patch({ overlay: setDependency(overlay, stepId, null) });
         setHistory((entries) =>
           [
             {
               kind: "deps" as const,
               id: stepId,
-              dependencies: existing,
-              primaryBlockerId: card.primaryBlockerId ?? null,
-              primaryBlockerPinned: card.primaryBlockerPinned === true,
+              // Undo puts back exactly the records this cut removed, and the
+              // pinned primary if it was one of them.
+              undo: [{
+                op: "restore" as const,
+                dependencies: removed,
+                primaryBlockerId: card.primaryBlockerId ?? null,
+                primaryBlockerPinned: card.primaryBlockerPinned === true,
+              }],
               label,
             },
             ...entries,
@@ -551,69 +514,8 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         note("ph:scissors", label);
       }
     },
-    [allSteps, announce, cardById, note, overlay, patch, patchCard, writeOverlay],
+    [allSteps, cardById, note, patchCard],
   );
-
-  // ── Overlay import (idempotent, merge-never-overwrite) ─────────────────────
-
-  // Each legacy overlay edge becomes a canonical `kind: task` dependency with
-  // `origin: system` and evidence naming the import. The plan only ever ADDS —
-  // a canonical edge is never overwritten, so divergent per-browser maps union
-  // and a re-run is a no-op. An edge the validator refuses (say it would close
-  // a canonical cycle) stays in the overlay union and is not retried this
-  // session; the signature guard stops a refused import from looping.
-  const importAttemptedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (cards == null) return;
-    const plan = overlayImportPlan(cards, overlay);
-    if (plan.length === 0) return;
-    const signature = plan.map((entry) => `${entry.stepId}->${entry.needs}`).join("|");
-    if (importAttemptedRef.current === signature) return;
-    importAttemptedRef.current = signature;
-    const titles = new Map(cards.map((entry) => [entry.id, entry.title]));
-    const byCard = new Map<string, string[]>();
-    for (const entry of plan) {
-      const bucket = byCard.get(entry.stepId);
-      if (bucket) bucket.push(entry.needs);
-      else byCard.set(entry.stepId, [entry.needs]);
-    }
-    void (async () => {
-      let imported = 0;
-      for (const [cardId, parents] of byCard) {
-        const card = cards.find((entry) => entry.id === cardId);
-        if (!card) continue;
-        const existing = card.dependencies ?? [];
-        const additions: TaskDependency[] = parents
-          .filter((parentId) => !existing.some((dep) => dep.kind === "task" && dep.taskId === parentId))
-          .map((parentId) => ({
-            id: crypto.randomUUID(),
-            kind: "task",
-            label: titles.get(parentId) ?? parentId,
-            taskId: parentId,
-            state: "unresolved",
-            origin: "system",
-            createdAt: new Date().toISOString(),
-            evidence: "Imported from the Chart Room dependency overlay",
-          }));
-        if (additions.length === 0) continue;
-        try {
-          const res = await fetch(`/api/board/${encodeURIComponent(cardId)}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dependencies: [...existing, ...additions] }),
-          });
-          if (res.ok) imported += additions.length;
-        } catch {
-          /* the edge survives in the overlay union; a later session retries */
-        }
-      }
-      if (imported > 0) {
-        publishBoardChanged();
-        await loadBoard({ retainData: true });
-        note("ph:link", `Imported ${imported} chart link${imported === 1 ? "" : "s"} onto the board`);
-      }
-    })();
-  }, [cards, loadBoard, note, overlay]);
 
   const moveStage = useCallback(
     async (id: string, stage: ChartStageId, options?: { record?: boolean }) => {
@@ -707,7 +609,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         const res = await fetch(`/api/board/${encodeURIComponent(id)}`, { method: "DELETE" });
         if (!res.ok) throw new Error(`status ${res.status}`);
         publishBoardChanged();
-        patch({ overlay: forgetStep(overlay, id), selectedId: null });
+        patch({ selectedId: null });
         await loadBoard({ retainData: true });
         note("ph:trash", `Removed “${step.title}”`);
         announce(`Removed "${step.title}" from the board.`);
@@ -719,7 +621,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         setSaving(false);
       }
     },
-    [allSteps, announce, loadBoard, note, overlay, patch],
+    [allSteps, announce, loadBoard, note, patch],
   );
 
   // Title edits coalesce: typing sends one write when you stop, not one per key.
@@ -760,18 +662,10 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     const [entry, ...rest] = history;
     if (!entry) return;
     setHistory(rest);
-    if (entry.kind === "overlay") {
-      patch({ overlay: entry.overlay });
-      note("ph:arrow-arc-left", `Undid — ${entry.label}`);
-      announce("Undid the last chart edit.");
-    } else if (entry.kind === "deps") {
+    if (entry.kind === "deps") {
       void patchCard(
         entry.id,
-        {
-          dependencies: entry.dependencies,
-          primaryBlockerId: entry.primaryBlockerId,
-          primaryBlockerPinned: entry.primaryBlockerPinned,
-        },
+        { ops: { dependencyOps: entry.undo } },
         "Undid the last dependency edit.",
         "Undo failed — the board didn't accept the change.",
       );
@@ -780,7 +674,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       void moveStage(entry.id, entry.stage, { record: false });
       note("ph:arrow-arc-left", `Undid — ${entry.label}`);
     }
-  }, [announce, history, moveStage, note, patch, patchCard]);
+  }, [history, moveStage, note, patchCard]);
 
   const applyAction = useCallback(
     (action: ChartProposalAction) => {
@@ -1877,19 +1771,6 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                 <Icon name={focusMode ? "ph:corners-in" : "ph:corners-out"} width={11} height={11} aria-hidden />
                 {focusMode ? "Exit" : "Expand"}
               </button>
-              {Object.keys(overlay.dependsOn).length > 0 ? (
-                <button
-                  type="button"
-                  className="cr-btn focus-ring"
-                  title="Discard the legacy overlay's surviving links — canonical dependencies on the cards are untouched"
-                  onClick={() => {
-                    writeOverlay(EMPTY_OVERLAY, "Cleared the legacy chart links", "ph:arrow-counter-clockwise");
-                    announce("Cleared the legacy chart links.");
-                  }}
-                >
-                  <Icon name="ph:arrow-counter-clockwise" width={11} height={11} aria-hidden /> Clear legacy links
-                </button>
-              ) : null}
             </div>
 
             {selected && chainOpen && chain.length > 1 && lens !== "decisions" ? (

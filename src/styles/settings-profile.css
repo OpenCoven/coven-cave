@@ -2,8 +2,6 @@
   container-type: inline-size;
   display: grid;
   gap: var(--space-4);
-  max-width: 96rem;
-  margin-inline: auto;
   padding-bottom: var(--space-4);
   color: var(--text-primary);
 }

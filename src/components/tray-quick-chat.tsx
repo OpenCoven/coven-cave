@@ -12,6 +12,7 @@ import {
   QuickChatComposer,
   QuickChatControlsRow,
   QuickChatThread,
+  quickChatSendHintId,
   useSuggestionPicker,
 } from "@/components/quick-chat-controls";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
@@ -261,6 +262,7 @@ export function QuickChatTabPane({
     projectsLoading,
     projectsError,
     projectLaunchReady,
+    projectLaunchMessage,
     selectedProjectRoot,
     setSelectedProjectRoot,
     draft,
@@ -324,7 +326,24 @@ export function QuickChatTabPane({
       window.location.href = `/#chat-${encodeURIComponent(sessionId)}`;
     }
   }, [selectedFamiliarId, sessionId]);
-  const modelLabel = modelOverride === "" ? "Runtime default" : modelOverride ?? "auto";
+  const modelLabel = modelOverride === "" ? "Runtime default" : modelOverride ?? "Auto";
+  const inputId = `quick-chat-draft-${tabId}`;
+  // A message (text or staged files, not a local /command) is waiting on the
+  // project gate: the picker is the next step, described by the composer's
+  // visible reason. The composer owns that predicate — attachments, reading,
+  // disabled — and reports it, so the picker never points at a hint that
+  // isn't rendered or misses one that is.
+  const [projectAttention, setProjectAttention] = useState(false);
+  // Choosing a project replaces the picker with its locked badge, so the
+  // trigger that would get focus back is gone. Hand focus to the message
+  // instead: the draft that was waiting can go with a single Enter.
+  const pickProjectRoot = useCallback(
+    (root: string | null) => {
+      setSelectedProjectRoot(root);
+      requestAnimationFrame(() => composerRef.current?.focus());
+    },
+    [composerRef, setSelectedProjectRoot],
+  );
 
   return (
     <section
@@ -343,8 +362,10 @@ export function QuickChatTabPane({
         projectsLoading={projectsLoading}
         projectsError={projectsError}
         selectedProjectRoot={selectedProjectRoot}
-        onPickProjectRoot={setSelectedProjectRoot}
+        onPickProjectRoot={pickProjectRoot}
         showFamiliarPicker={showAgentPicker && !pickerDismissed && messages.length === 0}
+        projectAttention={projectAttention}
+        projectHintId={quickChatSendHintId(inputId)}
       />
 
       <QuickChatThread
@@ -363,11 +384,13 @@ export function QuickChatTabPane({
         sending={sending}
         disabled={loading}
         launchReady={projectLaunchReady}
+        launchBlockedReason={projectLaunchMessage}
+        onSendBlockedChange={setProjectAttention}
         queued={queued}
         onRemoveQueued={removeQueued}
         onSteerQueued={steerQueued}
         familiar={selectedFamiliar}
-        inputId={`quick-chat-draft-${tabId}`}
+        inputId={inputId}
         composerRef={composerRef}
         autoFocus={active}
         messages={messages}
@@ -385,14 +408,17 @@ export function QuickChatTabPane({
         onModelControlChange={setModelControl}
         leading={
           <div className="flex min-w-0 items-center gap-1.5">
-            <IconButton
-              icon="ph:arrow-square-out"
-              size="xs"
-              aria-label="Open in CovenCave"
-              title="Open in CovenCave"
-              disabled={!sessionId}
-              onClick={() => void openFullSession()}
-            />
+            {/* Only once there is a chat to open: before the first reply it
+                was a permanently disabled icon with nothing to explain it. */}
+            {sessionId ? (
+              <IconButton
+                icon="ph:arrow-square-out"
+                size="xs"
+                aria-label="Open in CovenCave"
+                title="Open in CovenCave"
+                onClick={() => void openFullSession()}
+              />
+            ) : null}
             {selectedFamiliar ? (
               // Quiet meta chips: one per negotiated capability (Thinking,
               // Speed — whichever the selected runtime/model actually offers)
@@ -414,11 +440,13 @@ export function QuickChatTabPane({
                     className="quick-chat-meta-chip"
                     title={controlChipLabel(capability)}
                   >
-                    {controlValueLabel(capability, modelControls)}
+                    <span className="quick-chat-meta-chip__key">{controlChipLabel(capability)}</span>
+                    <span className="quick-chat-meta-chip__value">{controlValueLabel(capability, modelControls)}</span>
                   </span>
                 ))}
                 <span aria-hidden className="quick-chat-meta-chip" title="Model">
-                  {modelLabel}
+                  <span className="quick-chat-meta-chip__key">Model</span>
+                  <span className="quick-chat-meta-chip__value">{modelLabel}</span>
                 </span>
               </span>
             ) : (

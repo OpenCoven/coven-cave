@@ -4,6 +4,24 @@ import XCTest
 /// every conversation keeps its own project binding, and "All projects"
 /// restores the global list.
 final class ChatProjectFilterUITests: XCTestCase {
+    /// Scroll the chip strip until `chip` lies inside it. Compares frames, not
+    /// `isHittable`: XCTest throws instead of answering for a chip scrolled
+    /// well outside the strip, which happens in a narrower column such as
+    /// the sidebar of an iPad or an open iPhone Duo.
+    @MainActor
+    private func reveal(_ chip: XCUIElement, in app: XCUIApplication) {
+        let strip = app.scrollViews["Project filter"].firstMatch
+        for _ in 0..<4 {
+            if chip.frame.minX < strip.frame.minX {
+                strip.swipeRight()
+            } else if chip.frame.maxX > strip.frame.maxX {
+                strip.swipeLeft()
+            } else {
+                return
+            }
+        }
+    }
+
     @MainActor
     func testProjectChipsNarrowChatsAndAllRestoresThem() {
         let app = XCUIApplication()
@@ -36,13 +54,13 @@ final class ChatProjectFilterUITests: XCTestCase {
         XCTAssertTrue(lyra.waitForNonExistence(timeout: 5))
 
         let unassigned = chip(app, "Unassigned")
-        if !unassigned.isHittable { app.scrollViews["Project filter"].firstMatch.swipeLeft() }
+        reveal(unassigned, in: app)
         unassigned.tap()
         XCTAssertTrue(orphan.waitForExistence(timeout: 5))
         XCTAssertTrue(ghost.exists, "a root no registered project resolves is Unassigned")
         XCTAssertFalse(desktop.exists)
 
-        if !all.isHittable { app.scrollViews["Project filter"].firstMatch.swipeRight() }
+        reveal(all, in: app)
         all.tap()
         XCTAssertTrue(lyra.waitForExistence(timeout: 5))
         XCTAssertTrue(desktop.exists)

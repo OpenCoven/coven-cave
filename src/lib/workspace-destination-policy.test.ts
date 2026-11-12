@@ -24,7 +24,7 @@ test("palette destinations expose only visible canonical destinations", () => {
   const destinations = paletteDestinations();
   assert.deepEqual(
     destinations.map(({ id }) => id),
-    ["chat", "home", "inbox", "board", "salem", "browser", "canvas", "marketplace", "grimoire"],
+    ["chat", "home", "inbox", "board", "browser", "canvas", "marketplace", "grimoire"],
   );
   assert.ok(destinations.every(({ id, canonicalId, palette }) => id === canonicalId && palette !== "hidden"));
   assert.equal(new Set(destinations.map(({ id }) => id)).size, destinations.length);
@@ -60,7 +60,7 @@ test("the sidebar is one flat list with Chat directly under Home", () => {
   assert.equal(ids[1], "chat");
 
   // Every former Home and Code destination now appears in the same list.
-  for (const id of ["home", "chat", "board", "inbox", "marketplace", "grimoire"]) {
+  for (const id of ["home", "chat", "board", "inbox", "grimoire"]) {
     assert.ok(ids.includes(id), `${id} should be present in the unified sidebar`);
   }
 
@@ -72,11 +72,16 @@ test("the sidebar is one flat list with Chat directly under Home", () => {
   }
 });
 
-test("Explore places Canvas immediately before Marketplace without a primary duplicate", () => {
+test("Marketplace leaves default navigation but stays reachable by palette and deep link (#6398)", () => {
+  assert.equal(sidebarDestinations().some(({ id }) => id === "marketplace"), false);
+  assert.ok(paletteDestinations().some(({ id }) => id === "marketplace"));
+});
+
+test("Explore holds Canvas and Memories without a primary duplicate", () => {
   const destinations = sidebarDestinations();
   assert.deepEqual(
     destinations.filter(({ nav }) => nav === "quiet").map(({ id }) => id),
-    ["canvas", "marketplace", "grimoire"],
+    ["canvas", "grimoire"],
   );
   assert.equal(destinations.filter(({ id }) => id === "canvas").length, 1);
   assert.equal(destinations.find(({ id }) => id === "canvas")?.canonicalId, "canvas");

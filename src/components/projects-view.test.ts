@@ -239,10 +239,10 @@ test("pills and states are token-driven for both themes", () => {
   assert.match(css, /\.projects-access-rule \{[^}]*background: var\(--border-hairline\)/, "section rules are hairlines");
 });
 
-test("empty projects offer New project and Ask Salem", () => {
+test("empty projects offer New project without the retired Salem launcher", () => {
   assert.match(view, /Create one here, or register a folder from the chat composer\./, "empty state points at both creation paths");
-  assert.match(view, /Ask Salem/, "projects empty state offers Ask Salem");
-  assert.match(view, /cave:salem-open/, "Ask Salem opens the Salem rail");
+  assert.doesNotMatch(view, /Ask Salem/, "the retired assistant is not offered");
+  assert.doesNotMatch(view, /cave:salem-open/, "projects cannot dispatch the retired assistant");
 });
 
 test("the toolbar creates projects through the one shared add flow", () => {

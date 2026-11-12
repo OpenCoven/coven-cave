@@ -16,6 +16,8 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, positiveInteger, writeThrew, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,7 +45,7 @@ function ghHeaders(token: string | null): Record<string, string> {
 /** The authenticated login, or null — best-effort, so a failure only costs `mine`. */
 async function viewerLogin(token: string): Promise<string | null> {
   try {
-    const res = await fetch(`${GH}/user`, { headers: ghHeaders(token), cache: "no-store" });
+    const res = await upstreamFetch("github", `${GH}/user`, { headers: ghHeaders(token), cache: "no-store" });
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok || typeof data?.login !== "string") return null;
     return data.login;
@@ -75,7 +77,7 @@ export async function GET(req: Request) {
   try {
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
     const [res, login] = await Promise.all([
-      fetch(`${GH}/repos/${repo}/issues/${number}/reactions?per_page=100`, {
+      upstreamFetch("github", `${GH}/repos/${repo}/issues/${number}/reactions?per_page=100`, {
         headers: ghHeaders(token),
         cache: "no-store",
       }),
@@ -83,10 +85,7 @@ export async function GET(req: Request) {
     ]);
     const data = await res.json().catch(() => null);
     if (!res.ok || !Array.isArray(data)) {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 401 || res.status === 403 ? res.status : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 401 || res.status === 403 ? res.status : 502);
     }
 
     // Aggregate by content, remembering the id of the viewer's own row: the
@@ -135,22 +134,35 @@ export async function POST(req: Request) {
 
   try {
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/issues/${number}/reactions`, {
-      method: "POST",
-      headers: ghHeaders(token),
-      cache: "no-store",
-      body: JSON.stringify({ content }),
-    });
-    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    // 200 (already reacted) and 201 (created) are both the desired end state.
+    let res: Response;
+    try {
+      res = await upstreamFetch("github", `${GH}/repos/${repo}/issues/${number}/reactions`, {
+        method: "POST",
+        headers: ghHeaders(token),
+        cache: "no-store",
+        body: JSON.stringify({ content }),
+      });
+    } catch (e) {
+      // The request may have reached GitHub before this failed; only a
+      // write that provably never left is a plain, retryable failure (#6369).
+      return writeThrew("GitHub", "reaction", e, "failed to add reaction");
+    }
+    // A 5xx after GitHub received the write leaves its outcome unknown (#6369).
+    if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", "reaction");
+    const raw: unknown = await res.json().catch(() => null);
+    // 200 (already reacted) and 201 (created) are both the desired end state,
+    // but only an answer carrying the reaction's id confirms it — and DELETE
+    // needs that id to undo it (#6368).
+    if (res.ok && !(isRecord(raw) && positiveInteger(raw.id))) return ambiguousWrite("GitHub", "reaction");
+    const data = isRecord(raw) ? raw : null;
     if (!res.ok || !data) {
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamFailureResponse(res, "GitHub", message, res.status === 403 ? 403 : 502);
     }
     return NextResponse.json({
       ok: true,
       reaction: {
-        id: typeof data.id === "number" ? data.id : null,
+        id: positiveInteger(data.id) as number,
         content: typeof data.content === "string" ? data.content : content,
       },
     });
@@ -187,7 +199,7 @@ export async function DELETE(req: Request) {
   try {
     // repo passed REPO_RE; number and reactionId are positive integers — all
     // safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/issues/${number}/reactions/${reactionId}`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/issues/${number}/reactions/${reactionId}`, {
       method: "DELETE",
       headers: ghHeaders(token),
       cache: "no-store",
@@ -196,7 +208,7 @@ export async function DELETE(req: Request) {
     if (!res.ok && res.status !== 404) {
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamFailureResponse(res, "GitHub", message, res.status === 403 ? 403 : 502);
     }
     return NextResponse.json({ ok: true, deleted: true });
   } catch (e) {

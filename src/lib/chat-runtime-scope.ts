@@ -2,6 +2,7 @@ import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
+import { realpathNativeOrResolve } from "./server/canonical-path.ts";
 
 type RuntimeScopeErrorCode =
   | "project_root_required"
@@ -29,6 +30,8 @@ export type RuntimeScope =
   | {
       kind: "local";
       root: string;
+      /** Effective native access after capability negotiation, not saved grants. */
+      permissionMode?: "read" | "full";
       allowedProjectRoots?: string[];
       /** Per-root effective access level (keyed by the exact string in
        * `allowedProjectRoots`), so the preamble can tell the familiar which
@@ -43,6 +46,8 @@ export type RuntimeScope =
 
 export type RuntimeAccessFingerprintInput = {
   primaryRoot: string;
+  permissionMode?: "read" | "full";
+  readOnlyResourceRoots?: readonly string[];
   grantedProjectRoots: readonly string[];
   projectRootAccess?: Readonly<Record<string, ProjectAccessLevel>>;
   additionalRoots?: readonly string[];
@@ -73,8 +78,11 @@ export function buildRuntimeAccessFingerprint(input: RuntimeAccessFingerprintInp
     roots.set(canonical, input.projectRootAccess?.[root] ?? "write");
   }
   return JSON.stringify({
-    version: 1,
+    version: 2,
     primaryRoot,
+    permissionMode: input.permissionMode === "read" ? "read" : "full",
+    readOnlyResourceRoots: [...new Set((input.readOnlyResourceRoots ?? [])
+      .map(canonicalFingerprintRoot).filter(Boolean))].sort(),
     roots: [...roots.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([root, access]) => ({ root, access })),
@@ -108,13 +116,50 @@ function isInsideRoot(root: string, candidate: string): boolean {
   );
 }
 
+/**
+ * The directories a local harness receives as `--add-dir` grants: the granted
+ * project roots and the familiar workspace, minus the spawn root the harness
+ * already trusts as its cwd, one grant per directory. Forwarded roots keep
+ * their registered spelling.
+ *
+ * The spawn root arrives realpathed from {@link resolveLocalRuntimeCwd}, while
+ * a granted root keeps the spelling it was registered under, so directories
+ * are compared by canonical identity: a project registered through an alias of
+ * the spawn directory (macOS `/tmp -> /private/tmp`, another letter case on a
+ * case-insensitive volume; #6210) is not handed back to the harness as a
+ * second grant of its own cwd.
+ */
+export function runtimeGrantDirs(input: {
+  spawnRoot: string;
+  grantedProjectRoots: readonly string[];
+  projectRootAccess?: Readonly<Record<string, ProjectAccessLevel>>;
+  familiarWorkspace?: string;
+}): string[] {
+  const seen = new Set([realpathNativeOrResolve(input.spawnRoot)]);
+  const dirs: string[] = [];
+  for (const candidate of [
+    ...input.grantedProjectRoots.filter((root) =>
+      !input.projectRootAccess || input.projectRootAccess[root] === "write"
+    ),
+    ...(input.familiarWorkspace ? [input.familiarWorkspace] : []),
+  ]) {
+    const root = candidate.trim();
+    if (!root || root === input.spawnRoot) continue;
+    const identity = realpathNativeOrResolve(root);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    dirs.push(root);
+  }
+  return dirs;
+}
+
 export async function resolveLocalRuntimeCwd(
   requested?: string,
   options: ResolveLocalRuntimeOptions = {},
 ): Promise<string> {
   const authorizedProjectRoot = options.rootAuthority === "authorized-project";
-  const homePath = path.resolve(normalizePath(options.homeDir ?? homedir()));
-  const homeRoot = await realpath(homePath);
+  const homePath = path.resolve(/* turbopackIgnore: true */ normalizePath(options.homeDir ?? homedir()));
+  const homeRoot = await realpath(/* turbopackIgnore: true */ homePath);
   const trimmed = requested?.trim();
   if (!trimmed) {
     throw new RuntimeScopeError(
@@ -179,13 +224,25 @@ export function buildRuntimeScopePreamble(scope: RuntimeScope): string {
   if (scope.kind === "local") {
     const allowedProjectRoots = uniqueAllowedProjectRoots(scope.root, scope.allowedProjectRoots);
     const readOnlyResourceRoots = uniqueAllowedProjectRoots(scope.root, scope.readOnlyResourceRoots);
+    if (scope.permissionMode === "read") {
+      return [
+        "Runtime filesystem boundary:",
+        "- Effective access for this turn: Read-only, including the primary root and every granted project.",
+        `- Primary root: ${scope.root} (read-only)`,
+        ...allowedProjectRoots.map(({ root, spellings }) => `- Granted project root: ${root} (${mergedAccessLevel(spellings, scope.projectRootAccess) === "read" ? "read-only; no shell commands" : "read-only"})`),
+        ...readOnlyResourceRoots.map(({ root }) => `- Runtime resource: ${root} (read-only; no shell commands)`),
+        "- Project grants identify readable locations; they do not enable writes in this turn.",
+        "- Do not edit, create, delete, commit, or push, or run commands that change files. Preserve any stricter project or resource restrictions on running commands.",
+        "- Do not access files outside the listed roots.",
+      ].join("\n");
+    }
     if (allowedProjectRoots.length > 0 || readOnlyResourceRoots.length > 0) {
       const access = scope.projectRootAccess;
       // Only annotate when the caller actually threaded per-root levels
       // through — omitting `projectRootAccess` keeps prior behavior (and
       // prior test expectations) byte-for-byte unchanged.
       const readOnlyRoots = access
-        ? allowedProjectRoots.filter((root) => access[root] === "read")
+        ? allowedProjectRoots.filter(({ spellings }) => mergedAccessLevel(spellings, access) === "read")
         : [];
       return [
         "Runtime filesystem boundary:",
@@ -194,17 +251,19 @@ export function buildRuntimeScopePreamble(scope: RuntimeScope): string {
         ...(allowedProjectRoots.length > 0
           ? [
               "- Granted project roots:",
-              ...allowedProjectRoots.map((root) => {
-                const level = access?.[root];
+              ...allowedProjectRoots.map(({ root, spellings }) => {
+                const level = mergedAccessLevel(spellings, access);
                 const suffix = level === "read" ? " (read-only)" : level === "write" ? " (read + write)" : "";
-                return `  - ${root}${suffix}`;
+                // Name the directory by a spelling that holds the level shown.
+                const shown = (level && spellings.find((spelling) => access?.[spelling] === level)) || root;
+                return `  - ${shown}${suffix}`;
               }),
             ]
           : []),
         ...(readOnlyResourceRoots.length > 0
           ? [
               "- Read-only runtime resources:",
-              ...readOnlyResourceRoots.map((root) => `  - ${root} (read-only)`),
+              ...readOnlyResourceRoots.map(({ root }) => `  - ${root} (read-only)`),
             ]
           : []),
         allowedProjectRoots.length > 0
@@ -238,19 +297,42 @@ export function buildRuntimeScopePreamble(scope: RuntimeScope): string {
   ].join("\n");
 }
 
-function uniqueAllowedProjectRoots(primaryRoot: string, roots: string[] | undefined): string[] {
+// One entry per directory, compared by on-disk identity so an alias of the
+// primary root or a second spelling of a grant is not listed again (#6216).
+// Each entry keeps its first registered spelling and every spelling that named
+// the same directory, so per-root access levels can still be looked up.
+function uniqueAllowedProjectRoots(
+  primaryRoot: string,
+  roots: string[] | undefined,
+): Array<{ root: string; spellings: string[] }> {
   const normalize = (value: string) => value.trim().replace(/\\/g, "/").replace(/\/+$/, "");
   const primary = normalize(primaryRoot);
-  const seen = new Set<string>();
-  const unique: string[] = [];
+  const primaryIdentity = realpathNativeOrResolve(primaryRoot.trim());
+  const byIdentity = new Map<string, { root: string; spellings: string[] }>();
   for (const root of roots ?? []) {
     const trimmed = root.trim();
     const normalized = normalize(trimmed);
-    if (!normalized || normalized === primary || seen.has(normalized)) continue;
-    seen.add(normalized);
-    unique.push(trimmed);
+    if (!normalized || normalized === primary) continue;
+    const identity = realpathNativeOrResolve(trimmed);
+    if (identity === primaryIdentity) continue;
+    const entry = byIdentity.get(identity);
+    if (entry) entry.spellings.push(trimmed);
+    else byIdentity.set(identity, { root: trimmed, spellings: [trimmed] });
   }
-  return unique;
+  return [...byIdentity.values()];
+}
+
+// Spellings of one directory merge to the most permissive level: every granted
+// root is forwarded to the harness, read grants included, so a directory that
+// any grant makes writable is writable for this session.
+function mergedAccessLevel(
+  spellings: string[],
+  access: Record<string, ProjectAccessLevel> | undefined,
+): ProjectAccessLevel | undefined {
+  const levels = spellings.map((spelling) => access?.[spelling]);
+  if (levels.includes("write")) return "write";
+  if (levels.includes("read")) return "read";
+  return undefined;
 }
 
 export function buildPromptWithRuntimeScope(prompt: string, scope: RuntimeScope): string {

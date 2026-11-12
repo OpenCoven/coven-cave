@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 2,
+  "observedAt": "2026-10-28T11:26:50.115Z",
+  "head": "206d7fb613d976a1c7a65c32fdcc78c7ca642880",
+  "classification": "Passive local launch inventory; no provider turns, daemon starts, trust publication or support promotion.",
+  "runtimes": [
+    {
+      "runtime": "codex",
+      "version": "0.164.0",
+      "path": "coven-fallback",
+      "schema": null,
+      "diagnostic": "unsupported-version",
+      "model": null,
+      "qualification": "unverified-provider",
+      "approvalAuthority": "unavailable"
+    },
+    {
+      "runtime": "codex-ollama",
+      "version": "0.164.0",
+      "path": "coven-fallback",
+      "schema": null,
+      "diagnostic": "unsupported-version",
+      "model": null,
+      "backend": "local inference endpoint; not probed here",
+      "qualification": "unverified-activity: launch/preflight only (#6088); live tool/reasoning parity unqualified",
+      "approvalAuthority": "unavailable"
+    },
+    {
+      "runtime": "codex-lmstudio",
+      "version": "0.164.0",
+      "path": "coven-fallback",
+      "schema": null,
+      "diagnostic": "unsupported-version",
+      "model": null,
+      "backend": "local inference endpoint; not probed here",
+      "qualification": "unverified-activity: launch/preflight only (#6088); live tool/reasoning parity unqualified",
+      "approvalAuthority": "unavailable"
+    },
+    {
+      "runtime": "claude",
+      "version": "2.1.312",
+      "path": "coven",
+      "schema": "claude-stream-json-v2",
+      "admission": "compatible",
+      "diagnostic": null,
+      "reasoning": "unknown: no Runtimes descriptor classifies thinking as summary or progress",
+      "model": null,
+      "qualification": "unverified-provider",
+      "approvalAuthority": "unavailable"
+    },
+    {
+      "runtime": "copilot",
+      "version": "1.0.103",
+      "path": "direct-jsonl",
+      "schema": "copilot-jsonl-v1",
+      "admission": "direct-jsonl",
+      "diagnostic": null,
+      "reasoning": "unsupported on direct JSONL",
+      "model": null,
+      "qualification": "unverified-provider",
+      "approvalAuthority": "unavailable"
+    },
+    {
+      "runtime": "opencode",
+      "version": null,
+      "path": "direct-cli",
+      "schema": null,
+      "admission": "plain",
+      "probeStatus": "unavailable",
+      "diagnostic": "capability-probe-unavailable",
+      "readOnly": "unsupported: send route refuses with 501",
+      "model": null,
+      "qualification": "unverified-provider",
+      "approvalAuthority": "unavailable"
+    },
+    {
+      "runtime": "grok",
+      "qualification": "unverified",
+      "reason": "No executable on current PATH"
+    },
+    {
+      "runtime": "hermes",
+      "path": "api",
+      "schema": "hermes-responses-v1",
+      "version": null,
+      "model": "served-fixture-v3",
+      "qualification": "fixture-only until exact-build harness receipts are attached",
+      "servedModel": "Read from response.runtime.model; request alias does not prove the served model.",
+      "approvalAuthority": "unavailable"
+    }
+  ],
+  "scratchRoot": "/var/folders/5b/njd1qhwx4h97r9lvy_wpf5lc0000gn/T/cave-activity-matrix-D2hXIR",
+  "paths": [
+    {
+      "path": "ssh-relay",
+      "status": "unverified",
+      "activity": {
+        "path": "ssh",
+        "tools": "unknown",
+        "reasoning": "unknown"
+      },
+      "note": "No local schema or hook contract is borrowed over SSH; Grok and OpenClaw refuse SSH. Verification needs a registered host."
+    },
+    {
+      "path": "coven-relay",
+      "status": "unverified-provider",
+      "note": "Generic coven run transport; tools/reasoning unknown unless the harness-specific adapter admits them."
+    },
+    {
+      "path": "openclaw",
+      "status": "deferred",
+      "reference": "#4892",
+      "note": "Gateway/bridge/CLI paths report tools disabled or unsupported and reasoning unsupported; not planned under #5763."
+    }
+  ]
+}

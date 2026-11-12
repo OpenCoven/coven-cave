@@ -77,7 +77,7 @@ Familiar → Role → Craft → Skills / MCPs / prompts / workflows / capabiliti
 ```
 
 - **Plugin** stays the distribution format. Every Craft is a `catalog.json`
-  entry with `kind: "craft"`, and `scripts/sync-marketplace.py` expands it into
+  entry with `kind: "craft"`, and OpenCoven/marketplace's `scripts/sync-marketplace.py` expands it into
   a standard multi-resource Codex plugin package under
   `marketplace/plugins/<name>/` like any other package.
 - **Craft** adds a `craft` specification (`schemaVersion:
@@ -176,7 +176,8 @@ Craft content is vendored, pinned, and only updated by humans in `OpenCoven/mark
 - Updating a Craft from upstream means a **human-reviewed PR** that
   re-vendors the content, refreshes hashes/commit/modifications, bumps the
   Craft `version`, and re-runs `python3 scripts/sync-marketplace.py --check`
-  plus `scripts/crafts-audited-content.test.mjs` (which asserts the pinned
+  plus `scripts/crafts-audited-content.test.mjs` in OpenCoven/marketplace,
+  where both moved in #5996 (the test asserts the pinned
   commit, license, per-skill content hashes, and generated plugin packages).
   No automated pipeline pulls upstream changes into the catalog.
 

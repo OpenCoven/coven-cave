@@ -191,7 +191,7 @@ struct ToolActivity: Codable, Hashable {
     var authority: [String: String]
 
     func validated(callId: String, status: String?) -> ToolActivity? {
-        let phases = ["requested", "running", "ok", "error", "rejected", "unknown"]
+        let phases = ["requested", "approval-requested", "cancel-requested", "running", "ok", "error", "rejected", "policy-rejected", "user-rejected", "cancelled", "unknown"]
         let token = #"^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$"#
         let version = #"^v?\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$"#
         guard schemaVersion == 1, self.callId == callId, !callId.isEmpty, callId.utf16.count <= 512,
@@ -207,8 +207,8 @@ struct ToolActivity: Codable, Hashable {
         for time in [executionObservedAt, terminalObservedAt].compactMap({ $0 }) {
             guard time >= firstObservedAt, time <= updatedAt else { return nil }
         }
-        guard (phase == "ok" || phase == "error" || phase == "rejected") == (terminalObservedAt != nil),
-              phase != "requested" || executionObservedAt == nil,
+        guard (ActivityStep.Status(rawValue: phase)?.isKnownOutcome == true) == (terminalObservedAt != nil),
+              (phase != "requested" && phase != "approval-requested") || executionObservedAt == nil,
               phase != "running" || executionObservedAt != nil else { return nil }
         if let start = executionObservedAt, let end = terminalObservedAt, start > end { return nil }
         return self

@@ -6,7 +6,7 @@ import { bindingFor, saveConfig } from "@/lib/cave-config";
 import { covenHome } from "@/lib/coven-paths";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
-import { filterFamiliarsForProject, loadProjectPermissions } from "@/lib/project-permissions";
+import { effectiveProjectAccess, filterFamiliarsForProject, loadProjectPermissions } from "@/lib/project-permissions";
 import {
   buildFamiliarsToml,
   familiarsTomlContainsId,
@@ -148,13 +148,15 @@ export async function GET(req: Request) {
           projectId,
           (rostersByProject.get(projectId) ?? []).flatMap((familiar) => {
             const enriched = familiarById.get(familiar.id);
-            return enriched ? [enriched] : [];
+            return enriched ? [{ ...enriched, projectAccess: effectiveProjectAccess(permissions!, familiar.id, projectId).level }] : [];
           }),
         ]),
       ),
     });
   }
-  return NextResponse.json({ ok: true, familiars });
+  return NextResponse.json({ ok: true, familiars: projectIds.length === 1
+    ? familiars.map((familiar) => ({ ...familiar, projectAccess: effectiveProjectAccess(permissions!, familiar.id, projectIds[0]).level }))
+    : familiars });
 }
 
 async function pathExists(p: string): Promise<boolean> {

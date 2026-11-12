@@ -159,6 +159,7 @@ const contracts: RouteContract[] = [
   { route: "/coven-automation-lifecycle", methods: ["GET"], kind: "json" },
   { route: "/coven-automation-occurrences", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]/runs/[runId]/log", methods: ["GET"], kind: "json" },
+  { route: "/research-automation-import", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/import", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -297,8 +298,10 @@ const contracts: RouteContract[] = [
   { route: "/queue/issues", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/queue/prs", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/queue/readiness", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
-  { route: "/opencoven/executions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  // Thin hosts: the optional implementation reads the body, after admission.
+  { route: "/opencoven/executions", methods: ["POST"], kind: "json", localOriginGuard: true },
+  { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json", localOriginGuard: true },
+  { route: "/opencoven/submissions/retained", methods: ["GET", "DELETE"], kind: "json", localOriginGuard: true },
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
   { route: "/opencoven-tools/status", methods: ["GET"], kind: "json" },
   { route: "/passkey/challenge", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -317,7 +320,6 @@ const contracts: RouteContract[] = [
   { route: "/projects/icon", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/projects/seed", methods: ["POST"], kind: "json" },
   { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/prompt/enhance", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/profile/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", readsJson: true, invalidJson: "guarded" },
   { route: "/profile", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/prompts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -330,7 +332,7 @@ const contracts: RouteContract[] = [
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/runtime-models/[runtime]", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/runtime-models/opencode", methods: ["GET"], kind: "json", localOriginGuard: true },
-  { route: "/research/capability", methods: ["GET"], kind: "json", localOriginGuard: true },
+  { route: "/research/capability", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/autoloop/document", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/autoloop/stream", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/research/context-packs", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -372,9 +374,9 @@ const contracts: RouteContract[] = [
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
   { route: "/rss", methods: ["GET"], kind: "json" },
   { route: "/running-activity", methods: ["GET"], kind: "json" },
-  { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
-  { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/salem", methods: ["GET", "POST"], kind: "json" },
+  { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json" },
+  { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json" },
   { route: "/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },
   { route: "/sessions/[id]/input", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -490,10 +492,16 @@ function usesJsonResponse(source: string): boolean {
 
 function effectiveRouteSource(file: string, source: string): string {
   const parts = [source];
+  if (source.includes('from "@/lib/server/salem-retired"')) {
+    parts.push(readFileSync(path.join(root, "src", "lib", "server", "salem-retired.ts"), "utf8"));
+  }
   const reexport = source.match(/from\s+"(\.[^"]+\/route)";/);
   if (reexport) {
     const target = path.resolve(path.dirname(file), `${reexport[1]}.ts`);
     parts.push(readFileSync(target, "utf8"));
+  }
+  if (source.includes('from "@/lib/server/opencoven-submissions-host"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "opencoven-submissions-host.ts"), "utf8"));
   }
   if (source.includes('from "@/lib/proposal-decision-body"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "proposal-decision-body.ts"), "utf8"));

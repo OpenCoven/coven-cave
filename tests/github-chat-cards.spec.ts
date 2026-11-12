@@ -197,6 +197,47 @@ test.describe("github chat cards", () => {
     await expect(prCard.getByLabel(/Merged:/)).toBeVisible({ timeout: 10_000 });
   });
 
+  test("an uncertain proposal offers checking without another write", async ({ page }, testInfo) => {
+    const mergeCalls: unknown[] = [];
+    await boot(page, { mergedRef: { merged: false }, mergeCalls });
+    await page.route("**/api/github/merge", async (route) => {
+      mergeCalls.push(route.request().postDataJSON());
+      await route.fulfill({ json: { ok: false, error: { message: "drifted envelope" } } });
+    });
+    await page.locator(".chat-sidebar").getByText("Ship the thing", { exact: false }).first().click();
+    const proposal = page.locator('[data-gh-action-kind="merge"]');
+    await expect(proposal).toBeVisible();
+    await proposal.getByRole("button", { name: /Run proposed action/ }).click();
+    await expect(proposal.locator('[data-gh-action-uncertain="true"]')).toBeVisible();
+    await expect(proposal.getByRole("link", { name: "Check on GitHub" })).toHaveAttribute("href", "https://github.com/acme/rocket/pull/7");
+    await expect(proposal.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+    await expect(proposal.getByRole("button", { name: /Send again anyway/ })).toBeVisible();
+    expect(mergeCalls).toHaveLength(1);
+    await proposal.screenshot({ path: testInfo.outputPath("uncertain-proposal.png") });
+    expect(mergeCalls).toHaveLength(1);
+  });
+
+  test("an uncertain review preserves its draft and refresh never resends", async ({ page }, testInfo) => {
+    await boot(page, { mergedRef: { merged: false }, mergeCalls: [] });
+    const writes: unknown[] = [];
+    await page.route("**/api/github/review", async (route) => {
+      writes.push(route.request().postDataJSON());
+      await route.fulfill({ status: 200, body: '{"ok":', contentType: "application/json" });
+    });
+    await page.locator(".chat-sidebar").getByText("Ship the thing", { exact: false }).first().click();
+    const prCard = page.locator('[data-gh-kind="pr"]').first();
+    await prCard.getByRole("button", { name: "Reply to acme/rocket#7" }).click();
+    await prCard.getByRole("textbox", { name: "Reply to acme/rocket#7" }).fill("Keep this review draft");
+    await prCard.getByRole("button", { name: "Approve", exact: true }).click();
+    await prCard.getByRole("button", { name: "Approve on acme/rocket#7", exact: true }).click();
+    await expect(prCard.getByRole("alert")).toContainText("This may have gone through");
+    await expect(prCard.getByRole("button", { name: "Send as comment instead" })).toHaveCount(0);
+    await prCard.screenshot({ path: testInfo.outputPath("uncertain-review.png") });
+    await prCard.getByRole("button", { name: "Refresh to check" }).click();
+    await expect(prCard.getByRole("textbox", { name: "Reply to acme/rocket#7" })).toHaveValue("Keep this review draft");
+    expect(writes).toHaveLength(1);
+  });
+
   test("the command palette only offers what the card can fire", async ({ page }) => {
     const mergedRef = { merged: false };
     const mergeCalls: unknown[] = [];

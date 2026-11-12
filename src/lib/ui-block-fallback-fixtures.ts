@@ -3,11 +3,11 @@
  *
  * Surfaces that don't draw the native UI tier (Quick Chat, the expanded
  * reader, Copy and iOS) show a plain-text projection of each active block
- * instead of its raw markup. Every surface's test reads these cases, and
- * apps/ios/CovenCave/CovenCaveTests mirrors them case for case, so a
- * projection change lands everywhere or fails somewhere.
+ * instead of its raw markup (src/lib/ui-block-readable.ts). Every surface's
+ * test reads these cases, and apps/ios/CovenCave/CovenCaveTests mirrors them
+ * case for case, so a projection change lands everywhere or fails somewhere.
  *
- * Which fences are active comes from `sliceUiBlocks` (src/lib/ui-blocks.ts, #6073):
+ * Which fences are active comes from `sliceUiBlocks` (src/lib/ui-blocks.ts):
  * an example inside another fence, a list item, a quote or indented code
  * stays literal, byte for byte. A body the parser can't read as markup
  * (status "fallback") also stays literal, as the source fence.
@@ -16,100 +16,48 @@
  * evaluated at each State's initial value and formatted for en-US.
  *
  *   Card            title, then subtitle
- *   Heading, Text   their text, expressions evaluated
+ *   Heading, Text   their text, expressions evaluated; Bold and Code add only their text
  *   Badge           label, or its text
- *   Stat            "label: value", then " caption" when present
- *   Table           columns, then each row, cells joined with " | "; caption
+ *   Stat            "label: value", then " caption", then " (12% increase)" or " (unchanged)"
+ *   Table           columns, then each row, cells joined with " | "; caption. A badge cell is its label
  *   Progress        "label: value of max"
- *   BarChart        "label: Mon 4, Tue 6"
- *   Slider, Select  "label: value"
+ *   BarChart, Sparkline  "label: Mon 4, Tue 6"
+ *   Donut           "label: Cody 9 (50%), Nova 6 (33%)"
+ *   Slider, Select  "label: value" (a Select shows its option's label)
  *   Toggle          "label: on" or "label: off"
+ *   TextInput       "label: value", or the label alone while it's empty
+ *   List            "- item", or "1. item" when ordered
+ *   Callout         "Warning: title" (the tone word a reader hears), then its children
+ *   Tabs            label, then each Tab's label followed by its children
  *   Button          "[label]" (a label only; nothing runs, sends or prefills)
- *   State, Stack, Row and pending skeletons add no line of their own.
+ *   State, Stack, Row, Grid, Columns, Divider and pending skeletons add no line of their own.
  *
- * A node that failed validation contributes only its children's lines, and
- * the block ends with "(Some parts of this block couldn't be shown.)". A
- * settled block that ended early ends with "(This block ended early.)".
+ * A node that failed validation contributes only its children's lines (an
+ * inline component's text stays one line, #6067), and the block ends with
+ * "(Some parts of this block couldn't be shown.)". A settled block that ended
+ * early ends with "(This block ended early.)".
  */
 
-// The four bodies below are copies of the ones in #6073's src/lib/ui-block-fixtures.ts.
-// Once #6073 merges, import them from there instead of keeping copies.
+import {
+  DELIVERY_PULSE,
+  FAILED_CHILD_TEXT,
+  MALFORMED_DASHBOARD,
+  MINI_DASHBOARD,
+  PRICING_CALCULATOR,
+  RELEASE_BRIEF,
+  RELEASE_DRAFT,
+  STATUS_TABLE,
+  uiBlockFence,
+} from "./ui-block-fixtures.ts";
 
-const PRICING_CALCULATOR = `<Card title="Seat pricing" subtitle="Team plan, billed monthly">
-  <State name="seats" initial={8} />
-  <State name="annual" initial={false} />
-  <Slider bind="seats" min={1} max={50} label="Seats" />
-  <Toggle bind="annual" label="Bill annually (2 months free)" />
-  <Row gap="md">
-    <Stat label="Monthly" value={annual ? seats * 29 * 10 / 12 : seats * 29} format="usd" />
-    <Stat label="Per seat" value={annual ? 29 * 10 / 12 : 29} format="usd" />
-    <Stat label="Yearly" value={annual ? seats * 29 * 10 : seats * 29 * 12} format="usd" tone="accent" />
-  </Row>
-  <Text tone="muted">{seats} seats at $29 each.{annual ? " Annual billing applied." : ""}</Text>
-  <Row gap="sm">
-    <Button set="seats" to={8}>Reset</Button>
-    <Button variant="primary" prefill={"Upgrade our workspace to " + seats + " seats" + (annual ? ", billed annually." : ", billed monthly.")}>Draft upgrade request</Button>
-  </Row>
-</Card>`;
-
-const STATUS_TABLE = `<Card title="Service status" subtitle="Last checked 2 minutes ago">
-  <Row gap="sm">
-    <Badge tone="success">4 healthy</Badge>
-    <Badge tone="warning">1 degraded</Badge>
-    <Badge tone="danger">1 down</Badge>
-  </Row>
-  <Table
-    columns={["Service", "Status", "p95 latency", "Uptime"]}
-    rows={[
-      ["api", "healthy", "118 ms", "99.98%"],
-      ["auth", "healthy", "64 ms", "99.99%"],
-      ["search", "degraded", "842 ms", "99.20%"],
-      ["billing", "healthy", "131 ms", "99.95%"],
-      ["exports", "down", "n/a", "97.10%"],
-      ["webhooks", "healthy", "92 ms", "99.97%"]
-    ]}
-    caption="Six services in us-east"
-  />
-  <Text size="sm" tone="muted">Exports has been down since 09:12. Search latency is rising.</Text>
-</Card>`;
-
-const MINI_DASHBOARD = `<Stack gap="md">
-  <Heading level={2}>Weekly delivery</Heading>
-  <State name="range" initial="This week" />
-  <Select bind="range" label="Range" options={["This week", "Last week"]} />
-  <Row gap="md">
-    <Stat label="Merged PRs" value={range == "This week" ? 23 : 17} format="number" />
-    <Stat label="Median review" value={range == "This week" ? 3.4 : 5.1} format="number" caption="hours" />
-    <Stat label="Failed builds" value={range == "This week" ? 2 : 6} tone={"danger"} />
-  </Row>
-  <Progress label="Sprint scope done" value={range == "This week" ? 68 : 100} max={100} tone="success" />
-  <BarChart
-    label="Merged PRs per day"
-    data={[
-      { label: "Mon", value: range == "This week" ? 4 : 2 },
-      { label: "Tue", value: range == "This week" ? 6 : 3 },
-      { label: "Wed", value: range == "This week" ? 3 : 5 },
-      { label: "Thu", value: range == "This week" ? 7 : 4 },
-      { label: "Fri", value: range == "This week" ? 3 : 3 }
-    ]}
-  />
-</Stack>`;
-
-const MALFORMED_DASHBOARD = `<Card title="Partly broken">
-  <State name="count" initial={3} />
-  <Stat label="Valid stat" value={count * 2} />
-  <Sparkline values={[1, 2, 3]} />
-  <Badge colour="red">Unknown prop</Badge>
-  <Text style="color: red">Raw style</Text>
-  <Stat label="Calls a function" value={alert(1)} />
-  <Stat label="Reads a property" value={window.location} />
-  <Stat label="Undeclared state" value={missing + 1} />
-  <Text>Still rendered after the failures.</Text>
-</Card>`;
-
-function uiBlockFence(body: string): string {
-  return "```coven:ui\n" + body + "\n```";
-}
+const COLUMNS_AND_CALLOUTS = `<Columns columns={2}>
+  <Callout tone="success" title="Shipped">
+    <Text>All checks pass.</Text>
+  </Callout>
+  <Callout tone="accent">
+    <Text>An accent callout has no tone word.</Text>
+  </Callout>
+</Columns>`;
 
 export type UiBlockFallbackCase = {
   id: string;
@@ -194,6 +142,69 @@ export const UI_BLOCK_FALLBACK_CASES: readonly UiBlockFallbackCase[] = [
     readable: ["First:", "", "Plan A", "[Choose A]", "", "Second:", "", "Cost: $12.00 per month"].join("\n"),
   },
   {
+    id: "release-brief",
+    kind: "complete",
+    input: uiBlockFence(RELEASE_BRIEF),
+    readable: [
+      "Release brief",
+      "Cave 0.6, planned for Friday",
+      "Warning: Freeze starts Thursday",
+      "Run pnpm test:app before you merge, and don't skip pnpm lint.",
+      "Merged: 42",
+      "Open: 7",
+      "Blocked: 2",
+      "Ships",
+      "- Native UI blocks",
+      "- Faster startup",
+      "- Quieter inbox",
+      "Then",
+      "1. Tag the release",
+      "2. Publish the notes",
+      "3. Watch crash reports",
+    ].join("\n"),
+  },
+  {
+    id: "delivery-pulse",
+    kind: "complete",
+    input: uiBlockFence(DELIVERY_PULSE),
+    readable: [
+      "Delivery pulse",
+      "Last 7 days",
+      "Merged PRs: 23 (12% increase)",
+      "Median review: 3.4 hours (0.8 decrease)",
+      "Failed builds: 2 (unchanged)",
+      "Merges per day: Mon 4, Tue 6, Wed 3, Thu 7, Fri 3",
+      "Review load: Cody 9 (50%), Nova 6 (33%), Val 3 (17%)",
+      "Service | Status",
+      "api | healthy",
+      "exports | down",
+      "search | n/a",
+      "Service health",
+    ].join("\n"),
+  },
+  {
+    id: "release-draft",
+    kind: "complete",
+    input: uiBlockFence(RELEASE_DRAFT),
+    readable: [
+      "Release notes draft",
+      "Draft sections",
+      "Summary",
+      "Headline: Faster startup",
+      "Headline: Faster startup",
+      "Details",
+      "- Startup is 40% faster",
+      "- The inbox is quieter",
+      "[Draft the announcement]",
+    ].join("\n"),
+  },
+  {
+    id: "columns-and-callouts",
+    kind: "complete",
+    input: uiBlockFence(COLUMNS_AND_CALLOUTS),
+    readable: ["Success: Shipped", "All checks pass.", "An accent callout has no tone word."].join("\n"),
+  },
+  {
     id: "unterminated-final-block",
     kind: "partial",
     input: "Drafting:\n\n```coven:ui\n<Card title=\"Draft\">\n  <Text>First line</Text>",
@@ -215,6 +226,22 @@ export const UI_BLOCK_FALLBACK_CASES: readonly UiBlockFallbackCase[] = [
       "Unknown prop",
       "Raw style",
       "Still rendered after the failures.",
+      "(Some parts of this block couldn't be shown.)",
+    ].join("\n"),
+  },
+  {
+    // Tag-shaped text from a string stays text; nothing here becomes markup.
+    id: "failed-child-text",
+    kind: "malformed",
+    input: uiBlockFence(FAILED_CHILD_TEXT),
+    readable: [
+      "Release check",
+      "Score: 3 of 5 checks pass",
+      "Mood is glow today",
+      "window.__covenUiInjected = true",
+      "Trend is up",
+      "Shown as <b onclick='window.__covenUiInjected = true'>text</b>",
+      "Still rendered",
       "(Some parts of this block couldn't be shown.)",
     ].join("\n"),
   },
@@ -241,6 +268,18 @@ export const UI_BLOCK_FALLBACK_CASES: readonly UiBlockFallbackCase[] = [
     kind: "nested-literal",
     input: "- ```\n  " + LITERAL_EXAMPLE.split("\n").join("\n  ") + "\n  ```",
     readable: "- ```\n  " + LITERAL_EXAMPLE.split("\n").join("\n  ") + "\n  ```",
+  },
+  {
+    id: "example-in-list-continuation",
+    kind: "nested-literal",
+    input: "- Use this:\n\n  " + LITERAL_EXAMPLE.split("\n").join("\n  "),
+    readable: "- Use this:\n\n  " + LITERAL_EXAMPLE.split("\n").join("\n  "),
+  },
+  {
+    id: "example-in-tight-list-continuation",
+    kind: "nested-literal",
+    input: "1. Use this:\n   " + LITERAL_EXAMPLE.split("\n").join("\n   "),
+    readable: "1. Use this:\n   " + LITERAL_EXAMPLE.split("\n").join("\n   "),
   },
   {
     id: "example-in-quote",

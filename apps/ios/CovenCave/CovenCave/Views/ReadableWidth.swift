@@ -23,8 +23,40 @@ extension View {
     /// the sidebar sizes by trait defaults and can present as a floating
     /// overlay at in-between window widths (Designed-for-iPad on macOS);
     /// with one it stays a fixed pane and the detail keeps the rest.
+    ///
+    /// On a folded iPhone Duo the column asks to end on the hinge instead and
+    /// the system grants what it allows; `splitDetailColumn()` covers the rest.
     func sidebarColumn() -> some View {
-        navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
+        modifier(SidebarColumnWidth())
+    }
+
+    /// The other half of `sidebarColumn()` on a folded iPhone Duo. The split
+    /// view caps the sidebar below the hinge (~420pt of the inner display's
+    /// 951pt; any larger minimum collapses the sidebar entirely), so the
+    /// detail starts short of the fold. This keeps the detail's content in
+    /// the pane past the hinge and leaves the sliver before it empty, rather
+    /// than folding a conversation down the middle. Tabletop leaves it alone:
+    /// a transcript scrolls across that fold and its composer already sits in
+    /// the lower pane. A no-op everywhere else.
+    func splitDetailColumn() -> some View {
+        foldAvoiding(tabletop: nil)
+    }
+}
+
+private struct SidebarColumnWidth: ViewModifier {
+    @Environment(\.displayFold) private var fold
+
+    func body(content: Content) -> some View {
+        // Split views here span the window, so the window is the container.
+        // One modifier either way: branching would swap the sidebar's view
+        // identity as the fold arrives, and the split drops the column. The
+        // minimum stays at 300: a minimum past ~400pt collapses it too.
+        let onFold = fold.flatMap { FoldLayout.splitColumnWidth(container: $0.window, fold: $0) }
+        content.navigationSplitViewColumnWidth(
+            min: min(300, onFold ?? 300),
+            ideal: onFold ?? 340,
+            max: max(420, onFold ?? 420)
+        )
     }
 }
 

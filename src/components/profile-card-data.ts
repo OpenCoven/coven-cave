@@ -11,7 +11,7 @@ import {
   type ProfileKind,
 } from "@/lib/profile-card";
 import type { UserProfile } from "@/lib/user-profile-shared";
-import type { MemoryAvailability } from "@/components/familiars-view-stats";
+import type { FamiliarFileMemoryStat, MemoryAvailability } from "@/components/familiars-view-stats";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =
@@ -21,6 +21,10 @@ type FamiliarsResponse =
 type SessionsResponse =
   | { ok: true; sessions: SessionRow[] }
   | { ok: false; sessions?: SessionRow[]; error?: string };
+
+type MemoryResponse =
+  | { ok: true; entries: FamiliarFileMemoryStat[] }
+  | { ok: false; entries?: FamiliarFileMemoryStat[]; error?: string };
 
 type ProfileResponse =
   | { ok: true; profile: UserProfile }
@@ -32,6 +36,8 @@ export type ProfileCardData = {
   familiars: Familiar[];
   sessions: SessionRow[];
   memoryAvailability: MemoryAvailability;
+  /** Workspace memory files for the subject familiar; null when unreadable. */
+  memoryCount: number | null;
   userProfile: UserProfile | null;
   errors: string[];
 };
@@ -58,13 +64,20 @@ export async function loadProfileCardData(
   kind: ProfileKind,
   familiarId?: string,
 ): Promise<ProfileCardData> {
-  const [familiarsJson, sessionsJson, profileJson] = await Promise.all([
+  const [familiarsJson, sessionsJson, profileJson, memoryJson] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
-    fetchResource<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
+    // Classified so automatic workspace runs drop out of the shared session
+    // count exactly as they do on the roster and the analytics dock (issue 6357).
+    fetchResource<SessionsResponse>("/api/sessions/list?classifyFamiliarWorkspace=1", { ok: false, sessions: [] }),
     kind === "human"
       ? fetchResource<ProfileResponse>("/api/profile", { ok: false })
       : Promise.resolve<ProfileResponse>({ ok: true, profile: {} }),
+    // The same workspace-memory source the roster counts.
+    kind === "familiar" && familiarId
+      ? fetchResource<MemoryResponse>(`/api/memory?familiarId=${encodeURIComponent(familiarId)}`, { ok: false, entries: [] })
+      : Promise.resolve<MemoryResponse>({ ok: false, entries: [] }),
   ]);
+  const memoryReady = memoryJson.ok && Array.isArray(memoryJson.entries);
 
   const errors = [
     responseError(familiarsJson, "familiars unavailable"),
@@ -77,9 +90,10 @@ export async function loadProfileCardData(
     familiarId,
     familiars: familiarsJson.familiars ?? [],
     sessions: sessionsJson.sessions ?? [],
-    // The canonical vault was the only optional read here, and it is gone.
-    // Everything left either succeeds or lands in `errors`.
-    memoryAvailability: "unavailable",
+    memoryAvailability: memoryReady ? "ready" : "unavailable",
+    memoryCount: memoryReady
+      ? memoryJson.entries!.filter((entry) => entry.familiarId === familiarId).length
+      : null,
     userProfile: profileJson.ok ? profileJson.profile ?? {} : null,
     errors,
   };
@@ -106,11 +120,9 @@ export function buildProfileCardViewModel(
     data.kind === "familiar"
       ? data.familiars.find((item) => item.id === data.familiarId) ?? null
       : null;
-  // Null for a familiar card: the count's source was the canonical vault, and
-  // the card renders null as "unknown" rather than as zero. Claiming zero
-  // memories would be a statement about the dedicated app's contents that this
-  // surface is in no position to make.
-  const memoryCount = data.kind === "familiar" ? null : 0;
+  // A familiar card counts the same workspace memory the roster does; null
+  // (memory unreadable) renders as "unavailable", never as zero or a dash.
+  const memoryCount = data.kind === "familiar" ? data.memoryCount : 0;
 
   return {
     kind: data.kind,

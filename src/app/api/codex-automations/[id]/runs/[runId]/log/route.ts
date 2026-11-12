@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listRoutineRuns } from "@/lib/server/coven-automations-client";
+import { readRoutineLog } from "@/lib/server/automation-consumer-reads";
 import { CovenAutomationsUnavailableError } from "@/lib/coven-automations-types";
 
 export const dynamic = "force-dynamic";
@@ -9,12 +9,11 @@ type Params = { params: Promise<{ id: string; runId: string }> };
 export async function GET(_req: Request, { params }: Params) {
   const { id, runId } = await params;
   try {
-    const runs = await listRoutineRuns(id, 100);
-    const run = runs.find((candidate) => candidate.id === runId);
-    if (!run?.logJson) {
+    const log = await readRoutineLog(id, runId);
+    if (!log) {
       return NextResponse.json({ ok: false, error: "no log for this run" }, { status: 404 });
     }
-    return NextResponse.json({ ok: true, log: run.logJson, truncated: false });
+    return NextResponse.json({ ok: true, ...log });
   } catch (err) {
     if (err instanceof CovenAutomationsUnavailableError && err.degraded) {
       return NextResponse.json(

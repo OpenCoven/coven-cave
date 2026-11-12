@@ -56,3 +56,8 @@ the way a dated spec does:
 
 They stay here for the same path-stability reason as everything else. Read them
 as current unless the contract they describe has been superseded in code.
+
+Two have been. `double-blind-eval.md`'s implementation was removed in #3902.
+`research-generations-media-contract-v2.md` now describes the OpenCoven/research
+package (#6025), and `pnpm test:research-media:ffmpeg` is no longer a Cave
+script. Only `ios-new-chat-project-contract.md` describes Cave code today.

@@ -5,7 +5,7 @@ import { runAutoReflectionIfMissing } from "@/lib/auto-thread-reflection";
 import { mergeReasoningBlock, normalizeReasoningBlock, normalizeReasoningBlocks } from "@/lib/chat-reasoning-blocks";
 import { ResponseRunDetails } from "@/components/response-run-details";
 import { normalizeToolActivity } from "@/lib/chat-activity";
-import { isToolActive, mergeToolObservation, normalizeToolStatus, settleToolObservations, toolStatusLabel, type ToolStatus } from "@/lib/chat-tool-state";
+import { isToolActive, mergeToolObservation, normalizeToolStatus, settleToolObservations, toolProgressStatus, toolStatusCounts, toolStatusLabel, type ToolStatus } from "@/lib/chat-tool-state";
 import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
@@ -82,6 +82,7 @@ import {
 } from "@/lib/familiar-drag";
 import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
+import { createChatStreamAccessGuard, invalidateChatAccess, subscribeChatAccessInvalidation } from "@/lib/chat-access-invalidation";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { useToolOutput } from "@/lib/use-tool-output";
 import { deleteOfflineCacheEntry } from "@/lib/offline-cache";
@@ -94,6 +95,7 @@ import {
   readLiveChatGeneration,
   reconcileLiveChatGenerationSession,
   recordLiveChatGeneration,
+  forgetFailedSendModel,
   retryTurnModelRequest,
   stageLiveChatGenerationMetadata,
   subscribeLiveChatGeneration,
@@ -280,6 +282,7 @@ import { verificationEvidenceFromTools } from "@/lib/chat-tool-verification";
 import { createStreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
 import { useStreamingPresentationSource } from "@/lib/use-streaming-presentation-source";
 import { copyText } from "@/lib/clipboard";
+import { projectUiBlocksToReadable } from "@/lib/ui-block-readable";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
@@ -320,6 +323,7 @@ import { ChatSpecCard } from "@/components/chat-spec-card";
 import { ChatFileReader, type ChatFileReaderTarget } from "@/components/chat-file-reader";
 import { joinProjectPath } from "@/components/message-dom-wiring";
 import { ChatPreviewCard } from "@/components/chat-preview-card";
+import { UiBlockHostContext, UiBlockStateScope, splitSegmentsForUiBlocks, type UiBlockHost } from "@/components/chat-ui-block";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillRunSummary, SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -417,6 +421,7 @@ import { startSpan } from "@/lib/perf/marks";
 import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 import { markStartupSettled } from "@/lib/startup-gate";
 import { sharedJsonFetch } from "@/lib/shared-json-fetch";
+import { createPointerPressTracker, type PointerPressTracker } from "@/lib/pointer-press";
 
 /** How long an identical usage-meter request is shared across re-runs (#5668). */
 const USAGE_PLAN_REUSE_MS = 10_000;
@@ -791,7 +796,15 @@ function fmtDuration(ms?: number): string | null {
 
 function DurationText({ durationMs }: { durationMs?: number }) {
   const duration = fmtDuration(durationMs);
-  return duration ? <span className="font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">{duration}</span> : null;
+  return duration ? <span className="font-mono text-[length:var(--text-2xs)] tabular-nums text-[var(--text-muted)]">{duration}</span> : null;
+}
+
+/** The tone of a call's outcome chip (.cave-tool-status). Live states and
+ *  failures carry a tint; a finished, successful call reads as muted text;
+ *  rejected, cancelled and unknown outcomes take a neutral fill. The label
+ *  beside it is always the exact state word, so colour never stands alone. */
+function toolStatusTone(status: ToolStatus): "active" | "error" | "ok" | "neutral" {
+  return status === "error" ? "error" : isToolActive(status) ? "active" : status === "ok" ? "ok" : "neutral";
 }
 
 type ErrorStripTool = { id: string; name: string; input?: string; output?: string; status: ToolStatus; durationMs?: number };
@@ -1730,7 +1743,7 @@ function MetaLine({
   /** Derives a title from the live transcript for the title row's sparkle. */
   generateTitle?: () => string | null;
   readOnly?: boolean;
-  /** Session action verbs, rendered after the conversation title. */
+  /** Supplemental activity shares the metadata row outside its live region. */
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1801,10 +1814,9 @@ function MetaLine({
     // text that actually changes keeps the announcements and takes the
     // controls out of them (cave-fh9so).
     <div className={`cave-chat-meta-line cave-chat-meta-line--${state}${settleFlare ? " cave-chat-meta-line--reward" : ""}`} data-lifecycle={state}>
-      {/* Chat-revamp 1b: the session's familiar leads the header as a small
-          circular avatar, so the title row reads avatar · title · meta. */}
+      {/* The familiar spans the title and metadata rows. */}
       <span className="cave-chat-header-avatar" aria-hidden="true">
-        <FamiliarIcon familiar={familiar} size="md" />
+        <FamiliarIcon familiar={familiar} size="lg" />
       </span>
       {session ? (
         <ChatTitleEditable
@@ -1815,6 +1827,8 @@ function MetaLine({
           readOnly={readOnly}
         />
       ) : null}
+      <div className="cave-chat-meta-line__details">
+        <span className="cave-chat-meta-line__meta focus-ring-inset" title={metaModel ?? undefined} role="status" aria-live="polite" tabIndex={0}>
       {/* One status, stated once (cave-dkdev). The same <SessionStatusPill>
           the Sessions list renders, so a chat reads identically whether you
           are looking at it or looking for it. Transport ("connecting",
@@ -1829,62 +1843,56 @@ function MetaLine({
           transport={sessionState.transport}
         />
       ) : null}
-      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined} role="status" aria-live="polite">
-        {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
-            — "<familiar> · <model> · <branch>" — while the heavier provenance
-            (cwd · duration · tokens · cost + meters) stays in the adjacent
-            reveal-on-hover cluster, so nothing is deleted, just demoted.
-            Streaming/failed/offline states keep their live meta. */}
-        {state === "complete" ? (
-          <span className="cave-chat-meta-line__identity">
-            {familiar.display_name}
-            {hasResponse && metaHarness ? ` · ${metaHarness}` : ""}
-            {hasResponse && metaModel ? ` · ${responseModelLabel(metaModel)}` : ""}
-            {hasResponse && identityGaps.length ? (
-              <>
-                {" · "}
-                <span className="cave-chat-meta-line__unverified" title={identityGaps.join(" · ")}>unverified</span>
-              </>
-            ) : null}
+          {/* Chat-revamp 1b: the settled header can reveal a quiet identity line
+              — "<familiar> · <model> · <branch>" — while the heavier provenance
+              (cwd · duration · tokens · cost + meters) stays in the adjacent
+              reveal-on-hover cluster, so nothing is deleted, just demoted.
+              Streaming/failed/offline states keep their live meta. */}
+          {state === "complete" ? (
+            <span className="cave-chat-meta-line__identity">
+              {familiar.display_name}
+              {hasResponse && metaHarness ? ` · ${metaHarness}` : ""}
+              {hasResponse && metaModel ? ` · ${responseModelLabel(metaModel)}` : ""}
+              {hasResponse && identityGaps.length ? (
+                <>
+                  {" · "}
+                  <span className="cave-chat-meta-line__unverified" title={identityGaps.join(" · ")}>unverified</span>
+                </>
+              ) : null}
+            </span>
+          ) : null}
+          {/* Slim header (cave-xsq.3): when the turn has settled, the static
+              provenance (model · runtime · dir · duration · usage · meters) is a
+              quiet reveal-on-hover cluster so the settled header reads as just the
+              conversation title — like ChatGPT. Live streaming state (elapsed,
+              "esc to cancel") stays visible; provenance shows inline while
+              streaming (no reveal class) so nothing is hidden mid-response. */}
+          <span
+            className={`cave-chat-meta-line__provenance${state === "complete" ? " reveal-on-hover" : ""}`}
+          >
+            {provenanceSegments.map((seg, i) => (
+              <Fragment key={i}>
+                {i > 0 || state === "complete" ? " · " : null}
+                {typeof seg === "string" ? (
+                  seg
+                ) : "unverified" in seg ? (
+                  <span className="cave-chat-meta-line__unverified" title={seg.unverified}>unverified</span>
+                ) : (
+                  <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
+                    <Icon name="ph:folder" width={11} aria-hidden />
+                    {seg.dir.label}
+                  </span>
+                )}
+              </Fragment>
+            ))}
+            {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
           </span>
-        ) : null}
-        {/* Slim header (cave-xsq.3): when the turn has settled, the static
-            provenance (model · runtime · dir · duration · usage · meters) is a
-            quiet reveal-on-hover cluster so the settled header reads as just the
-            conversation title — like ChatGPT. Live streaming state (elapsed,
-            "esc to cancel") stays visible; provenance shows inline while
-            streaming (no reveal class) so nothing is hidden mid-response. */}
-        <span
-          className={`cave-chat-meta-line__provenance${state === "complete" ? " reveal-on-hover" : ""}`}
-        >
-          {provenanceSegments.map((seg, i) => (
-            <Fragment key={i}>
-              {i > 0 || state === "complete" ? " · " : null}
-              {typeof seg === "string" ? (
-                seg
-              ) : "unverified" in seg ? (
-                <span className="cave-chat-meta-line__unverified" title={seg.unverified}>unverified</span>
-              ) : (
-                <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
-                  <Icon name="ph:folder" width={11} aria-hidden />
-                  {seg.dir.label}
-                </span>
-              )}
-            </Fragment>
-          ))}
-          {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
+          {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
+          {state === "streaming" ? " · esc to cancel" : null}
+          {state === "offline" ? <MetaLineStartDaemon /> : null}
         </span>
-        {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
-        {state === "streaming" ? " · esc to cancel" : null}
-        {state === "offline" ? <MetaLineStartDaemon /> : null}
-      </span>
-      {/* No pickers on this row (cave-zfmqm). cave-fh9so pulled the
-          project/model/context chips inline here to collapse three stacked
-          header rows into one; one row of five controls is still a toolbar.
-          Choosing a project or a model belongs to the composer, which is where
-          you are when the choice matters and which still carries them. The
-          header is a title and the verbs that act on this conversation. */}
-      {children}
+        {children}
+      </div>
     </div>
   );
 }
@@ -3135,6 +3143,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectModel = useCallback(
     (modelId: string | null) => {
       const selectionRevision = ++modelSelectionRevisionRef.current;
+      setLastFailedSend((failed) => failed && forgetFailedSendModel(failed));
       const stagedModel = modelId ?? "";
       pendingModelOverrideRef.current = stagedModel;
       pendingModelScopeRef.current = modelId
@@ -3252,6 +3261,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
       const selectionRevision = ++modelSelectionRevisionRef.current;
+      // The saved failure belongs to the old runtime, as in handleUseHarnessFix.
+      setLastFailedSend((failed) => failed && forgetFailedSendModel(failed));
       const nextModel = modelForRuntimeSwitch(runtime);
       pendingModelOverrideRef.current = nextModel;
       pendingModelScopeRef.current = "next-message";
@@ -3333,6 +3344,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Native UI tier: a coven:ui Button may PREFILL the composer for review. It
+  // never sends; an existing draft is kept and the text is appended below it.
+  const prefillComposerFromUiBlock = useCallback((text: string) => {
+    setInput((current) => (current.trim() ? `${current.replace(/\s+$/, "")}\n\n${text}` : text));
+    requestAnimationFrame(() => {
+      const field = inputRef.current;
+      if (!field) return;
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    });
+    announce("Draft added to the composer. Nothing was sent.");
+  }, [announce, setInput]);
   const toggleMobileAutoMode = useCallback(() => {
     if (autoMissionActive) {
       const statusDraft = autoMissionStatusDraft(input);
@@ -3582,6 +3605,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     });
   }
 
+  useEffect(() => subscribeChatAccessInvalidation((change) => {
+    if (change.sessionId !== undefined && change.sessionId !== currentSessionRef.current) return;
+    transcriptResetRevisionRef.current += 1;
+    refetchOnSettleRef.current = null;
+    turnsRef.current = [];
+    setTurns([]);
+    setActiveLeafId("");
+    setLinkedContext(null);
+    setFlowTranscriptFallback(null);
+    setLastFailedSend(null);
+    abortRef.current?.abort();
+    abortRef.current = null;
+    streamOwnerRef.current = false;
+    currentStreamHealthRunIdRef.current = null;
+    setBusy(false);
+    setHistoryState(change.reason === "missing" ? "missing" : "error");
+    setError("Chat access changed. Reload history to check current access.");
+    announce("Chat access changed. History was cleared.");
+  }), [announce]);
+
   useEffect(() => {
     if (!sessionId) return;
     return subscribeLiveChatGeneration(sessionId, (live) => {
@@ -3747,7 +3790,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Toggling Match case / Whole word re-runs the search, so it must re-jump
   // too — the key includes them, otherwise flipping a toggle leaves you parked
   // on a hit that the new options no longer produce.
-  useEffect(() => {
+  // Layout phase, not passive (#6173): the jump must commit its selected
+  // window before the browser delivers a scroll event queued against the old
+  // tail. A passive effect let that event land first and page the transcript
+  // back to the tail, so the first hit's turn was never mounted.
+  useLayoutEffect(() => {
     if (!findOpen) return;
     const key = [findMatchCase ? "c" : "", findWholeWord ? "w" : "", findDebouncedQuery].join("|");
     if (key === lastJumpedQueryRef.current) return;
@@ -3870,6 +3917,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // anywhere in the composer dock (Tab to Send or a chip, a tap on Tools), so
   // the phone composer never collapses under the control being used.
   const [composerEngaged, setComposerEngaged] = useState(false);
+  // #5840: leaving the composer rests it only once the press that moved focus
+  // has been released, so the control being tapped stays under the finger.
+  const pointerPressRef = useRef<PointerPressTracker | null>(null);
+  const cancelComposerRestRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const tracker = createPointerPressTracker(window);
+    pointerPressRef.current = tracker;
+    return () => {
+      cancelComposerRestRef.current?.();
+      cancelComposerRestRef.current = null;
+      tracker.dispose();
+      pointerPressRef.current = null;
+    };
+  }, []);
+  const engageComposer = useCallback(() => {
+    cancelComposerRestRef.current?.();
+    cancelComposerRestRef.current = null;
+    setComposerEngaged(true);
+  }, []);
+  const restComposerAfterPress = useCallback((dock: Element) => {
+    cancelComposerRestRef.current?.();
+    const rest = () => {
+      cancelComposerRestRef.current = null;
+      if (!dock.contains(document.activeElement)) setComposerEngaged(false);
+    };
+    const tracker = pointerPressRef.current;
+    if (tracker) cancelComposerRestRef.current = tracker.afterPress(rest);
+    else rest();
+  }, []);
   const keyboardOffset =
     typeof window !== "undefined" && vv.height > 0
       ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
@@ -4024,8 +4100,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // server can hand the harness resolvable absolute paths.
   const [mentionedFiles, setMentionedFiles] = useState<string[]>([]);
   // Prompt enhancement (cave-b6c2): shared model-backed hook — streams a real
-  // rewrite from this thread's familiar (rule engine as offline fallback) and
-  // owns the race-safe apply/suggest/revert lifecycle.
+  // rewrite from this thread's familiar (no scripted fallback; failures keep
+  // the draft) and owns the race-safe apply/suggest/revert lifecycle.
   const preparedPromptEnhancement = prepareChatPromptEnhancement(
     input,
     Boolean(activeProjectRoot),
@@ -4441,7 +4517,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       sessionId,
       isThreadSwitch,
       flowBackedSession,
-      sources: chatHistorySources,
+      sources: {
+        ...chatHistorySources,
+        subscribeInvalidation: (targetSessionId, invalidate) => subscribeChatAccessInvalidation((change) => {
+          if (change.sessionId === undefined || change.sessionId === targetSessionId) {
+            invalidate(change.reason === "missing");
+          }
+        }),
+      },
       view: {
         readTurns: () => turnsRef.current,
         syncTurns: (next) => { turnsRef.current = next; },
@@ -5570,12 +5653,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         attentionSettlement.reconcileNow();
       },
     };
+    const accessGuard = createChatStreamAccessGuard(controller, () => liveGeneration.sessionAliases);
     const publishStreamHealth = (
       action: Exclude<
         ChatStreamHealthAction,
         { type: "hydrate" } | { type: "connect" } | { type: "reset" }
       >,
     ) => {
+      if (accessGuard.revoked()) return;
       generationStreamHealth = chatStreamHealthReducer(generationStreamHealth, action);
       if (liveGeneration.sessionId) {
         const metadata = {
@@ -5618,6 +5703,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const chunkCoalescer = createChunkCoalescer({
       flushMs: CHUNK_FLUSH_MS,
       apply: (text) => {
+        if (accessGuard.revoked()) return;
         flushPendingStreamHealthEvent();
         applyAssistantChunk(text, assistantId, liveGeneration);
       },
@@ -5676,8 +5762,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(startNewConversation ? { startNewConversation: true } : {}),
           projectRoot: projectRootForRequest,
           modelControls: controlsOverride?.modelControls ?? modelControls,
-          // Advisory permission mode for the picked access level; the daemon may
-          // ignore it if the harness doesn't support per-turn permission scoping.
+          // Send the selected access level; the server refuses unsupported modes.
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
           // Composer Host chip: only an explicit pick rides; the server
           // resolves it against the registered-host registry fail-closed.
@@ -5720,13 +5805,31 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }),
         signal: controller.signal,
       });
+      if (res.status === 401 || res.status === 403) {
+        invalidateChatAccess({ sessionId: liveGeneration.sessionId ?? undefined, reason: "denied" });
+        // Keep the existing project repair action, without retaining the
+        // rejected prompt as a retryable send or repainting its transcript.
+        if (res.status === 403) {
+          const message = await chatBridgeFailureMessage(res);
+          if (/project_access_denied|project access denied|not registered/i.test(message)
+            && currentSessionRef.current === liveGeneration.sessionId) {
+            const failingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
+            setProjectAccessRoot(failingRoot || null);
+          }
+        }
+      }
+      if (accessGuard.revoked()) return;
       if (!res.ok) {
         const refusal = res.status === 409
           ? await res.clone().json().catch(() => null) as { blockingRunId?: unknown; code?: unknown } | null
           : null;
         const message = await chatBridgeFailureMessage(res);
         let surfacedMessage = message;
-        setLastFailedSend(request);
+        // Resending a model the server refused can only be refused again, so
+        // Retry follows the composer and the composer catches up (#6419).
+        const modelRefused = /model_runtime_mismatch|unsupported_model_override/.test(message);
+        setLastFailedSend(modelRefused ? forgetFailedSendModel(request) : request);
+        if (modelRefused) void refreshModelState();
         // A 403 here is the project-access gate: the chat's cwd belongs to no
         // registered project the familiar can reach. Capture that cwd so the
         // error strip can offer a one-click "register + grant, then retry".
@@ -5830,6 +5933,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }, liveGeneration.sessionId, liveStreamMetadata(liveGeneration));
       let cursor = 0;
       const applyStreamEvent = (ev: StreamEvent, eventCursor: number | null) => {
+        if (accessGuard.revoked()) return;
         if (eventCursor != null) {
           cursor = Math.max(cursor, eventCursor);
           pendingStreamHealthEvent = { cursor, at: new Date().toISOString() };
@@ -5883,6 +5987,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             `/api/chat/stream?runId=${encodeURIComponent(runId)}&cursor=${cursor}`,
             { cache: "no-store", signal: controller.signal },
           );
+          if (recovery.status === 401 || recovery.status === 403) {
+            invalidateChatAccess({ sessionId: liveGeneration.sessionId ?? undefined, reason: "denied" });
+          }
+          if (accessGuard.revoked()) return;
           if (recovery.ok && recovery.body) {
             const resumed = await consumeChatSse(recovery.body, applyStreamEvent, cursor);
             cursor = Math.max(cursor, resumed.cursor);
@@ -5912,6 +6020,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } catch (err) {
+      if (accessGuard.revoked()) return;
       // Apply any buffered streamed text FIRST — the handlers below read
       // t.text (e.g. the cancelled fallback label) and must see all of it.
       flushStreamUpdates();
@@ -5961,6 +6070,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } finally {
+      accessGuard.dispose();
       attentionSettlement.reconcileIfNeeded();
       // All terminal exits — HTTP rejection, missing body, exhausted recovery,
       // abort, and stream exceptions — reach here. Calling
@@ -5969,7 +6079,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       // Always retire THIS generation's registry entry (keyed by session).
       clearLiveChatGenerationAliases(liveGeneration.sessionAliases, runId);
-      if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
+      if (!accessGuard.revoked() && needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
         setHistoryRetryKey((k) => k + 1);
       }
       // But only tear down the SHARED stream wiring if we still own it. After a
@@ -6302,7 +6412,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         next,
         prevAttachments ?? [],
         [],
-        { parentTurnId: parentId ?? null, ...retryTurnModelRequest(prevUser, turn) },
+        { parentTurnId: parentId ?? null, ...retryTurnModelRequest(prevUser, turn, modelStateRef.current?.harness) },
         {
           thinkingEffort,
           responseSpeed,
@@ -6329,7 +6439,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       [],
       {
         parentTurnId: parentId ?? null,
-        ...retryTurnModelRequest(prevUser, turn),
+        ...retryTurnModelRequest(prevUser, turn, modelStateRef.current?.harness),
       },
       {
         thinkingEffort,
@@ -6963,7 +7073,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 id: "tools",
                 label: toolStatusLabel(mergedTool.status),
                 detail: argSummary ? `${incoming.name}(${argSummary})` : incoming.name,
-                status: mergedTool.status === "error" ? "error" : mergedTool.status === "ok" ? "done" : mergedTool.status === "unknown" || mergedTool.status === "rejected" ? "notice" : "running",
+                status: toolProgressStatus(mergedTool.status),
                 durationMs: mergedTool.durationMs,
               }),
             };
@@ -7526,6 +7636,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
   const offlineReadOnly = historyState === "offline" || flowBackedSession;
+  // Native UI tier host: opts this chat's transcript into coven:ui rendering.
+  // Memoized so the context value is stable across composer keystrokes.
+  const uiBlockHost = useMemo<UiBlockHost>(
+    () => ({ prefill: offlineReadOnly ? null : prefillComposerFromUiBlock, announce }),
+    [offlineReadOnly, prefillComposerFromUiBlock, announce],
+  );
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const hasStagedComposerInput =
@@ -7566,7 +7682,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       popoverPlacement={composerPopoverPlacement}
       ariaLabel={inlineComposer ? "New chat context" : "Session context"}
-      executionRuntime={session?.runtime ?? null}
+      executionRuntime={runtimeHost && runtimeHost !== LOCAL_HOST_ID
+        ? `ssh:${runtimeHost}`
+        : modelState?.runtime ?? session?.runtime ?? (modelState ? "local" : null)}
     />
   );
   // One Tools menu, placed by width (#5954): desktop puts it in the action
@@ -7632,6 +7750,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onEnhance: promptEnhance.enhance,
           disabled: busy || !input.trim(),
           loading: promptEnhance.state.phase === "loading",
+          unavailableReason: promptEnhance.unavailableReason,
         },
       }}
       response={{
@@ -7964,7 +8083,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 // moving into its rows is still the composer being used, so
                 // the phone's rest state must not hide the chip it hangs from.
                 if (next instanceof Element && next.closest(".ui-popover-portal")) return;
-                if (!dock.contains(next)) setComposerEngaged(false);
+                if (!dock.contains(next)) restComposerAfterPress(dock);
               }}
             >
               <div className="cave-composer-edge-actions">
@@ -8064,7 +8183,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
               <textarea
                 ref={inputRef}
-                onFocus={() => setComposerEngaged(true)}
+                onFocus={engageComposer}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
@@ -8105,6 +8224,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onDismiss={promptEnhance.dismiss}
                 onRevert={promptEnhance.revert}
                 onCancel={promptEnhance.cancel}
+                onRetry={promptEnhance.retry}
                 onFocusComposer={() => inputRef.current?.focus()}
               />
               {queuedMessages.length > 0 ? (
@@ -8225,6 +8345,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       onEnhance={promptEnhance.enhance}
                       onCancel={promptEnhance.cancel}
                       disabled={busy || !input.trim()}
+                      unavailableReason={promptEnhance.unavailableReason}
                     />
                     <button
                       type="button"
@@ -8282,6 +8403,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
 
   return (
+    <UiBlockHostContext.Provider value={uiBlockHost}>
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
@@ -8370,26 +8492,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onSessionsChanged={onSessionsChanged}
             generateTitle={generateTitleFromTranscript}
             readOnly={offlineReadOnly}
-          />
-          {/* #5953: the run's stats and its Last run summary ride the title row
-              between the identity and the actions, instead of stacking as two
-              bands under it. On a narrow header the cluster wraps to its own
-              line; on phones it is the one band under the mobile header. */}
-          <div className="cave-chat-header-status">
-            {sessionId !== null || turns.length > 0 ? (
-              <ChatSessionContextRow
-                turns={turns}
-                usage={lastSettledAssistantTurn?.usage}
-                costUsd={lastSettledAssistantTurn?.costUsd}
-                durationMs={lastSettledAssistantTurn?.durationMs}
+          >
+            <div className="cave-chat-header-status">
+              {sessionId !== null || turns.length > 0 ? (
+                <ChatSessionContextRow
+                  turns={turns}
+                  usage={lastSettledAssistantTurn?.usage}
+                  costUsd={lastSettledAssistantTurn?.costUsd}
+                  durationMs={lastSettledAssistantTurn?.durationMs}
+                />
+              ) : null}
+              <RunActivityStrip
+                activeTurn={activePendingTurn}
+                lastTurn={lastSettledAssistantTurn}
+                identityGaps={lastSettledAssistantTurn ? runtimeIdentityGaps(responseMetadataIdentity(displayResponseMetadata)) : []}
               />
-            ) : null}
-            <RunActivityStrip
-              activeTurn={activePendingTurn}
-              lastTurn={lastSettledAssistantTurn}
-              identityGaps={lastSettledAssistantTurn ? runtimeIdentityGaps(responseMetadataIdentity(displayResponseMetadata)) : []}
-            />
-          </div>
+            </div>
+          </MetaLine>
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
                 no longer hides them). Voice joins the hover-reveal quick set;
@@ -8949,6 +9068,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </div>
       </Modal>
     </section>
+    </UiBlockHostContext.Provider>
   );
 });
 
@@ -9771,7 +9891,7 @@ function TurnRowImpl({
           splitSegmentsForApprove(
             splitSegmentsForImages(
               splitSegmentsForPreviews(
-                splitSegmentsForSpecs([{ kind: "text", text: protectedQuestions.text }], onOpenUrl),
+                splitSegmentsForSpecs(splitSegmentsForUiBlocks([{ kind: "text", text: protectedQuestions.text }]), onOpenUrl),
                 onOpenPreview,
                 onOpenUrl,
               ),
@@ -9929,11 +10049,11 @@ function TurnRowImpl({
         const projection = extractChatRenderedText(text, { pending });
         if (pending) {
           const blocks = partitionStreamingMarkdown(projection.visible, { turnId: key, settled: !trailing });
-          return <StreamingMarkdownBlocks {...blocks} live={trailing} />;
+          return <UiBlockStateScope key={key}><StreamingMarkdownBlocks {...blocks} live={trailing} /></UiBlockStateScope>;
         }
-        return richProseSegments(projection.cardText).map((segment, index) => segment.kind === "text"
+        return <UiBlockStateScope key={key}>{richProseSegments(projection.cardText).map((segment, index) => segment.kind === "text"
           ? <ProgressiveMarkdownBlock key={`prose-${index}`} text={segment.text} />
-          : <div key={segment.key} className="my-2">{segment.node}</div>);
+          : <div key={segment.key} className="my-2">{segment.node}</div>)}</UiBlockStateScope>;
       }} />
     {rehydratedResearchBlock?.kind === "block" ? rehydratedResearchBlock.node : null}
   </> : undefined;
@@ -10062,6 +10182,7 @@ function TurnRowImpl({
   );
 
   return (
+    <UiBlockStateScope key={turn.id}>
     <div
       data-turn-id={turn.id}
       className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}${foldFaded ? " cave-linear-turn--fold-faded" : ""}`}
@@ -10168,7 +10289,8 @@ function TurnRowImpl({
                       onRetry={turn.error ? onRegenerate : undefined}
                       onCopyCompleted={
                         streamingModel.committedText
-                          ? () => copyText(streamingModel.committedText)
+                          // coven:ui blocks copy as their readable lines (#6060).
+                          ? () => copyText(projectUiBlocksToReadable(streamingModel.committedText, { streaming: pending }))
                           : undefined
                       }
                       proseContent={proseContent}
@@ -10194,6 +10316,7 @@ function TurnRowImpl({
         </div>
       </div>
     </div>
+    </UiBlockStateScope>
   );
 }
 
@@ -10209,7 +10332,7 @@ function ReasoningBlock({ reasoning, durationMs, pending, label = "Reasoning sum
           {label}
         </span>
         {(typeof durationMs === "number" && durationMs > 0) || countWords ? (
-          <span className="ml-auto font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
+          <span className="cave-tool-summary__meta">
             {typeof durationMs === "number" && durationMs > 0
               ? `Worked for ${fmtDuration(durationMs)}`
               : `${wordCount} ${wordCount === 1 ? "word" : "words"}`}
@@ -10313,11 +10436,13 @@ function ProgressRow({ event, pending }: { event: ProgressEvent; pending: boolea
  *  readers get, plus the running/error counts that otherwise live only in a
  *  tinted (color-only) chip — so a screen reader hears "3 running" and
  *  "1 error" exactly like the eye sees them. */
-function toolGroupAriaLabel(summary: string, running: number, errors: number, requested = 0, unknown = 0): string {
+function toolGroupAriaLabel(summary: string, running: number, errors: number, requested = 0, unknown = 0, rejected = 0, cancelled = 0): string {
   return [
     summary ? `Tool activity: ${summary}` : "",
     requested ? `${requested} requested` : "",
     unknown ? `${unknown} outcome unknown` : "",
+    rejected ? `${rejected} rejected` : "",
+    cancelled ? `${cancelled} cancelled` : "",
     running ? `${running} running` : "",
     errors ? `${errors} ${errors === 1 ? "error" : "errors"}` : "",
   ]
@@ -10335,11 +10460,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   // The per-tool rows mount on the group's first open (#5572): a collapsed
   // group otherwise builds every tool card of the turn up front.
   const [runsMounted, setRunsMounted] = useState(false);
-  const running = tools.filter((tool) => tool.status === "running").length;
-  const errors = tools.filter((tool) => tool.status === "error").length;
-  const requested = tools.filter((tool) => tool.status === "requested").length;
-  const unknown = tools.filter((tool) => tool.status === "unknown").length;
-  const rejected = tools.filter((tool) => tool.status === "rejected").length;
+  const { running, error: errors, requested, unknown, rejected, cancelled } = toolStatusCounts(tools.map((tool) => tool.status));
   // The turn's own compact activity summary — count + distinct categories,
   // e.g. "6 calls · read, shell". Running/error calls keep their own tinted
   // counters beside it, so trouble never reads as neutral mono.
@@ -10394,16 +10515,17 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         <summary
           className="cave-tool-summary focus-ring"
           aria-expanded={open}
-          aria-label={toolGroupAriaLabel(summary, running, errors, requested, unknown)}
+          aria-label={toolGroupAriaLabel(summary, running, errors, requested, unknown, rejected, cancelled)}
         >
           <Icon name="ph:wrench" width={12} className="cave-tool-icon shrink-0" aria-hidden />
           <span className="cave-work-line__label">{summary}</span>
-          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-work-line__status">
+          <span className="cave-tool-summary__meta cave-work-line__status">
             {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
             {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
             {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+            {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           </span>
         </summary>
         {runsMounted ? (
@@ -10473,29 +10595,26 @@ function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
   const repeated = tools.length > 1;
   const visual = toolVisual(name);
   const displayName = name.trim() || "Tool";
-  const running = tools.filter((tool) => tool.status === "running").length;
-  const errors = tools.filter((tool) => tool.status === "error").length;
-  const requested = tools.filter((tool) => tool.status === "requested").length;
-  const unknown = tools.filter((tool) => tool.status === "unknown").length;
-  const rejected = tools.filter((tool) => tool.status === "rejected").length;
+  const { running, error: errors, requested, unknown, rejected, cancelled } = toolStatusCounts(tools.map((tool) => tool.status));
 
   return (
     <ChatToolRunDisclosure
       repeated={repeated}
       statuses={tools.map((tool) => tool.status)}
       category={visual.category}
-      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${requested ? `, ${requested} requested` : ""}${unknown ? `, ${unknown} outcome unknown` : ""}${rejected ? `, ${rejected} rejected` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
+      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${requested ? `, ${requested} requested` : ""}${unknown ? `, ${unknown} outcome unknown` : ""}${rejected ? `, ${rejected} rejected` : ""}${cancelled ? `, ${cancelled} cancelled` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
       summary={
         <>
           <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
           <span className="cave-tool-run__name">{displayName}</span>
           <span className="cave-tool-count">×{tools.length}</span>
-          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-tool-run__status">
+          <span className="cave-tool-summary__meta cave-tool-run__status">
             {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
             {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
             {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+            {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           </span>
         </>
       }
@@ -10718,14 +10837,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
               <span className="cave-edit-card__del">−{stat.deletions}</span>
             </span>
           </span>
-          <span className={[
-            "rounded px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]",
-            tool.status === "error"
-              ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
-              : isToolActive(tool.status)
-                ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
-                : tool.status === "ok" ? "bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] text-[var(--color-success)]" : "bg-[var(--bg-elevated)] text-[var(--text-muted)]",
-          ].join(" ")}>
+          <span className="cave-tool-status" data-status={toolStatusTone(tool.status)}>
             {toolStatusLabel(tool.status)}
           </span>
           <DurationText durationMs={tool.durationMs} />
@@ -10751,7 +10863,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   }
   return (
     <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category} onToggle={mountBodyOnOpen}>
-      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)] focus-ring">
+      <summary className="cave-tool-summary cave-tool-block__summary focus-ring">
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
         {argSummary ? (
@@ -10769,17 +10881,12 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             <span className="min-w-0 max-w-[18rem] truncate font-mono text-[var(--text-muted)]">· {argSummary}</span>
           )
         ) : null}
-        <span className={[
-          "rounded px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]",
-          tool.status === "error"
-            ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
-            : isToolActive(tool.status)
-              ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
-              : tool.status === "ok" ? "bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] text-[var(--color-success)]" : "bg-[var(--bg-elevated)] text-[var(--text-muted)]",
-        ].join(" ")}>
-          {toolStatusLabel(tool.status)}
+        <span className="cave-tool-summary__meta">
+          <span className="cave-tool-status" data-status={toolStatusTone(tool.status)}>
+            {toolStatusLabel(tool.status)}
+          </span>
+          <DurationText durationMs={tool.durationMs} />
         </span>
-        <DurationText durationMs={tool.durationMs} />
       </summary>
       {bodyMounted ? provenance : null}
       {bodyMounted && tool.input ? (
@@ -10930,22 +11037,15 @@ function RunActivityStrip({
   const progress = turn.progress ?? [];
   if (tools.length === 0 && progress.length === 0) return null;
 
-  const runningTool = [...tools].reverse().find((t) => t.status === "running");
+  const toolCounts = toolStatusCounts(tools.map((t) => t.status));
+  const runningTool = [...tools].reverse().find((t) => toolStatusCounts([t.status]).running);
   const runningToolDetail = live && runningTool ? toolArgDetail(runningTool.name, runningTool.input) : "";
   const step = currentProgress(progress);
-  const running =
-    tools.filter((t) => t.status === "running").length +
-    progress.filter((p) => p.status === "running").length;
-  const issues =
-    tools.filter((t) => t.status === "error").length +
-    progress.filter((p) => p.status === "error").length;
-  const requested = tools.filter((t) => t.status === "requested").length;
-  const unknown = tools.filter((t) => t.status === "unknown").length;
-  const rejected = tools.filter((t) => t.status === "rejected").length;
+  const running = toolCounts.running + progress.filter((p) => p.status === "running").length;
+  const issues = toolCounts.error + progress.filter((p) => p.status === "error").length;
+  const { requested, unknown, rejected, cancelled } = toolCounts;
   const notices = progress.filter((p) => p.status === "notice").length;
-  const done =
-    tools.filter((t) => t.status === "ok").length +
-    progress.filter((p) => p.status === "done").length;
+  const done = toolCounts.ok + progress.filter((p) => p.status === "done").length;
 
   let headline: string;
   if (live && runningTool) {
@@ -10957,7 +11057,7 @@ function RunActivityStrip({
     headline = issues ? "Last run needs attention" : "Last run";
   }
 
-  const tint = live ? "is-live" : issues ? "is-issue" : notices || unknown || rejected ? "is-notice" : "is-ok";
+  const tint = live ? "is-live" : issues ? "is-issue" : notices || unknown || rejected || cancelled ? "is-notice" : "is-ok";
   return (
     <div className={`cave-run-activity ${tint}`}>
       <button
@@ -10972,7 +11072,7 @@ function RunActivityStrip({
         title={live && runningTool && runningToolDetail ? `${runningTool.name}(${runningToolDetail})` : headline}
       >
         <Icon
-          name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected ? "ph:info" : "ph:check-circle"}
+          name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected || cancelled ? "ph:info" : "ph:check-circle"}
           width={13}
           className={`cave-run-activity__icon${live ? " animate-spin" : ""}`}
           aria-hidden
@@ -10984,6 +11084,7 @@ function RunActivityStrip({
           {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
           {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
           {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
+          {cancelled ? <span className="cave-tool-count">{cancelled} cancelled</span> : null}
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
           {notices ? <span className="cave-tool-count cave-tool-count--notice">{notices} {notices === 1 ? "notice" : "notices"}</span> : null}
           {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}

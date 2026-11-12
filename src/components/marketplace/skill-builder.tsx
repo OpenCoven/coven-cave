@@ -497,9 +497,10 @@ export function SkillBuilder({ onSaved, onViewSkills, activeFamiliarId = null }:
                     size="xs"
                     leadingIcon="ph:magic-wand-fill"
                     loading={enhancer.state.phase === "loading"}
-                    disabled={!instructions.trim()}
+                    disabled={!instructions.trim() || Boolean(enhancer.unavailableReason)}
                     onClick={() => enhancer.enhance()}
-                    title="Rewrite the instructions in place — applied only if you haven't typed meanwhile"
+                    title={enhancer.unavailableReason ?? "Rewrite the instructions in place — applied only if you haven't typed meanwhile"}
+                    aria-describedby={enhancer.unavailableReason ? "skill-builder-enhance-unavailable" : undefined}
                   >
                     Enhance
                   </Button>
@@ -531,10 +532,22 @@ export function SkillBuilder({ onSaved, onViewSkills, activeFamiliarId = null }:
               placeholder="Markdown the familiar follows — when to use the skill, the steps, and how to verify the result."
               className={`${INPUT_CLASS} resize-y font-mono text-[length:var(--text-sm)] leading-relaxed`}
             />
-            {enhancer.state.phase === "error" ? (
-              <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">
-                {enhancer.state.message}
+            {enhancer.unavailableReason ? (
+              <p id="skill-builder-enhance-unavailable" role="note" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                {enhancer.unavailableReason}
               </p>
+            ) : null}
+            {enhancer.state.phase === "error" ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">
+                  {enhancer.state.message}
+                </p>
+                {enhancer.state.retryable ? (
+                  <Button variant="ghost" size="xs" onClick={enhancer.retry}>
+                    Retry
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
           </div>
 

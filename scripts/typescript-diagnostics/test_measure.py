@@ -19,6 +19,16 @@ class EvidenceTests(unittest.TestCase):
   self.assertIn(str(self.out/'home'),(self.out/'command.log').read_text())
   rows=[json.loads(x) for x in (self.out/'samples.jsonl').read_text().splitlines()]
   self.assertTrue(rows);self.assertIn('swap',rows[0]);self.assertIn('vm_stat',rows[0])
+ def test_optional_node_observer_records_entry_and_log_progress(self):
+  with mock.patch.object(measure,'processes',return_value={}), mock.patch.object(measure,'capture',return_value='fixture'), contextlib.redirect_stdout(io.StringIO()):
+   status=measure.run(['node','-e','process.stdout.write("observed")'],self.out.parent,self.out,2,.05,observe_node=True)
+  self.assertEqual(status,0)
+  receipts=list((self.out/'node-observations').glob('*.jsonl'));self.assertEqual(len(receipts),1)
+  events=[json.loads(x) for x in receipts[0].read_text().splitlines()]
+  self.assertEqual([e['event'] for e in events],['start','exit'])
+  samples=[json.loads(x) for x in (self.out/'samples.jsonl').read_text().splitlines()]
+  self.assertEqual(samples[-1]['log_bytes'],len(b'observed'))
+  self.assertEqual([x['log_bytes'] for x in samples],sorted(x['log_bytes'] for x in samples))
  def test_ci_build_gates_remain_enabled(self):
   status,out=self.finish(self.start("import os;assert os.environ.get('CI') == 'true';assert 'COVEN_CAVE_SKIP_BUILD_TYPECHECK' not in os.environ;assert 'COVEN_CAVE_E2E' not in os.environ"))
   self.assertEqual(status,0,out)

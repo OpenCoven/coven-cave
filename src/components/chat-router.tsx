@@ -10,6 +10,7 @@ import { ChatView, DEFAULT_CHAT_COMPOSER_DRAFT_KEY } from "@/components/chat-vie
 import { ChatSplitHost, CHAT_SPLIT_PANE_ATTR, type ChatSplitTile } from "@/components/chat-split-host";
 import { NewChatLaunch } from "@/components/new-chat-launch";
 import { FamiliarChatoutCodexSurface } from "@/components/familiar-chatout-codex";
+import { pushHistoryUrl, replaceHistoryUrl } from "@/lib/history-url";
 import { caveChatoutCodex } from "@/lib/feature-flags";
 import { useIsMobile } from "@/lib/use-viewport";
 import {
@@ -236,7 +237,9 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const activeSessionId = view.kind === "chat" ? view.sessionId : null;
   const viewProjectRoot = view.kind === "chat"
     ? view.sessionId === null && !view.started
-      ? blankChatProjectRoot(view.projectRoot, view.projectScopeAtOpen, browseScope?.selection, composeProjectRoot)
+      ? browseScope?.familiarIds !== undefined
+        ? view.projectRoot ?? composeProjectRoot ?? undefined
+        : blankChatProjectRoot(view.projectRoot, view.projectScopeAtOpen, browseScope?.selection, composeProjectRoot)
       : view.projectRoot
     : undefined;
   const viewProjectRootRef = useRef(viewProjectRoot);
@@ -334,7 +337,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   retainedFamiliarRef.current = chatFamiliar;
   const {
     projects,
-  } = useProjects({ familiarId: familiar?.id ?? null });
+  } = useProjects({ familiarId: browseScope?.familiarIds !== undefined ? null : familiar?.id ?? null });
   const projectOverrides = useProjectOverrides();
   const browseSessions = useMemo(
     () => scopeChatBrowseSessions(sessions, projects, projectOverrides, browseScope),
@@ -402,7 +405,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     if (view.kind === "chat" && view.sessionId) {
       const next = `#chat-${encodeURIComponent(view.sessionId)}`;
       if (hash !== next) {
-        window.history.pushState(null, "", next);
+        pushHistoryUrl(next);
         window.dispatchEvent(new Event("cave:chat-history-push"));
       }
       return;
@@ -411,7 +414,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     // before workspace's restore effect has had a chance to open the session.
     if (isFirstRun) return;
     if (hash.startsWith("#chat-")) {
-      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      replaceHistoryUrl(window.location.pathname + window.location.search);
       window.dispatchEvent(new Event("cave:chat-history-replace"));
     }
   }, [syncUrlHash, view]);
@@ -823,7 +826,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   if (view.kind === "list") {
     return (
       <ChatList
-        familiar={familiar}
+        familiar={browseScope?.familiarIds !== undefined ? null : familiar}
         familiars={familiars}
         sessions={browseSessions}
         browseScope={browseScope}

@@ -2,6 +2,8 @@ import { createItem, loadInbox } from "@/lib/cave-inbox";
 import { broadcastCreated } from "@/lib/inbox-scheduler";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { withinDeadline } from "./async-deadline.ts";
+import { registerStartupWorker } from "./server/startup-worker-shutdown.ts";
+import { upstreamFetch } from "./server/upstream-fetch.ts";
 import {
   diffCompletedRuns,
   diffOpenedPrs,
@@ -25,6 +27,13 @@ import {
  *
  * One process-local owner survives hot reloads. Configuration transitions
  * cancel reads and drain admitted persistence before changing subscriptions.
+ *
+ * The owner is also the `github-watcher` startup worker (#6350): every
+ * activation registers `stopGithubWatcher` as its drain, so a coordinated
+ * shutdown clears the timer, cancels the read and waits for an admitted inbox
+ * or cursor write before the process exits, and an activation after shutdown
+ * began owns no timer. Registration is idempotent, so the route's module-load
+ * start and instrumentation share one drain.
  */
 
 const TICK_MS = 60_000;
@@ -66,7 +75,7 @@ async function ghFetch(path: string, token: string, owner: AbortSignal): Promise
   // Include body consumption: a partial response must not hold the shared
   // tick forever. Only the winning read reaches notification/cursor effects.
   const result = await withinDeadline(async (signal) => {
-    const res = await fetch(`${GH}${path}`, {
+    const res = await upstreamFetch("github", `${GH}${path}`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -74,7 +83,9 @@ async function ghFetch(path: string, token: string, owner: AbortSignal): Promise
       },
       cache: "no-store",
       signal,
-    });
+      // The watcher is a periodic poller: its next tick is the retry, and a
+      // backoff timer here would outlive a coordinated shutdown.
+    }, { retries: 0 });
     if (signal.aborted || !res.ok) {
       void res.body?.cancel().catch(() => undefined);
       return null;
@@ -210,6 +221,15 @@ export async function tickGithubWatcher(): Promise<void> {
 }
 
 function activate(state: WatcherState, subs: GithubSubscriptions | null): void {
+  // Register the drain before anything else. False means shutdown already
+  // began: the coordinator then invokes `stopGithubWatcher` synchronously, which
+  // only queues behind `state.transition` (the transition running this very
+  // call), so it cannot re-enter or deadlock here. Stay suspended so a later
+  // `tickGithubWatcher` admits nothing either; the slow read retry included.
+  if (!registerStartupWorker("github-watcher", stopGithubWatcher)) {
+    state.suspended = true;
+    return;
+  }
   state.suspended = false;
   if (subs && !eligible(subs)) return;
   // Unknown settings retain one slow read retry. Only confirmed ineligibility

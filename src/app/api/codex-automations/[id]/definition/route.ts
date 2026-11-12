@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { toCodexAutomationPayload } from "@/lib/coven-automations-facade";
-import { readRoutineDefinition } from "@/lib/server/coven-automations-client";
+import { readRoutineDefinition } from "@/lib/server/automation-consumer-reads";
 import { CovenAutomationsUnavailableError } from "@/lib/coven-automations-types";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const definition = await readRoutineDefinition(id);
     if (!definition) return NextResponse.json({ ok: false, error: "not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
     return NextResponse.json(
-      { ok: true, automation: toCodexAutomationPayload(definition.routine), revision: definition.revision },
+      { ok: true, automation: toCodexAutomationPayload(definition.routine), revision: definition.revision,
+        reviewedSource: { routine: definition.routine, revision: definition.revision, ...(definition.definition ? { definition: definition.definition } : {}) } },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {

@@ -1,7 +1,26 @@
 import "@/styles/response-run-details.css";
 import { Icon } from "@/lib/icon";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
-import { responseRunDetails } from "@/lib/chat-run-details";
+import { responseRunDetails, type RunDetailGroup, type RunDetailLine } from "@/lib/chat-run-details";
+
+/** Identifiers read as code: the runtime with its version, and a model id.
+ *  Only the first " · " segment of a runtime or model row is one; the clause
+ *  after it ("reported by the runtime") stays prose. The rendered text is
+ *  unchanged, so a copy and the accessible description read the same. */
+function RunDetailValue({ group, line }: { group: RunDetailGroup["id"]; line: RunDetailLine }) {
+  if ((group !== "runtime" && group !== "model") || !line.label) return <>{line.value}</>;
+  const separator = line.value.indexOf(" · ");
+  if (separator === -1) {
+    const identifier = group === "model" ? line.value !== "Runtime default" : !line.gap;
+    return identifier ? <span className="cave-run-details__id">{line.value}</span> : <>{line.value}</>;
+  }
+  return (
+    <>
+      <span className="cave-run-details__id">{line.value.slice(0, separator)}</span>
+      {line.value.slice(separator)}
+    </>
+  );
+}
 
 /** Run details (#6026, a slice of #5765): the model application trail, the
  *  per-turn control outcome and the activity support that used to render as
@@ -41,7 +60,9 @@ export function ResponseRunDetails({ metadata }: { metadata?: ChatResponseMetada
             {group.lines.map((line) => (
               <div key={`${line.label ?? ""}:${line.value}`} className="cave-run-details__row" data-gap={line.gap || undefined}>
                 {line.label ? <dt>{line.label}</dt> : null}
-                <dd className={line.label ? undefined : "cave-run-details__note"}>{line.value}</dd>
+                <dd className={line.label ? undefined : "cave-run-details__note"}>
+                  <RunDetailValue group={group.id} line={line} />
+                </dd>
               </div>
             ))}
           </div>

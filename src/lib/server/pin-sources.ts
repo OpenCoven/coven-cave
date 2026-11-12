@@ -26,6 +26,7 @@ import { parseSafeGitHubUrl, parseSafeHttpUrl } from "../url-safety.ts";
 import { makePin, PIN_CONTENT_MAX, type PinKind, type StitchPin } from "../stitch.ts";
 import { covenKnowledgeRoot } from "./knowledge-vault.ts";
 import { resolveAllowedFileReadPath, resolveAllowedMemoryFilePath } from "./memory-file-paths.ts";
+import { upstreamFetch } from "./upstream-fetch.ts";
 
 export type PinCaptureRequest = {
   kind: PinKind;
@@ -182,13 +183,26 @@ export type GitHubTarget =
   | { api: string; label: string; json: "repo" }
   | { api: string; label: string; json: "raw" };
 
+const PIN_SEGMENT = /^[A-Za-z0-9_.-]+$/;
+
+function isSafePinSegment(segment: string): boolean {
+  return PIN_SEGMENT.test(segment) && !/^\.+$/.test(segment);
+}
+
+/** The only origins a GitHub pin may fetch from, keyed by registry id. */
+const PIN_FETCH_ORIGINS = {
+  github: "https://api.github.com",
+  "github-raw": "https://raw.githubusercontent.com",
+} as const;
+
 /** Map a github.com URL to the fixed-host API/raw fetch for it. Exported for tests. */
 export function githubApiTarget(url: URL): GitHubTarget | null {
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts.length < 2) return null;
   const [owner, repo, section, ...rest] = parts;
-  const safe = /^[A-Za-z0-9_.-]+$/;
-  if (!safe.test(owner) || !safe.test(repo)) return null;
+  // A dot-only segment (`.`, `..`) would climb the fixed host's path, so it
+  // is never a valid owner, repo, branch or file segment.
+  if (!isSafePinSegment(owner) || !isSafePinSegment(repo)) return null;
   if (!section) {
     return {
       api: `https://api.github.com/repos/${owner}/${repo}/readme`,
@@ -205,7 +219,7 @@ export function githubApiTarget(url: URL): GitHubTarget | null {
   }
   if (section === "blob" && rest.length >= 2) {
     const [branch, ...filePath] = rest;
-    if (!safe.test(branch) || filePath.some((p) => !safe.test(p))) return null;
+    if (!isSafePinSegment(branch) || !filePath.every(isSafePinSegment)) return null;
     return {
       api: `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filePath.join("/")}`,
       label: `${owner}/${repo}: ${filePath.join("/")}`,
@@ -220,11 +234,27 @@ export function githubApiTarget(url: URL): GitHubTarget | null {
 /** Plain fetch for the FIXED GitHub hosts only (no user-controlled hostname —
  *  no rebinding surface). URL pins go through `requestPublicUrl` instead. */
 async function fetchCapped(url: string, accept: string): Promise<Response> {
-  return fetch(url, {
+  // Re-derive the request from a constant origin and checked path segments,
+  // so nothing a user typed can choose the host, port, credentials or a
+  // dot-segment climb, even if githubApiTarget changes later.
+  const parsed = new URL(url);
+  const id = parsed.hostname === "raw.githubusercontent.com"
+    ? "github-raw"
+    : parsed.hostname === "api.github.com"
+    ? "github"
+    : null;
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  if (
+    !id || parsed.protocol !== "https:" || parsed.port || parsed.username || parsed.password ||
+    parsed.search || segments.length === 0 || !segments.every(isSafePinSegment)
+  ) {
+    throw new Error("GitHub pins fetch only from the fixed GitHub hosts");
+  }
+  const pinned = `${PIN_FETCH_ORIGINS[id]}/${segments.map(encodeURIComponent).join("/")}`;
+  return upstreamFetch(id, pinned, {
     redirect: "manual",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     headers: { accept, "user-agent": "coven-cave-grimoire-stitch" },
-  });
+  }, { timeoutMs: FETCH_TIMEOUT_MS });
 }
 
 async function readBodyCapped(res: Response): Promise<string> {

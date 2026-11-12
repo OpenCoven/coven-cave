@@ -181,6 +181,16 @@ assert.match(
 );
 assert.match(
   daemon,
+  /isDaemonLifecycleState\(status\?\.lifecycle\?\.state\)\s*\n\s*\? describeDaemonLifecycle\(\{ state: status\.lifecycle\.state \}\)\s*\n\s*: availabilityPresentation/,
+  "the state label prefers the server's lifecycle projection and falls back to availability for older routes (#6298)",
+);
+assert.match(
+  daemon,
+  /: lifecyclePresentation\.label;/,
+  "the visible state label is the lifecycle label",
+);
+assert.match(
+  daemon,
   /const statusFailureReason =[\s\S]*?!loading && !starting && !restarting && !daemonOnline \? status\?\.reason : null/,
   "contradictory running evidence should remain visible without announcing stale errors during recovery",
 );

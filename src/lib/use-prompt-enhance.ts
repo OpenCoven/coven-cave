@@ -7,9 +7,9 @@ import { contextFingerprint, type AgenticRecommendation } from "@/lib/agentic-re
 import { useAgenticRecommendations } from "@/lib/use-agentic-recommendations";
 import {
   buildEnhanceInstruction,
-  buildPromptEnhancement,
   containsPromptEnhancementSecret,
   createPromptEnhancementRecommendation,
+  describePromptEnhancementFailure,
   extractCompleteEnhancedPrompt,
   extractEnhancedPrompt,
   isPromptEnhancementRecommendationCurrent,
@@ -19,17 +19,27 @@ import {
   serializePromptEnhancementRecommendation,
   settleEnhance,
   type EnhanceIntent,
+  type PromptEnhancementFailure,
   type PromptEnhancementPayload,
   type PromptEnhanceMode,
 } from "@/lib/prompt-enhancer";
 
 // Model-backed prompt enhancement (cave-b6c2) is deliberately a manual use of
 // the shared recommendation lifecycle: typing only updates its fingerprint;
-// the existing Enhance control explicitly starts a generation.
+// the existing Enhance control explicitly starts a generation. A successful
+// enhancement is always the familiar's own rewrite (#5920): every failure
+// keeps the draft and reports an actionable error instead of a template.
 
 // Account-backed harnesses can spend ~20 seconds starting before emitting text.
 export const ENHANCE_FIRST_TOKEN_TIMEOUT_MS = 30_000;
 export const ENHANCE_GENERATION_TIMEOUT_MS = 120_000;
+
+/** Enhancement needs a familiar to write the rewrite; callers show this reason
+ *  beside the disabled control rather than offering a scripted substitute. */
+export const PROMPT_ENHANCE_NO_FAMILIAR_REASON = "Choose a familiar to enhance this prompt.";
+
+/** A failure whose actionable message the hook already chose. */
+class PromptEnhanceFailure extends Error {}
 
 function newEnhanceRunId() {
   return globalThis.crypto?.randomUUID?.() ?? `enhance-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -51,9 +61,10 @@ export type PromptEnhanceRecommendation = AgenticRecommendation<PromptEnhancemen
 export type PromptEnhanceState =
   | { phase: "idle" }
   | { phase: "loading"; intent: EnhanceIntent; preview: string }
-  | { phase: "suggested"; enhanced: string; applied: string; offline: boolean; recommendation: PromptEnhanceRecommendation }
-  | { phase: "applied"; original: string; offline: boolean; recommendation: PromptEnhanceRecommendation }
-  | { phase: "error"; message: string };
+  | { phase: "suggested"; enhanced: string; applied: string; recommendation: PromptEnhanceRecommendation }
+  | { phase: "applied"; original: string; recommendation: PromptEnhanceRecommendation }
+  /** `retryable` is false only when retrying cannot help (no familiar). */
+  | { phase: "error"; message: string; retryable: boolean };
 
 type PromptEnhanceRequest = {
   baseDraft: string;
@@ -74,7 +85,6 @@ function asPromptEnhancementRecommendation(
     recommendation.surface !== "chat"
     || recommendation.kind !== "prose"
     || typeof payload.enhanced !== "string"
-    || typeof payload.offline !== "boolean"
     || (
       payload.mode !== "chat"
       && payload.mode !== "code"
@@ -135,6 +145,11 @@ export function usePromptEnhance({
   const sourceDraftRef = useRef(sourceDraft);
   const transformEnhancedRef = useRef(transformEnhanced);
   const currentContextFingerprintRef = useRef("");
+  // The shared lifecycle reports a generic generation error; the hook keeps
+  // the specific reason its own generation chose for the current request.
+  const failureRef = useRef<{ message: string; retryable: boolean } | null>(null);
+  const lastIntentRef = useRef<EnhanceIntent>("auto");
+  const unavailableReason = familiarId ? null : PROMPT_ENHANCE_NO_FAMILIAR_REASON;
 
   draftRef.current = draft;
   stateRef.current = state;
@@ -161,27 +176,25 @@ export function usePromptEnhance({
   }) => {
     const activeRequest = requestRef.current;
     if (!activeRequest) throw new Error("Enhance request is missing.");
+    const runFamiliarId = familiarIdRef.current;
+    if (!runFamiliarId) {
+      failureRef.current = { message: PROMPT_ENHANCE_NO_FAMILIAR_REASON, retryable: false };
+      throw new PromptEnhanceFailure(PROMPT_ENHANCE_NO_FAMILIAR_REASON);
+    }
     activeRunIdRef.current = request.runId;
 
-    const localRecommendation = () => {
-      const local = buildPromptEnhancement({
-        draft: activeRequest.baseDraft,
-        mode,
-        context: contextRef.current,
-      });
-      if (!local.ok) throw new Error(local.error);
-      return local.enhanced;
+    const fail = (failure: PromptEnhancementFailure) => {
+      const message = describePromptEnhancementFailure(failure);
+      failureRef.current = { message, retryable: true };
+      return new PromptEnhanceFailure(message);
     };
-    const toRecommendationOutput = (enhanced: string, offline: boolean) => {
+    const toRecommendationOutput = (enhanced: string) => {
       const clean = enhanced.trim();
-      if (!clean) throw new Error("Enhance returned nothing usable.");
-      if (containsPromptEnhancementSecret(clean, contextRef.current)) {
-        throw new Error("Enhance returned text that may contain sensitive values.");
-      }
+      if (!clean) throw fail({ kind: "invalid-output" });
+      if (containsPromptEnhancementSecret(clean, contextRef.current)) throw fail({ kind: "unsafe-output" });
       const recommendation = createPromptEnhancementRecommendation({
         id: recommendationId(request.runId),
         enhanced: clean,
-        offline,
         mode,
         intent: activeRequest.intent,
         contextFingerprint: request.contextFingerprint,
@@ -190,22 +203,28 @@ export function usePromptEnhance({
       return serializePromptEnhancementRecommendation(recommendation);
     };
 
-    if (!familiarIdRef.current) return toRecommendationOutput(localRecommendation(), true);
-
     const controller = new AbortController();
     const abortForLifecycle = () => controller.abort();
     request.signal.addEventListener("abort", abortForLifecycle, { once: true });
-    const abortForTimeout = () => {
+    const timeout: { failure: PromptEnhancementFailure | null } = { failure: null };
+    const abortForTimeout = (failure: PromptEnhancementFailure) => () => {
       if (controller.signal.aborted || request.signal.aborted) return;
+      timeout.failure = failure;
       stopEnhanceRun(request.runId);
       controller.abort();
     };
-    const firstTokenTimer = setTimeout(abortForTimeout, ENHANCE_FIRST_TOKEN_TIMEOUT_MS);
-    const generationTimer = setTimeout(abortForTimeout, ENHANCE_GENERATION_TIMEOUT_MS);
+    const firstTokenTimer = setTimeout(
+      abortForTimeout({ kind: "timeout", stage: "start", ms: ENHANCE_FIRST_TOKEN_TIMEOUT_MS }),
+      ENHANCE_FIRST_TOKEN_TIMEOUT_MS,
+    );
+    const generationTimer = setTimeout(
+      abortForTimeout({ kind: "timeout", stage: "finish", ms: ENHANCE_GENERATION_TIMEOUT_MS }),
+      ENHANCE_GENERATION_TIMEOUT_MS,
+    );
 
     try {
       const { text, error } = await streamFamiliarText({
-        familiarId: familiarIdRef.current,
+        familiarId: runFamiliarId,
         prompt: buildEnhanceInstruction({
           draft: activeRequest.baseDraft,
           mode,
@@ -228,12 +247,13 @@ export function usePromptEnhance({
         },
       });
       if (request.signal.aborted) throw new Error("Enhance cancelled.");
-      if (error) return toRecommendationOutput(localRecommendation(), true);
+      if (timeout.failure) throw fail(timeout.failure);
+      if (error) throw fail({ kind: "stream", detail: error });
       const enhanced = extractCompleteEnhancedPrompt(text);
-      return enhanced ? toRecommendationOutput(enhanced, false) : "{}";
+      return enhanced ? toRecommendationOutput(enhanced) : "{}";
     } catch (error) {
-      if (request.signal.aborted) throw error;
-      return toRecommendationOutput(localRecommendation(), true);
+      if (request.signal.aborted || error instanceof PromptEnhanceFailure) throw error;
+      throw fail({ kind: "stream", detail: error instanceof Error ? error.message : "" });
     } finally {
       clearTimeout(firstTokenTimer);
       clearTimeout(generationTimer);
@@ -291,7 +311,6 @@ export function usePromptEnhance({
     }
 
     handledRecommendationRef.current = recommendation.id;
-    const offline = recommendation.payload.offline;
     const applied = activeRequest.applyDraft(recommendation.payload.enhanced);
     if (settleEnhance(activeRequest.originalDraft, draftRef.current) === "apply") {
       selfEditRef.current = true;
@@ -299,25 +318,34 @@ export function usePromptEnhance({
       setState({
         phase: "applied",
         original: activeRequest.originalDraft,
-        offline,
         recommendation,
       });
-      announce(offline ? "Prompt enhanced offline." : "Prompt enhanced.", "polite");
+      announce("Prompt enhanced.", "polite");
       return;
     }
     setState({
       phase: "suggested",
       enhanced: recommendation.payload.enhanced,
       applied,
-      offline,
       recommendation,
     });
     announce("Enhanced prompt ready — apply or dismiss.", "polite");
   }, [agentic.state.items, announce, setDraft]);
 
+  // The draft is never written on failure: the error only reports what
+  // happened and whether Retry can help.
   useEffect(() => {
     if (agentic.state.phase !== "error" || stateRef.current.phase !== "loading") return;
-    setState({ phase: "error", message: agentic.state.error?.message ?? "Enhance could not be completed." });
+    const failure = failureRef.current;
+    setState({
+      phase: "error",
+      message: failure?.message ?? describePromptEnhancementFailure(
+        agentic.state.error?.code === "validation"
+          ? { kind: "invalid-output" }
+          : { kind: "stream", detail: "" },
+      ),
+      retryable: failure?.retryable ?? true,
+    });
   }, [agentic.state.error, agentic.state.phase]);
 
   useEffect(() => {
@@ -344,6 +372,12 @@ export function usePromptEnhance({
   const enhance = useCallback((intent: EnhanceIntent = "auto", draftOverride?: string) => {
     const baseDraft = draftOverride ?? sourceDraftRef.current ?? draftRef.current;
     if (!baseDraft.trim() || disabled) return;
+    lastIntentRef.current = intent;
+    if (!familiarIdRef.current) {
+      setState({ phase: "error", message: PROMPT_ENHANCE_NO_FAMILIAR_REASON, retryable: false });
+      return;
+    }
+    failureRef.current = null;
     handledRecommendationRef.current = null;
     requestRef.current = {
       baseDraft,
@@ -363,7 +397,7 @@ export function usePromptEnhance({
       previous.recommendation,
       currentContextFingerprintRef.current,
     )) {
-      setState({ phase: "error", message: "Chat context changed. Enhance again before applying." });
+      setState({ phase: "error", message: "Chat context changed. Enhance again before applying.", retryable: true });
       return;
     }
     const original = draftRef.current;
@@ -372,7 +406,6 @@ export function usePromptEnhance({
     setState({
       phase: "applied",
       original,
-      offline: previous.offline,
       recommendation: previous.recommendation,
     });
     announce("Enhanced prompt applied.", "polite");
@@ -393,5 +426,12 @@ export function usePromptEnhance({
     announce("Prompt restored.", "polite");
   }, [announce, setDraft]);
 
-  return { state, enhance, apply, dismiss, revert, cancel, reset: cancel };
+  /** Re-run the failed intent on the current draft. */
+  const retry = useCallback(() => {
+    const previous = stateRef.current;
+    if (previous.phase !== "error" || !previous.retryable) return;
+    enhance(lastIntentRef.current);
+  }, [enhance]);
+
+  return { state, enhance, apply, dismiss, revert, retry, cancel, reset: cancel, unavailableReason };
 }

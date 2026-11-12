@@ -1,3 +1,4 @@
+import { invalidateChatAccess, subscribeChatAccessInvalidation } from "./chat-access-invalidation.ts";
 import type { ChatReasoningBlock } from "./chat-reasoning-blocks.ts";
 import { settleToolObservations, type ToolStatus } from "./chat-tool-state.ts";
 import type { ToolActivity } from "./chat-activity.ts";
@@ -7,6 +8,7 @@ import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type { ModelControlValues } from "@/lib/model-control-capabilities";
 import type { ChatStreamClientHealth } from "@/lib/chat-stream-health";
 import { cleanModelId } from "@/lib/chat-model-state";
+import { runtimeModelProviderMismatch } from "@/lib/runtime-models";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import type { TurnUsage } from "@/lib/usage-format";
 
@@ -171,15 +173,43 @@ export type RetryTurnModelRequest = {
 export function retryTurnModelRequest(
   userTurn: Pick<Turn, "modelOverrideScope">,
   assistantTurn: Pick<Turn, "responseMetadata">,
+  currentHarness?: string | null,
 ): RetryTurnModelRequest {
   const retryModel = cleanModelId(assistantTurn.responseMetadata?.retryModel);
   if (retryModel) {
-    return { modelOverride: retryModel, modelOverrideScope: "next-message" };
+    // The model belongs to the runtime this turn ran on. Once the chat has
+    // moved, the new runtime resolves its own instead of refusing this one (#6419).
+    const ranOn = assistantTurn.responseMetadata?.harness;
+    const runtimeMoved = Boolean(currentHarness) && (
+      (Boolean(ranOn) && ranOn !== currentHarness) ||
+      runtimeModelProviderMismatch(currentHarness!, retryModel)
+    );
+    return runtimeMoved ? {} : { modelOverride: retryModel, modelOverrideScope: "next-message" };
   }
   if (userTurn.modelOverrideScope === "runtime-default") {
     return { modelOverride: "", modelOverrideScope: "next-message" };
   }
   return {};
+}
+
+/** A saved failure replays its own attempt, but a runtime or model picked since
+ * then outranks it, and so does a server refusal of that model. The keys are
+ * removed rather than nulled so Retry resolves the model and its controls the
+ * way a new send would, including a pick still being saved (#6419). */
+export function forgetFailedSendModel<T extends {
+  options?: { modelOverride?: unknown; modelOverrideScope?: unknown };
+  controls?: { modelControls?: unknown };
+}>(failed: T): T {
+  const next = { ...failed };
+  if (failed.options) {
+    const { modelOverride: _model, modelOverrideScope: _scope, ...options } = failed.options;
+    next.options = options as T["options"];
+  }
+  if (failed.controls) {
+    const { modelControls: _controls, ...controls } = failed.controls;
+    next.controls = controls as T["controls"];
+  }
+  return next;
 }
 
 function cloneLiveTurn(turn: Turn): Turn {
@@ -208,11 +238,20 @@ export type LiveChatGenerationMetadata = {
 // updates, freezing the visible snapshot mid-stream.
 const liveChatRegistry = createLiveGenerationRegistry<Turn, LiveChatGenerationSnapshot>(cloneLiveTurn);
 
+subscribeChatAccessInvalidation((change) => {
+  const aliases = liveChatRegistry.revoke(change.sessionId);
+  if (change.sessionId !== undefined) {
+    for (const sessionId of aliases) {
+      if (sessionId !== change.sessionId) invalidateChatAccess({ ...change, sessionId });
+    }
+  }
+});
+
 export function readLiveChatGeneration(sessionId: string): LiveChatGenerationSnapshot | null {
   return liveChatRegistry.read(sessionId);
 }
 
-export function recordLiveChatGeneration(snapshot: LiveChatGenerationSnapshot): LiveChatGenerationSnapshot {
+export function recordLiveChatGeneration(snapshot: LiveChatGenerationSnapshot): LiveChatGenerationSnapshot | null {
   return liveChatRegistry.record(snapshot);
 }
 
@@ -303,6 +342,10 @@ export function clearLiveChatGeneration(
     }
   }
   liveChatRegistry.clear(sessionId);
+}
+
+export function revokeLiveChatGenerations(sessionId?: string): void {
+  liveChatRegistry.revoke(sessionId);
 }
 
 export function subscribeLiveChatGeneration(

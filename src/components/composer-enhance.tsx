@@ -24,18 +24,23 @@ export function EnhanceControl({
   state,
   onEnhance,
   onCancel,
-  disabled,
+  disabled: disabledByComposer,
+  unavailableReason,
   size = "md",
 }: {
   state: PromptEnhanceState;
   onEnhance: (intent: EnhanceIntent) => void;
   onCancel: () => void;
   disabled?: boolean;
+  /** Why Enhance can't run here (e.g. no familiar). Disables both segments
+   *  and is shown as the control's tooltip and accessible description. */
+  unavailableReason?: string | null;
   /** Height language of the hosting composer — "md" sits with the 30px
    *  icon-button rows (home, chat); "sm" matches the 26px `Button size="sm"`
    *  Send button (quick chat). */
   size?: "sm" | "md";
 }) {
+  const disabled = disabledByComposer || Boolean(unavailableReason);
   const [menuOpen, setMenuOpen] = useState(false);
   const mainRef = useRef<HTMLButtonElement | null>(null);
   const optionsRef = useRef<HTMLButtonElement | null>(null);
@@ -92,12 +97,17 @@ export function EnhanceControl({
   const segmentBtn = `composer-enhance-control__segment focus-ring grid ${heightClass} place-items-center hover:bg-[var(--bg-raised)] disabled:opacity-40`;
 
   return (
-    <span className="composer-enhance-control inline-flex items-stretch overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)]">
+    <span
+      className="composer-enhance-control inline-flex items-stretch overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)]"
+      // Disabled buttons drop hover in some engines; the wrapper keeps the
+      // reason discoverable.
+      title={!loading && unavailableReason ? unavailableReason : undefined}
+    >
       <button
         ref={mainRef}
         type="button"
         className={`${segmentBtn} px-2`}
-        title={loading ? "Cancel enhancement" : "Enhance prompt"}
+        title={loading ? "Cancel enhancement" : unavailableReason ?? "Enhance prompt"}
         aria-label={loading ? "Cancel enhancement" : "Enhance prompt"}
         disabled={disabled && !loading}
         onClick={(event) => {
@@ -238,13 +248,14 @@ export function EnhanceControl({
 
 /** The status strip under the composer: streaming preview while loading,
  *  Apply/Dismiss for a suggestion that arrived after the draft changed,
- *  Revert after an in-place apply, and error reporting. */
+ *  Revert after an in-place apply, and error reporting with Retry. */
 export function EnhanceStrip({
   state,
   onApply,
   onDismiss,
   onRevert,
   onCancel,
+  onRetry,
   onFocusComposer,
 }: {
   state: PromptEnhanceState;
@@ -252,6 +263,8 @@ export function EnhanceStrip({
   onDismiss: () => void;
   onRevert: () => void;
   onCancel: () => void;
+  /** Re-runs a failed enhancement; offered only when retrying can help. */
+  onRetry?: () => void;
   /** User-action-only focus return after a strip control unmounts. */
   onFocusComposer?: () => void;
 }) {
@@ -279,6 +292,19 @@ export function EnhanceStrip({
       >
         <Icon name="ph:warning-circle" width={12} aria-hidden className="shrink-0 text-[var(--color-warning)]" />
         <span className="composer-enhance-strip__message">{state.message}</span>
+        {state.retryable && onRetry ? (
+          <button
+            type="button"
+            className={actionClass}
+            onClick={() => {
+              onRetry();
+              focusComposerAfterAction();
+            }}
+            aria-label="Retry enhance"
+          >
+            Retry
+          </button>
+        ) : null}
         <button
           type="button"
           className={actionClass}
@@ -320,7 +346,7 @@ export function EnhanceStrip({
           <>
             <Icon name="ph:sparkle" width={12} aria-hidden className="shrink-0 text-[var(--text-secondary)]" />
             <span className="composer-enhance-strip__message">
-              Enhanced version ready{state.offline ? " (offline)" : ""}.
+              Enhanced version ready.
             </span>
             <button
               type="button"
@@ -349,7 +375,7 @@ export function EnhanceStrip({
           <>
             <Icon name="ph:check" width={12} aria-hidden className="shrink-0 text-[var(--text-secondary)]" />
             <span className="composer-enhance-strip__message">
-              Prompt improved{state.offline ? " (offline)" : ""}.
+              Prompt improved.
             </span>
             <button
               type="button"

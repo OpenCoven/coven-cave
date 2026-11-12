@@ -6,6 +6,7 @@ import {
   type Section,
 } from "@/components/settings-sections";
 import { settingsGroupId } from "@/components/ui/settings-group";
+import { compactPath } from "@/components/familiars-memory-utils";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { useGeneralSettingsData } from "./settings-general-data";
 import {
@@ -61,8 +62,10 @@ export function SettingsOverview({
       { label: "Backup", id: settingsGroupId("Backup") },
       { label: "Chat", id: settingsGroupId("Chat") },
     ] as const;
+    // The header shows where workspaces live at a glance; the full path stays
+    // in the title and in the editable Workspace path field below (#6243).
     const summaryParts = [
-      summary?.workspacePath,
+      summary?.workspacePath ? compactPath(summary.workspacePath) : null,
       typeof summary?.syncEnabled === "boolean"
         ? `sync ${summary.syncEnabled ? "on" : "off"}`
         : null,
@@ -107,7 +110,7 @@ export function SettingsOverview({
               className="settings-overview__summary"
               role={summaryHasProblem ? "alert" : "status"}
             >
-              <span>{summaryMessage}</span>
+              <span title={summary?.workspacePath || undefined}>{summaryMessage}</span>
               {summaryHasProblem ? (
                 <Button
                   size="xs"

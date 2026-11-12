@@ -4,6 +4,7 @@ import { bindingFor, loadConfig, recordOwnedSession, recordSessionFamiliar } fro
 import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
+import { prepareLocalCodexLaunch } from "@/lib/server/local-codex-launch";
 import {
   boundedInt,
   boundedString,
@@ -62,6 +63,11 @@ export async function POST(req: Request) {
   if (!isAllowedHarness(harness)) {
     return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
   }
+  const localLaunch = await prepareLocalCodexLaunch(harness, binding.model, "daemon");
+  if (localLaunch.local && !localLaunch.ok) {
+    return NextResponse.json({ ok: false, code: localLaunch.code, error: localLaunch.message }, { status: 409 });
+  }
+  const launchModel = localLaunch.local ? localLaunch.nativeModel : binding.model;
 
   const prompt = boundedString(body.prompt, MAX_PROMPT_CHARS);
   if (prompt === null) {
@@ -79,7 +85,7 @@ export async function POST(req: Request) {
     body: {
       projectRoot,
       harness,
-      ...(binding.model ? { model: binding.model } : {}),
+      ...(launchModel ? { model: launchModel } : {}),
       prompt,
       cols,
       rows,

@@ -1,11 +1,11 @@
-/* Run details (#6026, #6034): the per-turn runtime, model and control trail
-   under a reply, shared by the main chat and Quick Chat. Imported by
+/* Run details (#6026, #6034, #6269): the per-turn runtime, model and control
+   trail under a reply, shared by the main chat and Quick Chat. Imported by
    src/components/response-run-details.tsx, so each surface that renders the
    disclosure carries these rules and no route pays for them otherwise.
-   The trail is one muted
-   disclosure, not a row of pills (static provenance reads as text, design
-   language §8). Closed, it is a single line that fits the reading column;
-   open, a label/value list whose long values wrap inside the column. */
+   The trail is one muted disclosure, not a row of pills (static provenance
+   reads as text, design language §8). Closed, it is a single quiet line that
+   fits the reading column; open, a label/value ledger on one surface step,
+   its groups parted by a hairline, whose long values wrap inside the column. */
 .cave-run-details {
   margin-top: var(--space-2);
   min-width: 0;
@@ -14,47 +14,84 @@
 }
 
 .cave-run-details > summary {
-  display: inline-block;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-1);
   max-width: 100%;
-  padding-block: var(--space-1);
+  min-height: var(--space-6);
+  margin-inline-start: calc(-1 * var(--space-1));
+  padding: 0 var(--space-2) 0 var(--space-1);
   line-height: 1.5;
   cursor: pointer;
   list-style: none;
   border-radius: var(--radius-control);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
-.cave-run-details__caret {
-  display: inline-block;
-  vertical-align: -0.1em;
-  margin-inline-end: var(--space-1);
+.cave-run-details > summary:hover {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+  color: var(--text-secondary);
 }
 
 .cave-run-details > summary::-webkit-details-marker {
   display: none;
 }
 
+.cave-run-details__caret {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
 .cave-run-details[open] > summary > .cave-run-details__caret {
   transform: rotate(90deg);
 }
 
+.cave-run-details__title {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* The ledger: one surface step up from the reply, no border of its own. The
+   label column is shared across groups through a subgrid, so every value
+   starts on the same line. */
 .cave-run-details__list {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
+  grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
   margin: var(--space-1) 0 var(--space-2);
-  padding-inline-start: calc(var(--icon-xs) + var(--space-1));
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 46%, transparent);
   color: var(--text-secondary);
 }
 
-.cave-run-details__group,
-.cave-run-details__row {
-  display: contents;
+.cave-run-details__group {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  gap: inherit;
 }
 
-/* Groups (runtime, model, controls, activity) read as a gap in the list, not
-   a heading that would repeat the first row's label. */
-.cave-run-details__group + .cave-run-details__group > .cave-run-details__row:first-child > * {
-  margin-top: var(--space-2);
+@supports not (grid-template-columns: subgrid) {
+  .cave-run-details__group {
+    grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+  }
+}
+
+/* Groups (runtime, model, controls, activity) part on one hairline, not a
+   heading that would repeat the first row's label. */
+.cave-run-details__group + .cave-run-details__group {
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-hairline);
+}
+
+.cave-run-details__row {
+  display: contents;
 }
 
 .cave-run-details dt {
@@ -67,6 +104,16 @@
   overflow-wrap: anywhere;
 }
 
+/* Identifiers (runtime and version, model id) read as code; the clause
+   after them stays prose. */
+.cave-run-details__id {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+/* A fact the runtime did not report or confirm stays in the ledger, quieter;
+   its words say what is missing, so the colour is never the only signal. */
 .cave-run-details__row[data-gap] > dd {
   color: var(--text-muted);
 }
@@ -76,10 +123,21 @@
 }
 
 @media (max-width: 40rem) {
-  .cave-run-details__list {
+  .cave-run-details__list,
+  .cave-run-details__group {
     grid-template-columns: minmax(0, 1fr);
   }
   .cave-run-details dt {
     margin-top: var(--space-1);
+  }
+  .cave-run-details__group > .cave-run-details__row:first-child > dt {
+    margin-top: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-run-details > summary,
+  .cave-run-details__caret {
+    transition: none;
   }
 }

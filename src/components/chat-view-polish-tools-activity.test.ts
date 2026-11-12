@@ -85,10 +85,32 @@ assert.match(
 // ToolGroup's accessible name is a dedicated helper: the compact activity
 // summary plus the running/error counts a sighted reader gets only from a
 // tinted (color-only) chip.
+// #5762: every compact counter and progress row folds the exact lifecycle
+// through the shared helpers, so a rejected or cancelled call never reads as
+// running, done or a clean run.
 assert.match(
   source,
-  /function toolGroupAriaLabel\(summary: string, running: number, errors: number, requested = 0, unknown = 0\): string \{[\s\S]*?Tool activity: \$\{summary\}/,
+  /status: toolProgressStatus\(mergedTool\.status\)/,
+  "live tool progress rows settle through toolProgressStatus",
+);
+assert.equal((source.match(/toolStatusCounts\(tools\.map\(\(tool\) => tool\.status\)\)/g) ?? []).length, 2,
+  "both tool-group summaries count through toolStatusCounts");
+assert.match(
+  source,
+  /const toolCounts = toolStatusCounts\(tools\.map\(\(t\) => t\.status\)\)[\s\S]*?notices \|\| unknown \|\| rejected \|\| cancelled \? "is-notice"/,
+  "the run-activity strip never tints a rejected or cancelled run as a clean success",
+);
+
+assert.match(
+  source,
+  /function toolGroupAriaLabel\(summary: string, running: number, errors: number, requested = 0, unknown = 0, rejected = 0, cancelled = 0\): string \{[\s\S]*?Tool activity: \$\{summary\}/,
   "toolGroupAriaLabel states the compact summary as the disclosure's accessible name",
+);
+
+assert.match(
+  source,
+  /function toolGroupAriaLabel[\s\S]*?rejected \? `\$\{rejected\} rejected` : ""[\s\S]*?cancelled \? `\$\{cancelled\} cancelled` : ""[\s\S]*?aria-label=\{toolGroupAriaLabel\(summary, running, errors, requested, unknown, rejected, cancelled\)\}/,
+  "the group's accessible name speaks the rejected and cancelled counts its chips show",
 );
 
 assert.match(
@@ -99,7 +121,7 @@ assert.match(
 
 assert.match(
   source,
-  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors, requested, unknown\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
+  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors, requested, unknown, rejected, cancelled\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
   "ToolGroup wraps ONE collapsed disclosure — named by toolGroupAriaLabel — around ToolRuns per assistant turn",
 );
 const toolGroup = source.match(/function ToolGroup[\s\S]*?function ToolRuns/)?.[0] ?? "";
@@ -141,8 +163,8 @@ assert.match(
 );
 assert.match(
   source,
-  /function ToolRunGroup[\s\S]*ariaLabel=\{`\$\{displayName\}, \$\{tools\.length\} \$\{tools\.length === 1 \? "call" : "calls"\}\$\{running \? `, \$\{running\} running` : ""\}\$\{requested \? `, \$\{requested\} requested` : ""\}\$\{unknown \? `, \$\{unknown\} outcome unknown` : ""\}\$\{rejected \? `, \$\{rejected\} rejected` : ""\}\$\{errors \? `, \$\{errors\} \$\{errors === 1 \? "error" : "errors"\}` : ""\}`\}/,
-  "a repeated run's accessible name includes requested, rejected, unknown, running, and error counts",
+  /function ToolRunGroup[\s\S]*ariaLabel=\{`\$\{displayName\}, \$\{tools\.length\} \$\{tools\.length === 1 \? "call" : "calls"\}\$\{running \? `, \$\{running\} running` : ""\}\$\{requested \? `, \$\{requested\} requested` : ""\}\$\{unknown \? `, \$\{unknown\} outcome unknown` : ""\}\$\{rejected \? `, \$\{rejected\} rejected` : ""\}\$\{cancelled \? `, \$\{cancelled\} cancelled` : ""\}\$\{errors \? `, \$\{errors\} \$\{errors === 1 \? "error" : "errors"\}` : ""\}`\}/,
+  "a repeated run's accessible name includes requested, rejected, cancelled, unknown, running, and error counts",
 );
 
 // Task 3 cont.: Status spans are scoped to their <summary> and wrap the chip markup.

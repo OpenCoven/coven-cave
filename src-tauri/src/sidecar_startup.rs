@@ -1188,6 +1188,8 @@ fn run_sidecar_runtime(
 
     #[cfg(unix)]
     configure_unix_sidecar_parent_watchdog(&mut command);
+    #[cfg(target_os = "windows")]
+    configure_windows_sidecar_parent_watchdog(&mut command);
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     #[cfg(target_os = "windows")]

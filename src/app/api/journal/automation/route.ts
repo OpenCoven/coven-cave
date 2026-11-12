@@ -19,9 +19,10 @@ export const runtime = "nodejs";
  *
  *   GET  /api/journal/automation?familiar=ID
  *        → 200 { ok: true, available: true, routine: Routine & { hour, minute } | null, lastRun: RoutineRun | null }
- *   PUT  /api/journal/automation  body { familiar, enabled, hour, minute?: 0, familiarName? }
- *        → 200 { ok: true, available: true, routine, lastRun } — creates (ACTIVE) or updates the
- *          routine (ACTIVE/PAUSED, daily RRULE at hour:00 local — the native scheduler runs on the hour, tags ["journal"],
+ *   PUT  /api/journal/automation body { familiar, enabled, hour, minute?: 0, familiarName?, mutation }
+ *        mutation carries the reviewed source/revision, stable adoption key and timezone.
+ *        → 200 { ok: true, available: true, routine, lastRun } — creates paused or updates the
+ *          routine (activation requires separate review, daily RRULE at hour:00 — the native scheduler runs on the hour, tags ["journal"],
  *          timeoutMinutes 10); disabling with no routine is a no-op (routine: null)
  *   POST /api/journal/automation  body { familiar, action: "run" }
  *        → 200 { ok: true, available: true, run: { runId, status, sessionId } }

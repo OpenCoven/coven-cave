@@ -4,7 +4,7 @@ import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
@@ -82,6 +82,7 @@ type Props = {
   familiars: Familiar[];
   sessions: SessionRow[];
   browseScope?: ChatBrowseScope;
+  browseFilter?: ReactNode;
   composeProjectRoot?: string | null;
   activeFamiliar: Familiar | null;
   activeFamiliarId: string | null;
@@ -138,6 +139,7 @@ export function ChatSurface({
   familiars,
   sessions,
   browseScope,
+  browseFilter,
   composeProjectRoot,
   activeFamiliar,
   activeFamiliarId,
@@ -174,7 +176,7 @@ export function ChatSurface({
   // reaching into the router for state it is handed anyway.
   const [railActiveSessionId, setRailActiveSessionId] = useState<string | null>(null);
   const { projects, loading: projectsLoading, loadedSuccessfully: projectsLoaded, error: projectsError } =
-    useProjects({ familiarId: activeFamiliarId });
+    useProjects({ familiarId: browseScope?.familiarIds !== undefined ? null : activeFamiliarId });
   const projectOverrides = useProjectOverrides();
   const effectiveBrowseScope = useMemo(
     () => effectiveChatBrowseScope(browseScope, { loaded: projectsLoaded, loading: projectsLoading, error: projectsError }),
@@ -588,7 +590,7 @@ export function ChatSurface({
             sessionsError={sessionsError}
             browseScope={effectiveBrowseScope}
             outOfScopeActiveSession={outOfScopeActiveSession}
-            activeFamiliarId={activeFamiliarId}
+            activeFamiliarId={browseScope?.familiarIds !== undefined ? null : activeFamiliarId}
             activeSessionId={railActiveSessionId}
             onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
             onOpenSessionInSplit={(session: SessionRow) => routerRef.current?.openSessionInSplit(session.id)}
@@ -602,9 +604,9 @@ export function ChatSurface({
       <div ref={contentRef} className="chat-surface__content flex min-h-0 min-w-0 flex-1">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
-            Chat keeps Projects discoverable as a first-class tab. The familiar
-            is chosen only at the top of the page, beside the project selector
-            (workspace context switcher / top bar), never inside Chat (#5565). */}
+            Chat keeps Projects discoverable as a first-class tab. The optional
+            browse filter lives here; acting-familiar and project choices for
+            a new chat remain in the launch/composer flow. */}
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
           {/* Mobile route to the thread list. Rendered on every viewport and
               hidden by CSS above 1024px, where the docked rail and its spine
@@ -637,6 +639,7 @@ export function ChatSurface({
             items={CHAT_SECTION_ITEMS}
           />
           <div className="flex shrink-0 items-center gap-1.5">
+            {browseFilter}
             {/* Group demoted from a co-equal tab (cave-xsq.5): the default chat
                 surface reads as a conversation (Sessions / Projects), and Group
                 — broadcast one prompt to a coven — is a quiet icon here instead.
@@ -680,9 +683,10 @@ export function ChatSurface({
         ) : scope === "familiar" ? (
           // The active familiar's identity + capability surface (hero, role,
           // skills, tools) — a purpose-built first-class chat tab, since it
-          // describes who you're chatting with.
-          <div className="flex min-h-0 min-w-0 flex-1 justify-center">
-            <div className="h-full w-full max-w-7xl">
+          // describes who you're chatting with. It spans the full pane like
+          // the Chats and Projects tabs rather than a centered column.
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <div className="h-full w-full min-w-0">
               <ChatFamiliarView
                 familiar={activeFamiliar}
                 familiars={familiars}
@@ -812,13 +816,14 @@ export function ChatSurface({
         sessionsError={sessionsError}
         browseScope={effectiveBrowseScope}
         outOfScopeActiveSession={outOfScopeActiveSession}
-        activeFamiliarId={activeFamiliarId}
+        activeFamiliarId={browseScope?.familiarIds !== undefined ? null : activeFamiliarId}
         activeSessionId={railActiveSessionId}
         onOpenSession={(session: SessionRow) => routerRef.current?.openSession(session.id)}
         onDeleteSession={deleteThreadFromRail}
         onSessionsChanged={onSessionsChanged}
         onOpenUrl={onOpenUrl}
         sections={
+          <>
           <div className="chat-threads-sheet__sections">
             <Tabs<FamiliarsScope>
               bordered={false}
@@ -846,6 +851,8 @@ export function ChatSurface({
               <Icon name="ph:users-three" width={16} aria-hidden />
             </button>
           </div>
+          <div className="chat-browse-filter__sheet">{browseFilter}</div>
+          </>
         }
       />
     </section>

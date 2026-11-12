@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { GitHubCard } from "@/components/github-card";
 import {
@@ -9,6 +9,7 @@ import { ResearchRunInlineCard } from "@/components/research-run-surface";
 import { ResponseRunDetails } from "@/components/response-run-details";
 import { SkillRunSummary } from "@/components/skill-stage-card";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
+import { UiBlockReadable } from "@/components/ui-block-readable";
 import { Button } from "@/components/ui/button";
 import { shouldUseEmptySuccessfulFallback } from "@/lib/chat-assistant-output";
 import { copyText } from "@/lib/clipboard";
@@ -107,6 +108,9 @@ function QuickChatBubble({
                 text={piece.text}
               />
             );
+          }
+          if (piece.kind === "ui") {
+            return <UiBlockReadable key={`ui-${index}`} lines={piece.lines} />;
           }
           if (piece.kind === "action") {
             return (
@@ -213,12 +217,35 @@ function QuickChatBubble({
   );
 }
 
+// The cold thread's keyboard grammar as keycap hints. Each hint is one
+// unbreakable unit, so a narrow window wraps between hints — never inside one
+// (the old run-on sentence orphaned "send" on its own line) — and `/`
+// commands, otherwise invisible until typed, are named alongside @ and Enter.
+const QUICK_CHAT_KEY_HINTS: ReadonlyArray<{ key: string; action: string }> = [
+  { key: "@", action: "switch familiar" },
+  { key: "/", action: "commands" },
+  { key: "Enter", action: "send" },
+];
+
+function QuickChatKeyHints() {
+  return (
+    <p className="quick-chat-empty__hint quick-chat-empty__keys">
+      {QUICK_CHAT_KEY_HINTS.map(({ key, action }) => (
+        <span key={key} className="quick-chat-empty__key">
+          <kbd className="quick-chat-reco__kbd">{key}</kbd>
+          {action}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 export function QuickChatThread({
   messages,
   familiar,
   emptyIcon = "ph:chat-circle-dots",
   emptyTitle = familiar ? `Ask ${familiar.display_name} anything` : "Ask a familiar anything",
-  emptyHint = "Replies stream right here · @name to switch familiar · Enter to send",
+  emptyHint,
   suggestions = QUICK_CHAT_SUGGESTIONS,
   onSuggestion,
   onRegenerate,
@@ -228,7 +255,8 @@ export function QuickChatThread({
   familiar: Familiar | null;
   emptyIcon?: IconName;
   emptyTitle?: string;
-  emptyHint?: string;
+  /** Replaces the default keycap hints (@, /, Enter). */
+  emptyHint?: ReactNode;
   suggestions?: string[];
   onSuggestion?: (value: string) => void;
   onRegenerate?: () => void;
@@ -314,7 +342,7 @@ export function QuickChatThread({
         <div className="quick-chat-empty">
           <span className="quick-chat-empty__glyph" aria-hidden><Icon name={emptyIcon} width={22} /></span>
           <p className="quick-chat-empty__title">{emptyTitle}</p>
-          <p className="quick-chat-empty__hint">{emptyHint}</p>
+          {emptyHint === undefined ? <QuickChatKeyHints /> : <p className="quick-chat-empty__hint">{emptyHint}</p>}
           {suggestions.length > 0 ? <div className="quick-chat-empty__chips">
             {suggestions.map((suggestion) => <Button key={suggestion} size="xs" variant="secondary" className="quick-chat-chip" onClick={() => onSuggestion?.(suggestion)}>{suggestion}</Button>)}
           </div> : null}

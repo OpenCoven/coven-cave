@@ -10,8 +10,8 @@ on:
       experiment:
         description: Frozen-source comparison to run
         type: choice
-        options: [incremental-checker, phase-baseline]
-        default: incremental-checker
+        options: [build-observation, typecheck-before-compile, incremental-checker, phase-baseline]
+        default: build-observation
 
 permissions:
   contents: read
@@ -28,6 +28,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.22.0
       - run: python3 -m unittest discover -s scripts/typescript-diagnostics -v
 
   measure:
@@ -38,14 +41,10 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        kind: ${{ fromJSON(inputs.experiment == 'phase-baseline' && '["tsc","build"]' || '["tsc","tsc-incremental"]') }}
-        source:
-          - name: baseline
-            oid: 8b2f0baffdfbe67aa3c9dff0c98523adc305735a
-          - name: stopgap
-            oid: cd4965abc98023144023db07e58f8fde35d8c27d
-          - name: current-20261021
-            oid: 0a38e2ec43eac0289d1b436f1cd97dddad6238c8
+        kind: ${{ fromJSON((inputs.experiment == 'build-observation' || inputs.experiment == 'typecheck-before-compile' || github.event_name == 'pull_request') && '["build-observed"]' || inputs.experiment == 'phase-baseline' && '["tsc","build"]' || '["tsc","tsc-incremental"]') }}
+        # typecheck-before-compile: one A/B run, main 777d6a0ad against #6217 (the same
+        # tree plus the fix), the fix twice. Pull requests measure the fix commit.
+        source: ${{ fromJSON(inputs.experiment == 'typecheck-before-compile' && '[{"name":"main-777d6a0ad","oid":"777d6a0ad2177d730223701694e3478adcb013d2","research":"0.2.0"},{"name":"fix-50bab3ee5-a","oid":"50bab3ee522dc4fc60d216c9c23db9867d556c06","research":"0.2.0"},{"name":"fix-50bab3ee5-b","oid":"50bab3ee522dc4fc60d216c9c23db9867d556c06","research":"0.2.0"}]' || github.event_name == 'pull_request' && '[{"name":"fix-50bab3ee5","oid":"50bab3ee522dc4fc60d216c9c23db9867d556c06","research":"0.2.0"}]' || inputs.experiment == 'build-observation' && '[{"name":"stopgap","oid":"cd4965abc98023144023db07e58f8fde35d8c27d"}]' || '[{"name":"baseline","oid":"8b2f0baffdfbe67aa3c9dff0c98523adc305735a"},{"name":"stopgap","oid":"cd4965abc98023144023db07e58f8fde35d8c27d"},{"name":"current-20261021","oid":"0a38e2ec43eac0289d1b436f1cd97dddad6238c8"}]') }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -67,11 +66,13 @@ jobs:
         env:
           SOURCE_OID: ${{ matrix.source.oid }}
           WORKLOAD_KIND: ${{ matrix.kind }}
+          RESEARCH_VERSION: ${{ matrix.source.research || '0.1.0' }}
           REPORT_ROOT: ${{ runner.temp }}/typescript-diagnostics
         run: |
           python3 harness/scripts/typescript-diagnostics/workload.py \
             --source source --output "$REPORT_ROOT" \
-            --commit "$SOURCE_OID" --kind "$WORKLOAD_KIND"
+            --commit "$SOURCE_OID" --kind "$WORKLOAD_KIND" \
+            --research-version "$RESEARCH_VERSION"
       - name: Preserve evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -83,5 +84,6 @@ jobs:
             ${{ runner.temp }}/typescript-diagnostics/*/result.json
             ${{ runner.temp }}/typescript-diagnostics/*/command.log
             ${{ runner.temp }}/typescript-diagnostics/*/samples.jsonl
+            ${{ runner.temp }}/typescript-diagnostics/measurement/node-observations/*.jsonl
           if-no-files-found: error
           retention-days: 30

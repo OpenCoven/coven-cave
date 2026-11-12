@@ -259,6 +259,7 @@ struct ChatsHomeView: View {
             .sidebarColumn()
         } detail: {
             detailColumn
+                .splitDetailColumn()
         }
         // Keep the list visible beside the conversation on iPad; on iPhone the
         // split view still collapses to a single navigation stack.

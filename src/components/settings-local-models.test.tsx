@@ -185,6 +185,19 @@ describe("LocalModelsSection", () => {
     expect(textContent(unchecked.root)).not.toContain("Models marked LM Link");
   });
 
+  it("marks Ollama cloud models as not offered and leaves them out of the count", async () => {
+    const renderer = await render(vi.fn(async () => reply(statusOf([backend({
+      server: { state: "running", version: "0.40.6", deviceCheck: "not-needed", models: [
+        { name: "gpt-oss:20b-cloud", tools: true, contextLength: 131072, lmLink: null, cloud: { host: "ollama.com" } },
+        { name: "qwen3:8b", tools: true, contextLength: 40960, lmLink: null, cloud: null },
+      ] },
+    }), lmstudio()]))));
+    const models = renderer.root.findAll((node) => node.props?.className === "settings-local-models__model").map(textContent);
+    expect(models[0]).toBe("gpt-oss:20b-cloud131,072-token contextCloud · ollama.com · not offeredTool support");
+    expect(statusLines(renderer)[0]).toContain("1 model with tool support");
+    expect(textContent(renderer.root)).toContain("Cloud models run on Ollama's service, not on this computer, so chats never offer them.");
+  });
+
   it("offers a retry when the status can't be read", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(reply({ ok: false, error: "boom" }, 500))

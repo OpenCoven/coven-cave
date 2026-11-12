@@ -107,6 +107,9 @@ $ echo $?
 
 Close condition not met as of 2026-08-30: all four remain `queued`.
 
+**2026-09-16:** #4905 closed as not planned in backlog triage. The closure does
+not claim the runs are terminal; on 2026-10-24 all four still report `queued`.
+
 ## Retrying
 
 `scripts/cancel-stuck-action-runs.mjs` takes run IDs as arguments (defaulting

@@ -127,8 +127,8 @@ assert.match(
 for (const [name, sidebar] of [["Home", homeSidebar]]) {
   assert.match(
     sidebar,
-    /contextMode="mobile"/,
-    `the ${name} rail scopes its context row to mobile`,
+    /contextMode=\{mode === "chat" \? "hidden" : "mobile"\}/,
+    `the ${name} rail keeps mobile context outside Chat and hides it on Chat`,
   );
 }
 

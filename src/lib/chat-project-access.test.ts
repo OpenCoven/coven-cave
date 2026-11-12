@@ -4,7 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { chatProjectAccessId, taskWorktreeProjectAccessId } from "./chat-project-access.ts";
+import {
+  chatProjectAccessId,
+  resumeRootIsRegisteredProject,
+  taskWorktreeProjectAccessId,
+} from "./chat-project-access.ts";
 
 const projects = [
   {
@@ -275,3 +279,431 @@ assert.equal(
 }
 
 console.log("chat-project-access worktree cwd containment tests passed");
+
+// REGRESSION (#6210): a project registered through an alias spelling — a
+// symlinked ancestor, macOS `/tmp -> /private/tmp` being the everyday case —
+// must keep its identity when a chat resumes. The first turn persists the
+// realpathed runtime cwd, and comparing that against the registered spelling
+// failed the resumed turn closed as unregistered. Built under a realpathed
+// temp dir with its own alias symlink, so it holds whatever HOME looks like.
+{
+  const realBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpa-alias-")));
+  const realParent = path.join(realBase, "real");
+  const realProject = path.join(realParent, "cave");
+  fs.mkdirSync(realProject, { recursive: true });
+  const aliasParent = path.join(realBase, "alias");
+  fs.symlinkSync(realParent, aliasParent);
+  const aliasProject = path.join(aliasParent, "cave");
+
+  const project = (id, root) => ({
+    id,
+    name: id,
+    root,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const aliasProjects = [project("proj-alias", aliasProject)];
+
+  assert.equal(
+    chatProjectAccessId({ projects: aliasProjects, resumeCwd: realProject, resolvedCwd: realProject }),
+    "proj-alias",
+    "a resume from the persisted canonical cwd keeps the alias-registered project's identity",
+  );
+  assert.equal(
+    chatProjectAccessId({
+      projects: aliasProjects,
+      requestedProjectRoot: realProject,
+      resolvedCwd: realProject,
+    }),
+    "proj-alias",
+    "an explicit canonical spelling of an alias-registered root is the same project",
+  );
+  assert.equal(
+    chatProjectAccessId({
+      projects: [project("proj-real", realProject)],
+      resumeCwd: aliasProject,
+      resolvedCwd: realProject,
+    }),
+    "proj-real",
+    "the reverse holds: an alias spelling of a canonically registered root is the same project",
+  );
+  assert.equal(
+    chatProjectAccessId({
+      projects: aliasProjects,
+      requestedProjectRoot: aliasProject,
+      resolvedCwd: realProject,
+    }),
+    "proj-alias",
+    "the registered spelling still resolves",
+  );
+
+  // Identity is equality of one existing directory, never containment or a
+  // shared prefix.
+  const sibling = path.join(realParent, "cave-evil");
+  fs.mkdirSync(sibling);
+  assert.equal(
+    chatProjectAccessId({ projects: aliasProjects, resumeCwd: sibling, resolvedCwd: sibling }),
+    `unregistered:${sibling}`,
+    "a sibling sharing the registered root's prefix is not that project",
+  );
+  const subdir = path.join(realProject, "src");
+  fs.mkdirSync(subdir);
+  assert.equal(
+    chatProjectAccessId({ projects: aliasProjects, resumeCwd: subdir, resolvedCwd: subdir }),
+    `unregistered:${subdir}`,
+    "a directory inside the project is not the project itself",
+  );
+  const elsewhere = path.join(realBase, "elsewhere");
+  fs.mkdirSync(elsewhere);
+  assert.equal(
+    chatProjectAccessId({ projects: aliasProjects, resumeCwd: elsewhere, resolvedCwd: elsewhere }),
+    `unregistered:${elsewhere}`,
+    "a different root stays unregistered",
+  );
+
+  // A path that does not exist has no canonical identity to share.
+  const missing = path.join(realParent, "gone");
+  assert.equal(
+    chatProjectAccessId({
+      projects: [project("proj-gone", path.join(aliasParent, "gone"))],
+      resumeCwd: missing,
+      resolvedCwd: missing,
+    }),
+    `unregistered:${missing}`,
+    "a nonexistent registered root and resume path never match canonically",
+  );
+
+  // A registered symlink retargeted after the conversation started: the
+  // persisted cwd names the OLD target, which the registered root no longer
+  // reaches, so the resumed turn fails closed rather than carrying the grant
+  // into a directory the project no longer names.
+  const targetA = path.join(realBase, "target-a");
+  const targetB = path.join(realBase, "target-b");
+  fs.mkdirSync(targetA);
+  fs.mkdirSync(targetB);
+  const linkRoot = path.join(realBase, "link-root");
+  fs.symlinkSync(targetA, linkRoot);
+  const linkProjects = [project("proj-link", linkRoot)];
+  assert.equal(
+    chatProjectAccessId({ projects: linkProjects, resumeCwd: targetA, resolvedCwd: targetA }),
+    "proj-link",
+    "before the retarget, the persisted target is the registered project",
+  );
+  fs.unlinkSync(linkRoot);
+  fs.symlinkSync(targetB, linkRoot);
+  assert.equal(
+    chatProjectAccessId({ projects: linkProjects, resumeCwd: targetA, resolvedCwd: targetA }),
+    `unregistered:${targetA}`,
+    "after the retarget, the old target is no longer that project",
+  );
+
+  // Two records naming one directory through different spellings, neither of
+  // which the request spells: the grant to check is ambiguous, so fail closed.
+  const twinParent = path.join(realBase, "twin");
+  fs.symlinkSync(realParent, twinParent);
+  assert.equal(
+    chatProjectAccessId({
+      projects: [project("proj-alias", aliasProject), project("proj-twin", path.join(twinParent, "cave"))],
+      resumeCwd: realProject,
+      resolvedCwd: realProject,
+    }),
+    `unregistered:${realProject}`,
+    "two records canonicalizing to one directory never pick a grant silently",
+  );
+
+  // Roots that are not local absolute paths never take part in canonical
+  // matching, even when a relative spelling would resolve to the cwd.
+  assert.equal(
+    chatProjectAccessId({
+      projects: [
+        project("proj-remote", `ssh://host${realProject}`),
+        project("proj-relative", path.relative(process.cwd(), realProject)),
+      ],
+      resumeCwd: realProject,
+      resolvedCwd: realProject,
+    }),
+    `unregistered:${realProject}`,
+    "remote-looking or relative registered roots never match a local cwd canonically",
+  );
+
+  // The Board first-turn handoff checks that the realpathed cwd stays inside
+  // the task's registered project. Against an alias-registered root that
+  // containment must run in the same canonical namespace, or every legitimate
+  // reserved Board turn fails closed — and still fail closed when the cwd
+  // really escapes.
+  const boardTask = {
+    projects: aliasProjects,
+    startNewConversation: true,
+    hasExistingConversation: false,
+    taskProjectId: "proj-alias",
+    taskCwd: aliasProject,
+    requestedProjectRoot: aliasProject,
+  };
+  assert.equal(
+    taskWorktreeProjectAccessId({ ...boardTask, resolvedCwd: realProject }),
+    "proj-alias",
+    "a reserved Board turn in an alias-registered project authorizes against it",
+  );
+  assert.equal(
+    taskWorktreeProjectAccessId({ ...boardTask, resolvedCwd: subdir }),
+    "proj-alias",
+    "a Board cwd inside the alias-registered project stays authorized",
+  );
+  assert.equal(
+    taskWorktreeProjectAccessId({ ...boardTask, resolvedCwd: sibling }),
+    `unregistered:${sibling}`,
+    "a Board cwd in a prefix-sharing sibling still fails closed",
+  );
+
+  // A symlink planted inside a familiar's own workspace that points at an
+  // alias-registered project is that project: the caller must hold its grant.
+  const workspace = path.join(realBase, "workspace");
+  fs.mkdirSync(workspace);
+  const planted = path.join(workspace, "planted");
+  fs.symlinkSync(aliasProject, planted);
+  assert.equal(
+    chatProjectAccessId({ projects: aliasProjects, resumeCwd: planted, resolvedCwd: realProject }),
+    "proj-alias",
+    "a planted symlink to an alias-registered project still requires that project's grant",
+  );
+
+  // The canonical step takes a path as spelled. On POSIX a backslash is part
+  // of a name, so `foo\bar` is not the registered `foo/bar` directory.
+  if (process.platform !== "win32") {
+    fs.mkdirSync(path.join(realParent, "foo", "bar"), { recursive: true });
+    const backslashDir = path.join(realParent, "foo\\bar");
+    fs.mkdirSync(backslashDir);
+    assert.equal(
+      chatProjectAccessId({
+        projects: [project("proj-nested", path.join(aliasParent, "foo", "bar"))],
+        resumeCwd: backslashDir,
+        resolvedCwd: backslashDir,
+      }),
+      `unregistered:${backslashDir}`,
+      "a POSIX directory named with a backslash never borrows another project's identity",
+    );
+  }
+
+  // On a case-insensitive volume another letter case names the same directory.
+  // The persisted cwd carries the on-disk case, so a registration typed in
+  // another case must keep its identity on resume too.
+  const caseProbe = path.join(realBase, "CaseProbe");
+  fs.mkdirSync(caseProbe);
+  if (fs.existsSync(path.join(realBase, "caseprobe"))) {
+    const onDisk = path.join(realParent, "MyProj");
+    fs.mkdirSync(onDisk);
+    const persisted = fs.realpathSync.native(path.join(realParent, "myproj"));
+    assert.equal(persisted, onDisk, "the native realpath reports the on-disk case");
+    assert.equal(
+      chatProjectAccessId({
+        projects: [project("proj-case", path.join(aliasParent, "myproj"))],
+        resumeCwd: persisted,
+        resolvedCwd: persisted,
+      }),
+      "proj-case",
+      "a registration typed in another letter case keeps its identity on resume",
+    );
+  }
+
+  // The hidden-generation workspace exemption applies only to roots that are
+  // not registered projects. Twin records make the grant ambiguous, but the
+  // directory is still registered, so it must not read as exempt.
+  const twins = [project("proj-alias", aliasProject), project("proj-twin", path.join(twinParent, "cave"))];
+  assert.equal(
+    resumeRootIsRegisteredProject({ projects: twins, resumeCwd: realProject, resolvedCwd: realProject }),
+    true,
+    "a directory two records name is registered, even though its grant is ambiguous",
+  );
+  assert.equal(
+    resumeRootIsRegisteredProject({ projects: aliasProjects, resumeCwd: planted, resolvedCwd: realProject }),
+    true,
+    "an alias-registered directory reached through a planted link is registered",
+  );
+  assert.equal(
+    resumeRootIsRegisteredProject({ projects: aliasProjects, resumeCwd: elsewhere, resolvedCwd: elsewhere }),
+    false,
+    "an unregistered directory is not registered",
+  );
+  assert.equal(
+    resumeRootIsRegisteredProject({ projects: aliasProjects, resumeCwd: missing, resolvedCwd: missing }),
+    false,
+    "a nonexistent path is not registered",
+  );
+
+  fs.rmSync(realBase, { recursive: true, force: true });
+}
+
+console.log("chat-project-access alias identity tests passed");
+
+// REGRESSION (#6216): `.worktrees/` and Board containment compare the runtime
+// cwd — which arrives with its on-disk letter case — against the registered
+// root. On a case-insensitive volume a project registered in another case is
+// the same directory, so its worktree and Board turns must keep its identity,
+// while a sibling or a symlink that escapes still fails closed.
+{
+  const realBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cpa-case-")));
+  const realParent = path.join(realBase, "real");
+  fs.mkdirSync(realParent);
+  fs.symlinkSync(realParent, path.join(realBase, "alias"));
+  const project = (id, root) => ({
+    id,
+    name: id,
+    root,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  try {
+    fs.mkdirSync(path.join(realBase, "CaseProbe"));
+    if (fs.existsSync(path.join(realBase, "caseprobe"))) {
+      const onDisk = path.join(realParent, "MyProj");
+      const worktree = path.join(onDisk, ".worktrees", "feat-x");
+      fs.mkdirSync(worktree, { recursive: true });
+      fs.mkdirSync(path.join(realParent, "MyProj-evil", ".worktrees", "feat-x"), { recursive: true });
+      const outside = path.join(realBase, "outside");
+      fs.mkdirSync(outside);
+      fs.symlinkSync(outside, path.join(onDisk, ".worktrees", "escape"));
+
+      const typedRoot = path.join(realBase, "alias", "myproj");
+      const projects = [project("proj-case", typedRoot)];
+      const persistedWorktree = fs.realpathSync.native(path.join(typedRoot, ".worktrees", "feat-x"));
+      assert.equal(persistedWorktree, worktree, "the native realpath reports the on-disk case");
+
+      assert.equal(
+        chatProjectAccessId({
+          projects,
+          requestedProjectRoot: path.join(typedRoot, ".worktrees", "feat-x"),
+          resolvedCwd: persistedWorktree,
+        }),
+        "proj-case",
+        "a worktree under a project registered in another letter case authorizes against it",
+      );
+      assert.equal(
+        chatProjectAccessId({ projects, resumeCwd: persistedWorktree, resolvedCwd: persistedWorktree }),
+        "proj-case",
+        "a resumed worktree under a case-variant registration keeps its parent project",
+      );
+      const evil = path.join(realParent, "MyProj-evil", ".worktrees", "feat-x");
+      assert.equal(
+        chatProjectAccessId({ projects, requestedProjectRoot: evil, resolvedCwd: evil }),
+        `unregistered:${evil}`,
+        "a prefix-sharing sibling's worktree is not the case-variant project's",
+      );
+      const escape = path.join(typedRoot, ".worktrees", "escape");
+      assert.equal(
+        chatProjectAccessId({ projects, requestedProjectRoot: escape, resolvedCwd: outside }),
+        `unregistered:${escape}`,
+        "a worktree symlink that escapes the case-variant project still fails closed",
+      );
+
+      const boardTask = {
+        projects,
+        startNewConversation: true,
+        hasExistingConversation: false,
+        taskProjectId: "proj-case",
+        taskCwd: path.join(typedRoot, ".worktrees", "feat-x"),
+        requestedProjectRoot: path.join(typedRoot, ".worktrees", "feat-x"),
+      };
+      assert.equal(
+        taskWorktreeProjectAccessId({ ...boardTask, resolvedCwd: persistedWorktree }),
+        "proj-case",
+        "a reserved Board turn under a case-variant registration authorizes against it",
+      );
+      assert.equal(
+        taskWorktreeProjectAccessId({ ...boardTask, resolvedCwd: outside }),
+        `unregistered:${outside}`,
+        "a Board cwd outside the case-variant project still fails closed",
+      );
+    }
+
+    // CI runs on case-sensitive Linux, where the block above is skipped.
+    // Simulate a case-insensitive volume by folding one directory's case in
+    // the native realpath, so these regressions run on every platform.
+    const folded = path.join(realParent, "Folded");
+    const foldedWorktree = path.join(folded, ".worktrees", "feat-x");
+    fs.mkdirSync(foldedWorktree, { recursive: true });
+    const typedFolded = path.join(realParent, "folded");
+    const nativeBefore = fs.realpathSync.native;
+    const fold = (value) => {
+      const text = String(value);
+      return text === typedFolded || text.startsWith(typedFolded + path.sep)
+        ? folded + text.slice(typedFolded.length)
+        : text;
+    };
+    const { mock: foldMock } = await import("node:test");
+    foldMock.method(fs.realpathSync, "native", (value, ...rest) => nativeBefore(fold(value), ...rest));
+    try {
+      const foldedProjects = [project("proj-folded", typedFolded)];
+      const typedWorktree = path.join(typedFolded, ".worktrees", "feat-x");
+      assert.equal(
+        chatProjectAccessId({ projects: foldedProjects, requestedProjectRoot: typedWorktree, resolvedCwd: foldedWorktree }),
+        "proj-folded",
+        "(simulated case-insensitive volume) a worktree under a case-variant registration authorizes against it",
+      );
+      assert.equal(
+        taskWorktreeProjectAccessId({
+          projects: foldedProjects,
+          startNewConversation: true,
+          hasExistingConversation: false,
+          taskProjectId: "proj-folded",
+          taskCwd: typedWorktree,
+          requestedProjectRoot: typedWorktree,
+          resolvedCwd: foldedWorktree,
+        }),
+        "proj-folded",
+        "(simulated case-insensitive volume) a reserved Board turn under a case-variant registration authorizes against it",
+      );
+    } finally {
+      foldMock.restoreAll();
+    }
+
+    // A registered root that is not a local absolute path contains nothing,
+    // rather than resolving against the server's working directory.
+    const relativeWorktree = path.join(process.cwd(), "cpa-relative-root", ".worktrees", "feat-x");
+    assert.equal(
+      chatProjectAccessId({
+        projects: [project("proj-relative", "cpa-relative-root")],
+        requestedProjectRoot: relativeWorktree,
+        resolvedCwd: relativeWorktree,
+      }),
+      `unregistered:${relativeWorktree}`,
+      "a relative registered root never contains a worktree under the server's cwd",
+    );
+
+    // One registry answer canonicalizes each registered root once, however many
+    // lookup steps consult it.
+    fs.mkdirSync(path.join(realParent, "cave"));
+    fs.symlinkSync(realParent, path.join(realBase, "twin"));
+    const twins = [
+      project("proj-alias", path.join(realBase, "alias", "cave")),
+      project("proj-twin", path.join(realBase, "twin", "cave")),
+    ];
+    const { mock } = await import("node:test");
+    const nativeRealpath = mock.method(fs.realpathSync, "native");
+    try {
+      assert.equal(
+        resumeRootIsRegisteredProject({
+          projects: twins,
+          resumeCwd: path.join(realParent, "cave"),
+          resolvedCwd: path.join(realParent, "cave"),
+        }),
+        true,
+        "the shared cache keeps a directory two records name registered",
+      );
+    } finally {
+      mock.restoreAll();
+    }
+    for (const twin of twins) {
+      assert.equal(
+        nativeRealpath.mock.calls.filter((call) => call.arguments[0] === twin.root).length,
+        1,
+        `${twin.id}'s registered root is canonicalized once per registry answer`,
+      );
+    }
+
+  } finally {
+    fs.rmSync(realBase, { recursive: true, force: true });
+  }
+}
+
+console.log("chat-project-access case-variant identity tests passed");

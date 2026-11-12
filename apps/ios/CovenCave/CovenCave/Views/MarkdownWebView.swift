@@ -545,7 +545,8 @@ struct MarkdownWebView: UIViewRepresentable {
                 }
             case "image":
                 Haptics.tap()
-                presentImage(src: body["src"] as? String, fallbackHTML: body["html"] as? String ?? "")
+                presentImage(src: body["src"] as? String, alt: body["alt"] as? String,
+                             fallbackHTML: body["html"] as? String ?? "")
             default:
                 if let html = body["html"] as? String, !html.isEmpty {
                     Haptics.tap()
@@ -557,7 +558,7 @@ struct MarkdownWebView: UIViewRepresentable {
         /// Inline zoom shares the bounded loader and off-main ImageIO path used
         /// by attachments. Never render the original HTML as a failure fallback:
         /// its image could bypass the encoded-byte and decoded-pixel limits.
-        func presentImage(src: String?, fallbackHTML _: String) {
+        func presentImage(src: String?, alt: String? = nil, fallbackHTML _: String) {
             guard !isInvalidated, !failed else { return }
             imageTask?.cancel()
             imageTask = nil
@@ -590,7 +591,7 @@ struct MarkdownWebView: UIViewRepresentable {
                       self.imageGeneration == requestGeneration else { return }
                 self.imageTask = nil
                 if let image {
-                    ContentZoom.image(image)
+                    ContentZoom.image(image, description: alt)
                 } else {
                     ContentZoom.html("<p>Couldn't open this image. It may be unavailable, unsupported, or too large.</p>")
                 }

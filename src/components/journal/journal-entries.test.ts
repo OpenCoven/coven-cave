@@ -330,7 +330,8 @@ assert.match(entries, /`\$\{selectedName\} hasn't reflected on this day yet`/, "
 const auto = read("./journal-automation-card.tsx");
 assert.match(entries, /<JournalAutomationCard\s*\n\s*key=\{selected\.familiar\}/, "the day pane hosts the selected familiar's automation card");
 assert.match(auto, /fetch\(`\/api\/journal\/automation\?familiar=\$\{encodeURIComponent\(familiarId\)\}`/, "the card reads the familiar's routine");
-assert.match(auto, /method: "PUT",[\s\S]*?JSON\.stringify\(\{ familiar: familiarId, enabled, hour: nextHour, runtime: nextRuntime, familiarName \}\)/, "toggle, hour and harness save through PUT");
+assert.match(auto, /body: JSON\.stringify\(\{ familiar: familiarId, enabled, hour: nextHour, runtime: nextRuntime, familiarName,\s*mutation: \{ adoptionKey:/, "the retained save includes familiar, toggle, hour, harness and mutation identity");
+assert.match(auto, /method: "PUT",[\s\S]*?body: pending\.body,/, "toggle, hour and harness PUT the retained serialized command");
 assert.match(auto, /JSON\.stringify\(\{ familiar: familiarId, action: "run" \}\)/, "Run now posts the run action");
 assert.match(auto, /role="switch"\s*\n\s*aria-checked=\{enabled\}/, "the toggle is an accessible switch");
 // The native scheduler runs on the hour (no BYMINUTE), so the picker is an

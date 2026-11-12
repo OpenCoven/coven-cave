@@ -6,11 +6,14 @@
 // development React and fail with "Cannot read properties of null (reading
 // 'useContext')" while CI, with NODE_ENV unset, stayed green. A build is a
 // production build, so this pins NODE_ENV and says so when it overrides one.
+//
+// It also runs Next's TypeScript pass before compiling rather than after
+// (#6036): see typecheckBeforeCompile.
 
 import { BUILD_GATE_EXIT_CODE } from "./build-gate-exit.mjs";
 import { applyInstrumentationTraceExclusions, instrumentationTraceLeaks } from "./instrumentation-trace.mjs";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, rmdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -100,6 +103,67 @@ export function traceWalkReport(walk) {
   ].join("\n");
 }
 
+/**
+ * Set on the `next build` that follows a passing typecheckBeforeCompile, and nowhere else.
+ * next.config.ts then skips Next's own TypeScript pass for that build only.
+ */
+export const TYPECHECKED_BEFORE_COMPILE = "COVEN_CAVE_TYPECHECKED_BEFORE_COMPILE";
+
+/** The arguments Next 16.3's CLI checker passes to `tsc` (next/dist/lib/typescript/runTypeCheckCli.js). */
+export function nextTypecheckArgs(root, incremental) {
+  const args = ["--project", path.join(root, "tsconfig.json"), "--noEmit", "--declarationMap", "false", "--emitDeclarationOnly", "false"];
+  if (incremental) args.push("--tsBuildInfoFile", path.join(root, ".next", "cache", ".tsbuildinfo"));
+  return args;
+}
+
+/** The `tsc` entry Next runs: the typescript package's `bin.tsc`, resolved from the project. */
+export function typescriptCompilerPath(root) {
+  const manifestPath = createRequire(path.join(root, "package.json")).resolve("typescript/package.json");
+  const bin = JSON.parse(readFileSync(manifestPath, "utf8")).bin;
+  return path.resolve(path.dirname(manifestPath), typeof bin === "string" ? bin : bin.tsc);
+}
+
+/**
+ * Next's own TypeScript pass, run before compiling instead of inside `next build` (#6036).
+ *
+ * Next checks types after compiling, in a `tsc` child, while the process that compiled still
+ * holds Turbopack's module graph (5.7 GB resident in a local build) and its Node loader pool
+ * (about 400 MB per process). Neither is released until `next build` exits; awaiting Turbopack's
+ * shutdown first frees nothing. On the 7 GiB macos-15 runner the checker then pages, and a pass
+ * that takes under 2 minutes on its own took 17 to 35. `next typegen` writes the `.next/types`
+ * the build writes, so `tsc` with Next's arguments checks the same program in a process tree
+ * that holds nothing else. A failing check stops before compiling, with Next's exit status 1.
+ */
+export function typecheckBeforeCompile(nextBin, root, env, { run = spawnSync, log = console.log, now = () => performance.now() } = {}) {
+  log("next-build: Running TypeScript before compiling (#6036) ...");
+  const started = now();
+  const step = (args, options = { stdio: "inherit" }) => {
+    const result = run(process.execPath, args, { ...options, cwd: root, env });
+    if (result.error) throw result.error;
+    return result;
+  };
+  if (step([nextBin, "typegen"]).status !== 0) return 1;
+  const tsc = typescriptCompilerPath(root);
+  const shown = step([tsc, "--showConfig", "--project", path.join(root, "tsconfig.json"), "--pretty", "false"], { encoding: "utf8" });
+  if (shown.status !== 0) return 1;
+  const { compilerOptions = {} } = JSON.parse(shown.stdout);
+  const incremental = Boolean(compilerOptions.incremental || compilerOptions.composite);
+  if (step([tsc, ...nextTypecheckArgs(root, incremental)]).status !== 0) return 1;
+  log(`next-build: Finished TypeScript in ${((now() - started) / 1000).toFixed(1)}s`);
+  return 0;
+}
+
+/**
+ * The environment for `next build`: unchanged for a fixture build that skips type checking
+ * (COVEN_CAVE_SKIP_BUILD_TYPECHECK=1), otherwise marked as checked once the pass above succeeds.
+ * Returns null when the check failed and the build must stop.
+ */
+export function checkedBuildEnv(nextBin, root, env, options) {
+  if (env.COVEN_CAVE_SKIP_BUILD_TYPECHECK === "1") return env;
+  if (typecheckBeforeCompile(nextBin, root, env, options) !== 0) return null;
+  return { ...env, [TYPECHECKED_BEFORE_COMPILE]: "1" };
+}
+
 /** Runs `next build`, mirroring its output while keeping a copy to read a probe failure from. */
 function runNextBuild(nextBin, args, env) {
   return new Promise((resolve, reject) => {
@@ -159,7 +223,8 @@ async function main() {
   if (notice) console.warn(notice);
   const nextBin = createRequire(import.meta.url).resolve("next/dist/bin/next");
   const root = process.cwd();
-  const env = productionBuildEnv(process.env);
+  const env = checkedBuildEnv(nextBin, root, productionBuildEnv(process.env));
+  if (env === null) process.exit(1);
   if (!traceWalkProbeEnabled(process.env)) {
     if (clearStaleTraceWalkProbe(root)) {
       console.warn(`next-build: removed a ${TRACE_WALK_PROBE}/ left by an interrupted probed build (#6101).`);

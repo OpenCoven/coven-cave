@@ -16,6 +16,7 @@ import {
   xArticleCodePointLength,
 } from "../x-articles.ts";
 import { xArticleContentSha256 } from "./x-article-content-sha.ts";
+import { upstreamFetch } from "./upstream-fetch.ts";
 
 const SORSA_ARTICLE_ENDPOINT = "https://api.sorsa.io/v3/article";
 // 1 MiB covers a 120k-code-point body at 4 UTF-8 bytes per code point (~480 KiB),
@@ -269,7 +270,7 @@ export async function fetchSorsaXArticle(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetchImpl(SORSA_ARTICLE_ENDPOINT, {
+    const response = await upstreamFetch("sorsa", SORSA_ARTICLE_ENDPOINT, {
       method: "POST",
       headers: {
         ApiKey: apiKey,
@@ -277,7 +278,7 @@ export async function fetchSorsaXArticle(
       },
       body: JSON.stringify({ tweet_link: candidate.canonicalUrl }),
       signal: controller.signal,
-    });
+    }, { fetchImpl, timeoutMs });
 
     if (!response.ok) {
       await cancelResponseBody(response);

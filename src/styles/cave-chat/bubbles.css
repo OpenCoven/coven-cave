@@ -1019,10 +1019,12 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   border-color: color-mix(in oklch, var(--accent-presence) 20%, transparent);
 }
 
-/* Assistant bubble — transparent, full width */
+/* Assistant bubble — transparent, full width. The reply fills the reading
+   column unless a narrower reading width (Settings → Appearance →
+   Typography) is chosen; "Full", the default, leaves the var unset. */
 .cave-bubble-assistant {
   width: 100%;
-  --response-measure: min(48rem, 768px);
+  --response-measure: var(--cave-reading-width, 100%);
   --response-font-size: var(--text-lg);
   --response-leading: 1.65;
   --response-block-gap: var(--space-4);

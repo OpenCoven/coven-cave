@@ -128,13 +128,13 @@ assert.match(
 
 assert.match(
   hashSyncEffect,
-  /history\.pushState/,
+  /pushHistoryUrl\(next\)/,
   "Opening a chat must push a history entry so browser Back returns to the list",
 );
 
 assert.match(
   hashSyncEffect,
-  /hash\.startsWith\("#chat-"\)[\s\S]*?history\.replaceState/,
+  /hash\.startsWith\("#chat-"\)[\s\S]*?replaceHistoryUrl\(/,
   "Returning to the list should clear the chat hash via replaceState (no extra history entry)",
 );
 

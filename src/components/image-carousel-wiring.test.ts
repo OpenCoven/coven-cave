@@ -26,7 +26,7 @@ assert.match(chatView, /function splitSegmentsForArtifacts\(/, "has a segment-pr
 assert.match(chatView, /<ImageCarousel images=\{p\.carousel\.images\} \/>/, "mounts the carousel as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForApprove\(\s*splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: protectedQuestions\.text \}\], onOpenUrl\)/,
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForApprove\(\s*splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(splitSegmentsForUiBlocks\(\[\{ kind: "text", text: protectedQuestions\.text \}\]\), onOpenUrl\)/,
   "settled path splits images before preview/GitHub/artifact/question cards, so one group deck can span any boundary",
 );
 assert.match(

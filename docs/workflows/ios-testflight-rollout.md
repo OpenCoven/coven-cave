@@ -3,10 +3,12 @@
 Use this procedure to bind each iOS distribution decision to the exact build,
 physical-device evidence, and a named maintainer's decision.
 
-**Status: preparation only.** This runbook implements the documentation slice
-of [#5319](https://github.com/OpenCoven/coven-cave/issues/5319). It records no
-completed device acceptance, cohort observation, recovery drill, or permission
-to publish. Keep the issue open until its execution evidence exists.
+**Status: preparation only.** This runbook was the documentation slice of
+[#5319](https://github.com/OpenCoven/coven-cave/issues/5319), which closed as not
+planned on 2026-10-18: its v0.4-era gate is obsolete, and every release tag now
+uploads the iOS build to TestFlight. The runbook records no completed device
+acceptance, cohort observation, recovery drill, or permission to publish. Open a
+new issue before using it for an external-tester cohort.
 
 Start a record by copying the template below into the release issue's evidence
 record. Keep private device and diagnostic material in approved private storage;
@@ -255,8 +257,8 @@ separate authorization and receipt.
 
 ## Close the preparation and execution separately
 
-A reviewed runbook completes documentation preparation only. To complete #5319,
-attach the exact release manifest, upgrade/recovery and diagnostic-drill results,
+A reviewed runbook completes documentation preparation only. To complete a
+future cohort issue, attach the exact release manifest, upgrade/recovery and diagnostic-drill results,
 ratified cohort thresholds and observations, on-call/control ownership, and
 explicit build-specific go/no-go decision. Keep missing receipts named as
 blockers. Preserve any applicable physical-device or release hold until its

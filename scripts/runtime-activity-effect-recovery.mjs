@@ -7,7 +7,8 @@ import { promisify } from "node:util";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
-import { mkdtemp, mkdir, writeFile, readFile, rm, realpath, chmod } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, realpath, chmod } from "node:fs/promises";
+import { lateWriteRecord, removeFixtureRoot } from "./native-harness-teardown.mjs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -527,8 +528,17 @@ try {
     }
   }
   if (report.serverStopped && report.daemonStopped) {
-    await rm(root, { recursive: true, force: true });
-    report.fixtureRootRemoved = true;
+    // A late write under the state directory must not throw out of this
+    // teardown and lose result.json (#6340).
+    const removal = await removeFixtureRoot(root);
+    report.fixtureRootRemoved = removal.removed;
+    if (!removal.removed) {
+      report.preservedRoot = root;
+      report.teardownLateWrite = lateWriteRecord(removal);
+      report.failure ??= `fixture root not removed: ${removal.code} at ${removal.path}`;
+      report.passed = false;
+      process.exitCode = 1;
+    }
   } else {
     report.preservedRoot = root;
     report.passed = false;

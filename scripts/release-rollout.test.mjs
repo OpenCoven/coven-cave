@@ -53,7 +53,7 @@ function readinessVerdict(overrides = {}) {
 }
 
 /** `baselineFloor` as the readiness gate records a patched baseline (#6076). */
-const CLEAR_FLOOR = Object.freeze({ clear: true, versions: { next: "16.3.8", sharp: "0.35.5" }, problems: [] });
+const CLEAR_FLOOR = Object.freeze({ clear: true, versions: { next: "16.4.3", sharp: "0.35.5" }, problems: [] });
 
 /** …and as it records one below the #5339 floor, from v0.4.1's real pins. */
 const UNPATCHED_FLOOR = Object.freeze({
@@ -853,7 +853,7 @@ test("the readiness verdict this gate reads is the one that script emits", async
     apiUrl: api,
     fetchImpl: async (url) => {
       const body = new URL(url).pathname.endsWith("/contents/package.json")
-        ? { dependencies: { next: "16.3.8", sharp: "0.35.5" }, pnpm: { overrides: { sharp: "0.35.5" } } }
+        ? { dependencies: { next: "16.4.3", sharp: "0.35.5" }, pnpm: { overrides: { sharp: "0.35.5" } } }
         : url.startsWith(`${api}/repos/`)
           ? new URL(url).searchParams.get("page") === "1" ? [release] : []
           : manifest;

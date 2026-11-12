@@ -109,9 +109,16 @@ squash_body=$(jq -er .body "$squash_message")
 gh pr merge <#> --squash --match-head-commit "$expected_head" --subject "$squash_subject" --body "$squash_body"
 ```
 
-Do not pass `--delete-branch`. Local retirement requires separate evidence and
-authority; remote deletion remains proposal-only. Preserve human numeric
-GitHub no-reply trailers. Do not add AI attribution to commits or PRs.
+Do not pass `--delete-branch`; it also deletes the local branch. The
+repository's `delete_branch_on_merge` setting is on, so GitHub deletes a
+same-repository head branch when its PR merges (the 40-branch cap in
+`.github/workflows/branch-cap.yml` relies on it); `refs/pull/<#>/head` keeps
+the merged head. Local retirement requires separate evidence and authority;
+any other remote deletion remains proposal-only. Preserve human numeric
+GitHub no-reply trailers and `Coven-Familiar` provenance; the squash script
+carries both and drops `Coven-Harness` and `Coven-Session`. Do not add AI
+attribution to commits or PRs. A familiar is credited only through its
+`Coven-Familiar` trailer, never a `Co-authored-by` line (#6068).
 
 ## Worktree convention
 

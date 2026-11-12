@@ -1,8 +1,10 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useContext } from "react";
 
 import type { StreamingContentBlock } from "@/lib/streaming-markdown-blocks";
+import { isLiveUiFenceAfter, isPartialUiFenceOpener, stableUiBlockKey, uiFenceBody } from "@/lib/ui-blocks";
+import { ChatUiBlock, UiBlockHostContext } from "./chat-ui-block";
 import { ProgressiveMarkdownBlock } from "./message-bubble";
 
 function stripListMarker(source: string): string {
@@ -146,16 +148,39 @@ export function StreamingMarkdownBlocks({
   live: boolean;
 }) {
   const blocks = activeBlock ? [...committedBlocks, activeBlock] : committedBlocks;
+  const uiBlocksEnabled = useContext(UiBlockHostContext) !== null;
+  let uiBlockIndex = 0;
+  // Block sources tile the turn text, so this is the text before each block.
+  let before = "";
 
   return (
     <div className="streaming-markdown-blocks">
-      {blocks.map((block) => (
-        <StreamingBlock
-          key={block.id}
-          block={block}
-          live={live && block.id === activeBlock?.id}
-        />
-      ))}
+      {blocks.map((block) => {
+        const active = live && block.id === activeBlock?.id;
+        const preceding = before;
+        before += block.source;
+        // Native UI tier: a ```coven:ui fence renders progressively from every
+        // prefix. Its key is the block START (the id also carries the growing
+        // end offset), so one renderer and its State survive each chunk. An
+        // example under a list item stays literal, as it does once settled.
+        const fenceCandidate = uiBlocksEnabled && block.kind === "markdown";
+        const uiFence = fenceCandidate ? uiFenceBody(block.source) : null;
+        if (uiFence && isLiveUiFenceAfter(preceding, block.source)) {
+          return (
+            <div key={stableUiBlockKey(block.id)} data-stream-block-id={block.id}>
+              <ChatUiBlock source={uiFence.body} streaming={active && !uiFence.closed} blockIndex={uiBlockIndex++} />
+            </div>
+          );
+        }
+        if (fenceCandidate && active && isPartialUiFenceOpener(block.source) && isLiveUiFenceAfter(preceding, block.source)) return null;
+        return (
+          <StreamingBlock
+            key={block.id}
+            block={block}
+            live={active}
+          />
+        );
+      })}
     </div>
   );
 }

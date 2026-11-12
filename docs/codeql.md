@@ -1,7 +1,7 @@
-# CodeQL — retired 2026-07-31
+# CodeQL Advanced workflow — retired 2026-07-31
 
-CodeQL no longer runs on this repository. The retirement happened in three
-steps, in this order:
+The CodeQL Advanced workflow and its required context no longer run on this
+repository. The retirement happened in three steps, in this order:
 
 1. The `code_scanning` rule was dropped from branch ruleset `19123333`, which
    was renamed from "main protection (checks + CodeQL)" to "main protection
@@ -13,9 +13,10 @@ steps, in this order:
    reports can never be satisfied.
 3. `.github/workflows/codeql.yml` was deleted.
 
-**Nothing scans in its place.** GitHub's default setup is `not-configured`, so
-there is no code scanning on this repository at all. There were zero open
-alerts at the time of retirement.
+GitHub's CodeQL **default setup** has since been configured and scans weekly
+and on pull requests (Actions, C/C++, JavaScript/TypeScript, Python, Rust). It
+is advisory: `CodeQL` is not a required context, and a neutral conclusion is not
+a failure. There were zero open alerts at the time of retirement.
 
 Comments across the codebase still cite CodeQL rules by name —
 `js/path-injection`, `js/request-forgery`, polynomial-ReDoS — as the rationale

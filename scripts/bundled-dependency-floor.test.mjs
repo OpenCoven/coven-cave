@@ -43,11 +43,11 @@ async function withRuntime(versions, body) {
   }
 }
 
-test("the floors are the patched minimums recorded on #5339", () => {
+test("the floors are the patched minimums recorded on #5339 and #6264", () => {
   assert.deepEqual(
     BUNDLED_DEPENDENCY_FLOORS.map(({ name, minimum }) => [name, minimum]),
     [
-      ["next", "16.3.3"],
+      ["next", "16.4.1"],
       ["sharp", "0.35.4"],
     ],
     "lowering a floor reopens #5339; raising one is a reviewed security decision",
@@ -56,7 +56,7 @@ test("the floors are the patched minimums recorded on #5339", () => {
   for (const floor of BUNDLED_DEPENDENCY_FLOORS) {
     assert.ok(Object.isFrozen(floor), `${floor.name} floor must be immutable`);
     assert.ok(parseFinalVersion(floor.minimum), `${floor.name} floor must be a final version`);
-    assert.match(floor.reason, /#5339/, `${floor.name} floor must cite its incident`);
+    assert.match(floor.reason, /, #\d+$/, `${floor.name} floor must cite its incident`);
   }
 });
 
@@ -99,23 +99,25 @@ test("a release's package.json pins are checked against the floor (#6076)", asyn
     v041.problems.map((problem) => problem.split(" is ")[0]),
     ["dependencies.next 16.3.1", "dependencies.sharp 0.35.3", "pnpm.overrides.sharp 0.35.3"],
   );
-  assert.match(v041.problems[0], /below the patched minimum 16\.3\.3 \(GHSA-p293-qw3h-jr36 and GHSA-2xp9-vwfh-vxw4, #5339\)$/);
+  assert.match(v041.problems[0], /below the patched minimum 16\.4\.1 \(GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr and GHSA-p3m5-59mp-jv5r, #6264\)$/);
 
   // At the floor is clear; one patch below it is not.
-  assert.deepEqual(collectPinnedFloorProblems(pinned("16.3.3", "0.35.4")).problems, []);
-  assert.equal(collectPinnedFloorProblems(pinned("16.3.2", "0.35.4")).problems.length, 1);
+  assert.deepEqual(collectPinnedFloorProblems(pinned("16.4.1", "0.35.4")).problems, []);
+  assert.equal(collectPinnedFloorProblems(pinned("16.4.0", "0.35.4")).problems.length, 1);
+  // v0.5.17 pinned Next 16.3.8, which #6264 put below the floor.
+  assert.match(collectPinnedFloorProblems(pinned("16.3.8", "0.35.5")).problems[0], /^dependencies\.next 16\.3\.8 is below the patched minimum 16\.4\.1/);
 
   // The override is what pnpm installs, so it is checked on its own.
-  const override = collectPinnedFloorProblems(pinned("16.3.8", "0.35.5", "0.35.3"));
+  const override = collectPinnedFloorProblems(pinned("16.4.3", "0.35.5", "0.35.3"));
   assert.deepEqual(override.problems.length, 1);
   assert.match(override.problems[0], /^pnpm\.overrides\.sharp 0\.35\.3 is below/);
   // No override at all is fine: the dependency pin is then what installs.
-  assert.deepEqual(collectPinnedFloorProblems({ dependencies: { next: "16.3.8", sharp: "0.35.5" } }).problems, []);
+  assert.deepEqual(collectPinnedFloorProblems({ dependencies: { next: "16.4.3", sharp: "0.35.5" } }).problems, []);
 });
 
 test("a pin the floor cannot compare fails closed", () => {
   const problemsFor = (manifest) => collectPinnedFloorProblems(manifest).problems;
-  assert.match(problemsFor({ dependencies: { sharp: "0.35.5" } })[0], /^package\.json pins no next in dependencies; the floor is 16\.3\.3/);
+  assert.match(problemsFor({ dependencies: { sharp: "0.35.5" } })[0], /^package\.json pins no next in dependencies; the floor is 16\.4\.1/);
   for (const pin of ["^16.3.3", "~16.3.8", "16.3.8-canary.1", "latest", "workspace:*", "", 16.3, null]) {
     const problems = problemsFor({ dependencies: { next: pin, sharp: "0.35.5" } });
     assert.equal(problems.length, 1, `${JSON.stringify(pin)} must not pass`);
@@ -166,25 +168,25 @@ test("versions order numerically, not lexically", () => {
 });
 
 test("a bundle at or above every floor passes and reports what it read", async () => {
-  await withRuntime({ next: "16.3.3", sharp: "0.35.4" }, async (root) => {
-    assert.deepEqual(await checkBundledDependencyFloor(root), { next: "16.3.3", sharp: "0.35.4" });
+  await withRuntime({ next: "16.4.1", sharp: "0.35.4" }, async (root) => {
+    assert.deepEqual(await checkBundledDependencyFloor(root), { next: "16.4.1", sharp: "0.35.4" });
   });
-  await withRuntime({ next: "16.3.8", sharp: "0.35.5" }, async (root) => {
-    assert.deepEqual(await checkBundledDependencyFloor(root), { next: "16.3.8", sharp: "0.35.5" });
+  await withRuntime({ next: "16.4.3", sharp: "0.35.5" }, async (root) => {
+    assert.deepEqual(await checkBundledDependencyFloor(root), { next: "16.4.3", sharp: "0.35.5" });
   });
 });
 
 test("a pre-patch Next fails with the floor and the advisory named", async () => {
-  await withRuntime({ next: "16.3.1", sharp: "0.35.4" }, async (root) => {
+  await withRuntime({ next: "16.3.8", sharp: "0.35.4" }, async (root) => {
     await assert.rejects(
       checkBundledDependencyFloor(root),
-      /bundled next 16\.3\.1 is below the patched minimum 16\.3\.3 \(GHSA-p293-qw3h-jr36/,
+      /bundled next 16\.3\.8 is below the patched minimum 16\.4\.1 \(GHSA-2464-fhr4-w9xw/,
     );
   });
 });
 
 test("a pre-patch sharp fails even when Next is patched", async () => {
-  await withRuntime({ next: "16.3.8", sharp: "0.35.3" }, async (root) => {
+  await withRuntime({ next: "16.4.3", sharp: "0.35.3" }, async (root) => {
     await assert.rejects(checkBundledDependencyFloor(root), /bundled sharp 0\.35\.3 is below the patched minimum 0\.35\.4/);
   });
 });
@@ -229,16 +231,16 @@ test("the CLI checks an extracted artifact's runtime root and sets its exit stat
   assert.equal(usage.status, 2);
   assert.match(usage.stderr, /usage: bundled-dependency-floor\.mjs <runtime-root>/);
 
-  await withRuntime({ next: "16.3.8", sharp: "0.35.5" }, async (patched) => {
+  await withRuntime({ next: "16.4.3", sharp: "0.35.5" }, async (patched) => {
     const ok = spawnSync(process.execPath, [SCRIPT, patched], { encoding: "utf8" });
     assert.equal(ok.status, 0, ok.stderr);
-    assert.match(ok.stdout, /bundled dependency floor ok .*next 16\.3\.8 >= 16\.3\.3, sharp 0\.35\.5 >= 0\.35\.4/);
+    assert.match(ok.stdout, /bundled dependency floor ok .*next 16\.4\.3 >= 16\.4\.1, sharp 0\.35\.5 >= 0\.35\.4/);
 
     await withRuntime({ next: "16.3.1", sharp: "0.35.4" }, async (unpatched) => {
       const refused = spawnSync(process.execPath, [SCRIPT, patched, unpatched], { encoding: "utf8" });
       assert.equal(refused.status, 1, "any refused root must fail the whole check");
       assert.match(refused.stdout, /bundled dependency floor ok/);
-      assert.match(refused.stderr, /bundled next 16\.3\.1 is below the patched minimum 16\.3\.3/);
+      assert.match(refused.stderr, /bundled next 16\.3\.1 is below the patched minimum 16\.4\.1/);
     });
   });
 });
