@@ -107,6 +107,33 @@ test("short onboarding resumes and opens an editable real-chat draft without aut
   expect(f.sends[0]).toMatchObject({ familiarId: "nova", projectRoot: PROJECT.root, permissionMode: "read" });
 });
 
+test("a missing runtime installs in the assistant chooser only after explicit action", async ({ page }) => {
+  const f = await fixture(page);
+  let started = false, complete = false, installed = false;
+  const installs: unknown[] = [];
+  await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars: [] } }));
+  await page.route("**/api/harnesses**", (route) => route.fulfill({ json: { ok: true, harnesses: [{ id: "codex", label: "Codex", installed, chatSupported: true }] } }));
+  await page.route("**/api/onboarding/install**", (route) => {
+    if (route.request().method() === "POST") { installs.push(route.request().postDataJSON()); started = true; return route.fulfill({ status: 202, json: { status: "started" } }); }
+    const target = new URL(route.request().url()).searchParams.get("target");
+    if (!target) return route.fulfill({ json: { status: "idle", npmBusy: started && !complete, npmBusyLabel: "Codex" } });
+    if (target === "codex" && started) { installed = complete; return route.fulfill({ json: complete ? { status: "done", ok: true } : { status: "running" } }); }
+    return route.fulfill({ json: { status: "idle" } });
+  });
+  await page.goto("/?mode=home");
+  const guide = page.getByRole("dialog", { name: "Get started with Cave" });
+  await expect(guide.getByRole("button", { name: "Install Codex", exact: true })).toBeEnabled();
+  expect(installs).toEqual([]);
+  await guide.getByRole("button", { name: "Install Codex", exact: true }).click();
+  await expect.poll(() => installs.length).toBe(1);
+  expect(installs[0]).toEqual({ target: "codex", confirmInstall: true });
+  await expect(guide.getByRole("button", { name: "Installing Codex…", exact: true })).toBeDisabled();
+  complete = true;
+  await expect(guide.getByRole("button", { name: "Create with Codex", exact: true })).toBeEnabled({ timeout: 15_000 });
+  await expect(guide).toContainText("Sign in if requested when you first send a message.");
+  expect(f.sends).toEqual([]);
+});
+
 test("short setup retains the first failed request for Retry and Stop reaches cancellation", async ({ page }) => {
   const selected = advanceFirstUse(createQuickStartState(), { kind: "choose-assistant", familiarId: "nova" });
   const state = advanceFirstUse(selected, { kind: "finish-setup", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, permissionMode: "read" });
