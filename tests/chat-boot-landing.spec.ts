@@ -306,9 +306,7 @@ test("booting with no active familiar asks which one instead of picking", async 
 
   // Let saved introduction state restore before asserting that it did not
   // replace the explicit actor-free browsing choice with its configured actor.
-  await expect(page.getByRole("complementary", { name: "Getting started" }).getByRole("button", {
-    name: "Continue setup",
-  })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole("complementary", { name: "Getting started" })).toContainText("Your workspace is ready.", { timeout: 45_000 });
 
   // The chat-first landing still happens — we did not fall back to the list.
   const launch = page.locator(".cave-launch");
