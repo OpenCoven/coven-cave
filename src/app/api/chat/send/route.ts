@@ -207,11 +207,13 @@ import {
 } from "@/lib/chat-project-access";
 import {
   authorizeChatProjectLaunch,
+  PROJECT_ACCESS_REVOKED_MESSAGE,
   ChatProjectLaunchError,
   projectlessGenerationLaunch,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
+import { claudeBuildUnavailableMessage } from "@/lib/chat-access-escape";
 import { buildClaudeWriteScope, ClaudeAuthorityRootError, loadClaudeFamiliarMcpServers, prepareClaudeWriteScopeFile, countClaudeWriteDenials, claudeWriteScopeRefusal } from "@/lib/claude-write-scope";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
@@ -381,8 +383,8 @@ import {
 import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
 export const dynamic = "force-dynamic";
-// Reused from #6450 at 119a775f2: the onboarding access review must match
-// admission on every local runtime, including Codex workspace-write.
+// One copy for both refusals: the onboarding access review (#6462) must
+// match admission on every local runtime, including Codex workspace-write.
 const PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE =
   "This project's access is read-only. Choose Read-only mode or request write access, then retry.";
 export const runtime = "nodejs";
@@ -3171,9 +3173,22 @@ async function postAdmittedChat(
   const grantedProjectRootAccess: Record<string, ProjectAccessLevel> = Object.fromEntries(
     effectiveAccessibleProjects.map((entry) => [entry.project.root.trim(), entry.access]),
   );
+  // A read-only project grant bounds Build on every local harness, not only
+  // Claude's scoped write (#6445). Codex, OpenCode, Hermes and the others run
+  // Build inside their own sandbox, which can be writable, so the grant is
+  // admitted here before any launch. Cave narrows a harness sandbox this way
+  // but never widens one (#3297, #6096). SSH runtimes have no local grants.
   const primaryProjectAccess = authorizedProjectId
     ? accessibleProjects.find((entry) => entry.project.id === authorizedProjectId)?.access
     : undefined;
+  // The project was authorized above from an earlier read of the grants.
+  // Projects can revoke it in between, so a project with no grant in this
+  // snapshot is refused the way authorization refuses it: nothing launches
+  // in a project the familiar can no longer open, in any mode.
+  if (!sshRuntime && authorizedProjectId && !primaryProjectAccess) {
+    return Response.json({ ok: false, code: "project_access_denied",
+      error: PROJECT_ACCESS_REVOKED_MESSAGE }, { status: 403 });
+  }
   if (!sshRuntime && body.permissionMode !== "read" && primaryProjectAccess === "read") {
     return Response.json({ ok: false, code: "project_write_access_required",
       error: PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE }, { status: 403 });
@@ -5847,9 +5862,7 @@ async function postAdmittedChat(
                 }
                 if (claudeScopedWrite && !claudeWriteScopeSupported) {
                   launchFailure = { code: "scoped_write_unavailable",
-                    message: permissionForwardingEnabled
-                      ? "Full access is unavailable for Claude on this runtime. Choose a runtime that can enforce project write access, then retry."
-                      : "This runtime cannot safely apply project write access. Update Coven and restart Cave, then retry." };
+                    message: claudeBuildUnavailableMessage(permissionForwardingEnabled) };
                   result.is_error = true;
                   pushProgress("harness-start", "Scoped writes unavailable", "error", launchFailure.message);
                   push({ kind: "error", ...launchFailure, harness: binding.harness });

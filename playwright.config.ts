@@ -78,8 +78,10 @@ const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 // cases (rest-state chips, 44px rows, viewport containment) only run there.
 // history-state-restore joins too (#6442): browser Back must restore the page
 // on phones as well as desktop.
+// chat-access-escape joins too (#6445): the access bar and refusal actions
+// must work in the phone composer as well as on desktop.
 const MOBILE_SURFACE_SPECS =
-  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore|first-use-journey)\.spec\.ts/;
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore|chat-access-escape|first-use-journey)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 

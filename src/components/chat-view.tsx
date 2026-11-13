@@ -84,6 +84,23 @@ import {
 import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { createChatStreamAccessGuard, invalidateChatAccess, subscribeChatAccessInvalidation } from "@/lib/chat-access-invalidation";
+import {
+  accessRefusalActions,
+  BUILD_PLAN_PROMPT,
+  GrantChangeError,
+  grantProjectAccess,
+  isAccessRefusalCode,
+  parseChatBuildAccess,
+  planReadyFromTools,
+  readChatAccessOverride,
+  undoProjectGrant,
+  writeChatAccessOverride,
+  type AccessFixAction,
+  type AccessRefusalCode,
+  type ChatBuildAccess,
+  type ChatGrantUndo,
+} from "@/lib/chat-access-escape";
+import { AccessFixActions, ChatAccessBar } from "@/components/chat-access-bar";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { useToolOutput } from "@/lib/use-tool-output";
 import { deleteOfflineCacheEntry } from "@/lib/offline-cache";
@@ -888,8 +905,22 @@ function ChatErrorStrip({
   onRetryWithModel,
   onManageUsage,
   localRefusal,
+  accessFix,
 }: {
   message: string;
+  /** Access refusal fix row (#6445): actions that can clear it, never one that can't. */
+  accessFix?: {
+    actions: AccessFixAction[];
+    familiarName: string;
+    projectName: string | null;
+    /** The actions cover every way out, so the plain Retry (which can only fail again) is hidden. */
+    replacesRetry: boolean;
+    busy: boolean;
+    onGrantWriteAndRetry: () => void;
+    onRetryExplore: () => void;
+    onRetryBuild: () => void;
+    onOpenProjectAccess: () => void;
+  };
   code?: string;
   errorSeq: number;
   failingTurn: ErrorStripTurn | null;
@@ -1029,9 +1060,11 @@ function ChatErrorStrip({
       className="cave-chat-error-strip shrink-0 border-t border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
     >
       <div className="mx-auto w-full max-w-[var(--cave-chat-measure)]">
-      <div className="flex items-center gap-2 px-5 py-2 text-xs">
+      {/* The row wraps so the code badge and buttons never squeeze the
+          reason to zero width in a phone composer (#6445). */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-5 py-2 text-xs">
         <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
+        <span className="min-w-0 flex-1 basis-56 line-clamp-6 break-words font-medium">{message}</span>
         {code && code !== "harness_auth_required" && code !== "harness_auth_configuration_required" && !usageLimit ? (
           <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]">
             {code}
@@ -1079,7 +1112,7 @@ function ChatErrorStrip({
               Stop earlier turn
             </button>
           ) : null}
-          {canRetry && !usageLimit ? (
+          {canRetry && !usageLimit && !(accessFix?.replacesRetry && accessFix.actions.length) ? (
             <button type="button" onClick={onRetry} disabled={busy} className={btn}>
               <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
               Retry
@@ -1090,6 +1123,20 @@ function ChatErrorStrip({
           </button>
         </div>
       </div>
+      {accessFix?.actions.length ? (
+        <AccessFixActions
+          actions={accessFix.actions}
+          familiarName={accessFix.familiarName}
+          projectName={accessFix.projectName}
+          busy={accessFix.busy}
+          onGrantWriteAndRetry={accessFix.onGrantWriteAndRetry}
+          onRetryExplore={accessFix.onRetryExplore}
+          onRetryBuild={accessFix.onRetryBuild}
+          onOpenProjectAccess={accessFix.onOpenProjectAccess}
+          buttonClassName={btn}
+          primaryClassName={primaryBtn}
+        />
+      ) : null}
       {usageLimit && onRetryWithModel ? (
         <UsageLimitFixRow
           model={usageLimitModel ?? null}
@@ -2128,6 +2175,9 @@ function conciseStreamError(error: unknown, fallback: string): string {
 
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
+/** How long an access action waits for its pressed control to unmount before it stops returning focus. */
+const ACCESS_FOCUS_RETURN_MS = 5000;
+
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
@@ -2471,11 +2521,54 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
   const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode);
+  // Per-chat Access chosen from an in-place action (#6445). The composer's
+  // Access menu stays the shared default; these override it for one chat, so
+  // leaving Explore here never widens access in every other chat.
+  const [draftAccessOverride, setDraftAccessOverride] = useState<CommandPermissionMode | null>(null);
+  const [storedAccessOverride, setStoredAccessOverride] = useState<{ sessionId: string; mode: CommandPermissionMode } | null>(null);
+  const chatAccessOverride = sessionId
+    ? (storedAccessOverride?.sessionId === sessionId ? storedAccessOverride.mode : null)
+    : draftAccessOverride;
+  const effectivePermissionMode: CommandPermissionMode = chatAccessOverride ?? permissionMode;
+  /** The server's view of Build for this chat (null = not reported; the send route decides). */
+  const [buildAccess, setBuildAccess] = useState<ChatBuildAccess | null>(null);
+  /** The last refusal Chat can answer with an access action. */
+  const [accessRefusal, setAccessRefusal] = useState<{ code: AccessRefusalCode; requested: CommandPermissionMode } | null>(null);
+  /** A grant made from Chat that Undo can restore. */
+  const [grantUndo, setGrantUndo] = useState<ChatGrantUndo | null>(null);
+  const [accessActionBusy, setAccessActionBusy] = useState(false);
+  /** A draft chat's access, carried onto the session its first turn mints. */
+  const pendingDraftAccessRef = useRef<CommandPermissionMode | null>(null);
+  /** This chat's Access before a grant from Chat switched it to Build; Undo restores it. */
+  const priorChatAccessRef = useRef<CommandPermissionMode | null>(null);
+  /** The session this draft's own turn just minted: the same chat, so its grant Undo stays. */
+  const grantUndoCarryRef = useRef<string | null>(null);
   useEffect(() => {
     if (sessionId) return;
-    const updateUnsentChoice = () => setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode);
+    // The guide's access review is a pick of the shared default, like the
+    // Access menu: it also ends an unsent chat's in-place override, so a
+    // draft switched to Build never outlives a newer Read-only choice.
+    const updateUnsentChoice = () => {
+      setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode);
+      setDraftAccessOverride(null);
+      pendingDraftAccessRef.current = null;
+    };
     window.addEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
     return () => window.removeEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
+  }, [sessionId]);
+  useEffect(() => {
+    setAccessRefusal(null);
+    const carried = sessionId !== null && grantUndoCarryRef.current === sessionId;
+    grantUndoCarryRef.current = null;
+    if (!carried) setGrantUndo(null);
+    if (!sessionId) {
+      setDraftAccessOverride(null);
+      setStoredAccessOverride(null);
+      pendingDraftAccessRef.current = null;
+      return;
+    }
+    const stored = readChatAccessOverride(typeof window === "undefined" ? null : window.localStorage, sessionId);
+    setStoredAccessOverride(stored ? { sessionId, mode: stored } : null);
   }, [sessionId]);
   // Composer Host chip: null = auto — the conversation's recorded host, else
   // the familiar's own runtime binding. Only an explicit pick rides the send
@@ -2830,6 +2923,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     );
   }, [activeProjectRoot, composerHostValue, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
+  /** Set this chat's Access; null returns it to the shared composer default (#6445). */
+  function setChatAccess(mode: CommandPermissionMode | null) {
+    const target = currentSessionRef.current ?? sessionId;
+    if (target) {
+      writeChatAccessOverride(typeof window === "undefined" ? null : window.localStorage, target, mode);
+      setStoredAccessOverride(mode ? { sessionId: target, mode } : null);
+    }
+    if (!sessionId) {
+      setDraftAccessOverride(mode);
+      pendingDraftAccessRef.current = mode;
+    }
+  }
+  /** A draft chat's Access, and any grant Undo, follow it onto the session its first turn mints. */
+  function adoptDraftAccess(newSessionId: string) {
+    grantUndoCarryRef.current = newSessionId;
+    const mode = pendingDraftAccessRef.current;
+    if (!mode) return;
+    writeChatAccessOverride(typeof window === "undefined" ? null : window.localStorage, newSessionId, mode);
+    setStoredAccessOverride({ sessionId: newSessionId, mode });
+    pendingDraftAccessRef.current = null;
+  }
   const liveSessionIdRef = useRef<string | null>(null);
   const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
   // Tracks which generation run currently owns the displayed view. Cleared on
@@ -3046,12 +3160,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         ok?: boolean;
         state?: ChatModelState;
         controls?: ModelControlCapability[];
+        access?: unknown;
       };
       const next = json.ok && json.state ? json.state : null;
       if (canApply()) {
         modelStateRef.current = next;
         setModelState(next);
         setModelCapabilities(json.ok && Array.isArray(json.controls) ? json.controls : []);
+        setBuildAccess(json.ok ? parseChatBuildAccess(json) : null);
       }
       return next;
     } catch {
@@ -3059,6 +3175,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         modelStateRef.current = null;
         setModelState(null);
         setModelCapabilities([]);
+        setBuildAccess(null);
       }
       return null;
     }
@@ -3353,6 +3470,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Focus return for an access action's own control (#6445). It runs in the
+  // commit that removes that control, before the next paint or keystroke, so
+  // an immediate paste or Enter lands in the composer. A one-frame check
+  // raced that commit, and in WebKit a focused button that turns disabled
+  // keeps focus until it unmounts.
+  const focusReturnRef = useRef<{ from: HTMLElement; until: number } | null>(null);
+  useLayoutEffect(() => {
+    const pending = focusReturnRef.current;
+    if (!pending) return;
+    if (Date.now() > pending.until) {
+      focusReturnRef.current = null;
+      return;
+    }
+    if (pending.from.isConnected) return;
+    focusReturnRef.current = null;
+    const active = document.activeElement;
+    if (!active || active === document.body) inputRef.current?.focus({ preventScroll: true });
+  });
   // Native UI tier: a coven:ui Button may PREFILL the composer for review. It
   // never sends; an existing draft is kept and the text is appended below it.
   const prefillComposerFromUiBlock = useCallback((text: string) => {
@@ -4041,16 +4176,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     {
       id: "access",
       label: "Access",
-      value: permissionMode,
+      value: effectivePermissionMode,
       options: [
         { value: "read", label: "Explore · read only" },
-        { value: "full", label: "Build · full access" },
+        // The same capability report as the access bar: a Build this runtime
+        // refuses is shown, with its reason, but can't be chosen (#6445).
+        { value: "full", label: "Build · full access", disabled: buildAccess?.available === false },
       ],
+      ...(buildAccess?.available === false ? { note: `Build isn't available here: ${buildAccess.message}` } : {}),
       onChange: (value: string) => {
-        if (value === "read" || value === "full") {
-          writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode: value });
-          setPermissionMode(value);
-        }
+        if (value !== "read" && value !== "full") return;
+        if (value === "full" && buildAccess?.available === false) return;
+        // The menu keeps its shared-default meaning; a pick here also ends
+        // this chat's in-place override so the two never disagree.
+        writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode: value });
+        setPermissionMode(value);
+        setChatAccess(null);
       },
     },
     ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0 || composerModelInventory.loading
@@ -5471,7 +5612,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
           modelControls: controlsOverride?.modelControls ?? modelControls,
-          permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+          permissionMode: controlsOverride?.permissionMode ?? effectivePermissionMode,
           ...(controlsOverride?.runtimeHost ?? runtimeHost ? { runtimeHost: (controlsOverride?.runtimeHost ?? runtimeHost) ?? undefined } : {}),
         },
       });
@@ -5500,7 +5641,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
           modelControls: controlsOverride?.modelControls ?? modelControls,
-          permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+          permissionMode: controlsOverride?.permissionMode ?? effectivePermissionMode,
           queuedRuntimeHost:
             controlsOverride && "queuedRuntimeHost" in controlsOverride
               ? controlsOverride.queuedRuntimeHost
@@ -5566,7 +5707,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         thinkingEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
         responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
         modelControls: controlsOverride?.modelControls ?? modelControls,
-        permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+        permissionMode: controlsOverride?.permissionMode ?? effectivePermissionMode,
         ...(controlsOverride?.runtimeHost ?? runtimeHost ? { runtimeHost: (controlsOverride?.runtimeHost ?? runtimeHost) ?? undefined } : {}),
       },
     };
@@ -5575,6 +5716,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setError(null);
     setDebugError(null);
     setLastFailedSend(null);
+    setAccessRefusal(null);
     setProjectAccessRoot(null);
     setProjectRootMissing(false);
     setProjectRootRequired(false);
@@ -5778,7 +5920,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           projectRoot: projectRootForRequest,
           modelControls: controlsOverride?.modelControls ?? modelControls,
           // Send the selected access level; the server refuses unsupported modes.
-          permissionMode: controlsOverride?.permissionMode ?? permissionMode,
+          permissionMode: controlsOverride?.permissionMode ?? effectivePermissionMode,
           // Composer Host chip: only an explicit pick rides; the server
           // resolves it against the registered-host registry fail-closed.
           ...(fleetHost ? { runtimeHost: fleetHost } : {}),
@@ -5820,7 +5962,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }),
         signal: controller.signal,
       });
-      if (res.status === 401 || res.status === 403) {
+      // Read the refusal code once, before any branch below consumes the body.
+      const refusalCode = res.ok
+        ? undefined
+        : await res.clone().json().then((body: { code?: unknown } | null) => body?.code, () => undefined);
+      // A read-only project refuses a Build turn with 403, but the familiar can
+      // still read this chat's project: nothing was revoked, so the transcript
+      // and the retry stay (#6445).
+      const accessLevelRefusal = refusalCode === "project_write_access_required";
+      if ((res.status === 401 || res.status === 403) && !accessLevelRefusal) {
         invalidateChatAccess({ sessionId: liveGeneration.sessionId ?? undefined, reason: "denied" });
         // Keep the existing project repair action, without retaining the
         // rejected prompt as a retryable send or repainting its transcript.
@@ -5881,6 +6031,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           surfacedMessage =
             "This chat can’t run in its current project. Choose a project this familiar can access below and your message will be retried there.";
           reloadProjects();
+        }
+        // Access refusals get an in-place action that can clear them (#6445).
+        if (isAccessRefusalCode(refusalCode)) {
+          setAccessRefusal({ code: refusalCode, requested: request.controls?.permissionMode ?? effectivePermissionMode });
+          if (refusalCode === "project_write_access_required") {
+            const projectName = requestProject?.name;
+            surfacedMessage = projectName
+              ? `${projectName} is read only for ${familiar.display_name}, so this Build turn didn't run. Give write access, or retry in Explore.`
+              : `This project is read only for ${familiar.display_name}, so this Build turn didn't run. Retry in Explore, or give write access in Projects.`;
+          }
         }
         // The server refused a second live turn for this chat. Nothing was
         // launched; the message is kept for Retry once the earlier run ends.
@@ -6187,7 +6347,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
-  function retryFailedSend(optionOverrides?: Partial<ChatSendOptions>) {
+  function currentSendControls(): ChatSendControls {
+    return {
+      thinkingEffort,
+      responseSpeed,
+      modelControls,
+      permissionMode: effectivePermissionMode,
+      ...(runtimeHost ? { runtimeHost } : {}),
+    };
+  }
+
+  function retryFailedSend(optionOverrides?: Partial<ChatSendOptions>, controlOverrides?: Partial<ChatSendControls>) {
     if (!lastFailedSend || busy) return;
     setError(null);
     setLastFailedSend(null);
@@ -6200,8 +6370,110 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       lastFailedSend.attachments,
       lastFailedSend.mentionedFiles ?? [],
       optionOverrides ? { ...savedOptions, ...optionOverrides } : savedOptions,
-      lastFailedSend.controls,
+      controlOverrides
+        ? { ...(lastFailedSend.controls ?? currentSendControls()), ...controlOverrides }
+        : lastFailedSend.controls,
     );
+  }
+
+  // In-place access actions (#6445). Each is an explicit press; none runs
+  // from model output, and a grant is confirmed in the UI first.
+  const accessProject =
+    selectedProject && !projectSelection.unregisteredRoot && selectedProject.access ? selectedProject : null;
+
+  // The access bar or strip button that had focus unmounts after its action.
+  // Return focus to the composer only when that control held focus (keyboard
+  // use) and the focus was then lost. A tap that never moved focus leaves it
+  // alone, so a phone keyboard doesn't open unasked.
+  function focusedAccessControl(): HTMLElement | null {
+    if (typeof document === "undefined") return null;
+    const active = document.activeElement;
+    return active instanceof HTMLElement && active.closest(".cave-chat-access-bar, .cave-chat-error-strip") ? active : null;
+  }
+  function keepFocusInChat(pressed: HTMLElement | null = focusedAccessControl()) {
+    if (!pressed) return;
+    focusReturnRef.current = { from: pressed, until: Date.now() + ACCESS_FOCUS_RETURN_MS };
+  }
+
+  function retryWithAccess(mode: CommandPermissionMode) {
+    if (!lastFailedSend || busy) return;
+    setChatAccess(mode);
+    setAccessRefusal(null);
+    setDebugError(null);
+    announce(mode === "full" ? "This chat now uses Build. Retrying your message." : "This chat now uses Explore. Retrying your message.", "polite");
+    retryFailedSend(undefined, { permissionMode: mode });
+    keepFocusInChat();
+  }
+
+  function switchChatToBuild() {
+    setChatAccess("full");
+    // Say only what Cave controls: a harness's own sandbox can still limit
+    // writes (Codex keeps its sandbox_mode, #6096).
+    announce("This chat now uses Build.", "polite");
+    keepFocusInChat();
+  }
+
+  function buildThisPlan() {
+    if (busy) return;
+    setChatAccess("full");
+    announce("This chat now uses Build. Sending the plan to build.", "polite");
+    void sendRaw(BUILD_PLAN_PROMPT, [], [], undefined, { ...currentSendControls(), permissionMode: "full" });
+    keepFocusInChat();
+  }
+
+  async function grantChatProjectWrite(retry: boolean) {
+    const project = accessProject;
+    if (!project || accessActionBusy) return;
+    setAccessActionBusy(true);
+    try {
+      const undo = await grantProjectAccess(fetch, {
+        familiarId: familiar.id,
+        familiarName: familiar.display_name,
+        projectId: project.id,
+        projectName: project.name,
+      }, "write");
+      priorChatAccessRef.current = chatAccessOverride;
+      setGrantUndo(undo);
+      reloadProjects();
+      setChatAccess("full");
+      setAccessRefusal(null);
+      announce(`${familiar.display_name} can now change files in ${project.name}.`, "polite");
+      if (retry) retryFailedSend(undefined, { permissionMode: "full" });
+    } catch (failure) {
+      const message = `Couldn't change ${familiar.display_name}'s access: ${failure instanceof Error ? failure.message : "the request failed"}`;
+      setError(message);
+      announce(message, "assertive");
+    } finally {
+      setAccessActionBusy(false);
+    }
+  }
+
+  async function undoChatGrant() {
+    const undo = grantUndo;
+    if (!undo || accessActionBusy) return;
+    const pressed = focusedAccessControl();
+    setAccessActionBusy(true);
+    try {
+      await undoProjectGrant(fetch, undo);
+      setGrantUndo(null);
+      setChatAccess(priorChatAccessRef.current);
+      priorChatAccessRef.current = null;
+      reloadProjects();
+      announce(`Undid ${undo.familiarName}'s write access to ${undo.projectName}.`, "polite");
+      keepFocusInChat(pressed);
+    } catch (failure) {
+      // Someone changed the grant after this one: Undo no longer applies.
+      if (failure instanceof GrantChangeError && failure.code === "grant_changed") {
+        setGrantUndo(null);
+        priorChatAccessRef.current = null;
+        keepFocusInChat(pressed);
+      }
+      const message = `Couldn't undo the access change: ${failure instanceof Error ? failure.message : "the request failed"}`;
+      setError(message);
+      announce(message, "assertive");
+    } finally {
+      setAccessActionBusy(false);
+    }
   }
 
   function retryLastSend() {
@@ -6432,7 +6704,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           thinkingEffort,
           responseSpeed,
           modelControls: prevUser.modelControls ?? {},
-          permissionMode,
+          permissionMode: effectivePermissionMode,
           runtimeHost: runtimeHost ?? undefined,
         },
       );
@@ -6460,7 +6732,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         thinkingEffort,
         responseSpeed,
         modelControls: prevUser.modelControls ?? {},
-        permissionMode,
+        permissionMode: effectivePermissionMode,
         runtimeHost: runtimeHost ?? undefined,
       },
     );
@@ -6604,7 +6876,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           thinkingEffort,
           responseSpeed,
           modelControls,
-          permissionMode,
+          permissionMode: effectivePermissionMode,
           queuedRuntimeHost: runtimeHost,
         },
       });
@@ -6755,7 +7027,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         normalized
           ? {
               ...normalized,
-              permissionMode,
+              permissionMode: effectivePermissionMode,
               runtimeHost: initialControls?.runtimeHost,
               ...(Object.keys(handoffModelControls).length > 0
                 ? { modelControls: handoffModelControls }
@@ -6942,6 +7214,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
+            if (liveGeneration.originSessionId == null) adoptDraftAccess(ev.sessionId);
             // This id was minted BY this view's own generation, which is the
             // only transition a sessionless /auto mission may be carried onto.
             // See reconcileAutoMissionOnSessionChange.
@@ -7164,6 +7437,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
+            if (liveGeneration.originSessionId == null) adoptDraftAccess(ev.sessionId);
             // This id was minted BY this view's own generation, which is the
             // only transition a sessionless /auto mission may be carried onto.
             // See reconcileAutoMissionOnSessionChange.
@@ -7232,6 +7506,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       case "error": {
         setError(ev.message);
         setLastFailedSend(request);
+        if (isAccessRefusalCode(ev.code)) {
+          setAccessRefusal({ code: ev.code, requested: request.controls?.permissionMode ?? effectivePermissionMode });
+        }
         markAssistantError(
           assistantId,
           liveGeneration.sessionId,
@@ -7779,7 +8056,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         saveAsTemplateDisabled: !input.trim(),
         indicator:
           composerHostValue !== LOCAL_HOST_ID ||
-          permissionMode !== DEFAULT_PERMISSION_MODE ||
+          effectivePermissionMode !== DEFAULT_PERMISSION_MODE ||
           thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
           responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
       }}
@@ -7797,6 +8074,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         guidance: { label: guidanceLabel, onSelect: firstUse.openGuide },
       } : undefined}
     />
+  );
+
+  // A settled Claude plan in Explore is the cue for "Build this plan" (#6445).
+  // Other runtimes can show the same tool names, and the continuation is
+  // Claude's, so only a Claude chat gets the cue.
+  const latestPathTurn = activePath.at(-1);
+  const latestPlanReady = Boolean(
+    modelHarness === "claude" &&
+    latestPathTurn &&
+    latestPathTurn.role === "assistant" &&
+    !latestPathTurn.pending &&
+    !latestPathTurn.error &&
+    planReadyFromTools(latestPathTurn.tools),
   );
 
   const composerNode = (
@@ -7820,6 +8110,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </div>
       ) : (
         <>
+          {!offlineReadOnly ? (
+            <ChatAccessBar
+              mode={effectivePermissionMode}
+              familiarName={familiar.display_name}
+              projectName={accessProject?.name ?? null}
+              projectAccess={accessProject?.access ?? null}
+              buildAccess={buildAccess}
+              planReady={latestPlanReady}
+              busy={busy || accessActionBusy}
+              accessBusy={accessActionBusy}
+              grantUndo={grantUndo}
+              onSwitchToBuild={switchChatToBuild}
+              onBuildPlan={buildThisPlan}
+              onGrantWrite={accessProject ? () => void grantChatProjectWrite(false) : undefined}
+              onUndoGrant={() => void undoChatGrant()}
+              onDismissUndo={() => {
+                setGrantUndo(null);
+                priorChatAccessRef.current = null;
+              }}
+            />
+          ) : null}
           {setupCandidateRoot && !setupBannerDismissed ? (
             <div
               role="status"
@@ -8094,7 +8405,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
             <div
               className="cave-composer-panel"
-              data-access-mode={permissionMode}
+              data-access-mode={effectivePermissionMode}
               onBlur={(event) => {
                 const dock = event.currentTarget.closest(".cave-composer-dock") ?? event.currentTarget;
                 const next = event.relatedTarget as Node | null;
@@ -8316,7 +8627,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           prompt: buildQuotedPrompt(replyTarget, input.trim()),
                           projectRoot: requestProjectRoot ?? undefined,
                           attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(attachments.map(({ id: _id, ...attachment }) => attachment)),
-                          modelControls: { ...modelControls }, permissionMode,
+                          modelControls: { ...modelControls }, permissionMode: effectivePermissionMode,
                           ...(runtimeHost ? { runtimeHost } : {}),
                           ...(modelState?.source === "runtime-default"
                             ? { modelOverride: "", modelOverrideScope: "next-message" as const }
@@ -8925,6 +9236,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       {error ? (
         <ChatErrorStrip
           message={error}
+          accessFix={accessRefusal ? {
+            actions: accessRefusalActions({
+              code: accessRefusal.code,
+              requested: accessRefusal.requested,
+              buildAccess,
+              projectAccess: accessProject?.access ?? null,
+              canGrant: Boolean(accessProject && lastFailedSend),
+            }).filter((action) => action === "open-project-access" || Boolean(lastFailedSend)),
+            familiarName: familiar.display_name,
+            projectName: accessProject?.name ?? null,
+            // Retry resends the refused Build turn unchanged, so it can only be
+            // refused again. Runtime blockers keep Retry: it follows a runtime
+            // switch in the composer (#6419).
+            replacesRetry: accessRefusal.code === "project_write_access_required",
+            busy: busy || accessActionBusy,
+            onGrantWriteAndRetry: () => void grantChatProjectWrite(true),
+            onRetryExplore: () => retryWithAccess("read"),
+            onRetryBuild: () => retryWithAccess("full"),
+            onOpenProjectAccess: () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT)),
+          } : undefined}
           code={debugError?.code}
           localRefusal={debugError?.localRefusal}
           errorSeq={debugError?.seq ?? 0}
@@ -8983,6 +9314,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onDismiss={() => {
             setError(null);
             setDebugError(null);
+            setAccessRefusal(null);
             setProjectAccessRoot(null);
             setProjectRootMissing(false);
             setProjectRootRequired(false);

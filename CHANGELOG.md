@@ -7,6 +7,27 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Added
+- **Chat has a one-press way out of Explore** (#6445). An Explore chat says it
+  is read only and offers **Switch to Build** for that chat; a finished Claude
+  plan offers **Build this plan**. The composer's Access menu stays the shared
+  default. Each access refusal names the action that clears it. For a
+  read-only project, that is giving the familiar write access, which you
+  confirm first, can undo, and is logged as a desktop grant change. It is
+  refused if the grant changed in the meantime. You can also retry in Explore.
+  When a runtime can't run Build, Chat and the Access menu say why instead of
+  offering it, and a read-only project there offers only Explore. A plan made
+  before you give write access keeps **Build this plan** after the grant.
+
+### Security
+- **A read-only project grant now limits Full access on every runtime**
+  (#6445). Codex, OpenCode and the other harnesses could start a Full access
+  turn in a project the familiar could only read. With Codex's `sandbox_mode`
+  set to `workspace-write`, that turn could write there. Cave now refuses it
+  before launch, as it already did for Claude. A turn is also refused when
+  the project's grant is removed while the turn is starting. Cave still never
+  widens a runtime's own sandbox.
+
 ## [0.5.21] - 2026-11-12
 
 > The iPhone transcript holds its place, Chat opens on All chats, and Ask Salem is retired.

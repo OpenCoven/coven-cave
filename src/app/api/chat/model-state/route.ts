@@ -17,7 +17,8 @@ import {
   modelControlCapabilities,
   withForwardableRuntimeCliControls,
 } from "@/lib/model-control-capabilities";
-import { covenRunSupportsSpeed } from "@/app/api/chat/send/chat-send-capabilities";
+import { covenRunSupportsPermission, covenRunSupportsSpeed, covenRunSupportsWriteScope } from "@/app/api/chat/send/chat-send-capabilities";
+import { chatBuildAccessFor } from "@/lib/chat-access-escape";
 import {
   NO_DIRECT_REASONING,
   directTransportReasoningGates,
@@ -227,6 +228,17 @@ export async function GET(req: Request) {
       ? await directTransportReasoningGates({ familiarId, harness: state.harness, resumeSessionId })
           .catch(() => NO_DIRECT_REASONING)
       : NO_DIRECT_REASONING;
+  // Build (Full access) for a local Claude binding needs Coven's
+  // `--write-scope`; the send route refuses it otherwise (#6393). Report that
+  // here so Chat never offers a Build that can't run (#6445).
+  const claudeLocal = state.harness === "claude" && localBinding;
+  const [writeScopeSupported, permissionForwarding] = claudeLocal
+    ? await Promise.all([
+        covenRunSupportsWriteScope().catch(() => false),
+        covenRunSupportsPermission().catch(() => false),
+      ])
+    : [true, true];
+  const buildAccess = chatBuildAccessFor({ harness: state.harness, localBinding, writeScopeSupported, permissionForwarding });
   const controls = withForwardableRuntimeCliControls(
     modelControlCapabilities(state.harness, state.effectiveModel)
       .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null)),
@@ -244,6 +256,7 @@ export async function GET(req: Request) {
     options: inventory.models,
     inventory,
     allowCustom: inventory.allowCustom,
+    access: { build: buildAccess },
   });
 }
 
