@@ -47,6 +47,30 @@ fn validates_absolute_existing_directories_for_path_open() {
 }
 
 #[test]
+fn reveal_accepts_existing_files_and_folders_but_nothing_else() {
+    let current = std::env::current_dir().expect("current dir");
+    let file = std::env::current_exe().expect("test binary");
+    assert!(super::validate_shell_reveal_path(&current.to_string_lossy()).is_ok());
+    // Revealing selects a file without launching it, so files are allowed.
+    assert_eq!(
+        super::validate_shell_reveal_path(&format!("  {}  ", file.display())).expect("file"),
+        file
+    );
+    assert!(super::validate_shell_reveal_path("").is_err());
+    assert!(super::validate_shell_reveal_path("relative/path").is_err());
+    assert!(super::validate_shell_reveal_path(
+        &current.join("no-such-file-for-reveal.txt").to_string_lossy()
+    )
+    .is_err());
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        if home.is_dir() {
+            assert_eq!(super::validate_shell_reveal_path("~").expect("home"), home);
+        }
+    }
+    assert!(super::validate_shell_reveal_path("~someone/notes").is_err());
+}
+
+#[test]
 fn normalizes_only_absolute_existing_picked_directories() {
     let current = std::env::current_dir().expect("current dir");
     assert!(

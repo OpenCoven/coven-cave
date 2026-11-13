@@ -105,6 +105,41 @@ pub(super) fn validate_shell_open_path(path: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// `~` and `~/…` name the person's home folder. Chat links use it; the page
+/// cannot expand it, so the shell does. `~someone` is not supported.
+#[cfg(desktop)]
+fn expand_home_prefix(path: &str) -> Option<PathBuf> {
+    let rest = if path == "~" {
+        Some("")
+    } else {
+        path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\"))
+    };
+    let Some(rest) = rest else {
+        return Some(PathBuf::from(path));
+    };
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    let home = PathBuf::from(home);
+    Some(if rest.is_empty() { home } else { home.join(rest) })
+}
+
+/// A path for `shell_reveal_path`: absolute (after `~` expansion) and present
+/// on disk. Unlike `shell_open_path` it may name a file, because revealing
+/// selects the file in its folder and never opens it.
+#[cfg(desktop)]
+pub(super) fn validate_shell_reveal_path(path: &str) -> Result<PathBuf, String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("shell_reveal_path requires a path".to_string());
+    }
+    let path = expand_home_prefix(path)
+        .ok_or_else(|| "shell_reveal_path could not resolve the home folder".to_string())?;
+    if !path.is_absolute() {
+        return Err("shell_reveal_path requires an absolute path".to_string());
+    }
+    std::fs::metadata(&path).map_err(|_| "shell_reveal_path path does not exist".to_string())?;
+    Ok(path)
+}
+
 #[cfg(desktop)]
 pub(super) fn normalize_picked_directory(path: &str) -> Result<Option<String>, String> {
     let path = path.trim();

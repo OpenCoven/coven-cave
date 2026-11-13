@@ -346,8 +346,22 @@ assert.match(
 );
 assert.match(
   domWiring,
-  /wireMarkdownLinks\(el, onOpenUrl, resolveOpenUrl\)/,
-  "The markdown DOM boundary should wire rendered links through the current URL resolver and opener",
+  /wireMarkdownLinks\(el, onOpenUrl, resolveOpenUrl, reading\?\.projectRoot \?\? null\)/,
+  "The markdown DOM boundary should wire rendered links through the current URL resolver, opener and project root",
+);
+// A link to a file on this machine is resolved against the page by the
+// browser, so it used to open http://127.0.0.1:<port>/Users/… in the embedded
+// browser. It opens the system file manager instead, and only surfaces without
+// their own resolver (a captured README keeps its #5781 routing) do this.
+assert.match(
+  domWiring,
+  /const localPath = resolveOpenUrl \? null : localPathFromHref\(rawHref, projectRoot\);\s*if \(localPath\) \{\s*wireLocalPathLink\(link, localPath\);\s*continue;\s*\}\s*if \(!onOpenUrl\)/,
+  "a local path link is claimed for the file manager before any web opener sees it",
+);
+assert.match(
+  domWiring,
+  /const open = \(event: MouseEvent\) => \{\s*if \(event\.button !== 0\) return;\s*event\.preventDefault\(\);\s*void revealLocalPath\(path\)/,
+  "every primary click on a local path link is taken, so the anchor can never navigate the app to a dead loopback URL",
 );
 assert.match(
   domWiring,

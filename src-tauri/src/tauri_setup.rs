@@ -109,6 +109,29 @@ mod native_startup_terminal_tests {
     }
 }
 
+/// Pop the right Chat panel out into the detached Chat window, on the
+/// familiar and conversation the panel was showing. Only a main window may
+/// ask: the Chat window is launched from the app's own chrome, never from an
+/// embedded browser child or an auxiliary window.
+#[cfg(desktop)]
+#[tauri::command]
+fn open_chat_window(
+    webview: tauri::Webview,
+    familiar_id: Option<String>,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let app = webview.app_handle();
+    if !is_registered_main_window(app, webview.label()) {
+        log::warn!(
+            "[cave] denied open_chat_window from non-main webview: {}",
+            webview.label()
+        );
+        return Err("the Chat window can only be opened from the main app window".to_string());
+    }
+    show_chat_window_from_main(app, &ChatWindowTarget::new(familiar_id, session_id));
+    Ok(())
+}
+
 /// Keep the native macOS window controls in sync with the primary side panel.
 /// When the side panel is closed the shell asks for them to disappear, Dia-style,
 /// and brings them back the moment the panel (or its hover-peek) opens.
@@ -309,8 +332,10 @@ pub fn run() {
             open_tailscale_app,
             open_x_oauth_url,
             shell_open_path,
+            shell_reveal_path,
             shell_pick_directory,
             set_traffic_lights_visible,
+            open_chat_window,
             #[cfg(target_os = "macos")]
             microphone::microphone_permission_request,
             #[cfg(target_os = "macos")]
@@ -735,35 +760,10 @@ pub fn run() {
                 MenuItem::with_id(app, "new_reminder", "New Reminder…", true, None::<&str>)?;
             let quick_chat =
                 MenuItem::with_id(app, "quick_chat", "Quick Chat…", true, None::<&str>)?;
-            // The notch is a macOS menu-bar concept: on Windows the item parked a
-            // pill over other apps' title bars and hid the tray icon (#5970).
-            #[cfg(target_os = "macos")]
-            let notch_mode = MenuItem::with_id(
-                app,
-                "notch_mode",
-                "Move to Centered Notch",
-                true,
-                None::<&str>,
-            )?;
             let show_app =
                 MenuItem::with_id(app, "show_app", "Show CovenCave", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
             let quit = MenuItem::with_id(app, "quit", "Quit CovenCave", true, None::<&str>)?;
-            #[cfg(target_os = "macos")]
-            let tray_menu = Menu::with_items(
-                app,
-                &[
-                    &open_inbox,
-                    &new_reminder,
-                    &quick_chat,
-                    &notch_mode,
-                    &separator,
-                    &show_app,
-                    &separator,
-                    &quit,
-                ],
-            )?;
-            #[cfg(not(target_os = "macos"))]
             let tray_menu = Menu::with_items(
                 app,
                 &[
@@ -799,26 +799,6 @@ pub fn run() {
                         }
                     }
                     "quick_chat" => show_quick_chat_from_main(app),
-                    // "Move" the menu-bar icon into the centered notch: the
-                    // notch window appears top-center, the tray icon hides,
-                    // and the choice persists across restarts. The notch's
-                    // own dock button (notch:dock-to-tray) is the way back.
-                    #[cfg(target_os = "macos")]
-                    "notch_mode" => {
-                        let Some(url) = preferred_main_window(app)
-                            .and_then(|window| window.url().ok())
-                            .and_then(notch_url_from_main)
-                        else {
-                            focus_main_window(app);
-                            return;
-                        };
-
-                        show_notch_window(app, &url);
-                        if app.get_webview_window(NOTCH_WINDOW_LABEL).is_some() {
-                            save_notch_mode(app, true);
-                            set_tray_visible(app, false);
-                        }
-                    }
                     "show_app" => focus_main_window(app),
                     "quit" => {
                         #[cfg(target_os = "windows")]
@@ -870,60 +850,6 @@ pub fn run() {
             app.listen("quick-chat:open-session", move |_| {
                 focus_main_window(&app_handle);
             });
-
-            // Notch state machine — the notch webview only emits intents
-            // (capability loopback-notch.json grants it core:event:allow-emit
-            // and nothing else); the shell owns geometry and tray visibility.
-            // Customizations load from notch-config.json.
-            app.manage(NotchState {
-                expanded: std::sync::atomic::AtomicBool::new(false),
-                config: Mutex::new(load_notch_config(app.handle())),
-            });
-            let notch_expand_handle = app.handle().clone();
-            app.listen("notch:expand", move |_| {
-                set_notch_geometry(&notch_expand_handle, true);
-            });
-            let notch_collapse_handle = app.handle().clone();
-            app.listen("notch:collapse", move |_| {
-                set_notch_geometry(&notch_collapse_handle, false);
-            });
-            // Detach: fold the notch back up and pop the traditional floating
-            // quick-chat window with all its operations.
-            let notch_detach_handle = app.handle().clone();
-            app.listen("notch:detach", move |_| {
-                set_notch_geometry(&notch_detach_handle, false);
-                show_quick_chat_from_main(&notch_detach_handle);
-            });
-            // Dock: move the quick chat back to the menu bar — restore the
-            // tray icon, forget the preference, and close the notch window.
-            let notch_dock_handle = app.handle().clone();
-            app.listen("notch:dock-to-tray", move |_| {
-                save_notch_mode(&notch_dock_handle, false);
-                set_tray_visible(&notch_dock_handle, true);
-                if let Some(window) = notch_dock_handle.get_webview_window(NOTCH_WINDOW_LABEL) {
-                    let _ = window.close();
-                }
-            });
-            // Customizations: the page's toolbar toggle emits notch:config
-            // patches ({"fitMenuBar":bool}); the shell persists them and
-            // re-applies geometry immediately.
-            let notch_config_handle = app.handle().clone();
-            app.listen("notch:config", move |event| {
-                apply_notch_config_patch(&notch_config_handle, event.payload());
-            });
-
-            // Restore the notch presentation on launch when the user left it
-            // enabled — the tray icon stays "moved" until they dock it back.
-            if load_notch_mode(app.handle()) {
-                show_notch_from_main(app.handle());
-                if app
-                    .handle()
-                    .get_webview_window(NOTCH_WINDOW_LABEL)
-                    .is_some()
-                {
-                    set_tray_visible(app.handle(), false);
-                }
-            }
 
             // Last statement in the closure on purpose: every `?` above has
             // already succeeded, so the marker only ever vouches for a startup

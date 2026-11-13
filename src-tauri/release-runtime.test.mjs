@@ -1013,7 +1013,7 @@ test("Windows first launch paints progress and supports recovery while the sidec
   );
   assert.match(
     launcher,
-    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*NOTCH_WINDOW_LABEL/,
+    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*CHAT_WINDOW_LABEL/,
     "sidecar recovery must rotate auth for already-open auxiliary windows",
   );
   assert.match(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
 import dynamic from "next/dynamic";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
@@ -34,6 +34,25 @@ const ChatRouter = dynamic(
 );
 
 export type RightChatLaunchRequest = AgentsNewChatRequest & { familiarId: string; nonce: number };
+
+/** What a pop-out carries to the detached Chat window: the familiar the panel
+ *  is showing and its selected conversation (null while composing a new one). */
+/** `familiarId` is null when the panel has no familiar yet: the Chat window
+ *  has its own roster and opens on the one it showed last. */
+export type RightChatPopOutTarget = { familiarId: string | null; sessionId: string | null };
+
+/**
+ * Thread selection for a host that renders its own conversation list beside
+ * the panel (the detached Chat window). Each call is the same action as the
+ * rail's own thread switcher and New chat button, so selection, the router
+ * and announcements can never disagree between the two. Safe to call at any
+ * time: a request made before the familiar's first resolve is held and
+ * becomes that resolve's choice instead of being dropped or overridden.
+ */
+export type RightChatPanelController = {
+  openSession: (sessionId: string) => void;
+  newChat: () => void;
+};
 
 /**
  * Shared frame for every loading/error/chooser state: a named `<aside>` plus
@@ -74,11 +93,15 @@ export type RightChatLaunchRequest = AgentsNewChatRequest & { familiarId: string
 function RightChatPanelFrame({
   open,
   onClose,
+  onPopOut,
   title = "Chat",
   children,
 }: {
   open: boolean;
   onClose: () => void;
+  /** Offered where the panel is waiting on a familiar choice: the Chat window
+   *  needs none, so it must not be gated behind picking one here. */
+  onPopOut?: () => void;
   title?: string;
   children: ReactNode;
 }) {
@@ -93,6 +116,17 @@ function RightChatPanelFrame({
         <span className="right-chat__rail-mark" title={title}>
           <Icon name="ph:chats" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </span>
+        {onPopOut ? (
+          <button
+            type="button"
+            className="focus-ring right-chat__icon-button"
+            aria-label="Open Chat in its own window"
+            title="Open in its own window"
+            onClick={onPopOut}
+          >
+            <Icon name="ph:arrow-square-out" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
+          </button>
+        ) : null}
         <span className="right-chat__rail-spacer" aria-hidden />
         <button
           type="button"
@@ -150,7 +184,30 @@ type Props = {
   onOpenTask: (cardId: string) => void;
   onOpenUrl: (url: string) => void;
   onOpenPreview?: (url: string) => void;
+  /**
+   * Pop the panel out into the detached Chat window. Supplied only where a
+   * second window can exist (desktop); omitted, the rail shows no control.
+   */
+  onPopOut?: (target: RightChatPopOutTarget) => void;
+  /**
+   * Conversation to open on this familiar's first resolve instead of its
+   * latest, when it is still eligible — how a pop-out lands on the thread the
+   * panel was showing. Read once at mount; a familiar change discards it.
+   */
+  initialSessionId?: string | null;
+  /** Reports the selected conversation; null while composing a new chat. */
+  onSelectedSessionChange?: (sessionId: string | null) => void;
+  /** See {@link RightChatPanelController}. */
+  controllerRef?: Ref<RightChatPanelController>;
+  /**
+   * Namespace for per-familiar composer drafts. The detached Chat window
+   * passes its own so a draft typed there never overwrites the panel's.
+   */
+  composerDraftKeyPrefix?: string;
 };
+
+/** Per-familiar draft namespace of the in-app panel. */
+const RIGHT_CHAT_DRAFT_KEY_PREFIX = "cave:right-chat-composer-draft:v1:";
 
 /**
  * Persistent, focused wrapper around the shared ChatRouter for the global
@@ -368,6 +425,43 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
     activeFamiliar === null ||
     isCurrentRightChatSessionsScope(sessionsScopeFamiliarId, activeFamiliar.id);
   const { announce } = useAnnouncer();
+  // A thread asked for before this familiar has resolved: a pop-out's target
+  // (seeded from `initialSessionId`) or an early controller call. The first
+  // resolve below consumes it in place of "latest", so an early request is
+  // neither dropped nor overwritten a moment later.
+  const pendingThreadRef = useRef<{ kind: "session"; id: string } | { kind: "new" } | null>(
+    props.initialSessionId ? { kind: "session", id: props.initialSessionId } : null,
+  );
+
+  // The rail's thread switcher, its New chat button and the controller a
+  // host list drives all go through these two, so they cannot drift apart.
+  const startNewChat = () => {
+    if (!activeFamiliar) return;
+    if (resolvedFamiliarRef.current !== activeFamiliar.id) {
+      pendingThreadRef.current = { kind: "new" };
+      return;
+    }
+    routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
+    setSelectedSessionId(null);
+    announce(`New chat with ${activeFamiliar.display_name}`);
+  };
+  const selectSession = (nextId: string) => {
+    if (!activeFamiliar) return;
+    if (resolvedFamiliarRef.current !== activeFamiliar.id) {
+      pendingThreadRef.current = { kind: "session", id: nextId };
+      return;
+    }
+    routerRef.current?.openSession(nextId);
+    setSelectedSessionId(nextId);
+    const nextSession = eligibleSessions.find((session) => session.id === nextId);
+    announce(`${nextSession ? sessionRailTitle(nextSession) : "Chat"} opened`);
+  };
+  useImperativeHandle(props.controllerRef, () => ({ openSession: selectSession, newChat: startNewChat }));
+
+  const { onSelectedSessionChange } = props;
+  useEffect(() => {
+    onSelectedSessionChange?.(selectedSessionId);
+  }, [onSelectedSessionChange, selectedSessionId]);
 
   // Commits currentSelectionRef the instant either half changes — a plain
   // useLayoutEffect with no early-return guard, unlike the big resolution
@@ -557,6 +651,9 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
     if (!activeFamiliar) return;
 
     if (trackedFamiliarIdRef.current !== activeFamiliar.id) {
+      // A request held for the outgoing familiar must not pick the incoming
+      // one's thread. The very first occupancy keeps its seeded request.
+      if (trackedFamiliarIdRef.current !== null) pendingThreadRef.current = null;
       // A transition just occurred — possibly back to a familiar visited
       // earlier in the same closed stretch (closed A -> B -> A), or one that
       // happened entirely while familiars/sessions were erroring — so
@@ -598,7 +695,18 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
       // `open` flips true.
       if (!open) return;
       resolvedFamiliarRef.current = activeFamiliar.id;
-      const latestId = resolveLatestRightChatSessionId(sessions, activeFamiliar.id);
+      // Honor a held request once: a named thread only while it is still one
+      // of this familiar's visible chats, otherwise the latest as usual.
+      const pending = pendingThreadRef.current;
+      pendingThreadRef.current = null;
+      const requestedId =
+        pending?.kind === "session" && eligibleSessions.some((session) => session.id === pending.id)
+          ? pending.id
+          : null;
+      const latestId =
+        pending?.kind === "new"
+          ? null
+          : requestedId ?? resolveLatestRightChatSessionId(sessions, activeFamiliar.id);
       if (latestId) routerRef.current?.openSession(latestId);
       else routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
       setSelectedSessionId(latestId);
@@ -683,8 +791,13 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
   }
 
   if (!activeFamiliar) {
+    const popOut = props.onPopOut;
     return (
-      <RightChatPanelFrame onClose={props.onClose} open={open}>
+      <RightChatPanelFrame
+        onClose={props.onClose}
+        open={open}
+        onPopOut={popOut ? () => popOut({ familiarId: null, sessionId: null }) : undefined}
+      >
         <EmptyState
           compact
           icon="ph:users-three"
@@ -765,16 +878,8 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
           )}
           disabled={!routerReady}
           onChange={(nextId) => {
-            if (nextId === "__new__") {
-              routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
-              setSelectedSessionId(null);
-              announce(`New chat with ${activeFamiliar.display_name}`);
-              return;
-            }
-            routerRef.current?.openSession(nextId);
-            setSelectedSessionId(nextId);
-            const nextSession = eligibleSessions.find((session) => session.id === nextId);
-            announce(`${nextSession ? sessionRailTitle(nextSession) : "Chat"} opened`);
+            if (nextId === "__new__") startNewChat();
+            else selectSession(nextId);
           }}
           options={[
             { value: "__new__", label: "New chat" },
@@ -789,14 +894,21 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
           className="focus-ring right-chat__icon-button"
           aria-label="New Chat panel chat"
           disabled={!routerReady}
-          onClick={() => {
-            routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
-            setSelectedSessionId(null);
-            announce(`New chat with ${activeFamiliar.display_name}`);
-          }}
+          onClick={startNewChat}
         >
           <Icon name="ph:plus" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
+        {props.onPopOut ? (
+          <button
+            type="button"
+            className="focus-ring right-chat__icon-button"
+            aria-label="Open Chat in its own window"
+            title="Open in its own window"
+            onClick={() => props.onPopOut?.({ familiarId: activeFamiliar.id, sessionId: selectedSessionId })}
+          >
+            <Icon name="ph:arrow-square-out" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
+          </button>
+        ) : null}
         {props.launchRequest && props.onFollowMainChat ? (
           <button
             type="button"
@@ -864,7 +976,7 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
             onOpenUrl={props.onOpenUrl}
             onOpenPreview={props.onOpenPreview}
             onActiveSessionChange={handleActiveSessionChange}
-            composerDraftKey={`cave:right-chat-composer-draft:v1:${activeFamiliar.id}`}
+            composerDraftKey={`${props.composerDraftKeyPrefix ?? RIGHT_CHAT_DRAFT_KEY_PREFIX}${activeFamiliar.id}`}
             compact
             syncUrlHash={false}
             enableSplitPanes={false}

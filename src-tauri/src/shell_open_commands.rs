@@ -218,6 +218,50 @@ pub(super) fn shell_open_path(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Show a local file or folder in the system file manager: a folder opens, a
+/// file is selected in its folder (Finder `open -R`, Explorer `/select,`).
+/// The file itself is never launched, so a chat link cannot run anything by
+/// being clicked.
+#[cfg(desktop)]
+#[tauri::command]
+pub(super) fn shell_reveal_path(path: String) -> Result<(), String> {
+    let path = validate_shell_reveal_path(&path)?;
+    let is_dir = path.is_dir();
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = std::process::Command::new("/usr/bin/open");
+        if !is_dir {
+            command.arg("-R");
+        }
+        // The validated path is absolute, so it cannot be read as an option.
+        command.arg(&path).spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = windows_command::hidden_command(windows_system32_binary("explorer.exe"));
+        if is_dir {
+            command.arg(&path);
+        } else {
+            use std::os::windows::process::CommandExt;
+            // Explorer parses `/select,"<path>"` itself, so the argument is
+            // passed raw; a Windows path cannot contain a double quote.
+            command.raw_arg(format!("/select,\"{}\"", path.display()));
+        }
+        command.spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // File managers have no portable "select" verb: open the folder.
+        let folder = if is_dir { path.as_path() } else { path.parent().unwrap_or(path.as_path()) };
+        std::process::Command::new("xdg-open")
+            .arg(folder)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Ask the OS for a local directory and return its absolute path.
 #[cfg(desktop)]
 #[tauri::command]

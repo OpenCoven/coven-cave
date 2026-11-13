@@ -187,7 +187,9 @@ import {
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectFocusPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { AutoMissionSupervisor } from "@/components/auto-mission-supervisor";
-import { RightChatPanel, type RightChatLaunchRequest } from "@/components/right-chat-panel";
+import { RightChatPanel, type RightChatLaunchRequest, type RightChatPopOutTarget } from "@/components/right-chat-panel";
+import { openChatWindow } from "@/lib/chat-window";
+import { useIsMobile } from "@/lib/use-viewport";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -376,6 +378,24 @@ export function Workspace() {
   const [rightChatOpen, setRightChatOpen] = useState(false);
   const [rightChatLaunchRequest, setRightChatLaunchRequest] = useState<RightChatLaunchRequest | null>(null);
   const rightChatLaunchNonceRef = useRef(0);
+  // A second window only exists on desktop; a phone's Chat drawer has nowhere
+  // to pop out to.
+  const canPopOutChat = !useIsMobile();
+  // Popping out moves the conversation into the detached Chat window and
+  // closes the docked panel. From then on the two are independent: nothing
+  // this workspace does (familiar, chat, surface) is sent to that window.
+  const popOutRightChat = useCallback(
+    async (target: RightChatPopOutTarget) => {
+      const opened = await openChatWindow(target);
+      if (!opened) {
+        announce("Couldn't open the Chat window. Allow pop-ups for CovenCave and try again.");
+        return;
+      }
+      shellRef.current?.closeRightChat();
+      announce("Chat opened in its own window");
+    },
+    [announce],
+  );
   // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
   // (declared above startFamiliarChat) can call it without a TDZ, and without
   // workspace self-dispatching a chat-nav event. Assigned in an effect below.
@@ -5135,6 +5155,7 @@ export function Workspace() {
       onOpenOnboarding={openOnboarding}
       onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
       onOpenUrl={openUrlInApp}
+      onPopOut={canPopOutChat ? popOutRightChat : undefined}
     />
   );
   // The standalone "Manage familiars" drawer is gone — Chat → Familiar →
