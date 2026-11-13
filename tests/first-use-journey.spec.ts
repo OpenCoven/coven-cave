@@ -151,6 +151,27 @@ test("Full requires an explicit choice and opens Chat with the reviewed mode", a
   expect(f.sends).toEqual([]);
 });
 
+test("reopened Read setup overrides a conflicting Full preference only for the new chat", async ({ page }) => {
+  const selected = advanceFirstUse(createQuickStartState(), { kind: "choose-assistant", familiarId: "nova" });
+  const state = advanceFirstUse(selected, { kind: "finish-setup", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, permissionMode: "read" });
+  const f = await fixture(page, state); f.allowWrite();
+  await page.addInitScript(() => localStorage.setItem("cave:chat-composer-controls:v1", JSON.stringify({ permissionMode: "full" })));
+  await page.goto("/?mode=home");
+  await expect(page.getByRole("complementary", { name: "Getting started", exact: true })).toContainText("Your workspace is ready.");
+  await page.getByRole("button", { name: "Continue setup", exact: true }).click();
+  const guide = page.getByRole("dialog", { name: "Get started with Cave" });
+  await expect(guide).toContainText("Read only");
+  await guide.getByRole("button", { name: "Open in Chat", exact: true }).click();
+  const chat = page.getByTestId("chat-main");
+  await expect(chat.getByRole("button", { name: /Project: Practice garden.*Full/ })).toBeVisible();
+  await expect(chat.locator("[data-access-mode]")).toHaveAttribute("data-access-mode", "read");
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("cave:chat-composer-controls:v1")!).permissionMode)).toBe("full");
+  await chat.getByRole("textbox", { name: "Message", exact: true }).fill("Explain the entry point without changing files");
+  await chat.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect.poll(() => f.sends.length).toBe(1);
+  expect(f.sends[0]).toMatchObject({ permissionMode: "read" });
+});
+
 for (const destination of ["project", "session"] as const) {
   test(`an unresolved starter replacement cannot overwrite another ${destination} draft`, async ({ page }) => {
     const selected = advanceFirstUse(createQuickStartState(), { kind: "choose-assistant", familiarId: "nova" });

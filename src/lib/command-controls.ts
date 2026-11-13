@@ -12,6 +12,8 @@ export type CommandControls = {
 };
 
 export type InitialCommandControls = Partial<CommandControls> & {
+  /** Explicitly reviewed mode for a new chat; bound conversations retain theirs. */
+  permissionMode?: CommandPermissionMode;
   /** Composer Host chip: "local" or a registered ssh host id (see chat-hosts).
    *  Rides the opened chat's first send and seeds its Host chip. */
   runtimeHost?: string;

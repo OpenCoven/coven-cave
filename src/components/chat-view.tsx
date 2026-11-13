@@ -2472,7 +2472,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
-  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode);
+  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => {
+    const reviewed = !sessionId ? initialControls?.permissionMode : undefined;
+    return reviewed === "read" || reviewed === "full" ? reviewed : readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode;
+  });
   useEffect(() => {
     if (sessionId) return;
     const updateUnsentChoice = () => setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode);

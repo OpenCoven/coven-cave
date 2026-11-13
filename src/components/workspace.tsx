@@ -5467,7 +5467,7 @@ export function Workspace() {
             || !current.project) return false;
           const access = await resolveActorProjectAccess(defaults.actingFamiliarId, defaults.projectId, current.project.root);
           if (access !== true) return false;
-          return startFamiliarChat(defaults.actingFamiliarId, current.project.root, null, null, null, "chat", true, "main", draft);
+          return startFamiliarChat(defaults.actingFamiliarId, current.project.root, null, { permissionMode: current.state.permissionMode ?? "read" }, null, "chat", true, "main", draft);
         }}
         onUseDefaults={(defaults) => {
           if (activeChatSessionId) return;

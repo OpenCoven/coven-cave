@@ -108,6 +108,18 @@ test("changing the assistant during fresh setup keeps a single acting familiar",
   const checked = renderer!.root.findAllByType("input").filter((entry: { props: { type: string; checked: boolean } }) => entry.props.type === "checkbox" && entry.props.checked);
   expect(checked).toHaveLength(1);
 });
+test("resuming an assistant change retains saved members and includes the selected actor", async () => {
+  await renderGuide();
+  await act(async () => button("Back to assistants").props.onClick());
+  await act(async () => renderer!.root.findByType(FirstUseAssistantPicker).props.onCreated({ id: "sage", display_name: "Sage", harness: "hermes" }));
+  await act(async () => button("Choose a project").props.onClick());
+  fixture.firstUse.open = false; await renderGuide();
+  fixture.firstUse.open = true; await renderGuide();
+  const members = renderer!.root.findAllByType("input").filter((entry: { props: { type: string } }) => entry.props.type === "checkbox");
+  expect(members.find((entry: { props: { disabled: boolean } }) => entry.props.disabled)!.props.checked).toBe(true);
+  expect(members.filter((entry: { props: { checked: boolean } }) => entry.props.checked)).toHaveLength(2);
+  expect(payload().state.defaults?.familiarIds).toEqual(["nova"]);
+});
 
 test("blocked browser storage cannot complete setup with an unsaved access choice", async () => {
   await renderGuide(); await selectAccess("read");

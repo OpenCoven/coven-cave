@@ -71,8 +71,9 @@ export function FirstUseGuide({ familiars, canShow = true, onManageFamiliars, on
   function seed() {
     if (!payload) return;
     const state = payload.state;
-    setActorId(state.setupFamiliarId ?? state.defaults?.actingFamiliarId ?? "");
-    setScope(state.defaults?.familiarIds ?? (state.setupFamiliarId ? [state.setupFamiliarId] : []));
+    const nextActor = state.setupFamiliarId ?? state.defaults?.actingFamiliarId ?? "";
+    setActorId(nextActor);
+    setScope([...new Set([...(state.defaults?.familiarIds ?? []), ...(nextActor ? [nextActor] : [])])]);
     setProjectId(state.defaults?.projectId ?? ""); setRevision(state.revision); setAccessChoice(null);
     setView(state.step === "complete" && payload.resolution.kind === "ready" ? "chat" : state.step === "project" || state.defaults ? "project" : "assistant");
     setError(null);

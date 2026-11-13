@@ -2,6 +2,8 @@
 
 > For agentic workers: use superpowers:executing-plans to implement this plan task by task. The user already approved the visual direction and instructed implementation through protected merge. This plan does not request renewed design or merge approval.
 
+Checkbox state is not evidence of completion. Code, verification receipts, and the merged pull request recorded on #6485 are authoritative.
+
 **Goal:** Deliver the approved assistant → project/access → real-chat flow in #6485.
 
 **Architecture:** Preserve existing production creation, grant and chat boundaries. Replace compulsory methodology progress with a versioned short-setup state and a dedicated responsive guide; keep tutorial content optional. Use focused presentation components and the existing workspace/chat handoff, rather than adding a second execution or authority path.
