@@ -112,11 +112,11 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
   }, [announce, refresh]);
 
   const openGuide = useCallback(() => { setOpen(true); void refresh(); }, [refresh]);
-  const closeGuide = useCallback(() => { setOpen(false); announce("Introduction kept. Continue it before starting a run."); }, [announce]);
+  const closeGuide = useCallback(() => { setOpen(false); announce("Setup progress kept. You can continue whenever you’re ready."); }, [announce]);
   const ensureIntroduction = useCallback(() => {
     if (payloadRef.current?.state.step === "complete") return true;
     setOpen(true);
-    announce("Complete the introduction before starting a run. Your draft is kept.", "assertive");
+    announce("Choose an assistant, project and access before starting a run. Your draft is kept.", "assertive");
     return false;
   }, [announce]);
 
