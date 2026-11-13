@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { completedFirstUsePayload } from "./fixtures/first-use";
 
 // #6445: a Chat blocked or limited by access gets one in-place action that can
 // work. Explore says it is read-only and offers Build for this chat; a ready
@@ -6,7 +7,8 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 // that clears it, and a runtime blocker never offers a Build that cannot run.
 //
 // Daemon-less (COVEN_CAVE_E2E=1): the roster, sessions, projects, grants,
-// model state and send route are scoped page.route mocks. Listed in
+// model state, send route and first-use journey are scoped page.route mocks
+// (an unfinished or unverifiable journey holds every send). Listed in
 // MOBILE_SURFACE_SPECS so it runs on desktop, Pixel 5 and iPhone 13.
 
 const ISO = "2026-11-10T09:00:00.000Z";
@@ -58,6 +60,21 @@ async function setup(page: Page, fixture: Fixture) {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem(key, JSON.stringify({ permissionMode: access }));
   }, { access: fixture.access ?? "full", key: PREFS_KEY });
+  // An already-introduced installation whose saved context is this fixture's
+  // project and familiar. The grant route keeps this file's own mock below.
+  const firstUse = completedFirstUsePayload({
+    project: { id: "p1", name: "Coven Cave", root: "/tmp/coven-cave" },
+    familiarIds: ["nova"], actingFamiliarId: "nova",
+    permissionMode: fixture.access ?? "full", access: directAccess ?? "read",
+  });
+  await page.route("**/api/onboarding/journey**", (route) => {
+    const request = route.request();
+    if (request.method() !== "GET") return route.fulfill({ status: 403, json: { ok: false, error: "This fixture has already completed its introduction." } });
+    const familiarId = new URL(request.url()).searchParams.get("runtimeFamiliarId");
+    return route.fulfill({ json: familiarId
+      ? { ok: true, runtime: { familiarId, harness: fixture.harness ?? "claude", transport: "local", state: "ready" } }
+      : { ok: true, ...firstUse } });
+  });
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: {
     ok: true,
     familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", harness: fixture.harness ?? "claude", icon: "ph:sparkle-fill" }],

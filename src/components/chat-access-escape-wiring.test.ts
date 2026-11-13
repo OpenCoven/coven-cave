@@ -52,10 +52,21 @@ assert.match(bar, /You can undo this\./);
 // Per-chat access: the shared prefs keep the composer default.
 assert.match(
   source,
-  /writeChatComposerPrefs\([^)]*\{ thinkingEffort, responseSpeed, permissionMode \}\);/,
+  /writeChatComposerPrefs\([^)]*\{ thinkingEffort, responseSpeed, permissionMode \}, "automatic"\);/,
   "only the shared composer default is written to the composer prefs",
 );
+assert.doesNotMatch(
+  source,
+  /writeChatComposerPrefs\([^;]*effectivePermissionMode/,
+  "a chat's in-place override is never saved as the shared default",
+);
 assert.match(source, /const effectivePermissionMode: CommandPermissionMode = chatAccessOverride \?\? permissionMode;/);
+// The first-use guide's access review (#6462) picks the shared default too.
+assert.match(
+  source,
+  /const updateUnsentChoice = \(\) => \{\s*setPermissionMode\(readChatComposerPrefs\(window\.localStorage\)\.permissionMode\);\s*setDraftAccessOverride\(null\);\s*pendingDraftAccessRef\.current = null;/,
+  "a new shared default from the guide ends an unsent chat's in-place override",
+);
 assert.match(source, /data-access-mode=\{effectivePermissionMode\}/);
 assert.match(source, /function buildThisPlan\(\) \{[\s\S]*?setChatAccess\("full"\);[\s\S]*?sendRaw\(BUILD_PLAN_PROMPT,[\s\S]*?permissionMode: "full"/);
 

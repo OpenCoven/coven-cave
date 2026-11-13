@@ -2521,12 +2521,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
   const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode);
-  useEffect(() => {
-    if (sessionId) return;
-    const updateUnsentChoice = () => setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode);
-    window.addEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
-    return () => window.removeEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
-  }, [sessionId]);
   // Per-chat Access chosen from an in-place action (#6445). The composer's
   // Access menu stays the shared default; these override it for one chat, so
   // leaving Explore here never widens access in every other chat.
@@ -2549,6 +2543,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const priorChatAccessRef = useRef<CommandPermissionMode | null>(null);
   /** The session this draft's own turn just minted: the same chat, so its grant Undo stays. */
   const grantUndoCarryRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (sessionId) return;
+    // The guide's access review is a pick of the shared default, like the
+    // Access menu: it also ends an unsent chat's in-place override, so a
+    // draft switched to Build never outlives a newer Read-only choice.
+    const updateUnsentChoice = () => {
+      setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode);
+      setDraftAccessOverride(null);
+      pendingDraftAccessRef.current = null;
+    };
+    window.addEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
+    return () => window.removeEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
+  }, [sessionId]);
   useEffect(() => {
     setAccessRefusal(null);
     const carried = sessionId !== null && grantUndoCarryRef.current === sessionId;
