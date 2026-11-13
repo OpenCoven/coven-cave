@@ -39,6 +39,8 @@ export type RightChatLaunchRequest = AgentsNewChatRequest & { familiarId: string
  *  is showing and its selected conversation (null while composing a new one). */
 /** `familiarId` is null when the panel has no familiar yet: the Chat window
  *  has its own roster and opens on the one it showed last. */
+/** Where a pop-out leaves off: with a familiar, its open chat or null while
+ *  composing a new one; with no familiar, nothing to carry. */
 export type RightChatPopOutTarget = { familiarId: string | null; sessionId: string | null };
 
 /**
@@ -195,6 +197,12 @@ type Props = {
    * panel was showing. Read once at mount; a familiar change discards it.
    */
   initialSessionId?: string | null;
+  /**
+   * Open a new chat on this familiar's first resolve instead of its latest:
+   * a pop-out that left off composing one. Read once at mount, like
+   * `initialSessionId`, and wins over it.
+   */
+  startWithNewChat?: boolean;
   /** Reports the selected conversation; null while composing a new chat. */
   onSelectedSessionChange?: (sessionId: string | null) => void;
   /** See {@link RightChatPanelController}. */
@@ -206,8 +214,9 @@ type Props = {
   composerDraftKeyPrefix?: string;
 };
 
-/** Per-familiar draft namespace of the in-app panel. */
-const RIGHT_CHAT_DRAFT_KEY_PREFIX = "cave:right-chat-composer-draft:v1:";
+/** Per-familiar draft namespace of the in-app panel. The detached window
+ *  reads it once, to carry a popped-out draft across. */
+export const RIGHT_CHAT_DRAFT_KEY_PREFIX = "cave:right-chat-composer-draft:v1:";
 
 /**
  * Persistent, focused wrapper around the shared ChatRouter for the global
@@ -430,7 +439,11 @@ function RightChatPanelContent(props: Props & { hasOpened: boolean; consumedLaun
   // resolve below consumes it in place of "latest", so an early request is
   // neither dropped nor overwritten a moment later.
   const pendingThreadRef = useRef<{ kind: "session"; id: string } | { kind: "new" } | null>(
-    props.initialSessionId ? { kind: "session", id: props.initialSessionId } : null,
+    props.startWithNewChat
+      ? { kind: "new" }
+      : props.initialSessionId
+        ? { kind: "session", id: props.initialSessionId }
+        : null,
   );
 
   // The rail's thread switcher, its New chat button and the controller a

@@ -140,6 +140,15 @@ pub(super) fn validate_shell_reveal_path(path: &str) -> Result<PathBuf, String> 
     Ok(path)
 }
 
+/// Whether revealing `path` may open it as a folder. On macOS an app,
+/// plug-in or document package is a folder on disk, and `open` launches it.
+/// Only a plain folder (no extension, no bundle `Contents`) is opened;
+/// everything else is selected in its parent, so a link can't start a program.
+#[cfg(desktop)]
+pub(super) fn reveal_opens_as_folder(path: &std::path::Path) -> bool {
+    path.is_dir() && path.extension().is_none() && !path.join("Contents").is_dir()
+}
+
 #[cfg(desktop)]
 pub(super) fn normalize_picked_directory(path: &str) -> Result<Option<String>, String> {
     let path = path.trim();

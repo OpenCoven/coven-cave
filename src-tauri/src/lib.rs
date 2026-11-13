@@ -131,7 +131,8 @@ use shell_open_commands::{
 #[cfg(desktop)]
 use shell_open_helpers::{
     normalize_picked_directory, validate_shell_open_path, validate_shell_open_url,
-    validate_shell_reveal_path, validate_x_oauth_url, windows_system32_binary,
+    reveal_opens_as_folder, validate_shell_reveal_path, validate_x_oauth_url,
+    windows_system32_binary,
 };
 #[cfg(desktop)]
 use sidecar_auth::*;

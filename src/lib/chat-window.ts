@@ -1,5 +1,6 @@
 import { filterVisibleChatSessions } from "./chat-projects.ts";
 import { attentionLifecycle } from "./session-lifecycle.ts";
+import { isTauri } from "./tauri-platform.ts";
 import type { SessionRow } from "./types.ts";
 
 /**
@@ -36,8 +37,15 @@ const CHAT_WINDOW_ID_MAX_LENGTH = 200;
 // Mirrors chat_window_id in window_geometry.rs: ids are short opaque tokens.
 const CHAT_WINDOW_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
 
+/**
+ * `sessionId` of a target that opens a new chat: the panel was composing one
+ * when it popped out. A real session id is never this short word.
+ */
+export const CHAT_WINDOW_NEW_CHAT = "new";
+
 export type ChatWindowTarget = {
   familiarId: string | null;
+  /** A conversation, {@link CHAT_WINDOW_NEW_CHAT}, or null for the familiar's latest. */
   sessionId: string | null;
 };
 
@@ -73,6 +81,64 @@ export function readChatWindowTarget(search: string): ChatWindowTarget {
 export function chatWindowTargetFromEvent(event: Event): ChatWindowTarget | null {
   const target = normalizeChatWindowTarget((event as CustomEvent<unknown>).detail);
   return target.familiarId || target.sessionId ? target : null;
+}
+
+/** Fired on the main window (a browser opener) when the detached window asks
+ *  it to do something only the main window can, such as familiar settings. */
+export const CHAT_WINDOW_MAIN_REQUEST_EVENT = "cave:chat-window-main-request";
+
+type DraftStorage = Pick<Storage, "length" | "key" | "getItem" | "setItem" | "removeItem">;
+
+/**
+ * Move the docked panel's composer draft for a popped-out target into this
+ * window's draft namespace, so popping out mid-sentence keeps the sentence.
+ *
+ * Draft keys are `<namespace>:scoped:<json tuple>` (chatComposerDraftKey in
+ * use-composer-draft.ts): `["session", familiar, session]`, or
+ * `["compose", familiar, project, host]` for a chat not yet sent. The tuple is
+ * kept verbatim, so the window's composer finds it under its own namespace.
+ * A draft already typed in this window wins and the panel keeps its own.
+ * Returns how many drafts moved.
+ */
+export function adoptPanelComposerDrafts(
+  storage: DraftStorage,
+  panelNamespace: string,
+  windowNamespace: string,
+  familiarId: string,
+  sessionId: string,
+): number {
+  const fromScope = `${panelNamespace}:scoped:`;
+  const candidates: string[] = [];
+  try {
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (!key?.startsWith(fromScope)) continue;
+      let tuple: unknown;
+      try {
+        tuple = JSON.parse(key.slice(fromScope.length));
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(tuple) || tuple[1] !== familiarId) continue;
+      const wanted =
+        sessionId === CHAT_WINDOW_NEW_CHAT ? tuple[0] === "compose" : tuple[0] === "session" && tuple[2] === sessionId;
+      if (wanted) candidates.push(key);
+    }
+    let moved = 0;
+    for (const from of candidates) {
+      const text = storage.getItem(from);
+      if (!text) continue;
+      const to = `${windowNamespace}:scoped:${from.slice(fromScope.length)}`;
+      if (storage.getItem(to)) continue;
+      storage.setItem(to, text);
+      storage.removeItem(from);
+      moved += 1;
+    }
+    return moved;
+  } catch {
+    // Storage unavailable or full: the draft stays where it was.
+    return 0;
+  }
 }
 
 /** Same-origin path of the detached window for `target`. */
@@ -153,10 +219,6 @@ export function resolveChatWindowFamiliarId(
 
 let browserPopup: Window | null = null;
 
-function isTauriShell(): boolean {
-  return typeof window !== "undefined" && (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== undefined;
-}
-
 /**
  * Pop the Chat panel out. Resolves true once the window is open (or already
  * was, and has been handed the target), false when it could not be opened —
@@ -167,7 +229,7 @@ export async function openChatWindow(target: ChatWindowTarget): Promise<boolean>
   if (typeof window === "undefined") return false;
   const clean = normalizeChatWindowTarget(target);
 
-  if (isTauriShell()) {
+  if (isTauri()) {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("open_chat_window", { familiarId: clean.familiarId, sessionId: clean.sessionId });
@@ -204,7 +266,7 @@ export async function openChatWindow(target: ChatWindowTarget): Promise<boolean>
 export async function openChatInMainWindow(target: ChatWindowTarget): Promise<void> {
   const clean = normalizeChatWindowTarget(target);
   if (!clean.sessionId) return;
-  if (isTauriShell()) {
+  if (isTauri()) {
     try {
       const { emit } = await import("@tauri-apps/api/event");
       await emit("quick-chat:open-session", { sessionId: clean.sessionId, familiarId: clean.familiarId });
@@ -222,7 +284,7 @@ export async function openChatInMainWindow(target: ChatWindowTarget): Promise<vo
  * event whatever its payload; a browser opens the app in a tab.
  */
 export async function focusMainWindow(): Promise<void> {
-  if (isTauriShell()) {
+  if (isTauri()) {
     try {
       const { emit } = await import("@tauri-apps/api/event");
       await emit("quick-chat:open-session", {});

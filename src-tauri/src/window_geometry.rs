@@ -343,7 +343,12 @@ pub(super) fn chat_window_url_from_main(mut url: Url, target: &ChatWindowTarget)
 /// Open the detached Chat window on `target`, or bring the existing one
 /// forward and hand it the new target.
 #[cfg(desktop)]
-pub(super) fn show_chat_window_from_main(app: &tauri::AppHandle, target: &ChatWindowTarget) {
+/// Show the Chat window on `target`. `Err` means no window is showing it, so
+/// the caller must keep the conversation where it was.
+pub(super) fn show_chat_window_from_main(
+    app: &tauri::AppHandle,
+    target: &ChatWindowTarget,
+) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(CHAT_WINDOW_LABEL) {
         let _ = window.unminimize();
         let _ = window.show();
@@ -359,14 +364,14 @@ pub(super) fn show_chat_window_from_main(app: &tauri::AppHandle, target: &ChatWi
                 ));
             }
         }
-        return;
+        return Ok(());
     }
 
     let Some(url) = main_url_for_child_windows(app)
         .and_then(|main_url| chat_window_url_from_main(main_url, target))
     else {
-        focus_main_window(app);
-        return;
+        log::warn!("[cave] no loopback app address to open the Chat window from");
+        return Err("the app's local address isn't known yet".to_string());
     };
 
     let builder =
@@ -391,7 +396,11 @@ pub(super) fn show_chat_window_from_main(app: &tauri::AppHandle, target: &ChatWi
     match builder.build() {
         Ok(window) => {
             let _ = window.set_focus();
+            Ok(())
         }
-        Err(e) => log::warn!("[cave] failed to open the Chat window: {}", e),
+        Err(e) => {
+            log::warn!("[cave] failed to open the Chat window: {}", e);
+            Err(format!("the window couldn't be created: {e}"))
+        }
     }
 }

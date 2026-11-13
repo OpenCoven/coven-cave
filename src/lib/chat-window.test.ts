@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   CHAT_WINDOW_DRAFT_KEY_PREFIX,
   CHAT_WINDOW_FAMILIAR_KEY,
+  CHAT_WINDOW_NEW_CHAT,
+  adoptPanelComposerDrafts,
   chatWindowActivityLabel,
   chatWindowChatState,
   chatWindowHref,
@@ -136,5 +138,100 @@ describe("chat window activity", () => {
       "2 replies in progress, 3 chats awaiting you",
     );
     assert.equal(chatWindowActivityLabel({ running: 0, waiting: 1 }), "1 chat awaiting you");
+  });
+});
+
+describe("popping out a new chat", () => {
+  it("carries the new-chat marker through the window URL", () => {
+    const href = chatWindowHref({ familiarId: "sage", sessionId: CHAT_WINDOW_NEW_CHAT });
+    assert.equal(href, "/quick-chat?view=window&familiar=sage&session=new");
+    assert.deepEqual(readChatWindowTarget(href.slice(href.indexOf("?"))), {
+      familiarId: "sage",
+      sessionId: CHAT_WINDOW_NEW_CHAT,
+    });
+  });
+});
+
+class MemoryStorage {
+  private readonly map = new Map<string, string>();
+  constructor(entries: Record<string, string> = {}) {
+    for (const [key, value] of Object.entries(entries)) this.map.set(key, value);
+  }
+  get length() {
+    return this.map.size;
+  }
+  key(index: number) {
+    return [...this.map.keys()][index] ?? null;
+  }
+  getItem(key: string) {
+    return this.map.get(key) ?? null;
+  }
+  setItem(key: string, value: string) {
+    this.map.set(key, value);
+  }
+  removeItem(key: string) {
+    this.map.delete(key);
+  }
+  snapshot() {
+    return Object.fromEntries(this.map);
+  }
+}
+
+describe("adoptPanelComposerDrafts", () => {
+  const panel = "cave:right-chat-composer-draft:v1:sage";
+  const win = `${CHAT_WINDOW_DRAFT_KEY_PREFIX}sage`;
+  const sessionKey = (ns: string, familiar: string, session: string) =>
+    `${ns}:scoped:${JSON.stringify(["session", familiar, session])}`;
+  const composeKey = (ns: string, familiar: string, project: string, host: string) =>
+    `${ns}:scoped:${JSON.stringify(["compose", familiar, project, host])}`;
+
+  it("moves the popped-out chat's draft and leaves other chats alone", () => {
+    const storage = new MemoryStorage({
+      [sessionKey(panel, "sage", "s1")]: "half a thought",
+      [sessionKey(panel, "sage", "s2")]: "another chat",
+    });
+    assert.equal(adoptPanelComposerDrafts(storage, panel, win, "sage", "s1"), 1);
+    assert.deepEqual(storage.snapshot(), {
+      [sessionKey(panel, "sage", "s2")]: "another chat",
+      [sessionKey(win, "sage", "s1")]: "half a thought",
+    });
+  });
+
+  it("moves a new chat's drafts with their project and host intact", () => {
+    const storage = new MemoryStorage({
+      [composeKey(panel, "sage", "/work/app", "")]: "start of a new chat",
+      [sessionKey(panel, "sage", "s1")]: "not this one",
+    });
+    assert.equal(adoptPanelComposerDrafts(storage, panel, win, "sage", CHAT_WINDOW_NEW_CHAT), 1);
+    assert.equal(storage.getItem(composeKey(win, "sage", "/work/app", "")), "start of a new chat");
+    assert.equal(storage.getItem(sessionKey(panel, "sage", "s1")), "not this one");
+  });
+
+  it("never overwrites a draft already typed in the window", () => {
+    const storage = new MemoryStorage({
+      [sessionKey(panel, "sage", "s1")]: "panel text",
+      [sessionKey(win, "sage", "s1")]: "window text",
+    });
+    assert.equal(adoptPanelComposerDrafts(storage, panel, win, "sage", "s1"), 0);
+    assert.equal(storage.getItem(sessionKey(win, "sage", "s1")), "window text");
+    assert.equal(storage.getItem(sessionKey(panel, "sage", "s1")), "panel text", "the panel keeps its own");
+  });
+
+  it("ignores another familiar's drafts and malformed keys", () => {
+    const storage = new MemoryStorage({
+      [sessionKey(panel, "cody", "s1")]: "cody's draft",
+      [`${panel}:scoped:not-json`]: "garbage",
+    });
+    assert.equal(adoptPanelComposerDrafts(storage, panel, win, "sage", "s1"), 0);
+    assert.equal(storage.length, 2);
+  });
+
+  it("keeps the draft where it was when storage throws", () => {
+    const storage = new MemoryStorage({ [sessionKey(panel, "sage", "s1")]: "kept" });
+    storage.setItem = () => {
+      throw new Error("QuotaExceededError");
+    };
+    assert.equal(adoptPanelComposerDrafts(storage, panel, win, "sage", "s1"), 0);
+    assert.equal(storage.getItem(sessionKey(panel, "sage", "s1")), "kept");
   });
 });

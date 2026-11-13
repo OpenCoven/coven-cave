@@ -113,9 +113,13 @@ mod native_startup_terminal_tests {
 /// familiar and conversation the panel was showing. Only a main window may
 /// ask: the Chat window is launched from the app's own chrome, never from an
 /// embedded browser child or an auxiliary window.
+///
+/// Async on purpose: building a window inside a synchronous command
+/// deadlocks on Windows (WebView2), because sync commands run on the main
+/// thread that window creation needs.
 #[cfg(desktop)]
 #[tauri::command]
-fn open_chat_window(
+async fn open_chat_window(
     webview: tauri::Webview,
     familiar_id: Option<String>,
     session_id: Option<String>,
@@ -128,8 +132,9 @@ fn open_chat_window(
         );
         return Err("the Chat window can only be opened from the main app window".to_string());
     }
-    show_chat_window_from_main(app, &ChatWindowTarget::new(familiar_id, session_id));
-    Ok(())
+    // An error reaches the page, so the docked panel stays open instead of
+    // announcing a window that never appeared.
+    show_chat_window_from_main(app, &ChatWindowTarget::new(familiar_id, session_id))
 }
 
 /// Keep the native macOS window controls in sync with the primary side panel.

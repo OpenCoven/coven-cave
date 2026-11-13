@@ -78,7 +78,7 @@ assert.match(
 );
 assert.match(
   source,
-  /resolveChatWindowFamiliarId\(visibleIds, \[landing\.familiarId, readStored\(CHAT_WINDOW_FAMILIAR_KEY\)\]\)/,
+  /const stored = readStored\(CHAT_WINDOW_FAMILIAR_KEY\);\s*const next = resolveChatWindowFamiliarId\(visibleIds, fromLanding \? \[landing\.familiarId, stored\] : \[stored\]\);/,
   "the first familiar comes from the pop-out, then this window's own memory",
 );
 
@@ -239,3 +239,42 @@ assert.match(
 );
 assert.match(css, /@media \(max-width: 759px\)/, "the chat list becomes a drawer at narrow widths");
 assert.match(source, /const NARROW_QUERY = "\(max-width: 759px\)";/, "the component and stylesheet agree on the narrow breakpoint");
+
+// Review of #6480: familiar settings open in the main window. Navigating this
+// window to Chat would discard every mounted conversation and reply in flight.
+assert.match(
+  source,
+  /<FamiliarStudioProvider redirectToChat openSettings=\{openFamiliarSettingsInMainWindow\}>/,
+  "familiar settings are handed to the main window, never opened by navigating this one",
+);
+assert.match(
+  source,
+  /await emit\("quick-chat:open-session", \{ familiarSettings \}\);/,
+  "the desktop hand-off rides the event the main window already listens to",
+);
+assert.doesNotMatch(source, /location\.assign\(/, "this window never navigates itself away");
+
+// The pop-out's landing target counts once; recovery uses the window's own
+// last familiar and no stale chat.
+assert.match(
+  source,
+  /const fromLanding = !landingUsedRef\.current;[\s\S]{0,200}fromLanding \? \[landing\.familiarId, stored\] : \[stored\][\s\S]{0,120}landingUsedRef\.current = true;/,
+  "a recovery after the first selection never replays the pop-out's familiar or chat",
+);
+
+// A new-chat pop-out opens a new chat, and the panel's unsent draft comes along.
+assert.match(
+  source,
+  /adoptPoppedOutDraft\(familiarId, sessionId\);[\s\S]{0,240}else if \(sessionId === CHAT_WINDOW_NEW_CHAT\) controller\.newChat\(\);/,
+  "a popped-out target carries its draft before the chat opens, and a new-chat target starts one",
+);
+assert.match(
+  source,
+  /startWithNewChat=\{initialSessionId === CHAT_WINDOW_NEW_CHAT\}/,
+  "a not-yet-mounted familiar starts on a new chat when the pop-out asked for one",
+);
+assert.match(
+  source,
+  /settle = window\.setTimeout\(\(\) => \{[\s\S]*\}, POP_OUT_DRAFT_SETTLE_MS\);/,
+  "a later pop-out waits out the panel's draft debounce before carrying the draft",
+);

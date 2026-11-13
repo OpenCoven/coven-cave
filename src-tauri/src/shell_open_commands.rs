@@ -226,7 +226,7 @@ pub(super) fn shell_open_path(path: String) -> Result<(), String> {
 #[tauri::command]
 pub(super) fn shell_reveal_path(path: String) -> Result<(), String> {
     let path = validate_shell_reveal_path(&path)?;
-    let is_dir = path.is_dir();
+    let is_dir = reveal_opens_as_folder(&path);
 
     #[cfg(target_os = "macos")]
     {

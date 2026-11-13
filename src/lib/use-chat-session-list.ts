@@ -60,8 +60,10 @@ export function useChatSessionList(
         const json = (await response.json()) as { ok?: boolean; sessions?: unknown };
         if (!response.ok || !json.ok || !Array.isArray(json.sessions)) throw new Error("Couldn't load chats");
         sessions = json.sessions as SessionRow[];
+        // Cached only while still current: a body read before a removal must
+        // not become the baseline the next 304 replays.
         const etag = response.headers.get("ETag");
-        if (etag) cacheRef.current = { scope, etag, sessions };
+        if (etag && generation === generationRef.current) cacheRef.current = { scope, etag, sessions };
       }
       if (generation !== generationRef.current) return;
       setState((previous) =>
@@ -97,8 +99,10 @@ export function useChatSessionList(
       ...previous,
       sessions: previous.sessions.filter((session) => !sessionIds.includes(session.id)),
     }));
-    // The cached body still lists them; force a full read on the next poll.
+    // The cached body still lists them; force a full read on the next poll,
+    // and retire a read already in flight, which may still list them too.
     cacheRef.current = null;
+    generationRef.current += 1;
   }, []);
 
   // A scope change must not show the previous scope's rows for a render.

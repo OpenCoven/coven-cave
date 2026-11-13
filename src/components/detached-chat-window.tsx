@@ -13,7 +13,11 @@ import {
 import "@/styles/detached-chat-window.css";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FirstUseProvider } from "@/components/first-use-provider";
-import { RightChatPanel, type RightChatPanelController } from "@/components/right-chat-panel";
+import {
+  RIGHT_CHAT_DRAFT_KEY_PREFIX,
+  RightChatPanel,
+  type RightChatPanelController,
+} from "@/components/right-chat-panel";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -26,7 +30,10 @@ import {
   CHAT_WINDOW_DRAFT_KEY_PREFIX,
   CHAT_WINDOW_FAMILIAR_KEY,
   CHAT_WINDOW_LIST_COLLAPSED_KEY,
+  CHAT_WINDOW_MAIN_REQUEST_EVENT,
+  CHAT_WINDOW_NEW_CHAT,
   CHAT_WINDOW_TARGET_EVENT,
+  adoptPanelComposerDrafts,
   chatWindowActivityLabel,
   chatWindowChatState,
   chatWindowTargetFromEvent,
@@ -38,7 +45,11 @@ import {
   type ChatWindowActivity,
 } from "@/lib/chat-window";
 import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
-import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
+import {
+  FamiliarStudioProvider,
+  stageFamiliarStudioSettings,
+  type FamiliarStudioTab,
+} from "@/lib/familiar-studio-context";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { replaceHistoryUrl } from "@/lib/history-url";
 import { openSystemBrowserUrl, routeExternalUrlsToSystemBrowser } from "@/lib/open-external";
@@ -48,6 +59,7 @@ import { eligibleRightChatSessions } from "@/lib/right-chat-session";
 import { sessionLifecycleLabel } from "@/lib/session-lifecycle";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { WorkspaceSurfacePreferencesProvider } from "@/lib/surface-preferences";
+import { isTauri } from "@/lib/tauri-platform";
 import { useChatSessionList } from "@/lib/use-chat-session-list";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -74,7 +86,7 @@ export function DetachedChatWindow() {
   return (
     <WorkspaceSurfacePreferencesProvider>
       <FirstUseProvider>
-        <FamiliarStudioProvider redirectToChat>
+        <FamiliarStudioProvider redirectToChat openSettings={openFamiliarSettingsInMainWindow}>
           <DetachedChatWindowSurface />
         </FamiliarStudioProvider>
       </FirstUseProvider>
@@ -85,6 +97,62 @@ export function DetachedChatWindow() {
 /** Below this the conversation list no longer fits beside a usable chat, so
  *  it becomes a drawer over it. Mirrored in detached-chat-window.css. */
 const NARROW_QUERY = "(max-width: 759px)";
+
+/** The docked panel saves a draft 250ms after the last keystroke (the
+ *  composer's COMPOSER_DRAFT_WRITE_DELAY_MS). A later pop-out waits this long
+ *  so a draft typed just before it has landed when it is carried. */
+const POP_OUT_DRAFT_SETTLE_MS = 300;
+
+/**
+ * Familiar settings live in the main window. Ask it to open them, rather than
+ * navigating this window, and every conversation mounted in it, away.
+ */
+function openFamiliarSettingsInMainWindow(tab?: FamiliarStudioTab, familiarId?: string): void {
+  const familiarSettings = { tab: tab ?? null, familiarId: familiarId ?? null };
+  void (async () => {
+    if (isTauri()) {
+      try {
+        // The shell brings the main window forward on this event.
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("quick-chat:open-session", { familiarSettings });
+      } catch (error) {
+        console.warn("[chat-window] Could not ask the main window for familiar settings.", error);
+      }
+      return;
+    }
+    // A browser popup: the page that opened it is the main app.
+    const opener = window.opener as (Window & typeof globalThis) | null;
+    if (opener && !opener.closed) {
+      try {
+        opener.dispatchEvent(new opener.CustomEvent(CHAT_WINDOW_MAIN_REQUEST_EVENT, { detail: { familiarSettings } }));
+        opener.focus();
+        return;
+      } catch {
+        /* The opener has navigated elsewhere; open the app in a tab instead. */
+      }
+    }
+    stageFamiliarStudioSettings(tab, familiarId);
+    window.open("/?mode=chat", "_blank");
+  })();
+}
+
+/** Carry the docked panel's unsent draft for a popped-out target into this
+ *  window's own draft namespace (see adoptPanelComposerDrafts). */
+function adoptPoppedOutDraft(familiarId: string, sessionId: string): void {
+  let storage: Storage;
+  try {
+    storage = window.localStorage;
+  } catch {
+    return;
+  }
+  adoptPanelComposerDrafts(
+    storage,
+    `${RIGHT_CHAT_DRAFT_KEY_PREFIX}${familiarId}`,
+    `${CHAT_WINDOW_DRAFT_KEY_PREFIX}${familiarId}`,
+    familiarId,
+    sessionId,
+  );
+}
 
 type FamiliarRoster = {
   familiars: Familiar[];
@@ -242,7 +310,8 @@ function DetachedChatWindowSurface() {
   // mounted so its conversation, scroll position and any reply in flight
   // survive a switch to another familiar.
   const [mountedIds, setMountedIds] = useState<string[]>([]);
-  // The conversation each not-yet-mounted familiar should open on.
+  // The conversation each not-yet-mounted familiar should open on: a session
+  // id, or CHAT_WINDOW_NEW_CHAT for a new chat.
   const [initialSessions, setInitialSessions] = useState<Record<string, string>>({});
   const controllersRef = useRef(new Map<string, RightChatPanelController>());
   // The chat each mounted familiar has open (null while composing a new one).
@@ -250,9 +319,13 @@ function DetachedChatWindowSurface() {
 
   const activate = useCallback((familiarId: string, sessionId?: string | null) => {
     if (sessionId) {
+      // Only a pop-out names a chat. Bring its unsent draft along first, so
+      // the composer finds it when that chat opens.
+      adoptPoppedOutDraft(familiarId, sessionId);
       const controller = controllersRef.current.get(familiarId);
-      if (controller) controller.openSession(sessionId);
-      else setInitialSessions((current) => ({ ...current, [familiarId]: sessionId }));
+      if (!controller) setInitialSessions((current) => ({ ...current, [familiarId]: sessionId }));
+      else if (sessionId === CHAT_WINDOW_NEW_CHAT) controller.newChat();
+      else controller.openSession(sessionId);
     }
     setActiveId(familiarId);
     setMountedIds((current) => (current.includes(familiarId) ? current : [...current, familiarId]));
@@ -260,12 +333,18 @@ function DetachedChatWindowSurface() {
   }, []);
 
   // First selection, and recovery when the active familiar leaves the roster.
+  // The pop-out's target counts once: a later recovery returns to where this
+  // window last was, never back to the chat it was first opened on.
+  const landingUsedRef = useRef(false);
   useEffect(() => {
     if (!landing.read || visibleIds.length === 0) return;
     if (activeId && visibleIds.includes(activeId)) return;
-    const next = resolveChatWindowFamiliarId(visibleIds, [landing.familiarId, readStored(CHAT_WINDOW_FAMILIAR_KEY)]);
+    const fromLanding = !landingUsedRef.current;
+    const stored = readStored(CHAT_WINDOW_FAMILIAR_KEY);
+    const next = resolveChatWindowFamiliarId(visibleIds, fromLanding ? [landing.familiarId, stored] : [stored]);
     if (!next) return;
-    activate(next, next === landing.familiarId || !landing.familiarId ? landing.sessionId : null);
+    landingUsedRef.current = true;
+    activate(next, fromLanding && (next === landing.familiarId || !landing.familiarId) ? landing.sessionId : null);
   }, [activate, activeId, landing, visibleIds]);
 
   // A later pop-out, for a window that is already running.
@@ -274,19 +353,26 @@ function DetachedChatWindowSurface() {
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   useEffect(() => {
+    let settle: number | undefined;
     const onTarget = (event: Event) => {
       const target = chatWindowTargetFromEvent(event);
       if (!target) return;
-      const familiarId =
-        target.familiarId && visibleIdsRef.current.includes(target.familiarId)
-          ? target.familiarId
-          : target.familiarId
-            ? null
-            : activeIdRef.current;
-      if (familiarId) activate(familiarId, target.sessionId);
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        const familiarId =
+          target.familiarId && visibleIdsRef.current.includes(target.familiarId)
+            ? target.familiarId
+            : target.familiarId
+              ? null
+              : activeIdRef.current;
+        if (familiarId) activate(familiarId, target.sessionId);
+      }, POP_OUT_DRAFT_SETTLE_MS);
     };
     window.addEventListener(CHAT_WINDOW_TARGET_EVENT, onTarget);
-    return () => window.removeEventListener(CHAT_WINDOW_TARGET_EVENT, onTarget);
+    return () => {
+      window.removeEventListener(CHAT_WINDOW_TARGET_EVENT, onTarget);
+      window.clearTimeout(settle);
+    };
   }, [activate]);
 
   // One unscoped list feeds every rail badge: which familiars are replying,
@@ -574,6 +660,7 @@ function FamiliarChatPane({
   onRetryFamiliars: () => void;
   daemonRunning: boolean;
   active: boolean;
+  /** A session id, CHAT_WINDOW_NEW_CHAT, or null for the latest chat. */
   initialSessionId: string | null;
   listId: string;
   listShown: boolean;
@@ -748,7 +835,8 @@ function FamiliarChatPane({
           familiarsLoaded={familiarsLoaded}
           familiarsError={familiarsError}
           daemonRunning={daemonRunning}
-          initialSessionId={initialSessionId}
+          initialSessionId={initialSessionId === CHAT_WINDOW_NEW_CHAT ? null : initialSessionId}
+          startWithNewChat={initialSessionId === CHAT_WINDOW_NEW_CHAT}
           controllerRef={controllerRef}
           onSelectedSessionChange={setSelectedSessionId}
           composerDraftKeyPrefix={CHAT_WINDOW_DRAFT_KEY_PREFIX}

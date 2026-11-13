@@ -95,7 +95,7 @@ test("popping out again reuses the running Chat window instead of reloading it",
   const reuse = chatWindow.slice(0, chatWindow.indexOf("main_url_for_child_windows"));
   assert.match(
     reuse,
-    /get_webview_window\(CHAT_WINDOW_LABEL\)[\s\S]*set_focus\(\)[\s\S]*return;/,
+    /get_webview_window\(CHAT_WINDOW_LABEL\)[\s\S]*set_focus\(\)[\s\S]*return Ok\(\(\)\);/,
     "an open Chat window is focused, never rebuilt",
   );
   assert.doesNotMatch(
@@ -107,5 +107,34 @@ test("popping out again reuses the running Chat window instead of reloading it",
     reuse,
     /serde_json::to_string\(target\)[\s\S]*cave:chat-window-target/,
     "the new target reaches the page as serialized JSON on a DOM event",
+  );
+});
+
+// Review of #6480: a pop-out the shell could not show must say so. The page
+// closes the docked panel only on success, so an Ok(()) with no window would
+// make the conversation vanish.
+test("a Chat window that could not be shown is reported to the page", async () => {
+  assert.match(
+    chatWindow,
+    /-> Result<\(\), String>/,
+    "show_chat_window_from_main reports whether a window is showing the chat",
+  );
+  assert.match(
+    chatWindow,
+    /else \{[\s\S]{0,160}return Err\(/,
+    "no known app address is an error, not a silent focus of the main window",
+  );
+  assert.match(
+    chatWindow,
+    /Err\(e\) => \{[\s\S]{0,160}Err\(format!\(/,
+    "a window build failure reaches the page",
+  );
+  const setup = await readFile(new URL("./src/tauri_setup.rs", import.meta.url), "utf8");
+  // Building a window in a synchronous command deadlocks on Windows (WebView2).
+  assert.match(setup, /async fn open_chat_window\(/, "the command that builds the Chat window is async");
+  assert.match(
+    setup,
+    /show_chat_window_from_main\(app, &ChatWindowTarget::new\(familiar_id, session_id\)\)\n\}/,
+    "the command returns the window's result instead of a blanket Ok",
   );
 });

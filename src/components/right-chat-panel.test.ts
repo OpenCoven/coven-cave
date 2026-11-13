@@ -729,12 +729,22 @@ assert.match(
 );
 assert.match(
   workspaceSource,
-  /const canPopOutChat = !useIsMobile\(\);[\s\S]*onPopOut=\{canPopOutChat \? popOutRightChat : undefined\}/,
-  "Workspace offers pop-out on desktop only: a phone's Chat drawer has no second window",
+  /const canPopOutChat =\s*!useIsMobile\(\) && \(tauriPlatform === "desktop" \|\| tauriPlatform === "browser"\);[\s\S]*onPopOut=\{canPopOutChat \? popOutRightChat : undefined\}/,
+  "Workspace offers pop-out only where a second window exists: not a phone's Chat drawer, not the Tauri mobile shells",
 );
 assert.match(
   workspaceSource,
-  /const opened = await openChatWindow\(target\);\s*if \(!opened\) \{[\s\S]{0,220}return;\s*\}\s*shellRef\.current\?\.closeRightChat\(\);/,
+  /sessionId: target\.familiarId && !target\.sessionId \? CHAT_WINDOW_NEW_CHAT : target\.sessionId,/,
+  "a pop-out made while composing a new chat opens a new chat in the window, not the familiar's latest",
+);
+assert.match(
+  source,
+  /props\.startWithNewChat\s*\? \{ kind: "new" \}\s*: props\.initialSessionId/,
+  "the panel's first resolve honors a new-chat landing ahead of a named session",
+);
+assert.match(
+  workspaceSource,
+  /const opened = await openChatWindow\(\{[\s\S]{0,400}?\}\);\s*if \(!opened\) \{[\s\S]{0,320}return;\s*\}\s*shellRef\.current\?\.closeRightChat\(\);/,
   "the docked panel closes only once the Chat window actually opened",
 );
 // The thread switcher, the New chat button and a host's controller must be

@@ -71,6 +71,27 @@ fn reveal_accepts_existing_files_and_folders_but_nothing_else() {
 }
 
 #[test]
+fn reveal_opens_only_plain_folders_never_packages() {
+    let root = std::env::temp_dir().join(format!("cave-reveal-{}", std::process::id()));
+    let plain = root.join("notes");
+    let app = root.join("Tool.app");
+    let bundle = root.join("NoExtension");
+    let file = root.join("report.md");
+    std::fs::create_dir_all(&plain).expect("plain folder");
+    std::fs::create_dir_all(app.join("Contents/MacOS")).expect("app bundle");
+    std::fs::create_dir_all(bundle.join("Contents")).expect("extensionless bundle");
+    std::fs::write(&file, "x").expect("file");
+
+    assert!(super::reveal_opens_as_folder(&plain));
+    // `open` would launch these, so they are selected in their folder instead.
+    assert!(!super::reveal_opens_as_folder(&app));
+    assert!(!super::reveal_opens_as_folder(&bundle));
+    assert!(!super::reveal_opens_as_folder(&file));
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn normalizes_only_absolute_existing_picked_directories() {
     let current = std::env::current_dir().expect("current dir");
     assert!(
