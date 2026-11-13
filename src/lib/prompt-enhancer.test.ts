@@ -179,7 +179,10 @@ assert.match(
   );
   assert.ok(!JSON.stringify(ctx).includes("oldest message"), "older messages fall out of the window");
   assert.ok(!contextual.includes(fakeKey), "secrets in recent context are redacted before the instruction");
-  assert.deepEqual(ctx.toolOutcomes, [{ name: "Bash", status: "error", output: "1 failing test: auth.spec.ts" }]);
+  // Tool names and outcomes only: a result the page loaded stays in its tool
+  // card and never reaches the Enhance instruction (#6486, golden-13).
+  assert.deepEqual(ctx.toolOutcomes, [{ name: "Bash", status: "error" }]);
+  assert.ok(!contextual.includes("1 failing test"), "tool result text never reaches the Enhance instruction");
   assert.deepEqual(ctx.linkedTask, { title: "Fix the login regression", status: "inbox", notes: "Keep the session scope." });
   assert.ok(!contextual.includes("model-a") && !("modelScope" in ctx), "model scope is not rewrite context");
   assert.equal(ctx.recentMessages[2].text, "Maybe it's the cookie domain?", "uncertain context stays verbatim");
@@ -380,6 +383,36 @@ assert.equal(settleEnhance("draft", "draft edited"), "suggest", "a changed draft
     false,
     "changing the composer-local model scope invalidates a pending suggestion",
   );
+  assert.equal(
+    isPromptEnhancementRecommendationCurrent(recommendation, promptEnhancementLifecycleFingerprint({
+      ...base,
+      context: { ...base.context, recentToolOutcomes: [{ id: uuid, name: "Read", status: "error", output: "Found ChatView." }] },
+    })),
+    false,
+    "a tool that settles with a different outcome invalidates a pending suggestion",
+  );
+  assert.equal(
+    isPromptEnhancementRecommendationCurrent(recommendation, promptEnhancementLifecycleFingerprint({
+      ...base,
+      context: { ...base.context, recentToolOutcomes: [{ id: uuid, name: "Read", status: "ok", output: "A different private result." }] },
+    })),
+    true,
+    "tool result text is not Enhance context, so it cannot make a suggestion stale (#6486)",
+  );
+}
+
+// A tool with an outcome but no loaded result still contributes its name and
+// outcome; one with no usable fields contributes nothing.
+{
+  const instruction = buildEnhanceInstruction({
+    draft: "fix it",
+    mode: "chat",
+    intent: "auto",
+    context: { recentToolOutcomes: [{ id: "t1", name: "Read", status: "ok" }, { id: "t2", output: "orphan result" }] },
+  });
+  const ctx = quotedBlock(instruction, "context");
+  assert.deepEqual(ctx.toolOutcomes, [{ name: "Read", status: "ok" }]);
+  assert.ok(!instruction.includes("orphan result"), "a result without a name or outcome is not sent either");
 }
 
 // The hook derives the lifecycle fingerprint from the contextKey it already

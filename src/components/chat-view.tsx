@@ -4150,7 +4150,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         .flatMap((turn) => turn.tools ?? [])
         .filter((tool) => tool.status === "ok" || tool.status === "error")
         .slice(-3)
-        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status, output: tool.output ?? "" })),
+        // Names and outcomes only: a loaded tool result stays in its card (#6486).
+        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status })),
       linkedTask: linkedContext?.task ?? null,
     },
     disabled: busy,
