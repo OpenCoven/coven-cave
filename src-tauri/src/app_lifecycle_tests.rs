@@ -189,103 +189,89 @@ fn child_windows_reuse_the_remembered_token_bearing_startup_url() {
 }
 
 #[test]
-fn notch_url_requires_a_loopback_sidecar_origin() {
-    let sidecar = Url::parse("http://127.0.0.1:43123/?token=secret").expect("sidecar URL");
-    let notch = notch_url_from_main(sidecar).expect("trusted notch URL");
+fn chat_window_url_requires_a_loopback_sidecar_origin() {
+    let sidecar = Url::parse("http://127.0.0.1:43123/?token=secret#chat-old").expect("sidecar URL");
+    let target = ChatWindowTarget::new(Some("nova".to_string()), Some("sess-1".to_string()));
+    let chat = chat_window_url_from_main(sidecar, &target).expect("trusted Chat window URL");
 
-    assert_eq!(notch.path(), "/quick-chat");
-    assert_eq!(notch.query(), Some("token=secret&notch=1"));
-    assert!(
-        notch_url_from_main(Url::parse("https://example.test/").expect("external URL")).is_none()
+    assert_eq!(chat.path(), "/quick-chat");
+    // The auth token survives, and the main window's hash does not follow.
+    assert_eq!(
+        chat.query(),
+        Some("token=secret&view=window&familiar=nova&session=sess-1")
     );
-    assert!(notch_url_from_main(
-        Url::parse("tauri://localhost/startup.html").expect("local startup URL")
+    assert_eq!(chat.fragment(), None);
+    assert!(chat_window_url_from_main(
+        Url::parse("https://example.test/").expect("external URL"),
+        &target
+    )
+    .is_none());
+    assert!(chat_window_url_from_main(
+        Url::parse("tauri://localhost/startup.html").expect("local startup URL"),
+        &target
     )
     .is_none());
 }
 
+// `scripts/dev-app.sh` hands the main window its token in the fragment, not
+// the query. Clearing the fragment wholesale opened the Chat window with no
+// token: "[SidecarAuthBridge] No sidecar auth token found" and 403s on the
+// token-gated routes. Only the token pair may follow; a deep link may not.
 #[test]
-fn notch_centered_x_keeps_the_pill_inside_the_monitor() {
-    // Centering lands the pill under the requested center…
-    assert_eq!(notch_centered_x(500.0, 0.0, 1000.0, 200.0), 400.0);
-    // …until either edge stops it.
-    assert_eq!(notch_centered_x(10.0, 0.0, 1000.0, 200.0), 0.0);
-    assert_eq!(notch_centered_x(995.0, 0.0, 1000.0, 200.0), 800.0);
-    // Secondary monitors offset the clamp window.
-    assert_eq!(notch_centered_x(-1900.0, -2000.0, 2000.0, 200.0), -2000.0);
-    // A pill wider than the monitor pins to the left edge, no panic.
-    assert_eq!(notch_centered_x(100.0, 0.0, 150.0, 200.0), 0.0);
+fn chat_window_url_keeps_a_fragment_token_and_drops_the_rest_of_the_hash() {
+    let target = ChatWindowTarget::new(Some("nova".to_string()), None);
+    let dev = Url::parse("http://127.0.0.1:3477/#covenCaveToken=a%2Bb_c-d").expect("dev URL");
+    let chat = chat_window_url_from_main(dev, &target).expect("trusted Chat window URL");
+    assert_eq!(chat.fragment(), Some("covenCaveToken=a%2Bb_c-d"));
+    assert_eq!(chat.query(), Some("view=window&familiar=nova"));
+
+    let mixed = Url::parse("http://127.0.0.1:3477/#chat-old&covenCaveToken=tok&x=1").expect("mixed URL");
+    let chat = chat_window_url_from_main(mixed, &target).expect("trusted Chat window URL");
+    assert_eq!(chat.fragment(), Some("covenCaveToken=tok"));
+
+    let lookalike = Url::parse("http://127.0.0.1:3477/#covenCaveTokenX=tok").expect("lookalike URL");
+    let chat = chat_window_url_from_main(lookalike, &target).expect("trusted Chat window URL");
+    assert_eq!(chat.fragment(), None);
 }
 
 #[test]
-fn notch_centers_exactly_on_the_monitor_middle() {
-    // The notch must sit dead-center on the target monitor's top bar.
-    // Centering on `monitor_x + monitor_w/2` yields a window whose own
-    // center equals the monitor's center, on any monitor.
-    for (monitor_x, monitor_w, width) in [
-        (0.0, 1000.0, 200.0),
-        (0.0, 1512.0, 480.0),
-        (-2000.0, 2000.0, 640.0),
-        (1512.0, 3840.0, 900.0),
-    ] {
-        let center_x = monitor_x + monitor_w / 2.0;
-        let x = notch_centered_x(center_x, monitor_x, monitor_w, width);
-        // The window's center lands exactly on the monitor's center.
-        assert_eq!(x + width / 2.0, monitor_x + monitor_w / 2.0);
-    }
-}
+fn chat_window_target_forwards_only_plain_bounded_ids() {
+    let empty = ChatWindowTarget::new(None, Some("   ".to_string()));
+    assert_eq!(empty, ChatWindowTarget::default());
 
-#[test]
-fn notch_config_defaults_fit_the_menu_bar_and_forgive_legacy_keys() {
-    let config = NotchConfig::default();
-    assert!(config.fit_menu_bar);
+    // Anything that could break out of a URL or a script literal is dropped,
+    // not escaped.
+    let hostile = ChatWindowTarget::new(
+        Some("nova\"});alert(1);//".to_string()),
+        Some("a".repeat(201)),
+    );
+    assert_eq!(hostile, ChatWindowTarget::default());
 
-    // Partial JSON keeps the other defaults, and keys from the retired
-    // follow-mouse era are ignored — hand-edits and old configs stay
-    // forgiving.
-    let partial: NotchConfig =
-        serde_json::from_str(r#"{"followMouse":true,"fitMenuBar":false}"#).expect("legacy config");
-    assert!(!partial.fit_menu_bar);
-    assert_eq!(partial.collapsed_width, NOTCH_COLLAPSED_WIDTH);
+    let plain = ChatWindowTarget::new(
+        Some(" nova ".to_string()),
+        Some("01JABC-def_2.3:4".to_string()),
+    );
+    let url = chat_window_url_from_main(
+        Url::parse("http://localhost:3000/").expect("dev URL"),
+        &plain,
+    )
+    .expect("trusted Chat window URL");
+    assert_eq!(
+        url.query(),
+        Some("view=window&familiar=nova&session=01JABC-def_2.3%3A4")
+    );
+    assert_eq!(
+        serde_json::to_string(&plain).expect("target JSON"),
+        r#"{"familiarId":"nova","sessionId":"01JABC-def_2.3:4"}"#
+    );
 
-    // Out-of-range custom sizes clamp instead of wedging the window.
-    let wild =
-        serde_json::from_str::<NotchConfig>(r#"{"collapsedHeight":1.0,"expandedWidth":10000.0}"#)
-            .expect("wild config")
-            .sanitized();
-    assert_eq!(wild.collapsed_height, 20.0);
-    assert_eq!(wild.expanded_width, 900.0);
-}
-
-#[test]
-fn notch_collapsed_size_fits_the_menu_bar_strip_when_asked() {
-    let config = NotchConfig::default();
-    // Fit on + a reported strip → the pill squeezes into it.
-    assert_eq!(notch_collapsed_size(&config, Some(24.0)), (190.0, 24.0));
-    // No strip reported (auto-hidden bar, most Linux WMs) → configured
-    // height instead of a zero-height pill.
-    assert_eq!(notch_collapsed_size(&config, None), (190.0, 38.0));
-    // Fit off → configured height even when a strip exists.
-    let fixed = NotchConfig {
-        fit_menu_bar: false,
-        ..config
-    };
-    assert_eq!(notch_collapsed_size(&fixed, Some(24.0)), (190.0, 38.0));
-}
-
-#[test]
-fn notch_url_carries_the_presentation_state_to_the_page() {
-    let url = Url::parse("http://127.0.0.1:43123/notch?token=secret").expect("notch URL");
-    let seeded = notch_url_with_config(url, &NotchConfig::default(), Some(37.0));
-    let query = seeded.query().expect("seeded query");
-    assert!(query.contains("fit=1"));
-    // The retired follow-mouse era's param is gone for good.
-    assert!(!query.contains("follow="));
-    assert!(query.contains("pillw=190"));
-    assert!(query.contains("pillh=38"));
-    assert!(query.contains("barh=37"));
-    // The original query (the auth token) survives.
-    assert!(query.contains("token=secret"));
+    // No target still opens the window; the page restores its own selection.
+    let bare = chat_window_url_from_main(
+        Url::parse("http://localhost:3000/").expect("dev URL"),
+        &ChatWindowTarget::default(),
+    )
+    .expect("trusted Chat window URL");
+    assert_eq!(bare.query(), Some("view=window"));
 }
 
 #[test]

@@ -7,6 +7,7 @@ import {
   type FileRefDispatch,
 } from "@/lib/file-ref-open";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
+import { localPathFromHref, revealLocalPath, revealLocalPathLabel } from "@/lib/local-path-link";
 import { FOCUSABLE } from "@/lib/use-focus-trap";
 import {
   isCodeProvenance,
@@ -111,8 +112,9 @@ function wireCopyButtons(container: HTMLElement) {
 }
 
 type MarkdownLinkWiring = {
+  /** The web URL it opens, or `local:<path>` for a file-manager link. */
   href: string;
-  onOpenUrl: (url: string) => void;
+  onOpenUrl: ((url: string) => void) | null;
   cleanup: () => void;
 };
 
@@ -129,15 +131,51 @@ function cleanupMarkdownLinks(container: HTMLElement) {
   }
 }
 
+/**
+ * A link to a file or folder on this machine opens the system file manager,
+ * never the embedded browser: resolved against the page, `/Users/…` or
+ * `docs/a.md` became `http://127.0.0.1:<port>/…`, a page that cannot exist.
+ * Every click is taken, modified or not, so the anchor can never navigate the
+ * app away to that address.
+ */
+function wireLocalPathLink(link: HTMLAnchorElement, path: string) {
+  const key = `local:${path}`;
+  if (markdownLinkWirings.get(link)?.href === key) return;
+  clearMarkdownLinkWiring(link);
+  const previousTitle = link.getAttribute("title");
+  const label = revealLocalPathLabel();
+  link.title = `${label}: ${path}`;
+  link.dataset.localPath = "true";
+  const open = (event: MouseEvent) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    void revealLocalPath(path).then((outcome) => {
+      if (outcome === "revealed") return;
+      link.title =
+        outcome === "copied"
+          ? `Couldn't ${label.charAt(0).toLowerCase()}${label.slice(1)}. Path copied: ${path}`
+          : `Couldn't ${label.charAt(0).toLowerCase()}${label.slice(1)}: ${path}`;
+    });
+  };
+  link.addEventListener("click", open);
+  markdownLinkWirings.set(link, {
+    href: key,
+    onOpenUrl: null,
+    cleanup: () => {
+      link.removeEventListener("click", open);
+      delete link.dataset.localPath;
+      if (previousTitle === null) link.removeAttribute("title");
+      else link.setAttribute("title", previousTitle);
+    },
+  });
+}
+
 function wireMarkdownLinks(
   container: HTMLElement,
   onOpenUrl?: (url: string) => void,
   resolveOpenUrl?: (url: string) => string | null,
+  projectRoot: string | null = null,
 ) {
-  if (!onOpenUrl) {
-    cleanupMarkdownLinks(container);
-    return;
-  }
   for (const link of Array.from(container.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
     if (
       link.getAttribute("href")?.startsWith("#cite-") ||
@@ -147,6 +185,17 @@ function wireMarkdownLinks(
       continue;
     }
     const rawHref = link.getAttribute("href") ?? "";
+    // A surface with its own resolver (a captured README, #5781) decides what
+    // its relative links mean; everywhere else a local path is a file.
+    const localPath = resolveOpenUrl ? null : localPathFromHref(rawHref, projectRoot);
+    if (localPath) {
+      wireLocalPathLink(link, localPath);
+      continue;
+    }
+    if (!onOpenUrl) {
+      clearMarkdownLinkWiring(link);
+      continue;
+    }
     const href = resolveOpenUrl ? resolveOpenUrl(rawHref) : link.href;
     if (!href) {
       clearMarkdownLinkWiring(link);
@@ -435,7 +484,7 @@ export function useWireCopyButtons(
     if (!html || !el) return;
     const wireAll = () => {
       wireCopyButtons(el);
-      wireMarkdownLinks(el, onOpenUrl, resolveOpenUrl);
+      wireMarkdownLinks(el, onOpenUrl, resolveOpenUrl, reading?.projectRoot ?? null);
       wireMermaidDiagrams(el);
       wireExpandableTables(el);
       wireFilePathLinks(el, fileLinkResolver);

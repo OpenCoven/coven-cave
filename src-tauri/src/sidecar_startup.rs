@@ -822,7 +822,7 @@ pub(super) fn replace_main_window_url(app: &tauri::AppHandle, url: Url) -> Resul
         navigate_sidecar_window(&main_window, target)?;
     }
 
-    for label in [QUICK_CHAT_WINDOW_LABEL, NOTCH_WINDOW_LABEL] {
+    for label in [QUICK_CHAT_WINDOW_LABEL, CHAT_WINDOW_LABEL] {
         let Some(window) = app.get_webview_window(label) else {
             continue;
         };

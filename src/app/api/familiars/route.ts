@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     // Auth failures (401/403) mean the hub/daemon rejected our access token
     // — typically a stale or missing token after a hub reconnect. Surface
     // that distinctly and actionably instead of collapsing every daemon
-    // failure into a bare 503/401 code in the notch ("Failed to load
+    // failure into a bare 503/401 code in quick chat ("Failed to load
     // familiars (401)"), which tells the user nothing about how to recover.
     if (rosterResult.status === 401 || rosterResult.status === 403) {
       return NextResponse.json(

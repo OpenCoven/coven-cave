@@ -126,11 +126,13 @@ use shell_open_commands::launch_x_oauth_url_with_window;
 #[cfg(desktop)]
 use shell_open_commands::{
     open_tailscale_app, open_x_oauth_url, shell_open, shell_open_path, shell_pick_directory,
+    shell_reveal_path,
 };
 #[cfg(desktop)]
 use shell_open_helpers::{
     normalize_picked_directory, validate_shell_open_path, validate_shell_open_url,
-    validate_x_oauth_url, windows_system32_binary,
+    reveal_opens_as_folder, validate_shell_reveal_path, validate_x_oauth_url,
+    windows_system32_binary,
 };
 #[cfg(desktop)]
 use sidecar_auth::*;

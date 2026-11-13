@@ -1080,7 +1080,7 @@ mod tests {
         )
         .unwrap();
         let current = Url::parse(
-            "http://127.0.0.1:43123/quick-chat?notch=1&fit=1&covenCaveToken=old-sidecar",
+            "http://127.0.0.1:43123/quick-chat?view=window&familiar=nova&covenCaveToken=old-sidecar",
         )
         .unwrap();
 
@@ -1089,7 +1089,7 @@ mod tests {
         assert_eq!(refreshed.path(), "/quick-chat");
         assert_eq!(
             refreshed.query(),
-            Some("covenCaveToken=new-sidecar&coven_access_token=new-mobile&notch=1&fit=1")
+            Some("covenCaveToken=new-sidecar&coven_access_token=new-mobile&view=window&familiar=nova")
         );
     }
 

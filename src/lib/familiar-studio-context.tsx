@@ -40,6 +40,16 @@ export const BRAIN_STUDIO_FAMILIAR_KEY = "cave:brain-studio-familiar:v1";
  */
 export function openFamiliarStudioSettingsTab(tab?: FamiliarStudioTab, familiarId?: string): void {
   if (typeof window === "undefined") return;
+  stageFamiliarStudioSettings(tab, familiarId);
+  window.location.assign("/?mode=chat");
+}
+
+/**
+ * Record the one-shot Chat → Familiar → Settings destination without
+ * navigating, for a page that opens the main app elsewhere (a new tab).
+ */
+export function stageFamiliarStudioSettings(tab?: FamiliarStudioTab, familiarId?: string): void {
+  if (typeof window === "undefined") return;
   try {
     if (familiarId) window.localStorage.setItem(BRAIN_STUDIO_FAMILIAR_KEY, familiarId);
     if (tab) window.localStorage.setItem(TAB_STORAGE_KEY, tab);
@@ -48,7 +58,11 @@ export function openFamiliarStudioSettingsTab(tab?: FamiliarStudioTab, familiarI
   }
   if (familiarId) setFamiliarScope([familiarId]);
   markFamiliarSettingsPending(chatSettingsTabFor(tab));
-  window.location.assign("/?mode=chat");
+}
+
+/** Whether `value` names a studio tab, for a tab that arrives from outside. */
+export function isFamiliarStudioTab(value: unknown): value is FamiliarStudioTab {
+  return typeof value === "string" && (STUDIO_TABS as readonly string[]).includes(value);
 }
 
 function chatSettingsTabFor(tab?: FamiliarStudioTab): FamiliarSettingsTab | undefined {
@@ -86,6 +100,7 @@ const StudioContext = createContext<Ctx | null>(null);
 export function FamiliarStudioProvider({
   children,
   redirectToChat = false,
+  openSettings = openFamiliarStudioSettingsTab,
 }: {
   children: ReactNode;
   /**
@@ -94,6 +109,12 @@ export function FamiliarStudioProvider({
    * the workspace switches to the active familiar.
    */
   redirectToChat?: boolean;
+  /**
+   * How that hand-off happens. By default this page navigates to Chat; the
+   * detached Chat window instead asks the main window, so its own live
+   * conversations are never navigated away.
+   */
+  openSettings?: (tab?: FamiliarStudioTab, familiarId?: string) => void;
 }) {
   const [activeFamiliarId, setActiveFamiliarId] = useState<string | null>(null);
   const [activeTab, setActiveTabState] = useState<FamiliarStudioTab>(DEFAULT_TAB);
@@ -117,23 +138,23 @@ export function FamiliarStudioProvider({
   const openFamiliarStudio = useCallback(
     (id: string, tab?: FamiliarStudioTab) => {
       if (redirectToChat) {
-        openFamiliarStudioSettingsTab(tab, id);
+        openSettings(tab, id);
         return;
       }
       setActiveFamiliarId(id);
       if (tab) setActiveTab(tab);
     },
-    [setActiveTab, redirectToChat],
+    [setActiveTab, redirectToChat, openSettings],
   );
 
   // "Manage familiars" entry point: open the Chat Familiar settings surface.
   const openFamiliarStudioListView = useCallback(() => {
     if (redirectToChat) {
-      openFamiliarStudioSettingsTab();
+      openSettings();
       return;
     }
     setActiveFamiliarId(null);
-  }, [redirectToChat]);
+  }, [redirectToChat, openSettings]);
 
   const closeFamiliarStudio = useCallback(() => {
     setActiveFamiliarId(null);

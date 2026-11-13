@@ -1,0 +1,23 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-chat-window-launch",
+  "description": "lets the trusted main loopback webview pop its right Chat panel out into the detached Chat window",
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
+  "webviews": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*",
+      "http://[\\:\\:1]:*/*"
+    ]
+  },
+  "permissions": [
+    "allow-open-chat-window"
+  ]
+}

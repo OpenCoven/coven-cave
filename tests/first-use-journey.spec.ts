@@ -281,13 +281,12 @@ test("changing from a Write actor to a Read actor requires a new access choice",
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("cave:chat-composer-controls:v1") ?? "{}").permissionMode)).toBe("read");
 });
 
-for (const presentation of ["tray", "notch"] as const) {
+for (const presentation of ["tray"] as const) {
   test(`${presentation} restores concrete defaults and keeps its draft when introduction needs the main window`, async ({ page }) => {
     const initial: FirstUseState = { version: 1, revision: 8, step: "complete", outcome: "plan", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, practice: { approvalHeld: true, stopped: true, retried: true, verified: true }, completedAt: "2026-11-11T12:00:00.000Z" };
     const f = await fixture(page, initial);
     await page.addInitScript(() => { localStorage.setItem("cave.quick-chat.last-familiar", "old-actor"); localStorage.setItem("cave:chat-composer-controls:v1", JSON.stringify({ permissionMode: "read" })); });
-    await page.goto(presentation === "notch" ? "/quick-chat?notch=1" : "/quick-chat");
-    if (presentation === "notch") await page.getByTitle("Open quick chat", { exact: true }).click();
+    await page.goto("/quick-chat");
     const pane = page.getByRole("tabpanel");
     await expect(pane).toContainText(PROJECT.name);
     const input = pane.getByRole("combobox", { name: "Message", exact: true });
@@ -300,8 +299,7 @@ for (const presentation of ["tray", "notch"] as const) {
   test(`${presentation} keeps an unfinished draft and offers an introduction handoff without execution`, async ({ page }) => {
     const initial = advanceFirstUse(advanceFirstUse(createFirstUseState(), { kind: "outcome", outcome: "plan" }), { kind: "context", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" } });
     const f = await fixture(page, initial);
-    await page.goto(presentation === "notch" ? "/quick-chat?notch=1" : "/quick-chat");
-    if (presentation === "notch") await page.getByTitle("Open quick chat", { exact: true }).click();
+    await page.goto("/quick-chat");
     const pane = page.getByRole("tabpanel");
     await expect(pane).toContainText(PROJECT.name);
     const input = pane.getByRole("combobox", { name: "Message", exact: true });
