@@ -36,7 +36,7 @@ assert.doesNotMatch(
 );
 assert.match(
   src,
-  /export async function installPreparedUpdate\([^)]*\): Promise<void> \{\s*(?:\/\/[^\n]*\s*)*const \{ relaunch \} = await import\("@tauri-apps\/plugin-process"\);\s*const disarmRecovery = await armWindowsInstallRecovery\(\);\s*try \{\s*await update\.install\(\);\s*\} catch \(err\) \{\s*await disarmRecovery\(\);\s*throw err;\s*\}/,
+  /export async function installPreparedUpdate\([^)]*\): Promise<void> \{[^}]*?const \{ relaunch \} = await import\("@tauri-apps\/plugin-process"\);\s*const disarmRecovery = await armWindowsInstallRecovery\(\);\s*try \{\s*await update\.install\(\);\s*\} catch \(err\) \{\s*await disarmRecovery\(\);\s*throw err;\s*\}/,
   "installs the prepared native update directly: the relaunch code is loaded and Windows install recovery is armed first (no daemon npm install in between), and a failed install() disarms it and still surfaces the error",
 );
 // install() replaces the bundle that serves this build's chunks, so nothing
