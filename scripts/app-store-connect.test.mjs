@@ -356,6 +356,45 @@ process.exit(0);
   }
 });
 
+test("the CLI accepts a validation that altool recovered and says so", () => {
+  const directory = mkdtempSync(join(tmpdir(), "app-store-connect-recovered-test-"));
+  const fakeXcrun = join(directory, "xcrun");
+  const ipaPath = join(directory, "CovenCave.ipa");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+
+  try {
+    writeFileSync(ipaPath, "ipa");
+    writeFileSync(
+      fakeXcrun,
+      `#!/usr/bin/env node
+process.stderr.write(${JSON.stringify(RECOVERED_VALIDATION)});
+process.exit(0);
+`,
+    );
+    chmodSync(fakeXcrun, 0o755);
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/app-store-connect.mjs", "validate", ipaPath],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          APPLE_API_KEY: "KEY123",
+          APPLE_API_ISSUER: "issuer-id",
+          PATH: `${directory}${delimiter}${process.env.PATH}`,
+        },
+      },
+    );
+
+    assert.equal(result.status, 0);
+    assert.match(result.stderr, /altool validate recovered from 2 server error\(s\) and reported success/);
+    assert.doesNotMatch(result.stderr, /reported an error despite exiting successfully/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("upload --wait polls the exact delivery ID returned by altool", () => {
   const directory = mkdtempSync(join(tmpdir(), "app-store-connect-upload-test-"));
   const fakeXcrun = join(directory, "xcrun");
