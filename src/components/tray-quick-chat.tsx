@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import "@/styles/quick-chat-glass.css";
+import "@/styles/first-use-guide.css";
+import { Button } from "@/components/ui/button";
+import { useFirstUse } from "@/components/first-use-provider";
 import { IconButton } from "@/components/ui/icon-button";
 import { Icon } from "@/lib/icon";
 import type { ModelControlCapability, ModelControlFamily, ModelControlValues } from "@/lib/model-control-capabilities";
@@ -22,8 +25,7 @@ import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
  * show_quick_chat_window in src-tauri/src/lib.rs).
  *
  * Holds MULTIPLE quick chats at once: a tab strip in the header, the add
- * button (or ⌘/Ctrl+N) opens a fresh chat that inherits the active tab's
- * familiar, ⌘/Ctrl+W or the pill's × closes one, and closing the last chat
+ * button (or ⌘/Ctrl+N) opens a fresh chat using the saved default context, ⌘/Ctrl+W or the pill's × closes one, and closing the last chat
  * hides the whole window (as does the header's close button). Every pane
  * stays mounted while hidden so a familiar can keep streaming a reply in a
  * background tab.
@@ -105,12 +107,10 @@ export function TrayQuickChat() {
     setReports(reportsRef.current);
   }, []);
 
-  // A new chat starts on the familiar the user is already talking to — the
-  // active tab's current pick — not on a cold default.
+  // A new tab restores the same configured default as other new work.
   const addTab = useCallback(() => {
-    const inherited = reportsRef.current[activeIdRef.current]?.familiar?.id ?? null;
     const id = seqRef.current++;
-    setTabs((prev) => [...prev, { id, initialFamiliarId: inherited, showAgentPicker: true }]);
+    setTabs((prev) => [...prev, { id, initialFamiliarId: null, showAgentPicker: true }]);
     setActiveId(id);
   }, []);
 
@@ -119,13 +119,13 @@ export function TrayQuickChat() {
     const idx = prev.findIndex((tab) => tab.id === id);
     if (idx === -1) return;
     const next = prev.filter((tab) => tab.id !== id);
-    const { [id]: dropped, ...rest } = reportsRef.current;
+    const { [id]: _dropped, ...rest } = reportsRef.current;
     reportsRef.current = rest;
     setReports(rest);
     if (next.length === 0) {
       // Closing the last chat closes the quick chat itself; a fresh tab
-      // (keeping the familiar) waits behind it for the next summon.
-      const fresh = { id: seqRef.current++, initialFamiliarId: dropped?.familiar?.id ?? null, showAgentPicker: false };
+      // using the saved default waits behind it for the next summon.
+      const fresh = { id: seqRef.current++, initialFamiliarId: null, showAgentPicker: false };
       setTabs([fresh]);
       setActiveId(fresh.id);
       void hideTrayWindow();
@@ -253,6 +253,7 @@ export function QuickChatTabPane({
   showAgentPicker: boolean;
   onReport: (id: number, report: TabReport) => void;
 }) {
+  const firstUse = useFirstUse();
   const {
     familiars,
     selectedFamiliarId,
@@ -262,6 +263,8 @@ export function QuickChatTabPane({
     projectsLoading,
     projectsError,
     projectLaunchReady,
+    permissionMode,
+    applySavedDefaultContext,
     projectLaunchMessage,
     selectedProjectRoot,
     setSelectedProjectRoot,
@@ -326,6 +329,16 @@ export function QuickChatTabPane({
       window.location.href = `/#chat-${encodeURIComponent(sessionId)}`;
     }
   }, [selectedFamiliarId, sessionId]);
+  const reviewIntroduction = useCallback(async () => {
+    try {
+      const { emit } = await import("@tauri-apps/api/event");
+      await emit("quick-chat:open-session", { firstUse: true });
+    } catch {
+      window.open("/?firstUse=1", "_blank", "noopener");
+    }
+  }, []);
+  const needsIntroduction = firstUse.payload?.state.step !== "complete";
+  const needsRepair = firstUse.error || firstUse.payload?.resolution.kind === "repair";
   const modelLabel = modelOverride === "" ? "Runtime default" : modelOverride ?? "Auto";
   const inputId = `quick-chat-draft-${tabId}`;
   // A message (text or staged files, not a local /command) is waiting on the
@@ -353,6 +366,8 @@ export function QuickChatTabPane({
       hidden={!active}
       className="tray-quick-chat__pane"
     >
+      {needsIntroduction || needsRepair ? <aside className="quick-chat-first-use" aria-label="Compact chat guidance"><p>{firstUse.error ?? (needsIntroduction ? "Complete the introduction in the main Cave window. This chat and draft stay here." : firstUse.payload?.resolution.kind === "repair" ? firstUse.payload.resolution.message : "Review the saved context.")}</p><Button size="xs" onClick={() => void reviewIntroduction()}>{needsIntroduction ? "Continue introduction in Cave" : "Review default context in Cave"}</Button><Button size="xs" variant="ghost" onClick={() => void firstUse.refresh()}>Check saved context again</Button></aside> : null}
+      {!sessionId && firstUse.payload?.resolution.kind === "ready" && !projectLaunchReady && !needsIntroduction ? <Button size="xs" variant="ghost" onClick={applySavedDefaultContext}>Use saved default context</Button> : null}
       <QuickChatControlsRow
         loading={loading}
         familiars={familiars}
@@ -380,7 +395,7 @@ export function QuickChatTabPane({
         error={error}
         draft={draft}
         onDraftChange={setDraft}
-        onSend={(attachments) => void send(attachments)}
+        onSend={(attachments, onAccepted) => void send(attachments, onAccepted)}
         sending={sending}
         disabled={loading}
         launchReady={projectLaunchReady}
@@ -399,7 +414,7 @@ export function QuickChatTabPane({
         // composer dispatches; these hand it the thread-owning hook methods.
         onNewThread={newThread}
         onLocalNote={note}
-        onSendText={(text) => void sendText(text)}
+        onSendText={(text, onAccepted) => void sendText(text, [], undefined, onAccepted)}
         modelOverride={modelOverride}
         onModelOverrideChange={setModelOverride}
         modelCapabilities={modelCapabilities}
@@ -408,6 +423,7 @@ export function QuickChatTabPane({
         onModelControlChange={setModelControl}
         leading={
           <div className="flex min-w-0 items-center gap-1.5">
+            <span className="quick-chat-meta-chip" aria-label={`Execution mode: ${permissionMode === "read" ? "Explore, read only" : "Build"}`}>{permissionMode === "read" ? "Explore" : "Build"}</span>
             {/* Only once there is a chat to open: before the first reply it
                 was a permanently disabled icon with nothing to explain it. */}
             {sessionId ? (

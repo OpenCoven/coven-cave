@@ -3,6 +3,7 @@
 import "@/styles/board.css";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { replaceHistoryUrl } from "@/lib/history-url";
+import { useFirstUse } from "@/components/first-use-provider";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
@@ -162,6 +163,7 @@ export function BoardView({
   // which familiar to rebind and which task chat to re-run.
   const [chatLinkErrorCardId, setChatLinkErrorCardId] = useState<string | null>(null);
   const { projects } = useProjects();
+  const firstUse = useFirstUse();
 
   // The OpenClaw bridge reserves its conversation id before the first streamed
   // turn. Once the normal chat path persists that local conversation, stop
@@ -875,6 +877,7 @@ export function BoardView({
     initialModelOverride?: string;
     bridge?: string;
   } | null> => {
+    if (!firstUse.ensureIntroduction()) return null;
     const card = cards.find((candidate) => candidate.id === id);
     // Project-backed tasks must retain an explicit familiar chosen from the
     // project's authorized roster. Falling back to the active/default
@@ -886,7 +889,25 @@ export function BoardView({
       setChatLinkErrorCardId(id);
       return null;
     }
-    const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
+    const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId
+      ?? (firstUse.payload?.resolution.kind === "ready" ? firstUse.payload.state.defaults?.actingFamiliarId : null)
+      ?? null;
+    if (!fallbackFamiliarId) {
+      firstUse.openGuide();
+      setChatLinkError("Choose an acting familiar before starting work.");
+      setChatLinkErrorCardId(id);
+      return null;
+    }
+    if (!card?.projectId && !card?.cwd && !projectRoot) {
+      const defaults = await firstUse.refresh();
+      if (defaults?.resolution.kind !== "ready" || !defaults.project) {
+        firstUse.openGuide();
+        setChatLinkError("Review the default project before starting work.");
+        setChatLinkErrorCardId(id);
+        return null;
+      }
+      projectRoot = defaults.project.root;
+    }
     setChatLinkingId(id);
     setChatLinkError(null);
     setChatLinkErrorCardId(null);

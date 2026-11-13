@@ -26,6 +26,11 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/first-use-execution.test.ts",
+    "src/components/first-use-guide.behavior.test.tsx",
+    "src/components/first-use-provider.behavior.test.tsx",
+    "src/lib/first-use.test.ts",
+    "src/lib/server/first-use-store.test.ts",
     "src/lib/github-watcher.behavior.test.ts",
     "src/lib/chat-tool-milestones.test.ts",
     "src/app/api/chat/scheduled/route.test.ts",
@@ -1544,6 +1549,10 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
   ],
   api: [
+    "src/app/api/onboarding/journey/route.behavior.test.ts",
+    "src/app/api/project-grants/route-chat-grant.integration.test.ts",
+    "src/app/api/onboarding/journey/route.integration.test.ts",
+    "src/app/api/chat/send/route-read-project-admission.integration.test.ts",
     "src/app/api/research-automation-import/route.test.ts",
     "src/app/api/proposals/submit/route.test.ts",
     "src/lib/server/proposal-submission.test.ts",
@@ -1844,7 +1853,6 @@ export const SUITES = {
     "src/app/api/chat/send/route-claude-write-scope.integration.test.ts",
     "src/app/api/chat/send/route-claude-write-scope-legacy.integration.test.ts",
     "src/app/api/chat/send/route-claude-write-scope-no-permission.integration.test.ts",
-    "src/app/api/chat/send/route-read-project-admission.integration.test.ts",
     "src/app/api/chat/send/route-revoked-project-admission.integration.test.ts",
     "src/app/api/chat/send/route-copilot-auth.integration.test.ts",
     "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
@@ -2071,7 +2079,6 @@ export const SUITES = {
     "src/app/api/project-file/route-behaviour.test.ts",
     "src/app/api/project-tree/route.test.ts",
     "src/app/api/project-grants/route.test.ts",
-    "src/app/api/project-grants/route-chat-grant.integration.test.ts",
     "src/lib/server/trusted-grant-mutation.test.ts",
     "src/lib/server/project-permission-symlink.test.ts",
     "src/app/api/flows/runs/route.test.ts",
@@ -2323,6 +2330,9 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/app/api/project-grants/route-chat-grant.integration.test.ts",
+  "src/app/api/onboarding/journey/route.integration.test.ts",
+  "src/app/api/chat/send/route-read-project-admission.integration.test.ts",
   "src/app/api/salem/retirement.test.ts",
   "src/components/salem/salem-retirement.test.ts",
   "src/lib/surface-preferences-lifecycle.test.ts",
@@ -2504,7 +2514,6 @@ const ALIAS_LOADER = new Set([
   "src/app/api/sessions/list/route.test.ts",
   "src/app/api/sessions/[id]/route.test.ts",
   "src/app/api/familiars/route.test.ts",
-  "src/app/api/project-grants/route-chat-grant.integration.test.ts",
   "src/app/api/familiars/[id]/dashboard/route.test.ts",
   "src/lib/familiar-dashboard.test.ts",
   "src/lib/server/familiar-dashboard-data.test.ts",
@@ -2540,7 +2549,6 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/route-claude-write-scope.integration.test.ts",
   "src/app/api/chat/send/route-claude-write-scope-legacy.integration.test.ts",
   "src/app/api/chat/send/route-claude-write-scope-no-permission.integration.test.ts",
-  "src/app/api/chat/send/route-read-project-admission.integration.test.ts",
   "src/app/api/chat/send/route-revoked-project-admission.integration.test.ts",
   "src/app/api/chat/send/route-copilot-auth.integration.test.ts",
   "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
@@ -2818,6 +2826,9 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/first-use-guide.behavior.test.tsx",
+  "src/app/api/onboarding/journey/route.behavior.test.ts",
+  "src/components/first-use-provider.behavior.test.tsx",
   "src/lib/inbox-scheduler.behavior.test.ts",
   "src/lib/server/scheduled-chat-store-drain.behavior.test.ts",
   "src/lib/server/backup-sync-scheduler.behavior.test.ts",

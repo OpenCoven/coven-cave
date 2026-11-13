@@ -16,6 +16,9 @@ async function boot(page: Page, code = "not-connected") {
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "echo");
+    // Keep the publishing fixture's explicit Echo scope when host defaults hydrate.
+    localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": ["echo"] }));
   });
   await page.route("**/api/familiars**", route => route.fulfill({ json: { ok: true, familiars: [{
     id: "echo", display_name: "Echo", role: "Messenger", status: "active", icon: "ph:sparkle-fill", xPublishEnabled: true,

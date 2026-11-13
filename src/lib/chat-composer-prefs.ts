@@ -10,6 +10,8 @@ import {
 } from "./command-controls.ts";
 
 const CHAT_COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
+/** Explicit user changes in the guide can update an unsent draft's controls. */
+export const CHAT_COMPOSER_PREFS_CHANGED_EVENT = "cave:chat-composer-prefs-changed";
 
 export type ChatComposerPrefs = {
   thinkingEffort: CommandThinkingEffort;
@@ -40,11 +42,31 @@ export function readChatComposerPrefs(storage: Pick<Storage, "getItem"> | null):
   }
 }
 
-export function writeChatComposerPrefs(storage: Pick<Storage, "setItem"> | null, prefs: ChatComposerPrefs): void {
+/** Automatic control sync cannot turn a fallback or bound chat mode into a saved access choice. */
+export function writeChatComposerPrefs(storage: Pick<Storage, "getItem" | "setItem"> | null, prefs: ChatComposerPrefs, source: "explicit" | "automatic" = "explicit"): void {
   if (!storage) return;
   try {
-    storage.setItem(CHAT_COMPOSER_PREFS_KEY, JSON.stringify(prefs));
+    let permissionMode: CommandPermissionMode | undefined = prefs.permissionMode;
+    if (source === "automatic") {
+      let saved: Partial<ChatComposerPrefs> | null = null;
+      try { saved = JSON.parse(storage.getItem(CHAT_COMPOSER_PREFS_KEY) ?? "null") as Partial<ChatComposerPrefs> | null; } catch { /* A missing or malformed preference is not an access choice. */ }
+      permissionMode = saved?.permissionMode === "read" || saved?.permissionMode === "full" ? saved.permissionMode : undefined;
+    }
+    storage.setItem(CHAT_COMPOSER_PREFS_KEY, JSON.stringify({ ...prefs, permissionMode }));
   } catch {
     /* best effort */
   }
+}
+
+/** Restore the reviewed host default only when this origin has no saved mode. */
+export function restoreReviewedPermissionMode(storage: Pick<Storage, "getItem" | "setItem"> | null, permissionMode: CommandPermissionMode): boolean {
+  if (!storage) return false;
+  try {
+    const raw = storage.getItem(CHAT_COMPOSER_PREFS_KEY);
+    let saved: Partial<ChatComposerPrefs> | null = null;
+    try { saved = raw ? JSON.parse(raw) as Partial<ChatComposerPrefs> : null; } catch { /* A malformed local preference cannot override the reviewed host mode. */ }
+    if (saved?.permissionMode === "read" || saved?.permissionMode === "full") return false;
+    writeChatComposerPrefs(storage, { ...readChatComposerPrefs(storage), permissionMode });
+    return true;
+  } catch { return false; }
 }

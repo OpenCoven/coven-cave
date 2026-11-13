@@ -383,7 +383,8 @@ import {
 import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
 export const dynamic = "force-dynamic";
-
+// One copy for both refusals: the onboarding access review (#6462) must
+// match admission on every local runtime, including Codex workspace-write.
 const PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE =
   "This project's access is read-only. Choose Read-only mode or request write access, then retry.";
 export const runtime = "nodejs";

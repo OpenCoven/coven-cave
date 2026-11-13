@@ -28,6 +28,16 @@ breaking config changes; patch releases stay additive.
   the project's grant is removed while the turn is starting. Cave still never
   widens a runtime's own sandbox.
 
+## [0.5.21] - 2026-11-12
+
+> The iPhone transcript holds its place, Chat opens on All chats, and Ask Salem is retired.
+
+Patch release on top of v0.5.20. Headline: **the latest reply on iPhone stays
+where you are reading** while rich content finishes laying out (#6090, #6387).
+On the desktop, **Chat opens on All chats** with one optional filter (#6434),
+and the built-in **Ask Salem assistant is retired** (#6408). This is the first
+release with Tauri 2.12 and updater 2.14.1 (#6382).
+
 ### Changed
 - **Full-access Claude will take its permissions only from your project
   grants** (#6393). This needs a Coven release with the updated `--write-scope`
@@ -41,8 +51,74 @@ breaking config changes; patch releases stay additive.
   out of the turn with a notice. A tool that starts its own sandbox, such as
   Chromium, needs its no-sandbox option to run inside an MCP server. A writable
   grant that overlaps Cave's own state folder is refused. No
-  Coven release has this yet, so a Claude chat in Full access still runs
+  Coven release has this yet. Until one does, a Claude Build request in Full
+  access stops before the model starts (#6441, below), and Explore runs
   Read-only.
+- **Chat opens on All chats** (#6434). The chat list shows every conversation
+  across projects and familiars, and one optional filter replaces the two
+  workspace selectors. Browsing keeps your draft and the conversation you
+  have open. On phones the filter is in the chat-list sheet.
+- **A Claude Build request no longer falls back to a read-only plan** (#6441).
+  When Coven can't limit Claude's edits to your project grants, a Build
+  request now stops before the model starts and says why. Before, it could
+  run in plan mode and report success without making the edits. Explore
+  stays read-only.
+- **A failed Codex turn says what kind of failure it was** (#6448). A local
+  Codex turn that fails on a context limit, configuration or a command-line
+  argument is saved as a failed reply with that reason, even when Coven
+  itself exits cleanly. Retry keeps the failed attempt and adds the new
+  reply. A Read-only turn is no longer told that your project folders are
+  writable.
+
+### Removed
+- **Ask Salem** (#6408, #6437). The built-in assistant, its Projects
+  launchers and its command-palette answers are gone. Chat and search are
+  unchanged. A saved link to Salem opens a notice where you can export your
+  earlier Salem history, which stays on disk and in encrypted backups.
+
+### Fixed
+- **The latest reply on iPhone stays put** (#6090, #6387). A reply with
+  rich content could grow above where you were reading and move the latest
+  reply out of view after you swiped back. The transcript now keeps your
+  place, follows a streaming reply only while you are at the end, and
+  renders rich content as it comes on screen. Acceptance on a physical
+  phone and with VoiceOver is still open on #6090.
+- **Underscores in names stay as typed** (#6429). `MAX_RETRY_COUNT` and
+  `snake_case_name` no longer lose their underscores or turn italic in a
+  reply, while it streams or afterwards. Emphasis and code are unaffected.
+- **Back leaves Settings** (#6442, #6444). After opening Cave from a link
+  or a reload and going to Settings, the browser's Back button changed the
+  address and left Settings on screen.
+- **Cave starts when the OS account lookup is unavailable** (#6426). The
+  server could stop at startup. The lookup now runs only for the two device
+  administration actions that need it.
+- **Encrypted backups include chat attachments** (#6426). A restored
+  conversation's attachments download again. Older backups still restore;
+  an older Cave refuses a new backup that contains attachments.
+- **Daemon status settles on the newest check** (#6305). A slow health check
+  could overwrite a newer one, and a timed-out request could return another
+  request's answer or wait past 30 seconds.
+
+### Security
+- **Tauri 2.12 and updater 2.14.1** (#6377, #6382) clear three alerts on the
+  `zip` library, which only the Windows updater uses. Update signatures are
+  checked as before. A local macOS update install passed with the new
+  updater; the Windows install on the acceptance machine has not run yet
+  (#5981).
+- **A test build can't read the installed app's offline-cache key** (#6449).
+  A desktop build with a different application identifier now uses its own
+  Keychain entry. The installed app's entry is unchanged.
+
+### Under the hood
+- The sidecar staging install copies dependency patches (#6432), and the
+  Research archive's lockfile integrity hash is restored (#6435).
+- Generated server bundles and dangling worktree links are cleaned up
+  (#6428), and the worktree guidance and app-run examples are refreshed
+  (#6430).
+- The work queue filters by lane and state (#6459) and resumes an apply
+  from a regenerated manifest (#6463).
+- `pnpm release:train` reports the release step and prints the next
+  command; the README screenshots are refreshed (#6461).
 
 ## [0.5.20] - 2026-11-07
 

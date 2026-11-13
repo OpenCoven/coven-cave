@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installCompletedFirstUse } from "./fixtures/first-use";
+
+test.use({ serviceWorkers: "block" });
 
 const ISO = "2026-08-10T12:00:00.000Z";
+const PROJECT = { id: "response-project", name: "Response project", root: "/tmp/coven-cave", access: "write" };
 
 const SESSIONS = [
   {
@@ -154,6 +158,7 @@ async function setup(page: Page) {
       },
     });
   });
+  await installCompletedFirstUse(page, { project: PROJECT, familiarIds: ["nova"], actingFamiliarId: "nova", permissionMode: "full", harness: "claude" });
 }
 
 test("completed assistant responses render editorial Markdown and accessible controls", async ({
@@ -331,7 +336,7 @@ test("the header archive button sends one archive mutation and leaves the sessio
 
 async function openControlledStream(page: Page, surface: "main" | "quick") {
   await setup(page);
-  const project = { id: "response-project", name: "Response project", root: "/tmp/coven-cave", access: "write" };
+  const project = PROJECT;
   await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [project] } }));
   await page.route("**/api/queue/project", (route) => route.fulfill({ json: { ok: true, projectId: project.id, project } }));
   await page.route("**/api/daemon/connection", (route) => route.fulfill({ json: { ok: true, running: true, connected: true, target: { mode: "local" } } }));
@@ -340,6 +345,7 @@ async function openControlledStream(page: Page, surface: "main" | "quick") {
     localStorage.setItem("cave.quick-chat.last-familiar", "nova");
     const originalFetch = window.fetch.bind(window);
     let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+    Object.assign(window, { caveTestStreamReady: false });
     Object.assign(window, {
       caveTestFrame(frame: object) {
         if (!stream) throw new Error("Chat stream has not opened");
@@ -351,7 +357,7 @@ async function openControlledStream(page: Page, surface: "main" | "quick") {
       const input = args[0];
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (new URL(url, location.href).pathname === "/api/chat/send") {
-        return new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } }), {
+        return new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; Object.assign(window, { caveTestStreamReady: true }); } }), {
           headers: { "Content-Type": "text/event-stream" },
         });
       }
@@ -363,11 +369,11 @@ async function openControlledStream(page: Page, surface: "main" | "quick") {
   if (surface === "main") {
     await expect(main.locator('.cave-bubble-assistant[data-state="complete"]').last()).toBeVisible({ timeout: 30_000 });
   } else {
-    await page.getByRole("button", { name: "Project", exact: true }).click();
-    await page.getByRole("menu", { name: "Project options" }).getByText("Response project · Full", { exact: true }).click();
+    await expect(main.getByLabel("Project: Response project, Full access (locked for this chat)", { exact: true })).toBeVisible();
   }
   await main.getByRole(surface === "main" ? "textbox" : "combobox", { name: "Message", exact: true }).fill("Stream a selection fixture");
   await main.getByRole("button", { name: surface === "main" ? "Send message" : "Send", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { caveTestStreamReady: boolean }).caveTestStreamReady)).toBe(true);
   const emit = async (frame: object) => page.evaluate((value) => {
     (window as unknown as { caveTestFrame(frame: object): void }).caveTestFrame(value);
   }, frame);

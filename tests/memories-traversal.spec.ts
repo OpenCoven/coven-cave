@@ -13,7 +13,12 @@ const nodes = [
 ];
 async function setup(page: Page, failMemory = false, hash = "") {
   let failure = failMemory;
-  await page.addInitScript(() => localStorage.setItem("cave:onboarding:dismissed", "1"));
+  await page.addInitScript(() => {
+    localStorage.setItem("cave:onboarding:dismissed", "1");
+    // Traversal starts across familiars, then the page filter narrows to Sage.
+    localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [] }));
+  });
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: {
     ok: true, familiars: [{ id: "nova", display_name: "Nova", status: "active" }, { id: "sage", display_name: "Sage", status: "active" }],
   } }));

@@ -1,0 +1,17 @@
+/* Keep long methodology copy legible over busy chat content in WebKit. */
+.ui-modal:has(.first-use-guide) { background: var(--bg-raised); }
+.first-use-guide { container-type: inline-size; display: grid; gap: var(--space-4); color: var(--text-secondary); font-size: var(--text-base); }
+.first-use-guide h2 { color: var(--text-primary); font-size: var(--text-xl); font-weight: 600; }
+.first-use-guide p { line-height: 1.6; }
+.first-use-guide pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.first-use-guide fieldset { display: grid; gap: var(--space-2); }
+.first-use-guide legend, .first-use-guide label { color: var(--text-primary); }
+.first-use-guide__select { width: 100%; min-height: var(--touch-target); border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: var(--bg-base); padding: var(--space-2); color: var(--text-primary); }
+.first-use-guide__choice { display: flex; align-items: center; gap: var(--space-2); min-height: var(--touch-target); }
+.first-use-guide__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.first-use-guide__review { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border-hairline); border-radius: var(--radius-card); background: var(--bg-raised); overflow-wrap: anywhere; }
+.first-use-guide__error { padding: var(--space-3); color: var(--danger-text); background: var(--danger-bg); border: 1px solid var(--danger-border); border-radius: var(--radius-control); }
+.first-use-nudge { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); flex-shrink: 0; padding: var(--space-2) var(--space-4); color: var(--text-secondary); background: var(--bg-raised); border-bottom: 1px solid var(--border-hairline); font-size: var(--text-sm); }
+@container (max-width: 420px) { .first-use-guide__actions { flex-direction: column; } .first-use-guide__select { font-size: var(--text-lg); } }
+
+.quick-chat-first-use { padding: var(--space-3); border-bottom: 1px solid var(--border-hairline); font-size: var(--text-sm); }
