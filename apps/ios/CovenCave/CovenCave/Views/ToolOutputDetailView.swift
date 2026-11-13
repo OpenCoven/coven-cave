@@ -35,7 +35,9 @@ struct ToolOutputTextSurface: UIViewRepresentable {
     static func updateText(_ text: String, in view: UITextView) {
         let body = UIFont.preferredFont(forTextStyle: .body)
         view.font = UIFont(descriptor: body.fontDescriptor.withDesign(.monospaced) ?? body.fontDescriptor, size: 0)
-        if view.text != text { view.text = text }
+        // Swift String equality folds canonically equivalent Unicode. Output
+        // updates must retain the exact projected bytes, including that form.
+        if !(view.text ?? "").utf8.elementsEqual(text.utf8) { view.text = text }
     }
 
     static func clear(_ view: UITextView) {

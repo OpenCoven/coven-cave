@@ -69,6 +69,11 @@ final class ToolOutputTests: XCTestCase {
         XCTAssertEqual(view.selectedRange.length, 0)
         ToolOutputTextSurface.updateText("replacement", in: view)
         XCTAssertEqual(view.text, "replacement", "A cleared surface cannot retain an earlier result")
+        ToolOutputTextSurface.updateText("caf\u{e9}", in: view)
+        let combining = "cafe\u{301}"
+        ToolOutputTextSurface.updateText(combining, in: view)
+        XCTAssertEqual(Array(view.text.utf8), Array(combining.utf8),
+                       "Canonically equivalent results still replace the exact projected bytes")
     }
 
     private func client() -> (CaveClient, URLSession) {
