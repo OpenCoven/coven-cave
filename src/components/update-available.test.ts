@@ -36,8 +36,20 @@ assert.doesNotMatch(
 );
 assert.match(
   src,
-  /export async function installPreparedUpdate\([^)]*\): Promise<void> \{\s*const disarmRecovery = await armWindowsInstallRecovery\(\);\s*try \{\s*await update\.install\(\);\s*\} catch \(err\) \{\s*await disarmRecovery\(\);\s*throw err;\s*\}/,
-  "installs the prepared native update directly: only Windows install recovery is armed first (no daemon npm install in between), and a failed install() disarms it and still surfaces the error",
+  /export async function installPreparedUpdate\([^)]*\): Promise<void> \{\s*(?:\/\/[^\n]*\s*)*const \{ relaunch \} = await import\("@tauri-apps\/plugin-process"\);\s*const disarmRecovery = await armWindowsInstallRecovery\(\);\s*try \{\s*await update\.install\(\);\s*\} catch \(err\) \{\s*await disarmRecovery\(\);\s*throw err;\s*\}/,
+  "installs the prepared native update directly: the relaunch code is loaded and Windows install recovery is armed first (no daemon npm install in between), and a failed install() disarms it and still surfaces the error",
+);
+// install() replaces the bundle that serves this build's chunks, so nothing
+// may be loaded between install() and relaunch() (#6470).
+assert.doesNotMatch(
+  src,
+  /await update\.install\(\);[\s\S]*?await import\([\s\S]*?await relaunch\(\);/,
+  "nothing is dynamically imported between install() and relaunch()",
+);
+assert.match(
+  src,
+  /try \{\s*await relaunch\(\);\s*\} catch \(err\) \{\s*throw new UpdateInstalledRelaunchError\(/,
+  "a relaunch failure after a completed install is reported as installed, not as a failed update",
 );
 
 // Declined or failed Windows msiexec recovery (#5981): the watcher is armed

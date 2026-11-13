@@ -7,12 +7,7 @@ vi.mock("@/lib/tauri-platform", () => ({
   isTauri: () => native.desktop, useIsTauriDesktop: () => native.desktop,
 }));
 vi.mock("@tauri-apps/plugin-os", () => ({ platform: () => "windows", arch: () => "x86_64" }));
-// The factory runs when the relaunch code is first loaded, as a chunk fetch
-// would in the packaged app.
-vi.mock("@tauri-apps/plugin-process", () => {
-  native.order.push("load relaunch code");
-  return { relaunch: () => native.relaunch() };
-});
+vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: () => native.relaunch() }));
 vi.mock("@/lib/icon", () => ({ Icon: () => null }));
 
 import { UpdateBannerTrigger, UpdateInstalledRelaunchError, UpdateSettingsRow, installPreparedUpdate } from "./update-available";
@@ -27,6 +22,7 @@ let tree;
 let banners;
 let release;
 let popup;
+let beginAction;
 function Probe() { banners = useShellBanners().banners; return null; }
 async function mount(child) {
   await act(async () => {
@@ -40,6 +36,7 @@ function button(label) {
 beforeEach(() => {
   native.desktop = false;
   native.check.mockReset(); native.invoke.mockReset(); native.relaunch.mockReset();
+  beginAction = vi.spyOn(nativeUpdateCoordinator, "beginAction");
   popup = { opener: {}, location: { replace: vi.fn() }, close: vi.fn() };
   vi.stubGlobal("window", {
     open: vi.fn(() => popup), dispatchEvent: vi.fn(),
@@ -58,6 +55,9 @@ beforeEach(() => {
 afterEach(async () => {
   if (tree) await act(async () => tree.unmount());
   tree = null;
+  // An installed update keeps its action; release it so the next test starts clean.
+  for (const [, update] of beginAction.mock.calls) await nativeUpdateCoordinator.invalidate(update);
+  beginAction.mockRestore();
   await nativeUpdateCoordinator.reportCurrent();
   vi.unstubAllGlobals();
 });
@@ -156,13 +156,24 @@ test("an unarmable Windows install refuses to start rather than risk a closed ap
 // the new version was on disk.
 test("the relaunch code is loaded before install() replaces the app bundle", async () => {
   nativeIpc();
-  vi.resetModules();
-  const fresh = await import("./update-available");
+  // A fresh module graph whose relaunch module records when it is first
+  // evaluated, as a chunk fetch would in the packaged app.
   native.order.length = 0;
-  native.relaunch.mockImplementation(async () => { native.order.push("relaunch"); });
-  const update = { install: vi.fn(async () => { native.order.push("install"); }) };
-  await fresh.installPreparedUpdate(update);
-  expect(native.order).toEqual(["load relaunch code", "install", "relaunch"]);
+  vi.resetModules();
+  vi.doMock("@tauri-apps/plugin-process", () => {
+    native.order.push("load relaunch code");
+    return { relaunch: async () => { native.order.push("relaunch"); } };
+  });
+  try {
+    const fresh = await import("./update-available");
+    expect(native.order).toEqual([]);
+    const update = { install: vi.fn(async () => { native.order.push("install"); }) };
+    await fresh.installPreparedUpdate(update);
+    expect(native.order).toEqual(["load relaunch code", "install", "relaunch"]);
+  } finally {
+    vi.doMock("@tauri-apps/plugin-process", () => ({ relaunch: () => native.relaunch() }));
+    vi.resetModules();
+  }
 });
 
 test("a relaunch that fails after install() reports an installed update, not a failed one", async () => {

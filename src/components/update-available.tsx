@@ -130,8 +130,20 @@ async function armWindowsInstallRecovery(): Promise<() => Promise<void>> {
   };
 }
 
+/** The update is on disk, but this version could not restart itself into it. */
+export class UpdateInstalledRelaunchError extends Error {
+  constructor(reason: string) {
+    super(`update installed, relaunch failed: ${reason}`);
+    this.name = "UpdateInstalledRelaunchError";
+  }
+}
+
 /** Install an already downloaded and verified update, then relaunch where supported. */
 export async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
+  // install() replaces the app bundle, and with it the chunks this build's
+  // server can still serve. Load the relaunch code while it can be fetched;
+  // loaded afterwards it fails with "Failed to load chunk" (#6470).
+  const { relaunch } = await import("@tauri-apps/plugin-process");
   const disarmRecovery = await armWindowsInstallRecovery();
   try {
     await update.install();
@@ -141,8 +153,11 @@ export async function installPreparedUpdate(update: NativeUpdateHandle): Promise
   }
   // Windows exits inside install() and AUTOLAUNCHAPP handles restart. Other
   // desktop platforms return and need an explicit relaunch.
-  const { relaunch } = await import("@tauri-apps/plugin-process");
-  await relaunch();
+  try {
+    await relaunch();
+  } catch (err) {
+    throw new UpdateInstalledRelaunchError(errorMessage(err, "unknown error"));
+  }
 }
 
 /** The recorded outcome of a Windows install that did not complete, if any. */
@@ -473,6 +488,17 @@ export function UpdateBannerTrigger() {
                           title: `Installing CovenCave v${r.version}…`,
                         });
                         void installPreparedUpdate(r.update).catch(async (error) => {
+                          if (error instanceof UpdateInstalledRelaunchError) {
+                            // The new version is on disk. Stay busy so no later
+                            // check replaces this, and offer nothing that would
+                            // need another chunk from the replaced bundle.
+                            pushBanner({
+                              id: BANNER_ID,
+                              severity: "info",
+                              title: `CovenCave v${r.version} is installed. Quit and reopen CovenCave to finish updating.`,
+                            });
+                            return;
+                          }
                           await nativeUpdateCoordinator.finishAction(owner);
                           await nativeUpdateCoordinator.invalidate(r.update);
                           busy = false;
@@ -597,6 +623,7 @@ type RowState =
   | { phase: "cancelling"; version: string }
   | { phase: "prepared"; version: string; update: NativeUpdateHandle }
   | { phase: "installing"; version: string }
+  | { phase: "installed"; version: string }
   | { phase: "failed"; version: string; message: string };
 
 type LastKnownUpdate =
@@ -695,7 +722,8 @@ export function UpdateSettingsRow({
         state.phase !== "preparing" &&
         state.phase !== "cancelling" &&
         state.phase !== "prepared" &&
-        state.phase !== "installing",
+        state.phase !== "installing" &&
+        state.phase !== "installed",
     );
   }, [onCheckAvailabilityChange, state.phase]);
 
@@ -793,6 +821,12 @@ export function UpdateSettingsRow({
     installInFlight.current = true;
     setState({ phase: "installing", version });
     void installPreparedUpdate(update).catch(async (err) => {
+      if (err instanceof UpdateInstalledRelaunchError) {
+        // The new version is on disk; installInFlight stays set so nothing
+        // re-checks against the replaced bundle.
+        if (mounted.current) setState({ phase: "installed", version });
+        return;
+      }
       installInFlight.current = false;
       await nativeUpdateCoordinator.finishAction(owner);
       await nativeUpdateCoordinator.invalidate(update);
@@ -857,6 +891,12 @@ export function UpdateSettingsRow({
     control = (
       <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
         Installing update…
+      </span>
+    );
+  } else if (state.phase === "installed") {
+    control = (
+      <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
+        {`v${state.version} installed. Quit and reopen CovenCave to finish updating.`}
       </span>
     );
   } else if (state.phase === "available") {
