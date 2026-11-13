@@ -82,6 +82,12 @@ function errorMessage(err: unknown, fallback: string): string {
  */
 async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
   if (!isTauri()) return { kind: "not-applicable" };
+  // A development shell registers no updater (tauri_setup.rs): installing a
+  // release over a dev build replaces its build folder. Say so plainly
+  // instead of surfacing the missing plugin as an error.
+  if (process.env.NODE_ENV === "development") {
+    return { kind: "failed", message: "Development builds don't install updates." };
+  }
   const checkEpoch = nativeUpdateCoordinator.beginCheck();
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
@@ -362,7 +368,10 @@ export function UpdateBannerTrigger() {
   const owner = useRef(Symbol("update-banner")).current;
 
   useEffect(() => {
-    if (!isDesktop) return;
+    // Development sessions trail `main`'s release stamp by design, so every
+    // dev launch would offer an update it cannot install. Settings → About
+    // still answers an explicit check.
+    if (!isDesktop || process.env.NODE_ENV === "development") return;
     let cancelled = false;
     let busy = false;
     let activeCancellation: CancellationSignal | null = null;

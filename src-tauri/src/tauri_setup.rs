@@ -550,7 +550,18 @@ pub fn run() {
                 app.manage(install_watch);
                 updater_builder.installer_args(msi_verbose_log_installer_args(&log_path))
             };
-            app.handle().plugin(updater_builder.build())?;
+            // A debug build is never an installed app: `tauri dev` runs the bare
+            // `target/debug/app`, with no .app bundle around it. Handed a
+            // release, the macOS installer took `target/debug` itself for the
+            // bundle and replaced it, deleting the binary and the cargo cache
+            // (and on Windows it would run the release MSI over the installed
+            // app). Debug builds register no updater, so a check or install
+            // from the page fails before anything is downloaded.
+            if cfg!(debug_assertions) {
+                log::info!("[cave] updater disabled: debug builds never install releases");
+            } else {
+                app.handle().plugin(updater_builder.build())?;
+            }
             app.handle().plugin(tauri_plugin_process::init())?;
 
             // Dev builds: when the configured dev server (tauri.conf.json

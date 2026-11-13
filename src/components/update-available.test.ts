@@ -98,6 +98,16 @@ assert.match(src, /resolveDownloadUrl\(combined\.status\)/, "fallback download U
 
 // Both surfaces are exported and resolve native-first.
 assert.match(src, /export function UpdateBannerTrigger/, "exports the banner trigger");
+assert.match(
+  src,
+  /if \(!isDesktop \|\| process\.env\.NODE_ENV === "development"\) return;\s*let cancelled = false;/,
+  "the periodic update banner stays quiet in development sessions, which always trail the release stamp",
+);
+assert.match(
+  src,
+  /if \(!isTauri\(\)\) return \{ kind: "not-applicable" \};[\s\S]{0,320}if \(process\.env\.NODE_ENV === "development"\) \{\s*return \{ kind: "failed", message: "Development builds don't install updates\." \};/,
+  "an explicit check in a development shell says updates are off instead of calling an updater that is not registered",
+);
 assert.match(src, /export function DaemonReleaseAlignmentTrigger/, "reconciles the daemon after the new Cave version starts");
 assert.match(src, /updateCovenCli\(/, "startup reconciliation checks the independently versioned CLI");
 assert.doesNotMatch(src, /APP_VERSION/, "the running Cave version is never treated as a CLI version requirement");
