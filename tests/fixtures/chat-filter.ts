@@ -34,5 +34,6 @@ export async function openChatFilter(page: Page): Promise<ChatFilter> {
 export function chatFilterAtAllChats(page: Page): Locator {
   return chatFilterInTitleBar(page)
     ? chatFilterTitleBar(page).getByRole("button", { name: "Switch project: All projects", exact: true })
-    : page.getByRole("button", { name: "Filter chats: All chats", exact: true });
+    // The phone chat-list sheet repeats the button while it is open.
+    : page.getByRole("button", { name: "Filter chats: All chats", exact: true }).first();
 }

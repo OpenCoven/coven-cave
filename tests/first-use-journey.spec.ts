@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { advanceFirstUse, createFirstUseState, type FirstUseState } from "../src/lib/first-use";
+import { chatFilterAtAllChats } from "./fixtures/chat-filter";
 
 test.use({ serviceWorkers: "block" });
 const browserErrors = new WeakMap<Page, string[]>();
@@ -109,7 +110,9 @@ test("a saved default is restored while All chats remains the overview", async (
   await fixture(page, state);
   await page.goto("/?mode=chat");
   await expect.poll(() => page.evaluate(() => localStorage.getItem("cave:workspace:project-scope:v1"))).toBe(JSON.stringify(PROJECT.id));
-  await expect(page.getByRole("button", { name: /All chats/ }).first()).toBeVisible();
+  // The saved default is the workspace scope; Chat's own filter still opens on
+  // All chats, in the title bar at desktop widths and the header below (#6478).
+  await expect(chatFilterAtAllChats(page)).toBeVisible();
 });
 
 test("revoked defaults require repair and preserve their stable identities", async ({ page }) => {
