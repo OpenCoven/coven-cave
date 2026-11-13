@@ -247,6 +247,16 @@ test.describe("chat threads rail", () => {
     ]) {
       await page.setViewportSize(viewport);
       await expect(surface).toBeVisible();
+      if (viewport.width >= 1024) {
+        // The title bar carries Chat's filter, as on every other page (#6478).
+        // It reads All familiars, so it filters the list and asks for no actor.
+        const titleBar = page.getByRole("group", { name: "Filter chats", exact: true });
+        await expect(titleBar.getByRole("button", { name: "Switch project: All projects", exact: true })).toBeVisible();
+        await expect(titleBar.getByRole("button", { name: "Switch familiar — scope: all familiars", exact: true })).toBeVisible();
+        await expect(visibleTrigger(page.locator("body")), `one familiar filter at ${viewport.width}px`).toHaveCount(1);
+        await expect(page.getByRole("button", { name: /^Filter chats:/ })).toBeHidden();
+        continue;
+      }
       await expect(visibleTrigger(page.locator("body")), `no mandatory actor picker at ${viewport.width}px`).toHaveCount(0);
       const filter = page.getByRole("button", { name: "Filter chats: All chats", exact: true });
       if (!(await filter.isVisible())) {

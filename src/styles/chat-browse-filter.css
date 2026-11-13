@@ -44,3 +44,16 @@
   max-width: 100%;
   min-height: var(--touch-target);
 }
+
+/* The title bar shows the project and familiar selectors from 1024px, where
+   .workspace-titlebar-context is visible. Exactly one of the two is shown at
+   any width. */
+.chat-browse-filter__inline {
+  display: contents;
+}
+
+@media (min-width: 1024px) {
+  .chat-browse-filter__inline {
+    display: none;
+  }
+}
