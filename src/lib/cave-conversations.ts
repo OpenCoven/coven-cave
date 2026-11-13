@@ -11,6 +11,7 @@ import { writeFileAtomic, writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import { externalizeInlineImages } from "./server/externalize-inline-images.ts";
 import { removeChatImageAttachment } from "./server/chat-attachment-store.ts";
+import { projectLegacyAssistantText } from "./server/legacy-reasoning-projection.ts";
 import { inspectStoreFile, readCachedStore, type FileIdentity } from "./server/store-read-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
@@ -1523,7 +1524,13 @@ export async function searchConversations(
       let matchCount = 0;
       let snippet = "";
       for (const turn of conv.turns) {
-        const text = typeof turn?.text === "string" ? turn.text : "";
+        const stored = typeof turn?.text === "string" ? turn.text : "";
+        // Search what the transcript shows. Legacy reasoning tags are removed
+        // from assistant turns on display, so their content is neither matched
+        // nor quoted here; the raw pre-filter above only narrows the files.
+        const text = turn?.role === "assistant"
+          ? projectLegacyAssistantText(stored, Boolean(turn.cancelled || turn.isError))
+          : stored;
         if (!text) continue;
         const textLower = text.toLowerCase();
         let idx = textLower.indexOf(qLower);

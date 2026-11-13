@@ -130,6 +130,24 @@ export type ConversationHistoryPayload = {
   };
 };
 
+/** Select the tool display schema explicitly, as the server's stored-tool
+ * projection does. Opaque provider siblings in a history payload (signatures,
+ * encrypted content) never ride along into the turn in a spread. */
+function historyToolEvent(tool: ToolEvent, outputSessionId: string | undefined): ToolEvent {
+  return {
+    id: tool.id,
+    name: tool.name,
+    status: tool.status,
+    ...(tool.input !== undefined ? { input: tool.input } : {}),
+    ...(tool.output !== undefined ? { output: tool.output } : {}),
+    ...(tool.outputChars !== undefined ? { outputChars: tool.outputChars } : {}),
+    ...(tool.durationMs !== undefined ? { durationMs: tool.durationMs } : {}),
+    ...(tool.textOffset !== undefined ? { textOffset: tool.textOffset } : {}),
+    ...("activity" in tool ? { activity: tool.activity } : {}),
+    outputSessionId,
+  };
+}
+
 /** Normalize the API's permissive persisted turn shape for ChatView. */
 export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[], outputSessionId?: string): Turn[] {
   return rawTurns
@@ -145,7 +163,7 @@ export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[],
       attachments: turn.attachments,
       reasoning: turn.reasoning,
       reasoningBlocks: turn.reasoningBlocks,
-      tools: settleToolObservations(turn.tools)?.map((tool) => ({ ...tool, outputSessionId })),
+      tools: settleToolObservations(turn.tools)?.map((tool) => historyToolEvent(tool, outputSessionId)),
       progress: turn.progress ? turn.progress.map((progress) => ({ ...progress })) : undefined,
       durationMs: turn.durationMs,
       usage: turn.usage,
