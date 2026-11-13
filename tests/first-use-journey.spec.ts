@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { advanceFirstUse, createFirstUseState, createQuickStartState, type FirstUseState } from "../src/lib/first-use";
 import { chatFilterAtAllChats } from "./fixtures/chat-filter";
+import { chatComposerDraftKey } from "../src/lib/use-composer-draft";
 
 test.use({ serviceWorkers: "block" });
 const browserErrors = new WeakMap<Page, string[]>();
@@ -150,6 +151,37 @@ test("Full requires an explicit choice and opens Chat with the reviewed mode", a
   expect(f.sends).toEqual([]);
 });
 
+for (const destination of ["project", "session"] as const) {
+  test(`an unresolved starter replacement cannot overwrite another ${destination} draft`, async ({ page }) => {
+    const selected = advanceFirstUse(createQuickStartState(), { kind: "choose-assistant", familiarId: "nova" });
+    const state = advanceFirstUse(selected, { kind: "finish-setup", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, permissionMode: "read" });
+    await fixture(page, state);
+    const other = { ...PROJECT, id: "other-project", name: "Other project", root: "/synthetic/other" };
+    const session = { id: "starter-bound", title: "Existing other chat", familiarId: "nova", project_root: other.root, harness: "codex", status: "completed", hasLocalConversation: true, created_at: "2026-11-11T00:00:00.000Z", updated_at: "2026-11-11T00:00:00.000Z" };
+    await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [PROJECT, other] } }));
+    await page.route("**/api/project-grants**", (route) => route.fulfill({ json: { ok: true, grants: [PROJECT, other].map((project) => ({ familiarId: "nova", projectId: project.id, access: "read" })), accessGroups: [], supremeFamiliarId: null } }));
+    await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [session] } }));
+    await page.route("**/api/chat/conversation/starter-bound**", (route) => route.fulfill({ json: { ok: true, conversation: { sessionId: session.id, familiarId: "nova", harness: "codex", turns: [], createdAt: session.created_at, updatedAt: session.updated_at }, context: null } }));
+    const key = (project: string, sessionId: string | null = null) => chatComposerDraftKey("cave:chat-composer-draft:v1", { familiarId: "nova", sessionId, project, host: "local" });
+    await page.addInitScript((drafts) => { for (const [key, text] of drafts) localStorage.setItem(key, text); }, [[key(PROJECT.root), "Original project A draft"], [key(other.root), "Original project B draft"], [key(other.root, session.id), "Original session B draft"]]);
+    await page.goto("/?mode=home");
+    await expect(page.getByRole("complementary", { name: "Getting started", exact: true })).toContainText("Your workspace is ready.");
+    await page.getByRole("button", { name: "Continue setup", exact: true }).click();
+    await page.getByRole("dialog", { name: "Get started with Cave" }).getByRole("button", { name: "Open in Chat", exact: true }).click();
+    const chat = page.getByTestId("chat-main");
+    await expect(chat.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("Original project A draft");
+    await expect(chat.getByRole("button", { name: "Use starter request", exact: true })).toBeVisible();
+    if (destination === "project") {
+      await chat.getByRole("button", { name: /Project: Practice garden.*change project/ }).click();
+      await page.getByRole("menuitemradio", { name: /^Other project Read/ }).click();
+    } else {
+      await page.evaluate((sessionId) => window.dispatchEvent(new CustomEvent("cave:agents-open-session", { detail: { sessionId, familiarId: "nova" } })), session.id);
+    }
+    await expect(chat.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(destination === "project" ? "Original project B draft" : "Original session B draft");
+    await expect(chat.getByRole("button", { name: "Use starter request", exact: true })).toHaveCount(0);
+  });
+}
+
 test("a saved default is restored while All chats remains the overview", async ({ page }) => {
   const state: FirstUseState = { version: 1, revision: 8, step: "complete", outcome: "plan", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, practice: { approvalHeld: true, stopped: true, retried: true, verified: true }, completedAt: "2026-11-11T12:00:00.000Z" };
   await fixture(page, state);
@@ -228,6 +260,7 @@ test("the guide contains keyboard focus and fits narrow light and alternate-them
   await page.keyboard.press("Enter");
   const guide = page.getByRole("dialog", { name: "Get started with Cave" });
   await expect(guide).toBeVisible();
+  await expect.poll(() => guide.evaluate((element) => element.contains(document.activeElement)), { message: "Opening setup moves focus into the guide" }).toBe(true);
   for (let index = 0; index < 18; index++) {
     await page.keyboard.press("Tab");
     const active = await page.evaluate(() => ({ tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute("aria-label") }));

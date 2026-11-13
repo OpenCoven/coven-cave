@@ -42,10 +42,10 @@ export function OnboardingRuntimeStep({
   const [activeTarget, setActiveTarget] = useState<RuntimeId | null>(null);
   const [startingTarget, setStartingTarget] = useState<RuntimeId | null>(null);
   const [npmBusyLabel, setNpmBusyLabel] = useState<string | null>(null);
-  const [installedHere, setInstalledHere] = useState(false);
+  const [installedTarget, setInstalledTarget] = useState<RuntimeId | null>(null);
   const { announce } = useAnnouncer();
 
-  const ready = installedHere || harnesses.some((harness) => (!target || harness.id === target) && harness.chatSupported && harness.installed);
+  const ready = (installedTarget !== null && (!target || installedTarget === target)) || harnesses.some((harness) => (!target || harness.id === target) && harness.chatSupported && harness.installed);
   useEffect(() => onReadyChange(ready), [onReadyChange, ready]);
 
   const refresh = useCallback(async () => {
@@ -97,7 +97,7 @@ export function OnboardingRuntimeStep({
       if (view.status === "running") return;
       setActiveTarget(null);
       if (view.status === "done" && view.ok) {
-        setInstalledHere(true);
+        setInstalledTarget(activeTarget);
         setError(null);
         announce("Chat runtime installed.");
       } else if (view.status === "done") {
@@ -156,7 +156,7 @@ export function OnboardingRuntimeStep({
           ))}
         </div>
       )}
-      {npmBusyLabel && !activeTarget ? <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{npmBusyLabel} is installing. Refresh when it finishes.</p> : null}
+      {npmBusyLabel && (!activeTarget || (target && activeTarget !== target)) ? <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{npmBusyLabel} is installing. Refresh when it finishes.</p> : null}
       {error ? <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">{error}</p> : null}
     </section>
   );

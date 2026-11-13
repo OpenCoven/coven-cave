@@ -6,8 +6,10 @@ import { advanceFirstUse, createQuickStartState, type FirstUseAction, type First
 import { LiveRegionProvider } from "./ui/live-region";
 import { FirstUseGuide } from "./first-use-guide";
 import { FirstUseAssistantPicker } from "./first-use-assistant-picker";
+import { OnboardingRuntimeStep } from "./onboarding-runtime-step";
 
-const fixture = vi.hoisted(() => ({ firstUse: {} as Record<string, unknown>, access: "read" as "read" | "write" | null, inheritedWrite: false, runtime: "ready", runtimeFailure: false, requests: [] as Array<{ url: string; body: Record<string, unknown> }>, refuseGrant: false, refuseSave: false }));
+const fixture = vi.hoisted(() => ({ firstUse: {} as Record<string, unknown>, access: "read" as "read" | "write" | null, inheritedWrite: false, runtime: "ready", runtimeFailure: false, requests: [] as Array<{ url: string; body: Record<string, unknown> }>, refuseGrant: false, refuseSave: false, poll: undefined as undefined | (() => Promise<void>) }));
+vi.mock("@/lib/use-pausable-poll", () => ({ usePausablePoll: (callback: () => Promise<void>, _interval: number, options: { enabled: boolean }) => { fixture.poll = options.enabled ? callback : undefined; } }));
 vi.mock("./first-use-provider", () => ({ useFirstUse: () => fixture.firstUse }));
 vi.mock("@/lib/use-projects", () => ({ useProjects: () => ({ projects: [{ id: "p", name: "Practice", root: "/synthetic/practice" }, { id: "q", name: "Other", root: "/synthetic/other" }], loading: false, error: null, reload() {} }) }));
 vi.mock("./ui/modal", () => ({ Modal: ({ children }: { children: ReactNode }) => createElement("div", null, children) }));
@@ -23,6 +25,7 @@ function payload() { return fixture.firstUse.payload as { state: FirstUseState; 
 beforeEach(() => {
   fixture.access = "read"; fixture.inheritedWrite = false; fixture.runtime = "ready"; fixture.runtimeFailure = false; fixture.requests = []; fixture.refuseGrant = false; fixture.refuseSave = false;
   onStartChat.mockClear(); onUseDefaults.mockClear(); onClose.mockClear();
+  fixture.poll = undefined;
   fixture.firstUse = {
     open: true, busy: false, error: null, closeGuide: onClose,
     refresh: async () => payload(),
@@ -78,6 +81,23 @@ test("a failed progress read remains visible and retryable inside the guide", as
   await renderGuide();
   expect(text()).toContain("Saved context temporarily unavailable");
   expect(button("Retry")).toBeDefined();
+});
+test("another runtime's completed install cannot mark the selected runtime ready", async () => {
+  let done = false;
+  const ready = vi.fn();
+  vi.stubGlobal("fetch", async (url: string) => {
+    if (url === "/api/harnesses") return Response.json({ harnesses: [{ id: "codex", installed: done, chatSupported: true }, { id: "claude", installed: false, chatSupported: true }] });
+    if (url === "/api/onboarding/install") return Response.json({ status: "idle", npmBusy: !done, npmBusyLabel: "Codex" });
+    if (url.endsWith("target=codex")) return Response.json({ status: done ? "done" : "running", ok: done });
+    return Response.json({ status: "idle" });
+  });
+  await act(async () => { renderer = create(createElement(LiveRegionProvider, null, createElement(OnboardingRuntimeStep, { open: true, target: "claude", onReadyChange: ready }))); });
+  expect(button("Install Claude Code").props.disabled).toBe(true);
+  expect(fixture.poll).toBeDefined();
+  done = true;
+  await act(async () => fixture.poll!());
+  expect(ready.mock.lastCall).toEqual([false]);
+  expect(button("Install Claude Code").props.disabled).toBe(false);
 });
 test("changing the assistant during fresh setup keeps a single acting familiar", async () => {
   payload().state = createQuickStartState();

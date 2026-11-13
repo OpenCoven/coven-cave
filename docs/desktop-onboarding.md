@@ -39,7 +39,7 @@ Progress is stored with a revision on the host. New installations use version-tw
 
 ### Qualification for #6485
 
-Local qualification on 13 November 2026 passed 25 focused app/API/style test files, typecheck, lint, token and test-wiring gates, and the production build with bundle budgets intact. The production browser fixture passed 99 cases across desktop Chromium, Pixel-width Chromium, and iPhone-width WebKit, including keyboard focus/return, narrow light and alternate themes, reduced motion, explicit Read/Full, failed-progress recovery, draft retention, first-send Retry, and Stop. The fixture uses synthetic projects, grants, and runtime responses; these results do not establish real-account authentication, a live provider response, installed Tauri behavior, physical-device behavior, or human accessibility acceptance. The exact protected-delivery receipt and intentionally preserved worktree disposition are recorded on [#6485](https://github.com/OpenCoven/coven-cave/issues/6485).
+Local qualification on 13 November 2026 passed 27 focused app/API/style test files, typecheck, lint, token and test-wiring gates, and the production build with bundle budgets intact. The production browser fixture passed 105 cases across desktop Chromium, Pixel-width Chromium, and iPhone-width WebKit, including keyboard focus/return, narrow light and alternate themes, reduced motion, explicit Read/Full, failed-progress recovery, draft retention, first-send Retry, and Stop. The fixture uses synthetic projects, grants, and runtime responses; these results do not establish real-account authentication, a live provider response, installed Tauri behavior, physical-device behavior, or human accessibility acceptance. The exact protected-delivery receipt and intentionally preserved worktree disposition are recorded on [#6485](https://github.com/OpenCoven/coven-cave/issues/6485).
 
 ## Credentials belong to the user
 
@@ -79,8 +79,8 @@ Primary onboarding copy should introduce only:
 | Runtime | The installed application that runs a familiar, such as Codex, Hermes, or OpenCode. Do not lead with "harness" or "adapter". |
 | Account or provider | The subscription, OAuth account, API provider, or local model service used by the runtime. |
 | Model | The model selected by the runtime or user. Show it after runtime selection. |
-| Familiar | Meet the others offers a small familiar deck and focused creation; More ways to connect opens the existing advanced configuration. | Creates through `/api/familiars`; uncertain creation waits for an authoritative refresh before retry. | Real runtime sign-in may still be required on first send. |
-| Project | Choose a registered folder, select a folder, or create a dedicated starter, with an actual file preview. | Reuses existing project registration and root-pinning routes. | Packaged folder-picker IPC still requires installed-app qualification. |
+| Familiar | The configured assistant the user talks to. |
+| Project | A registered project folder. |
 | Access | The explicit read or full project permission granted to a familiar. |
 
 Manifests, bindings, adapter sources, executable paths, and internal storage

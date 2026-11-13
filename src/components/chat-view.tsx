@@ -3478,15 +3478,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   });
   const initialPromptSentRef = useRef(false);
   const initialDraftConsumedRef = useRef(false);
-  const [starterDraftConflict, setStarterDraftConflict] = useState<string | null>(null);
+  const [starterDraftConflict, setStarterDraftConflict] = useState<{ key: string; text: string } | null>(null);
+  const currentStarterConflict = starterDraftConflict?.key === scopedDraftKey ? starterDraftConflict : null;
   useEffect(() => {
     if (!initialDraft || initialDraftConsumedRef.current) return;
     const decision = initialComposerDraftDecision({ incoming: initialDraft, current: input, sessionId, expectedProject: projectRoot, project: activeProjectRoot, ready: projectLaunchReady });
     if (decision === "wait") return;
     initialDraftConsumedRef.current = true;
     if (decision === "apply") setInput(initialDraft);
-    else if (decision === "review") setStarterDraftConflict(initialDraft);
-  }, [initialDraft, input, sessionId, projectRoot, activeProjectRoot, projectLaunchReady, setInput]);
+    else if (decision === "review") setStarterDraftConflict({ key: scopedDraftKey, text: initialDraft });
+  }, [initialDraft, input, sessionId, projectRoot, activeProjectRoot, projectLaunchReady, scopedDraftKey, setInput]);
   /** True while THIS instance's sendRaw reader loop is running. The owner
    *  applies stream events itself (handleEvent), so it never needs the
    *  settle-refetch below; an instance that merely ADOPTED a live snapshot
@@ -8648,7 +8649,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onPrev={findPrev}
         onClose={closeFind}
       />
-      {starterDraftConflict ? <aside className="first-use-nudge" aria-label="Starter request needs review"><span>Your existing draft is kept. Use the onboarding starter instead?</span><Button variant="ghost" size="xs" onClick={() => { setInput(starterDraftConflict); setStarterDraftConflict(null); }}>Use starter request</Button><Button variant="ghost" size="xs" onClick={() => setStarterDraftConflict(null)}>Keep my draft</Button></aside> : null}
+      {currentStarterConflict ? <aside className="first-use-nudge" aria-label="Starter request needs review"><span>Your existing draft is kept. Use the onboarding starter instead?</span><Button variant="ghost" size="xs" onClick={() => { if (currentDraftKeyRef.current !== currentStarterConflict.key) return; setInput(currentStarterConflict.text); setStarterDraftConflict(null); }}>Use starter request</Button><Button variant="ghost" size="xs" onClick={() => setStarterDraftConflict(null)}>Keep my draft</Button></aside> : null}
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
