@@ -1,0 +1,51 @@
+{
+  "qualifiedNativeSource": "7eb96638362aa0d7138788f7cbaf6c698d42c863",
+  "nativeSourceHashes": {
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift": "8b2967c094a5da6364ec9bf4bd8acb4d43a5be170ce2dac7d862f1621ba07928",
+    "apps/ios/CovenCave/CovenCaveTests/ToolOutputTests.swift": "fbf13414bbe6b08c93eef97b7ede9ec37e160a25792a67aba41e7361b1044499",
+    "apps/ios/CovenCave/CovenCave/Networking/ToolOutputPreview.swift": "975ad369216b95567f9b36135452a9e6b2a9fdef21c06245d1b36dd7d81f3d6b",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "d4c505c1423a367d894c37a658993aa51686f0d74b75d77291a5eb2d3c006d94"
+  },
+  "nativeDebugBinaries": {
+    "CovenCave": "e306f37fe52fcc4f976f877c28fbe000fb70d763d8bb77f43f8764c98e0531b1",
+    "CovenCave.debug.dylib": "e748ad5c3f708e15c739bc94f88dc866cfd0ef242bd58fc79a4987979b45622f"
+  },
+  "nativeRelease": {
+    "sourceCommit": "7eb96638362aa0d7138788f7cbaf6c698d42c863",
+    "rendererSha256": "8b2967c094a5da6364ec9bf4bd8acb4d43a5be170ce2dac7d862f1621ba07928",
+    "startedUnix": 1794546141.985922,
+    "command": [
+      "xcodebuild",
+      "test",
+      "-project",
+      "apps/ios/CovenCave/CovenCave.xcodeproj",
+      "-scheme",
+      "CovenCavePerformance",
+      "-destination",
+      "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+      "-derivedDataPath",
+      "/private/tmp/nova6064-20261112/derived-data-performance",
+      "-resultBundlePath",
+      "/private/tmp/nova6064-20261112/native-current-release-final.xcresult",
+      "-parallel-testing-enabled",
+      "NO",
+      "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+      "CODE_SIGNING_ALLOWED=YES",
+      "CODE_SIGN_IDENTITY=-"
+    ],
+    "scope": "Ordinary ad-hoc Release signature; owned simulator only; offline rich120 actual earlier-entry scroll journey. App aggregate spans are not frame/hitch measurements.",
+    "processPid": 5873,
+    "retainedCaptures": 5,
+    "exitCode": 0,
+    "finishedUnix": 1794546514.244771,
+    "binarySha256": "88b82acb35fc04cf0983278c9b81d48a0efe9d46b0b731324d25bcb653971fe1"
+  },
+  "web": {
+    "sourceCommit": "40a9ec3e5517f5b13f42eb878e98b4f5cab5dbe5",
+    "buildId": "G8PGZ7Uq62CeuoLK3Lov8",
+    "standaloneServerSha256": "3bd1bf3cca9ec7e5a3e5e4cab82fc8ff85ff24ceca5f715f863484293162d8fa",
+    "serverMjsSha256": "e2162c4fc4adc07dbbab3bd1fba98c1ead10a26e32d21157ade0b156a33282e2",
+    "productionWebPathsUnchangedThroughNativeFinal": true
+  },
+  "qualificationLimits": "These are development-source/client receipts, not an adopted #5767 release tuple, packaged rendered UI, physical-device or human acceptance. Final evidence-only PR head and its exact hosted checks are recorded in the canonical issue handoff."
+}

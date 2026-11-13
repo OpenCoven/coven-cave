@@ -1,0 +1,15 @@
+{
+  "productName": "Cave6064Qualification",
+  "identifier": "ai.opencoven.cave.qualification.nova6064",
+  "bundle": {
+    "createUpdaterArtifacts": false
+  },
+  "build": {
+    "devUrl": null
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": []
+    }
+  }
+}

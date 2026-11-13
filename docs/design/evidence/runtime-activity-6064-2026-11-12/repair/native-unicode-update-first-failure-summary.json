@@ -1,0 +1,46 @@
+{
+  "devicesAndConfigurations": [
+    {
+      "device": {
+        "architecture": "arm64",
+        "deviceId": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName": "cave-6064-nova-20261112",
+        "modelName": "iPhone 17",
+        "osBuildNumber": "24B8117",
+        "osVersion": "27.2",
+        "platform": "iOS Simulator"
+      },
+      "expectedFailures": 0,
+      "failedTests": 1,
+      "passedTests": 0,
+      "skippedTests": 0,
+      "testPlanConfiguration": {
+        "configurationId": "1",
+        "configurationName": "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription": "CovenCave \u00b7 Built with macOS 27.2.1",
+  "expectedFailures": 0,
+  "failedTests": 1,
+  "finishTime": 1794545863.82,
+  "passedTests": 0,
+  "result": "Failed",
+  "runtimeWarnings": [],
+  "skippedTests": 0,
+  "startTime": 1794545810.79,
+  "statistics": [],
+  "testFailures": [
+    {
+      "failureText": "XCTAssertEqual failed: (\"[99, 97, 102, 195, 169]\") is not equal to (\"[99, 97, 102, 101, 204, 129]\") - Canonically equivalent results still replace the exact projected bytes",
+      "targetName": "CovenCaveTests",
+      "testIdentifier": 1,
+      "testIdentifierString": "ToolOutputTests/testLargePlainTextSurfacePreservesSelectionAndClearsPrivateContent()",
+      "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveTests/ToolOutputTests/testLargePlainTextSurfacePreservesSelectionAndClearsPrivateContent",
+      "testName": "testLargePlainTextSurfacePreservesSelectionAndClearsPrivateContent()"
+    }
+  ],
+  "title": "Test - CovenCave",
+  "topInsights": [],
+  "totalTestCount": 1
+}

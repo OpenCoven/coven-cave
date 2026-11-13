@@ -1,5 +1,7 @@
 # Golden-14 diagnostic checkpoint, 12 November 2026
 
+Historical checkpoint; the subsequent repair and expanded qualification are recorded in the [continuation packet](repair/README.md). Original failures and limitations below are preserved.
+
 Status: incomplete. This packet reproduces #6064's dropped WebKit Retry on current main and retains request/event evidence. It contains no product repair, no green regression claim and no full golden-14 acceptance. The activated eight-hour wall-clock window elapsed during permission waits; execution stopped for handoff after collecting the in-flight run.
 
 ## Candidate and boundary

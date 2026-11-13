@@ -1,0 +1,984 @@
+{
+  "method": "Baseline-candidate-candidate-baseline; same identical test file, one worker, zero retries, production standalone server per invocation, same desktop browser presets; native compilation/launch held during measurement. Shared host is not controlled hardware.",
+  "limitations": "Ten samples per engine per source, not p95, CPU cost, a hitch budget or a performance-improvement claim. Exclude each first frameIntervalsMs entry because it is not an inter-frame delta. Long-task API support varies by engine.",
+  "summary": [
+    {
+      "label": "baseline",
+      "project": "chromium-6064",
+      "samples": 10,
+      "reloadMedianMs": 945.0105414999998,
+      "reloadRangeMs": [
+        458.6258749999997,
+        1275.3644590000004
+      ],
+      "openMedianMs": 135.68768750000027,
+      "openRangeMs": [
+        104.92937499999971,
+        531.0936250000004
+      ],
+      "observedInterFrameRangeMs": [
+        0,
+        56.799999999999955
+      ],
+      "minimumActualScrollTravelPx": 39297,
+      "maxObservedLongTaskMs": 0,
+      "domNodeRange": [
+        6854,
+        6869
+      ]
+    },
+    {
+      "label": "baseline",
+      "project": "webkit-6064",
+      "samples": 10,
+      "reloadMedianMs": 921.3323965000002,
+      "reloadRangeMs": [
+        385.82212500000014,
+        1001.3636660000002
+      ],
+      "openMedianMs": 180.06031249999978,
+      "openRangeMs": [
+        126.30337500000041,
+        426.99762499999997
+      ],
+      "observedInterFrameRangeMs": [
+        10,
+        41
+      ],
+      "minimumActualScrollTravelPx": 39297,
+      "maxObservedLongTaskMs": 0,
+      "domNodeRange": [
+        6869,
+        6869
+      ]
+    },
+    {
+      "label": "candidate",
+      "project": "chromium-6064",
+      "samples": 10,
+      "reloadMedianMs": 912.037979,
+      "reloadRangeMs": [
+        894.6032500000001,
+        954.0014170000002
+      ],
+      "openMedianMs": 122.74481250000053,
+      "openRangeMs": [
+        108.60912499999995,
+        162.27887500000043
+      ],
+      "observedInterFrameRangeMs": [
+        0,
+        41.799999999999955
+      ],
+      "minimumActualScrollTravelPx": 38636,
+      "maxObservedLongTaskMs": 0,
+      "domNodeRange": [
+        6869,
+        6869
+      ]
+    },
+    {
+      "label": "candidate",
+      "project": "webkit-6064",
+      "samples": 10,
+      "reloadMedianMs": 419.9656665,
+      "reloadRangeMs": [
+        352.4329160000002,
+        933.5036660000001
+      ],
+      "openMedianMs": 269.59062500000005,
+      "openRangeMs": [
+        133.48466699999972,
+        294.5501250000002
+      ],
+      "observedInterFrameRangeMs": [
+        8,
+        28
+      ],
+      "minimumActualScrollTravelPx": 38768,
+      "maxObservedLongTaskMs": 0,
+      "domNodeRange": [
+        6869,
+        6869
+      ]
+    }
+  ],
+  "invocations": [
+    {
+      "ordinal": 1,
+      "label": "baseline",
+      "baseSource": "ac704cae2bba6a2cd02329a4009a954a8e5cd9ca",
+      "candidateSource": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+      "buildId": "et5BewbkeAbOcsKyw5pg-",
+      "exitCode": 0,
+      "startedUnix": 1794543117.1836958,
+      "finishedUnix": 1794543148.671116,
+      "testSha256": "84984d8de89a8fa7dab781677c564a4bfdfa089ec011900d21df4e57bc154721",
+      "report": "matched-1-baseline.json",
+      "rawReportSha256": "39f63200da58f4a925eea0a5e27b933bc787049bf76f7d0781ab1180112d9319",
+      "stats": {
+        "startTime": "2026-11-13T04:11:58.509Z",
+        "duration": 30126.109,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "projects": [
+        {
+          "project": "chromium-6064",
+          "status": "passed",
+          "retry": 0,
+          "calls": 500,
+          "samples": [
+            {
+              "reloadMs": 1090.582042,
+              "openMs": 229.23220900000024,
+              "nodes": 6854,
+              "scroll": {
+                "elapsedMs": 64,
+                "frameIntervalsMs": [
+                  -0.2340000059605245,
+                  5.83400000000006,
+                  7.599999999999909,
+                  28.700000000000045,
+                  6.7999999999999545
+                ],
+                "longTasksMs": [],
+                "travelledPx": 79916,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 1275.3644590000004,
+              "openMs": 135.2889580000001,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 143.2999999821186,
+                "frameIntervalsMs": [
+                  9.92999998807909,
+                  21.170000000000073,
+                  39.5,
+                  56.799999999999955,
+                  7.5
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77933,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 1020.6283329999997,
+              "openMs": 531.0936250000004,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 57.400000005960464,
+                "frameIntervalsMs": [
+                  -6.200000005960419,
+                  7.599999999999909,
+                  8.799999999999955,
+                  8.100000000000136,
+                  17.09999999999991
+                ],
+                "longTasksMs": [],
+                "travelledPx": 79916,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 1171.6578339999996,
+              "openMs": 128.7440000000006,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 79.30000001192093,
+                "frameIntervalsMs": [
+                  -3.4019999821186957,
+                  8.402000000000044,
+                  8.299999999999955,
+                  16.700000000000045,
+                  33.299999999999955
+                ],
+                "longTasksMs": [],
+                "travelledPx": 79255,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 919.864458,
+              "openMs": 104.92937499999971,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 97.19999998807907,
+                "frameIntervalsMs": [
+                  17.729999994039645,
+                  0,
+                  16.569999999999936,
+                  25,
+                  16.700000000000045
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77933,
+                "maxScrollPx": 19979
+              }
+            }
+          ]
+        },
+        {
+          "project": "webkit-6064",
+          "status": "passed",
+          "retry": 0,
+          "calls": 500,
+          "samples": [
+            {
+              "reloadMs": 385.82212500000014,
+              "openMs": 255.653417,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 73,
+                "frameIntervalsMs": [
+                  14,
+                  16,
+                  10,
+                  18,
+                  15
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77790,
+                "maxScrollPx": 19977
+              }
+            },
+            {
+              "reloadMs": 999.9894999999997,
+              "openMs": 137.4622500000005,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 72,
+                "frameIntervalsMs": [
+                  3,
+                  15,
+                  16,
+                  22,
+                  16
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77796,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 615.7138749999995,
+              "openMs": 243.88966699999946,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 73,
+                "frameIntervalsMs": [
+                  3,
+                  22,
+                  15,
+                  17,
+                  16
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77790,
+                "maxScrollPx": 19977
+              }
+            },
+            {
+              "reloadMs": 913.3538340000005,
+              "openMs": 126.30337500000041,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 83,
+                "frameIntervalsMs": [
+                  9,
+                  17,
+                  18,
+                  21,
+                  17
+                ],
+                "longTasksMs": [],
+                "travelledPx": 39297,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 949.7687919999998,
+              "openMs": 131.2569170000006,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 74,
+                "frameIntervalsMs": [
+                  2,
+                  17,
+                  16,
+                  22,
+                  17
+                ],
+                "longTasksMs": [],
+                "travelledPx": 39297,
+                "maxScrollPx": 19979
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ordinal": 2,
+      "label": "candidate",
+      "baseSource": "ac704cae2bba6a2cd02329a4009a954a8e5cd9ca",
+      "candidateSource": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+      "buildId": "-bY9qlcmXSqkfZGc6qxBV",
+      "exitCode": 0,
+      "startedUnix": 1794543148.674131,
+      "finishedUnix": 1794543170.198199,
+      "testSha256": "84984d8de89a8fa7dab781677c564a4bfdfa089ec011900d21df4e57bc154721",
+      "report": "matched-2-candidate.json",
+      "rawReportSha256": "c608e1b30d59403d22a94910baa26d949d9a0347ab6dffbf627af87d0a9a43e9",
+      "stats": {
+        "startTime": "2026-11-13T04:12:29.251Z",
+        "duration": 20900.609,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "projects": [
+        {
+          "project": "chromium-6064",
+          "status": "passed",
+          "retry": 0,
+          "calls": 500,
+          "samples": [
+            {
+              "reloadMs": 954.0014170000002,
+              "openMs": 162.27887500000043,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 71.19999998807907,
+                "frameIntervalsMs": [
+                  -4.603999994039441,
+                  17.003999999999905,
+                  8.400000000000091,
+                  16.699999999999818,
+                  24.90000000000009
+                ],
+                "longTasksMs": [],
+                "travelledPx": 38636,
+                "maxScrollPx": 19318
+              }
+            },
+            {
+              "reloadMs": 909.3192079999999,
+              "openMs": 108.60912499999995,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 98.7999999821186,
+                "frameIntervalsMs": [
+                  0.127999988079182,
+                  8.571999999999889,
+                  16.700000000000045,
+                  33.299999999999955,
+                  16
+                ],
+                "longTasksMs": [],
+                "travelledPx": 79255,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 931.2290000000003,
+              "openMs": 125.10525000000052,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 102.7999999821186,
+                "frameIntervalsMs": [
+                  17.329999994039554,
+                  8.170000000000073,
+                  33.5,
+                  25,
+                  8.199999999999818
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77933,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 894.6032500000001,
+              "openMs": 120.38437500000055,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 96.40000000596046,
+                "frameIntervalsMs": [
+                  20.597999999999956,
+                  0.10200000000008913,
+                  15.700000000000045,
+                  26,
+                  16.59999999999991
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77933,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 926.326916,
+              "openMs": 128.99575000000004,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 106.59999999403954,
+                "frameIntervalsMs": [
+                  0.36400000596040627,
+                  9.036000000000058,
+                  41.59999999999991,
+                  16.700000000000045,
+                  25.100000000000136
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77933,
+                "maxScrollPx": 19979
+              }
+            }
+          ]
+        },
+        {
+          "project": "webkit-6064",
+          "status": "passed",
+          "retry": 0,
+          "calls": 500,
+          "samples": [
+            {
+              "reloadMs": 352.4329160000002,
+              "openMs": 270.97837500000014,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 61,
+                "frameIntervalsMs": [
+                  3,
+                  9,
+                  16,
+                  19,
+                  14
+                ],
+                "longTasksMs": [],
+                "travelledPx": 79247,
+                "maxScrollPx": 19977
+              }
+            },
+            {
+              "reloadMs": 423.0054580000001,
+              "openMs": 294.5501250000002,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 72,
+                "frameIntervalsMs": [
+                  11,
+                  16,
+                  11,
+                  18,
+                  15
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77796,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 378.56616600000007,
+              "openMs": 263.8530410000003,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 79,
+                "frameIntervalsMs": [
+                  18,
+                  11,
+                  17,
+                  17,
+                  16
+                ],
+                "longTasksMs": [],
+                "travelledPx": 39293,
+                "maxScrollPx": 19977
+              }
+            },
+            {
+              "reloadMs": 381.38475000000017,
+              "openMs": 291.8204999999998,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 68,
+                "frameIntervalsMs": [
+                  2,
+                  17,
+                  12,
+                  21,
+                  16
+                ],
+                "longTasksMs": [],
+                "travelledPx": 39295,
+                "maxScrollPx": 19977
+              }
+            },
+            {
+              "reloadMs": 921.2005419999996,
+              "openMs": 133.48466699999972,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 73,
+                "frameIntervalsMs": [
+                  8,
+                  18,
+                  11,
+                  19,
+                  17
+                ],
+                "longTasksMs": [],
+                "travelledPx": 39297,
+                "maxScrollPx": 19979
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ordinal": 3,
+      "label": "candidate",
+      "baseSource": "ac704cae2bba6a2cd02329a4009a954a8e5cd9ca",
+      "candidateSource": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+      "buildId": "-bY9qlcmXSqkfZGc6qxBV",
+      "exitCode": 0,
+      "startedUnix": 1794543170.20251,
+      "finishedUnix": 1794543188.889262,
+      "testSha256": "84984d8de89a8fa7dab781677c564a4bfdfa089ec011900d21df4e57bc154721",
+      "report": "matched-3-candidate.json",
+      "rawReportSha256": "ed3b6b6fcc06525e9a51b706b255687013a2488a8c51b0836076bb2d3ec76a45",
+      "stats": {
+        "startTime": "2026-11-13T04:12:50.617Z",
+        "duration": 18231.239,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "projects": [
+        {
+          "project": "chromium-6064",
+          "status": "passed",
+          "retry": 0,
+          "calls": 500,
+          "samples": [
+            {
+              "reloadMs": 914.75675,
+              "openMs": 144.66062499999998,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 105.30000001192093,
+                "frameIntervalsMs": [
+                  11.759999988079016,
+                  7.440000000000055,
+                  25.799999999999955,
+                  33.40000000000009,
+                  16.59999999999991
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77933,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 900.8554589999999,
+              "openMs": 117.41045800000029,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 105.5,
+                "frameIntervalsMs": [
+                  -7.599999988079162,
+                  16.5,
+                  16.90000000000009,
+                  41.700000000000045,
+                  24.899999999999864
+                ],
+                "longTasksMs": [],
+                "travelledPx": 39297,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 896.2811669999992,
+              "openMs": 118.57691599999998,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 115.09999999403954,
+                "frameIntervalsMs": [
+                  -2.5720000178814644,
+                  8.372000000000071,
+                  16.59999999999991,
+                  41.600000000000136,
+                  33.399999999999864
+                ],
+                "longTasksMs": [],
+                "travelledPx": 79255,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 941.5142089999999,
+              "openMs": 118.28616600000078,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 96.40000000596046,
+                "frameIntervalsMs": [
+                  -5.9000000059604645,
+                  8.200000000000045,
+                  16.59999999999991,
+                  41.799999999999955,
+                  33.30000000000018
+                ],
+                "longTasksMs": [],
+                "travelledPx": 79255,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 896.208791,
+              "openMs": 155.62995799999953,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 83.30000001192093,
+                "frameIntervalsMs": [
+                  -3.0019999821186047,
+                  0,
+                  16.60200000000009,
+                  33.399999999999864,
+                  33
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77933,
+                "maxScrollPx": 19979
+              }
+            }
+          ]
+        },
+        {
+          "project": "webkit-6064",
+          "status": "passed",
+          "retry": 0,
+          "calls": 500,
+          "samples": [
+            {
+              "reloadMs": 431.802958,
+              "openMs": 287.7334169999999,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 60,
+                "frameIntervalsMs": [
+                  2,
+                  8,
+                  17,
+                  17,
+                  16
+                ],
+                "longTasksMs": [],
+                "travelledPx": 38768,
+                "maxScrollPx": 19316
+              }
+            },
+            {
+              "reloadMs": 933.5036660000001,
+              "openMs": 142.18687499999987,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 70,
+                "frameIntervalsMs": [
+                  8,
+                  18,
+                  10,
+                  18,
+                  16
+                ],
+                "longTasksMs": [],
+                "travelledPx": 39297,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 373.48062500000015,
+              "openMs": 268.20287499999995,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 71,
+                "frameIntervalsMs": [
+                  5,
+                  21,
+                  12,
+                  17,
+                  16
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77790,
+                "maxScrollPx": 19977
+              }
+            },
+            {
+              "reloadMs": 926.8715830000001,
+              "openMs": 140.1098750000001,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 92,
+                "frameIntervalsMs": [
+                  2,
+                  22,
+                  28,
+                  23,
+                  17
+                ],
+                "longTasksMs": [],
+                "travelledPx": 39297,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 416.9258749999999,
+              "openMs": 272.07124999999996,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 85,
+                "frameIntervalsMs": [
+                  11,
+                  14,
+                  13,
+                  28,
+                  18
+                ],
+                "longTasksMs": [],
+                "travelledPx": 79248,
+                "maxScrollPx": 19977
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ordinal": 4,
+      "label": "baseline",
+      "baseSource": "ac704cae2bba6a2cd02329a4009a954a8e5cd9ca",
+      "candidateSource": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+      "buildId": "et5BewbkeAbOcsKyw5pg-",
+      "exitCode": 0,
+      "startedUnix": 1794543188.897592,
+      "finishedUnix": 1794543208.529801,
+      "testSha256": "84984d8de89a8fa7dab781677c564a4bfdfa089ec011900d21df4e57bc154721",
+      "report": "matched-4-baseline.json",
+      "rawReportSha256": "bd664775f41712c8b4d5e6af990b3c706dd91496e0751e3ddf14c47496623565",
+      "stats": {
+        "startTime": "2026-11-13T04:13:09.353Z",
+        "duration": 19146.236,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "projects": [
+        {
+          "project": "chromium-6064",
+          "status": "passed",
+          "retry": 0,
+          "calls": 500,
+          "samples": [
+            {
+              "reloadMs": 928.72325,
+              "openMs": 144.99304200000006,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 97.30000001192093,
+                "frameIntervalsMs": [
+                  18.06400000596045,
+                  16.635999999999967,
+                  16.700000000000045,
+                  25,
+                  8
+                ],
+                "longTasksMs": [],
+                "travelledPx": 39297,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 915.6077089999999,
+              "openMs": 135.16308300000037,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 95.90000000596046,
+                "frameIntervalsMs": [
+                  -1.97199999999998,
+                  13.172000000000025,
+                  16.399999999999864,
+                  33,
+                  16.700000000000045
+                ],
+                "longTasksMs": [],
+                "travelledPx": 40209,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 458.6258749999997,
+              "openMs": 173.8597920000002,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 95.59999999403954,
+                "frameIntervalsMs": [
+                  -11.80600000000004,
+                  16.105999999999995,
+                  8.5,
+                  25.600000000000023,
+                  41.10000000000002
+                ],
+                "longTasksMs": [],
+                "travelledPx": 40460,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 922.0463330000002,
+              "openMs": 133.43145800000002,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 107.39999997615814,
+                "frameIntervalsMs": [
+                  13.093999976158102,
+                  8.30600000000004,
+                  16.59999999999991,
+                  25,
+                  16.800000000000182
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77933,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 961.2978329999996,
+              "openMs": 136.08641700000044,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 79.30000001192093,
+                "frameIntervalsMs": [
+                  -5.935999999999922,
+                  8.235999999999876,
+                  8.400000000000091,
+                  33.299999999999955,
+                  8.299999999999955
+                ],
+                "longTasksMs": [],
+                "travelledPx": 80577,
+                "maxScrollPx": 19979
+              }
+            }
+          ]
+        },
+        {
+          "project": "webkit-6064",
+          "status": "passed",
+          "retry": 0,
+          "calls": 500,
+          "samples": [
+            {
+              "reloadMs": 434.66041700000005,
+              "openMs": 311.66879199999994,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 70,
+                "frameIntervalsMs": [
+                  4,
+                  16,
+                  17,
+                  21,
+                  12
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77790,
+                "maxScrollPx": 19977
+              }
+            },
+            {
+              "reloadMs": 929.3109589999999,
+              "openMs": 154.3218339999994,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 61,
+                "frameIntervalsMs": [
+                  3,
+                  13,
+                  12,
+                  18,
+                  15
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77796,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 446.32087499999943,
+              "openMs": 426.99762499999997,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 113,
+                "frameIntervalsMs": [
+                  7,
+                  18,
+                  19,
+                  41,
+                  27
+                ],
+                "longTasksMs": [],
+                "travelledPx": 79248,
+                "maxScrollPx": 19977
+              }
+            },
+            {
+              "reloadMs": 1001.3636660000002,
+              "openMs": 176.41858299999967,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 65,
+                "frameIntervalsMs": [
+                  3,
+                  17,
+                  12,
+                  20,
+                  13
+                ],
+                "longTasksMs": [],
+                "travelledPx": 77796,
+                "maxScrollPx": 19979
+              }
+            },
+            {
+              "reloadMs": 973.7917909999996,
+              "openMs": 183.7020419999999,
+              "nodes": 6869,
+              "scroll": {
+                "elapsedMs": 69,
+                "frameIntervalsMs": [
+                  10,
+                  16,
+                  10,
+                  22,
+                  11
+                ],
+                "longTasksMs": [],
+                "travelledPx": 39297,
+                "maxScrollPx": 19979
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
