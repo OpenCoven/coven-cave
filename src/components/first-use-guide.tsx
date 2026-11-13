@@ -4,246 +4,233 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { StandardSelect } from "@/components/ui/select";
+import { DirectoryPickerModal } from "@/components/directory-picker-modal";
+import { FirstUseProjectPreview } from "@/components/first-use-project-preview";
+import { FirstUseAssistantPicker } from "@/components/first-use-assistant-picker";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useFirstUse } from "@/components/first-use-provider";
 import { resolveEffectiveAccess, type AccessGroupShape, type DirectGrantShape } from "@/lib/project-access-levels";
 import { useProjects } from "@/lib/use-projects";
 import type { Familiar } from "@/lib/types";
 import type { FirstUseDefaults } from "@/lib/first-use";
-import { CHAT_COMPOSER_PREFS_CHANGED_EVENT, readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
+import { CHAT_COMPOSER_PREFS_KEY, CHAT_COMPOSER_PREFS_CHANGED_EVENT, readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import { requestOpenSetup } from "@/lib/setup-events";
 import { emitProjectRegistryMutation } from "@/lib/project-registry-events";
 import { PROJECT_ACCESS_CHANGED_EVENT } from "@/lib/project-access-events";
+import { FIRST_USE_STARTERS } from "@/lib/first-use-starters";
+import { Icon } from "@/lib/icon";
 import "@/styles/first-use-guide.css";
 
 type Permissions = { grants: DirectGrantShape[]; accessGroups: AccessGroupShape[]; supremeFamiliarId: string | null };
-
+type AccessChoice = "read" | "full";
 export function FirstUseNudge() {
   const firstUse = useFirstUse();
-  const state = firstUse.payload?.state;
-  const repairMessage = firstUse.payload?.resolution.kind === "repair" ? firstUse.payload.resolution.message : null;
-  return <aside className="first-use-nudge" aria-label="Working with familiars">
-    <span>{firstUse.error ?? (!firstUse.loaded ? "Loading introduction…" : state?.step !== "complete" ? "Learn the method before your first run. Your progress is kept." : repairMessage ?? "Outcome → project → familiar → access → approval → progress → verification")}</span>
-    <Button variant="ghost" size="xs" onClick={firstUse.openGuide}>{state?.step !== "complete" ? "Continue introduction" : repairMessage ? "Review default context" : "Working with familiars"}</Button>
-  </aside>;
+  const repair = firstUse.payload?.resolution.kind === "repair" ? firstUse.payload.resolution.message : null;
+  return <aside className="first-use-nudge" aria-label="Getting started"><span>{firstUse.error ?? (!firstUse.loaded ? "Loading setup…" : firstUse.payload?.state.step !== "complete" ? "Choose an assistant, project and access. Your progress is kept." : repair ?? "Your workspace is ready.")}</span><Button variant="ghost" size="xs" onClick={firstUse.openGuide}>{repair && firstUse.payload?.state.step === "complete" ? "Review default context" : "Continue setup"}</Button></aside>;
 }
 
-export function FirstUseGuide({ familiars, canShow = true, onManageFamiliars, onUseDefaults }: { familiars: Familiar[]; canShow?: boolean; onManageFamiliars: () => void; onUseDefaults: (defaults: FirstUseDefaults) => void }) {
+export function FirstUseGuide({ familiars, canShow = true, onManageFamiliars, onUseDefaults, onStartChat, onFamiliarsChange }: {
+  familiars: Familiar[]; canShow?: boolean; onManageFamiliars: () => void;
+  onUseDefaults: (defaults: FirstUseDefaults) => void;
+  onStartChat?: (defaults: FirstUseDefaults, draft: string) => boolean | void | Promise<boolean | void>;
+  onFamiliarsChange?: () => void;
+}) {
   const firstUse = useFirstUse();
-  const { payload, error, busy, open, closeGuide: closeFirstUseGuide, mutate, refresh } = firstUse;
+  const { payload, busy, open, mutate, refresh } = firstUse;
   const projects = useProjects({ enabled: open && canShow });
-  const [projectId, setProjectId] = useState("");
-  const [scope, setScope] = useState<string[]>([]);
-  const [actorId, setActorId] = useState("");
-  const [editingContext, setEditingContext] = useState(false);
-  const [permissions, setPermissions] = useState<Permissions | null>(null);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [grantReview, setGrantReview] = useState<string | null>(null);
-  const [mutatingContext, setMutatingContext] = useState(false);
-  const [runtimeReady, setRuntimeReady] = useState<boolean | null>(null);
-  const [permissionEpoch, setPermissionEpoch] = useState(0);
-  const [accessChoice, setAccessChoice] = useState<"read" | "full" | null>(null);
-  const [formRevision, setFormRevision] = useState(0);
-  const formSeeded = useRef(false);
   const { announce } = useAnnouncer();
-  const state = payload?.state;
-  const savedDefaults = state?.defaults;
-  const isRepair = payload?.resolution.kind === "repair" && payload.resolution.reason !== "missing";
-  const contextStep = state?.step === "context" || editingContext || isRepair;
-  const canBuild = payload?.access.find((entry) => entry.familiarId === savedDefaults?.actingFamiliarId)?.level === "write";
+  const [view, setView] = useState<"assistant" | "project" | "chat">("assistant");
+  const [roster, setRoster] = useState<Familiar[]>([]);
+  const [actorId, setActorId] = useState("");
+  const [scope, setScope] = useState<string[]>([]);
+  const [projectId, setProjectId] = useState("");
+  const [accessChoice, setAccessChoice] = useState<AccessChoice | null>(null);
+  const [permissions, setPermissions] = useState<Permissions | null>(null);
+  const [runtime, setRuntime] = useState<{ key: string; ready: boolean } | null>(null);
+  const [epoch, setEpoch] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const [draft, setDraft] = useState(FIRST_USE_STARTERS[0].prompt);
+  const seeded = useRef(false);
+  const operation = useRef(false);
+  const currentSelection = useRef("");
+  const known = [...familiars, ...roster.filter((entry) => !familiars.some((live) => live.id === entry.id))];
+  const actor = known.find((entry) => entry.id === actorId);
   const project = projects.projects.find((entry) => entry.id === projectId);
-  const actor = familiars.find((entry) => entry.id === (contextStep ? actorId : savedDefaults?.actingFamiliarId));
-  const actorRuntimeId = actor?.id;
-  const actorHarness = actor?.harness;
-  const runtimeProjectId = contextStep ? projectId : savedDefaults?.projectId;
-  const example = state?.outcome === "inspect"
-    ? { outcome: "Explain the welcome export", criterion: "Name the source file and explain the exported value.", plan: "Read the sample welcome.ts, then explain its exported value with the file as evidence.", result: "The sample welcome.ts exports welcome with the string value ‘Welcome’. A caller can import that named value.", check: "The explanation names welcome.ts and matches the exported value shown in the sample." }
-    : { outcome: "Plan clearer welcome copy", criterion: "Name one small edit and a check that would verify it.", plan: "Propose a clearer greeting in the sample welcome.ts and name the check needed before accepting the change.", result: "Change welcome in the sample welcome.ts to ‘Welcome home’. After editing, check that the exported value equals ‘Welcome home’.", check: "The plan names the file, one concrete edit and a check. It does not claim the edit or check has run." };
-  const closeGuide = () => { setEditingContext(false); closeFirstUseGuide(); };
-  useEffect(() => { setAccessChoice(null); }, [savedDefaults?.projectId, savedDefaults?.actingFamiliarId]);
-  useEffect(() => { if (!canBuild && accessChoice === "full") setAccessChoice(null); }, [canBuild, accessChoice]);
+  const selectionKey = JSON.stringify([actorId, projectId]);
+  currentSelection.current = selectionKey;
+  const disabled = busy || working;
+  const stale = payload !== null && revision !== payload.state.revision;
+  const accessFor = (id: string) => permissions && projectId ? resolveEffectiveAccess({ directGrants: permissions.grants, groups: permissions.accessGroups, familiarId: id, projectId }) : null;
+  const effective = accessFor(actorId);
+  const ready = runtime?.key === selectionKey && runtime.ready;
+  const scopeReady = scope.length > 0 && scope.includes(actorId) && scope.every((id) => accessFor(id)?.level || id === actorId);
 
+  function seed() {
+    if (!payload) return;
+    const state = payload.state;
+    const nextActor = state.setupFamiliarId ?? state.defaults?.actingFamiliarId ?? "";
+    setActorId(nextActor);
+    setScope([...new Set([...(state.defaults?.familiarIds ?? []), ...(nextActor ? [nextActor] : [])])]);
+    setProjectId(state.defaults?.projectId ?? ""); setRevision(state.revision); setAccessChoice(null);
+    setView(state.step === "complete" && payload.resolution.kind === "ready" ? "chat" : state.step === "project" || state.defaults ? "project" : "assistant");
+    setError(null);
+  }
   useEffect(() => {
-    if (!open || !contextStep) { formSeeded.current = false; return; }
-    if (formSeeded.current || !state) return;
-    formSeeded.current = true;
-    setFormRevision(state.revision);
-    setProjectId(savedDefaults?.projectId ?? "");
-    setScope(savedDefaults?.familiarIds ?? []);
-    setActorId(savedDefaults?.actingFamiliarId ?? "");
-    setLocalError(null);
-    setGrantReview(null);
-  }, [open, contextStep, savedDefaults, state]);
-
+    if (!open || !canShow) { seeded.current = false; return; }
+    if (!seeded.current && payload) { seeded.current = true; seed(); }
+    // A later revision is a conflict to review, never an instruction to overwrite a draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, canShow, payload]);
   useEffect(() => {
     if (!open || !canShow) return;
     let cancelled = false;
     setPermissions(null);
-    void fetch("/api/project-grants", { cache: "no-store", signal: AbortSignal.timeout(10_000) })
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.error ?? "Couldn't load project access. Retry.");
-        if (!cancelled) setPermissions({ grants: data.grants ?? [], accessGroups: data.accessGroups ?? [], supremeFamiliarId: data.supremeFamiliarId ?? null });
-      }).catch((cause) => { if (!cancelled) setLocalError(cause instanceof Error ? cause.message : "Couldn't load project access. Retry."); });
+    void fetch("/api/project-grants", { cache: "no-store", signal: AbortSignal.timeout(10_000) }).then(async (response) => {
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error ?? "Couldn't load project access. Retry.");
+      if (!cancelled) setPermissions({ grants: data.grants ?? [], accessGroups: data.accessGroups ?? [], supremeFamiliarId: data.supremeFamiliarId ?? null });
+    }).catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "Couldn't load access."); });
     return () => { cancelled = true; };
-  }, [open, canShow, permissionEpoch]);
-
+  }, [open, canShow, epoch]);
   useEffect(() => {
-    if (!open || !canShow || !actorRuntimeId || !runtimeProjectId) { setRuntimeReady(null); return; }
+    if (!open || !canShow || !actorId || !projectId) { setRuntime(null); return; }
     let cancelled = false;
-    setRuntimeReady(null);
-    void fetch(`/api/onboarding/journey?runtimeFamiliarId=${encodeURIComponent(actorRuntimeId)}&projectId=${encodeURIComponent(runtimeProjectId)}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) })
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error("Couldn't verify this familiar’s runtime. Open setup or retry.");
-        if (!cancelled) setRuntimeReady(data.runtime?.familiarId === actorRuntimeId && data.runtime?.state === "ready");
-      }).catch((cause) => { if (!cancelled) { setRuntimeReady(false); setLocalError(cause instanceof Error ? cause.message : "Couldn't verify the runtime."); } });
+    setRuntime(null);
+    void fetch(`/api/onboarding/journey?runtimeFamiliarId=${encodeURIComponent(actorId)}&projectId=${encodeURIComponent(projectId)}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) }).then(async (response) => {
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error("Couldn't check this assistant’s runtime. Retry or open setup.");
+      if (!cancelled) setRuntime({ key: selectionKey, ready: data.runtime?.familiarId === actorId && data.runtime?.state === "ready" });
+    }).catch((cause) => { if (!cancelled) { setRuntime({ key: selectionKey, ready: false }); setError(cause instanceof Error ? cause.message : "Couldn't check the runtime."); } });
     return () => { cancelled = true; };
-  }, [open, canShow, actorRuntimeId, actorHarness, runtimeProjectId, permissionEpoch]);
+  }, [open, canShow, actorId, projectId, selectionKey, epoch]);
 
-  function accessFor(familiarId: string) {
-    if (!permissions || !projectId) return null;
-    return { ...resolveEffectiveAccess({ directGrants: permissions.grants, groups: permissions.accessGroups, familiarId, projectId }), supreme: permissions.supremeFamiliarId === familiarId };
-  }
-
-  async function createStarter() {
-    setMutatingContext(true);
-    setLocalError(null);
+  function selectActor(id: string) { setActorId(id); setScope((ids) => payload?.state.defaults ? [...new Set([...ids, id])] : [id]); setAccessChoice(null); setError(null); }
+  async function reloadFamiliars() {
     try {
-      const response = await fetch("/api/onboarding/journey", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "starter" }) });
+      const response = await fetch("/api/familiars", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+      const data = await response.json();
+      if (!response.ok || !data.ok || !Array.isArray(data.familiars)) throw new Error(data.error ?? "Couldn't refresh familiars.");
+      setRoster(data.familiars); onFamiliarsChange?.(); return data.familiars as Familiar[];
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Couldn't refresh familiars."); return null; }
+  }
+  async function chooseAssistant() {
+    if (!actor || stale || disabled || operation.current) return;
+    operation.current = true;
+    setWorking(true);
+    try { if (await mutate({ kind: "choose-assistant", familiarId: actor.id }, revision)) { setRevision(revision + 1); setView("project"); announce("Choose a project and review access."); } }
+    finally { operation.current = false; setWorking(false); }
+  }
+  async function addFolder(root: string, name: string) {
+    const existing = projects.projects.find((entry) => entry.root === root);
+    const added = existing ?? await projects.createProjectOrThrow(name, root);
+    setProjectId(added.id); setAccessChoice(null); setPickerOpen(false);
+    announce(`${added.name} selected. Review access before continuing.`);
+  }
+  async function createStarter() {
+    if (operation.current) return;
+    operation.current = true;
+    setWorking(true); setError(null);
+    try {
+      const response = await fetch("/api/onboarding/journey", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "starter" }) });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error ?? "Couldn't create the starter folder.");
-      const created = await projects.createProjectOrThrow(data.name, data.root);
-      setProjectId(created.id);
-      setScope([]);
-      setActorId("");
-      announce("Cave starter created. Choose its familiar scope and review access.");
-    } catch (cause) { setLocalError(cause instanceof Error ? cause.message : "Couldn't create the starter folder."); }
-    finally { setMutatingContext(false); }
+      await addFolder(data.root, data.name);
+    } catch (cause) { projects.reload(); setError(cause instanceof Error ? cause.message : "Couldn't create the starter folder."); }
+    finally { operation.current = false; setWorking(false); }
   }
-
-  async function grantRead(familiarId: string) {
-    setMutatingContext(true);
-    setLocalError(null);
+  async function saveProject() {
+    if (!project || !actor || !accessChoice || !effective || !scopeReady || !ready || stale || disabled || operation.current) return;
+    operation.current = true;
+    const key = selectionKey, choice = accessChoice;
+    const defaults = { projectId, familiarIds: [...scope], actingFamiliarId: actorId };
+    let nextRevision = revision;
+    setWorking(true); setError(null);
     try {
-      const response = await fetch("/api/project-grants", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetFamiliarId: familiarId, projectId, access: "read", expectedAccess: accessFor(familiarId)?.direct ?? null }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error ?? "Couldn't change project access.");
-      setPermissionEpoch((value) => value + 1);
-      // Adding a grant refreshes eligibility without clearing unrelated admitted
-      // conversations. Revocation keeps its existing invalidation path.
-      window.dispatchEvent(new CustomEvent(PROJECT_ACCESS_CHANGED_EVENT, { detail: { projectId } }));
-      emitProjectRegistryMutation();
-      setGrantReview(null);
-      announce("Read access granted. Review the effective access before continuing.");
-    } catch (cause) { setLocalError(cause instanceof Error ? cause.message : "Couldn't change project access."); }
-    finally { setMutatingContext(false); }
-  }
-
-  async function saveContext() {
-    if (!project || !actorId || scope.length === 0 || runtimeReady !== true) return;
-    if (await mutate({ kind: "context", defaults: { projectId, familiarIds: scope, actingFamiliarId: actorId } }, formRevision)) {
-      onUseDefaults({ projectId, familiarIds: scope, actingFamiliarId: actorId });
-      setEditingContext(false);
-      projects.reload();
-    }
-  }
-
-  async function reviewAccess() {
-    if (!accessChoice) return;
-    if (accessChoice === "full" && !canBuild) { setLocalError("This actor has Read access. Choose Explore or review write access."); return; }
-    try {
-      const storage = window.localStorage;
-      const previous = readChatComposerPrefs(storage);
-      writeChatComposerPrefs(storage, { ...previous, permissionMode: accessChoice });
-      if (readChatComposerPrefs(storage).permissionMode !== accessChoice) throw new Error("Couldn't save your access choice. Enable local storage, then retry.");
-      window.dispatchEvent(new Event(CHAT_COMPOSER_PREFS_CHANGED_EVENT));
-      if (!(await mutate({ kind: "review-access", permissionMode: accessChoice }))) {
-        const current = readChatComposerPrefs(storage);
-        if (JSON.stringify(current) === JSON.stringify({ ...previous, permissionMode: accessChoice })) writeChatComposerPrefs(storage, { ...current, permissionMode: previous.permissionMode });
-        window.dispatchEvent(new Event(CHAT_COMPOSER_PREFS_CHANGED_EVENT));
+      if (!effective.level || (choice === "full" && effective.level !== "write")) {
+        const response = await fetch("/api/project-grants", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ targetFamiliarId: actorId, projectId, access: choice === "full" ? "write" : "read", expectedAccess: effective.direct ?? null }) });
+        const data = await response.json();
+        if (!response.ok || !data.ok) { setAccessChoice(null); setEpoch((value) => value + 1); throw new Error(data.error ?? "Project access changed. Review it before trying again."); }
+        emitProjectRegistryMutation();
+        window.dispatchEvent(new CustomEvent(PROJECT_ACCESS_CHANGED_EVENT, { detail: { projectId } }));
       }
-    } catch (cause) { setLocalError(cause instanceof Error ? cause.message : "Couldn't save the access choice."); }
+      if (currentSelection.current !== key) throw new Error("The selection changed. Review access for the current project.");
+      if (payload?.state.version !== 2 || payload.state.setupFamiliarId !== actorId) {
+        if (!await mutate({ kind: "choose-assistant", familiarId: actorId }, nextRevision)) return;
+        nextRevision++; setRevision(nextRevision);
+      }
+      const storage = window.localStorage, previous = readChatComposerPrefs(storage);
+      const reviewed = { ...previous, permissionMode: choice };
+      writeChatComposerPrefs(storage, reviewed);
+      if (JSON.parse(storage.getItem(CHAT_COMPOSER_PREFS_KEY) ?? "null")?.permissionMode !== choice) throw new Error("Couldn't save your access choice. Enable local storage, then retry.");
+      window.dispatchEvent(new Event(CHAT_COMPOSER_PREFS_CHANGED_EVENT));
+      if (!await mutate({ kind: "finish-setup", defaults, permissionMode: choice }, nextRevision)) {
+        if (JSON.stringify(readChatComposerPrefs(storage)) === JSON.stringify(reviewed)) writeChatComposerPrefs(storage, previous);
+        window.dispatchEvent(new Event(CHAT_COMPOSER_PREFS_CHANGED_EVENT)); return;
+      }
+      setRevision(nextRevision + 1); setView("chat"); setEpoch((value) => value + 1); onUseDefaults(defaults);
+      announce("Your workspace is ready. Choose a starter or write your own request.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Couldn't save setup. Your selections are kept."); }
+    finally { operation.current = false; setWorking(false); }
   }
-
-  async function reloadSavedContext() {
-    const current = await refresh();
-    if (!current) return;
-    setProjectId(current.state.defaults?.projectId ?? "");
-    setScope(current.state.defaults?.familiarIds ?? []);
-    setActorId(current.state.defaults?.actingFamiliarId ?? "");
-    setFormRevision(current.state.revision);
-    formSeeded.current = true;
-    setLocalError(null);
-    setPermissionEpoch((value) => value + 1);
-    announce("Loaded the saved context. Review it before saving.");
+  async function openChat() {
+    if (!payload?.state.defaults || payload.resolution.kind !== "ready" || disabled || stale || operation.current) return;
+    operation.current = true;
+    setWorking(true);
+    try {
+      const result = await onStartChat?.(payload.state.defaults, draft);
+      if (result !== false) firstUse.closeGuide();
+      else setError("Couldn't open this context. Refresh the saved setup and try again; your draft is kept.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Couldn't open Chat. Your draft is kept."); }
+    finally { operation.current = false; setWorking(false); }
   }
-
-  const disabled = busy || mutatingContext;
-  return <Modal open={open && canShow} onClose={closeGuide} cycleTabFocus breadcrumb={["Cave", "Start with an outcome"]} ariaDescribedBy="first-use-purpose" footerActions={<Button variant="ghost" onClick={closeGuide} disabled={disabled}>Continue later</Button>}>
+  const step = view === "assistant" ? 1 : view === "project" ? 2 : 3;
+  const grantNeeded = effective && (!effective.level || (accessChoice === "full" && effective.level !== "write"));
+  const accessLabel = accessChoice === "full" ? "Full" : "Read";
+  return <Modal open={open && canShow} onClose={firstUse.closeGuide} cycleTabFocus wide ariaLabel="Get started with Cave" dismissOnBackdrop={!disabled} dismissOnEscape={!disabled}>
     <div className="first-use-guide">
-      <p id="first-use-purpose">A familiar works toward an outcome in a project you choose. Review who acts and what they can access, then follow the run and verify its result. This short example is practice; it calls no model and changes no project files.</p>
-      {(error || localError) ? <div role="alert" className="first-use-guide__error"><p>{localError ?? error}</p><Button variant="ghost" onClick={() => { setLocalError(null); setPermissionEpoch((value) => value + 1); void refresh(); }}>Retry</Button></div> : null}
-      {!payload ? <p role="status">Restoring introduction progress…</p> : null}
-      {state?.outcome && state.step !== "complete" ? <div className="first-use-guide__review"><p>Practice outcome: <strong>{example.outcome}</strong></p><p>Acceptance: {example.criterion}</p><p>The sample is fictional. Your project choice below is saved for real work.</p><pre aria-label="Sample welcome.ts"><code>export const welcome = &quot;Welcome&quot;;</code></pre></div> : null}
-      {isRepair ? <div role="alert" className="first-use-guide__error"><p>{payload.resolution.kind === "repair" ? payload.resolution.message : ""}</p><p>Choose a replacement below. Your saved identities remain unchanged until you save.</p></div> : null}
-      {state?.step === "outcome" ? <>
-        <h2>1. Define an outcome</h2><p>Choose a small example with a result you can check. An outcome names what will be true, rather than just asking a familiar to stay busy.</p>
-        <div className="first-use-guide__actions"><Button onClick={() => void mutate({ kind: "outcome", outcome: "inspect" })} disabled={disabled}>Understand a project</Button><Button onClick={() => void mutate({ kind: "outcome", outcome: "plan" })} disabled={disabled}>Plan a small change</Button></div>
-        <p>You’ll compare the result with the chosen outcome and its acceptance check.</p>
-      </> : null}
-      {contextStep ? <>
-        <h2>2. Choose the project and familiar scope</h2>
-        {formSeeded.current && formRevision !== state?.revision ? <div role="alert" className="first-use-guide__error"><p>The saved context changed in another window. Reload it to review the current choice; this replaces unsaved context choices.</p><Button onClick={() => void reloadSavedContext()}>Reload saved context</Button></div> : null}
-        <p>A project names the folder for the work. Selecting it grants no access. Save a default for new work; explicit project choices and existing chats keep their own context.</p>
-        {projects.error ? <div role="alert">Couldn’t load projects. <Button onClick={projects.reload}>Retry projects</Button></div> : null}
-        <label htmlFor="first-use-project">Default project</label>
-        <StandardSelect id="first-use-project" label="Default project" className="first-use-guide__select" value={projectId} placeholder="Choose a project…" onChange={(value) => { setProjectId(value); setScope([]); setActorId(""); setGrantReview(null); }} disabled={disabled || projects.loading} options={[
-          ...(projectId && !project ? [{ value: projectId, label: "Saved project unavailable", disabled: true }] : []),
-          ...projects.projects.map((entry) => ({ value: entry.id, label: entry.name, detail: entry.root })),
-        ]} />
-        {project ? <div className="first-use-guide__review"><p>{project.name}</p><code>{project.root}</code></div> : null}
-        <div className="first-use-guide__review"><p>No project ready? Create <strong>Cave starter</strong> in its own local folder: <code>{payload?.starterRoot ?? "your configured workspace’s cave-starter folder"}</code>. You’ll review familiar access separately.</p><Button onClick={() => void createStarter()} disabled={disabled || projects.loading || Boolean(projects.error)}>Create local starter folder</Button></div>
-        <fieldset><legend>Familiar scope</legend><p>Choose each familiar allowed in this default scope, then name the one who will act. Missing or revoked access requires review.</p>
-          {[...new Set([...(savedDefaults?.familiarIds ?? []), ...scope])].filter((id) => !familiars.some((familiar) => familiar.id === id)).map((id) => <label key={id} className="first-use-guide__choice"><input type="checkbox" checked={scope.includes(id)} onChange={(event) => { setScope((ids) => event.target.checked ? [...ids, id] : ids.filter((entry) => entry !== id)); if (!event.target.checked && actorId === id) setActorId(""); }} />Unavailable familiar {id}</label>)}
-          {familiars.map((familiar) => {
-            const access = accessFor(familiar.id);
-            return <div key={familiar.id}><label className="first-use-guide__choice"><input type="checkbox" checked={scope.includes(familiar.id)} disabled={!project || disabled} onChange={(event) => { setScope((ids) => event.target.checked ? [...ids, familiar.id] : ids.filter((id) => id !== familiar.id)); if (!event.target.checked && actorId === familiar.id) setActorId(""); }} />{familiar.display_name}</label>
-              {scope.includes(familiar.id) ? <div className="first-use-guide__review"><p>{access ? access.level === "write" ? "Full access" : access.level === "read" ? "Read access" : "No project access" : "Loading effective access…"}{access?.supreme ? " · supreme familiar" : ""}{access?.groups.length ? ` · inherited from ${access.groups.map((group) => group.groupName).join(", ")}` : ""}</p>
-                {access && access.level === null ? grantReview === familiar.id ? <><p>Give {familiar.display_name} Read access to {project?.name} at <code>{project?.root}</code>? This persists until you revoke it in Projects. It does not permit Build.</p><div className="first-use-guide__actions"><Button onClick={() => void grantRead(familiar.id)} disabled={disabled}>Give Read access</Button><Button variant="ghost" onClick={() => setGrantReview(null)}>Cancel access change</Button></div></> : <Button variant="secondary" onClick={() => setGrantReview(familiar.id)}>Review Read access for {familiar.display_name}</Button> : null}
-              </div> : null}</div>;
-          })}
-          {familiars.length === 0 ? <p>No familiars are available. <Button onClick={() => { closeGuide(); onManageFamiliars(); }}>Choose or summon a familiar</Button></p> : null}
-        </fieldset>
-        <label htmlFor="first-use-actor">Acting familiar</label><StandardSelect id="first-use-actor" label="Acting familiar" className="first-use-guide__select" value={actorId} placeholder="Choose the acting familiar…" disabled={disabled || scope.length === 0} onChange={setActorId} options={familiars.filter((familiar) => scope.includes(familiar.id)).map((familiar) => ({ value: familiar.id, label: familiar.display_name }))} />
-        {actor ? <p>{runtimeReady === null ? "Checking the acting familiar’s runtime…" : runtimeReady ? `Runtime configured for ${actor.display_name}. Access and runtime limits are checked again when a run starts.` : "The acting familiar’s runtime is unavailable. Open setup or choose another familiar."}</p> : null}
-        {actor && runtimeReady === false ? <Button onClick={() => { closeGuide(); requestOpenSetup(); }}>Open setup</Button> : null}
-        <Button variant="primary" onClick={() => void saveContext()} disabled={disabled || formRevision !== state?.revision || !project || !actorId || !scope.includes(actorId) || runtimeReady !== true || scope.some((id) => !accessFor(id)?.level)}>Save default context</Button>
-      </> : null}
-      {state && !contextStep && state.step === "access" ? <>
-        <h2>3. Review effective access</h2><p><strong>{payload?.project?.name}</strong> · <code>{payload?.project?.root}</code></p>
-        {payload?.access.map((entry) => <p key={entry.familiarId} className="first-use-guide__review">{familiars.find((familiar) => familiar.id === entry.familiarId)?.display_name ?? entry.familiarId}: {entry.level === "write" ? "Full access" : entry.level === "read" ? "Read access" : "No project access"}{entry.groups.length ? ` through ${entry.groups.map((group) => group.groupName).join(", ")}` : entry.direct ? " through a direct grant" : ""}{entry.supreme ? " · supreme familiar" : ""}</p>)}
-        <p>Explore is read-only. Build uses the familiar’s effective project access and its runtime’s own limits. A project selection never changes either. Review an access request before granting it; model output cannot approve it for you.</p>
-        <fieldset><legend>Access for new chats</legend><p>This updates the shared composer default only when you continue. Existing chats keep their current choice.</p><label className="first-use-guide__choice"><input type="radio" name="first-use-access" checked={accessChoice === "read"} onChange={() => setAccessChoice("read")} />Explore · read only</label><label className="first-use-guide__choice"><input type="radio" name="first-use-access" checked={accessChoice === "full"} onChange={() => setAccessChoice("full")} disabled={payload?.access.find((entry) => entry.familiarId === savedDefaults?.actingFamiliarId)?.level !== "write"} />Build · full access</label></fieldset>
-        <div className="first-use-guide__actions"><Button variant="primary" onClick={() => void reviewAccess()} disabled={disabled || !accessChoice || (accessChoice === "full" && !canBuild)}>Continue to approvals</Button><Button variant="ghost" onClick={() => setEditingContext(true)}>Change context</Button></div>
-      </> : null}
-      {state && !contextStep && state.step === "approval" ? <>
-        <h2>4. Review the approval</h2><p>The practice task is blocked: its unresolved dependency is your approval. The primary blocker is “Approve the practice plan.” Its next step is “Review the plan,” owned by you, with approval required. A familiar cannot dispatch that step until you approve.</p>
-        {!state.practice.approvalHeld ? <Button variant="primary" onClick={() => void mutate({ kind: "hold-approval" })} disabled={disabled}>Wait for approval</Button> : <><p className="first-use-guide__review">Approve the practice plan: {example.plan} This approval applies only to the simulated example.</p><Button variant="primary" onClick={() => void mutate({ kind: "approve" })} disabled={disabled}>Approve practice step</Button></>}
-      </> : null}
-      {state && !contextStep && state.step === "progress" ? <>
-        <h2>5. Follow progress and use Stop</h2><p>In a real chat, follow the run’s progress and tool activity. Press Stop when the work needs to halt. Stopping does not undo changes already made; inspect the result before retrying.</p>
-        <p role="status" className="first-use-guide__review">Practice run: {state.practice.stopped ? "Stopped. The next step is to inspect the partial result, then choose Retry or repair." : "Running. Reading the brief, checking the chosen project, preparing one next step…"}</p>
-        {state.practice.stopped ? <Button variant="primary" onClick={() => void mutate({ kind: "retry" })} disabled={disabled}>Retry practice run</Button> : <Button variant="primary" onClick={() => void mutate({ kind: "stop" })} disabled={disabled}>Stop practice run</Button>}
-      </> : null}
-      {state && !contextStep && state.step === "verify" ? <>
-        <h2>6. Verify the result</h2><div className="first-use-guide__review"><p>Practice result: {example.result}</p><p>Check: {example.check}</p></div><p>Which evidence meets the outcome? In real work, open the result and inspect the check. A completed run or a familiar saying “done” is not acceptance.</p>
-        <div className="first-use-guide__actions"><Button onClick={() => setLocalError("Compare the result and its check with the outcome. A claim alone is not evidence.")} disabled={disabled}>The familiar said it’s done</Button><Button variant="primary" onClick={() => void mutate({ kind: "verify", evidence: "result-and-check" })} disabled={disabled}>The result and its check meet the outcome</Button></div>
-      </> : null}
-      {state?.step === "complete" && !contextStep ? <><h2>Ready to start with context</h2><p>Your default is {payload?.project?.name ?? "the saved project"}, with {savedDefaults?.familiarIds.map((id) => familiars.find((entry) => entry.id === id)?.display_name ?? id).join(", ")} and {familiars.find((entry) => entry.id === savedDefaults?.actingFamiliarId)?.display_name ?? savedDefaults?.actingFamiliarId} acting. New work uses this context when no explicit context exists.</p><p>Define the outcome, review access and approvals, follow progress, use Stop when needed and verify the result. Tasks with blockers need a named dependency, one primary blocker and one imperative next step. Find this guide again through “Working with familiars.”</p><div className="first-use-guide__actions"><Button variant="primary" onClick={closeGuide}>Return to my work</Button><Button variant="secondary" onClick={() => setEditingContext(true)}>Change default context</Button></div></> : null}
+      <header className="first-use-header"><strong><Icon name="ph:compass" aria-hidden />Cave</strong><Button variant="ghost" size="xs" onClick={firstUse.closeGuide} disabled={disabled}>Explore first</Button></header>
+      <ol className="first-use-progress" aria-label="Setup progress">{["Connect an assistant", "Choose a project", "Start a conversation"].map((label, index) => <li key={label} aria-current={step === index + 1 ? "step" : undefined}><span>{step > index + 1 ? <Icon name="ph:check" aria-hidden /> : `0${index + 1}`}</span>{label}</li>)}</ol>
+      {(error || firstUse.error) ? <div role="alert" className="first-use-error"><p>{error ?? firstUse.error}</p><Button variant="ghost" size="xs" onClick={() => { setError(null); setEpoch((value) => value + 1); void refresh(); }}>Retry</Button></div> : null}
+      {!payload ? !firstUse.error && !error ? <p role="status">Restoring setup…</p> : null : <>
+        {stale ? <div role="alert" className="first-use-error"><p>Setup changed in another window. Reload the saved choices before continuing.</p><Button onClick={() => { seed(); setEpoch((value) => value + 1); announce("Loaded saved setup. Review your choices."); }}>Reload saved context</Button></div> : null}
+        {payload.resolution.kind === "repair" && payload.resolution.reason !== "missing" ? <p role="alert" className="first-use-error">{payload.resolution.message}</p> : null}
+        <div className={`first-use-stage${view === "chat" ? " first-use-stage--chat" : ""}`}>
+          <div className="first-use-form">
+            <p className="first-use-eyebrow">0{step} / {view === "assistant" ? "Your assistant" : view === "project" ? "Your project" : "Your first conversation"}</p>
+            <h1>{view === "assistant" ? <>Bring your assistant.<br />Find your flow.</> : view === "project" ? <>A place to start.<br />A little room to play.</> : <>A good place for<br />your next idea.</>}</h1>
+            <p className="first-use-lede">{view === "assistant" ? "A familiar is your assistant in Cave. Connect one you already use, and make it yours." : view === "project" ? "Bring a folder, or create a starter. Review what your familiar can access before you begin." : "Ask a question, find your bearings, or move something forward."}</p>
+            {view === "assistant" ? <><FirstUseAssistantPicker familiars={known} selectedId={actorId} busy={disabled} onSelect={selectActor} onCreated={(created) => { setRoster((entries) => [...entries.filter((entry) => entry.id !== created.id), created]); selectActor(created.id); onFamiliarsChange?.(); announce(`${created.display_name} created. Choose a project next.`); }} onRefresh={reloadFamiliars} onAdvanced={() => { firstUse.closeGuide(); onManageFamiliars(); }} /><div className="first-use-actions"><Button variant="primary" disabled={disabled || !actor || stale} onClick={() => void chooseAssistant()}>Choose a project<Icon name="ph:arrow-right" aria-hidden /></Button><p className="first-use-fine">Sign in if your runtime requests it on first use. No model is called during setup.</p></div></> : null}
+            {view === "project" ? <>
+              <div className="first-use-project-options"><Button variant="secondary" onClick={() => void createStarter()} disabled={disabled || projects.loading || Boolean(projects.error)}><Icon name="ph:sparkle" aria-hidden />Create a starter</Button><Button variant="secondary" onClick={() => setPickerOpen(true)} disabled={disabled}><Icon name="ph:folder" aria-hidden />Bring a project</Button></div>
+              <label className="first-use-field" htmlFor="first-use-project">Project</label><StandardSelect id="first-use-project" label="Project" className="first-use-select" value={projectId} placeholder="Choose a project…" onChange={(id) => { setProjectId(id); setAccessChoice(null); setError(null); }} disabled={disabled || projects.loading} options={[
+                ...(projectId && !project ? [{ value: projectId, label: "Saved project unavailable", disabled: true }] : []), ...projects.projects.map((entry) => ({ value: entry.id, label: entry.name, detail: entry.root })),
+              ]} />
+              {projects.error ? <p role="alert" className="first-use-error">{projects.error}<Button variant="ghost" onClick={projects.reload}>Retry projects</Button></p> : null}
+              {!actor ? <p role="alert">The saved familiar is unavailable. Choose another assistant.</p> : <fieldset className="first-use-access"><legend>How can {actor.display_name} work here?</legend><div>{([{ value: "read", label: "Read", description: "Explore files. Suggest next steps." }, { value: "full", label: "Full", description: "Read, create, edit, and delete files." }] as const).map((choice) => <label key={choice.value} className={`first-use-access-card${accessChoice === choice.value ? " is-selected" : ""}`}><input type="radio" name="setup-access" value={choice.value} checked={accessChoice === choice.value} disabled={disabled || !project || !effective} onChange={() => setAccessChoice(choice.value)} /><span><strong>{choice.label}</strong><small>{choice.description}</small></span></label>)}</div></fieldset>}
+              {project && actor ? <p className="first-use-fine">{effective ? `Existing project grant: ${effective.level === "write" ? "Full" : effective.level === "read" ? "Read" : "None"}${effective.groups.length ? ` through ${effective.groups.map((entry) => entry.groupName).join(", ")}` : ""}. ` : "Loading project access… "}{accessChoice === "read" ? "New chats use Read only; existing grants remain visible and unchanged." : accessChoice === "full" ? "Full permits file changes in this folder, subject to runtime and approval controls." : "Choosing a project grants no access."}</p> : null}
+              {actor && project && runtime?.key === selectionKey && !runtime.ready ? <p role="alert">This assistant’s runtime is unavailable. <Button variant="ghost" onClick={() => requestOpenSetup()}>Open setup</Button></p> : null}
+              <details className="first-use-disclosure"><summary>Access stays in your hands</summary><p>Only {project?.name ?? "the selected project"}, until you revoke it in Projects. Your runtime’s approval and network controls still apply.</p></details>
+              <details className="first-use-disclosure"><summary>Familiar scope and defaults</summary><p>Saved scope is retained. Choose which familiars belong to this default; existing chats keep their own context.</p>{[...new Set([...scope, ...known.map((entry) => entry.id)])].map((id) => <label key={id} className="first-use-scope"><input type="checkbox" checked={scope.includes(id)} disabled={disabled || id === actorId} onChange={(event) => setScope((ids) => event.target.checked ? [...ids, id] : ids.filter((entry) => entry !== id))} />{known.find((entry) => entry.id === id)?.display_name ?? `Unavailable familiar ${id}`}{scope.includes(id) && !accessFor(id)?.level && id !== actorId ? " · review project access in Projects" : ""}</label>)}</details>
+              <div className="first-use-actions"><Button variant="primary" disabled={disabled || stale || !project || !actor || !accessChoice || !effective || !scopeReady || !ready} onClick={() => void saveProject()}>{grantNeeded ? `Allow ${accessLabel} and continue` : `Continue with ${accessLabel}`}<Icon name="ph:arrow-right" aria-hidden /></Button><div className="first-use-secondary-actions"><Button variant="ghost" size="xs" onClick={() => { setView("assistant"); setAccessChoice(null); }} disabled={disabled}>Back to assistants</Button><span className="first-use-fine">{actor && project && runtime?.key !== selectionKey ? "Checking runtime…" : "Your choice saves when you continue."}</span></div></div>
+            </> : null}
+            {view === "chat" ? <>
+              <div className="first-use-context-summary"><Icon name="ph:folder" aria-hidden /><strong>{project?.name ?? payload.project?.name ?? "Saved project"}</strong><span>{known.find((entry) => entry.id === payload.state.defaults?.actingFamiliarId)?.display_name ?? payload.state.defaults?.actingFamiliarId} · {payload.state.permissionMode === "full" ? "Full access" : "Read only"}</span><Button variant="ghost" size="xs" onClick={() => { setView("project"); setAccessChoice(null); }}>Change</Button></div>
+              <div className="first-use-starters">{FIRST_USE_STARTERS.map((starter) => <button className="first-use-starter focus-ring" type="button" key={starter.title} aria-pressed={draft === starter.prompt} onClick={() => setDraft(starter.prompt)}><Icon name={starter.icon} aria-hidden /><strong>{starter.title}</strong><span>{starter.description}</span><Icon name="ph:arrow-right" aria-hidden /></button>)}</div>
+              <label className="first-use-field" htmlFor="first-use-draft">Your first request<textarea id="first-use-draft" className="ui-textarea" value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} /></label>
+              <div className="first-use-actions"><Button variant="primary" onClick={openChat} disabled={disabled || stale || payload.resolution.kind !== "ready" || !draft.trim()}>Open in Chat<Icon name="ph:arrow-right" aria-hidden /></Button><p className="first-use-fine">Your request opens as an editable draft. Send when you’re ready; follow the activity and use Stop whenever needed.</p></div>
+            </> : null}
+          </div>
+          {view !== "chat" ? <aside className="first-use-preview" aria-label={view === "assistant" ? "Meet your familiar" : "Project preview"}>
+            <div className="first-use-preview-heading"><span className="first-use-eyebrow">{view === "assistant" ? "A little spark. A useful collaborator." : "Your workspace, taking shape"}</span><span className="first-use-presence">{actor?.display_name ?? "Your familiar"}</span></div>
+            {view === "assistant" ? <><div className="first-use-scene" aria-hidden><span><Icon name="ph:folder" />Your project</span><div><Icon name="ph:sparkle" /></div><span><Icon name="ph:check" />Your next step</span></div><h2>Big idea? Small question?<br />Start anywhere.</h2><p>Explore a project, plan a change, or make something new. Review access, follow the work, and check the result.</p></> : <>{project ? <FirstUseProjectPreview key={project.id} name={project.name} root={project.root} /> : <div className="first-use-project-preview"><Icon name="ph:folder-open" aria-hidden /><h2>Choose your starting point</h2><p>Bring a project you already have, or create a dedicated local starter folder.</p><p className="first-use-fine">The starter folder is created at {payload.starterRoot ?? "your configured workspace’s cave-starter folder"}.</p></div>}<div className="first-use-preview-note"><Icon name="ph:seal-check" aria-hidden /><p>{accessChoice === "full" ? `Review Full access for ${actor?.display_name ?? "your familiar"} to this folder before continuing.` : accessChoice === "read" ? "Read mode lets you explore and get suggestions without file modifications." : "You choose how your familiar can work in this folder."}</p></div></>}
+          </aside> : null}
+        </div>
+        <details className="first-use-method"><summary>Working with familiars</summary><p>Start with an outcome you can check. Review access and any real approval request before work begins. Follow progress and tool activity; Stop halts further work but does not undo changes already made. Inspect the result and its checks before accepting it. A familiar saying “done” is not evidence.</p></details>
+      </>}
     </div>
+    {pickerOpen ? <DirectoryPickerModal open onClose={() => setPickerOpen(false)} onSelect={(root) => { setWorking(true); setError(null); void addFolder(root, root.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || "Project").catch((cause) => setError(cause instanceof Error ? cause.message : "Couldn't register the folder.")).finally(() => setWorking(false)); }} /> : null}
   </Modal>;
 }

@@ -3140,6 +3140,7 @@ export function Workspace() {
     origin?: SessionOrigin,
     actorHasProjectAccess?: boolean,
     destination?: AgentsNewChatRequest["destination"],
+    initialDraft?: string,
   ) => {
     if (!firstUse.ensureIntroduction()) return false;
     if (!familiarId) {
@@ -3185,6 +3186,7 @@ export function Workspace() {
       initialPrompt,
       initialAttachments,
       initialControls,
+      initialDraft,
       origin,
       nonce: Date.now(),
     });
@@ -5456,6 +5458,17 @@ export function Workspace() {
         familiars={resolvedFamiliars}
         canShow={onboardingResolved && !onboardingOpen}
         onManageFamiliars={() => setMode("agents")}
+        onFamiliarsChange={() => { void loadFamiliars(); }}
+        onStartChat={async (defaults, draft) => {
+          const current = await firstUse.refresh();
+          if (!current || current.state.step !== "complete" || current.resolution.kind !== "ready"
+            || current.state.defaults?.projectId !== defaults.projectId
+            || current.state.defaults.actingFamiliarId !== defaults.actingFamiliarId
+            || !current.project) return false;
+          const access = await resolveActorProjectAccess(defaults.actingFamiliarId, defaults.projectId, current.project.root);
+          if (access !== true) return false;
+          return startFamiliarChat(defaults.actingFamiliarId, current.project.root, null, { permissionMode: current.state.permissionMode ?? "read" }, null, "chat", true, "main", draft);
+        }}
         onUseDefaults={(defaults) => {
           if (activeChatSessionId) return;
           setSelectedWorkspaceProjectId(defaults.projectId);

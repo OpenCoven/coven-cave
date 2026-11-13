@@ -2,6 +2,7 @@
 
 import "@/styles/cave-chat.css";
 import "@/styles/home-dashboard.css";
+import "@/styles/first-use-chat.css";
 
 // ── ChatNewDashboard ──────────────────────────────────────────────────────────
 // The work-led dashboard (launcher 3a), relocated from Home to the brand-new
@@ -51,6 +52,7 @@ import {
 } from "@/components/home/dashboard-open-work";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { useKeySymbols } from "@/lib/platform-keys";
+import { FIRST_USE_STARTERS } from "@/lib/first-use-starters";
 
 /** Hard caps that keep the no-scroll board inside the pane — the overflow
  *  stays reachable through each band's trailing "All in …" tile. */
@@ -140,6 +142,8 @@ export function ChatNewDashboard({
   onSaveDefaults,
   defaultsSaved = false,
   modelId = null,
+  firstUse = false,
+  onPrompt,
 }: {
   familiar: Familiar;
   /** Workspace-owned session list; powers Recent threads without a fetch. */
@@ -157,6 +161,8 @@ export function ChatNewDashboard({
   defaultsSaved?: boolean;
   /** Effective model for the board-head meta row (quiet text, not a badge). */
   modelId?: string | null;
+  firstUse?: boolean;
+  onPrompt?: (text: string) => void;
 }) {
   const keys = useKeySymbols();
   const [nowMs] = useState(() => Date.now());
@@ -349,7 +355,7 @@ export function ChatNewDashboard({
                   states what the page is FOR rather than counting what is
                   open; the bands below do the counting. */}
               <h1 className="home-dash__headline">
-                {bands.length > 0 ? "What should we begin?" : "A clean slate — what shall we conjure?"}
+                {firstUse ? "A good place for your next idea." : bands.length > 0 ? "What should we begin?" : "A clean slate — what shall we conjure?"}
               </h1>
               {/* "Chat Session - Prototype.dc.html" (cave-n3jg2): one line under
                   the headline naming the two ways off this page, in the order
@@ -373,6 +379,7 @@ export function ChatNewDashboard({
           {/* Chat.dc.html 2b: the brief sits directly under the hero, above
               the launcher — you state the work first, and the bands below are
               the shortcut for when it already exists somewhere. */}
+          {firstUse && onPrompt ? <section className="first-chat-starters" aria-label="Choose a starting point">{FIRST_USE_STARTERS.map((starter) => <button type="button" className="first-chat-starter focus-ring" key={starter.title} onClick={() => onPrompt(starter.prompt)}><Icon name={starter.icon} aria-hidden /><strong>{starter.title}</strong><span>{starter.description}</span><Icon name="ph:arrow-right" aria-hidden /></button>)}</section> : null}
           {composer ? (
             <div className="home-dash__composer">
               {composer}

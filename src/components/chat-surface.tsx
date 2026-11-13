@@ -456,6 +456,7 @@ export function ChatSurface({
           pendingChatAction.origin,
           pendingChatAction.initialControls ?? undefined,
           pendingChatAction.initialAttachments ?? undefined,
+          pendingChatAction.initialDraft ?? undefined,
         ),
         0,
       );

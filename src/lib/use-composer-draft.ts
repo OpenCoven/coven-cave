@@ -23,6 +23,16 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SetStat
  *  Home (marketplace "Try it") write to the exact slot Home reads at mount. */
 export const HOME_DRAFT_KEY = "cave:home-composer-draft:v1";
 
+/** A draft handoff is never an instruction to send or replace existing work. */
+export function initialComposerDraftDecision(args: {
+  incoming: string; current: string; sessionId: string | null;
+  expectedProject: string | undefined; project: string; ready: boolean;
+}): "wait" | "apply" | "review" | "keep" {
+  if (!args.incoming.trim() || args.sessionId || !args.ready || !args.expectedProject || args.expectedProject !== args.project) return "wait";
+  if (args.current === args.incoming) return "keep";
+  return args.current.trim() ? "review" : "apply";
+}
+
 export function readComposerDraft(key: string): string {
   if (typeof window === "undefined") return "";
   try {

@@ -3,7 +3,8 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CaveConfig } from "@/lib/cave-config";
-import { createFirstUseState } from "@/lib/first-use";
+import { advanceFirstUse, createFirstUseState, createQuickStartState } from "@/lib/first-use";
+import { updateFirstUseState } from "@/lib/server/first-use-store";
 import { inspectFirstUseContext } from "@/lib/server/first-use-context";
 import { GET, POST } from "./route";
 
@@ -45,6 +46,7 @@ function runtimeRequest(id = "nova", host = "localhost", projectId = "p") {
   return new Request(`http://${host}/api/onboarding/journey?runtimeFamiliarId=${encodeURIComponent(id)}&projectId=${encodeURIComponent(projectId)}`, { headers: { host } });
 }
 beforeEach(() => {
+  vi.mocked(updateFirstUseState).mockReset().mockImplementation(async () => { throw new Error("A refused setup change must not write state"); });
   fixture.config = { defaults: { harness: "hermes", model: "", runtime: { kind: "local" } }, familiars: {}, inferenceRoutes: {} } as unknown as CaveConfig;
   fixture.env = { NODE_ENV: "test", PATH: "" };
   fixture.grants = [];
@@ -73,6 +75,38 @@ test.each(["direct", "group"])("a supreme designation preserves an actual %s Rea
     body: JSON.stringify({ revision: 2, action: { kind: "review-access", permissionMode: "full" } }),
   }));
   expect(response.status).toBe(409);
+});
+
+test("short setup cannot complete Full access against an actual Read grant", async () => {
+  fixture.grants = [{ familiarId: "nova", projectId: "p", access: "read" }];
+  const response = await POST(new Request("http://localhost/api/onboarding/journey", {
+    method: "POST", headers: { host: "localhost", "content-type": "application/json" },
+    body: JSON.stringify({ revision: 2, action: { kind: "finish-setup", defaults, permissionMode: "full" } }),
+  }));
+  expect(response.status).toBe(409);
+});
+
+test.each(["read", "full"] as const)("short setup persists reviewed %s mode only with live project and runtime evidence", async (permissionMode) => {
+  fixture.grants = [{ familiarId: "nova", projectId: "p", access: permissionMode === "full" ? "write" : "read" }];
+  fixture.env = { NODE_ENV: "test", PATH: "", HERMES_BIN: process.execPath };
+  const ready = advanceFirstUse(advanceFirstUse(createQuickStartState(), { kind: "choose-assistant", familiarId: "nova" }), { kind: "finish-setup", defaults, permissionMode });
+  vi.mocked(updateFirstUseState).mockResolvedValueOnce(ready);
+  const response = await POST(new Request("http://localhost/api/onboarding/journey", {
+    method: "POST", headers: { host: "localhost", "content-type": "application/json" },
+    body: JSON.stringify({ revision: 2, action: { kind: "finish-setup", defaults, permissionMode } }),
+  }));
+  expect(response.status).toBe(200);
+  expect((await response.json()).state).toMatchObject({ version: 2, step: "complete", permissionMode, practice: { verified: false } });
+});
+
+test("short setup refuses completion when its configured runtime disappears", async () => {
+  fixture.grants = [{ familiarId: "nova", projectId: "p", access: "write" }];
+  const response = await POST(new Request("http://localhost/api/onboarding/journey", {
+    method: "POST", headers: { host: "localhost", "content-type": "application/json" },
+    body: JSON.stringify({ revision: 2, action: { kind: "finish-setup", defaults, permissionMode: "full" } }),
+  }));
+  expect(response.status).toBe(409);
+  expect(vi.mocked(updateFirstUseState)).not.toHaveBeenCalled();
 });
 
 test("supreme designation without project grants remains an access repair", async () => {

@@ -30,9 +30,11 @@ type HarnessView = {
 export function OnboardingRuntimeStep({
   open,
   onReadyChange,
+  target,
 }: {
   open: boolean;
   onReadyChange: (ready: boolean) => void;
+  target?: RuntimeId;
 }) {
   const [harnesses, setHarnesses] = useState<HarnessView[]>([]);
   const [checking, setChecking] = useState(false);
@@ -40,10 +42,10 @@ export function OnboardingRuntimeStep({
   const [activeTarget, setActiveTarget] = useState<RuntimeId | null>(null);
   const [startingTarget, setStartingTarget] = useState<RuntimeId | null>(null);
   const [npmBusyLabel, setNpmBusyLabel] = useState<string | null>(null);
-  const [installedHere, setInstalledHere] = useState(false);
+  const [installedTarget, setInstalledTarget] = useState<RuntimeId | null>(null);
   const { announce } = useAnnouncer();
 
-  const ready = installedHere || harnesses.some((harness) => harness.chatSupported && harness.installed);
+  const ready = (installedTarget !== null && (!target || installedTarget === target)) || harnesses.some((harness) => (!target || harness.id === target) && harness.chatSupported && harness.installed);
   useEffect(() => onReadyChange(ready), [onReadyChange, ready]);
 
   const refresh = useCallback(async () => {
@@ -95,7 +97,7 @@ export function OnboardingRuntimeStep({
       if (view.status === "running") return;
       setActiveTarget(null);
       if (view.status === "done" && view.ok) {
-        setInstalledHere(true);
+        setInstalledTarget(activeTarget);
         setError(null);
         announce("Chat runtime installed.");
       } else if (view.status === "done") {
@@ -144,17 +146,17 @@ export function OnboardingRuntimeStep({
         <Button variant="ghost" size="sm" onClick={() => { setError(null); void refresh(); }} disabled={checking || startingTarget !== null || activeTarget !== null}>Refresh</Button>
       </div>
       {ready ? (
-        <p role="status" className="text-[length:var(--text-xs)] text-[var(--color-success)]">Chat runtime ready. You can open Cave.</p>
+        <p role="status" className="text-[length:var(--text-xs)] text-[var(--color-success)]">Chat runtime installed. Sign in if requested on first use.</p>
       ) : (
         <div className="flex flex-wrap gap-2">
-          {RUNTIMES.map(({ id, label }) => (
+          {RUNTIMES.filter(({ id }) => !target || id === target).map(({ id, label }) => (
             <Button key={id} variant="secondary" size="sm" onClick={() => void install(id)} disabled={checking || startingTarget !== null || activeTarget !== null || npmBusyLabel !== null}>
               {startingTarget === id || activeTarget === id ? `Installing ${label}…` : `Install ${label}`}
             </Button>
           ))}
         </div>
       )}
-      {npmBusyLabel && !activeTarget ? <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{npmBusyLabel} is installing. Refresh when it finishes.</p> : null}
+      {npmBusyLabel && (!activeTarget || (target && activeTarget !== target)) ? <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{npmBusyLabel} is installing. Refresh when it finishes.</p> : null}
       {error ? <p role="alert" className="text-[length:var(--text-xs)] text-[var(--danger-text)]">{error}</p> : null}
     </section>
   );

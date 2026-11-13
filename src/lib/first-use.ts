@@ -5,9 +5,9 @@ export type FirstUseDefaults = {
   actingFamiliarId: string;
 };
 
-export type FirstUseStep = "outcome" | "context" | "access" | "approval" | "progress" | "verify" | "complete";
+export type FirstUseStep = "assistant" | "project" | "outcome" | "context" | "access" | "approval" | "progress" | "verify" | "complete";
 export type FirstUseState = {
-  version: 1;
+  version: 1 | 2;
   revision: number;
   step: FirstUseStep;
   outcome: "inspect" | "plan" | null;
@@ -15,9 +15,12 @@ export type FirstUseState = {
   practice: { approvalHeld: boolean; stopped: boolean; retried: boolean; verified: boolean };
   completedAt: string | null;
   permissionMode?: "read" | "full";
+  setupFamiliarId?: string | null;
 };
 
 export type FirstUseAction =
+  | { kind: "choose-assistant"; familiarId: string }
+  | { kind: "finish-setup"; defaults: FirstUseDefaults; permissionMode: "read" | "full" }
   | { kind: "outcome"; outcome: "inspect" | "plan" }
   | { kind: "context"; defaults: FirstUseDefaults }
   | { kind: "review-access"; permissionMode?: "read" | "full" }
@@ -57,12 +60,18 @@ export function createFirstUseState(): FirstUseState {
   };
 }
 
+/** Fresh setup records readiness separately from the optional practice guide. */
+export function createQuickStartState(): FirstUseState {
+  return { ...createFirstUseState(), version: 2, step: "assistant", setupFamiliarId: null };
+}
+
 /** Corruption must remain visible; it must never reset trust to broad defaults. */
 export function parseFirstUseState(value: unknown): FirstUseState {
   const data = object(value);
-  if (data.version !== 1) throw new Error("Unsupported introduction state version");
+  if (data.version !== 1 && data.version !== 2) throw new Error("Unsupported introduction state version");
+  const steps = data.version === 2 ? ["assistant", "project", "complete"] : STEPS;
   if (!Number.isSafeInteger(data.revision) || (data.revision as number) < 0
-    || !STEPS.includes(data.step as FirstUseStep)) throw new Error("Invalid introduction progress");
+    || !steps.includes(data.step as FirstUseStep)) throw new Error("Invalid introduction progress");
   if (data.outcome !== null && data.outcome !== "inspect" && data.outcome !== "plan") throw new Error("Invalid outcome");
   if (data.permissionMode !== undefined && data.permissionMode !== "read" && data.permissionMode !== "full") throw new Error("Invalid reviewed access mode");
   const defaults = data.defaults === null ? null : parseFirstUseDefaults(data.defaults);
@@ -71,19 +80,27 @@ export function parseFirstUseState(value: unknown): FirstUseState {
     if (typeof practice[key] !== "boolean") throw new Error("Invalid introduction practice");
   }
   const index = STEPS.indexOf(data.step as FirstUseStep);
-  if (index >= 1 && data.outcome === null) throw new Error("Choose an outcome before continuing");
-  if (index >= 2 && defaults === null) throw new Error("Choose concrete context before continuing");
-  if ((index >= 4 && !practice.approvalHeld) || (index >= 5 && (!practice.stopped || !practice.retried))) {
+  if (data.version === 1 && index >= 1 && data.outcome === null) throw new Error("Choose an outcome before continuing");
+  if (data.version === 1 && index >= 2 && defaults === null) throw new Error("Choose concrete context before continuing");
+  if (data.version === 1 && ((index >= 4 && !practice.approvalHeld) || (index >= 5 && (!practice.stopped || !practice.retried)))) {
     throw new Error("Introduction practice is incomplete");
   }
   if (data.completedAt !== null && (typeof data.completedAt !== "string" || !Number.isFinite(Date.parse(data.completedAt)))) {
     throw new Error("Invalid introduction completion date");
   }
-  if ((data.step === "complete") !== Boolean(data.completedAt) || (data.step === "complete") !== practice.verified) {
+  if ((data.step === "complete") !== Boolean(data.completedAt) || (data.version === 1 && (data.step === "complete") !== practice.verified)) {
     throw new Error("Introduction completion requires verified practice");
   }
+  if (data.version === 2) {
+    if (data.setupFamiliarId !== null && !stableId(data.setupFamiliarId)) throw new Error("Choose a familiar before continuing");
+    if (data.step !== "assistant" && !stableId(data.setupFamiliarId)) throw new Error("Choose a familiar before continuing");
+    if (data.step === "complete" && (!defaults || defaults.actingFamiliarId !== data.setupFamiliarId || (data.permissionMode !== "read" && data.permissionMode !== "full"))) {
+      throw new Error("Setup completion requires concrete context and reviewed access");
+    }
+  }
   return {
-    version: 1, revision: data.revision as number, step: data.step as FirstUseStep,
+    version: data.version, revision: data.revision as number, step: data.step as FirstUseStep,
+    ...(data.version === 2 ? { setupFamiliarId: data.setupFamiliarId as string | null } : {}),
     outcome: data.outcome, defaults, permissionMode: data.permissionMode === "full" ? "full" : "read",
     practice: {
       approvalHeld: practice.approvalHeld as boolean, stopped: practice.stopped as boolean,
@@ -94,6 +111,18 @@ export function parseFirstUseState(value: unknown): FirstUseState {
 
 export function advanceFirstUse(state: FirstUseState, action: FirstUseAction, now = new Date().toISOString()): FirstUseState {
   const next = parseFirstUseState(state);
+  if (action.kind === "choose-assistant") {
+    if (!stableId(action.familiarId)) throw new Error("Choose a familiar");
+    return parseFirstUseState({ ...next, version: 2, revision: next.revision + 1, step: "project", setupFamiliarId: action.familiarId, completedAt: null });
+  }
+  if (action.kind === "finish-setup") {
+    const defaults = parseFirstUseDefaults(action.defaults);
+    const actor = next.version === 2 ? next.setupFamiliarId : next.defaults?.actingFamiliarId;
+    if (actor !== defaults.actingFamiliarId) throw new Error("Review the selected acting familiar before continuing");
+    if (action.permissionMode !== "read" && action.permissionMode !== "full") throw new Error("Choose Read or Full access");
+    return parseFirstUseState({ ...next, version: 2, revision: next.revision + 1, step: "complete", setupFamiliarId: actor, defaults, permissionMode: action.permissionMode, completedAt: now });
+  }
+  if (next.version === 2) throw new Error("Use the short setup actions to configure this workspace");
   const requireStep = (step: FirstUseStep) => {
     if (next.step !== step) throw new Error(`Complete the ${next.step} step before this action`);
   };
