@@ -750,6 +750,7 @@ export const SUITES = {
     "src/components/notification-bell-mutations.test.ts",
     "src/components/notification-bell-series.test.ts",
     "src/components/notification-bell-glyph-size.test.ts",
+    "src/components/notification-bell.behavior.test.tsx",
     "src/components/surface-error-states.test.ts",
     "src/components/glass-overlay-chrome.test.ts",
     "src/components/github-action-popover-portal.test.ts",
@@ -1130,6 +1131,8 @@ export const SUITES = {
     "src/lib/automations/use-automation-in-flight.test.ts",
     "src/components/automations/schedule-list-in-flight.test.ts",
     "src/lib/inbox-feed.test.ts",
+    "src/lib/notification-feed.test.ts",
+    "src/lib/snooze-options.test.ts",
     "src/lib/inbox-title.test.ts",
     "src/lib/toast-groups.test.ts",
     "src/components/inbox-toast-stack.test.ts",
@@ -2824,6 +2827,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/notification-bell.behavior.test.tsx",
   "src/components/first-use-guide.behavior.test.tsx",
   "src/app/api/onboarding/journey/route.behavior.test.ts",
   "src/components/first-use-provider.behavior.test.tsx",

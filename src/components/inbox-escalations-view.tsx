@@ -14,6 +14,9 @@ type Props = {
   calendarSlot?: ReactNode;
   /** Tab to open on mount — "calendar" deep-links the Calendar nav button. */
   initialTab?: "overview" | "calendar" | "crons";
+  /** An inbox item to open, from the bell (#6483). */
+  focusItem?: { id: string; nonce: number } | null;
+  onFocusItemConsumed?: () => void;
 };
 
 export function InboxEscalationsView({
@@ -23,6 +26,8 @@ export function InboxEscalationsView({
   onOpenLink,
   calendarSlot,
   initialTab,
+  focusItem,
+  onFocusItemConsumed,
 }: Props) {
   return (
     <section className="h-full bg-background text-foreground">
@@ -33,6 +38,8 @@ export function InboxEscalationsView({
         onOpenLink={onOpenLink}
         calendarSlot={calendarSlot}
         initialTab={initialTab}
+        focusItem={focusItem}
+        onFocusItemConsumed={onFocusItemConsumed}
       />
     </section>
   );

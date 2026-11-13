@@ -3131,6 +3131,34 @@ export function Workspace() {
     }
   }, [nextRouter, openFamiliarSession, openUrlInAppBrowser, openGitHubTarget]);
 
+  // Where a bell row opens (#6483). The bell is a triage list, not a chat
+  // launcher (cave-ipze, #3067): a row lands on Rituals with that item's
+  // detail open. Two kinds have a truer home. A daily report opens the report
+  // page, which is what its Rituals row does too. A waiting reply is built
+  // from the session and never exists in Rituals, so it opens the chat that
+  // is waiting instead of a Rituals page without it.
+  const [inboxFocus, setInboxFocus] = useState<{ id: string; nonce: number } | null>(null);
+  const clearInboxFocus = useCallback(() => setInboxFocus(null), []);
+  const openBellItem = useCallback((item: InboxItem) => {
+    markInboxItemRead(item.id);
+    if (item.kind === "response-needed") {
+      if (item.sessionId) {
+        openFamiliarSession(item.sessionId, item.familiarId);
+      } else {
+        if (item.familiarId) setActiveId(item.familiarId);
+        setMode("chat");
+      }
+      return;
+    }
+    if (item.kind === "daily-summary" && item.link) {
+      openReminderLink(item.link);
+      return;
+    }
+    if (item.familiarId) setActiveId(item.familiarId);
+    setInboxFocus({ id: item.id, nonce: Date.now() });
+    setMode("inbox");
+  }, [markInboxItemRead, openFamiliarSession, openReminderLink, setActiveId, setMode]);
+
   const startFamiliarChat = useCallback((
     familiarId?: string | null,
     projectRoot?: string | null,
@@ -4863,6 +4891,8 @@ export function Workspace() {
           showReminderOverlay();
         }}
         onOpenLink={openReminderLink}
+        focusItem={inboxFocus}
+        onFocusItemConsumed={clearInboxFocus}
         calendarSlot={
           <CalendarView
             items={inboxItems}
@@ -5357,11 +5387,7 @@ export function Workspace() {
                   prefs={inboxPrefs}
                   badgeCount={notificationUnreadCount}
                   onOpenInbox={() => setMode("inbox")}
-                  onOpenItem={(item) => {
-                    markInboxItemRead(item.id);
-                    if (item.familiarId) setActiveId(item.familiarId);
-                    setMode("inbox");
-                  }}
+                  onOpenItem={openBellItem}
                   onPrefsChanged={refreshPrefs}
                 />
               }
@@ -5401,14 +5427,8 @@ export function Workspace() {
               familiarSwitcherLabeled={mode === "chat"}
               inboxPrefs={inboxPrefs}
               inboxBadgeCount={notificationUnreadCount}
-              // Bell rows open in the Inbox (Schedules) surface — the popover
-              // is a triage list, not a chat launcher. Session jumps stay on
-              // the chat surface and Home needs-you paths.
-              onOpenInboxItem={(item) => {
-                markInboxItemRead(item.id);
-                if (item.familiarId) setActiveId(item.familiarId);
-                setMode("inbox");
-              }}
+              // Same open path as the desktop bell (openBellItem, #6483).
+              onOpenInboxItem={openBellItem}
               onNotificationPrefsChanged={refreshPrefs}
               onToggleNav={() => shellRef.current?.toggleNav()}
               onToggleList={undefined}

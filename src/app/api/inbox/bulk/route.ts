@@ -11,10 +11,11 @@ export const dynamic = "force-dynamic";
 
 startScheduler();
 
-const ACTIONS: readonly BulkAction[] = ["read", "unread", "dismiss", "done", "delete"];
+const ACTIONS: readonly BulkAction[] = ["read", "unread", "dismiss", "restore", "done", "delete"];
 
 // `all: true` may only sweep the non-destructive notification stack — done and
-// delete change what exists, so they must name their targets.
+// delete change what exists, so they must name their targets. Restore is the
+// undo of a dismiss the client just made, so it names the ids it dismissed.
 const ALL_ALLOWED: readonly BulkAction[] = ["read", "unread", "dismiss"];
 
 export async function POST(req: Request) {

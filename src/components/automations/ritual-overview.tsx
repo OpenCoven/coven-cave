@@ -85,7 +85,7 @@ export function RitualItemRow({ item, familiarLabel, onSelect, quiet = false, ti
     ? item.firedAt ?? item.updatedAt ?? item.createdAt
     : date ? date.toISOString() : item.updatedAt;
   return (
-    <button type="button" className={`rituals-overview__row focus-ring-inset${quiet ? " rituals-overview__row--quiet" : ""}`} onClick={() => onSelect(item)}>
+    <button type="button" className={`rituals-overview__row focus-ring-inset${quiet ? " rituals-overview__row--quiet" : ""}`} data-inbox-item-id={item.id} onClick={() => onSelect(item)}>
       {item.kind === "daily-summary" ? (
         <InboxDailyReportRow item={item} />
       ) : (
@@ -106,7 +106,7 @@ export function RitualNeedsRow({ item, familiarLabel, onSelect, onDone, onSnooze
   const familiar = familiarLabel(item.familiarId);
   const watchedRepo = repoFromGithubSubTag(item.auto);
   return (
-    <li className="rituals-overview__need-row">
+    <li className="rituals-overview__need-row" data-inbox-item-id={item.id}>
       <button type="button" className="rituals-overview__need-main focus-ring-inset" onClick={() => onSelect(item)}>
         {item.kind === "daily-summary" ? (
           <InboxDailyReportRow item={item} />
