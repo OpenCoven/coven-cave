@@ -261,6 +261,140 @@ final class AgentActivityUITests: XCTestCase {
     }
 
     @MainActor
+    func testOversizedToolOutputIsExplicitlyWithheldAndSheetRemainsResponsive() throws {
+        for shape in ["oversized-output", "oversized-envelope"] {
+            let app = launchToolOutput(extraArguments: ["--ui-preview-tool-output-case", shape])
+            defer { app.terminate() }
+            app.buttons["Show output for Read"].tap()
+            let refusal = app.staticTexts["This output exceeds the display limit. Close this sheet to return to the tool summary."]
+            XCTAssertTrue(refusal.waitForExistence(timeout: 5), shape)
+            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "MUST_NOT_DISPLAY")).firstMatch.exists)
+            XCTAssertFalse(app.buttons["Load output again"].exists)
+            try attachScreenshot(named: "tool-output-\(shape)")
+            assertToolOutputDismisses(in: app)
+        }
+    }
+
+    @MainActor
+    func testDeepToolOutputEnvelopeIsWithheldAndSheetRemainsResponsive() throws {
+        let app = launchToolOutput(extraArguments: ["--ui-preview-tool-output-case", "deep-envelope"])
+        defer { app.terminate() }
+        app.buttons["Show output for Read"].tap()
+        XCTAssertTrue(app.staticTexts["The desktop returned an unreadable output response. Try loading it again."].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "DEEP_ENVELOPE_MUST_NOT_DISPLAY")).firstMatch.exists)
+        XCTAssertTrue(app.buttons["Load output again"].exists)
+        try attachScreenshot(named: "tool-output-deep-envelope")
+        assertToolOutputDismisses(in: app)
+    }
+
+    @MainActor
+    func testAtLimitDeepToolOutputRendersVerbatimAndSheetRemainsResponsive() throws {
+        let app = launchToolOutput(extraArguments: ["--ui-preview-tool-output-case", "large-deep-output"])
+        defer { app.terminate() }
+        app.buttons["Show output for Read"].tap()
+        let result = app.textViews["tool-output-text"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        guard result.exists else { return }
+        let text = try XCTUnwrap(result.value as? String)
+        XCTAssertEqual(text.utf8.count, 256 * 1024)
+        XCTAssertTrue(text.hasPrefix("LARGE_DEEP_OUTPUT_START"))
+        XCTAssertTrue(text.contains("<script>not executable</script>"))
+        XCTAssertTrue(text.contains(String(repeating: "[", count: 256) + "0" + String(repeating: "]", count: 256)))
+        XCTAssertTrue(text.hasSuffix("LARGE_DEEP_OUTPUT_END"))
+        let geometry = XCTAttachment(string: """
+        outputFrame=\(result.frame)
+        outputHittable=\(result.isHittable)
+        savedOutputHeadingFrame=\(app.staticTexts["Saved output"].frame)
+        appFrame=\(app.frame)
+        outputUTF8Bytes=\(text.utf8.count)
+        """)
+        geometry.name = "at-limit-output-geometry"
+        geometry.lifetime = .keepAlways
+        add(geometry)
+        try attachScreenshot(named: "tool-output-large-deep-verbatim")
+        XCTAssertTrue(result.isHittable, "Saved output must expose a visible selectable text surface")
+        XCTAssertLessThanOrEqual(result.frame.maxY, app.frame.maxY,
+                                 "The selectable saved-output viewport must remain within the screen")
+        let header = app.staticTexts["Tool output"]
+        let headerFrame = header.frame
+        result.swipeUp(velocity: .slow)
+        XCTAssertTrue(header.isHittable)
+        XCTAssertEqual(header.frame, headerFrame, "Scrolling saved text must keep the sheet header fixed")
+        XCTAssertTrue(app.staticTexts["Saved output"].isHittable)
+        XCTAssertTrue(app.buttons["Close tool output"].isHittable)
+        XCTAssertEqual(result.value as? String, text, "Inner scrolling does not change the complete result")
+        assertOutputGlyphsPaint(in: result, app: app)
+        try attachScreenshot(named: "tool-output-large-deep-after-inner-scroll")
+        app.sendToBackground()
+        app.activate()
+        XCTAssertTrue(app.buttons["Show output for Read"].waitForExistence(timeout: 5))
+        XCTAssertFalse(result.exists, "The native text viewport clears and closes on backgrounding")
+        revealBelowHeader(app.buttons["Show output for Read"], in: app)
+        app.buttons["Show output for Read"].tap()
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        XCTAssertEqual(result.value as? String, text)
+        try attachScreenshot(named: "tool-output-large-deep-reloaded")
+        assertToolOutputDismisses(in: app)
+        try attachScreenshot(named: "tool-output-large-deep-dismissed")
+    }
+
+    /// Accessibility content can exist while a tall native layout fragment is
+    /// blank. Observe actual pixels inside the text viewport after scrolling,
+    /// excluding the sheet header, padding and native scroll indicator.
+    @MainActor
+    private func assertOutputGlyphsPaint(in result: XCUIElement, app: XCUIApplication) {
+        let region = result.frame.insetBy(dx: 12, dy: 8)
+        let screen = app.frame
+        var fractions: [Double] = []
+        let paints = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let fraction = (try? Self.outputGlyphFraction(region: region, screen: screen)) ?? 0
+            fractions.append(fraction)
+            return fraction > 0.005
+        }, object: nil)
+        let observed = XCTWaiter.wait(for: [paints], timeout: 5)
+        let attachment = XCTAttachment(string: "region=\(region) contrastFractions=\(fractions)")
+        attachment.name = "post-scroll-output-glyph-observations"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertEqual(observed, .completed, "Visible saved-output glyphs must paint after inner scrolling")
+    }
+
+    private static func outputGlyphFraction(region: CGRect, screen: CGRect) throws -> Double {
+        let image = try XCTUnwrap(XCUIScreen.main.screenshot().image.cgImage)
+        let scale = CGFloat(image.width) / screen.width
+        let pixels = CGRect(x: region.minX * scale, y: region.minY * scale,
+                            width: region.width * scale, height: region.height * scale).integral
+        let crop = try XCTUnwrap(image.cropping(to: pixels))
+        let context = try XCTUnwrap(CGContext(data: nil, width: crop.width, height: crop.height,
+            bitsPerComponent: 8, bytesPerRow: crop.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        let bytes = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        var histogram = [Int](repeating: 0, count: 256)
+        let count = crop.width * crop.height
+        for index in 0..<count {
+            let offset = index * 4
+            let luminance = (Int(bytes[offset]) + Int(bytes[offset + 1]) + Int(bytes[offset + 2])) / 3
+            histogram[luminance] += 1
+        }
+        let background = try XCTUnwrap(histogram.indices.max(by: { histogram[$0] < histogram[$1] }))
+        let ink = histogram.indices.filter { abs($0 - background) > 48 }.reduce(0) { $0 + histogram[$1] }
+        return Double(ink) / Double(count)
+    }
+
+    @MainActor
+    private func assertToolOutputDismisses(in app: XCUIApplication) {
+        let close = app.buttons["Close tool output"]
+        XCTAssertTrue(close.isHittable)
+        close.tap()
+        let open = app.buttons["Show output for Read"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        revealBelowHeader(open, in: app)
+        XCTAssertTrue(open.isHittable, "The owning tool remains interactive after bounded output handling")
+        XCTAssertFalse(app.staticTexts["Tool output"].exists)
+    }
+
+    @MainActor
     func testToolOutputClearsWhenBackgroundedAndCanBeLoadedAgain() throws {
         let app = launchToolOutput()
         app.buttons["Show output for Read"].tap()

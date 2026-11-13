@@ -221,7 +221,7 @@ export default defineConfig({
       name: "desktop-webkit-tool-output",
       dependencies: ["preferences-iphone-13"],
       testMatch: /chat-activity-acceptance\.spec\.ts/,
-      grep: /lazy output|stationary press/,
+      grep: /lazy output|stationary press|large mixed trace/,
       use: { ...devices["Desktop Safari"] },
     },
     {

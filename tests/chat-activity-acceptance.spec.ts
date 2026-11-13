@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createOnboardingBootstrapState, ONBOARDING_BOOTSTRAP_BOUNDARIES } from "../src/lib/onboarding-bootstrap";
 import { privateSentinelsIn, reasoningStateBlocks, TOOL_PAYLOAD_SENTINELS, toolSentinelsIn } from "./fixtures/reasoning-states";
 import { installCompletedFirstUse } from "./fixtures/first-use";
+import { capLiveToolPayload, LIVE_TOOL_INPUT_CAP, LIVE_TOOL_OUTPUT_CAP } from "../src/lib/chat-tool-events";
 
 test.use({ serviceWorkers: "block" });
 
@@ -214,6 +215,50 @@ test("large trace production measurements", async ({ page }, info) => {
   await info.attach("large-trace-measurements", { body: JSON.stringify({ calls: 500, samples }, null, 2), contentType: "application/json" });
 });
 
+test("large mixed trace keeps capped payloads explicit and draft interactive", async ({ page }, info) => {
+  const deepInput = '{"nested":'.repeat(80) + '{"value":"' + "x".repeat(16_000) + '"}' + "}".repeat(80);
+  const cappedInput = capLiveToolPayload(deepInput, LIVE_TOOL_INPUT_CAP)!;
+  const cappedOutput = capLiveToolPayload("MIXED_OUTPUT_START\n" + "x".repeat(32_000), LIVE_TOOL_OUTPUT_CAP)!;
+  const tools = Array.from({ length: 500 }, (_, index) => ({
+    id: `mixed-${index}`, name: "Read", status: "ok", input: index === 0 ? cappedInput : '{"file_path":"/tmp/mixed"}',
+    ...(index === 2 ? { outputChars: 300_000 } : { output: index === 1 ? cappedOutput : "Bounded output" }),
+    textOffset: 0, activity: activity(`mixed-${index}`, "ok", index + 1),
+  }));
+  const started = performance.now();
+  const { main } = await setup(page, true, true, false, tools);
+  const cards = main.locator(".cave-tool-block");
+  await expect(cards).toHaveCount(500);
+  const mountMs = performance.now() - started;
+  await expect(main.locator(".cave-tool-io")).toHaveCount(0);
+  const composer = main.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Retain this draft across the mixed trace");
+  const samples: Array<{ case: string; openMs: number }> = [];
+  for (const [index, label] of [[0, "deep capped input"], [1, "capped output"]] as const) {
+    const card = cards.nth(index);
+    const opened = performance.now();
+    await card.locator(":scope > summary").click();
+    await expect(card).toContainText("[tool payload truncated]");
+    if (index === 1) await expect(card).toContainText("MIXED_OUTPUT_START");
+    samples.push({ case: label, openMs: performance.now() - opened });
+    await card.locator(":scope > summary").click();
+  }
+  const privateMarker = "MIXED_OVERSIZED_BODY_MUST_NOT_DISPLAY";
+  let requests = 0;
+  await page.route("**/api/chat/conversation/*/tool-output?*", async (route) => {
+    requests++;
+    await route.fulfill({ json: { ok: true, output: privateMarker + "x".repeat(256 * 1024 + 1) } });
+  });
+  await cards.nth(2).locator(":scope > summary").click();
+  await expect(cards.nth(2).getByRole("alert")).toContainText("Couldn't load this output.");
+  await expect(main).not.toContainText(privateMarker);
+  expect(requests).toBe(1);
+  await expect(composer).toHaveValue("Retain this draft across the mixed trace");
+  await composer.fill("Still interactive after the mixed trace");
+  await expect(composer).toHaveValue("Still interactive after the mixed trace");
+  await info.attach("mixed-trace-measurements", { body: JSON.stringify({ calls: 500, inputDepth: 80,
+    inputBytes: Buffer.byteLength(cappedInput), outputBytes: Buffer.byteLength(cappedOutput), mountMs, samples, requests }), contentType: "application/json" });
+});
+
 for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
   test(`lazy output ${refusal} withholds bodies and rechecks or revokes access`, async ({ page }, info) => {
     await page.addInitScript(() => {
@@ -250,6 +295,8 @@ for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
     const toggle = card.locator(":scope > summary");
     await expect(card).toBeVisible();
     expect(requests).toEqual([]);
+    const composer = main.getByRole("textbox", { name: "Message", exact: true });
+    await composer.fill("Keep this draft after refused output");
     await toggle.click();
     if (refusal === 401 || refusal === 403) {
       // Authorization refusal is request-time revocation (#5764): the whole
@@ -281,8 +328,6 @@ for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
       await expect(main).not.toContainText(privateMarker);
       expect(requests).toHaveLength(3);
     }
-    const composer = main.getByRole("textbox", { name: "Message", exact: true });
-    await composer.fill("Keep this draft after refused output");
     await expect(composer).toHaveValue("Keep this draft after refused output");
     await info.attach("lazy-output-refusal", { body: JSON.stringify({ refusal, inputDepth: 80, requests }), contentType: "application/json" });
   });

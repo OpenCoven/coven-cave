@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import XCTest
 @testable import CovenCave
 
@@ -39,6 +40,37 @@ private actor DeferredToolOutput: ToolOutputLoading {
 
 @MainActor
 final class ToolOutputTests: XCTestCase {
+    func testLargePlainTextSurfacePreservesSelectionAndClearsPrivateContent() throws {
+        let prefix = "🧙 café e\u{301}\r\n<script>literal</script>\nhttps://example.invalid/never-open\n"
+        let text = prefix + String(repeating: "x", count: 256 * 1024 - prefix.utf8.count)
+        let view = ToolOutputTextSurface.makePlainTextView()
+        ToolOutputTextSurface.updateText(text, in: view)
+        XCTAssertEqual(view.text, text)
+        XCTAssertEqual(Data(view.text.utf8), Data(text.utf8))
+        XCTAssertEqual(view.text.utf8.count, 256 * 1024)
+        XCTAssertFalse(view.isEditable)
+        XCTAssertTrue(view.isSelectable)
+        XCTAssertTrue(view.isScrollEnabled)
+        XCTAssertTrue(view.clipsToBounds, "Only the bounded text viewport may paint saved output")
+        XCTAssertTrue(view.dataDetectorTypes.isEmpty)
+        XCTAssertNil(view.textLayoutManager, "Long output uses the glyph-range layout that survives inner scrolling")
+        XCTAssertTrue(view.adjustsFontForContentSizeCategory)
+        let selection = try XCTUnwrap(view.textRange(from: view.beginningOfDocument, to: view.endOfDocument))
+        view.selectedTextRange = selection
+        let selectedText = try XCTUnwrap(view.text(in: selection))
+        XCTAssertEqual(Data(selectedText.utf8), Data(text.utf8), "Full selection keeps exact Unicode, line endings and markup")
+        XCTAssertEqual(view.attributedText.string, text)
+        view.attributedText.enumerateAttribute(.link, in: NSRange(location: 0, length: view.attributedText.length)) { link, range, _ in
+            XCTAssertNil(link, "Output must not create links, including the literal URL at \(range)")
+        }
+        ToolOutputTextSurface.clear(view)
+        XCTAssertEqual(view.text, "")
+        XCTAssertEqual(view.attributedText.string, "")
+        XCTAssertEqual(view.selectedRange.length, 0)
+        ToolOutputTextSurface.updateText("replacement", in: view)
+        XCTAssertEqual(view.text, "replacement", "A cleared surface cannot retain an earlier result")
+    }
+
     private func client() -> (CaveClient, URLSession) {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [ToolOutputURLProtocol.self]
