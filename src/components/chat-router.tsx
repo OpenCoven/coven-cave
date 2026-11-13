@@ -60,7 +60,7 @@ import { blankChatProjectRoot, retainOpenChatSession, scopeChatBrowseSessions, t
 
 type View =
   | { kind: "list" }
-  | { kind: "chat"; sessionId: string | null; started?: boolean; projectRoot?: string; projectScopeAtOpen?: ProjectSelection; initialPrompt?: string; initialAttachments?: ChatAttachment[]; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin };
+  | { kind: "chat"; sessionId: string | null; started?: boolean; projectRoot?: string; projectScopeAtOpen?: ProjectSelection; initialPrompt?: string; initialDraft?: string; initialAttachments?: ChatAttachment[]; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin };
 
 type Props = {
   /** Imperative-handle bridge for a next/dynamic consumer. `next/dynamic`
@@ -131,7 +131,7 @@ type Props = {
 
 export type ChatRouterHandle = {
   goToList: () => void;
-  newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => void;
+  newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[], initialDraft?: string) => void;
   /** `familiarHint` is the thread's own familiar when the caller knows it: the
    *  session list is scoped to the active familiar, so another familiar's
    *  thread would otherwise open under the current one (#5584). */
@@ -700,7 +700,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const imperativeHandle = useMemo<ChatRouterHandle>(
     () => ({
       goToList: () => setView({ kind: "list" }),
-      newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => {
+      newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[], initialDraft?: string) => {
         const next = selectFamiliarForChat(familiarId);
         advanceComposeInstance();
         setView({
@@ -709,6 +709,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           projectRoot,
           projectScopeAtOpen: browseScope?.selection,
           initialPrompt,
+          initialDraft,
           initialAttachments,
           initialControls,
           familiarId: next?.id ?? familiarId ?? null,
@@ -912,6 +913,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       activeFamiliarId={activeFamiliarId}
       projectRoot={viewProjectRoot}
       initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
+      initialDraft={view.kind === "chat" ? view.initialDraft : undefined}
       initialAttachments={view.kind === "chat" ? view.initialAttachments : undefined}
       initialControls={view.kind === "chat" ? view.initialControls : undefined}
       origin={view.kind === "chat" ? view.origin : undefined}

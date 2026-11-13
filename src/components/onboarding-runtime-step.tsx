@@ -30,9 +30,11 @@ type HarnessView = {
 export function OnboardingRuntimeStep({
   open,
   onReadyChange,
+  target,
 }: {
   open: boolean;
   onReadyChange: (ready: boolean) => void;
+  target?: RuntimeId;
 }) {
   const [harnesses, setHarnesses] = useState<HarnessView[]>([]);
   const [checking, setChecking] = useState(false);
@@ -43,7 +45,7 @@ export function OnboardingRuntimeStep({
   const [installedHere, setInstalledHere] = useState(false);
   const { announce } = useAnnouncer();
 
-  const ready = installedHere || harnesses.some((harness) => harness.chatSupported && harness.installed);
+  const ready = installedHere || harnesses.some((harness) => (!target || harness.id === target) && harness.chatSupported && harness.installed);
   useEffect(() => onReadyChange(ready), [onReadyChange, ready]);
 
   const refresh = useCallback(async () => {
@@ -144,10 +146,10 @@ export function OnboardingRuntimeStep({
         <Button variant="ghost" size="sm" onClick={() => { setError(null); void refresh(); }} disabled={checking || startingTarget !== null || activeTarget !== null}>Refresh</Button>
       </div>
       {ready ? (
-        <p role="status" className="text-[length:var(--text-xs)] text-[var(--color-success)]">Chat runtime ready. You can open Cave.</p>
+        <p role="status" className="text-[length:var(--text-xs)] text-[var(--color-success)]">Chat runtime installed. Sign in if requested on first use.</p>
       ) : (
         <div className="flex flex-wrap gap-2">
-          {RUNTIMES.map(({ id, label }) => (
+          {RUNTIMES.filter(({ id }) => !target || id === target).map(({ id, label }) => (
             <Button key={id} variant="secondary" size="sm" onClick={() => void install(id)} disabled={checking || startingTarget !== null || activeTarget !== null || npmBusyLabel !== null}>
               {startingTarget === id || activeTarget === id ? `Installing ${label}…` : `Install ${label}`}
             </Button>

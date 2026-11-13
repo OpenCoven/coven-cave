@@ -25,6 +25,22 @@ read-only:
 The target supported path requires no terminal step and reaches this result in
 under ten minutes.
 
+## Short setup in Cave
+
+The active guide has three stages: **Connect an assistant**, **Choose a project**, and **Start a conversation**. Local component preparation stays in the bootstrap overlay; runtime selection and installation are available in the assistant stage rather than repeated during bootstrap.
+
+Choose an existing familiar or use **Meet the others** to create one with an installed Codex, Claude Code, or GitHub Copilot runtime. **More ways to connect** retains the existing local, custom, and remote configuration paths. Installation is distinct from authentication: the runtime may request sign-in when the user first sends a message, and setup never calls a model to claim that an account is connected.
+
+Choose a registered project, select a folder, or create a dedicated starter folder. The preview lists actual project entries and opens selected text files through the existing human read routes. It does not invent sample files or grant an assistant access while previewing. Review **Read** or **Full** explicitly before continuing. Full requests write access for the acting familiar only when needed; inherited or broader existing access remains visible even when the Chat mode is Read. Changing the actor or project clears the pending access choice, and changed grant snapshots require review.
+
+The final stage offers editable starters and **Open in Chat**. This prepares a new conversation with the saved actor, project, and mode; it does not dispatch a request. Existing drafts require an explicit choice before replacement. The user sends through the existing Chat controls, with normal failure recovery and Stop behavior. Setup completion means the context is ready, while the first completed runtime response remains the first-success milestone defined above.
+
+Progress is stored with a revision on the host. New installations use version-two short setup; existing version-one completion and recorded practice history remain valid. Migrating interrupted progress preserves the saved identities and historical practice data without marking unperformed exercises complete. **Explore first** dismisses the guide while keeping progress, and **Continue setup** reopens it. Methodology guidance is optional.
+
+### Qualification for #6485
+
+Local qualification on 13 November 2026 passed 25 focused app/API/style test files, typecheck, lint, token and test-wiring gates, and the production build with bundle budgets intact. The production browser fixture passed 99 cases across desktop Chromium, Pixel-width Chromium, and iPhone-width WebKit, including keyboard focus/return, narrow light and alternate themes, reduced motion, explicit Read/Full, failed-progress recovery, draft retention, first-send Retry, and Stop. The fixture uses synthetic projects, grants, and runtime responses; these results do not establish real-account authentication, a live provider response, installed Tauri behavior, physical-device behavior, or human accessibility acceptance. The exact protected-delivery receipt and intentionally preserved worktree disposition are recorded on [#6485](https://github.com/OpenCoven/coven-cave/issues/6485).
+
 ## Credentials belong to the user
 
 Fresh installs start with an empty Secret Vault. Cave never copies credential
@@ -63,8 +79,8 @@ Primary onboarding copy should introduce only:
 | Runtime | The installed application that runs a familiar, such as Codex, Hermes, or OpenCode. Do not lead with "harness" or "adapter". |
 | Account or provider | The subscription, OAuth account, API provider, or local model service used by the runtime. |
 | Model | The model selected by the runtime or user. Show it after runtime selection. |
-| Familiar | The configured assistant the user talks to. |
-| Project | A registered project folder. |
+| Familiar | Meet the others offers a small familiar deck and focused creation; More ways to connect opens the existing advanced configuration. | Creates through `/api/familiars`; uncertain creation waits for an authoritative refresh before retry. | Real runtime sign-in may still be required on first send. |
+| Project | Choose a registered folder, select a folder, or create a dedicated starter, with an actual file preview. | Reuses existing project registration and root-pinning routes. | Packaged folder-picker IPC still requires installed-app qualification. |
 | Access | The explicit read or full project permission granted to a familiar. |
 
 Manifests, bindings, adapter sources, executable paths, and internal storage
@@ -78,11 +94,11 @@ layouts belong in expandable technical details, not the standard path.
 | Download | The user chooses among release filenames. | GitHub Releases does not recommend an asset by OS/architecture. | Wrong architecture and updater payloads can be mistaken for installers. |
 | Installation | macOS uses DMGs, Windows uses MSI, Linux uses AppImage. | Native installer behavior only. | Trust warnings and Linux executable/FUSE requirements require documentation. |
 | First launch | `onboarding-bootstrap-overlay.tsx` presents one confirmation and three setup rows. | Detects and prepares Cave-managed Node/npm, Coven CLI, user defaults, and the local service. | The row labels hide component names; a setup timeout can look like a missing component. |
-| Runtime connection | Runtime choice appears later in Summoning Circle and other surfaces. | `/api/harnesses` and `runtime-availability.ts` detect installation and launchability. | Installed/launchable/authenticated/provider-ready are not one guided connection test. |
-| Familiar | Summoning Circle offers local runtimes, OpenClaw agents, Hermes profiles, SSH, identity templates, and custom setup. | Detects supported sources and creates through `/api/familiars`. | The number of choices is useful for established users but heavy before first success. |
-| Project | Chat is blocked by `first-project-gate.tsx` until a project exists and is granted. | Reuses registered projects or creates one from a folder path. | Folder-picker failures and absolute-path language can force technical recovery. |
-| Permission | Project creation and familiar grant happen together. | The grant API supports read and write access. | The bundled first-project path does not present a readable scope review and inherits write as the legacy default. |
-| First task | Chat sends through the selected runtime and now preserves drafts across many inline failures. | Project/runtime/daemon checks and runtime event streaming. | Progress is not expressed as onboarding milestones, and stalls can still require interpretation. |
+| Runtime connection | The assistant stage offers existing familiars, installed runtime choices, and targeted installation. | Passive runtime checks use the existing runtime inspector; setup makes no provider call. | Authentication and a successful provider response are still confirmed at first use. |
+| Familiar | Meet the others offers a small familiar deck and focused creation; More ways to connect opens the existing advanced configuration. | Creates through `/api/familiars`; uncertain creation waits for an authoritative refresh before retry. | Real runtime sign-in may still be required on first send. |
+| Project | Choose a registered folder, select a folder, or create a dedicated starter, with an actual file preview. | Reuses existing project registration and root-pinning routes. | Packaged folder-picker IPC still requires installed-app qualification. |
+| Permission | Read and Full are explicit unselected choices with effective scope shown. | Compare-and-set grants and live context validation protect changed selections. | Broader inherited grants remain effective and are disclosed; Read Chat mode does not revoke them. |
+| First task | Choose a starter or write a request, then open an editable real Chat draft. | The existing Chat launcher binds the actor, project and mode; sending remains explicit. | Account/provider readiness and a completed first response are distinct from setup completion. |
 | Success | The first completed assistant response is timestamped. | `first-run-stamps.ts` records first open and first reply. | No completion receipt explains runtime, access, activity, revocation, or next actions. |
 
 The active first-run import is in `src/components/lazy-surfaces.tsx`. The

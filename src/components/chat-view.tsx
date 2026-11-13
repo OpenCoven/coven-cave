@@ -360,7 +360,7 @@ import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
-import { chatComposerDraftKey, readComposerDraft, useComposerDraft, writeComposerDraft } from "@/lib/use-composer-draft";
+import { chatComposerDraftKey, initialComposerDraftDecision, readComposerDraft, useComposerDraft, writeComposerDraft } from "@/lib/use-composer-draft";
 import { useAddProjectFlow } from "@/components/project-picker";
 import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
@@ -476,6 +476,8 @@ type Props = {
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  /** A reviewed onboarding starter, preserved as editable text without dispatch. */
+  initialDraft?: string;
   /** Explicit task-card model forwarded through a native Board handoff. */
   initialModelOverride?: string;
   /** Task work can reserve its conversation id before mounting the bridge.
@@ -2129,7 +2131,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialDraft, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
 ) {
   const firstUse = useFirstUse();
@@ -3475,6 +3477,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     sessionId: null,
   });
   const initialPromptSentRef = useRef(false);
+  const initialDraftConsumedRef = useRef(false);
+  const [starterDraftConflict, setStarterDraftConflict] = useState<string | null>(null);
+  useEffect(() => {
+    if (!initialDraft || initialDraftConsumedRef.current) return;
+    const decision = initialComposerDraftDecision({ incoming: initialDraft, current: input, sessionId, expectedProject: projectRoot, project: activeProjectRoot, ready: projectLaunchReady });
+    if (decision === "wait") return;
+    initialDraftConsumedRef.current = true;
+    if (decision === "apply") setInput(initialDraft);
+    else if (decision === "review") setStarterDraftConflict(initialDraft);
+  }, [initialDraft, input, sessionId, projectRoot, activeProjectRoot, projectLaunchReady, setInput]);
   /** True while THIS instance's sendRaw reader loop is running. The owner
    *  applies stream events itself (handleEvent), so it never needs the
    *  settle-refetch below; an instance that merely ADOPTED a live snapshot
@@ -8387,6 +8399,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         title={`Send message (${keys.enter})`}
                         aria-label="Send message"
                       >
+                        {firstUse.payload?.state.version === 2 && !sessionId && turns.length === 0 ? <span className="first-chat-send-label">Send message</span> : null}
                         <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
                       </button>
                     ) : null}
@@ -8428,6 +8441,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
       {...(offlineReadOnly ? {} : dropHandlers)}
+      data-first-use={firstUse.payload?.state.version === 2 && !sessionId && turns.length === 0 ? "true" : undefined}
       // On the root, not the dock: the dock rides up by it and the transcript
       // reserves the same height so its last turn is never under the keyboard.
       style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
@@ -8634,6 +8648,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onPrev={findPrev}
         onClose={closeFind}
       />
+      {starterDraftConflict ? <aside className="first-use-nudge" aria-label="Starter request needs review"><span>Your existing draft is kept. Use the onboarding starter instead?</span><Button variant="ghost" size="xs" onClick={() => { setInput(starterDraftConflict); setStarterDraftConflict(null); }}>Use starter request</Button><Button variant="ghost" size="xs" onClick={() => setStarterDraftConflict(null)}>Keep my draft</Button></aside> : null}
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
@@ -8742,6 +8757,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               // quieter ChatEmptyState below.
               <ChatNewDashboard
                 familiar={familiar}
+                firstUse={firstUse.payload?.state.version === 2}
+                onPrompt={(text) => { setInput(text); inputRef.current?.focus(); }}
                 sessions={sessions}
                 composer={composerNode}
                 onSaveDefaults={saveNewSessionDefaults}
