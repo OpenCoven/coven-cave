@@ -11111,19 +11111,20 @@ function RunActivityStrip({
         aria-expanded={expanded}
         aria-controls={panelId}
         aria-haspopup="dialog"
-        aria-label={live ? "Agent activity (running)" : "Last run summary"}
+        aria-label={live ? "Agent activity" : "Last run summary"}
+        aria-describedby={`${live || issues ? `${panelId}-headline ` : ""}${panelId}-counts`}
         title={live && runningTool && runningToolDetail ? `${runningTool.name}(${runningToolDetail})` : headline}
       >
         <Icon
           name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : notices || unknown || rejected || cancelled ? "ph:info" : "ph:check-circle"}
           width={13}
-          className={`cave-run-activity__icon${live ? " animate-spin" : ""}`}
+          className="cave-run-activity__icon"
           aria-hidden
         />
         {/* A clean settled run is just its icon and counts on the title row;
             the trigger's name and tooltip still say "Last run". */}
-        {live || issues ? <span className="cave-run-activity__headline">{headline}</span> : null}
-        <span className="cave-run-activity__counts">
+        {live || issues ? <span id={`${panelId}-headline`} className="cave-run-activity__headline">{headline}</span> : null}
+        <span id={`${panelId}-counts`} className="cave-run-activity__counts">
           {requested ? <span className="cave-tool-count">{requested} requested</span> : null}
           {unknown ? <span className="cave-tool-count">{unknown} outcome unknown</span> : null}
           {rejected ? <span className="cave-tool-count">{rejected} rejected</span> : null}
