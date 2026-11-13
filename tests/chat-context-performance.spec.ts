@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { now, setup, openThread, switchProject, switchComposeProject } from "./chat-context-fixture";
+import { chatFilterAtAllChats, openChatFilter } from "./fixtures/chat-filter";
 
 test("composer project drafts stay isolated while browse filters preserve the current draft", async ({ page }) => {
   await setup(page);
@@ -68,11 +69,10 @@ test("familiar filtering preserves the open conversation and draft", async ({ pa
   const composer = main.getByRole("textbox", { name: "Message", exact: true });
   await composer.fill("Cody draft survives filtering");
   await switchProject(page, "beta");
-  await page.getByRole("button", { name: /^Filter chats:/ }).click();
-  const switcher = page.locator(".chat-browse-filter__panel .workspace-context-switcher");
-  await switcher.getByRole("button", { name: /^Switch familiar/ }).click();
+  const filter = await openChatFilter(page);
+  await filter.controls.getByRole("button", { name: /^Switch familiar/ }).click();
   await page.getByRole("dialog", { name: "Familiars", exact: true }).getByRole("option").filter({ hasText: "Sage" }).click();
-  await page.keyboard.press("Escape");
+  await filter.close();
   await expect(main.locator('[data-turn-id="context-a-999"]')).toBeAttached();
   await expect(composer).toHaveValue("Cody draft survives filtering");
   await expect(composer).toHaveAttribute("placeholder", "Message Cody…");
@@ -268,7 +268,7 @@ test("late session recency cannot move an inferred first-send project or its pro
   const pendingSend = new Promise<void>((resolve) => { releaseSend = resolve; });
   const roots: string[] = [];
   await setup(page, "cody", pendingSessions);
-  await expect(page.getByRole("button", { name: "Filter chats: All chats", exact: true })).toBeVisible();
+  await expect(chatFilterAtAllChats(page)).toBeVisible();
   await page.route("**/api/chat/send", async (route) => {
     roots.push(route.request().postDataJSON().projectRoot);
     await pendingSend;

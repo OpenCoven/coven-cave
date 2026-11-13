@@ -77,7 +77,7 @@ import type { DetailSplitTile } from "@/components/detail-split-host";
 import { WorkspacePanePage } from "@/components/workspace-pane-page";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { ChatBrowseFilter } from "@/components/chat-browse-filter";
-import { WorkspaceContextSwitcher } from "@/components/workspace-context-switcher";
+import { WorkspaceContextSwitcher, type WorkspaceContextSwitcherProps } from "@/components/workspace-context-switcher";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import {
   FamiliarStudioProvider,
@@ -4615,6 +4615,28 @@ export function Workspace() {
   // even though the nav no longer swaps components when collapsed.
   const [, setNavOpen] = useState(true);
 
+  // One set of browse-filter props for both places Chat shows it: the title
+  // bar at desktop widths, like every other page, and the funnel button in the
+  // Chat header and phone sheet below 1024px, where the title-bar cluster is
+  // hidden (#6478).
+  const chatFilterProps: WorkspaceContextSwitcherProps = {
+    projects: registeredProjects,
+    projectId: chatFilterProjectId,
+    project: chatFilterProject,
+    onProjectChange: (id) => { setChatFilterProjectId(id); setChatFilterFamiliarIds(new Set()); announce(id ? "Chats filtered by project" : "Showing all chats"); },
+    projectLoading: projectsLoading,
+    projectError: projectsError,
+    reloadProjects,
+    allFamiliars: resolvedFamiliars,
+    projectCrew: resolvedChatFilterCrew,
+    projectCrewLoading: chatFilterCrew.loading,
+    projectCrewError: chatFilterCrew.error,
+    reloadProjectCrew: chatFilterCrew.reload,
+    activeFamiliarId: chatFilterFamiliarIds.size === 1 ? [...chatFilterFamiliarIds][0]! : null,
+    selectedFamiliarIds: chatFilterFamiliarIds,
+    onSelectFamiliar: (id, opts) => { setChatFilterFamiliarIds((previous) => id === null ? new Set() : toggleFamiliarSelection(previous, id, opts?.multi ?? false)); announce(id ? "Chat familiar filter updated" : "Showing all familiars' chats"); },
+    sessions,
+  };
   const sidebar = (
     <SidebarMinimal
       mode={mode}
@@ -4750,26 +4772,7 @@ export function Workspace() {
       <ChatSurface
         familiars={familiars}
         sessions={sessions}
-        browseFilter={
-          <ChatBrowseFilter
-            projects={registeredProjects}
-            projectId={chatFilterProjectId}
-            project={chatFilterProject}
-            onProjectChange={(id) => { setChatFilterProjectId(id); setChatFilterFamiliarIds(new Set()); announce(id ? "Chats filtered by project" : "Showing all chats"); }}
-            projectLoading={projectsLoading}
-            projectError={projectsError}
-            reloadProjects={reloadProjects}
-            allFamiliars={resolvedFamiliars}
-            projectCrew={resolvedChatFilterCrew}
-            projectCrewLoading={chatFilterCrew.loading}
-            projectCrewError={chatFilterCrew.error}
-            reloadProjectCrew={chatFilterCrew.reload}
-            activeFamiliarId={chatFilterFamiliarIds.size === 1 ? [...chatFilterFamiliarIds][0]! : null}
-            selectedFamiliarIds={chatFilterFamiliarIds}
-            onSelectFamiliar={(id, opts) => { setChatFilterFamiliarIds((previous) => id === null ? new Set() : toggleFamiliarSelection(previous, id, opts?.multi ?? false)); announce(id ? "Chat familiar filter updated" : "Showing all familiars' chats"); }}
-            sessions={sessions}
-          />
-        }
+        browseFilter={<ChatBrowseFilter {...chatFilterProps} />}
         browseScope={chatBrowseScope}
         composeProjectRoot={selectedWorkspaceProject?.root ?? null}
         activeFamiliar={active}
@@ -5278,13 +5281,24 @@ export function Workspace() {
         onRightChatOpenChange={setRightChatOpen}
         topBar={({ navDrawerOpen }) => (
           <>
-            <div className="workspace-titlebar-context">
+            <div
+              className="workspace-titlebar-context"
+              // On Chat the two selectors filter the chat list; say so, since
+              // their own labels read "Switch project" and "Switch familiar".
+              role={mode === "chat" ? "group" : undefined}
+              aria-label={mode === "chat" ? "Filter chats" : undefined}
+            >
               {/* The Home/Chat switcher used to sit here. It duplicated the
                   sidebar's own Home row (both rendered active at once) and,
                   because it swapped the whole sidebar component, it hid the
                   chat list on Home and every non-coding room on Chat. Both are
                   permanent sidebar rows now — see cave-fh9so. */}
-              {mode !== "chat" && <WorkspaceContextSwitcher
+              {mode === "chat" ? (
+                // Same place and form as every other page. The values are
+                // Chat's own browse filter: it starts on All chats and never
+                // changes the chat actor, the open chat or a draft (#6434).
+                <WorkspaceContextSwitcher {...chatFilterProps} variant="titlebar" fullAccessOnly />
+              ) : <WorkspaceContextSwitcher
                 projects={registeredProjects}
                 projectId={selectedWorkspaceProjectId}
                 onProjectChange={selectWorkspaceProject}
