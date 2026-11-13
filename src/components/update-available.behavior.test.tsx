@@ -2,14 +2,20 @@
 import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-const native = vi.hoisted(() => ({ desktop: false, check: vi.fn(), invoke: vi.fn() }));
+const native = vi.hoisted(() => ({ desktop: false, check: vi.fn(), invoke: vi.fn(), relaunch: vi.fn(), order: [] }));
 vi.mock("@/lib/tauri-platform", () => ({
   isTauri: () => native.desktop, useIsTauriDesktop: () => native.desktop,
 }));
 vi.mock("@tauri-apps/plugin-os", () => ({ platform: () => "windows", arch: () => "x86_64" }));
+// The factory runs when the relaunch code is first loaded, as a chunk fetch
+// would in the packaged app.
+vi.mock("@tauri-apps/plugin-process", () => {
+  native.order.push("load relaunch code");
+  return { relaunch: () => native.relaunch() };
+});
 vi.mock("@/lib/icon", () => ({ Icon: () => null }));
 
-import { UpdateBannerTrigger, UpdateSettingsRow, installPreparedUpdate } from "./update-available";
+import { UpdateBannerTrigger, UpdateInstalledRelaunchError, UpdateSettingsRow, installPreparedUpdate } from "./update-available";
 import { ShellBannersProvider, useShellBanners } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { nativeUpdateCoordinator } from "@/lib/native-update-coordinator";
@@ -33,7 +39,7 @@ function button(label) {
 }
 beforeEach(() => {
   native.desktop = false;
-  native.check.mockReset(); native.invoke.mockReset();
+  native.check.mockReset(); native.invoke.mockReset(); native.relaunch.mockReset();
   popup = { opener: {}, location: { replace: vi.fn() }, close: vi.fn() };
   vi.stubGlobal("window", {
     open: vi.fn(() => popup), dispatchEvent: vi.fn(),
@@ -142,6 +148,72 @@ test("an unarmable Windows install refuses to start rather than risk a closed ap
   const update = { install: vi.fn() };
   await expect(installPreparedUpdate(update)).rejects.toThrow("couldn't prepare install recovery: disk full");
   expect(update.install).not.toHaveBeenCalled();
+});
+
+// install() replaces the app bundle, and with it every chunk the running build
+// can still fetch from its own server. A relaunch loaded afterwards fails with
+// "Failed to load chunk", which v0.5.20 reported as a failed update although
+// the new version was on disk.
+test("the relaunch code is loaded before install() replaces the app bundle", async () => {
+  nativeIpc();
+  vi.resetModules();
+  const fresh = await import("./update-available");
+  native.order.length = 0;
+  native.relaunch.mockImplementation(async () => { native.order.push("relaunch"); });
+  const update = { install: vi.fn(async () => { native.order.push("install"); }) };
+  await fresh.installPreparedUpdate(update);
+  expect(native.order).toEqual(["load relaunch code", "install", "relaunch"]);
+});
+
+test("a relaunch that fails after install() reports an installed update, not a failed one", async () => {
+  nativeIpc();
+  native.relaunch.mockRejectedValue(new Error("restart refused"));
+  const update = { install: vi.fn(async () => {}) };
+  const failure = await installPreparedUpdate(update).catch((error) => error);
+  expect(update.install).toHaveBeenCalledTimes(1);
+  expect(failure).toBeInstanceOf(UpdateInstalledRelaunchError);
+  expect(failure.message).toContain("restart refused");
+  // Nothing was rolled back: Windows recovery stays armed for the installer.
+  expect(native.invoke.mock.calls.map(([command]) => command)).not.toContain("disarm_update_install_recovery");
+});
+
+function installableIpc() {
+  native.desktop = true;
+  window.__TAURI_INTERNALS__ = {
+    transformCallback: () => 1,
+    invoke: (command, args) =>
+      command === "plugin:updater|check" ? native.check()
+        : command === "plugin:updater|download" ? Promise.resolve(41)
+        : command === "plugin:updater|install" ? Promise.resolve()
+        : command === "plugin:resources|close" ? Promise.resolve()
+        : native.invoke(command, args),
+  };
+  native.check.mockImplementation(async () => ({ rid: 9, currentVersion: "1.0.0", version: "9.9.9", body: "Notes" }));
+  native.invoke.mockImplementation(async () => undefined);
+  native.relaunch.mockRejectedValue(new Error("restart refused"));
+}
+
+test("Settings says the update is installed and asks for a reopen when the relaunch fails", async () => {
+  installableIpc();
+  await mount(<UpdateSettingsRow />);
+  await act(async () => button("Download update").props.onClick());
+  await act(async () => button("Restart & install").props.onClick());
+  expect(text()).toContain("v9.9.9 installed");
+  expect(text()).toContain("Quit and reopen CovenCave to finish updating.");
+  expect(text()).not.toContain("Update failed");
+  expect(button("Open release page in system browser")).toBeUndefined();
+});
+
+test("the banner says the update is installed and offers no release-page detour when the relaunch fails", async () => {
+  installableIpc();
+  await mount(<UpdateBannerTrigger />);
+  await act(async () => banners.find(b => b.id === "update-available").cta.onClick());
+  expect(banners.find(b => b.id === "update-available").cta.label).toBe("Restart & install");
+  await act(async () => banners.find(b => b.id === "update-available").cta.onClick());
+  const banner = banners.find(b => b.id === "update-available");
+  expect(banner.title).toBe("CovenCave v9.9.9 is installed. Quit and reopen CovenCave to finish updating.");
+  expect(banner.cta).toBeUndefined();
+  expect(banners.some(b => b.id.startsWith("update-browser-handoff"))).toBe(false);
 });
 
 test("blocked browser handoff has retry and never opens the embedded Browser", async () => {
