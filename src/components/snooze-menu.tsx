@@ -4,6 +4,7 @@ import "@/styles/dash-act.css";
 
 import { useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { DEFAULT_SNOOZE_OPTIONS, type SnoozeOption } from "@/lib/snooze-options";
 
 // The one snooze split-button + duration menu, shared by the inbox toast, the
 // inspector inbox list, and the dashboard's ActionInbox (which used to carry
@@ -13,28 +14,11 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 // option focused on open, Tab/Shift+Tab cycle, Escape closes and returns
 // focus to the trigger. Outside clicks close it.
 
-export type SnoozeOption = {
-  label: string;
-  /** Whole minutes from "now", resolved at click time so relative options
-   *  (tomorrow morning) stay correct however long the menu sits open. */
-  minutes: () => number;
-};
+// The durations live in a shared module so the bell can offer the same
+// choices inline without pulling in this menu's stylesheet.
+export { minutesUntilTomorrowMorning, type SnoozeOption } from "@/lib/snooze-options";
 
-/** Whole minutes from now until 9am the next calendar day. */
-export function minutesUntilTomorrowMorning(): number {
-  const now = new Date();
-  const target = new Date(now);
-  target.setDate(target.getDate() + 1);
-  target.setHours(9, 0, 0, 0);
-  return Math.max(1, Math.round((target.getTime() - now.getTime()) / 60_000));
-}
-
-const DEFAULT_OPTIONS: SnoozeOption[] = [
-  { label: "5 min", minutes: () => 5 },
-  { label: "30 min", minutes: () => 30 },
-  { label: "1 hour", minutes: () => 60 },
-  { label: "Tomorrow 9am", minutes: () => minutesUntilTomorrowMorning() },
-];
+const DEFAULT_OPTIONS: SnoozeOption[] = [...DEFAULT_SNOOZE_OPTIONS];
 
 type Props = {
   /** Both currencies of the snooze APIs: `untilIso` for /snooze bodies that
