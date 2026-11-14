@@ -1,0 +1,228 @@
+{
+  "classification": "Local source/artifact verification; no owner/device/human/merge/release acceptance",
+  "productionSourceCommit": "b20eef0c8f23fe36f256f9314c191953a9ce4fe7",
+  "priorHead": "d0e436bdb571133318705c833ff6b30e63a4b9ea",
+  "sourceSHA256": {
+    "apps/ios/CovenCave/CovenCave/Models/AgentActivity.swift": "3f0710b3c985dab4eff702f69d539949cbee977c2da1817460df7a6a2a20730c",
+    "apps/ios/CovenCave/CovenCave/Models/Models.swift": "650321451fb8c301021f8b495ddcd26ee1693224e13e6a9c82faef830a4abc0b",
+    "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "8e3552c18c66cc026dce506112c49950d5c3be093c8709be845be9bea04dca73",
+    "apps/ios/CovenCave/CovenCave/Views/AgentActivityView.swift": "c7da0dc3e31e3d1fa4c2f13eb8a009185fc2a15c3b541e25d212367658de20cf",
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift": "870b519a5c8a0c87541fa4ec9a0fbd184235ca201d7eba9b42556eeb74d16f95",
+    "apps/ios/CovenCave/CovenCaveTests/ToolOutputTests.swift": "f9855dffbfa1dc7b244ff823d7611eab8526f4529ccd88bc97ec912ac41d5648",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "6abd8b0fb51038213d6d45cc1b5bc0e30edab1dccbbf13dcdebbfb0444e230a4",
+    "scripts/run-tests.mjs": "7b98cfe9ebbc4ab6140c8aab44c2fa57025d8f7aa943b316b5f7cfbc95456e70",
+    "src/app/api/chat/conversation/[id]/route.test.ts": "5d8375b3450a0f7ce937ebd16c2afa88251d315ff767962791712e3d14da41cd",
+    "src/app/api/chat/send/harness-routing-tool-events.test.ts": "ef27733f18c590ec9cf49b16ecbb8e61c58a4bfbcc744353d599c861f6afe55d",
+    "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts": "ea0db62328afb98d654d89ef4b6e9fc234607fcfcc774fe1f539cb140fdf93ad",
+    "src/components/chat-header-row.test.ts": "06d6e0f2b419615bcd69b33955bac40995eb4c3b52756249ca7a628bf553525b",
+    "src/components/chat-view-polish-tools-activity.test.ts": "c18bdf28d9140b690a18d8272fc08f74447511d03ad88449b2de7b893e15fa31",
+    "src/components/chat-view.tsx": "0f66b522aff6d1cf934ee2a6ecbb5fb677a3e99d7ecc4b0e683cc5208f66e2a2",
+    "src/lib/cave-conversations.ts": "052abf01b39999c87162b96694715e71c2fd9672ba12ed680d0b930ee48a9e77",
+    "src/lib/chat-display-disclosure.test.ts": "079df8b74ccc847a7d71b19ac83b10bed36005a4bcac176e64ed80ea920edac5",
+    "src/lib/chat-turn-state.ts": "9fe2a91acf5495d7b26c461bee3182d75e32545a925ae32ef3035d4854fb0d15",
+    "src/lib/server/chat-display-projection.ts": "a2c688cb0695999f9f9a698f6db03808548fe8342f109998f6951d55f2cee12e",
+    "src/lib/server/conversation-display-projection.ts": "b186ef55bbb030b2e4cd5af82f82b1e876819955c7d17ef9529b3db9595c65f3",
+    "src/lib/server/flow-copilot-session.test.ts": "18361de2788581bde27d941af11c39ba0ce9f9e15b010c552fcdc09681e46f59",
+    "tests/chat-activity-acceptance.spec.ts": "8474edc7accb256b64a678f846ca0098f36ebd08c192cec1bc2441195216fd08",
+    "tests/chat-tool-cards.spec.ts": "85b2355f263d63abbd2d0dc8d63f9fe70e8afb9a8b31b0907715827b9b48e2c4",
+    "src/lib/chat-history-disclosure.test.ts": "55628767f81abfc323e9b07dde3b231ec2ca79f2288559543afdf3ceba90b8b9"
+  },
+  "buildId": "FJ56LSVjtucX8EXCP6UMW",
+  "packageExecutableSha256": "21164217fe51dbcb6689c912f16f09efce261e1b279aff50ca94cde7f1e17d00",
+  "results": {
+    "appApiMobile": {
+      "fileCount": 2243,
+      "exitCode": 0,
+      "wholeCanonicalRun": true,
+      "hostSkipSummaryLines": [
+        "\u2139 skipped 2",
+        "\u2139 skipped 2",
+        "\u2139 skipped 3",
+        "\u2139 skipped 3"
+      ]
+    },
+    "conformance": {
+      "fileCount": 9,
+      "exitCode": 0,
+      "hostExclusions": [
+        "coven Windows .cmd shim",
+        "OpenCode Windows shim",
+        "Tailscale CLI discovery unavailable",
+        "cave-home Windows migration"
+      ]
+    },
+    "functionalBrowser": {
+      "passed": 60,
+      "retries": 0,
+      "skipped": 0,
+      "stats": {
+        "startTime": "2026-11-14T07:22:29.289Z",
+        "duration": 148937.974,
+        "expected": 60,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    "browserMeasurements": {
+      "passed": 2,
+      "samplesPerEngine": 5,
+      "retries": 0,
+      "skipped": 0,
+      "firstStartupFailure": "Conformance intentionally removes .next; same-build restored from retained signed bundle with all 8975 file copies hash-verified",
+      "negativeInitialRafDeltaCount": 1,
+      "negativeInitialRafDeltaMs": -8.934000011920944,
+      "universalBudgetPass": false
+    },
+    "realServer": {
+      "passed": 9,
+      "report": "privacy-final-live-server.json"
+    },
+    "native": "See privacy-final-native-summary.json; source bytes unchanged across broader native and final actual-history/TCP evidence",
+    "typecheck": {
+      "exitCode": 0
+    },
+    "fullLint": {
+      "exitCode": 0
+    },
+    "configuredChangedSourceLint": {
+      "files": 13,
+      "exitCode": 0,
+      "firstInvocation": "Outside-config tests/*.spec.ts yielded two ignored-file warnings; final configured src scope passed, no lint gate changed"
+    },
+    "wiring": {
+      "fileCount": 2252,
+      "exitCode": 0
+    },
+    "noticePalette": {
+      "passed": 6,
+      "retries": 0,
+      "skipped": 0,
+      "report": "notice-theme-verification.json"
+    }
+  },
+  "terminalRunReceipts": [
+    {
+      "command": "pnpm",
+      "args": [
+        "lint"
+      ],
+      "started": "2026-11-14T07:15:14.241Z",
+      "ended": "2026-11-14T07:16:08.045Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "node",
+      "args": [
+        "scripts/run-tests.mjs",
+        "app",
+        "api",
+        "mobile"
+      ],
+      "started": "2026-11-14T07:15:14.242Z",
+      "ended": "2026-11-14T07:29:02.051Z",
+      "code": 1,
+      "signal": null
+    },
+    {
+      "command": "pnpm",
+      "args": [
+        "typecheck"
+      ],
+      "started": "2026-11-14T07:47:09.560Z",
+      "ended": "2026-11-14T07:47:50.229Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "node",
+      "args": [
+        "scripts/run-tests.mjs",
+        "conformance"
+      ],
+      "started": "2026-11-14T07:47:50.755Z",
+      "ended": "2026-11-14T07:49:14.293Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "node",
+      "args": [
+        "scripts/run-tests.mjs",
+        "app",
+        "api",
+        "mobile"
+      ],
+      "started": "2026-11-14T07:46:32.072Z",
+      "ended": "2026-11-14T07:59:02.582Z",
+      "code": 0,
+      "signal": null
+    }
+  ],
+  "rawLogIdentities": {
+    "privacy-full-app-api-mobile-clean-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/privacy-full-app-api-mobile-clean-final.log",
+      "sha256": "75e1b3e4c708903e759d5a60c257e4fb6341dfc1605a37fd9b33567b8be4ae24",
+      "bytes": 1060600
+    },
+    "privacy-conformance-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/privacy-conformance-final.log",
+      "sha256": "4660ca790a4058cbaf0af74fbdc0fddb3a7fc5bf144011b9244810a2ce6e5646",
+      "bytes": 9060
+    },
+    "privacy-lint-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/privacy-lint-final.log",
+      "sha256": "08b7cc8d876f993ab27d56bfc4a20425d058f3c0f8cb04f49c5b5cf9d22fc5d8",
+      "bytes": 1366
+    },
+    "privacy-typecheck-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/privacy-typecheck-final.log",
+      "sha256": "26f74663f70626935bcaeee94fc4ec70cbf522eb0493c9ad768e00008675a5e9",
+      "bytes": 137
+    },
+    "privacy-changed-src-eslint-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/privacy-changed-src-eslint-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "privacy-browser-functional-stable-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/privacy-browser-functional-stable-final.log",
+      "sha256": "c30002418c23700ad2a8c7590301208a7adebe63c9c839915f2ac19eb3030c3a",
+      "bytes": 10591
+    },
+    "privacy-browser-measurements-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/privacy-browser-measurements-final.log",
+      "sha256": "9e95165254d9feee7d999015f44069c743ea83e769190830c4b5a380f85eaa4c",
+      "bytes": 1186
+    },
+    "privacy-browser-measurements-restored-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/privacy-browser-measurements-restored-final.log",
+      "sha256": "3acfc20e2dc937564f4370b0bbe10018ecc44a0f0560d700cd4153455cf4b4cb",
+      "bytes": 1018
+    },
+    "privacy-live-server-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/privacy-live-server-final.log",
+      "sha256": "3c0054256d1492725b67f93907da4e53b4edab2702f193cf970aa8d4c46ab078",
+      "bytes": 1053
+    },
+    "privacy-package-build.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/privacy-package-build.log",
+      "sha256": "5fde71389a6c89ae11bdd1e68cc01fa56e826b1e918c7b2e5c9527988aacdcc0",
+      "bytes": 39578
+    },
+    "green-canonical-rate-limit-hook.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/green-canonical-rate-limit-hook.log",
+      "sha256": "4e870e59a46634f49f97226911eca7f3acac5ad3363e436876566eea78db74ac",
+      "bytes": 317
+    },
+    "projection-dependent-tests-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/projection-dependent-tests-final.log",
+      "sha256": "e37083ee95ae9f66a26a2396cb2fbefa63d91b383eaa4d5ed5e37910879681db",
+      "bytes": 8099
+    }
+  },
+  "profiling": "Failed exact-target host recording exit54 with saved partial artifact and one Time Mapping stream issue; see packaged-profiler-summary.json; no native/packaged frame-cost pass",
+  "hostedChecks": "Earlier d0 checks only; new head not pushed yet",
+  "signing": "Normal secret/attribution hooks passed; explicit SSH signature verified using existing agent key matching registered public signing key 1259375; no credential or global config change"
+}

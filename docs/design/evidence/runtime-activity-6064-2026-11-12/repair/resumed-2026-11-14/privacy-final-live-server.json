@@ -1,0 +1,54 @@
+{
+  "classification": "Built server, real storage/projection/device-gateway; controlled external peer inventory, synthetic saved conversation; no provider dispatch or physical ingress",
+  "root": "/private/tmp/n6064/g14-live-iUu5Bi",
+  "head": "working-tree-from-d0e436bdb571133318705c833ff6b30e63a4b9ea",
+  "buildId": "FJ56LSVjtucX8EXCP6UMW",
+  "serverSha256": "e2162c4fc4adc07dbbab3bd1fba98c1ead10a26e32d21157ade0b156a33282e2",
+  "checks": [
+    {
+      "case": "verified direct-local peer",
+      "status": 200
+    },
+    {
+      "case": "authorized real lazy fetch",
+      "status": 200
+    },
+    {
+      "case": "missing",
+      "status": 404
+    },
+    {
+      "case": "ambiguous",
+      "status": 409
+    },
+    {
+      "case": "oversized saved output withheld by server projection",
+      "status": 404,
+      "markerWithheld": true
+    },
+    {
+      "case": "at-limit real lazy response",
+      "status": 200,
+      "outputBytes": 262144
+    },
+    {
+      "case": "pending device",
+      "status": 403,
+      "markerWithheld": true
+    },
+    {
+      "case": "allowed device",
+      "status": 200
+    },
+    {
+      "case": "revoked device",
+      "status": 403,
+      "markerWithheld": true
+    }
+  ],
+  "passed": true,
+  "serverStopped": true,
+  "cleanup": {
+    "removed": true
+  }
+}

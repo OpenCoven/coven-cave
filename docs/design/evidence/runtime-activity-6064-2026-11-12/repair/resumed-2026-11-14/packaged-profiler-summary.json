@@ -1,0 +1,169 @@
+{
+  "classification": "Failed host macOS Animation Hitches recording with saved partial artifact; no usable target-attributed frame/hitch metrics established",
+  "expectedExecutableSha256": "21164217fe51dbcb6689c912f16f09efce261e1b279aff50ca94cde7f1e17d00",
+  "buildId": "FJ56LSVjtucX8EXCP6UMW",
+  "profilerPid": 98026,
+  "targetPids": [
+    98088
+  ],
+  "exit": {
+    "code": 54,
+    "signal": null
+  },
+  "failure": {
+    "name": "AssertionError",
+    "message": "Profiler must finish successfully\n\n54 !== 0\n"
+  },
+  "storedIssue": {
+    "message": "Data stream: Time Mapping",
+    "type": 2,
+    "count": 1,
+    "relativeTimestamp": 0,
+    "deeperCauseAvailable": false
+  },
+  "recordingWindowUtc": {
+    "start": "2026-11-14T08:04:24.351Z",
+    "end": "2026-11-14T08:05:25.365Z",
+    "durationSeconds": 61.014774,
+    "endReason": "time limit",
+    "mode": "deferred",
+    "targetTermination": "SIGKILL/status9; does not establish a product crash"
+  },
+  "interactionTimes": [
+    {
+      "phase": "before-outer-scroll",
+      "at": "2026-11-14T08:04:59.457Z"
+    },
+    {
+      "phase": "after-outer-scroll",
+      "at": "2026-11-14T08:05:00.762Z"
+    },
+    {
+      "phase": "earlier-calls",
+      "at": "2026-11-14T08:05:06.092Z"
+    },
+    {
+      "phase": "scroll-up-again",
+      "at": "2026-11-14T08:05:13.155Z"
+    },
+    {
+      "phase": "open-first-accepted-call",
+      "at": "2026-11-14T08:05:21.827Z"
+    },
+    {
+      "phase": "last-observation",
+      "at": "2026-11-14T08:05:29.919Z"
+    },
+    {
+      "phase": "return-latest",
+      "at": "2026-11-14T08:05:42.676Z"
+    }
+  ],
+  "interactionLimit": "Initial scroll, earlier calls and first accepted-call opening inside window; last observation and return-latest afterward",
+  "tocExportExitCode": 0,
+  "usableFrameMetrics": false,
+  "rowExport": "No documented PID-enforced filter found; no unscoped table exported",
+  "signature": "Ordinary ad-hoc/hardened-runtime retained Release; no entitlement/security changes",
+  "launchCommand": [
+    "xcrun",
+    "xctrace",
+    "record",
+    "--template",
+    "Animation Hitches",
+    "--time-limit",
+    "60s",
+    "--output",
+    "/private/tmp/nova6064-resume-20261114-mo25t69y/probe6-binary-profile/animation-hitches.trace",
+    "--env",
+    "<isolated fixture environment>",
+    "--launch",
+    "--",
+    "/private/tmp/nova6064-resume-20261114-mo25t69y/qualified-privacy-build-FJ56/Cave6064Qualification.app/Contents/MacOS/app"
+  ],
+  "firstAttempt": {
+    "bundleLaunch": {
+      "classification": "Excluded profiler candidate: xctrace bundle launch resolved earlier Debug bundle with same identifier",
+      "expectedBinarySha256": "21164217fe51dbcb6689c912f16f09efce261e1b279aff50ca94cde7f1e17d00",
+      "actualDebugExecutable": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-6064-webkit-retry-nova/src-tauri/target/debug/bundle/macos/Cave6064Qualification.app/Contents/MacOS/app",
+      "actualDebugSha256": "995fad446ba037d2a9682a67475f2a548790f86b3ab4350d66dd9f79641cc375",
+      "observedAppPids": [
+        89215,
+        89216
+      ],
+      "observedAppStartLocal": "Sat Nov 14 02:01:20 2026",
+      "observedParents": {
+        "89215": 1,
+        "89216": 89170
+      },
+      "possibleDevUrlReadsDisproven": false,
+      "originalControllerAppStoppedDidNotCoverWrongBundle": true,
+      "originalControllerProfilerStopped": false,
+      "cleanup": [
+        {
+          "pid": 89215,
+          "alreadyAbsent": true,
+          "stopped": true
+        },
+        {
+          "pid": 89216,
+          "alreadyAbsent": true,
+          "stopped": true
+        },
+        {
+          "pid": 89170,
+          "alreadyAbsent": false,
+          "command": "/Applications/Xcode.app/Contents/Developer/usr/bin/xctrace",
+          "sent": "SIGTERM",
+          "stopped": true
+        }
+      ],
+      "allObservedProcessesStopped": true,
+      "fixtureRetained": true,
+      "fixtureRoot": "/private/tmp/nova6064-resume-20261114-mo25t69y/probe5-profile/tmp/g14-live-soWAyy"
+    },
+    "excluded": true,
+    "rawStartupFailures": [
+      "probe5 missing scratch tmp directory before fixture creation",
+      "probe6 socket path105bytes exceeds103; no profiler launch; root removed"
+    ],
+    "postCorrectionFixtureCleanup": {
+      "fixtureRoot": "/private/tmp/nova6064-resume-20261114-mo25t69y/probe5-profile/tmp/g14-live-soWAyy",
+      "cleanup": {
+        "removed": true
+      },
+      "at": "2026-11-14T08:16:38.137Z",
+      "originalControllerCorrection": "/private/tmp/nova6064-resume-20261114-mo25t69y/probe5-profile/launch-identity-correction-and-teardown.json"
+    }
+  },
+  "teardown": {
+    "profilerStopped": true,
+    "appStopped": true,
+    "serverStopped": true,
+    "daemonStopped": true,
+    "cleanup": {
+      "removed": true
+    }
+  },
+  "raw": "/private/tmp/nova6064-resume-20261114-mo25t69y/probe6-binary-profile",
+  "rawProtectedDirectoryMode": "0700",
+  "rawToCContainsForeignMetadata": "Not copied into published packet",
+  "sourceOrNativePerformancePass": false,
+  "rawFileIdentities": {
+    "record.log": {
+      "bytes": 267,
+      "sha256": "6c77a17632e0ee021026ef50fd049338c3880a087f21e8de893804683615d5df"
+    },
+    "final-export-toc.xml": {
+      "bytes": 39425,
+      "sha256": "0253432051eda790d2be837f7a32287e3acf712b694540d1be93fef577d0ca79"
+    },
+    "final-export.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "package-fixture-report.json": {
+      "bytes": 6132,
+      "sha256": "a23308c264657655877fc9dc1e055e80599c817b955bef2bd3b59e811aeacd64"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "observedAt": "2026-11-14T05:46:28.316341+00:00",
+  "baseHead": "d0e436bdb571133318705c833ff6b30e63a4b9ea",
+  "worktree": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-6064-webkit-retry-nova",
+  "sourceSHA256": {
+    "apps/ios/CovenCave/CovenCave/Models/AgentActivity.swift": "3f0710b3c985dab4eff702f69d539949cbee977c2da1817460df7a6a2a20730c",
+    "apps/ios/CovenCave/CovenCave/Models/Models.swift": "650321451fb8c301021f8b495ddcd26ee1693224e13e6a9c82faef830a4abc0b",
+    "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "8e3552c18c66cc026dce506112c49950d5c3be093c8709be845be9bea04dca73",
+    "apps/ios/CovenCave/CovenCave/Views/AgentActivityView.swift": "c7da0dc3e31e3d1fa4c2f13eb8a009185fc2a15c3b541e25d212367658de20cf",
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift": "870b519a5c8a0c87541fa4ec9a0fbd184235ca201d7eba9b42556eeb74d16f95",
+    "apps/ios/CovenCave/CovenCaveTests/ToolOutputTests.swift": "f9855dffbfa1dc7b244ff823d7611eab8526f4529ccd88bc97ec912ac41d5648",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "6abd8b0fb51038213d6d45cc1b5bc0e30edab1dccbbf13dcdebbfb0444e230a4"
+  },
+  "nativeDiffSHA256": "878ca0af8fac00cd556dbeda74c554645233cb1ec65eaeed4cabb043c77cc468",
+  "simulator": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+  "binaryPath": "/private/tmp/nova6064-native-withholding-20261114/derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave",
+  "binarySHA256": "ed4e9537480e622f8d9599a00c7b6aa4163908d57f95844a28073dc34b46fe7b",
+  "binaryUUID": "UUID: AC095287-4A88-3AD7-86BF-A3784EBAAFB1 (arm64) /private/tmp/nova6064-native-withholding-20261114/derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave",
+  "xcode": "Xcode 27.2\nBuild version 27B52",
+  "codesign": "Executable=/private/tmp/nova6064-native-withholding-20261114/derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave\nIdentifier=ai.opencoven.cave\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20400 size=426 flags=0x2(adhoc) hashes=3+7 location=embedded\nSignature=adhoc\nInfo.plist entries=40\nTeamIdentifier=not set\nSealed Resources version=2 rules=10 files=32\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n",
+  "appFilesSHA256": {
+    "CovenCave": "ed4e9537480e622f8d9599a00c7b6aa4163908d57f95844a28073dc34b46fe7b",
+    "__preview.dylib": "64c9bfe80f5f8fc28a0465e8ec9dfb163ab5ebaebaf283fab04c8729a9346113",
+    "CovenCave.debug.dylib": "1e444fcc04fc8e05a848be866a69297dc8745e78a8a52f7c137599e021b3e785",
+    "Info.plist": "12fdfb92bec874d7c0355283ec1bf1dca5ad34776d07f2264501f34227237415"
+  },
+  "debugDylibUUID": "UUID: 7C9570C3-66BF-3530-9450-9BA63D800B0A (arm64) /private/tmp/nova6064-native-withholding-20261114/derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib"
+}

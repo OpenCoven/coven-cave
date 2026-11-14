@@ -1,0 +1,542 @@
+{
+  "sourceSha256": {
+    "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-6064-webkit-retry-nova/src/lib/server/chat-display-projection.ts": "a2c688cb0695999f9f9a698f6db03808548fe8342f109998f6951d55f2cee12e",
+    "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-6064-webkit-retry-nova/src/lib/secret-redaction.ts": "fb9c9fd19af6a7cb32582fb0d7558891921f1102281cae1e7822243d6dd0f989"
+  },
+  "processIsolation": "Each sample executes in a fresh Node process with scratch HOME",
+  "repeats": 3,
+  "results": [
+    {
+      "depth": 0,
+      "key": "safe",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 0,
+        "key": "safe",
+        "inputBytes": 40,
+        "redactedBytes": 40,
+        "redactorReturnedScalar": false,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": true,
+        "projectedIdentical": true
+      }
+    },
+    {
+      "depth": 0,
+      "key": "_meta",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 0,
+        "key": "_meta",
+        "inputBytes": 41,
+        "redactedBytes": 41,
+        "redactorReturnedScalar": false,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": true,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 0,
+      "key": "signature",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 0,
+        "key": "signature",
+        "inputBytes": 45,
+        "redactedBytes": 45,
+        "redactorReturnedScalar": false,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": true,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 0,
+      "key": "encrypted_content",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 0,
+        "key": "encrypted_content",
+        "inputBytes": 53,
+        "redactedBytes": 53,
+        "redactorReturnedScalar": false,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": true,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 64,
+      "key": "safe",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 64,
+        "key": "safe",
+        "inputBytes": 744,
+        "redactedBytes": 744,
+        "redactorReturnedScalar": false,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": true,
+        "projectedIdentical": true
+      }
+    },
+    {
+      "depth": 64,
+      "key": "_meta",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 64,
+        "key": "_meta",
+        "inputBytes": 745,
+        "redactedBytes": 745,
+        "redactorReturnedScalar": false,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": true,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 64,
+      "key": "signature",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 64,
+        "key": "signature",
+        "inputBytes": 749,
+        "redactedBytes": 749,
+        "redactorReturnedScalar": false,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": true,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 64,
+      "key": "encrypted_content",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 64,
+        "key": "encrypted_content",
+        "inputBytes": 757,
+        "redactedBytes": 757,
+        "redactorReturnedScalar": false,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": true,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 65,
+      "key": "safe",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 65,
+        "key": "safe",
+        "inputBytes": 755,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 65,
+      "key": "_meta",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 65,
+        "key": "_meta",
+        "inputBytes": 756,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 65,
+      "key": "signature",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 65,
+        "key": "signature",
+        "inputBytes": 760,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 65,
+      "key": "encrypted_content",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 65,
+        "key": "encrypted_content",
+        "inputBytes": 768,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 80,
+      "key": "safe",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 80,
+        "key": "safe",
+        "inputBytes": 920,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 80,
+      "key": "_meta",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 80,
+        "key": "_meta",
+        "inputBytes": 921,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 80,
+      "key": "signature",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 80,
+        "key": "signature",
+        "inputBytes": 925,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 80,
+      "key": "encrypted_content",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 80,
+        "key": "encrypted_content",
+        "inputBytes": 933,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 1024,
+      "key": "safe",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 1024,
+        "key": "safe",
+        "inputBytes": 11304,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 1024,
+      "key": "_meta",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 1024,
+        "key": "_meta",
+        "inputBytes": 11305,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 1024,
+      "key": "signature",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 1024,
+        "key": "signature",
+        "inputBytes": 11309,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 1024,
+      "key": "encrypted_content",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 1024,
+        "key": "encrypted_content",
+        "inputBytes": 11317,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": false,
+        "secretError": null,
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 2048,
+      "key": "safe",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 2048,
+        "key": "safe",
+        "inputBytes": 22568,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": null,
+        "secretError": "RangeError",
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 2048,
+      "key": "_meta",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 2048,
+        "key": "_meta",
+        "inputBytes": 22569,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": null,
+        "secretError": "RangeError",
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 2048,
+      "key": "signature",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 2048,
+        "key": "signature",
+        "inputBytes": 22573,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": null,
+        "secretError": "RangeError",
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 2048,
+      "key": "encrypted_content",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 2048,
+        "key": "encrypted_content",
+        "inputBytes": 22581,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": null,
+        "secretError": "RangeError",
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 4096,
+      "key": "safe",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 4096,
+        "key": "safe",
+        "inputBytes": 45096,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": null,
+        "secretError": "RangeError",
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 4096,
+      "key": "_meta",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 4096,
+        "key": "_meta",
+        "inputBytes": 45097,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": null,
+        "secretError": "RangeError",
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 4096,
+      "key": "signature",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 4096,
+        "key": "signature",
+        "inputBytes": 45101,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": null,
+        "secretError": "RangeError",
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    },
+    {
+      "depth": 4096,
+      "key": "encrypted_content",
+      "identicalSamples": true,
+      "sample": {
+        "depth": 4096,
+        "key": "encrypted_content",
+        "inputBytes": 45109,
+        "redactedBytes": 12,
+        "redactorReturnedScalar": true,
+        "actualRedactedReviverError": null,
+        "actualOpaqueFound": false,
+        "secretFound": null,
+        "secretError": "RangeError",
+        "projectedDefined": true,
+        "projectedMarkerPresent": false,
+        "projectedIdentical": false
+      }
+    }
+  ]
+}

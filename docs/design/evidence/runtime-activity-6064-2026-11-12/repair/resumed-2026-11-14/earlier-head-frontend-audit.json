@@ -1,0 +1,103 @@
+{
+  "head": "d0e436bdb571133318705c833ff6b30e63a4b9ea",
+  "run": 43371721447,
+  "source": "downloaded complete workflow logs",
+  "logZipSha256": "943bb5838316c61852febecfd9c97841c7c9a2a5dc890ffba0de0d1d51c41791",
+  "shards": [
+    {
+      "log": "Frontend E2E (5_6)/8_Validate end-to-end behavior.txt",
+      "planned": 183,
+      "executed": 174,
+      "expected": 174,
+      "unexpected": 0,
+      "flaky": 0,
+      "skipped": 9,
+      "attempts": 174,
+      "retries": 0,
+      "identitySha256": "e8d59f52ffc1840d247ee08527bee3c943104b4134caf5465f69129bda5da99c"
+    },
+    {
+      "log": "Frontend E2E (6_6)/8_Validate end-to-end behavior.txt",
+      "planned": 183,
+      "executed": 147,
+      "expected": 147,
+      "unexpected": 0,
+      "flaky": 0,
+      "skipped": 36,
+      "attempts": 147,
+      "retries": 0,
+      "identitySha256": "e76c1b07d01dddecc06818518b99cbbaf80b80fd270ae9bb4ea6f26daddf1173"
+    },
+    {
+      "log": "Frontend E2E (3_6)/8_Validate end-to-end behavior.txt",
+      "planned": 160,
+      "executed": 158,
+      "expected": 158,
+      "unexpected": 0,
+      "flaky": 0,
+      "skipped": 2,
+      "attempts": 158,
+      "retries": 0,
+      "identitySha256": "f6b1b4f72e609850c670eb5b6d7969be15798162162c9130fffc653459ee3672"
+    },
+    {
+      "log": "Frontend E2E (2_6)/8_Validate end-to-end behavior.txt",
+      "planned": 206,
+      "executed": 204,
+      "expected": 204,
+      "unexpected": 0,
+      "flaky": 0,
+      "skipped": 2,
+      "attempts": 204,
+      "retries": 0,
+      "identitySha256": "fbae6c058faaece8fc033ff422e4d123c791a33da0fd6658b248ed3b0ed16e09"
+    },
+    {
+      "log": "Frontend E2E (4_6)/8_Validate end-to-end behavior.txt",
+      "planned": 183,
+      "executed": 183,
+      "expected": 183,
+      "unexpected": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "attempts": 183,
+      "retries": 0,
+      "identitySha256": "58b5e2fcdbcc7ea493bb28cfa8db35261595bfd1cd8c74b3f530236ff4331c59"
+    },
+    {
+      "log": "Frontend E2E (1_6)/8_Validate end-to-end behavior.txt",
+      "planned": 183,
+      "executed": 177,
+      "expected": 177,
+      "unexpected": 0,
+      "flaky": 0,
+      "skipped": 6,
+      "attempts": 177,
+      "retries": 0,
+      "identitySha256": "e1ceb99a56099b5e66d9b7521c28a354291dc985359745da3ebbd7def4e53cb5"
+    },
+    {
+      "log": "Frontend E2E (agentic)/8_Validate flag-enabled agentic journeys.txt",
+      "planned": 34,
+      "executed": 33,
+      "expected": 33,
+      "unexpected": 0,
+      "flaky": 0,
+      "skipped": 1,
+      "attempts": 33,
+      "retries": 0,
+      "identitySha256": "06f3c813e9b389524da67255c2b2082c2f66dad2ba617844da31b971d7384252"
+    }
+  ],
+  "totals": {
+    "planned": 1132,
+    "executed": 1076,
+    "expected": 1076,
+    "unexpected": 0,
+    "flaky": 0,
+    "skipped": 56,
+    "attempts": 1076,
+    "retries": 0
+  },
+  "scope": "Frontend E2E jobs, six default shards and one agentic job; native transcript workflow separate"
+}
