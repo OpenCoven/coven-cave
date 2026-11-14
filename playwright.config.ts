@@ -77,9 +77,10 @@ const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 // branch chip's Environment popover opens at every width, and the phone
 // cases (rest-state chips, 44px rows, viewport containment) only run there.
 // history-state-restore joins too (#6442): browser Back must restore the page
-// on phones as well as desktop.
+// on phones as well as desktop. private-state-access joins too (#6451): the
+// grant flags and Chat's Open projects action must work at phone width.
 const MOBILE_SURFACE_SPECS =
-  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore|first-use-journey)\.spec\.ts/;
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore|first-use-journey|private-state-access)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 

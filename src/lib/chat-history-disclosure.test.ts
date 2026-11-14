@@ -27,3 +27,18 @@ test("saved withheld flags remove contradictory previews before rail, skill and 
   assert.equal(normalized[3].outputChars, 400);
   assert.equal(JSON.stringify(tools), original, "normalization never mutates the response object");
 });
+
+test("the history allowlist admits only recognized disclosure values and drops opaque siblings", () => {
+  const tools = [
+    { id: "safe", name: "Read", status: "ok", input: "safe.ts", output: "", outputChars: 400,
+      inputDisclosure: "future", outputDisclosure: { withheld: true }, signature: "OPAQUE_SENTINEL", _meta: "OPAQUE_SENTINEL" },
+    { id: "withheld", name: "Read", status: "error", inputDisclosure: "withheld", outputDisclosure: "withheld",
+      input: "PRIVATE_INPUT", output: "PRIVATE_OUTPUT", outputChars: 123, signature: "OPAQUE_SENTINEL" },
+  ] as unknown as ToolEvent[];
+  const original = JSON.stringify(tools);
+  const normalized = mapConversationHistoryTurns([{ id: "a", role: "assistant", text: "Answer", tools }], "bound")[0].tools!;
+  assert.deepEqual(normalized[0], { id: "safe", name: "Read", status: "ok", input: "safe.ts", output: "", outputChars: 400, outputSessionId: "bound" });
+  assert.deepEqual(normalized[1], { id: "withheld", name: "Read", status: "error", inputDisclosure: "withheld", outputDisclosure: "withheld", outputSessionId: "bound" });
+  assert.doesNotMatch(JSON.stringify(normalized), /PRIVATE_|OPAQUE_|future|signature|_meta/);
+  assert.equal(JSON.stringify(tools), original);
+});

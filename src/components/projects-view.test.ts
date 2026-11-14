@@ -59,7 +59,11 @@ test("rows cycle a direct grant against /api/project-grants", () => {
   assert.match(view, /fetch\("\/api\/project-grants", \{ cache: "no-store" \}\)/, "grants snapshot comes from the console API");
   assert.match(view, /method: op\.op === "grant" \? "POST" : "DELETE"/, "grant/revoke map to POST/DELETE");
   assert.match(view, /targetFamiliarId: familiarId/, "mutations target the picked familiar");
-  assert.match(view, /nextAccessState\(row\.state\)/, "click advances the none → read → full cycle");
+  assert.match(
+    view,
+/const blocked = writeBlocked\.has\(row\.project\.id\);[\s\S]{0,200}?nextAccessState\(row\.state, blocked\)/,
+    "click advances the none → read → full cycle, skipping Full on Cave's private state (#6451)",
+  );
   assert.match(view, /resolveEffectiveAccess\(\{/, "pills show the effective level (direct ∪ groups)");
   assert.match(view, /setOptimistic\(/, "mutations render optimistically");
   assert.match(view, /await loadGrants\(\)/, "server snapshot is re-fetched after a mutation");
@@ -108,7 +112,10 @@ test("the supreme familiar renders locked at Full", () => {
   assert.match(view, /isSupreme\(familiar\.id, grantsData\?\.supremeFamiliarId \?\? null\)/, "supreme comes from the console API");
   assert.match(view, /state: "write", direct: "write", groupNames: \[\] \}/, "supreme rows pin to Full");
   assert.match(view, /supreme familiar — full access to everything, always\./, "explains the lock");
-  assert.match(view, /disabled=\{pending \|\| supreme\}/, "supreme rows don't cycle");
+  assert.match(view, /const locked = supreme && !blocked;/, "the lock lifts only on a folder holding Cave's private state (#6451)");
+  assert.match(view, /if \(supreme && !writeBlocked\.has\(project\.id\)\) \{/, "where the real grant shows instead of a synthetic Full");
+  assert.match(view, /disabled=\{pending \|\| locked\}/, "supreme rows don't cycle");
+  assert.match(view, /disabled=\{pendingIds\.has\(row\.id\) \|\| \(supreme && !blocked\)\}/, "nor do its tree chips");
 });
 
 test("command-palette focus scrolls and flashes the row", () => {
@@ -155,7 +162,11 @@ test("cards disclose what a level actually permits", () => {
 test("bulk select sets several projects at once", () => {
   assert.match(view, /const \[bulk, setBulk\] = useState\(false\)/, "selection mode is off until asked for");
   assert.match(view, /setSelectedAccess\(target\)/, "the band applies one level to the checked set");
-  assert.match(view, /setAllOps\(ids, directByProject, target\)/, "bulk writes compute the minimal op set");
+  assert.match(
+    view,
+    /setAllOps\(ids, directByProject, target, writeBlocked\)/,
+    "bulk writes compute the minimal op set, giving Cave's private state Read at most (#6451)",
+  );
   assert.match(view, /selectionLabel\(selected\.size\)/, "the band counts the selection");
   assert.match(view, /disabled=\{selected\.size === 0 \|\| controlsDisabled\}/, "an empty selection can't fire a write");
   assert.match(
@@ -218,13 +229,18 @@ test("access controls retain semantic headings and visible keyboard focus", () =
   );
   assert.match(
     view,
-    /className=\{`projects-access-pill is-\$\{row\.state\}\$\{pending \? " is-pending" : ""\} focus-ring`\}/,
+    /className=\{`projects-access-pill is-\$\{row\.state\}\$\{pending \? " is-pending" : ""\}\$\{risky \? " is-private-state" : ""\} focus-ring`\}/,
     "row access pills use the shared visible focus ring",
   );
   assert.match(
     view,
-    /className=\{`projects-access-chip\$\{flashId === row\.id \? " is-flash" : ""\} focus-ring`\}/,
+    /className=\{`projects-access-chip\$\{risky \? " is-private-state" : ""\}\$\{flashId === row\.id \? " is-flash" : ""\} focus-ring`\}/,
     "tree access pills use the shared visible focus ring",
+  );
+  assert.match(
+    view,
+    /aria-label=\{risky \? label : undefined\}[\s\S]{0,200}?<Icon name="ph:warning-fill" width=\{12\} className="projects-access-warning" aria-hidden \/>/,
+    "a tree chip with Write on Cave's private state shows a warning and says why (#6451)",
   );
 });
 

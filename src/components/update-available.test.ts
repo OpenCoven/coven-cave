@@ -36,8 +36,20 @@ assert.doesNotMatch(
 );
 assert.match(
   src,
-  /export async function installPreparedUpdate\([^)]*\): Promise<void> \{\s*const disarmRecovery = await armWindowsInstallRecovery\(\);\s*try \{\s*await update\.install\(\);\s*\} catch \(err\) \{\s*await disarmRecovery\(\);\s*throw err;\s*\}/,
-  "installs the prepared native update directly: only Windows install recovery is armed first (no daemon npm install in between), and a failed install() disarms it and still surfaces the error",
+  /export async function installPreparedUpdate\([^)]*\): Promise<void> \{[^}]*?const \{ relaunch \} = await import\("@tauri-apps\/plugin-process"\);\s*const disarmRecovery = await armWindowsInstallRecovery\(\);\s*try \{\s*await update\.install\(\);\s*\} catch \(err\) \{\s*await disarmRecovery\(\);\s*throw err;\s*\}/,
+  "installs the prepared native update directly: the relaunch code is loaded and Windows install recovery is armed first (no daemon npm install in between), and a failed install() disarms it and still surfaces the error",
+);
+// install() replaces the bundle that serves this build's chunks, so nothing
+// may be loaded between install() and relaunch() (#6470).
+assert.doesNotMatch(
+  src,
+  /await update\.install\(\);[\s\S]*?await import\([\s\S]*?await relaunch\(\);/,
+  "nothing is dynamically imported between install() and relaunch()",
+);
+assert.match(
+  src,
+  /try \{\s*await relaunch\(\);\s*\} catch \(err\) \{\s*throw new UpdateInstalledRelaunchError\(/,
+  "a relaunch failure after a completed install is reported as installed, not as a failed update",
 );
 
 // Declined or failed Windows msiexec recovery (#5981): the watcher is armed
@@ -86,6 +98,24 @@ assert.match(src, /resolveDownloadUrl\(combined\.status\)/, "fallback download U
 
 // Both surfaces are exported and resolve native-first.
 assert.match(src, /export function UpdateBannerTrigger/, "exports the banner trigger");
+// Debug shells register no updater (tauri_setup.rs). The page must read
+// that as "off", never as a failure: a failed native check falls through to
+// the browser installer, which a dev build must not offer either.
+assert.match(
+  src,
+  /if \(!isTauri\(\)\) return \{ kind: "not-applicable" \};\s*\/\/[^\n]*\n\s*if \(process\.env\.NODE_ENV === "development"\) return \{ kind: "disabled" \};/,
+  "a development page skips the native check",
+);
+assert.match(
+  src,
+  /return message\.trim\(\) === "plugin updater not found";[\s\S]*if \(isUpdaterUnregistered\(err\)\) return \{ kind: "disabled" \};/,
+  "a debug shell serving a production page is recognized by Tauri's own unregistered-plugin rejection",
+);
+assert.match(
+  src,
+  /if \(native\.kind === "disabled"\) return \{ kind: "unavailable", message: DEVELOPMENT_UPDATES_OFF \};\s*if \(native\.kind === "available"\)/,
+  "a disabled updater resolves to the quiet unavailable state before any fallback lookup",
+);
 assert.match(src, /export function DaemonReleaseAlignmentTrigger/, "reconciles the daemon after the new Cave version starts");
 assert.match(src, /updateCovenCli\(/, "startup reconciliation checks the independently versioned CLI");
 assert.doesNotMatch(src, /APP_VERSION/, "the running Cave version is never treated as a CLI version requirement");

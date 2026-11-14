@@ -15,6 +15,12 @@ const loopbackMainEventsCapability = JSON.parse(
 const loopbackWindowDragCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-window-drag.json", import.meta.url), "utf8"),
 );
+const loopbackChatWindowCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-chat-window.json", import.meta.url), "utf8"),
+);
+const loopbackChatWindowLaunchCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-chat-window-launch.json", import.meta.url), "utf8"),
+);
 const loopbackWindowControlsCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-window-controls.json", import.meta.url), "utf8"),
 );
@@ -81,6 +87,8 @@ const requiredPermissionIds = [
   "allow-desktop-reachability-configure",
   "allow-record-daemon-reliability-measurement",
   "allow-set-traffic-lights-visible",
+  "allow-open-chat-window",
+  "allow-shell-reveal-path",
   "allow-offline-cache-read",
   "allow-offline-cache-write",
   "allow-offline-cache-clear",
@@ -116,6 +124,8 @@ const requiredCommands = [
   "desktop_reachability_configure",
   "record_daemon_reliability_measurement",
   "set_traffic_lights_visible",
+  "open_chat_window",
+  "shell_reveal_path",
   "offline_cache_read",
   "offline_cache_write",
   "offline_cache_clear",
@@ -485,8 +495,8 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
 test("loopback app webviews can drive native window drag for the seamless titlebar", () => {
   assert.deepEqual(
     loopbackWindowDragCapability.webviews,
-    [...managedMainWebviews, "quick-chat"],
-    "drag permissions cover only managed main and decoration-less quick-chat webviews, never browser children",
+    [...managedMainWebviews, "quick-chat", "chat-window"],
+    "drag permissions cover only managed main, decoration-less quick-chat and overlay-titlebar Chat window webviews, never browser children",
   );
   assert.equal(loopbackWindowDragCapability.windows, undefined);
   assert.deepEqual(
@@ -532,6 +542,62 @@ test("loopback app webviews can drive native window drag for the seamless titleb
       '<header className="quick-chat-overlay__header tray-quick-chat__header" data-tauri-drag-region="deep">',
     ),
     "the quick-chat tray header must be a deep Tauri drag region so the decoration-less window can be moved",
+  );
+});
+
+test("only a main window can pop out the Chat window, and that window gets no listen authority", () => {
+  assert.deepEqual(
+    loopbackChatWindowLaunchCapability.webviews,
+    managedMainWebviews,
+    "only managed main app webviews may open the Chat window",
+  );
+  assert.deepEqual(
+    loopbackChatWindowLaunchCapability.permissions,
+    ["allow-open-chat-window"],
+    "the launch capability grants the single pop-out command and nothing else",
+  );
+  assert.deepEqual(
+    loopbackChatWindowCapability.webviews,
+    ["chat-window"],
+    "the Chat window capability covers exactly the detached Chat window",
+  );
+  assert.deepEqual(
+    loopbackChatWindowCapability.permissions,
+    ["core:event:allow-emit", "allow-shell-open", "allow-shell-reveal-path"],
+    "the Chat window may only emit its open-in-main-window hand-off, open web links in the system browser, and show local paths in the file manager",
+  );
+  assertCapabilityDoesNotGrant(loopbackChatWindowCapability, [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-open-chat-window",
+  ]);
+  for (const capability of [loopbackChatWindowCapability, loopbackChatWindowLaunchCapability]) {
+    assert.equal(capability.windows, undefined);
+    assert.deepEqual(capability.platforms, ["linux", "macOS", "windows"]);
+    for (const origin of ["http://127.0.0.1:3000/", "http://localhost:3000/", "http://[::1]:64203/"]) {
+      assert.ok(
+        capabilityAllowsOrigin(capability, origin),
+        `${capability.identifier} must apply to loopback origin ${origin}`,
+      );
+    }
+    assert.equal(
+      capabilityAllowsOrigin(capability, "http://example.com:64203/"),
+      false,
+      `${capability.identifier} must not apply to a non-loopback origin`,
+    );
+  }
+  // The command re-checks its caller at runtime, so a misconfigured
+  // capability still cannot let an auxiliary or browser-child webview open it.
+  assert.match(
+    tauriSetupRust,
+    /fn open_chat_window\([\s\S]{0,200}webview: tauri::Webview[\s\S]{0,400}is_registered_main_window\(app, webview\.label\(\)\)/,
+    "open_chat_window must reject callers that are not registered main windows",
+  );
+  assert.match(tauriSetupRust, /\n\s+open_chat_window,\n/, "open_chat_window must be registered");
+  assert.match(
+    mainWindowRust,
+    /SECONDARY_MAIN_WINDOW_PERMISSIONS[\s\S]{0,700}"allow-open-chat-window"/,
+    "secondary main windows can pop out the Chat window too",
   );
 });
 
@@ -911,5 +977,18 @@ test("the offline read cache is registered, instance-scoped, and served read-onl
     [...new Set(invoked)].sort(),
     ["offline_cache_clear", "offline_cache_delete", "offline_cache_read", "offline_cache_status", "offline_cache_write"],
     "the offline cache client must invoke only its own permitted commands",
+  );
+});
+
+test("chat links can show a local path in the file manager from the main and Chat windows only", () => {
+  const reveal = JSON.parse(readFileSync(new URL("../capabilities/loopback-reveal-path.json", import.meta.url), "utf8"));
+  assert.deepEqual(reveal.webviews, ["main"], "the reveal grant covers only the main webview");
+  assert.deepEqual(reveal.permissions, ["allow-shell-reveal-path"], "the reveal capability grants nothing else");
+  const quickChat = JSON.parse(readFileSync(new URL("../capabilities/loopback-quick-chat.json", import.meta.url), "utf8"));
+  assert.equal(quickChat.permissions.includes("allow-shell-reveal-path"), false, "the tray quick chat does not get it");
+  assert.match(
+    commandPermissions,
+    /identifier = "allow-shell-reveal-path"[\s\S]{0,240}commands\.allow = \["shell_reveal_path"\]/,
+    "the permission allows exactly the reveal command",
   );
 });

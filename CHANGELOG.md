@@ -7,6 +7,48 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changed
+- **Projects won't give a familiar Write access to a folder that holds Cave's private state** (#6451). That folder holds the grants file and each Claude turn's authority files, so Write there would let a familiar change its own access. The rule covers direct grants, access groups, members added to a group, and Supreme's proposals. Read still works, and folders such as Research Missions are unaffected. Write grants made before this stay as they are, but Projects and Access groups now flag them. When one stops a Claude turn in Full access, Chat names the folder and says whether the access comes from the familiar's own grant or an access group, and offers **Open projects**. That opens the Access pane for the chat's familiar at the project, and puts the refused message back in the composer. A project's folder also can't be moved onto Cave's private state while anyone can write to the project.
+
+## [0.5.22] - 2026-11-13
+
+> Updates restart into the new version again, and Cave gains a guided first use.
+
+Patch release on top of v0.5.21. **If this update ends with "Update failed
+(Failed to load chunk …)", it did install: quit CovenCave and open it again.**
+That message comes from the version you are updating from. v0.5.22 fixes it
+for later updates (#6470). This release also adds a **short guided first use
+with saved project and familiar defaults** (#6458).
+
+### Added
+- **A guided first use and saved defaults** (#6458, #6462). Cave has a short
+  introduction you can leave and resume. It walks through one practice
+  outcome: the project, the acting familiar, access, approval, progress, Stop
+  and checking the result. It doesn't call a model or change project files.
+  Existing installs see it too. New work starts in a default project with a
+  default familiar. A default that is missing or revoked shows a repair
+  prompt and grants no access. You can reopen the guidance from Session
+  options or Tools.
+
+### Fixed
+- **An update that installed no longer says "Update failed"** (#6470, #6471).
+  On macOS and Linux, installing an update replaces the app before it
+  restarts. Cave loaded its restart code after that, and v0.5.21 renamed the
+  file it needed. The update installed, the app did not restart, and the
+  banner reported a failure. Cave now loads the restart code before
+  installing. If a restart ever fails after an install, the banner and
+  Settings say the update is installed and ask you to quit and reopen.
+  Updates from v0.5.20 or earlier still show the old message once, because
+  the installed version runs the update.
+
+### Under the hood
+- The TestFlight upload no longer fails when Apple's upload tool logs a
+  server error, retries it and reports success (#6474). Any other error
+  still fails the upload.
+- Saved proposal sources under `artifacts/` are excluded from TypeScript
+  checks, so they can't break the build (#6467, #6468).
+
+
 ## [0.5.21] - 2026-11-12
 
 > The iPhone transcript holds its place, Chat opens on All chats, and Ask Salem is retired.

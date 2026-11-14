@@ -418,6 +418,23 @@ test("native updater cleanup stops the sidecar before Windows exits", async () =
   );
 });
 
+// `tauri dev` runs the bare target/debug/app. Accepting an update there made
+// the macOS installer replace target/debug wholesale (binary and cargo cache
+// gone, "failed to restart app"). Debug builds must not register the updater.
+test("debug builds never register the native updater", async () => {
+  const setup = await readNativeHost("tauri_setup.rs");
+  assert.match(
+    setup,
+    /if cfg!\(debug_assertions\) \{\s*log::info!\("\[cave\] updater disabled: debug builds never install releases"\);\s*\} else \{\s*app\.handle\(\)\.plugin\(updater_builder\.build\(\)\)\?;\s*\}/,
+    "the updater plugin is registered only in release builds",
+  );
+  assert.equal(
+    (setup.match(/updater_builder\.build\(\)/g) ?? []).length,
+    1,
+    "no other path registers the updater",
+  );
+});
+
 test("Windows native close remains authoritative when the WebView is unresponsive", async () => {
   const launcher = await readNativeHost("tauri_setup.rs", "platform_lifecycle.rs");
 
@@ -1013,7 +1030,7 @@ test("Windows first launch paints progress and supports recovery while the sidec
   );
   assert.match(
     launcher,
-    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*NOTCH_WINDOW_LABEL/,
+    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*CHAT_WINDOW_LABEL/,
     "sidecar recovery must rotate auth for already-open auxiliary windows",
   );
   assert.match(

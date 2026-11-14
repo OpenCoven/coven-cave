@@ -69,7 +69,21 @@ type NativeCheckResult =
   | { kind: "available"; update: NativeUpdateHandle }
   | { kind: "current" }
   | { kind: "not-applicable" }
+  | { kind: "disabled" }
   | { kind: "failed"; message: string };
+
+const DEVELOPMENT_UPDATES_OFF = "Development builds don't install updates.";
+
+/**
+ * Debug shells register no updater (tauri_setup.rs): installing a release
+ * over a dev build replaces its build folder. Tauri rejects a call to an
+ * unregistered plugin with exactly this message, so the page learns it from
+ * the shell itself, whatever build of the page it is serving.
+ */
+function isUpdaterUnregistered(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  return message.trim() === "plugin updater not found";
+}
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -82,6 +96,8 @@ function errorMessage(err: unknown, fallback: string): string {
  */
 async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
   if (!isTauri()) return { kind: "not-applicable" };
+  // `next dev` only ever runs inside a debug shell, which has no updater.
+  if (process.env.NODE_ENV === "development") return { kind: "disabled" };
   const checkEpoch = nativeUpdateCoordinator.beginCheck();
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
@@ -98,6 +114,7 @@ async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
     }
     return await adoptNativeUpdateResult(nativeUpdateCoordinator, owner, update, checkEpoch);
   } catch (err) {
+    if (isUpdaterUnregistered(err)) return { kind: "disabled" };
     return { kind: "failed", message: errorMessage(err, "Native updater check failed") };
   }
 }
@@ -130,8 +147,20 @@ async function armWindowsInstallRecovery(): Promise<() => Promise<void>> {
   };
 }
 
+/** The update is on disk, but this version could not restart itself into it. */
+export class UpdateInstalledRelaunchError extends Error {
+  constructor(reason: string) {
+    super(`update installed, relaunch failed: ${reason}`);
+    this.name = "UpdateInstalledRelaunchError";
+  }
+}
+
 /** Install an already downloaded and verified update, then relaunch where supported. */
 export async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> {
+  // install() replaces the app bundle, and with it the chunks this build's
+  // server can still serve. Load the relaunch code while it can be fetched;
+  // loaded afterwards it fails with "Failed to load chunk" (#6470).
+  const { relaunch } = await import("@tauri-apps/plugin-process");
   const disarmRecovery = await armWindowsInstallRecovery();
   try {
     await update.install();
@@ -141,8 +170,11 @@ export async function installPreparedUpdate(update: NativeUpdateHandle): Promise
   }
   // Windows exits inside install() and AUTOLAUNCHAPP handles restart. Other
   // desktop platforms return and need an explicit relaunch.
-  const { relaunch } = await import("@tauri-apps/plugin-process");
-  await relaunch();
+  try {
+    await relaunch();
+  } catch (err) {
+    throw new UpdateInstalledRelaunchError(errorMessage(err, "unknown error"));
+  }
 }
 
 /** The recorded outcome of a Windows install that did not complete, if any. */
@@ -294,6 +326,10 @@ type Resolved =
 /** Native-first, then fallback. Used by both the banner and the settings row. */
 async function resolveUpdate(owner: symbol): Promise<Resolved> {
   const native = await checkNativeUpdate(owner);
+  // Not "failed": that would fall through to the browser installer, which a
+  // dev build must not offer either. "unavailable" keeps the banner quiet and
+  // lets Settings say why.
+  if (native.kind === "disabled") return { kind: "unavailable", message: DEVELOPMENT_UPDATES_OFF };
   if (native.kind === "available") {
     return { kind: "native", version: native.update.version, update: native.update };
   }
@@ -473,6 +509,17 @@ export function UpdateBannerTrigger() {
                           title: `Installing CovenCave v${r.version}…`,
                         });
                         void installPreparedUpdate(r.update).catch(async (error) => {
+                          if (error instanceof UpdateInstalledRelaunchError) {
+                            // The new version is on disk. Stay busy so no later
+                            // check replaces this, and offer nothing that would
+                            // need another chunk from the replaced bundle.
+                            pushBanner({
+                              id: BANNER_ID,
+                              severity: "info",
+                              title: `CovenCave v${r.version} is installed. Quit and reopen CovenCave to finish updating.`,
+                            });
+                            return;
+                          }
                           await nativeUpdateCoordinator.finishAction(owner);
                           await nativeUpdateCoordinator.invalidate(r.update);
                           busy = false;
@@ -597,6 +644,7 @@ type RowState =
   | { phase: "cancelling"; version: string }
   | { phase: "prepared"; version: string; update: NativeUpdateHandle }
   | { phase: "installing"; version: string }
+  | { phase: "installed"; version: string }
   | { phase: "failed"; version: string; message: string };
 
 type LastKnownUpdate =
@@ -695,7 +743,8 @@ export function UpdateSettingsRow({
         state.phase !== "preparing" &&
         state.phase !== "cancelling" &&
         state.phase !== "prepared" &&
-        state.phase !== "installing",
+        state.phase !== "installing" &&
+        state.phase !== "installed",
     );
   }, [onCheckAvailabilityChange, state.phase]);
 
@@ -793,6 +842,12 @@ export function UpdateSettingsRow({
     installInFlight.current = true;
     setState({ phase: "installing", version });
     void installPreparedUpdate(update).catch(async (err) => {
+      if (err instanceof UpdateInstalledRelaunchError) {
+        // The new version is on disk; installInFlight stays set so nothing
+        // re-checks against the replaced bundle.
+        if (mounted.current) setState({ phase: "installed", version });
+        return;
+      }
       installInFlight.current = false;
       await nativeUpdateCoordinator.finishAction(owner);
       await nativeUpdateCoordinator.invalidate(update);
@@ -857,6 +912,12 @@ export function UpdateSettingsRow({
     control = (
       <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
         Installing update…
+      </span>
+    );
+  } else if (state.phase === "installed") {
+    control = (
+      <span className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">
+        {`v${state.version} installed. Quit and reopen CovenCave to finish updating.`}
       </span>
     );
   } else if (state.phase === "available") {

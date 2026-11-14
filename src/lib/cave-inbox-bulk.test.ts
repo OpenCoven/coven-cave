@@ -61,6 +61,15 @@ try {
     "dismissed items are read",
   );
 
+  // ── restore (Undo of a dismiss) puts named dismissed items back, read ─────
+  res = await applyBulkAction("restore", [a.id, c.id, pending.id]);
+  assert.deepEqual(res.updated.map((i) => i.id).sort(), [a.id, c.id].sort(), "only dismissed items are restored");
+  assert.ok(res.updated.every((i) => i.status === "fired"), "restored items are back on the fired stack");
+  res = await applyBulkAction("restore", [a.id]);
+  assert.equal(res.updated.length, 0, "restoring an item that is not dismissed is a no-op");
+  res = await applyBulkAction("dismiss", [a.id, c.id]);
+  assert.equal(res.updated.length, 2);
+
   // ── done requires ids; unknown ids are skipped, not errors ────────────────
   res = await applyBulkAction("done", [b.id, "no-such-id"]);
   assert.equal(res.updated.length, 1);

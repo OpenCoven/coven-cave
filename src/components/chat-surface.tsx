@@ -456,6 +456,7 @@ export function ChatSurface({
           pendingChatAction.origin,
           pendingChatAction.initialControls ?? undefined,
           pendingChatAction.initialAttachments ?? undefined,
+          pendingChatAction.initialDraft ?? undefined,
         ),
         0,
       );
@@ -506,7 +507,10 @@ export function ChatSurface({
     // Projects tab opens even when the event loses the race (cave-c2zf; same
     // shape as the coven-tab latch below).
     if (consumeProjectsTabPending()) setScope("projects");
-    const open = () => setScope("projects");
+    const open = () => {
+      consumeProjectsTabPending();
+      setScope("projects");
+    };
     window.addEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
     return () => window.removeEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
   }, []);
@@ -639,7 +643,9 @@ export function ChatSurface({
             items={CHAT_SECTION_ITEMS}
           />
           <div className="flex shrink-0 items-center gap-1.5">
-            {browseFilter}
+            {/* At 1024px and up the title bar carries these selectors, as on
+                every other page; this copy is for narrower windows (#6478). */}
+            <div className="chat-browse-filter__inline">{browseFilter}</div>
             {/* Group demoted from a co-equal tab (cave-xsq.5): the default chat
                 surface reads as a conversation (Sessions / Projects), and Group
                 — broadcast one prompt to a coven — is a quiet icon here instead.

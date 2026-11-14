@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildAltoolArgs,
   extractDeliveryId,
+  countRecoveredServerErrors,
   hasAltoolSemanticError,
   isBuildNotFound,
   parseCommand,
@@ -199,6 +200,61 @@ test("treats semantic altool errors as failures even when the process exits zero
   assert.equal(hasAltoolSemanticError('{"status":"COMPLETE"}'), false);
 });
 
+// Captured from the v0.5.21 release run (2026-11-12) during an App Store
+// Connect incident: two server calls returned HTTP 500, altool retried them
+// itself and finished with its own success verdict and exit 0.
+const RECOVERED_VALIDATION = [
+  "{",
+  '  "os-version" : "Version 15.8.2 (Build 24H232)",',
+  '  "success-message" : "No errors validating archive at \'/tmp/CovenCave.ipa\'.",',
+  '  "tool-version" : "26.10.1 (171001)"',
+  "}",
+  "2026-11-12 21:50:39.892 ERROR: [ContentDelivery.Uploader.6000003484C0] CHANGE UPLOAD STATE TO COMPLETE (UPLOADING ASSET DESCRIPTION): received status code 500; internal server error. (QNT4G3W7) (500)",
+  "2026-11-12 21:51:14.324 ERROR: [ContentDelivery.Uploader.6000003484C0] CHANGE UPLOAD STATE TO COMPLETE (UPLOADING SPI ANALYSIS): received status code 500; internal server error. (3A3MWGHO) (500)",
+  "2026-11-12 21:51:26.523  INFO: [ContentDelivery.Uploader.6000003484C0] ",
+  "==========================================",
+  "VERIFY SUCCEEDED with no errors",
+  "==========================================",
+  "",
+].join("\n");
+
+test("a server error that altool recovered from is not a failure", () => {
+  assert.equal(hasAltoolSemanticError(RECOVERED_VALIDATION), false);
+  assert.equal(countRecoveredServerErrors(RECOVERED_VALIDATION), 2);
+  assert.equal(
+    hasAltoolSemanticError(RECOVERED_VALIDATION.replace("VERIFY SUCCEEDED", "UPLOAD SUCCEEDED")),
+    false,
+  );
+});
+
+test("a server error stays a failure without altool's own success verdict", () => {
+  const withoutVerdict = RECOVERED_VALIDATION.replace("VERIFY SUCCEEDED with no errors", "VERIFY FAILED");
+  assert.equal(hasAltoolSemanticError(withoutVerdict), true);
+  assert.equal(countRecoveredServerErrors(withoutVerdict), 0);
+  // A success message inside the JSON alone is not the verdict line.
+  assert.equal(
+    hasAltoolSemanticError(RECOVERED_VALIDATION.replace("VERIFY SUCCEEDED with no errors\n", "")),
+    true,
+  );
+});
+
+test("any other error stays a failure beside a success verdict", () => {
+  assert.equal(
+    hasAltoolSemanticError(
+      `${RECOVERED_VALIDATION}2026-11-12 21:51:27.000 ERROR: [altool.600003C544C0] Expected delivery ID argument is missing. (21)\n`,
+    ),
+    true,
+  );
+  assert.equal(
+    hasAltoolSemanticError(RECOVERED_VALIDATION.replaceAll("status code 500", "status code 401")),
+    true,
+  );
+  assert.equal(
+    hasAltoolSemanticError(`${RECOVERED_VALIDATION}{"errors":[{"code":"ENTITY_NOT_FOUND"}]}\n`),
+    true,
+  );
+});
+
 test("allow-missing reserves exit 3 for Apple's explicit not-found response", () => {
   const directory = mkdtempSync(join(tmpdir(), "app-store-connect-test-"));
   const fakeXcrun = join(directory, "xcrun");
@@ -295,6 +351,45 @@ process.exit(0);
 
     assert.equal(result.status, 1);
     assert.match(result.stderr, /reported an error despite exiting successfully/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the CLI accepts a validation that altool recovered and says so", () => {
+  const directory = mkdtempSync(join(tmpdir(), "app-store-connect-recovered-test-"));
+  const fakeXcrun = join(directory, "xcrun");
+  const ipaPath = join(directory, "CovenCave.ipa");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+
+  try {
+    writeFileSync(ipaPath, "ipa");
+    writeFileSync(
+      fakeXcrun,
+      `#!/usr/bin/env node
+process.stderr.write(${JSON.stringify(RECOVERED_VALIDATION)});
+process.exit(0);
+`,
+    );
+    chmodSync(fakeXcrun, 0o755);
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/app-store-connect.mjs", "validate", ipaPath],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          APPLE_API_KEY: "KEY123",
+          APPLE_API_ISSUER: "issuer-id",
+          PATH: `${directory}${delimiter}${process.env.PATH}`,
+        },
+      },
+    );
+
+    assert.equal(result.status, 0);
+    assert.match(result.stderr, /altool validate recovered from 2 server error\(s\) and reported success/);
+    assert.doesNotMatch(result.stderr, /reported an error despite exiting successfully/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

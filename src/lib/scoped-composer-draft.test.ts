@@ -1,6 +1,17 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { initialComposerDraftDecision } from "./use-composer-draft.ts";
 import { test } from "node:test";
+
+test("an onboarding starter is an editable draft only in its new conversation and project", () => {
+  const input = { incoming: "Explain the project", current: "", sessionId: null, expectedProject: "/work/a", project: "/work/a", ready: true };
+  assert.equal(initialComposerDraftDecision(input), "apply");
+  assert.equal(initialComposerDraftDecision({ ...input, current: "My existing draft" }), "review");
+  assert.equal(initialComposerDraftDecision({ ...input, sessionId: "existing-session" }), "wait");
+  assert.equal(initialComposerDraftDecision({ ...input, project: "/work/b" }), "wait");
+  assert.equal(initialComposerDraftDecision({ ...input, ready: false }), "wait");
+  assert.equal(initialComposerDraftDecision({ ...input, current: input.incoming }), "keep");
+});
 import { createElement, StrictMode } from "react";
 import { act, create } from "react-test-renderer";
 import { chatComposerDraftKey, useComposerDraft } from "./use-composer-draft.ts";

@@ -196,8 +196,30 @@ export function isBuildNotFound(output) {
   );
 }
 
+const ERROR_LINE = /^\s*(?:\d{4}-\d{2}-\d{2}.*)?ERROR:/i;
+// A ContentDelivery transport line for a server-side failure (HTTP 5xx).
+const SERVER_ERROR_LINE = /^\s*\d{4}-\d{2}-\d{2}.*ERROR: \[ContentDelivery\..*received status code 5\d\d\b/;
+// altool's own final verdict, on a line of its own.
+const SUCCESS_VERDICT_LINE = /^(?:VERIFY|UPLOAD) SUCCEEDED with no errors\s*$/;
+
+/**
+ * altool retries a failed server call itself. Count the logged HTTP 5xx lines
+ * it recovered from: every error line is such a line and altool still printed
+ * its own success verdict. Anything else counts as zero.
+ */
+export function countRecoveredServerErrors(output) {
+  const lines = output.split("\n");
+  const errorLines = lines.filter((line) => ERROR_LINE.test(line));
+  if (errorLines.length === 0) return 0;
+  if (!lines.some((line) => SUCCESS_VERDICT_LINE.test(line))) return 0;
+  return errorLines.every((line) => SERVER_ERROR_LINE.test(line)) ? errorLines.length : 0;
+}
+
 export function hasAltoolSemanticError(output) {
-  if (/^\s*(?:\d{4}-\d{2}-\d{2}[^\n]*)?ERROR:/im.test(output)) {
+  if (
+    output.split("\n").some((line) => ERROR_LINE.test(line)) &&
+    countRecoveredServerErrors(output) === 0
+  ) {
     return true;
   }
   const errors = output.match(/"errors"\s*:\s*\[([\s\S]*?)\]/i);
@@ -242,6 +264,12 @@ function execute(request, auth, env) {
         request.command,
         result.status,
         output,
+      );
+    }
+    const recovered = countRecoveredServerErrors(output);
+    if (recovered > 0) {
+      console.error(
+        `app-store-connect: altool ${request.command} recovered from ${recovered} server error(s) and reported success`,
       );
     }
     return output;

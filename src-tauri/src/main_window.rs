@@ -21,6 +21,8 @@ const SECONDARY_MAIN_WINDOW_PERMISSIONS: &[&str] = &[
     "allow-browser-deactivate-all",
     "allow-browser-close-all",
     "allow-browser-reload",
+    "allow-open-chat-window",
+    "allow-shell-reveal-path",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     #[cfg(target_os = "windows")]
