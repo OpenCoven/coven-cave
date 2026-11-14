@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireTrustedHumanGrantMutation } from "@/lib/server/trusted-grant-mutation";
 
 import {
+  CavePrivateStateGrantError,
   ProjectAccessDeniedError,
   resolveGrantProposal,
   undoGrantProposal,
@@ -64,6 +65,12 @@ export async function PATCH(
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {
       return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
+    }
+    if (error instanceof CavePrivateStateGrantError) {
+      return NextResponse.json(
+        { ok: false, code: error.code, error: error.message, projectId: error.project.id },
+        { status: error.status },
+      );
     }
     throw error;
   }

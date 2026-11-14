@@ -27,3 +27,49 @@ is inspected without mutation. If stale records are present, an authorized
 person can review the count in Projects and choose **Repair stale permissions**.
 If no action is taken, server-side chat launch remains fail-closed: a session
 still cannot start without an authorized, registered project root.
+
+## Folders that hold Cave's private state
+
+Cave keeps each Claude turn's authority files in `claude-authority` inside
+Cave's home, beside the grants file. These are scope files and MCP configs,
+which can hold server credentials. A familiar can't get Write access to a
+folder that holds that folder or sits inside it (#6451). Write there would let
+it change its own grants or read another turn's credentials.
+
+- The grants store refuses new Write access to such a project with 409
+  `cave_private_state_write`. That covers direct grants, access-group grants,
+  adding a member to a group that holds such a grant, and Supreme's proposals
+  and their acceptance. The bootstrap grant gives Read instead.
+- Read access, downgrades, removals and unrelated group edits still work.
+  Folders elsewhere in Cave's home, such as Research Missions, aren't affected.
+- Paths are compared on disk, through links and letter case, the same way a
+  Claude turn compares them. A link whose target doesn't exist yet is followed
+  to where it points: the private state folder isn't created until the first
+  Claude turn. A folder behind links that can't be resolved counts as
+  overlapping.
+- `PUT /api/projects/[id]` refuses, with the same 409, a root change that
+  would move a project onto the private state while anyone can write to it:
+  a direct Write grant, an access group's Write grant, or an accepted Write
+  request still inside its undo window. Narrow that access to Read first.
+- Each grant change reads the project registry and saves the grants under one
+  lock (registry, then grants), and a root change takes the same lock. A
+  folder can't move between a check and the write that relied on it.
+- A request accepted before this rule, whose undo window has passed, was
+  already a Write grant on every read. It stays one and is flagged like any
+  other existing grant. Finalizing a request doesn't check the folder again.
+- The supreme familiar shows as Full everywhere in Projects, except on these
+  folders. There its real grant shows and can be changed.
+- `GET /api/project-grants` lists such projects in `privateStateProjectIds`.
+  Projects and Access groups flag a Write grant made before this rule. Nothing
+  changes that grant automatically.
+- A Claude turn in Full access that could write to such a folder is refused
+  with 409 `scoped_write_unavailable` and `reason: "cave_private_state_overlap"`.
+  Its `overlap` names the project and folder, and says whether the access comes
+  from the familiar's own grant, access groups, its workspace or the chat's
+  folder. Chat shows that message and offers **Open projects**, which opens
+  the Access pane for the chat's familiar with the project in view. Projects
+  replaces the chat, so the refused message goes back in the composer;
+  attachments aren't carried.
+- Other harnesses aren't checked when a turn starts. An existing Write grant
+  can still reach Codex and the others through `--add-dir`, so narrow it in
+  Projects.
