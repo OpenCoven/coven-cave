@@ -63,6 +63,8 @@ const CONTEXT = {
 async function setup(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
+    // This session-list fixture browses across projects, independent of saved defaults.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     // Nav is minimized-by-default; keep it expanded here so the chat layout keeps

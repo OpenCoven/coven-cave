@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { advanceFirstUse, createFirstUseState, createQuickStartState, type FirstUseState } from "../src/lib/first-use";
-import { chatFilterAtAllChats } from "./fixtures/chat-filter";
+import { openChatFilter } from "./fixtures/chat-filter";
 import { chatComposerDraftKey } from "../src/lib/use-composer-draft";
 
 test.use({ serviceWorkers: "block" });
@@ -230,14 +230,15 @@ for (const destination of ["project", "session"] as const) {
   });
 }
 
-test("a saved default is restored while All chats remains the overview", async ({ page }) => {
+test("a saved default is restored into the shared Chat workspace selection", async ({ page }) => {
   const state: FirstUseState = { version: 1, revision: 8, step: "complete", outcome: "plan", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, practice: { approvalHeld: true, stopped: true, retried: true, verified: true }, completedAt: "2026-11-11T12:00:00.000Z" };
   await fixture(page, state);
   await page.goto("/?mode=chat");
   await expect.poll(() => page.evaluate(() => localStorage.getItem("cave:workspace:project-scope:v1"))).toBe(JSON.stringify(PROJECT.id));
-  // The saved default is the workspace scope; Chat's own filter still opens on
-  // All chats, in the title bar at desktop widths and the header below (#6478).
-  await expect(chatFilterAtAllChats(page)).toBeVisible();
+  const filter = await openChatFilter(page);
+  await expect(filter.controls.getByRole("button", { name: /^Switch project: Practice garden/ })).toBeVisible();
+  await expect(filter.controls.getByRole("button", { name: "Switch familiar — current: Nova", exact: true })).toBeVisible();
+  await filter.close();
 });
 
 test("revoked defaults require repair and preserve their stable identities", async ({ page }) => {

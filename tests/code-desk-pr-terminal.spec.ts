@@ -616,6 +616,8 @@ const RAIL_SESSION = mkSession({ id: "s-repo", title: "Refactor auth flow", proj
 async function openRepoChat(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
+    // The rail fixture opens its repo session from an unfiltered project list.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:code-rail:pinned:v1", "false");

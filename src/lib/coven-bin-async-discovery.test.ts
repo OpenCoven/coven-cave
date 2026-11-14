@@ -272,6 +272,22 @@ if (process.platform === "win32") {
     });
     assert.ok(!expired.PATH.split(path.delimiter).includes(shellBin), "expired deadline skips the shell");
     assert.equal(await invocations(), 7, "expired custom discovery spawned nothing");
+
+    // A runtime catalog can refresh while another request starts a harness.
+    // Keep serving the last verified PATH until the newest refresh publishes;
+    // a synchronous consumer must never run a second login shell in the gap.
+    const known = await refreshCovenSpawnEnvAsync();
+    const before = await invocations();
+    process.env.STUB_SLEEP = "0.3";
+    const olderRefresh = refreshCovenSpawnEnvAsync();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const newerRefresh = refreshCovenSpawnEnvAsync();
+    const syncReadStart = Date.now();
+    assert.equal(covenSpawnEnv().PATH, known.PATH);
+    assert.ok(Date.now() - syncReadStart < 150, "warm readers stay nonblocking while overlapping refreshes run");
+    await Promise.all([olderRefresh, newerRefresh]);
+    assert.equal(await invocations(), before + 2, "two async refreshes never cause a third synchronous discovery");
+
   } finally {
     for (const key of Object.keys(process.env)) {
       if (!(key in originalEnv)) delete process.env[key];

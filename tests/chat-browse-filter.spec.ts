@@ -15,6 +15,10 @@ const sessions = [
 
 async function fixture(page: Page) {
   await setup(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1",
+      JSON.stringify({ "__all-projects__": [], alpha: [], beta: [] }));
+  });
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars } }));
   await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects } }));
   const listRequests: URL[] = [];
@@ -40,12 +44,12 @@ async function filterProject(page: Page, name: string) {
   return filter;
 }
 
-test("Chat's filter sits in the title bar at desktop widths, starts at All chats, and keeps historical reads and draft identity", async ({ page }) => {
+test("Chat's filter sits in the title bar at desktop widths, uses shared All scope, and keeps historical reads and draft identity", async ({ page }) => {
   await fixture(page);
   await expect(page.locator('.chat-inner-rail .cnav__thread-title[title="Context thread B"]')).toBeVisible();
   await expect(page.locator('.chat-inner-rail .cnav__thread-title[title="Read-only historical chat"]')).toBeVisible();
   // Same row and form as the shared selectors on every other page (#6478),
-  // but at All chats: the saved ambient scope (Cody) is not applied (#6434).
+  // with the shared All-projects/All-familiars selection explicitly seeded above.
   const titleBar = chatFilterTitleBar(page);
   await expect(titleBar.getByRole("button", { name: "Switch project: All projects", exact: true })).toBeVisible();
   await expect(titleBar.getByRole("button", { name: "Switch familiar — scope: all familiars", exact: true })).toBeVisible();
@@ -62,7 +66,7 @@ test("Chat's filter sits in the title bar at desktop widths, starts at All chats
   await expect(titleBar.getByRole("button", { name: /^Switch project: Context alpha/ })).toBeVisible();
   await titleBar.getByRole("button", { name: /^Switch familiar/ }).click();
   await expect(page.getByRole("option", { name: /Cody/ })).toBeVisible();
-  await expect(page.getByRole("option", { name: /Sage/ })).toHaveCount(0);
+  await expect(page.getByRole("option", { name: /Sage/ })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("chat-main").getByRole("button", { name: /^Project: Context beta/ })).toBeVisible();
   await expect(composer).toHaveValue("Draft belongs to B");
@@ -81,7 +85,7 @@ test("Chat's filter sits in the title bar at desktop widths, starts at All chats
   expect(await page.evaluate(() => location.hash)).toBe(hash);
 });
 
-test("Chat's title-bar filter leaves the shared scope on other pages alone", async ({ page }) => {
+test("Chat's title-bar selection stays synchronized on other pages", async ({ page }) => {
   await fixture(page);
   await filterProject(page, "Context alpha");
   const titleBar = chatFilterTitleBar(page);
@@ -91,15 +95,15 @@ test("Chat's title-bar filter leaves the shared scope on other pages alone", asy
   await navigation.getByRole("button", { name: "Tasks", exact: true }).click();
   const shared = page.locator(".workspace-titlebar-context");
   await expect(titleBar).toHaveCount(0);
-  await expect(shared.getByRole("button", { name: "Switch project: All projects", exact: true })).toBeVisible();
-  await expect(shared.getByRole("button", { name: "Switch familiar — current: Cody", exact: true })).toBeVisible();
+  await expect(shared.getByRole("button", { name: /^Switch project: Context alpha/ })).toBeVisible();
+  await expect(shared.getByRole("button", { name: "Switch familiar — scope: project crew", exact: true })).toBeVisible();
 
   await navigation.getByRole("button", { name: "Chat", exact: true }).click();
   await expect(titleBar.getByRole("button", { name: /^Switch project: Context alpha/ })).toBeVisible();
 });
 
 for (const appearance of ["dark", "light", "tide"] as const) {
-  test(`phone filter preserves the open draft, Full-only choices and keyboard dismissal (${appearance})`, async ({ page }) => {
+  test(`phone filter preserves the open draft, shared crew choices and keyboard dismissal (${appearance})`, async ({ page }) => {
     await fixture(page);
     await openThread(page, "B");
     const composer = page.getByTestId("chat-main").getByRole("textbox", { name: "Message", exact: true });
@@ -123,7 +127,7 @@ for (const appearance of ["dark", "light", "tide"] as const) {
     await page.screenshot({ path: test.info().outputPath(`phone-filter-${appearance}.png`) });
     await page.getByRole("button", { name: /^Switch familiar/ }).click();
     await expect(page.getByRole("option", { name: /Cody/ })).toBeVisible();
-    await expect(page.getByRole("option", { name: /Sage/ })).toHaveCount(0);
+    await expect(page.getByRole("option", { name: /Sage/ })).toBeVisible();
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);

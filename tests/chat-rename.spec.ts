@@ -33,6 +33,8 @@ async function setup(page: Page): Promise<{ patched: () => unknown }> {
 
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
+    // This session-list fixture browses across projects, independent of saved defaults.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");

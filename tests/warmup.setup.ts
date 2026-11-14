@@ -99,6 +99,10 @@ const CHUNK_TIMEOUT = 120_000;
 async function boot(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
+    // Warm every surface from an explicit browsing scope. Chat now restores
+    // the shared project selection, so the server's unrelated saved default
+    // would otherwise hide this fixture's repo-linked session.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:code-rail:pinned:v1", "false");
     // Nav is minimized-by-default; keep it expanded so the rail keeps its room.
