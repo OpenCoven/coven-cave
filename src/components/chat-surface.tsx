@@ -507,7 +507,10 @@ export function ChatSurface({
     // Projects tab opens even when the event loses the race (cave-c2zf; same
     // shape as the coven-tab latch below).
     if (consumeProjectsTabPending()) setScope("projects");
-    const open = () => setScope("projects");
+    const open = () => {
+      consumeProjectsTabPending();
+      setScope("projects");
+    };
     window.addEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
     return () => window.removeEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
   }, []);

@@ -68,10 +68,13 @@ import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
 import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
+  CHAT_FOCUS_PROJECT_EVENT,
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
   markCovenGroupPending,
   markCovenTabPending,
+  markProjectFocusPending,
+  markProjectsTabPending,
 } from "@/lib/chat-tab-events";
 import { addableFamiliars, promoteSessionToCoven } from "@/lib/coven-promotion";
 import {
@@ -1031,15 +1034,18 @@ function ChatErrorStrip({
       className="cave-chat-error-strip shrink-0 border-t border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
     >
       <div className="mx-auto w-full max-w-[var(--cave-chat-measure)]">
-      <div className="flex items-center gap-2 px-5 py-2 text-xs">
+      {/* The row wraps so the code badge and buttons never squeeze the
+          reason to zero width in a phone composer (#6445). */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-5 py-2 text-xs">
         <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
+        <span className="min-w-0 flex-1 basis-56 break-words font-medium">{message}</span>
         {code && code !== "harness_auth_required" && code !== "harness_auth_configuration_required" && !usageLimit ? (
           <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]">
             {code}
           </span>
         ) : null}
-        <div className="flex shrink-0 items-center gap-1">
+        {/* Six buttons are wider than a phone: they wrap, so Dismiss stays reachable. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           {hasDetail ? (
             <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={btn}>
               <Icon name={open ? "ph:caret-down-bold" : "ph:caret-right-bold"} width={11} aria-hidden />
@@ -2605,6 +2611,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // send 400s with code project_root_unavailable and Retry can never succeed —
   // the recovery is re-pointing the project, not retrying (cave-ivcc).
   const [projectRootMissing, setProjectRootMissing] = useState(false);
+  // A project whose Write grant overlaps Cave's private state: Projects is
+  // where that grant changes, so the error offers to open it there (#6451).
+  const [privateStateProjectRoot, setPrivateStateProjectRoot] = useState<string | null>(null);
   // 409 chat_run_active: the server still runs an earlier turn of this chat
   // that this view no longer tracks. Holds that chat's id so the error strip
   // can stop the earlier run; Retry then sends the preserved message.
@@ -5594,6 +5603,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setLastFailedSend(null);
     setProjectAccessRoot(null);
     setProjectRootMissing(false);
+    setPrivateStateProjectRoot(null);
     setProjectRootRequired(false);
     setEarlierRunSessionId(null);
     setEarlierRunId(null);
@@ -5909,6 +5919,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           surfacedMessage = blockingRunId
             ? "This chat is still running an earlier turn, so your message was not sent. Stop the earlier turn, or wait for it to finish, then retry."
             : "This chat is still running an earlier turn, so your message was not sent. Wait for it to finish, then retry.";
+        }
+        // The message names the folder and the grant behind it; Projects is
+        // where a project's grant changes.
+        const overlapRefusal = refusal as {
+          error?: unknown;
+          reason?: unknown;
+          overlap?: { source?: unknown; root?: unknown } | null;
+        } | null;
+        if (res.status === 409 && overlapRefusal?.reason === "cave_private_state_overlap") {
+          if (typeof overlapRefusal.error === "string" && overlapRefusal.error.trim()) surfacedMessage = overlapRefusal.error;
+          if (overlapRefusal.overlap?.source === "project" && typeof overlapRefusal.overlap.root === "string") {
+            setPrivateStateProjectRoot(overlapRefusal.overlap.root);
+          }
         }
         setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
@@ -8981,7 +9004,31 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onOpenProjects={
             projectRootMissing
               ? () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT))
-              : undefined
+              : privateStateProjectRoot
+                ? () => {
+                    const root = privateStateProjectRoot;
+                    // Projects replaces this chat, and Retry goes with it. Put
+                    // the refused message back in the composer, whose draft
+                    // survives the trip, unless something newer is typed there.
+                    const failed = lastFailedSend;
+                    if (failed && !failed.promptOverride && failed.text.trim() && !input.trim()) {
+                      setInput(failed.text);
+                      writeComposerDraft(scopedDraftKey, failed.text);
+                    }
+                    // Latches cover a Projects tab that hasn't mounted yet.
+                    // This chat's familiar goes along: a split or side chat
+                    // can belong to a different one from the sidebar's.
+                    markProjectsTabPending();
+                    markProjectFocusPending(root, familiar.id);
+                    // A side chat sits beside Home or Tasks, where nothing is
+                    // listening for the Projects tab. Go to Chat first.
+                    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+                    window.setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+                      window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root, familiarId: familiar.id } }));
+                    }, 0);
+                  }
+                : undefined
           }
           pickProjectOptions={
             projectRootRequired
@@ -9007,6 +9054,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setDebugError(null);
             setProjectAccessRoot(null);
             setProjectRootMissing(false);
+            setPrivateStateProjectRoot(null);
             setProjectRootRequired(false);
             setEarlierRunSessionId(null);
             setEarlierRunId(null);

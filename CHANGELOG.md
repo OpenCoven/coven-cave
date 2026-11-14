@@ -57,6 +57,19 @@ and the built-in **Ask Salem assistant is retired** (#6408). This is the first
 release with Tauri 2.12 and updater 2.14.1 (#6382).
 
 ### Changed
+- **Projects won't give a familiar Write access to a folder that holds Cave's
+  private state** (#6451). That folder holds the grants file and each Claude
+  turn's authority files, so Write there would let a familiar change its own
+  access. The rule covers direct grants, access groups, members added to a
+  group, and Supreme's proposals. Read still works, and folders such as
+  Research Missions are unaffected. Write grants made before this stay as they
+  are, but Projects and Access groups now flag them. When one stops a Claude
+  turn in Full access, Chat names the folder and says whether the access comes
+  from the familiar's own grant or an access group, and offers **Open
+  projects**. That opens the Access pane for the chat's familiar at the
+  project, and puts the refused message back in the composer. A project's
+  folder also can't be moved onto Cave's private state while anyone can write
+  to the project.
 - **Full-access Claude will take its permissions only from your project
   grants** (#6393). This needs a Coven release with the updated `--write-scope`
   and Claude Code 2.1.318 or later. A familiar can then run shell commands and
