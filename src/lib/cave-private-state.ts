@@ -76,7 +76,9 @@ export function overlapsCavePrivateState(
 ): boolean {
   const candidate = resolveForOverlap(root);
   if (candidate === null) return true;
-  return isWithin(privateState, candidate) || isWithin(candidate, privateState);
+  const authorityEntry = path.join(/* turbopackIgnore: true */ canonicalPathForOverlap(caveHome()), "claude-authority");
+  return [privateState, authorityEntry].some((protectedPath) =>
+    isWithin(protectedPath, candidate) || isWithin(candidate, protectedPath));
 }
 
 /** A folder as a person reads it: `~/.coven`, not the full home path. */
