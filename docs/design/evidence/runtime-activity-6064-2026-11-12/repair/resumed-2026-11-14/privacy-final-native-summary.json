@@ -1,0 +1,52 @@
+{
+  "observedAt": "2026-11-14T07:00:40.757701+00:00",
+  "head": "d0e436bdb571133318705c833ff6b30e63a4b9ea",
+  "nativeSourceContinuity": "native-source-continuity.json",
+  "nativeSourcesUnchanged": true,
+  "priorNativeAcceptance": "/private/tmp/nova6064-native-withholding-20261114/native-functional-summary.json",
+  "realHistory": {
+    "passed": true,
+    "total": 1,
+    "passedTests": 1,
+    "failures": 0,
+    "log": "real-server-history.log",
+    "bundle": "real-server-history.xcresult",
+    "connectionReceipt": "real-server-history-connection.json",
+    "buildId": "FJ56LSVjtucX8EXCP6UMW",
+    "origin": "http://127.0.0.1:64355",
+    "sessionId": "history6064-e7646e50-78d8-469f-a20b-d76c9cb5fc88",
+    "storedHash": "31e74e03cd10f137fe97c4c90e0fa92d2e580814230ea14157a0e77731babd24",
+    "expectedOutputMarker": "\"[redacted]\"",
+    "expectedOutputUTF8Bytes": 12,
+    "classification": "Synthetic80-deep stored legacy tool output through real production history/lazy-output HTTP and native CaveClient, ChatThread.reload, expanded SwiftUI row and detail; no provider request"
+  },
+  "tcpTransport": {
+    "status": "passed",
+    "passed": true,
+    "total": 2,
+    "passedTests": 2,
+    "skipped": 0,
+    "failures": 0,
+    "result": "tcp-transport/result.json",
+    "launcherLog": "tcp-transport-launcher.log",
+    "bundle": "tcp-transport/native-transport.xcresult",
+    "buildId": "FJ56LSVjtucX8EXCP6UMW",
+    "sourceFingerprint": "f6b4fa3496cce6fe2355db50a5996d27a2aa1662f36bc2b3bb927140ee69f24e",
+    "sourceUnchanged": true,
+    "provider": "Controlled loopback synthetic Hermes API",
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "serverStopped": true,
+    "providerStopped": true,
+    "daemonStopped": true,
+    "noDaemonState": true,
+    "fixtureRootRemoved": true
+  },
+  "omissions": [
+    "Full native unit/glyph suites not repeated: all seven native source files byte-identical to prior accepted evidence",
+    "No physical device, human VoiceOver, managed pairing, frame/profile, release or TestFlight claim"
+  ],
+  "newBinaryIdentity": "native-privacy-binary-identity.json",
+  "finalSimulatorState": "Shutdown",
+  "simulatorTeardownLog": "owned-simulator-shutdown.log"
+}

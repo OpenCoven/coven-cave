@@ -1,0 +1,10 @@
+{
+  "head": "40a9ec3e5517f5b13f42eb878e98b4f5cab5dbe5",
+  "phase": "Legacy glyph-range renderer, exact Unicode byte replacement, full16unit+6UI post-touch glyph/privacy qualification",
+  "files": {
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift": "8b2967c094a5da6364ec9bf4bd8acb4d43a5be170ce2dac7d862f1621ba07928",
+    "apps/ios/CovenCave/CovenCaveTests/ToolOutputTests.swift": "fbf13414bbe6b08c93eef97b7ede9ec37e160a25792a67aba41e7361b1044499",
+    "apps/ios/CovenCave/CovenCave/Networking/ToolOutputPreview.swift": "975ad369216b95567f9b36135452a9e6b2a9fdef21c06245d1b36dd7d81f3d6b",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "d4c505c1423a367d894c37a658993aa51686f0d74b75d77291a5eb2d3c006d94"
+  }
+}

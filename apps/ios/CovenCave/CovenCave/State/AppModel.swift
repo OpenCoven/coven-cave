@@ -3344,6 +3344,21 @@ final class AppModel {
                          status: .ok, durationMs: 1_200),
         ]
 
+        if let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--ui-preview-tool-disclosure"),
+           let flag = ProcessInfo.processInfo.arguments.dropFirst(index + 1).first {
+            // The fixture enters through the same historical codec and fold as
+            // a saved conversation; it does not manufacture a display step.
+            var tool: [String: Any] = ["id": "a", "name": "Read", "status": "ok", "durationMs": 42]
+            if flag == "input" || flag == "both" { tool["inputDisclosure"] = "withheld" }
+            else { tool["input"] = #"{"file_path":"src/lib/tool-arg-summary.ts"}"# }
+            if flag == "output" || flag == "both" { tool["outputDisclosure"] = "withheld" }
+            if let data = try? JSONSerialization.data(withJSONObject: [tool]),
+               let tools = try? JSONDecoder().decode([ToolCall].self, from: data),
+               let step = ActivityFold.steps(fromTools: tools)?.first {
+                reply.activity?[0] = step
+            }
+        }
+
         let timelinePreview = ProcessInfo.processInfo.arguments.contains("--ui-preview-timeline")
         let liveTimeline = timelinePreview && ProcessInfo.processInfo.arguments.contains("--ui-preview-timeline-live")
         if timelinePreview {
@@ -3377,6 +3392,24 @@ final class AppModel {
         projectsLoaded = true
         seedPreviewProjectContext()
         connectionState = .connected
+        // A bounded, read-only production-history probe. This extends the
+        // isolated DEBUG fixture without installing a URLProtocol or persisting
+        // threads, pairing state, provider calls, or credentials.
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-tool-history"),
+           let raw = ProcessInfo.processInfo.environment["CAVE_TOOL_HISTORY_FIXTURE"],
+           let data = raw.data(using: .utf8),
+           let fixture = try? JSONDecoder().decode([String: String].self, from: data),
+           let origin = fixture["origin"], let sessionId = fixture["sessionId"],
+           let thread = threads.first {
+            let historyConnection = CaveConnection(host: origin)
+            connection = historyConnection
+            thread.sessionIds["nyx"] = sessionId
+            thread.messages = []
+            Task { @MainActor in
+                do { try await thread.reload(client: CaveClient(connection: historyConnection)) }
+                catch { thread.messages = [DisplayMessage(role: .assistant, text: "Couldn't load fixture history.", isError: true)] }
+            }
+        }
         if liveTimeline {
             let previewMessage = reply
             Task { @MainActor [weak self] in

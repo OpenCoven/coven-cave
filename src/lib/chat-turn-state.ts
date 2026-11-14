@@ -23,6 +23,9 @@ export type ToolEvent = {
   name: string;
   input?: string;
   output?: string;
+  /** Saved content rejected by the server's display projection, without a length hint. */
+  inputDisclosure?: "withheld";
+  outputDisclosure?: "withheld";
   /** Set when a transcript was loaded without this tool's output (#5581): its
    *  length, so the card can show it exists and fetch it when opened. */
   outputChars?: number;
@@ -134,13 +137,15 @@ export type ConversationHistoryPayload = {
  * projection does. Opaque provider siblings in a history payload (signatures,
  * encrypted content) never ride along into the turn in a spread. */
 function historyToolEvent(tool: ToolEvent, outputSessionId: string | undefined): ToolEvent {
+  const inputWithheld = tool.inputDisclosure === "withheld";
+  const outputWithheld = tool.outputDisclosure === "withheld";
   return {
     id: tool.id,
     name: tool.name,
     status: tool.status,
-    ...(tool.input !== undefined ? { input: tool.input } : {}),
-    ...(tool.output !== undefined ? { output: tool.output } : {}),
-    ...(tool.outputChars !== undefined ? { outputChars: tool.outputChars } : {}),
+    ...(inputWithheld ? { inputDisclosure: "withheld" as const } : tool.input !== undefined ? { input: tool.input } : {}),
+    ...(outputWithheld ? { outputDisclosure: "withheld" as const } : tool.output !== undefined ? { output: tool.output } : {}),
+    ...(!outputWithheld && tool.outputChars !== undefined ? { outputChars: tool.outputChars } : {}),
     ...(tool.durationMs !== undefined ? { durationMs: tool.durationMs } : {}),
     ...(tool.textOffset !== undefined ? { textOffset: tool.textOffset } : {}),
     ...("activity" in tool ? { activity: tool.activity } : {}),

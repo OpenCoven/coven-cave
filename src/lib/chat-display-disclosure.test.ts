@@ -37,6 +37,38 @@ assert.equal(projectDisplayText("UNKNOWN_SENTINEL", { classification: "tool-outp
 assert.equal(projectDisplayText("FRAGMENT_SENTINEL", { classification: "tool-output", complete: false }), undefined);
 assert.equal(projectDisplayText("UNKNOWN_SENTINEL", { classification: "future-policy" as never, complete: true }), undefined);
 assert.equal(projectDisplayText("safe.ts", { classification: "tool-output", complete: true }), "safe.ts");
+// Bound the actual disclosed unit, including replacements that grow in UTF-8.
+const displayCap = 256 * 1024;
+const completeOutput = { classification: "tool-output" as const, complete: true };
+for (const exact of [" ".repeat(displayCap), "界".repeat(87380) + "    "]) {
+  assert.equal(Buffer.byteLength(exact), displayCap);
+  assert.ok(projectDisplayText(exact, completeOutput) === exact, "exact-cap safe text is preserved byte for byte");
+}
+assert.equal(projectDisplayText("界".repeat(87381) + "  ", completeOutput), undefined);
+const expandsPastCap = " ".repeat(displayCap - 6) + "a@b.co";
+assert.equal(Buffer.byteLength(expandsPastCap), displayCap);
+assert.ok(projectDisplayText(expandsPastCap, completeOutput) === undefined, "redaction cannot expand a disclosed unit past the byte cap");
+const fitsAfterRedaction = " ".repeat(displayCap - 16) + "a@b.co";
+const fitsProjected = projectDisplayText(fitsAfterRedaction, completeOutput);
+assert.equal(Buffer.byteLength(fitsProjected ?? ""), displayCap);
+assert.ok(fitsProjected?.endsWith("[redacted email]"));
+// The bounded redactor's replacement must never be undone by raw-text fallback.
+const opaqueLeaf = "opaque private leaf must stay private";
+for (const depth of [64, 65, 80, 1024]) {
+  for (const key of ["_meta", "signature", "encrypted_content", "encryptedContent", "redacted_thinking", "providerMetadata", "provider_metadata"]) {
+    const raw = '{"nested":'.repeat(depth) + JSON.stringify({ [key]: opaqueLeaf }) + "}".repeat(depth);
+    const projected = projectDisplayText(raw, completeOutput);
+    assert.ok(projected === undefined || !projected.includes(opaqueLeaf), `opaque ${key} at depth ${depth} cannot return after bounded redaction`);
+    assert.ok(projected === undefined || Buffer.byteLength(projected) <= displayCap);
+  }
+}
+const wideOpaque = JSON.stringify([...Array.from({ length: 4100 }, () => "safe"), { _meta: opaqueLeaf }]);
+const wideProjected = projectDisplayText(wideOpaque, completeOutput);
+assert.ok(wideProjected === undefined || !wideProjected.includes(opaqueLeaf), "entry-budget replacement cannot revive raw opaque fields");
+const shadowed = '{"ordinary":"password=SHADOWED_PRIVATE_CREDENTIAL_SENTINEL","ordinary":"safe result"}';
+assert.ok(!projectDisplayText(shadowed, completeOutput)?.includes("SHADOWED_PRIVATE_CREDENTIAL_SENTINEL"), "discarded duplicate fields cannot ride along with raw formatting");
+const formattedSafe = JSON.stringify({ file_path: "safe.ts", count: 1000, literal: "A" }, null, 2);
+assert.deepEqual(JSON.parse(projectDisplayText(formattedSafe, completeOutput)!), JSON.parse(formattedSafe), "ordinary safe JSON values survive redactor serialization");
 assert.doesNotMatch(projectDisplayText('Read /file?sig=RELATIVE_SIGNED_SENTINEL', { classification: "tool-output", complete: true })!, /RELATIVE_SIGNED/);
 assert.doesNotMatch(projectDisplayText(JSON.stringify({ text: "Safe", _meta: "PRIVATE_META_SENTINEL", signature: "SIGNATURE_SENTINEL", encrypted_content: "OPAQUE_SENTINEL" }), { classification: "tool-output", complete: true })!, /PRIVATE_META|SIGNATURE_SENTINEL|OPAQUE_SENTINEL/);
 assert.doesNotMatch(projectDisplayText('{"email":"person\\u0040example.com"}', { classification: "tool-input", complete: true })!, /person|example.com/);

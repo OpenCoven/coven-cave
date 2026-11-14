@@ -1,0 +1,45 @@
+{
+  "sourceHead": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+  "appApiMobile": {
+    "exitCode": 0,
+    "testFilesPassed": 2242,
+    "rawLogSha256": "618aef80a2e6878c544744cdb1d59d2e45a9c8c8efd044d4d9229250a8c6e7fc"
+  },
+  "typecheck": {
+    "exitCode": 0,
+    "rawLogSha256": "26f74663f70626935bcaeee94fc4ec70cbf522eb0493c9ad768e00008675a5e9"
+  },
+  "lint": {
+    "fullExitCode": 0,
+    "changedBrowserTestsExitCode": 0,
+    "rawLogSha256": "87b685721d9f1c3fe75fa33a2feb8c1d447631987c0994d971f88adfa3538500"
+  },
+  "testWiring": {
+    "exitCode": 0,
+    "registeredFiles": 2251,
+    "rawLogSha256": "a4f0234a72ef016ec0fde86d6e1875813285b4b2436f79fad14dec4fb1ac5b22"
+  },
+  "rawReceiptsLocation": "/private/tmp/nova6064-20261112",
+  "limits": "Full app/API/mobile pass belongs to9492; final native changes have22focused tests, current Release rich120 scroll,107mobile contracts and source review; final webbuild/browser58 and realserver9 passed. Exact final-head hosted checks and all remaining acceptance classes stay separate.",
+  "portableEvidenceTypecheck": {
+    "exitCode": 0,
+    "rawLogSha256": "26f74663f70626935bcaeee94fc4ec70cbf522eb0493c9ad768e00008675a5e9"
+  },
+  "portableConfigList": {
+    "exitCode": 0,
+    "testsListed": 58,
+    "rawLogSha256": "191f0155df4a410c30b2816d3cc7d08ee6e2fd7703acbc045759bcfa7852502c"
+  },
+  "finalNativeSource": "7eb96638362aa0d7138788f7cbaf6c698d42c863",
+  "finalMobileContracts": {
+    "exitCode": 0,
+    "filesPassed": 107,
+    "rawLogSha256": "b4907c218eb1b6693564ffa02c91b1172faf7b7a42bafb7159f83dcb68fa9510"
+  },
+  "committedWebBuild": {
+    "exitCode": 0,
+    "sourceCommit": "40a9ec3e5517f5b13f42eb878e98b4f5cab5dbe5",
+    "buildId": "G8PGZ7Uq62CeuoLK3Lov8",
+    "rawLogSha256": "68c0178c51c5cda6f0a4acd070aeef4faee15a57d682132d298d3504211da1dc"
+  }
+}

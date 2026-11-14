@@ -1,0 +1,15 @@
+{
+  "head": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+  "phase": "same renderer logic; explanatory comment and stronger byte-exact selection/whole-range no-link test",
+  "files": {
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift": "5486fc51b146fd7b64c8beb1cfbba283de1e802968c1500005bdcbf31666f3f6",
+    "apps/ios/CovenCave/CovenCave/Networking/ToolOutputPreview.swift": "975ad369216b95567f9b36135452a9e6b2a9fdef21c06245d1b36dd7d81f3d6b",
+    "apps/ios/CovenCave/CovenCaveTests/ToolOutputTests.swift": "08b731dcb781bfb819f553576f68c72038cec128e3ab588a7e95863389d474fb",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "66973a47c54ca8d92f7acd1ab1354963e8fdc65865b0ba519ea695ed715dc0e2"
+  },
+  "diff_sha256": "2d55ab98e183587e62c01f5cd0812315a595d2911d6480846d72df12bb75f6d7",
+  "binaries": {
+    "CovenCave": "b1ef81fd46cb36a5c38d65d1749868ae02103d65103cc1d039e633752958c004",
+    "CovenCave.debug.dylib": "a09d3afa912bc3d5e6448324305ae3fd026052fca0590f304e12b6980a25fb1f"
+  }
+}

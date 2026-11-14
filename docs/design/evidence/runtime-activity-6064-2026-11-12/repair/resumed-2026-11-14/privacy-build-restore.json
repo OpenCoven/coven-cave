@@ -1,0 +1,9 @@
+{
+  "source": "/private/tmp/nova6064-resume-20261114-mo25t69y/qualified-privacy-build-FJ56/Cave6064Qualification.app/Contents/Resources/resources/server",
+  "destination": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-6064-webkit-retry-nova/.next/standalone",
+  "buildId": "FJ56LSVjtucX8EXCP6UMW",
+  "verifiedFileCopies": 8975,
+  "cause": "Conformance scripts/client-v1-compatibility-control.integration.test.mjs removeTestBuildOutputs explicitly removes repository .next; missing asset was a fixture-start failure before tests",
+  "rebuild": false,
+  "sourceMutation": false
+}

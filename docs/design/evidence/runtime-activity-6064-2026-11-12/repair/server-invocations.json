@@ -1,0 +1,296 @@
+{
+  "correction": "Early generic assert.rejects receipts do not prove client byte-limit rejection or an oversized200response. Strengthened final probe proves server404withholding and exact262144-byte safe-text200. Intermediate synthetic long-token output was redacted by existing display policy; fixture changed to safe spaced text without changing product guards.",
+  "invocations": [
+    {
+      "receipt": "live-server-report.json",
+      "rawSha256": "6a52752860fff02113075d7919911d639701bd5b98c77b5b64211104fca69ca9",
+      "report": {
+        "classification": "Built server, real storage/projection/device-gateway; controlled external peer inventory, synthetic saved conversation; no provider dispatch or physical ingress",
+        "head": "9492da1bb",
+        "buildId": "NTpvPQ3a5D8WVxQ9cl9ST",
+        "serverSha256": "e2162c4fc4adc07dbbab3bd1fba98c1ead10a26e32d21157ade0b156a33282e2",
+        "checks": [
+          {
+            "case": "verified direct-local peer",
+            "status": 200
+          },
+          {
+            "case": "authorized real lazy fetch",
+            "status": 200
+          },
+          {
+            "case": "missing",
+            "status": 404
+          },
+          {
+            "case": "ambiguous",
+            "status": 409
+          },
+          {
+            "case": "oversized real response",
+            "rejectedByClient": true
+          },
+          {
+            "case": "pending device",
+            "status": 403,
+            "markerWithheld": true
+          },
+          {
+            "case": "allowed device",
+            "status": 200
+          },
+          {
+            "case": "revoked device",
+            "status": 403,
+            "markerWithheld": true
+          }
+        ],
+        "passed": true,
+        "serverStopped": true,
+        "cleanup": {
+          "removed": true
+        }
+      }
+    },
+    {
+      "receipt": "portable-server-report.json",
+      "rawSha256": "453badae6729485dd0f2b0f500667387a5def8f7637760b2484ad611a623f01f",
+      "report": {
+        "classification": "Built server, real storage/projection/device-gateway; controlled external peer inventory, synthetic saved conversation; no provider dispatch or physical ingress",
+        "head": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+        "buildId": "-bY9qlcmXSqkfZGc6qxBV",
+        "serverSha256": "e2162c4fc4adc07dbbab3bd1fba98c1ead10a26e32d21157ade0b156a33282e2",
+        "checks": [
+          {
+            "case": "verified direct-local peer",
+            "status": 200
+          },
+          {
+            "case": "authorized real lazy fetch",
+            "status": 200
+          },
+          {
+            "case": "missing",
+            "status": 404
+          },
+          {
+            "case": "ambiguous",
+            "status": 409
+          },
+          {
+            "case": "oversized real response",
+            "rejectedByClient": true
+          },
+          {
+            "case": "pending device",
+            "status": 403,
+            "markerWithheld": true
+          },
+          {
+            "case": "allowed device",
+            "status": 200
+          },
+          {
+            "case": "revoked device",
+            "status": 403,
+            "markerWithheld": true
+          }
+        ],
+        "passed": true,
+        "serverStopped": true,
+        "cleanup": {
+          "removed": true
+        }
+      }
+    },
+    {
+      "receipt": "portable-server-verified-response.json",
+      "rawSha256": "16cbfcd5ebdfcf1f270ce9f8a33d12da1a3d6248a01f928f2c8ecf3168f2c520",
+      "report": {
+        "classification": "Built server, real storage/projection/device-gateway; controlled external peer inventory, synthetic saved conversation; no provider dispatch or physical ingress",
+        "head": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+        "buildId": "-bY9qlcmXSqkfZGc6qxBV",
+        "serverSha256": "e2162c4fc4adc07dbbab3bd1fba98c1ead10a26e32d21157ade0b156a33282e2",
+        "checks": [
+          {
+            "case": "verified direct-local peer",
+            "status": 200
+          },
+          {
+            "case": "authorized real lazy fetch",
+            "status": 200
+          },
+          {
+            "case": "missing",
+            "status": 404
+          },
+          {
+            "case": "ambiguous",
+            "status": 409
+          },
+          {
+            "case": "oversized real response",
+            "status": 200,
+            "outputBytes": 0,
+            "rejectedByClient": true
+          },
+          {
+            "case": "pending device",
+            "status": 403,
+            "markerWithheld": true
+          },
+          {
+            "case": "allowed device",
+            "status": 200
+          },
+          {
+            "case": "revoked device",
+            "status": 403,
+            "markerWithheld": true
+          }
+        ],
+        "passed": true,
+        "serverStopped": true,
+        "cleanup": {
+          "removed": true
+        }
+      }
+    },
+    {
+      "receipt": "final-real-server.json",
+      "rawSha256": "d400156c46278c344340056b2fe0e70c60d793091d7217c8ea408ed6a86fc0f4",
+      "report": {
+        "classification": "Built server, real storage/projection/device-gateway; controlled external peer inventory, synthetic saved conversation; no provider dispatch or physical ingress",
+        "head": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+        "buildId": "-bY9qlcmXSqkfZGc6qxBV",
+        "serverSha256": "e2162c4fc4adc07dbbab3bd1fba98c1ead10a26e32d21157ade0b156a33282e2",
+        "checks": [
+          {
+            "case": "verified direct-local peer",
+            "status": 200
+          },
+          {
+            "case": "authorized real lazy fetch",
+            "status": 200
+          },
+          {
+            "case": "missing",
+            "status": 404
+          },
+          {
+            "case": "ambiguous",
+            "status": 409
+          }
+        ],
+        "passed": false,
+        "failure": {
+          "name": "AssertionError",
+          "message": "The validation function is expected to return \"true\". Received false\n\nCaught error:\n\nToolOutputFetchError: This output is no longer available."
+        },
+        "serverStopped": true,
+        "cleanup": {
+          "removed": true
+        }
+      }
+    },
+    {
+      "receipt": "final-real-server-bounds.json",
+      "rawSha256": "483b89b7a5b6931d5ae4e0ff4b453825e117f92e2e2dd74398d0348e41704aec",
+      "report": {
+        "classification": "Built server, real storage/projection/device-gateway; controlled external peer inventory, synthetic saved conversation; no provider dispatch or physical ingress",
+        "head": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+        "buildId": "-bY9qlcmXSqkfZGc6qxBV",
+        "serverSha256": "e2162c4fc4adc07dbbab3bd1fba98c1ead10a26e32d21157ade0b156a33282e2",
+        "checks": [
+          {
+            "case": "verified direct-local peer",
+            "status": 200
+          },
+          {
+            "case": "authorized real lazy fetch",
+            "status": 200
+          },
+          {
+            "case": "missing",
+            "status": 404
+          },
+          {
+            "case": "ambiguous",
+            "status": 409
+          },
+          {
+            "case": "oversized saved output withheld by server projection",
+            "status": 404,
+            "markerWithheld": true
+          }
+        ],
+        "passed": false,
+        "failure": {
+          "name": "AssertionError",
+          "message": "Expected values to be strictly equal:\n\n10 !== 262144\n"
+        },
+        "serverStopped": true,
+        "cleanup": {
+          "removed": true
+        }
+      }
+    },
+    {
+      "receipt": "final-real-server-safe-boundary.json",
+      "rawSha256": "a8f0a3a1735288d00a60e26ee3736b70005747b90dcf6eb2d4c2fd5cbe808605",
+      "report": {
+        "classification": "Built server, real storage/projection/device-gateway; controlled external peer inventory, synthetic saved conversation; no provider dispatch or physical ingress",
+        "head": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+        "buildId": "-bY9qlcmXSqkfZGc6qxBV",
+        "serverSha256": "e2162c4fc4adc07dbbab3bd1fba98c1ead10a26e32d21157ade0b156a33282e2",
+        "checks": [
+          {
+            "case": "verified direct-local peer",
+            "status": 200
+          },
+          {
+            "case": "authorized real lazy fetch",
+            "status": 200
+          },
+          {
+            "case": "missing",
+            "status": 404
+          },
+          {
+            "case": "ambiguous",
+            "status": 409
+          },
+          {
+            "case": "oversized saved output withheld by server projection",
+            "status": 404,
+            "markerWithheld": true
+          },
+          {
+            "case": "at-limit real lazy response",
+            "status": 200,
+            "outputBytes": 262144
+          },
+          {
+            "case": "pending device",
+            "status": 403,
+            "markerWithheld": true
+          },
+          {
+            "case": "allowed device",
+            "status": 200
+          },
+          {
+            "case": "revoked device",
+            "status": 403,
+            "markerWithheld": true
+          }
+        ],
+        "passed": true,
+        "serverStopped": true,
+        "cleanup": {
+          "removed": true
+        }
+      }
+    }
+  ]
+}

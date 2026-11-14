@@ -1,0 +1,76 @@
+{
+  "classification": "Alternate-identity ad-hoc Release-profile packaged Tauri; synthetic persisted 503-tool trace, 80-deep input, oversized output; UI observations separate",
+  "head": "d0e436bdb571133318705c833ff6b30e63a4b9ea",
+  "workingTreeDiffSha256": "bc7de935dad0c8c07ed70dffe91144a9e2e5e0013d67fb53c964f631930b39f8",
+  "root": "/private/tmp/nova6064-resume-20261114-mo25t69y/probe3/tmp/g14-live-jeHRcU",
+  "sessionId": "golden14-919a07f9-b59a-42c6-97d6-f86f615349bc",
+  "project": {
+    "id": "RMQCtXlBMs",
+    "name": "Golden 14 fixture",
+    "root": "/private/tmp/nova6064-resume-20261114-mo25t69y/probe3/tmp/g14-live-jeHRcU/project",
+    "createdAt": "2026-11-14T06:01:27.187Z",
+    "updatedAt": "2026-11-14T06:01:27.187Z"
+  },
+  "marker": "AUTHORIZED_GOLDEN14_546d7e72-fa5c-4c45-b44e-af3779078090",
+  "binarySha256": "425c790493875f37d23feda478c15cb8daf88ae60dc0d9f25a010ae90893ea1b",
+  "startedAt": "2026-11-14T06:01:27.212Z",
+  "bundleBuildId": "v7RNAU7Q-W3yoMfJg7cOX",
+  "daemonStart": {
+    "args": [
+      "daemon",
+      "start"
+    ],
+    "code": 0,
+    "stdout": "Coven daemon: running (pid 75864, socket /private/tmp/nova6064-resume-20261114-mo25t69y/probe3/tmp/g14-live-jeHRcU/coven/coven.sock)\n",
+    "stderr": ""
+  },
+  "daemonStatus": {
+    "args": [
+      "daemon",
+      "status"
+    ],
+    "code": 0,
+    "stdout": "Coven daemon: running (pid 75864, socket /private/tmp/nova6064-resume-20261114-mo25t69y/probe3/tmp/g14-live-jeHRcU/coven/coven.sock)\n",
+    "stderr": ""
+  },
+  "daemonPid": 75864,
+  "appPid": 75904,
+  "ready": true,
+  "actualServerChecks": {
+    "fullHistory": 200,
+    "recentHistory": 200,
+    "acceptedExactBytes": 262144,
+    "withheld404": true,
+    "ambiguous409": true,
+    "missing404": true
+  },
+  "exit": {
+    "code": null,
+    "signal": "SIGTERM"
+  },
+  "appStopped": true,
+  "serverStopped": true,
+  "daemonStop": {
+    "args": [
+      "daemon",
+      "stop"
+    ],
+    "code": 0,
+    "stdout": "Coven daemon: stopped\n",
+    "stderr": ""
+  },
+  "daemonFinalStatus": {
+    "args": [
+      "daemon",
+      "status"
+    ],
+    "code": 0,
+    "stdout": "Coven daemon: not running\n",
+    "stderr": "start it with `coven daemon start` (optional — `coven run` works without it)\n"
+  },
+  "daemonStopped": true,
+  "cleanup": {
+    "removed": true
+  },
+  "finishedAt": "2026-11-14T06:12:55.411Z"
+}

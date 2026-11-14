@@ -216,6 +216,16 @@ export default defineConfig({
       use: { ...devices["iPhone 13"] },
     },
     {
+      // #6064: WKWebView's engine can retarget a Retry release when async
+      // input highlighting reflows a disclosure. Keep this narrow real-click
+      // lane alongside Chromium; WebKit is not packaged-app qualification.
+      name: "desktop-webkit-tool-output",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /chat-activity-acceptance\.spec\.ts/,
+      grep: /lazy output|stationary press|large mixed trace/,
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
       name: "desktop",
       dependencies: ["preferences-iphone-13"],
       testMatch: /.*\.spec\.ts/,

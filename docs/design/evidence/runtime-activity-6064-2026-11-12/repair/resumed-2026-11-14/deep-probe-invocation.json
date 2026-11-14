@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "node",
+    "--experimental-strip-types",
+    "/private/tmp/nova6064-resume-20261114-mo25t69y/privacy-deep-probe/probe.mjs"
+  ],
+  "cwd": "/private/tmp/nova6064-resume-20261114-mo25t69y/privacy-deep-probe",
+  "home": "/private/tmp/nova6064-resume-20261114-mo25t69y/privacy-deep-probe/home",
+  "exitCode": 0
+}
