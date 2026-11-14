@@ -41,6 +41,8 @@ const REPO_PROJECT = {
 async function base(page: Page, sessions: unknown[]) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
+    // This session-list fixture browses across projects, independent of saved defaults.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     // Keep the rail unpinned so its default open/collapse behaviour is exercised.

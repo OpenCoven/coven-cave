@@ -133,6 +133,8 @@ async function ensureChatSurface(page: Page, { expectRail = true } = {}) {
 async function gotoChat(page: Page, { expectRail = true, sessions = SESSIONS, sessionsFail = false } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
+    // This session-list fixture browses across projects, independent of saved defaults.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:shell:nav-open", "1");
@@ -235,7 +237,7 @@ test.describe("chat threads rail", () => {
     expect(new URL(page.url()).hash).toBe("#chat-s9");
   });
 
-  test("Chat offers one optional filter instead of mandatory workspace selection", async ({ page }) => {
+  test("Chat shares its familiar scope and discloses filters at narrow widths", async ({ page }) => {
     await gotoChat(page);
     const surface = page.locator(".chat-surface");
     const visibleTrigger = (scope: Locator) =>
@@ -249,16 +251,16 @@ test.describe("chat threads rail", () => {
       await expect(surface).toBeVisible();
       if (viewport.width >= 1024) {
         // The title bar carries Chat's filter, as on every other page (#6478).
-        // It reads All familiars, so it filters the list and asks for no actor.
+        // Its familiar matches the shared Nova selection (#6495).
         const titleBar = page.getByRole("group", { name: "Filter chats", exact: true });
         await expect(titleBar.getByRole("button", { name: "Switch project: All projects", exact: true })).toBeVisible();
-        await expect(titleBar.getByRole("button", { name: "Switch familiar — scope: all familiars", exact: true })).toBeVisible();
+        await expect(titleBar.getByRole("button", { name: "Switch familiar — current: Nova", exact: true })).toBeVisible();
         await expect(visibleTrigger(page.locator("body")), `one familiar filter at ${viewport.width}px`).toHaveCount(1);
         await expect(page.getByRole("button", { name: /^Filter chats:/ })).toBeHidden();
         continue;
       }
       await expect(visibleTrigger(page.locator("body")), `no mandatory actor picker at ${viewport.width}px`).toHaveCount(0);
-      const filter = page.getByRole("button", { name: "Filter chats: All chats", exact: true });
+      const filter = page.getByRole("button", { name: "Filter chats: Nova", exact: true });
       if (!(await filter.isVisible())) {
         await page.getByRole("button", { name: "Show chat list", exact: true }).click();
       }
