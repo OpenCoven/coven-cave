@@ -382,8 +382,13 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
                             : null;
                           const meta = level ? accessLevelMeta(level) : null;
                           // An existing Write grant here blocks Claude Build turns (#6451).
-                          const risky = level === "write" && writeBlocked.has(project.id);
-                          const note = risky ? ` ${PRIVATE_STATE_WRITE_NOTE}` : "";
+                          const blocked = writeBlocked.has(project.id);
+                          const risky = level === "write" && blocked;
+                          const note = risky
+                            ? ` ${PRIVATE_STATE_WRITE_NOTE}`
+                            : level === "read" && blocked
+                              ? " This folder holds Cave’s private state, so it can’t get write access: the next click removes access."
+                              : "";
                           return (
                             <div key={project.id} className="access-groups__grant">
                               <span className="access-groups__project">
