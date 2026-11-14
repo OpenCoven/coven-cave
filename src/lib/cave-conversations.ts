@@ -59,6 +59,9 @@ export type ChatTurn = {
     name: string;
     input?: string;
     output?: string;
+    /** Server-derived display disposition; stored flags never grant disclosure. */
+    inputDisclosure?: "withheld";
+    outputDisclosure?: "withheld";
     status: ToolStatus;
     durationMs?: number;
     /** CHAT-D4-01: length of the turn text when the tool's first event

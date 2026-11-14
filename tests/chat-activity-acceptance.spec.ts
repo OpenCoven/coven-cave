@@ -704,3 +704,45 @@ for (const [capability, capabilityLabel] of [["unknown", "not verified on this p
     await verify();
   });
 }
+
+
+// Client behavior from a mocked admitted history response. Server byte/privacy
+// admission is independently exercised by the actual conversation route tests.
+test("accepted saved output at byte limit preserves draft when returning to latest (#6064)", async ({ page }, info) => {
+  const exact = ("SAFE_LIMIT_MARKER\nsafe result \n".repeat(16_000)).slice(0, 262_144).padEnd(262_144, " ");
+  expect(Buffer.byteLength(exact)).toBe(256 * 1024);
+  let deep: object = { file_path: "/tmp/synthetic" };
+  for (let i = 0; i < 32; i++) deep = { nested: deep };
+  const tools = Array.from({ length: 500 }, (_, i) => ({
+    id: `saved-${i}`, name: "Read", status: "ok",
+    input: i === 0 ? JSON.stringify(deep) : '{"path":"fixture.txt"}',
+    output: i === 0 ? exact : "Safe output", textOffset: 0,
+  }));
+  const { main } = await setup(page, true, true, false, tools);
+  await main.locator("details.streaming-turn-activity > summary").click();
+  await main.locator("details.cave-tool-group > summary").click();
+  await main.locator("details.cave-tool-run > summary").click();
+  const cards = main.locator(".cave-tool-block");
+  await expect(cards).toHaveCount(500);
+  const composer = main.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Keep exact-cap draft");
+  await cards.first().locator(":scope > summary").click();
+  await expect(cards.first().locator(".cave-syntax-block").last()).toContainText("SAFE_LIMIT_MARKER");
+  const transcript = main.locator(".cave-chat-transcript");
+  await transcript.hover();
+  await page.mouse.wheel(0, -100_000);
+  const latest = main.getByRole("button", { name: "Latest", exact: true });
+  await expect(latest).toBeVisible();
+  const before = await transcript.evaluate(el => ({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight }));
+  expect(before.height - before.client).toBeGreaterThan(0);
+  expect(before.height - before.client - before.top).toBeGreaterThan(100);
+  await latest.click();
+  await expect.poll(() => transcript.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(4);
+  await expect(composer).toHaveValue("Keep exact-cap draft");
+  expect(await page.evaluate(() => (window as unknown as { activitySendCount: number }).activitySendCount)).toBe(0);
+  await expect(cards.first()).toHaveAttribute("open", "");
+  await info.attach("saved-output-latest", { body: JSON.stringify({
+    before, after: await transcript.evaluate(el => ({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight })),
+    fixtureBytes: Buffer.byteLength(exact),
+  }), contentType: "application/json" });
+});

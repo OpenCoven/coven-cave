@@ -121,7 +121,10 @@ struct ToolOutputDetailView: View {
                              ?? "Source unavailable for this observation.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    if let detail = target.step.detail, !detail.isEmpty {
+                    if target.step.inputDisclosure == .withheld {
+                        Text("Input withheld from saved history.")
+                            .foregroundStyle(.secondary)
+                    } else if let detail = target.step.detail, !detail.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Argument preview").font(.subheadline.weight(.semibold))
                             Text(detail).font(.body.monospaced()).textSelection(.enabled)
@@ -141,7 +144,7 @@ struct ToolOutputDetailView: View {
             if scenePhase != .active || closeOnReturn { PrivacyShieldView() }
         }
         .task(id: scenePhase == .active ? reload : nil) {
-            guard scenePhase == .active, !closeOnReturn,
+            guard target.step.outputDisclosure != .withheld, scenePhase == .active, !closeOnReturn,
                   let sessionId = target.sessionId, let client = target.client else { return }
             await store.load(sessionId: sessionId, toolId: target.step.id, using: client)
         }
@@ -159,7 +162,9 @@ struct ToolOutputDetailView: View {
     }
 
     @ViewBuilder private var output: some View {
-        if target.client == nil {
+        if target.step.outputDisclosure == .withheld {
+            Text("Output withheld from saved history.").foregroundStyle(.secondary)
+        } else if target.client == nil {
             Text("Connect to your desktop, then reopen this tool to load its output.")
         } else if let reference = target.reference, !reference.matches(target.client?.connection) {
             Text("This output belongs to another desktop connection. Reconnect to that desktop to view it.")

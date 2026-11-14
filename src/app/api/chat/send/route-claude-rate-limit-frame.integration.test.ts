@@ -354,12 +354,12 @@ try {
   );
   assert.equal(
     driftTools[0]?.input,
-    '{\n  "command": "test -f SOUL.md"\n}',
+    '{"command":"test -f SOUL.md"}',
     "the quarantined envelope path retains the independent filesystem check",
   );
   assert.equal(
     driftTools.at(-1)?.output,
-    '{\n  "exitCode": 1,\n  "stderr": "SOUL.md not found"\n}',
+    '{"exitCode":1,"stderr":"SOUL.md not found"}',
     "the hook retains its terminal result",
   );
   assert.equal(
@@ -387,7 +387,7 @@ try {
   const driftConversation = await loadConversation(driftDone?.sessionId);
   assert.equal(
     driftConversation?.turns.at(-1)?.tools?.at(-1)?.output,
-    '{\n  "exitCode": 1,\n  "stderr": "SOUL.md not found"\n}',
+    '{"exitCode":1,"stderr":"SOUL.md not found"}',
     "hook evidence persists across chat reloads instead of becoming tools: []",
   );
 

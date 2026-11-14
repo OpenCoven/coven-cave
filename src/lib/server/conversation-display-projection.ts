@@ -40,6 +40,8 @@ export function projectStoredTool(value: unknown): StoredTool | undefined {
     status,
     ...(input !== undefined ? { input } : {}),
     ...(output !== undefined ? { output } : {}),
+    ...(typeof tool.input === "string" && input === undefined ? { inputDisclosure: "withheld" as const } : {}),
+    ...(typeof tool.output === "string" && output === undefined ? { outputDisclosure: "withheld" as const } : {}),
     ...(Number.isFinite(tool.durationMs) && tool.durationMs! >= 0 ? { durationMs: tool.durationMs } : {}),
     ...(Number.isSafeInteger(tool.textOffset) && tool.textOffset! >= 0 ? { textOffset: tool.textOffset } : {}),
     ...(activity ? { activity: { ...activity, callId: id } } : {}),

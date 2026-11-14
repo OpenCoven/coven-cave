@@ -10775,16 +10775,19 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // instead of a dead button (the edit card's Review has its own modal
   // fallback and stays clickable regardless).
   const railRoot = useContext(ToolProjectRootContext);
-  const argSummary = toolArgSummary(tool.name, tool.input);
+  const inputWithheld = tool.inputDisclosure === "withheld";
+  const outputWithheld = tool.outputDisclosure === "withheld";
+  const input = inputWithheld ? undefined : tool.input;
+  const argSummary = toolArgSummary(tool.name, input);
   // CHAT-D8-02: Edit/Write/MultiEdit/NotebookEdit inputs render as a
   // structured before/after diff instead of the raw JSON payload; null for
   // every other tool (or unparseable input) falls back to the plain block.
-  const inputDiff = toolInputAsDiff(tool.name, tool.input);
-  const targetPath = toolTargetPath(tool.name, tool.input);
+  const inputDiff = toolInputAsDiff(tool.name, input);
+  const targetPath = toolTargetPath(tool.name, input);
   // Click-to-open: a file tool's target opens in the Code workspace preview.
   // Dispatched as an event; the comux pane (Code/Terminal) handles it, and the
   // workspace switches to Code mode first when neither is showing.
-  const targetFile = toolTargetFile(tool.name, tool.input);
+  const targetFile = toolTargetFile(tool.name, input);
   // An edit tool (Edit/Write/MultiEdit/NotebookEdit — the ones with a structured
   // input diff) jumps to its file's DIFF in the Changes review; other file tools
   // open the file preview. The comux pane handles both events.
@@ -10813,9 +10816,9 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     setOutputOpen(event.currentTarget.open);
     if (event.currentTarget.open) setBodyMounted(true);
   };
-  const outputOmitted = tool.output === undefined && (tool.outputChars ?? 0) > 0;
+  const outputOmitted = !outputWithheld && tool.output === undefined && (tool.outputChars ?? 0) > 0;
   const fetchedOutput = useToolOutput(tool, outputOpen && outputOmitted);
-  const output = tool.output ?? (fetchedOutput.status === "ready" ? fetchedOutput.text : undefined);
+  const output = outputWithheld ? undefined : tool.output ?? (fetchedOutput.status === "ready" ? fetchedOutput.text : undefined);
   const activity = normalizeToolActivity(tool.activity, tool.id, tool.status);
   const provenance = (
     <div className="cave-tool-io mt-2">
@@ -10826,7 +10829,18 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
       <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Approval and change confirmation unavailable.</p>
     </div>
   );
-  const omittedOutputState = outputOpen && output === undefined && outputOmitted ? (
+  const withheldInputState = inputWithheld ? (
+    <div className="cave-tool-io mt-2">
+      <div className="cave-tool-io-label">Input</div>
+      <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Input withheld from saved history.</p>
+    </div>
+  ) : null;
+  const omittedOutputState = outputWithheld ? (
+    <div className="cave-tool-io mt-2">
+      <div className="cave-tool-io-label">Output</div>
+      <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Output withheld from saved history.</p>
+    </div>
+  ) : outputOpen && output === undefined && outputOmitted ? (
     <div className="cave-tool-io mt-2">
       <div className="cave-tool-io-label">Output</div>
       {fetchedOutput.status === "error" ? (
@@ -10868,6 +10882,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
         {bodyMounted ? (
           <>
             {provenance}
+            {withheldInputState}
             <div className="cave-tool-io mt-2">
               <div className="cave-tool-io-label">Code changes</div>
               <SyntaxBlock text={inputDiff} lang="diff" />
@@ -10911,13 +10926,14 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
         </span>
       </summary>
       {bodyMounted ? provenance : null}
-      {bodyMounted && tool.input ? (
+      {bodyMounted ? withheldInputState : null}
+      {bodyMounted && input ? (
         <div className="cave-tool-io mt-2">
           <div className="cave-tool-io-label">Input</div>
           {inputDiff ? (
             <SyntaxBlock text={inputDiff} lang="diff" />
           ) : (
-            <ToolInputView input={tool.input} />
+            <ToolInputView input={input} />
           )}
         </div>
       ) : null}

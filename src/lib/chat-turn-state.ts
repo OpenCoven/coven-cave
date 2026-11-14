@@ -23,6 +23,9 @@ export type ToolEvent = {
   name: string;
   input?: string;
   output?: string;
+  /** Saved content rejected by the server's display projection, without a length hint. */
+  inputDisclosure?: "withheld";
+  outputDisclosure?: "withheld";
   /** Set when a transcript was loaded without this tool's output (#5581): its
    *  length, so the card can show it exists and fetch it when opened. */
   outputChars?: number;
@@ -145,7 +148,14 @@ export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[],
       attachments: turn.attachments,
       reasoning: turn.reasoning,
       reasoningBlocks: turn.reasoningBlocks,
-      tools: settleToolObservations(turn.tools)?.map((tool) => ({ ...tool, outputSessionId })),
+      tools: settleToolObservations(turn.tools)?.map((tool) => ({
+        ...tool,
+        // Normalize once before rail, skill, edit and prompt-context consumers.
+        // A stale cache cannot revive content explicitly withheld in history.
+        ...(tool.inputDisclosure === "withheld" ? { input: undefined } : {}),
+        ...(tool.outputDisclosure === "withheld" ? { output: undefined, outputChars: undefined } : {}),
+        outputSessionId,
+      })),
       progress: turn.progress ? turn.progress.map((progress) => ({ ...progress })) : undefined,
       durationMs: turn.durationMs,
       usage: turn.usage,

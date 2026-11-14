@@ -10,6 +10,91 @@ import UIKit
 final class AgentActivityUITests: XCTestCase {
 
     @MainActor
+    func testRealServerHistoryCarriesWithholdingIntoExpandedNativeRows() throws {
+        continueAfterFailure = false
+        guard let raw = ProcessInfo.processInfo.environment["CAVE_TOOL_HISTORY_FIXTURE"] else {
+            throw XCTSkip("Requires the owned, freshly built production server history fixture")
+        }
+        let fixture = try JSONDecoder().decode([String: String].self, from: Data(raw.utf8))
+        let withheldName = try XCTUnwrap(fixture["withheldTool"])
+        let inputOnlyName = try XCTUnwrap(fixture["inputOnlyTool"])
+        let legacyName = try XCTUnwrap(fixture["legacyTool"])
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview-tool-activity", "--ui-preview-tool-history"]
+        app.launchEnvironment["CAVE_OPEN_THREAD"] = "ui-preview-tool-activity"
+        app.launchEnvironment["CAVE_TOOL_HISTORY_FIXTURE"] = raw
+        app.launch()
+        defer { app.terminate() }
+        let chip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Agent activity")).firstMatch
+        XCTAssertTrue(chip.waitForExistence(timeout: 20), "Real CaveClient history must load before a native row exists")
+        chip.tap()
+        XCTAssertTrue(app.staticTexts[withheldName].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts[inputOnlyName].exists)
+        XCTAssertTrue(app.staticTexts[legacyName].exists)
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "Input withheld from saved history.")).count, 2)
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "Output withheld from saved history.")).count, 1)
+        XCTAssertFalse(app.buttons["Show output for \(withheldName)"].exists)
+        XCTAssertTrue(app.buttons["Show output for \(inputOnlyName)"].exists)
+        XCTAssertTrue(app.buttons["Show output for \(legacyName)"].exists)
+        XCTAssertFalse(app.staticTexts["Couldn't load fixture history."].exists)
+        try attachScreenshot(named: "real-server-native-historical-withholding")
+        if let marker = fixture["outputMarker"] {
+            let open = app.buttons["Show output for \(inputOnlyName)"]
+            revealBelowHeader(open, in: app)
+            open.tap()
+            XCTAssertTrue(app.staticTexts[marker].waitForExistence(timeout: 10), "The safe input-only result loads through the actual production route")
+            try attachScreenshot(named: "real-server-native-safe-output")
+            app.buttons["Close tool output"].tap()
+        }
+    }
+
+    @MainActor
+    func testHistoricalWithholdingExplainsInputAndOutputWithoutOfferingUnavailableLoads() throws {
+        continueAfterFailure = false
+        for flag in ["input", "output", "both", "legacy"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-preview-tool-activity", "--ui-preview-tool-output", "--ui-preview-tool-disclosure", flag]
+            app.launchEnvironment["CAVE_OPEN_THREAD"] = "ui-preview-tool-activity"
+            app.launch()
+            defer { app.terminate() }
+            let chip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Agent activity")).firstMatch
+            XCTAssertTrue(chip.waitForExistence(timeout: 15))
+            chip.tap()
+            let inputNotice = app.staticTexts["Input withheld from saved history."]
+            let outputNotice = app.staticTexts["Output withheld from saved history."]
+            let open = app.buttons["Show output for Read"]
+            let inputWithheld = flag == "input" || flag == "both"
+            let outputWithheld = flag == "output" || flag == "both"
+            if inputWithheld {
+                XCTAssertTrue(inputNotice.waitForExistence(timeout: 5))
+                XCTAssertFalse(app.staticTexts["src/lib/tool-arg-summary.ts"].exists, "Withholding cannot leave an argument preview")
+                revealBelowHeader(inputNotice, in: app)
+                XCTAssertTrue(inputNotice.isHittable)
+            } else {
+                XCTAssertFalse(inputNotice.exists)
+                XCTAssertTrue(app.staticTexts["src/lib/tool-arg-summary.ts"].exists)
+            }
+            if outputWithheld {
+                XCTAssertTrue(outputNotice.waitForExistence(timeout: 5))
+                XCTAssertFalse(open.exists, "Known withheld output has no lazy-load action")
+                revealBelowHeader(outputNotice, in: app)
+                XCTAssertTrue(outputNotice.isHittable)
+            } else {
+                XCTAssertFalse(outputNotice.exists)
+                XCTAssertTrue(open.waitForExistence(timeout: 5), "Input withholding and legacy absence preserve output loading")
+                revealBelowHeader(open, in: app)
+                open.tap()
+                XCTAssertTrue(app.staticTexts["NATIVE_TOOL_OUTPUT_PREVIEW\nSecond result line."].waitForExistence(timeout: 5))
+                XCTAssertFalse(app.staticTexts["Output withheld from saved history."].exists)
+                app.buttons["Close tool output"].tap()
+            }
+            XCTAssertTrue(app.buttons["Show output for Bash"].exists, "An unrelated tool keeps its existing action")
+            XCTAssertTrue(app.staticTexts["42ms"].exists, "Disclosure cannot fabricate or replace timing/status")
+            try attachScreenshot(named: "historical-tool-disclosure-\(flag)")
+        }
+    }
+
+    @MainActor
     func testLifecycleStatesKeepExactLabelsAndProvenanceInDetail() throws {
         let cases = [
             ("approval-requested", "Approval requested"),

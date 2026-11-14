@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import SwiftUI
 import XCTest
 @testable import CovenCave
 
@@ -40,6 +41,90 @@ private actor DeferredToolOutput: ToolOutputLoading {
 
 @MainActor
 final class ToolOutputTests: XCTestCase {
+    // A lost disclosure flag turns withheld history into an apparently missing result.
+    func testHistoryDisclosureSurvivesCodecFoldSnapshotAndDuplicateWithoutInventingEvidence() throws {
+        let turn = try JSONDecoder().decode(ChatTurn.self, from: Data(#"{"id":"reply","role":"assistant","text":"Saved reply","tools":[{"id":"a","name":"Read","inputDisclosure":"withheld","outputDisclosure":"withheld","status":"error","durationMs":42}]}"#.utf8))
+        let tool = try XCTUnwrap(turn.tools?.first)
+        let encodedTool = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(tool)) as? [String: Any])
+        XCTAssertEqual(encodedTool["inputDisclosure"] as? String, "withheld")
+        XCTAssertEqual(encodedTool["outputDisclosure"] as? String, "withheld")
+        let reference = try XCTUnwrap(ToolOutputReference(sessionId: "saved-chat", connection: CaveConnection(host: "https://desktop.example.test")))
+        let message = DisplayMessage.restored(from: turn, familiarId: "nyx", toolOutputReference: reference)
+        let reloaded = try JSONDecoder().decode(DisplayMessage.self, from: JSONEncoder().encode(message))
+        for restored in [message, reloaded, DisplayMessage.duplicate(of: reloaded)] {
+            let step = try XCTUnwrap(restored.activity?.first)
+            let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(step)) as? [String: Any])
+            XCTAssertEqual(encoded["inputDisclosure"] as? String, "withheld")
+            XCTAssertEqual(encoded["outputDisclosure"] as? String, "withheld")
+            XCTAssertNil(step.detail)
+            XCTAssertNil(step.errorOutput)
+            XCTAssertEqual(step.status, .error)
+            XCTAssertEqual(step.durationMs, 42)
+            XCTAssertNil(step.activity, "A withholding fact must not manufacture provenance or approval")
+            XCTAssertEqual(restored.toolOutputReference, reference)
+        }
+    }
+
+    func testUnknownOrMalformedDisclosureFlagsDoNotBreakLegacyHistoryOrEmptySafeValues() throws {
+        for value in [NSNull(), "available", "WITHHELD", "", 1, true, ["state": "withheld"], ["withheld"]] as [Any] {
+            let data = try JSONSerialization.data(withJSONObject: ["id": "a", "name": "Read", "input": "", "output": "", "inputDisclosure": value, "outputDisclosure": value])
+            let tool = try JSONDecoder().decode(ToolCall.self, from: data)
+            XCTAssertEqual(tool.input, "")
+            XCTAssertEqual(tool.output, "")
+            let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(tool)) as? [String: Any])
+            XCTAssertNil(encoded["inputDisclosure"])
+            XCTAssertNil(encoded["outputDisclosure"])
+            let stepData = try JSONSerialization.data(withJSONObject: ["id": "a", "kind": "tool", "title": "Read", "inputDisclosure": value, "outputDisclosure": value])
+            let step = try JSONDecoder().decode(ActivityStep.self, from: stepData)
+            XCTAssertEqual(step.status, .unknown)
+            let encodedStep = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(step)) as? [String: Any])
+            XCTAssertNil(encodedStep["inputDisclosure"])
+            XCTAssertNil(encodedStep["outputDisclosure"])
+        }
+        let legacy = try JSONDecoder().decode(ToolCall.self, from: Data(#"{"id":"a","name":"Read"}"#.utf8))
+        XCTAssertNil(legacy.input)
+        XCTAssertNil(legacy.output)
+    }
+
+    func testWithheldFieldsCannotBecomeArgumentOrFailurePreviews() throws {
+        let tools = try JSONDecoder().decode([ToolCall].self, from: Data(#"[{"id":"a","name":"Read","input":"{\"file_path\":\"PRIVATE_ARGUMENT\"}","output":"PRIVATE_FAILURE","inputDisclosure":"withheld","outputDisclosure":"withheld","status":"error"}]"#.utf8))
+        let step = try XCTUnwrap(ActivityFold.steps(fromTools: tools)?.first)
+        XCTAssertNil(step.detail)
+        XCTAssertNil(step.errorOutput)
+        XCTAssertEqual(step.status, .error)
+    }
+
+    func testRestoredWithheldStepCannotRecoverStalePreviewsFromSnapshotOrLiveReplay() throws {
+        let decoded = try JSONDecoder().decode(ActivityStep.self, from: Data(#"{"id":"a","kind":"tool","title":"Read","detail":"PRIVATE_ARGUMENT","errorOutput":"PRIVATE_FAILURE","status":"error","inputDisclosure":"withheld","outputDisclosure":"withheld"}"#.utf8))
+        XCTAssertNil(decoded.detail)
+        XCTAssertNil(decoded.errorOutput)
+        let replay = StreamEvent.toolUse(id: "a", name: "Read", input: #"{"file_path":"PRIVATE_REPLAY"}"#, output: "PRIVATE_REPLAY_FAILURE", status: "error", durationMs: nil, activity: nil)
+        let afterReplay = ActivityFold.fold([decoded], event: replay) ?? [decoded]
+        XCTAssertNil(afterReplay.first?.detail)
+        XCTAssertNil(afterReplay.first?.errorOutput)
+        XCTAssertEqual(afterReplay.first?.status, .error)
+    }
+
+    func testDefensiveWithheldDetailDispatchesZeroOutputLoads() async throws {
+        let (client, session) = client()
+        let dispatched = expectation(description: "withheld output must not dispatch")
+        dispatched.isInverted = true
+        ToolOutputURLProtocol.handler = { _ in
+            dispatched.fulfill()
+            return (200, Data(#"{"ok":true,"output":"PRIVATE_RESULT"}"#.utf8))
+        }
+        defer { session.invalidateAndCancel(); ToolOutputURLProtocol.handler = nil }
+        let step = try JSONDecoder().decode(ActivityStep.self, from: Data(#"{"id":"a","kind":"tool","title":"Read","status":"ok","outputDisclosure":"withheld"}"#.utf8))
+        let target = ToolOutputTarget(messageId: "reply", reference: ToolOutputReference(sessionId: "saved-chat", connection: client.connection), step: step,
+            scope: ToolOutputScope(threadId: "thread", familiarIds: ["nyx"], sessionIds: ["nyx": "saved-chat"], connection: client.connection), client: client)
+        let controller = UIHostingController(rootView: ToolOutputDetailView(target: target).environment(\.scenePhase, .active))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil }
+        await fulfillment(of: [dispatched], timeout: 1)
+    }
+
     func testLargePlainTextSurfacePreservesSelectionAndClearsPrivateContent() throws {
         let prefix = "🧙 café e\u{301}\r\n<script>literal</script>\nhttps://example.invalid/never-open\n"
         let text = prefix + String(repeating: "x", count: 256 * 1024 - prefix.utf8.count)
