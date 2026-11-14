@@ -226,13 +226,18 @@ assert.match(
 
 assert.match(
   notificationBell,
-  /notification-bell__popover[\s\S]*notification-bell__settings-btn[\s\S]*notification-bell__open-inbox[\s\S]*notification-bell__list/,
+  /notification-bell__popover[\s\S]*notification-bell__settings-btn[\s\S]*notification-bell__list[\s\S]*notification-bell__open-inbox/,
   "Notification bell should expose stable hooks for mobile popover layout and actions",
 );
 assert.match(
   notificationBell,
-  /notification-bell__mute[\s\S]*notification-bell__action/,
-  "Notification bell item controls should expose stable mobile hit-area hooks",
+  /className="notification-bell__action reveal-on-hover"/,
+  "Notification bell row actions should expose stable mobile hit-area hooks",
+);
+assert.match(
+  notificationBell,
+  /className="notification-bell__mute reveal-on-hover"/,
+  "Notification bell mute controls should expose stable mobile hit-area hooks",
 );
 
 assert.match(

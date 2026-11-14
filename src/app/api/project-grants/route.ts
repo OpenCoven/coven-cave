@@ -7,8 +7,10 @@ import {
 } from "@/lib/server/trusted-grant-mutation";
 
 import {
+  CavePrivateStateGrantError,
   grantProjectToFamiliar,
   listAccessGroups,
+  listPrivateStateProjectIds,
   listProjectGrants,
   listRecentGrantChanges,
   listRecentPermissionAudit,
@@ -92,13 +94,14 @@ function staleGrantResponse(error: StaleGrantError): Response {
 }
 
 export async function GET() {
-  const [grants, config, audit, grantChanges, accessGroups, integrity] = await Promise.all([
+  const [grants, config, audit, grantChanges, accessGroups, integrity, privateStateProjectIds] = await Promise.all([
     listProjectGrants(),
     loadHumanPermissionConfig(),
     listRecentPermissionAudit(),
     listRecentGrantChanges(),
     listAccessGroups(),
     inspectProjectPermissionIntegrity(),
+    listPrivateStateProjectIds(),
   ]);
   // `supremeFamiliarId` has access to every project regardless of grants — the
   // Permissions UI marks it as all-access and locks its toggles on. `audit` is a
@@ -117,6 +120,9 @@ export async function GET() {
     // Access CHANGES — who widened or narrowed a grant. Distinct from
     // `audit`, which is the access-CHECK decision log.
     grantChanges,
+    // Projects whose folder holds Cave's private state: Write can't be given
+    // there, and an existing Write grant blocks Claude Build turns (#6451).
+    privateStateProjectIds,
   });
 }
 
@@ -165,6 +171,12 @@ export async function POST(req: Request) {
       ...expected,
     });
   } catch (error) {
+    if (error instanceof CavePrivateStateGrantError) {
+      return NextResponse.json(
+        { ok: false, code: error.code, error: error.message, projectId: error.project.id },
+        { status: error.status },
+      );
+    }
     if (error instanceof StaleGrantError) return staleGrantResponse(error);
     throw error;
   }

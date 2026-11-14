@@ -281,3 +281,19 @@ test("leaving About removes its handoff warning while the shell stays mounted", 
   });
   expect(banners.some(b => b.id.startsWith("update-browser-handoff"))).toBe(false);
 });
+
+// A debug shell registers no updater (tauri_setup.rs), and Tauri rejects the
+// call with this exact string. That is "updates off", not a failure: no banner,
+// and no fall-through to the browser installer, which a dev build must not
+// offer either. Settings says why.
+test("a debug shell without the updater offers no update anywhere", async () => {
+  nativeIpc();
+  native.check.mockImplementation(async () => {
+    throw "plugin updater not found";
+  });
+  await mount(<><UpdateSettingsRow /><UpdateBannerTrigger /></>);
+  expect(banners.find(b => b.id === "update-available")).toBeUndefined();
+  expect(fetch.mock.calls.some(([url]) => String(url).includes("/api/app/latest-release"))).toBe(false);
+  expect(text()).toContain("Development builds don't install updates.");
+  expect(button("Open installer in system browser")).toBeUndefined();
+});

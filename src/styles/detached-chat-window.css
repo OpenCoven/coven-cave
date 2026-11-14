@@ -1,0 +1,432 @@
+/* ────────────────────────────────────────────────
+   Detached Chat window (/quick-chat?view=window)
+   The right Chat panel popped out into its own window: a title bar, a rail of
+   familiars, each familiar's chat list, and that familiar's Chat panel.
+   Imported by detached-chat-window.tsx only — no other route pays for it.
+   Tokens only, so it follows every theme and both modes.
+   ──────────────────────────────────────────────── */
+
+.chat-window {
+  --chat-window-rail: calc(var(--touch-target) + var(--space-3));
+  --chat-window-list: 272px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100dvh;
+  min-width: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+/* ── Title bar ─────────────────────────────────── */
+
+.chat-window__titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target);
+  /* On macOS the shell's overlay title bar floats the traffic lights over
+     this strip; reserve their width. Zero everywhere else. */
+  padding: 0 var(--space-3) 0 calc(var(--titlebar-lights-inset, 0px) + var(--space-3));
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+  user-select: none;
+}
+
+.chat-window__identity {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  /* Empty title-bar chrome drags the window; the text must not swallow it. */
+  pointer-events: none;
+}
+
+.chat-window__identity-name {
+  flex: 0 0 auto;
+  font-size: var(--text-md);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chat-window__identity-role {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Body: rail + panes ────────────────────────── */
+
+.chat-window__body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-window__state {
+  display: grid;
+  grid-column: 1 / -1;
+  place-items: center;
+  padding: var(--space-8);
+}
+
+.chat-window__state-skeleton {
+  width: min(100%, 360px);
+}
+
+/* ── Familiar rail ─────────────────────────────── */
+
+.chat-window__rail {
+  width: var(--chat-window-rail);
+  min-height: 0;
+  border-right: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.chat-window__rail-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+}
+
+.chat-window__familiar {
+  position: relative;
+  display: grid;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+
+.chat-window__familiar:hover {
+  background: var(--bg-hover);
+}
+
+.chat-window__familiar:active {
+  transform: scale(0.96);
+}
+
+.chat-window__familiar[aria-selected="true"] {
+  background: color-mix(in oklch, var(--chat-window-familiar, var(--accent-presence)) 16%, transparent);
+}
+
+/* The selected familiar's marker: a bar on the rail's leading edge, in the
+   familiar's own color. Selection is also carried by aria-selected and the
+   title bar's name, so color is not the only signal. */
+.chat-window__familiar::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc((var(--chat-window-rail) - var(--touch-target)) / -2);
+  width: 3px;
+  height: 0;
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  background: var(--chat-window-familiar, var(--accent-presence));
+  transform: translateY(-50%);
+  transition: height var(--duration-base) var(--ease-emphasized);
+}
+
+.chat-window__familiar:hover::before {
+  height: var(--space-2);
+}
+
+.chat-window__familiar[aria-selected="true"]::before {
+  height: var(--space-5);
+}
+
+.chat-window__familiar-dot,
+.chat-window__dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+}
+
+.chat-window__familiar-dot {
+  position: absolute;
+  right: var(--space-1);
+  bottom: var(--space-1);
+  box-shadow: 0 0 0 2px var(--bg-panel);
+}
+
+/* The app's lifecycle tints, so a dot here means what it means everywhere. */
+.chat-window__familiar-dot[data-tone="running"],
+.chat-window__dot[data-tone="running"] {
+  background: var(--status-running);
+  animation: chat-window-pulse 1.4s ease-in-out infinite;
+}
+
+.chat-window__familiar-dot[data-tone="waiting"],
+.chat-window__dot[data-tone="awaiting"] {
+  background: var(--status-awaiting);
+}
+
+.chat-window__dot[data-tone="blocked"] {
+  background: var(--status-blocked);
+}
+
+.chat-window__chat-state {
+  color: var(--text-primary);
+}
+
+@keyframes chat-window-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ── Pane: chat list + chat ────────────────────── */
+
+.chat-window__panes {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-window__pane {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--chat-window-list) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  transition: grid-template-columns var(--duration-base) var(--ease-standard);
+}
+
+.chat-window__pane[hidden] {
+  display: none;
+}
+
+.chat-window[data-list="hidden"] .chat-window__pane {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.chat-window__list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-panel) 60%, var(--bg-base));
+  overflow: hidden;
+}
+
+.chat-window[data-list="hidden"] .chat-window__list {
+  border-right-color: transparent;
+  visibility: hidden;
+}
+
+.chat-window__list-head {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* Fixed inner width: the column animates closed without reflowing text. */
+  width: var(--chat-window-list);
+  padding: var(--space-3);
+}
+
+.chat-window__kbd {
+  margin-left: auto;
+  padding: 0 var(--space-1);
+  border: 1px solid color-mix(in oklch, currentColor 32%, transparent);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  opacity: 0.8;
+}
+
+.chat-window__list-scroll {
+  flex: 1 1 auto;
+  width: var(--chat-window-list);
+  min-height: 0;
+  padding: 0 var(--space-2) var(--space-3);
+  overflow-y: auto;
+}
+
+.chat-window__group + .chat-window__group {
+  margin-top: var(--space-3);
+}
+
+.chat-window__group-label {
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chat-window__chats {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-window__chat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--touch-target);
+  justify-content: center;
+  padding: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.chat-window__chat-row:hover {
+  background: var(--bg-hover);
+}
+
+.chat-window__chat-row[aria-current="true"] {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+/* The unsent chat: a dashed hairline, the app's "something can happen here"
+   idiom, rather than a row that looks like a saved conversation. */
+.chat-window__chat-row--draft {
+  margin-bottom: var(--space-2);
+  border-style: dashed;
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
+  cursor: default;
+}
+
+.chat-window__chat-title {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-window__chat-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+
+.chat-window__list-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.chat-window__scrim {
+  display: none;
+}
+
+/* ── The Chat panel inside the window ──────────── */
+
+.chat-window__chat {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The panel's own control rail (identity, thread switcher, New chat, Close)
+   is the docked panel's chrome. Here the window's title bar, familiar rail
+   and chat list do those jobs, so the rail steps aside and the chat takes the
+   full pane. */
+.chat-window__chat .right-chat__rail {
+  display: none;
+}
+
+.chat-window__chat .right-chat {
+  background: var(--bg-base);
+}
+
+/* ── Narrow: the chat list becomes a drawer ────── */
+
+@media (max-width: 759px) {
+  .chat-window__pane,
+  .chat-window[data-list="hidden"] .chat-window__pane {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-window__list {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(var(--chat-window-list), 86%);
+    background: var(--bg-panel);
+    box-shadow: var(--shadow-popover);
+    transition:
+      transform var(--duration-base) var(--ease-emphasized),
+      visibility var(--duration-base);
+  }
+
+  .chat-window__list-head,
+  .chat-window__list-scroll {
+    width: 100%;
+  }
+
+  .chat-window[data-list="hidden"] .chat-window__list {
+    transform: translateX(-100%);
+  }
+
+  .chat-window__scrim {
+    position: absolute;
+    z-index: 1;
+    display: block;
+    inset: 0;
+    border: 0;
+    background: color-mix(in oklch, var(--shadow-color) 40%, transparent);
+    cursor: default;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-window__pane,
+  .chat-window__list,
+  .chat-window__familiar,
+  .chat-window__familiar::before,
+  .chat-window__chat-row {
+    transition: none;
+  }
+
+  .chat-window__familiar:active {
+    transform: none;
+  }
+
+  .chat-window__familiar-dot[data-tone="running"],
+  .chat-window__dot[data-tone="running"] {
+    animation: none;
+  }
+}

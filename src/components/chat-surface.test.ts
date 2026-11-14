@@ -320,10 +320,18 @@ assert.match(
   "Workspace must not emit the generic conversation landing after a Familiar Settings handoff",
 );
 
+// The bell's open path (#6483) keeps cave-ipze: a row lands on Rituals with
+// its detail open. Only a waiting reply, which never exists in Rituals,
+// opens its chat. daily-summary-notifications.test.ts pins the full shape.
 assert.match(
   workspace,
-  /onOpenInboxItem=\{\(item\) => \{\s*markInboxItemRead\(item\.id\);\s*if \(item\.familiarId\) setActiveId\(item\.familiarId\);\s*setMode\("inbox"\);/,
-  "Workspace should route notification-bell Open to the Inbox view (cave-ipze), never straight into a session",
+  /onOpenInboxItem=\{openBellItem\}/,
+  "Workspace should route the mobile bell through the shared openBellItem path",
+);
+assert.match(
+  workspace,
+  /const openBellItem = useCallback\(\(item: InboxItem\) => \{[\s\S]*?setInboxFocus\(\{ id: item\.id, nonce: Date\.now\(\) \}\);\s*setMode\("inbox"\);/,
+  "Workspace should route notification-bell Open to the Inbox view (cave-ipze)",
 );
 
 // The agents-new-chat bridge forwards an optional initialPrompt so callers

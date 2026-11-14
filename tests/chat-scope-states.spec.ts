@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openChatFilter } from "./fixtures/chat-filter";
 import {
   createOnboardingBootstrapState,
   ONBOARDING_BOOTSTRAP_BOUNDARIES,
@@ -113,12 +114,11 @@ test("the open chat stays reachable when the project filter would hide it (#5585
   await rail(page).locator(".cnav__thread-main").filter({ hasText: "Scope thread A" }).first().click();
   await expect(page.getByTestId("chat-main").getByText("scope-a opened")).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("button", { name: /^Filter chats:/ }).click();
-  const switcher = page.locator(".chat-browse-filter__panel .workspace-context-switcher");
-  await switcher.getByRole("button", { name: /^Switch project:/ }).click();
+  const filter = await openChatFilter(page);
+  await filter.controls.getByRole("button", { name: /^Switch project:/ }).click();
   await page.locator(".cave-project-picker__row").filter({ hasText: "Scope beta" }).first().locator(".ui-popover-item").click();
 
-  await page.keyboard.press("Escape");
+  await filter.close();
   const outside = rail(page).getByRole("region", { name: "Open chat outside these filters" });
   await expect(outside.getByText("Outside these filters")).toBeVisible({ timeout: 30_000 });
   await expect(outside.locator(".cnav__thread-main").filter({ hasText: "Scope thread A" })).toBeVisible();

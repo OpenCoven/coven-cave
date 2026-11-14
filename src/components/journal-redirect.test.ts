@@ -27,8 +27,8 @@ assert.match(
 );
 assert.match(
   ctx,
-  /openFamiliarStudioSettingsTab\(tab, id\)/,
-  "the redirecting provider reuses the helper",
+  /openSettings = openFamiliarStudioSettingsTab,[\s\S]*openSettings\(tab, id\)/,
+  "the redirecting provider reuses the helper unless a host (the detached Chat window) hands off elsewhere",
 );
 
 const inline = read("./familiar-studio-inline.tsx");

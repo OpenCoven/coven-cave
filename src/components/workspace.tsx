@@ -77,9 +77,13 @@ import type { DetailSplitTile } from "@/components/detail-split-host";
 import { WorkspacePanePage } from "@/components/workspace-pane-page";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { ChatBrowseFilter } from "@/components/chat-browse-filter";
-import { WorkspaceContextSwitcher } from "@/components/workspace-context-switcher";
+import { WorkspaceContextSwitcher, type WorkspaceContextSwitcherProps } from "@/components/workspace-context-switcher";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
-import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
+import {
+  FamiliarStudioProvider,
+  isFamiliarStudioTab,
+  openFamiliarStudioSettingsTab,
+} from "@/lib/familiar-studio-context";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -187,7 +191,9 @@ import {
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectFocusPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { AutoMissionSupervisor } from "@/components/auto-mission-supervisor";
-import { RightChatPanel, type RightChatLaunchRequest } from "@/components/right-chat-panel";
+import { RightChatPanel, type RightChatLaunchRequest, type RightChatPopOutTarget } from "@/components/right-chat-panel";
+import { CHAT_WINDOW_MAIN_REQUEST_EVENT, CHAT_WINDOW_NEW_CHAT, openChatWindow } from "@/lib/chat-window";
+import { useIsMobile } from "@/lib/use-viewport";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -349,6 +355,20 @@ function requestedWorkspaceProjectId(
 /** Familiar scopes whose last list is kept for instant switching. */
 const SESSIONS_SCOPE_SNAPSHOTS = 8;
 
+/**
+ * Familiar settings asked for by the detached Chat window, which cannot show
+ * them itself without leaving its conversations. Validated: the request comes
+ * from another window.
+ */
+function openRequestedFamiliarSettings(request: unknown): void {
+  if (!request || typeof request !== "object") return;
+  const { tab, familiarId } = request as { tab?: unknown; familiarId?: unknown };
+  openFamiliarStudioSettingsTab(
+    isFamiliarStudioTab(tab) ? tab : undefined,
+    typeof familiarId === "string" && familiarId.trim() ? familiarId : undefined,
+  );
+}
+
 export function Workspace() {
   const firstUse = useFirstUse();
   const nextRouter = useRouter();
@@ -376,6 +396,37 @@ export function Workspace() {
   const [rightChatOpen, setRightChatOpen] = useState(false);
   const [rightChatLaunchRequest, setRightChatLaunchRequest] = useState<RightChatLaunchRequest | null>(null);
   const rightChatLaunchNonceRef = useRef(0);
+  // A second window only exists on desktop; a phone's Chat drawer has nowhere
+  // to pop out to.
+  // The detached window exists in the desktop shell (a native window) and in
+  // a browser (a popup). The Tauri mobile shells have neither, even on a wide
+  // iPad, so the control is not offered there.
+  const canPopOutChat =
+    !useIsMobile() && (tauriPlatform === "desktop" || tauriPlatform === "browser");
+  // Popping out moves the conversation into the detached Chat window and
+  // closes the docked panel. From then on the two are independent: nothing
+  // this workspace does (familiar, chat, surface) is sent to that window.
+  const popOutRightChat = useCallback(
+    async (target: RightChatPopOutTarget) => {
+      const opened = await openChatWindow({
+        familiarId: target.familiarId,
+        // With a familiar, null means the panel was composing a new chat: the
+        // window opens one too (and carries its draft), not the latest chat.
+        sessionId: target.familiarId && !target.sessionId ? CHAT_WINDOW_NEW_CHAT : target.sessionId,
+      });
+      if (!opened) {
+        announce(
+          tauriPlatform === "browser"
+            ? "Couldn't open the Chat window. Allow pop-ups for CovenCave and try again."
+            : "Couldn't open the Chat window. Your chat is still here; try again.",
+        );
+        return;
+      }
+      shellRef.current?.closeRightChat();
+      announce("Chat opened in its own window");
+    },
+    [announce, tauriPlatform],
+  );
   // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
   // (declared above startFamiliarChat) can call it without a TDZ, and without
   // workspace self-dispatching a chat-nav event. Assigned in an effect below.
@@ -3003,9 +3054,15 @@ export function Workspace() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
         unlisten = await listen("quick-chat:open-session", (event) => {
-          const payload = event.payload as { sessionId?: string; familiarId?: string | null; firstUse?: boolean };
+          const payload = event.payload as {
+            sessionId?: string;
+            familiarId?: string | null;
+            firstUse?: boolean;
+            familiarSettings?: unknown;
+          };
           if (payload?.firstUse) firstUse.openGuide();
           if (payload?.sessionId) openFamiliarSession(payload.sessionId, payload.familiarId);
+          if (payload?.familiarSettings) openRequestedFamiliarSettings(payload.familiarSettings);
         });
       } catch {
         /* harmless in browser dev */
@@ -3013,6 +3070,17 @@ export function Workspace() {
     })();
     return () => unlisten?.();
   }, [openFamiliarSession, firstUse.openGuide]);
+
+  // The same familiar-settings request from a detached Chat window that runs
+  // as a browser popup of this page (the desktop shell uses the event above).
+  useEffect(() => {
+    const onRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{ familiarSettings?: unknown } | null>).detail;
+      if (detail?.familiarSettings) openRequestedFamiliarSettings(detail.familiarSettings);
+    };
+    window.addEventListener(CHAT_WINDOW_MAIN_REQUEST_EVENT, onRequest);
+    return () => window.removeEventListener(CHAT_WINDOW_MAIN_REQUEST_EVENT, onRequest);
+  }, []);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("firstUse") === "1") firstUse.openGuide();
@@ -3063,6 +3131,34 @@ export function Workspace() {
     }
   }, [nextRouter, openFamiliarSession, openUrlInAppBrowser, openGitHubTarget]);
 
+  // Where a bell row opens (#6483). The bell is a triage list, not a chat
+  // launcher (cave-ipze, #3067): a row lands on Rituals with that item's
+  // detail open. Two kinds have a truer home. A daily report opens the report
+  // page, which is what its Rituals row does too. A waiting reply is built
+  // from the session and never exists in Rituals, so it opens the chat that
+  // is waiting instead of a Rituals page without it.
+  const [inboxFocus, setInboxFocus] = useState<{ id: string; nonce: number } | null>(null);
+  const clearInboxFocus = useCallback(() => setInboxFocus(null), []);
+  const openBellItem = useCallback((item: InboxItem) => {
+    markInboxItemRead(item.id);
+    if (item.kind === "response-needed") {
+      if (item.sessionId) {
+        openFamiliarSession(item.sessionId, item.familiarId);
+      } else {
+        if (item.familiarId) setActiveId(item.familiarId);
+        setMode("chat");
+      }
+      return;
+    }
+    if (item.kind === "daily-summary" && item.link) {
+      openReminderLink(item.link);
+      return;
+    }
+    if (item.familiarId) setActiveId(item.familiarId);
+    setInboxFocus({ id: item.id, nonce: Date.now() });
+    setMode("inbox");
+  }, [markInboxItemRead, openFamiliarSession, openReminderLink, setActiveId, setMode]);
+
   const startFamiliarChat = useCallback((
     familiarId?: string | null,
     projectRoot?: string | null,
@@ -3072,6 +3168,7 @@ export function Workspace() {
     origin?: SessionOrigin,
     actorHasProjectAccess?: boolean,
     destination?: AgentsNewChatRequest["destination"],
+    initialDraft?: string,
   ) => {
     if (!firstUse.ensureIntroduction()) return false;
     if (!familiarId) {
@@ -3117,6 +3214,7 @@ export function Workspace() {
       initialPrompt,
       initialAttachments,
       initialControls,
+      initialDraft,
       origin,
       nonce: Date.now(),
     });
@@ -4547,6 +4645,28 @@ export function Workspace() {
   // even though the nav no longer swaps components when collapsed.
   const [, setNavOpen] = useState(true);
 
+  // One set of browse-filter props for both places Chat shows it: the title
+  // bar at desktop widths, like every other page, and the funnel button in the
+  // Chat header and phone sheet below 1024px, where the title-bar cluster is
+  // hidden (#6478).
+  const chatFilterProps: WorkspaceContextSwitcherProps = {
+    projects: registeredProjects,
+    projectId: chatFilterProjectId,
+    project: chatFilterProject,
+    onProjectChange: (id) => { setChatFilterProjectId(id); setChatFilterFamiliarIds(new Set()); announce(id ? "Chats filtered by project" : "Showing all chats"); },
+    projectLoading: projectsLoading,
+    projectError: projectsError,
+    reloadProjects,
+    allFamiliars: resolvedFamiliars,
+    projectCrew: resolvedChatFilterCrew,
+    projectCrewLoading: chatFilterCrew.loading,
+    projectCrewError: chatFilterCrew.error,
+    reloadProjectCrew: chatFilterCrew.reload,
+    activeFamiliarId: chatFilterFamiliarIds.size === 1 ? [...chatFilterFamiliarIds][0]! : null,
+    selectedFamiliarIds: chatFilterFamiliarIds,
+    onSelectFamiliar: (id, opts) => { setChatFilterFamiliarIds((previous) => id === null ? new Set() : toggleFamiliarSelection(previous, id, opts?.multi ?? false)); announce(id ? "Chat familiar filter updated" : "Showing all familiars' chats"); },
+    sessions,
+  };
   const sidebar = (
     <SidebarMinimal
       mode={mode}
@@ -4682,26 +4802,7 @@ export function Workspace() {
       <ChatSurface
         familiars={familiars}
         sessions={sessions}
-        browseFilter={
-          <ChatBrowseFilter
-            projects={registeredProjects}
-            projectId={chatFilterProjectId}
-            project={chatFilterProject}
-            onProjectChange={(id) => { setChatFilterProjectId(id); setChatFilterFamiliarIds(new Set()); announce(id ? "Chats filtered by project" : "Showing all chats"); }}
-            projectLoading={projectsLoading}
-            projectError={projectsError}
-            reloadProjects={reloadProjects}
-            allFamiliars={resolvedFamiliars}
-            projectCrew={resolvedChatFilterCrew}
-            projectCrewLoading={chatFilterCrew.loading}
-            projectCrewError={chatFilterCrew.error}
-            reloadProjectCrew={chatFilterCrew.reload}
-            activeFamiliarId={chatFilterFamiliarIds.size === 1 ? [...chatFilterFamiliarIds][0]! : null}
-            selectedFamiliarIds={chatFilterFamiliarIds}
-            onSelectFamiliar={(id, opts) => { setChatFilterFamiliarIds((previous) => id === null ? new Set() : toggleFamiliarSelection(previous, id, opts?.multi ?? false)); announce(id ? "Chat familiar filter updated" : "Showing all familiars' chats"); }}
-            sessions={sessions}
-          />
-        }
+        browseFilter={<ChatBrowseFilter {...chatFilterProps} />}
         browseScope={chatBrowseScope}
         composeProjectRoot={selectedWorkspaceProject?.root ?? null}
         activeFamiliar={active}
@@ -4790,6 +4891,8 @@ export function Workspace() {
           showReminderOverlay();
         }}
         onOpenLink={openReminderLink}
+        focusItem={inboxFocus}
+        onFocusItemConsumed={clearInboxFocus}
         calendarSlot={
           <CalendarView
             items={inboxItems}
@@ -5135,6 +5238,7 @@ export function Workspace() {
       onOpenOnboarding={openOnboarding}
       onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
       onOpenUrl={openUrlInApp}
+      onPopOut={canPopOutChat ? popOutRightChat : undefined}
     />
   );
   // The standalone "Manage familiars" drawer is gone — Chat → Familiar →
@@ -5209,13 +5313,24 @@ export function Workspace() {
         onRightChatOpenChange={setRightChatOpen}
         topBar={({ navDrawerOpen }) => (
           <>
-            <div className="workspace-titlebar-context">
+            <div
+              className="workspace-titlebar-context"
+              // On Chat the two selectors filter the chat list; say so, since
+              // their own labels read "Switch project" and "Switch familiar".
+              role={mode === "chat" ? "group" : undefined}
+              aria-label={mode === "chat" ? "Filter chats" : undefined}
+            >
               {/* The Home/Chat switcher used to sit here. It duplicated the
                   sidebar's own Home row (both rendered active at once) and,
                   because it swapped the whole sidebar component, it hid the
                   chat list on Home and every non-coding room on Chat. Both are
                   permanent sidebar rows now — see cave-fh9so. */}
-              {mode !== "chat" && <WorkspaceContextSwitcher
+              {mode === "chat" ? (
+                // Same place and form as every other page. The values are
+                // Chat's own browse filter: it starts on All chats and never
+                // changes the chat actor, the open chat or a draft (#6434).
+                <WorkspaceContextSwitcher {...chatFilterProps} variant="titlebar" fullAccessOnly />
+              ) : <WorkspaceContextSwitcher
                 projects={registeredProjects}
                 projectId={selectedWorkspaceProjectId}
                 onProjectChange={selectWorkspaceProject}
@@ -5272,11 +5387,7 @@ export function Workspace() {
                   prefs={inboxPrefs}
                   badgeCount={notificationUnreadCount}
                   onOpenInbox={() => setMode("inbox")}
-                  onOpenItem={(item) => {
-                    markInboxItemRead(item.id);
-                    if (item.familiarId) setActiveId(item.familiarId);
-                    setMode("inbox");
-                  }}
+                  onOpenItem={openBellItem}
                   onPrefsChanged={refreshPrefs}
                 />
               }
@@ -5316,14 +5427,8 @@ export function Workspace() {
               familiarSwitcherLabeled={mode === "chat"}
               inboxPrefs={inboxPrefs}
               inboxBadgeCount={notificationUnreadCount}
-              // Bell rows open in the Inbox (Schedules) surface — the popover
-              // is a triage list, not a chat launcher. Session jumps stay on
-              // the chat surface and Home needs-you paths.
-              onOpenInboxItem={(item) => {
-                markInboxItemRead(item.id);
-                if (item.familiarId) setActiveId(item.familiarId);
-                setMode("inbox");
-              }}
+              // Same open path as the desktop bell (openBellItem, #6483).
+              onOpenInboxItem={openBellItem}
               onNotificationPrefsChanged={refreshPrefs}
               onToggleNav={() => shellRef.current?.toggleNav()}
               onToggleList={undefined}
@@ -5373,6 +5478,17 @@ export function Workspace() {
         familiars={resolvedFamiliars}
         canShow={onboardingResolved && !onboardingOpen}
         onManageFamiliars={() => setMode("agents")}
+        onFamiliarsChange={() => { void loadFamiliars(); }}
+        onStartChat={async (defaults, draft) => {
+          const current = await firstUse.refresh();
+          if (!current || current.state.step !== "complete" || current.resolution.kind !== "ready"
+            || current.state.defaults?.projectId !== defaults.projectId
+            || current.state.defaults.actingFamiliarId !== defaults.actingFamiliarId
+            || !current.project) return false;
+          const access = await resolveActorProjectAccess(defaults.actingFamiliarId, defaults.projectId, current.project.root);
+          if (access !== true) return false;
+          return startFamiliarChat(defaults.actingFamiliarId, current.project.root, null, { permissionMode: current.state.permissionMode ?? "read" }, null, "chat", true, "main", draft);
+        }}
         onUseDefaults={(defaults) => {
           if (activeChatSessionId) return;
           setSelectedWorkspaceProjectId(defaults.projectId);

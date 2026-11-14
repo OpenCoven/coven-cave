@@ -1,0 +1,583 @@
+/* The bell's Notifications popover (#6483). Imported by notification-bell.tsx
+   only. The trigger, badge and mobile popover placement stay in the shared
+   chrome sheets (desktop-chrome.css, shell-responsive.css, primitives.css),
+   whose touch-target rules this sheet relies on rather than repeats.
+
+   Shape: header, optional settings and filters, a scrolling list of
+   sections (Needs you, then Today / Yesterday / Earlier), and a footer
+   that carries Undo and the way to Rituals. Rows are flat list items, not
+   cards: the row is the open control, and secondary actions reveal on
+   hover or focus (design language §8). */
+
+.notification-bell__popover {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Below 1024px shell-responsive.css pins the popover to the safe viewport
+   and lets the list fill it; these caps are for the anchored desktop form. */
+@media (min-width: 1024px) {
+  .notification-bell__popover {
+    max-height: min(640px, calc(100dvh - 96px));
+  }
+
+  .notification-bell__list {
+    max-height: 460px;
+  }
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+
+.notification-bell__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.notification-bell__heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex: none;
+  white-space: nowrap;
+}
+
+.notification-bell__title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.notification-bell__count {
+  font: 500 var(--text-2xs) var(--font-mono);
+  color: var(--color-warning);
+  white-space: nowrap;
+}
+
+/* When the actions can't share the title's line (phones), they wrap to
+   their own line, kept to the right. */
+.notification-bell__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  margin-left: auto;
+}
+
+/* ── Settings ────────────────────────────────────────────────────────── */
+
+.notification-bell__settings {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  font-size: var(--text-xs);
+}
+
+.notification-bell__settings-label {
+  margin-bottom: var(--space-2);
+  font: 500 var(--text-2xs) var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.notification-bell__settings-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.notification-bell__toggle {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.notification-bell__toggle:hover {
+  background: var(--bg-hover);
+}
+
+.notification-bell__toggle[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  color: var(--text-primary);
+}
+
+/* A "quiet" toggle that is on is a warning, not a selection. */
+.notification-bell__toggle--quiet[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--color-warning) 45%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+}
+
+.notification-bell__familiars {
+  max-height: 8rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.notification-bell__familiar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 2px 0;
+  color: var(--text-secondary);
+}
+
+.notification-bell__settings-empty {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Filters ─────────────────────────────────────────────────────────── */
+
+.notification-bell__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.notification-bell__chip {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.notification-bell__chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.notification-bell__chip[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  color: var(--text-primary);
+}
+
+.notification-bell__chip--warning {
+  border-color: color-mix(in oklch, var(--color-warning) 35%, transparent);
+  color: var(--color-warning);
+}
+
+.notification-bell__chip--warning[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--color-warning) 55%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+}
+
+/* ── List and sections ───────────────────────────────────────────────── */
+
+.notification-bell__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: var(--space-1);
+}
+
+.notification-bell__list > .ui-empty-state {
+  padding: var(--space-6) var(--space-4);
+}
+
+.notification-bell__section + .notification-bell__section {
+  border-top: 1px solid var(--border-hairline);
+}
+
+.notification-bell__section-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-4) var(--space-1);
+  background: color-mix(in oklch, var(--bg-elevated) 92%, transparent);
+  backdrop-filter: blur(6px);
+  font: 500 var(--text-2xs) var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Needs you leads, and reads as asks: a warm tint and heading. */
+.notification-bell__section--needs {
+  background: color-mix(in oklch, var(--color-warning) 5%, transparent);
+}
+
+.notification-bell__section--needs .notification-bell__section-title {
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 6%, var(--bg-elevated));
+}
+
+.notification-bell__section-count {
+  min-width: 16px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--color-warning) 16%, transparent);
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.notification-bell__rows {
+  margin: 0;
+  padding: 0 var(--space-1);
+  list-style: none;
+}
+
+/* ── Row ─────────────────────────────────────────────────────────────── */
+
+.notification-row {
+  border-radius: var(--radius-md);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.notification-row:hover,
+.notification-row:focus-within {
+  background: var(--bg-hover);
+}
+
+.notification-row__main {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.notification-row__open {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.notification-row__open:disabled {
+  cursor: default;
+}
+
+.notification-row__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--text-muted) 12%, transparent);
+  color: var(--text-secondary);
+}
+
+.notification-row[data-kind="response-needed"] .notification-row__icon {
+  background: color-mix(in oklch, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+}
+
+.notification-row[data-kind="agent"] .notification-row__icon {
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  color: var(--accent-presence);
+}
+
+.notification-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.notification-row__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.notification-row__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+}
+
+.notification-row__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.notification-row--unread .notification-row__title,
+/* A reply someone is waiting on is never "read": it stays prominent until
+   answered. */
+.notification-row[data-kind="response-needed"] .notification-row__title {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.notification-row__tag {
+  flex: none;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  font: 500 var(--text-2xs) var(--font-mono);
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+
+.notification-row__tag--warning {
+  border-color: color-mix(in oklch, var(--color-warning) 45%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 12%, transparent);
+  color: var(--color-warning);
+}
+
+/* Bodies keep their line breaks (a report or reminder written as lines must
+   not run together), clamped to two lines. */
+.notification-row__text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: pre-line;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.notification-row__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.notification-row__familiar {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.notification-row__familiar::after {
+  content: "·";
+  margin-left: var(--space-2);
+  color: var(--text-muted);
+}
+
+/* The folded daily report reuses the Rituals inbox row. In a 400px popover
+   the day chip stays (it is the point of the row) and the hourly spark goes. */
+.notification-row--reports .notification-row__open {
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.notification-row--reports .dri__date {
+  display: grid;
+}
+
+.notification-row--reports .dri__spark {
+  display: none;
+}
+
+.notification-row--reports .notification-row__meta {
+  padding-left: calc(42px + var(--space-3));
+}
+
+.notification-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: var(--space-2) var(--space-2) 0 0;
+}
+
+/* Phones only (see below): one More button and the labeled actions it opens. */
+.notification-row__more,
+.notification-row__sheet {
+  display: none;
+}
+
+.notification-row__sheet {
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+/* Inline snooze choices: the shared durations, as one quiet strip. */
+.notification-row__snooze {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3) var(--space-2) calc(26px + var(--space-3) * 2);
+}
+
+.notification-row__snooze-label {
+  margin-right: var(--space-1);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.notification-row__choice {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--bg-raised);
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+}
+
+.notification-row__choice:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+
+.notification-row__choice--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────── */
+
+.notification-bell__footer {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-elevated) 70%, transparent);
+}
+
+.notification-bell__undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+}
+
+.notification-bell__undo-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+.notification-bell__open-inbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  background: transparent;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  transition: color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
+}
+
+.notification-bell__more-count {
+  color: var(--text-muted);
+}
+
+.notification-bell__open-inbox:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Below 1024px: the fixed popover ─────────────────────────────────── */
+
+@media (max-width: 1023px) {
+  /* shell-responsive.css pins the popover under the top bar. End it above
+     the bottom tab bar (60px plus its safe-area padding) so the footer, with
+     Undo, is never hidden behind the tabs. */
+  .notification-bell__popover {
+    max-height: calc(
+      100dvh - 52px - var(--sai-top, 0px) - var(--space-2) - 60px - max(8px, env(safe-area-inset-bottom))
+        - var(--space-2)
+    );
+  }
+
+  /* With a backdrop image on, backdrop.css gives the bars their own glass.
+     A backdrop-filter makes an element the containing block for fixed
+     descendants and the backdrop root for nested glass, so the popover was
+     sized to the bar instead of the viewport, and its own blur could not
+     reach the page (which showed through, readable). While the popover is
+     open, the bars show their opaque band instead. */
+  html[data-backdrop-on] .top-bar:has(.notification-bell__popover),
+  html[data-backdrop-on] .shell-top:has(.notification-bell__popover) {
+    background: var(--bg-base);
+    backdrop-filter: none;
+  }
+}
+
+/* ── Phones ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  .notification-row__actions--inline {
+    display: none;
+  }
+
+  .notification-row__more {
+    display: inline-flex;
+    flex: none;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    margin: var(--space-1) var(--space-1) 0 0;
+  }
+
+  .notification-row__sheet {
+    display: flex;
+  }
+
+  .notification-row__sheet,
+  .notification-row__snooze {
+    padding-left: calc(26px + var(--space-3) * 2);
+  }
+
+  .notification-row--reports .notification-row__sheet {
+    padding-left: var(--space-3);
+  }
+
+  .notification-row__choice {
+    min-height: var(--touch-target);
+    padding: 0 var(--space-3);
+  }
+
+  .notification-bell__open-inbox {
+    width: 100%;
+  }
+}

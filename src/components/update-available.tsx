@@ -69,7 +69,21 @@ type NativeCheckResult =
   | { kind: "available"; update: NativeUpdateHandle }
   | { kind: "current" }
   | { kind: "not-applicable" }
+  | { kind: "disabled" }
   | { kind: "failed"; message: string };
+
+const DEVELOPMENT_UPDATES_OFF = "Development builds don't install updates.";
+
+/**
+ * Debug shells register no updater (tauri_setup.rs): installing a release
+ * over a dev build replaces its build folder. Tauri rejects a call to an
+ * unregistered plugin with exactly this message, so the page learns it from
+ * the shell itself, whatever build of the page it is serving.
+ */
+function isUpdaterUnregistered(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  return message.trim() === "plugin updater not found";
+}
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -82,6 +96,8 @@ function errorMessage(err: unknown, fallback: string): string {
  */
 async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
   if (!isTauri()) return { kind: "not-applicable" };
+  // `next dev` only ever runs inside a debug shell, which has no updater.
+  if (process.env.NODE_ENV === "development") return { kind: "disabled" };
   const checkEpoch = nativeUpdateCoordinator.beginCheck();
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
@@ -98,6 +114,7 @@ async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
     }
     return await adoptNativeUpdateResult(nativeUpdateCoordinator, owner, update, checkEpoch);
   } catch (err) {
+    if (isUpdaterUnregistered(err)) return { kind: "disabled" };
     return { kind: "failed", message: errorMessage(err, "Native updater check failed") };
   }
 }
@@ -309,6 +326,10 @@ type Resolved =
 /** Native-first, then fallback. Used by both the banner and the settings row. */
 async function resolveUpdate(owner: symbol): Promise<Resolved> {
   const native = await checkNativeUpdate(owner);
+  // Not "failed": that would fall through to the browser installer, which a
+  // dev build must not offer either. "unavailable" keeps the banner quiet and
+  // lets Settings say why.
+  if (native.kind === "disabled") return { kind: "unavailable", message: DEVELOPMENT_UPDATES_OFF };
   if (native.kind === "available") {
     return { kind: "native", version: native.update.version, update: native.update };
   }
