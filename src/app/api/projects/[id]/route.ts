@@ -88,7 +88,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const realpath = realpathSync.native(/* turbopackIgnore: true */ validatedRoot.root);
     if (!await authenticateProjectFolder(`Change ${current.name}’s project folder to:\n${realpath}`)) {
       return NextResponse.json({ ok: false, code: "project_folder_authentication_required",
-        error: "Authenticate on this Mac to change the folder. Use Touch ID or your Mac password, then retry." }, { status: 403 });
+        error: "Authenticate on this Mac with Touch ID to change the folder, then retry." }, { status: 403 });
     }
     confirmedChange = { previousRoot: current.root, realpath };
     patch.root = validatedRoot.root;
