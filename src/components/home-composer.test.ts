@@ -322,6 +322,7 @@ assert.match(
   "a project request is decided only once the candidate familiar's scoped read has succeeded or failed, not merely stopped loading (#5890 CI race)",
 );
 assert.match(workspaceSource, /requestedFamiliarId: requestedGateFamiliarId,/, "the explicit request feeds the gate policy");
-assert.match(workspaceSource, /projectOpenRequest=\{projectPickerOpenRequest\}/, "the picker request reaches the titlebar switcher");
+assert.match(workspaceSource, /projectOpenRequest: projectPickerOpenRequest/, "the picker request reaches the shared context props");
+assert.match(workspaceSource, /<WorkspaceContextSwitcher \{\.\.\.workspaceContextProps\} variant="titlebar"/, "the titlebar consumes the shared picker request");
 
 console.log("home-composer.test.ts: ok");

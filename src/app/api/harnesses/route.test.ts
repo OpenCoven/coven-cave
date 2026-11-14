@@ -27,7 +27,7 @@ assert.match(
 );
 assert.match(
   source,
-  /h\.id === "hermes"\s*\?\s*hermesLaunch\?\.state === "ready" \? hermesLaunch\.command : null\s*:\s*await which\(h\.binary\)/,
+  /h\.id === "hermes"\s*\?\s*hermesLaunch\?\.state === "ready" \? hermesLaunch\.command : null\s*:\s*discoveredPaths\.get\(h\.binary\) \?\? null/,
   "an unready Hermes plan must not fall back to which/where and turn a Windows shim into a status path",
 );
 assert.match(
@@ -57,7 +57,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const resolvedBinary = h\.id === "grok" \? grokBin\(\) : h\.binary;[\s\S]*?h\.id === "grok" && resolvedBinary !== h\.binary[\s\S]*?: await which\(h\.binary\)/,
+  /const resolvedBinary = h\.id === "grok" \? grokBin\(runtime\.spawnEnv\) : h\.binary;[\s\S]*?h\.id === "grok" && resolvedBinary !== h\.binary[\s\S]*?: discoveredPaths\.get\(h\.binary\) \?\? null/,
   "WSL must report a Windows grok.exe discovered by the native launcher even though Linux which does not use PATHEXT",
 );
 assert.match(
@@ -77,7 +77,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const runtime = h\.id === "copilot"[\s\S]*?\? copilotRuntime[\s\S]*?: await adapterAvailability\(h\.id\);[\s\S]*?const copilotLaunch = runtime\.copilotLaunch;[\s\S]*?const path =\s*copilotLaunch[\s\S]*?copilotLaunch\.availability\.state === "ready"[\s\S]*?copilotLaunch\.availability\.resolvedPath[\s\S]*?: await which\(h\.binary\)/,
+  /const runtime = h\.id === "copilot"[\s\S]*?\? copilotRuntime[\s\S]*?: await adapterAvailability\(h\.id\);[\s\S]*?const copilotLaunch = runtime\.copilotLaunch;[\s\S]*?const path =\s*copilotLaunch[\s\S]*?copilotLaunch\.availability\.state === "ready"[\s\S]*?copilotLaunch\.availability\.resolvedPath[\s\S]*?: discoveredPaths\.get\(h\.binary\) \?\? null/,
   "the harness catalog reports the resolved Copilot launch target without running an independent which probe",
 );
 assert.match(

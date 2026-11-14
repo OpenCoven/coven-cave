@@ -1203,14 +1203,36 @@ export async function covenSpawnEnvAsync(
   return spawnEnv(await pending);
 }
 
-/** refreshCovenSpawnEnv() for async callers: drop the caches and start a new
- *  discovery off the event loop. A discovery already in flight is retired
- *  (its result is returned to its own callers but never cached). */
+/** Refresh off the event loop, retaining the last verified PATH for warm
+ * synchronous readers until the new generation is ready. Overlapping refreshes
+ * still retire older discoveries, but cannot force unrelated harness launches
+ * into a synchronous login-shell probe while the newest discovery runs. */
 export async function refreshCovenSpawnEnvAsync(
   options: CovenSpawnEnvOptions = {},
 ): Promise<NodeJS.ProcessEnv> {
+  const previousPath = pathState.cachedPath;
+  const previousToolPath = pathState.cachedToolPath;
   invalidatePathCaches();
-  return covenSpawnEnvAsync(options);
+  const discovery = discoveryOptions(options);
+  const generation = pathState.discoveryGeneration;
+  const started = augmentedSpawnPathAsync(false, discovery)
+    .then((pathValue) => {
+      const fresh = discovery.deadline === undefined || discovery.now() < discovery.deadline;
+      if (fresh && generation === pathState.discoveryGeneration) {
+        pathState.cachedPath = pathValue;
+        pathState.cachedToolPath = null;
+      }
+      return pathValue;
+    })
+    .finally(() => {
+      if (pathState.pendingPathDiscovery === started) pathState.pendingPathDiscovery = null;
+    });
+  // Restore only the already verified cache. The refresh itself does not read
+  // it, and generation guards keep an older result from replacing a newer one.
+  pathState.cachedPath = previousPath;
+  pathState.cachedToolPath = previousToolPath;
+  pathState.pendingPathDiscovery = started;
+  return spawnEnv(await started);
 }
 
 /**

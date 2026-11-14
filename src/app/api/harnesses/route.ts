@@ -17,7 +17,7 @@ import {
   covenSpawnEnv,
   covenWrapperSpawnEnv,
   pickWindowsLauncher,
-  refreshCovenSpawnEnv,
+  refreshCovenSpawnEnvAsync,
   type CovenLaunchCommand,
 } from "@/lib/coven-bin";
 import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-stream";
@@ -189,7 +189,7 @@ async function adapterAvailability(id: string): Promise<AdapterAvailability> {
     };
   }
   if (id === "grok") {
-    const launch = grokLaunchCommandForBinary(grokBin());
+    const launch = grokLaunchCommandForBinary(grokBin(env));
     return {
       availability: summarizeRuntimeAvailability(evaluateRuntimeAvailability({
         runner: "grok",
@@ -247,14 +247,24 @@ function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | nul
   });
 }
 
-// covenSpawnEnv() caches PATH for the server's lifetime. A cave launched from
-// Finder/Spotlight starts with a minimal PATH (no nvm/fnm), so installed
-// runtimes go undetected and Option A renders empty. Re-probe once with a
-// freshly rebuilt PATH on a miss before reporting the runtime as absent.
-async function which(binary: string): Promise<string | null> {
-  const found = await whichWith(binary, covenSpawnEnv());
-  if (found) return found;
-  return whichWith(binary, refreshCovenSpawnEnv());
+// Finish discovery before starting bounded adapter/version probes. Missing
+// optional CLIs share one asynchronous PATH refresh; no login shell can block
+// delivery of another runtime's successful probe or invalidate its warm PATH.
+async function discoverHarnessPaths(): Promise<Map<string, string | null>> {
+  const binaries = [...new Set(COMPATIBILITY_ADAPTERS
+    .filter((adapter) => !["hermes", "openclaw"].includes(adapter.id))
+    .map((adapter) => adapter.binary))];
+  const env = covenSpawnEnv();
+  const paths = new Map(await Promise.all(binaries.map(async (binary) =>
+    [binary, await whichWith(binary, env)] as const)));
+  const missing = binaries.filter((binary) => !paths.get(binary));
+  if (missing.length > 0) {
+    const refreshedEnv = await refreshCovenSpawnEnvAsync();
+    await Promise.all(missing.map(async (binary) => {
+      paths.set(binary, await whichWith(binary, refreshedEnv));
+    }));
+  }
+  return paths;
 }
 
 function probeVersion(
@@ -325,6 +335,7 @@ export async function GET() {
   // server's warm-up (or run it) off the event loop first (#5448).
   await warmHarnessSpawnPath();
   const copilotRuntime = await adapterAvailability("copilot");
+  const discoveredPaths = await discoverHarnessPaths();
   const openclawAgentCount = await countOpenClawAgents();
   const reports: HarnessReport[] = await Promise.all(
     COMPATIBILITY_ADAPTERS.map(async (h) => {
@@ -340,7 +351,7 @@ export async function GET() {
         : await adapterAvailability(h.id);
       const copilotLaunch = runtime.copilotLaunch;
       const hermesLaunch = runtime.hermesLaunch;
-      const resolvedBinary = h.id === "grok" ? grokBin() : h.binary;
+      const resolvedBinary = h.id === "grok" ? grokBin(runtime.spawnEnv) : h.binary;
       const path =
         copilotLaunch
           ? copilotLaunch.availability.state === "ready"
@@ -350,7 +361,7 @@ export async function GET() {
             ? resolvedBinary
             : h.id === "hermes"
               ? hermesLaunch?.state === "ready" ? hermesLaunch.command : null
-              : await which(h.binary);
+              : discoveredPaths.get(h.binary) ?? null;
       const availability = runtime.availability;
       if (!path || (h.id === "codex" && availability.state !== "ready")) {
         return { ...h, installed: false, path: null, version: null, availability };
