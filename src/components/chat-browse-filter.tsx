@@ -6,7 +6,7 @@ import { Popover, usePopoverInitialFocus } from "@/components/ui/popover";
 import { WorkspaceContextSwitcher, type WorkspaceContextSwitcherProps } from "@/components/workspace-context-switcher";
 import "@/styles/chat-browse-filter.css";
 
-/** Optional browse controls. None of these callbacks change the chat actor. */
+/** Responsive placement of the shared workspace controls; open chats stay bound. */
 export function ChatBrowseFilter(props: WorkspaceContextSwitcherProps) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
@@ -22,9 +22,9 @@ export function ChatBrowseFilter(props: WorkspaceContextSwitcherProps) {
         <span>{label}</span>
       </Button>
       <Popover open={open} onOpenChange={setOpen} anchorRef={anchorRef} placement="bottom-start" ariaLabel="Filter chats" className="chat-browse-filter__panel">
-        <div className="chat-browse-filter__heading">Filter chats <span>Optional</span></div>
-        <WorkspaceContextSwitcher {...props} variant="rail" fullAccessOnly />
-        {props.projectId ? <p className="chat-browse-filter__help">Familiar choices have Full access. Historical chats remain available through All chats.</p> : null}
+        <div className="chat-browse-filter__heading">Workspace context</div>
+        <WorkspaceContextSwitcher {...props} variant="rail" />
+        <p className="chat-browse-filter__help">Selection is shared across pages. Open chats keep their original context.</p>
         {filtered ? <Button size="sm" variant="ghost" onClick={() => { props.onProjectChange(null); props.onSelectFamiliar(null); }}>Clear filters</Button> : null}
       </Popover>
     </>

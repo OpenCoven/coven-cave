@@ -1806,6 +1806,7 @@ export const SUITES = {
     "src/lib/grok-compatibility.test.ts",
     "src/lib/codex-runtime-availability.test.ts",
     "src/app/api/harnesses/route.test.ts",
+    "src/app/api/harnesses/route-path-refresh.test.ts",
     "src/lib/claude-stream.test.ts",
     "src/lib/runtime-compatibility.test.ts",
     "src/lib/server/claude-runtime-compatibility.test.ts",

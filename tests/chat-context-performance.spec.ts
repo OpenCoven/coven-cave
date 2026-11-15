@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { now, setup, openThread, switchProject, switchComposeProject } from "./chat-context-fixture";
 import { chatFilterAtAllChats, openChatFilter } from "./fixtures/chat-filter";
 
-test("composer project drafts stay isolated while browse filters preserve the current draft", async ({ page }) => {
+test("composer and shared workspace project drafts stay isolated", async ({ page }) => {
   await setup(page);
   await page.keyboard.press("Alt+2");
   await switchComposeProject(page, "alpha");
@@ -19,10 +19,18 @@ test("composer project drafts stay isolated while browse filters preserve the cu
   await main.getByRole("button", { name: /^Project:/ }).click();
   await page.locator(".cave-project-picker__row").filter({ hasText: "Context alpha" }).first().locator(".ui-popover-item").click();
   await expect(composer).toHaveValue("Alpha draft remains Alpha");
+  // The shared selector opens that workspace's blank-compose draft. Its
+  // storage key is separate from the All projects compose edited above.
   await switchProject(page, "beta");
-  await expect(composer).toHaveValue("Alpha draft remains Alpha");
+  await expect(composer).toHaveValue("");
+  await composer.fill("Shared Beta workspace draft");
   await switchProject(page, "alpha");
-  await expect(composer).toHaveValue("Alpha draft remains Alpha");
+  await expect(composer).toHaveValue("");
+  await composer.fill("Shared Alpha workspace draft");
+  await switchProject(page, "beta");
+  await expect(composer).toHaveValue("Shared Beta workspace draft");
+  await switchProject(page, "alpha");
+  await expect(composer).toHaveValue("Shared Alpha workspace draft");
 });
 
 for (const clearFirst of [false, true]) {
