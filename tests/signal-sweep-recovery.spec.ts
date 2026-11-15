@@ -65,6 +65,10 @@ test("signal fixes warn before dispatch, deduplicate remounts, and explicitly re
     available = true;
     await queue.getByRole("button", { name: "Check again", exact: true }).click();
     await expect(resolve).toBeEnabled();
+    await expect(resolve).toHaveAttribute("tabindex", "0");
+    await queue.getByRole("button", { name: "Blockers 1", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    await expect(resolve).toBeFocused();
     const popupPromise = page.waitForEvent("popup");
     await resolve.click();
     const popup = await popupPromise;

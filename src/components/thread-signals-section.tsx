@@ -682,6 +682,7 @@ function ThreadSignalReviewQueue({
   useRovingTabIndex({
     containerRef: listRef,
     itemSelector: ".fa-thread-review-item",
+    itemsVersion: JSON.stringify([access.available, shown.map(signalIdentity)]),
     orientation: "vertical",
   });
 
