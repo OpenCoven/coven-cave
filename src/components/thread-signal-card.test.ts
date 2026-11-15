@@ -79,17 +79,18 @@ describe("thread-signal-card module wiring", () => {
   });
 
   it("launches resolution threads through the shared prompt + cross-page launcher", () => {
-    assert.match(source, /requestAgentsNewChat\(/);
+    assert.match(source, /await launchSignalSweep\(report\.familiarId, targets/);
+    assert.doesNotMatch(source, /requestAgentsNewChat\(/, "the card cannot bypass shared admission");
     assert.match(source, /requestedRows\.current\.keys\.has/);
-    assert.match(source, /if \(result\.ok\) \{/);
+    assert.match(source, /if \(result\.ok && result\.requestId\) \{/);
     assert.match(source, /subscribeRightChatFailures\(\(detail\)/);
     assert.match(source, /requestedRows\.current\.requests\.get\(detail\.requestId\)/);
-    assert.match(source, /disabled=\{launchRequested\.has\(rowKey\(row\)\)\}/);
+    assert.match(source, /disabled=\{!access\.available \|\| launchPending \|\| launchRequested\.has\(rowKey\(row\)\)\}/);
     assert.match(source, /destination: "right-panel"/);
     assert.match(source, /setLaunchError\(result\.ok \? null : result\.error\)/);
     assert.doesNotMatch(source, /Thread launched/, "an acknowledged request is not yet a launched thread");
-    assert.match(source, /buildThreadSignalResolutionPrompt\(targets\[0\]\)/);
-    assert.match(source, /buildThreadSignalBatchResolutionPrompt\(targets\)/);
+    assert.match(source, /buildThreadSignalResolutionPrompt\(accepted\[0\]\)/);
+    assert.match(source, /buildThreadSignalBatchResolutionPrompt\(accepted\)/);
     // One thread for all remaining criticals, not one per signal.
     assert.match(source, /launch\(\s*openCriticals,/);
   });
@@ -212,12 +213,12 @@ describe("thread-signal-card module wiring", () => {
     const wide = styles.slice(styles.indexOf("@container thread-signal-overlay (min-width: 48rem)"));
     assert.match(
       wide,
-      /\.cave-thread-signal-overlay > \.tsc-card--no-signals \{\s*grid-template-areas:\s*"head head"\s*"tiles why"\s*"foot foot";/,
+      /\.cave-thread-signal-overlay > \.tsc-card--no-signals \{\s*grid-template-areas:\s*"status status"\s*"head head"\s*"tiles why"\s*"foot foot";/,
       "with no signals the rationale sits beside the tiles",
     );
     assert.match(
       wide,
-      /\.cave-thread-signal-overlay > \.tsc-card--no-signals\.tsc-card--no-detail \{\s*grid-template-areas:\s*"head"\s*"tiles"\s*"foot";\s*grid-template-columns: minmax\(0, 1fr\);/,
+      /\.cave-thread-signal-overlay > \.tsc-card--no-signals\.tsc-card--no-detail \{\s*grid-template-areas:\s*"status"\s*"head"\s*"tiles"\s*"foot";\s*grid-template-columns: minmax\(0, 1fr\);/,
       "with no rationale either, the tiles take the whole width",
     );
   });

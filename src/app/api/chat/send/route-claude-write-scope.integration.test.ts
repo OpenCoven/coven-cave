@@ -99,6 +99,8 @@ if (noPermission) {
   const launches = await calls();
   assert.equal(launches.length,1);
   assert.equal(launches[0].argv[launches[0].argv.indexOf("--permission")+1],"read-only");
+  assert.match(launches[0].argv.at(-1), /Effective access for this turn: Read-only/, "explicit Explore receives the truthful runtime boundary");
+  assert.match(launches[0].argv.at(-1), /Do not edit, create, delete, commit, or push/, "the preamble does not promise execution in Explore");
   const buildAgain = await send({sessionId:explore.done.sessionId,allowReadOnlyFallback:true});
   assert.equal(buildAgain.done?.isError,true,buildAgain.body);
   assert.ok(buildAgain.events.some(e=>e.kind === "error" && e.code === "scoped_write_unavailable"),buildAgain.body);
