@@ -26,6 +26,8 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/signal-sweep-identity.test.ts",
+    "src/lib/signal-sweep-launch.test.ts",
     "src/lib/first-use-execution.test.ts",
     "src/components/first-use-guide.behavior.test.tsx",
     "src/components/first-use-provider.behavior.test.tsx",
@@ -1085,6 +1087,7 @@ export const SUITES = {
     "src/lib/server/stuck-created-sweep.test.ts",
     "src/lib/server/stale-running-sweep.test.ts",
     "src/components/thread-signal-card.test.ts",
+    "src/components/thread-signal-card.behavior.test.tsx",
     "src/components/thread-signals-section.test.ts",
     "src/lib/thread-signal-dismissals.test.ts",
     "src/components/chat-view.test.ts",
@@ -1557,6 +1560,9 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
   ],
   api: [
+    "src/app/api/chat/signal-sweeps/route.integration.test.ts",
+    "src/lib/server/signal-sweep-store.test.ts",
+    "src/app/api/chat/send/coven-write-scope-refresh.test.ts",
     "src/app/api/onboarding/journey/route.behavior.test.ts",
     "src/app/api/project-grants/route-chat-grant.integration.test.ts",
     "src/app/api/onboarding/journey/route.integration.test.ts",
@@ -2339,6 +2345,9 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/signal-sweep-identity.test.ts",
+  "src/app/api/chat/signal-sweeps/route.integration.test.ts",
+  "src/app/api/chat/send/coven-write-scope-refresh.test.ts",
   "src/app/api/project-grants/route-chat-grant.integration.test.ts",
   "src/app/api/onboarding/journey/route.integration.test.ts",
   "src/app/api/chat/send/route-read-project-admission.integration.test.ts",
@@ -2835,6 +2844,8 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/lib/signal-sweep-launch.test.ts",
+  "src/components/thread-signal-card.behavior.test.tsx",
   "src/components/notification-bell.behavior.test.tsx",
   "src/components/first-use-guide.behavior.test.tsx",
   "src/app/api/onboarding/journey/route.behavior.test.ts",

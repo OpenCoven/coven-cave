@@ -241,7 +241,8 @@ describe("aggregateThreadSignals", () => {
 
   it("launches a resolution thread from a review item, primed with an auto-sent fix prompt", () => {
     assert.match(source, /buildThreadSignalResolutionPrompt/, "seeds the thread with a resolution-directive prompt");
-    assert.match(source, /requestAgentsNewChat\(\{/, "opens a new chat thread via the cross-page launcher");
+    assert.match(source, /launchSignalSweep\(familiarId, \[item\]/, "uses shared capability admission and atomic deduplication");
+    assert.doesNotMatch(source, /requestAgentsNewChat\(/, "analytics cannot bypass admission");
     assert.doesNotMatch(
       source,
       /new CustomEvent\("cave:agents-new-chat"/,
@@ -250,22 +251,24 @@ describe("aggregateThreadSignals", () => {
     assert.match(source, /Analytics source: \$\{analyticsPath\}/, "ties the thread back to the familiar analytics page");
     assert.match(source, /origin: "chat"/, "thread signal resolutions stay regular chat threads");
     assert.doesNotMatch(source, /origin: "eval"/, "thread signal resolutions are not routed through Evals");
-    assert.match(source, /className="fa-thread-review-item"[\s\S]*onClick=\{\(\) => \{[\s\S]*launchResolutionThread\(familiarId, item\)/, "each review item is a clickable button");
+    assert.match(source, /className="fa-thread-review-item"[\s\S]*onClick=\{\(\) => void resolve\(item\)\}/, "each review item reaches the async resolution action");
     assert.match(source, /destination: "right-panel"/, "resolution requests preserve the main surface");
     assert.match(source, /setLaunchError\(result\.ok \? null : result\.error\)/, "handoff failures remain visible and retryable");
     assert.match(source, /Launch a thread to resolve/, "the affordance says it launches a resolution thread");
   });
 
   it("launches a resolution thread from actionable table rows", () => {
-    assert.match(source, /function resolveRow\(familiarId: string, row: ThreadSignalTableRow\)/, "rows are shaped into review items");
+    assert.match(source, /function resolveRow\(familiarId: string, row: ThreadSignalTableRow, retry = false/, "rows are shaped into review items with explicit retry intent");
     assert.match(source, /if \(!row\.kind\) return;/, "purely informational rows (skills used most) cannot launch a resolution");
-    assert.match(source, /onClick=\{\(\) => resolve\(row\)\}/, "row action launches the resolution thread through visible error handling");
-    assert.match(source, /const result = resolveRow\(familiarId, row\)/);
+    assert.match(source, /onClick=\{\(\) => void resolve\(row\)\}/, "row action reaches async admission with visible error handling");
+    assert.match(source, /const result = await resolveRow\(familiarId, row, retry/);
+    assert.match(source, /sourceId: row\.sourceId \?\? row\.id/, "table and card share upstream signal identities");
     assert.match(source, /kind: "blocker",/, "blocker rows carry a review kind");
     assert.match(source, /kind: "skill-access",/, "access-gap rows carry a review kind");
     assert.match(source, /kind: "skill-clarity",/, "clarity-gap rows carry a review kind");
-    assert.match(source, /kind: "capability",/, "capability rows carry a review kind");
-    assert.match(source, />\s*Resolve\s*<\/Button>/, "row affordance is labeled Resolve");
+    assert.match(source, /kind: "capability" as const, sourceId: name/, "independent capabilities retain their own identity");
+    assert.match(source, /kind: "blocker" as const, sourceId: linked/, "linked capability rows use the underlying blocker’s identity");
+    assert.match(source, />\s*Resolve in Build\s*<\/Button>/, "the action explicitly requests Build without changing saved Explore preferences");
   });
 });
 
@@ -338,7 +341,7 @@ describe("signal table UX — sticky header, coarse-pointer overflow, empty disc
     assert.match(source, /const coarsePointer = useIsCoarsePointer\(\);/, "consolidation keys on (pointer: coarse), not viewport");
     assert.match(source, /coarsePointer \? \(/, "coarse pointers take the consolidated branch");
     assert.match(source, /<OverflowMenu ariaLabel=\{`Actions for signal \$\{row\.signal\}`\}/, "the ⋯ trigger names its signal");
-    assert.match(source, /Resolve in a thread/, "menu carries the resolve action");
+    assert.match(source, /Resolve in Build/, "menu explicitly names the requested access mode");
     assert.match(source, /Add task to Tasks/, "menu carries the canonical task action");
     assert.match(source, /Task already in Tasks/, "settled rows use the canonical Tasks name");
   });
