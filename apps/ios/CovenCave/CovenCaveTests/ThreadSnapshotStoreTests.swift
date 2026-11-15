@@ -1,5 +1,31 @@
+import Foundation
 import XCTest
 @testable import CovenCave
+
+private final class ThreadSnapshotRevocationProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url else { return }
+        let status = url.host?.split(separator: "-").last?.split(separator: ".").first
+            .flatMap { Int($0) } ?? 403
+        var headers = ["Content-Type": "application/json"]
+        if url.host?.contains("managed") == true { headers["x-coven-device-pairing"] = "1" }
+        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: headers)!
+        let code = url.host?.contains("write") == true ? "project_write_access_required"
+            : url.host?.contains("flow") == true ? "flow_session_read_only"
+            : url.host?.contains("trust") == true ? "untrusted_harness" : "project_access_denied"
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        let body = url.host?.contains("managed-gateway") == true
+            ? #"{"ok":false,"error":"forbidden","message":"Device approval is required. Open /connect."}"#
+            : "{\"ok\":false,\"code\":\"\(code)\",\"error\":\"Controlled refusal\"}"
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
 
 final class ThreadSnapshotStoreTests: XCTestCase {
     private var directory: URL!
@@ -16,12 +42,13 @@ final class ThreadSnapshotStoreTests: XCTestCase {
     }
 
     private func makeSnapshot(id: String = UUID().uuidString,
-                              title: String = "Chat") -> ThreadSnapshot {
+                              title: String = "Chat",
+                              sessionId: String = "session-1") -> ThreadSnapshot {
         ThreadSnapshot(
             id: id,
             title: title,
             familiarIds: ["nova"],
-            sessionIds: ["nova": "session-1"],
+            sessionIds: ["nova": sessionId],
             projectRoot: "/repos/cave",
             messages: [
                 DisplayMessage(role: .user, familiarId: nil, text: "hello"),
@@ -32,6 +59,257 @@ final class ThreadSnapshotStoreTests: XCTestCase {
             pinned: true,
             muted: nil
         )
+    }
+
+    // MARK: - Access revocation
+
+    @MainActor
+    func testConversationSpecificRequestsPurgeTheirRefusedSession() async throws {
+        let suite = "ThreadSnapshotStoreTests.boundaries.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for operation in ["turn-delete", "voice-discard", "voice-grant", "session-flags", "session-delete",
+                          "model-read", "model-write", "recovery", "unbound-recovery"] {
+            let revoked = makeSnapshot(id: "cached", sessionId: "known-session")
+            let kept = makeSnapshot(id: "kept", sessionId: "other-session")
+            let operationFile = directory.appendingPathComponent(operation + ".json")
+            let store = ThreadSnapshotStore(url: operationFile)
+            try await store.save([revoked, kept])
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ThreadSnapshotRevocationProtocol.self]
+            let session = URLSession(configuration: configuration)
+            defer { session.invalidateAndCancel() }
+            let app = AppModel(defaults: defaults, restoreLocalState: false,
+                               loadPersistedConnection: false, threadStoreURL: operationFile,
+                               widgetSnapshotDefaults: defaults, clientSession: session)
+            app.connection = CaveConnection(host: "cache-boundary-403.invalid")
+            let client = try XCTUnwrap(app.client)
+            do {
+                switch operation {
+                case "turn-delete": _ = try await client.deleteConversationTurn(sessionId: "known-session", turnId: "turn")
+                case "voice-discard": _ = try await client.discardVoiceConversationIfEmpty(sessionId: "known-session")
+                case "voice-grant": _ = try await client.mintVoiceSession(familiarId: "nova", sessionId: "known-session")
+                case "session-flags": try await client.setSessionFlags(sessionId: "known-session", pinned: true)
+                case "session-delete": try await client.deleteSession(sessionId: "known-session")
+                case "model-read": _ = try await client.chatModelState(familiarId: "nova", sessionId: "known-session")
+                case "model-write": _ = try await client.setChatModel(familiarId: "nova", sessionId: "known-session", model: nil, scope: "session")
+                default:
+                    for try await _ in client.resumeStream(runId: "opaque-run-id", cursor: 0,
+                                                           sessionId: operation == "recovery" ? "known-session" : nil) {}
+                }
+                XCTFail("Expected a refusal for \(operation)")
+            } catch is CaveError { }
+            let reloaded = try await store.load()
+            XCTAssertEqual(reloaded, operation == "unbound-recovery" ? [revoked, kept] : [kept], operation)
+        }
+    }
+
+    @MainActor
+    func testAnUnsavedRefusedThreadCannotBeCachedAfterRebinding() async throws {
+        let suite = "ThreadSnapshotStoreTests.unsaved.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ThreadSnapshotRevocationProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let app = AppModel(defaults: defaults, restoreLocalState: false,
+                           loadPersistedConnection: false, threadStoreURL: fileURL,
+                           widgetSnapshotDefaults: defaults, clientSession: session)
+        app.connection = CaveConnection(host: "cache-revocation.invalid")
+        app.threads = [ChatThread(snapshot: makeSnapshot(id: "local-unsaved", sessionId: "denied-session"))]
+        let client = try XCTUnwrap(app.client)
+        do {
+            _ = try await client.conversation(sessionId: "denied-session")
+            XCTFail("Expected an access refusal")
+        } catch CaveError.badResponse(403) { }
+        app.threads[0].sessionIds["nova"] = "replacement-session"
+        let flushed = await app.flushThreadsAndWait()
+        XCTAssertTrue(flushed)
+        let reloaded = try await ThreadSnapshotStore(url: fileURL).load()
+        XCTAssertEqual(reloaded, [])
+    }
+
+    @MainActor
+    func testSendAccessDenialPurgesButOperationOnlyRefusalsKeepTheSnapshot() async throws {
+        let suite = "ThreadSnapshotStoreTests.send.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for (host, shouldPurge) in [("cache-status-401.invalid", true), ("cache-status-403.invalid", true),
+                                    ("cache-managed-gateway-403.invalid", true),
+                                    ("cache-managed-write-403.invalid", false),
+                                    ("cache-write-403.invalid", false), ("cache-flow-403.invalid", false),
+                                    ("cache-trust-403.invalid", false), ("cache-status-500.invalid", false)] {
+            let snapshot = makeSnapshot(id: "cached", sessionId: "send-session")
+            let statusFile = directory.appendingPathComponent(host + ".json")
+            let store = ThreadSnapshotStore(url: statusFile)
+            try await store.save([snapshot])
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ThreadSnapshotRevocationProtocol.self]
+            let session = URLSession(configuration: configuration)
+            defer { session.invalidateAndCancel() }
+            let app = AppModel(defaults: defaults, restoreLocalState: false,
+                               loadPersistedConnection: false, threadStoreURL: statusFile,
+                               widgetSnapshotDefaults: defaults, clientSession: session)
+            app.connection = CaveConnection(host: host)
+            let client = try XCTUnwrap(app.client)
+            do {
+                for try await _ in client.sendStream(.init(familiarId: "nova", prompt: "Synthetic continuation",
+                                                           sessionId: "send-session", projectRoot: "/repos/cave")) {}
+                XCTFail("Expected a server refusal")
+            } catch CaveError.serverResponse { }
+            let reloaded = try await store.load()
+            XCTAssertEqual(reloaded, shouldPurge ? [] : [snapshot], host)
+        }
+    }
+
+    func testPurgeRemovesEverySnapshotReferencingTheConversation() async throws {
+        let direct = makeSnapshot(id: "denied-session", sessionId: "other-direct-session")
+        var group = makeSnapshot(id: "group", sessionId: "allowed-group-session")
+        group.sessionIds["sage"] = "denied-session"
+        var flow = makeSnapshot(id: "flow", sessionId: "allowed-flow-session")
+        flow.flowSessionIds = ["denied-session", "other-flow-session"]
+        let kept = makeSnapshot(id: "kept", sessionId: "unrelated-session")
+        let snapshots = [direct, group, flow, kept]
+        let store = ThreadSnapshotStore(url: fileURL)
+        try await store.save(snapshots)
+
+        try await store.purgeConversation(sessionId: "denied-session")
+        try await store.save(snapshots)
+
+        let reloaded = try await ThreadSnapshotStore(url: fileURL).load()
+        XCTAssertEqual(reloaded, [kept])
+    }
+
+    func testReceivedRevocationStillPurgesWhenTheCallerIsCancelled() async throws {
+        let revoked = makeSnapshot(id: "revoked", sessionId: "denied-session")
+        let kept = makeSnapshot(id: "kept", sessionId: "unrelated-session")
+        let store = ThreadSnapshotStore(url: fileURL)
+        try await store.save([revoked, kept])
+        let task = Task {
+            while !Task.isCancelled { await Task.yield() }
+            try await store.purgeConversation(sessionId: "denied-session")
+        }
+        task.cancel()
+        try await task.value
+
+        let reloaded = try await ThreadSnapshotStore(url: fileURL).load()
+        XCTAssertEqual(reloaded, [kept])
+    }
+
+    @MainActor
+    func testAReplacedConnectionCannotPurgeTheCurrentCache() async throws {
+        let kept = makeSnapshot(id: "kept", sessionId: "shared-session-id")
+        let store = ThreadSnapshotStore(url: fileURL)
+        try await store.save([kept])
+        let suite = "ThreadSnapshotStoreTests.replaced.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ThreadSnapshotRevocationProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let app = AppModel(defaults: defaults, restoreLocalState: false,
+                           loadPersistedConnection: false, threadStoreURL: fileURL,
+                           widgetSnapshotDefaults: defaults, clientSession: session)
+        app.connection = CaveConnection(host: "cache-old.invalid")
+        let oldClient = try XCTUnwrap(app.client)
+        app.connection = CaveConnection(host: "cache-successor.invalid")
+
+        do {
+            _ = try await oldClient.conversation(sessionId: "shared-session-id")
+            XCTFail("Expected the old connection's refusal")
+        } catch CaveError.badResponse(403) {}
+
+        let reloaded = try await store.load()
+        XCTAssertEqual(reloaded, [kept])
+    }
+
+    @MainActor
+    func testOnlyDefinitiveConversationAccessRefusalsPurgeTheCache() async throws {
+        let suite = "ThreadSnapshotStoreTests.status.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for (status, shouldPurge) in [(401, true), (403, true), (404, false), (500, false)] {
+            let snapshot = makeSnapshot(id: "cached", sessionId: "status-session")
+            let statusFile = directory.appendingPathComponent("status-\(status).json")
+            let store = ThreadSnapshotStore(url: statusFile)
+            try await store.save([snapshot])
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ThreadSnapshotRevocationProtocol.self]
+            let session = URLSession(configuration: configuration)
+            defer { session.invalidateAndCancel() }
+            let app = AppModel(defaults: defaults, restoreLocalState: false,
+                               loadPersistedConnection: false, threadStoreURL: statusFile,
+                               widgetSnapshotDefaults: defaults, clientSession: session)
+            app.connection = CaveConnection(host: "cache-status-\(status).invalid")
+            let client = try XCTUnwrap(app.client)
+            do {
+                _ = try await client.conversation(sessionId: "status-session")
+                XCTFail("Expected HTTP \(status)")
+            } catch CaveError.badResponse(let received) {
+                XCTAssertEqual(received, status)
+            }
+            let reloaded = try await ThreadSnapshotStore(url: statusFile).load()
+            XCTAssertEqual(reloaded, shouldPurge ? [] : [snapshot], "HTTP \(status)")
+        }
+    }
+
+    @MainActor
+    func testConversationRefusalPurgesOnlyRevokedSnapshotAndSurvivesRelaunch() async throws {
+        var revoked = makeSnapshot(id: "revoked-thread", sessionId: "revoked-session")
+        revoked.messages = [DisplayMessage(role: .assistant, familiarId: "nova", text: "revocation-cache-secret-6487")]
+        var kept = makeSnapshot(id: "kept-thread", title: "Keep every field", sessionId: "kept-session")
+        kept.archived = false
+        kept.muted = false
+        let store = ThreadSnapshotStore(url: fileURL)
+        try await store.save([revoked, kept])
+        let suite = "ThreadSnapshotStoreTests.revocation.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ThreadSnapshotRevocationProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let app = AppModel(defaults: defaults, restoreLocalState: false,
+                           loadPersistedConnection: false, threadStoreURL: fileURL,
+                           widgetSnapshotDefaults: defaults, clientSession: session)
+        app.connection = CaveConnection(host: "cache-revocation.invalid")
+        app.threads = [ChatThread(snapshot: revoked), ChatThread(snapshot: kept)]
+        let client = try XCTUnwrap(app.client)
+
+        do {
+            _ = try await client.conversation(sessionId: "revoked-session")
+            XCTFail("The conversation must still report its access refusal")
+        } catch CaveError.badResponse(403) {
+            // The actual client boundary learns that this conversation is forbidden.
+        }
+
+        let afterRefusal = try await store.load()
+        XCTAssertEqual(afterRefusal, [kept])
+        // A later background flush still holds the old in-memory snapshot.
+        // Even session rebinding must not resurrect its revoked transcript.
+        app.threads[0].sessionIds["nova"] = "replacement-session"
+        let flushed = await app.flushThreadsAndWait()
+        XCTAssertTrue(flushed)
+        let afterFlush = try await ThreadSnapshotStore(url: fileURL).load()
+        XCTAssertEqual(afterFlush, [kept])
+        XCTAssertFalse(String(decoding: try Data(contentsOf: fileURL), as: UTF8.self)
+            .contains("revocation-cache-secret-6487"))
+
+        let relaunched = AppModel(defaults: defaults, loadPersistedConnection: false,
+                                  threadStoreURL: fileURL, widgetSnapshotDefaults: defaults)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !relaunched.threads.contains(where: { $0.id == kept.id }), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(relaunched.threads.map(\.snapshot), [kept])
     }
 
     // MARK: - Round-trip / legacy compatibility

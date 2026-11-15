@@ -2520,7 +2520,8 @@ final class ChatThread: Identifiable, Hashable {
             }
             try Task.checkCancellation()
             do {
-                for try await frame in client.resumeStream(runId: runId, cursor: nextCursor) {
+                for try await frame in client.resumeStream(runId: runId, cursor: nextCursor,
+                                                          sessionId: sessionIds[familiarId]) {
                     try Task.checkCancellation()
                     recovery.accepted = true
                     if Self.isResumeGap(frame.event) { sawResumeGap = true }
@@ -2610,7 +2611,8 @@ final class ChatThread: Identifiable, Hashable {
         var sawResumeGap = false
         let coalescer = StreamCoalescer()
         do {
-            for try await frame in client.resumeStream(runId: runId, cursor: 0) {
+            for try await frame in client.resumeStream(runId: runId, cursor: 0,
+                                                      sessionId: sessionIds[familiarId]) {
                 try Task.checkCancellation()
                 if Self.isResumeGap(frame.event) { sawResumeGap = true }
                 apply(

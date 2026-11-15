@@ -2199,7 +2199,24 @@ final class AppModel {
 
     var client: CaveClient? {
         guard let connection else { return nil }
-        return CaveClient(connection: connection, session: clientSession)
+        let generation = connectionConfigurationGeneration
+        return CaveClient(connection: connection, session: clientSession,
+                          onConversationAccessDenied: { [weak self] sessionId in
+            guard let self else { return }
+            try await self.purgeDeniedConversation(sessionId, connection: connection, generation: generation)
+        })
+    }
+
+    private func purgeDeniedConversation(_ sessionId: String, connection: CaveConnection,
+                                         generation: UInt64) async throws {
+        // A delayed response from a replaced host cannot invalidate its successor.
+        // Cancellation alone does not undo an access denial already received.
+        guard connectionConfigurationGeneration == generation, self.connection == connection else { return }
+        let affected = Set(threads.filter {
+            $0.id == sessionId || $0.sessionIds.values.contains(sessionId)
+                || $0.snapshot.flowSessionIds?.contains(sessionId) == true
+        }.map(\.id))
+        try await threadStore.purgeConversation(sessionId: sessionId, snapshotIDs: affected)
     }
 
     /// Drop cached model state for a familiar on the current host. Every model

@@ -1,0 +1,60 @@
+{
+  "issue": 6487,
+  "testedBaseCommit": "f21325cbcbfc09841ffaf6771021c02710700ece",
+  "testedSourceFingerprint": "488eb59159790ca3a7ec54444bbd8cea1d7d154a64c9da3911094d6857057341",
+  "sourceUnchangedDuringNativeRun": true,
+  "finishedAt": "2026-11-15T23:26:59.399Z",
+  "host": {
+    "node": "v24.22.0",
+    "xcode": "Xcode 27.2\nBuild version 27B52"
+  },
+  "nativeSuite": {
+    "result": "Passed",
+    "totalTestCount": 1228,
+    "passedTests": 1228,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "expectedFailures": 0,
+    "devicesAndConfigurations": [
+      {
+        "device": {
+          "architecture": "arm64",
+          "deviceId": "B27A835C-42C9-46DB-8BC6-4AD7356FF55F",
+          "deviceName": "cave-6487-revocation-20261115",
+          "modelName": "iPhone 18 Pro",
+          "osBuildNumber": "24B8117",
+          "osVersion": "27.2",
+          "platform": "iOS Simulator"
+        },
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "passedTests": 1228,
+        "skippedTests": 0,
+        "testPlanConfiguration": {
+          "configurationId": "1",
+          "configurationName": "Test Scheme Action"
+        }
+      }
+    ]
+  },
+  "fixture": {
+    "classification": "full XCTest unit suite with real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider",
+    "fullUnitSuiteExecuted": true,
+    "ingressRefusalsVerified": true,
+    "realDaemonRosterVerified": true,
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "serverStopped": true,
+    "providerStopped": true,
+    "daemonStopped": true,
+    "fixtureRootRemoved": true
+  },
+  "changedSourceSha256": {
+    "apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift": "d505b9c73dc41f4d0651b920df471fcd7cda402710b7017997bb259dc3eab75d",
+    "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "b751281a68a9878d6d59d0db852be8109578245db4edd827c0d5b4c23377edc8",
+    "apps/ios/CovenCave/CovenCave/State/ChatThread.swift": "9d60c4cde08c1b3098e63f2187b20735f04201d6ec8e0686e6affc620d362576",
+    "apps/ios/CovenCave/CovenCave/State/ThreadSnapshotStore.swift": "6fe1df7c18af33eb57715bb27ac5168c52ff24b910cd33bb1a9ecbc783af5458",
+    "apps/ios/CovenCave/CovenCaveTests/ThreadSnapshotStoreTests.swift": "8eb29a55a9363abb07279032f8174c4b042a404912f2da0f8a60c7d1c64f4321"
+  },
+  "physicalDeviceVerified": false
+}
