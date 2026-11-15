@@ -71,7 +71,7 @@ async function setup(page: Page, options: {
   } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: {
     ok: true,
-    sessions: [{ id: SESSION_ID, title: "Private state chat", status: "idle", project_root: "/workspace/coven-cave", harness: "claude", familiarId: "nova", model: null, runtime: "local:/workspace/coven-cave", exit_code: null, archived_at: null, created_at: ISO, updated_at: ISO }],
+    sessions: [{ id: SESSION_ID, title: "Private state chat", status: "idle", project_root: "/workspace/coven-cave", harness: "claude", familiarId: "nova", model: null, runtime: "local:/workspace/coven-cave", exit_code: null, archived_at: null, created_at: ISO, updated_at: ISO }, { id: "other-chat", title: "Other chat", status: "idle", project_root: "/workspace/coven-cave", harness: "claude", familiarId: "nova", model: null, runtime: "local:/workspace/coven-cave", exit_code: null, archived_at: null, created_at: ISO, updated_at: ISO }],
   } }));
   await page.route("**/api/projects**", (route) => route.fulfill({ json: {
     ok: true, projects: PROJECTS.map((project) => ({ ...project, access: "write" })),
@@ -299,7 +299,6 @@ test("Chat names the folder and grant behind a refused Full access turn, and ope
   // Projects replaced the chat, and its Retry with it. Reopened from the
   // list, the refused message is in the composer to send again.
   await page.getByTestId("detail").getByRole("tab", { name: "Chats" }).click();
-  await page.getByRole("button", { name: /^Reorder chat Private state chat Private state chat/ }).click();
   await expect(page.getByTestId("chat-main").locator(".cave-composer-input")).toHaveValue("resume the restyle", { timeout: 45_000 });
 
   // The already-mounted handoff must not leave a latch that changes the next
@@ -310,25 +309,165 @@ test("Chat names the folder and grant behind a refused Full access turn, and ope
   await expect(page.getByTestId("detail").getByRole("tab", { name: "Chats", exact: true })).toHaveAttribute("aria-selected", "true");
 });
 
+test("Retry keeps the refused attachment and controls after Projects", async ({ page }, testInfo) => {
+  const sends: Record<string, unknown>[] = [];
+  await setup(page, { send: (route) => {
+    sends.push(route.request().postDataJSON());
+    return route.fulfill({ status: 409, json: { ok: false, code: "scoped_write_unavailable", reason: "cave_private_state_overlap",
+      overlap: { source: "project", root: "/home/cave/.coven", message: OVERLAP_MESSAGE }, error: OVERLAP_MESSAGE } });
+  } });
+  await page.goto(`/?mode=chat#chat-${SESSION_ID}`, { waitUntil: "domcontentloaded" });
+  const chat = page.getByTestId("chat-main");
+  await chat.locator(".cave-composer-input").fill("retry with evidence");
+  await chat.locator('input[type="file"]').setInputFiles({ name: "evidence.txt", mimeType: "text/plain", buffer: Buffer.from("Evidence for retry") });
+  await expect(chat.getByRole("button", { name: "Remove evidence.txt", exact: true })).toBeVisible();
+  await chat.getByRole("button", { name: "Send message" }).click();
+  await chat.getByRole("button", { name: "Open projects" }).click();
+  await expect(page.locator(".projects-access")).toBeVisible({ timeout: 180_000 });
+  await page.getByTestId("detail").getByRole("tab", { name: "Chats" }).click();
+  await expect(chat.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  // Retry owns the attachment; the composer must not also restore it.
+  await expect(chat.getByRole("button", { name: "Remove evidence.txt", exact: true })).toHaveCount(0);
+  // Changing the current composer must not change the saved Retry request.
+  await chat.getByRole("button", { name: "Tools", exact: true }).click();
+  await page.getByRole("menuitem", { name: /Response options/ }).hover();
+  const responseOptions = page.getByRole("dialog", { name: "Response options" });
+  await expect(responseOptions).toBeVisible();
+  await responseOptions.getByRole("radio", { name: "Explore · read only" }).click();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.screenshot({ path: testInfo.outputPath("carried-retry.png") });
+  await chat.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect.poll(() => sends.length).toBe(2);
+  expect(sends[0].attachments).toEqual([expect.objectContaining({ name: "evidence.txt" })]);
+  const { runId: firstRun, ...first } = sends[0];
+  const { runId: retryRun, ...retry } = sends[1];
+  expect(retryRun).not.toBe(firstRun);
+  expect(retry).toEqual(first);
+});
+
+test("A refused first send keeps Retry when returning from Projects, but a new chat does not", async ({ page }) => {
+  await setup(page);
+  await page.goto("/?mode=chat", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("detail").getByRole("tab", { name: "Chats", exact: true })).toBeVisible({ timeout: 45_000 });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: { familiarId: "nova", projectRoot: "/workspace/coven-cave" } })));
+  const chat = page.getByTestId("chat-main");
+  await expect(chat.locator(".cave-composer-input")).toBeVisible();
+  await chat.locator(".cave-composer-input").fill("my first refused send");
+  await chat.locator('input[type="file"]').setInputFiles({ name: "first.txt", mimeType: "text/plain", buffer: Buffer.from("first evidence") });
+  await expect(chat.getByRole("button", { name: "Remove first.txt", exact: true })).toBeVisible();
+  await chat.getByRole("button", { name: "Send message" }).click();
+  await chat.getByRole("button", { name: "Open projects" }).click();
+  await expect(page.locator(".projects-access")).toBeVisible({ timeout: 180_000 });
+  await page.getByTestId("detail").getByRole("tab", { name: "Chats" }).click();
+  await expect(chat.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  await expect(chat.locator(".cave-composer-input")).toHaveValue("my first refused send");
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-new-chat", { detail: { familiarId: "nova", projectRoot: "/workspace/coven-cave" } })));
+  await expect(chat.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+  await expect(chat.getByRole("button", { name: "Remove first.txt", exact: true })).toHaveCount(0);
+});
+
+test("Opening another chat discards the Projects retry before returning to the original", async ({ page }) => {
+  await setup(page);
+  await page.goto(`/?mode=chat#chat-${SESSION_ID}`, { waitUntil: "domcontentloaded" });
+  const chat = page.getByTestId("chat-main");
+  await chat.locator(".cave-composer-input").fill("only for this chat");
+  await chat.getByRole("button", { name: "Send message" }).click();
+  await chat.getByRole("button", { name: "Open projects" }).click();
+  await expect(page.locator(".projects-access")).toBeVisible({ timeout: 180_000 });
+  await page.getByTestId("detail").getByRole("tab", { name: "Chats" }).click();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:agents-open-session", { detail: { sessionId: "other-chat" } })));
+  await expect(chat.locator(".cave-composer-input")).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+  await expect(chat.locator(".cave-composer-input")).toHaveValue("");
+  await page.evaluate((sessionId) => window.dispatchEvent(new CustomEvent("cave:agents-open-session", { detail: { sessionId } })), SESSION_ID);
+  await expect(chat.locator(".cave-composer-input")).toHaveValue("only for this chat");
+  await expect(chat.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+});
+
+for (const action of ["dismiss", "send", "reload"] as const) {
+  test(`The Projects retry is dropped on ${action}`, async ({ page }) => {
+    let attempts = 0;
+    await setup(page, { send: (route) => {
+      attempts += 1;
+      if (attempts > 1) return route.fulfill({ contentType: "text/event-stream", body: 'data: {"type":"done"}\n\n' });
+      return route.fulfill({ status: 409, json: { ok: false, code: "scoped_write_unavailable", reason: "cave_private_state_overlap",
+        overlap: { source: "project", root: "/home/cave/.coven", message: OVERLAP_MESSAGE }, error: OVERLAP_MESSAGE } });
+    } });
+    await page.goto(`/?mode=chat#chat-${SESSION_ID}`, { waitUntil: "domcontentloaded" });
+    const chat = page.getByTestId("chat-main");
+    await chat.locator(".cave-composer-input").fill("original refused message");
+    await chat.getByRole("button", { name: "Send message" }).click();
+    await chat.getByRole("button", { name: "Open projects" }).click();
+    await expect(page.locator(".projects-access")).toBeVisible({ timeout: 180_000 });
+    await page.getByTestId("detail").getByRole("tab", { name: "Chats" }).click();
+    await expect(chat.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    if (action === "reload") {
+      await page.reload({ waitUntil: "domcontentloaded" });
+    } else {
+      if (action === "send") {
+        await chat.locator(".cave-composer-input").fill("a newer message");
+        await chat.getByRole("button", { name: "Send message" }).click();
+        await expect.poll(() => attempts).toBe(2);
+        await expect(chat.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+      } else {
+        await chat.getByRole("button", { name: "Dismiss error", exact: true }).click();
+      }
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:chat-open-projects")));
+      await expect(page.locator(".projects-access")).toBeVisible();
+      await page.getByTestId("detail").getByRole("tab", { name: "Chats" }).click();
+      await page.evaluate((sessionId) => window.dispatchEvent(new CustomEvent("cave:agents-open-session", { detail: { sessionId } })), SESSION_ID);
+    }
+    await expect(chat.locator(".cave-composer-input")).toBeVisible();
+    await expect(chat.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+  });
+}
+
 test("Open projects works from the Chat panel beside Home", async ({ page }) => {
   // Nothing listens for the Projects tab outside Chat, so the action has to
   // go there first. A desktop layout: phones have no side panel.
   test.skip((page.viewportSize()?.width ?? 0) < 1024, "the side Chat panel is a desktop layout");
-  await setup(page);
+  const sends: Record<string, unknown>[] = [];
+  await setup(page, { send: (route) => {
+    sends.push(route.request().postDataJSON());
+    if (sends.length === 1) return route.fulfill({ status: 409, json: { ok: false, code: "scoped_write_unavailable", reason: "cave_private_state_overlap",
+      overlap: { source: "project", root: "/home/cave/.coven", message: OVERLAP_MESSAGE }, error: OVERLAP_MESSAGE } });
+    return route.fulfill({ contentType: "text/event-stream", body: [
+      { kind: "session", sessionId: "side-created" },
+      { kind: "assistant_chunk", text: "Retry finished." },
+      { kind: "done", sessionId: "side-created", persistedTurnId: "retry-done" },
+    ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("") });
+  } });
+  await page.route("**/api/chat/conversation/side-created**", (route) => route.fulfill({ json: { ok: true, conversation: {
+    activeLeafId: "retry-done", turns: [{ id: "retry-done", role: "assistant", parentId: null, text: "Retry finished.", createdAt: ISO }],
+  } } }));
   await page.goto("/?mode=home", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Open Chat panel" }).click();
   const panel = page.getByRole("complementary", { name: "Chat panel" });
   await expect(panel.getByRole("textbox", { name: "Message" })).toBeVisible({ timeout: 45_000 });
   await panel.getByRole("textbox", { name: "Message" }).fill("resume the restyle");
+  await panel.locator('input[type="file"]').setInputFiles({ name: "side.txt", mimeType: "text/plain", buffer: Buffer.from("side evidence") });
+  await expect(panel.getByRole("button", { name: "Remove side.txt", exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "Send message" }).click();
 
   const strip = panel.getByRole("alert").filter({ hasText: OVERLAP_MESSAGE });
   await expect(strip).toBeVisible();
+  await panel.getByRole("textbox", { name: "Message" }).fill("newer draft while fixing access");
   await strip.getByRole("button", { name: "Open projects" }).click();
   await expect(page.locator(".projects-access")).toBeVisible({ timeout: 180_000 });
   const home = page.locator(".projects-access-card", { hasText: "Coven home" });
   await expect(home).toBeInViewport();
   await expect(home.locator(".projects-access-pill")).toHaveClass(/is-private-state/);
+  await page.getByTestId("detail").getByRole("tab", { name: "Chats" }).click();
+  const main = page.getByTestId("chat-main");
+  await expect(main.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  await expect(main.locator(".cave-composer-input")).toHaveValue("newer draft while fixing access");
+  await main.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect.poll(() => sends.length).toBe(2);
+  expect(sends[1].attachments).toEqual(sends[0].attachments);
+  expect(sends[1].prompt).toBe("resume the restyle");
+  await expect(main.getByText("Retry finished.", { exact: true })).toBeVisible();
+  await expect(main.locator(".cave-composer-input")).toHaveValue("newer draft while fixing access");
 });
 
 

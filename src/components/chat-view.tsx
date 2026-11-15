@@ -1,5 +1,6 @@
 "use client";
 
+import { createProjectsRetryCarry, type ProjectsRetryRoute } from "@/lib/chat-projects-retry";
 import { runAutoReflectionIfMissing } from "@/lib/auto-thread-reflection";
 import { useFirstUse } from "@/components/first-use-provider";
 
@@ -474,6 +475,10 @@ const APPROVAL_RELOAD_REQUIRED = "Reload this chat before sending answers so the
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
+  /** Opaque identity restored only for the original refused blank compose. */
+  retryComposeId?: string;
+  initialRetryRuntimeHost?: string | null;
+  projectsRetryPassive?: boolean;
   session?: SessionRow | null;
   projectRoot?: string;
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
@@ -603,6 +608,21 @@ type FailedSend = {
   /** Snapshot from the attempt, never the controls currently visible later. */
   controls?: ChatSendControls;
 };
+const projectsRetryCarry = createProjectsRetryCarry<{
+  failed: FailedSend;
+  message: string;
+  root: string;
+  route: ProjectsRetryRoute;
+}>();
+
+export function readProjectsRetryRoute(): ProjectsRetryRoute | null {
+  return projectsRetryCarry.peek()?.route ?? null;
+}
+
+export function discardProjectsRetry(): void {
+  projectsRetryCarry.drop();
+}
+
 type ChatSendOptions = {
   promptOverride?: string;
   parentTurnId?: string | null;
@@ -2137,7 +2157,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialDraft, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
+  { familiar, sessionId, retryComposeId, initialRetryRuntimeHost, projectsRetryPassive = false, session, projectRoot, initialPrompt, initialDraft, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
 ) {
   const firstUse = useFirstUse();
@@ -2492,7 +2512,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // the familiar's own runtime binding. Only an explicit pick rides the send
   // body (deliberately per-session, not a sticky global pref: a forgotten
   // sticky remote host would silently run every new chat elsewhere).
-  const [runtimeHost, setRuntimeHost] = useState<string | null>(() => initialControls?.runtimeHost ?? null);
+  const [runtimeHost, setRuntimeHost] = useState<string | null>(() => initialRetryRuntimeHost !== undefined ? initialRetryRuntimeHost : initialControls?.runtimeHost ?? null);
   const sessionRuntimeHost = useMemo(() => {
     const parsed = parseConversationRuntime(session?.runtime);
     return parsed?.kind === "ssh" ? parsed.host : null;
@@ -2614,6 +2634,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // A project whose Write grant overlaps Cave's private state: Projects is
   // where that grant changes, so the error offers to open it there (#6451).
   const [privateStateProjectRoot, setPrivateStateProjectRoot] = useState<string | null>(null);
+  // Projects unmounts Chat. Keep only this explicit round trip in memory;
+  // opening any other recipient discards it, including in a reused view.
+  const [localRetryComposeId] = useState(() => crypto.randomUUID());
+  const retryChatId = sessionId ?? retryComposeId ?? localRetryComposeId;
+  const projectsRetryOwnedRef = useRef(false);
+  useEffect(() => {
+    const target = { familiarId: familiar.id, chatId: retryChatId };
+    const carried = projectsRetryPassive ? projectsRetryCarry.read(target) : projectsRetryCarry.returnTo(target);
+    if (!carried && !projectsRetryOwnedRef.current) return;
+    projectsRetryOwnedRef.current = Boolean(carried);
+    setLastFailedSend(carried?.failed ?? null);
+    setError(carried?.message ?? null);
+    setDebugError(null);
+    setPrivateStateProjectRoot(carried?.root ?? null);
+    if (carried) announce("Your refused message is ready to retry.");
+  }, [familiar.id, retryChatId, projectsRetryPassive, announce]);
+
   // 409 chat_run_active: the server still runs an earlier turn of this chat
   // that this view no longer tracks. Holds that chat's id so the error strip
   // can stop the earlier run; Retry then sends the preserved message.
@@ -3649,6 +3686,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setLinkedContext(null);
     setFlowTranscriptFallback(null);
     setLastFailedSend(null);
+    projectsRetryCarry.drop();
     abortRef.current?.abort();
     abortRef.current = null;
     streamOwnerRef.current = false;
@@ -5392,6 +5430,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     submission?: { canSend: () => boolean; onPersisted: () => void },
   ) => {
     if (!firstUse.ensureIntroduction()) return;
+    if (text.trim() || outgoingAttachments.length > 0) projectsRetryCarry.drop();
     // A runtime picker writes the familiar binding through /api/config. Wait
     // for that read-modify-write before resolving the send body; otherwise an
     // immediate send can launch the old harness even though the chip already
@@ -9007,10 +9046,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : privateStateProjectRoot
                 ? () => {
                     const root = privateStateProjectRoot;
-                    // Projects replaces this chat, and Retry goes with it. Put
-                    // the refused message back in the composer, whose draft
-                    // survives the trip, unless something newer is typed there.
+                    // Carry Retry’s original attachments and controls across Projects.
+                    // Preserve the existing text draft unless something newer
+                    // is typed there; attachments belong only to Retry.
                     const failed = lastFailedSend;
+                    if (failed) {
+                      projectsRetryOwnedRef.current = true;
+                      projectsRetryCarry.save({ familiarId: familiar.id, chatId: retryChatId }, {
+                        failed, message: error, root,
+                        route: { sessionId, familiarId: familiar.id, projectRoot: activeProjectRoot, composerDraftKey, composeId: retryChatId, runtimeHost },
+                      });
+                    }
                     if (failed && !failed.promptOverride && failed.text.trim() && !input.trim()) {
                       setInput(failed.text);
                       writeComposerDraft(scopedDraftKey, failed.text);
@@ -9050,6 +9096,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : undefined
           }
           onDismiss={() => {
+            projectsRetryCarry.drop();
+            setLastFailedSend(null);
             setError(null);
             setDebugError(null);
             setProjectAccessRoot(null);
