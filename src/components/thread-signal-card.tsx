@@ -72,6 +72,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
   const [selectedTile, setSelectedTile] = useState<string | null>(() => weakestTileId(tiles));
   const [openRow, setOpenRow] = useState<string | null>(null);
   const requestedRows = useRef({ reportId: report.id, keys: new Set<string>(), requests: new Map<string, string[]>() });
+  const pendingFailures = useRef<Map<string, string> | null>(null);
   const [launchRequested, setLaunchRequested] = useState<Set<string>>(() => new Set());
   const [launchError, setLaunchError] = useState<string | null>(null);
   const access = useSignalSweepAccess(report.familiarId);
@@ -100,6 +101,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
     setLaunchRequested(new Set());
     setLaunchPending(false);
     setLastTargets([]);
+    pendingFailures.current = null;
     setTasked(new Set());
     setTaskPending(new Set());
     setDismissed(false);
@@ -127,7 +129,13 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
     return subscribeRightChatFailures((detail) => {
       if (!detail || requestedRows.current.reportId !== report.id) return;
       const keys = requestedRows.current.requests.get(detail.requestId);
-      if (!keys) return;
+      if (!keys) {
+        // The workspace can refuse asynchronously while the shared launcher
+        // still awaits its receipt commit. Correlate that early failure once
+        // the handoff returns, without surfacing another request's error.
+        if (pendingFailures.current && pendingFailures.current.size < 100) pendingFailures.current.set(detail.requestId, detail.error);
+        return;
+      }
       requestedRows.current.requests.delete(detail.requestId);
       for (const key of keys) requestedRows.current.keys.delete(key);
       setLaunchRequested(new Set(requestedRows.current.keys));
@@ -147,6 +155,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
       targets = targets.filter((row) => retry || !requestedRows.current.keys.has(rowKey(row)));
       if (targets.length === 0) return;
       setLaunchPending(true);
+      pendingFailures.current = new Map();
       setLastTargets(targets);
       // A report without a linkable thread (stored while the id was redacted)
       // opens in the current workspace project rather than failing the lookup.
@@ -157,15 +166,18 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
         origin: "chat" as const,
       }, (accepted) => `${accepted.length === 1 ? buildThreadSignalResolutionPrompt(accepted[0]) : buildThreadSignalBatchResolutionPrompt(accepted)}\n\nSource: ${selfReportSourceLabel(report)}.`, retry, () => liveReport.current === report.id, signalReportScope(report), report.id);
       if (liveReport.current !== report.id) return;
+      const earlyError = result.requestId ? pendingFailures.current?.get(result.requestId) : undefined;
+      pendingFailures.current = null;
       setLaunchPending(false);
-      if (result.ok && result.requestId) {
+      if (result.ok && result.requestId && !earlyError) {
         const keys = targets.filter((row) => result.accepted?.includes(signalSweepIdentity(row, signalReportScope(report)))).map(rowKey);
         requestedRows.current.requests.set(result.requestId, keys);
         for (const key of keys) requestedRows.current.keys.add(key);
         setLaunchRequested(new Set(requestedRows.current.keys));
       }
-      setLaunchError(result.ok ? null : result.error);
-      announce(result.ok ? label : result.error, result.ok ? "polite" : "assertive");
+      const error = earlyError ?? (result.ok ? null : result.error);
+      setLaunchError(error);
+      announce(error ?? label, error ? "assertive" : "polite");
     },
     [access.available, announce, launchPending, report],
   );

@@ -6,8 +6,8 @@ import { ThreadSignalCard } from "./thread-signal-card";
 import { LiveRegionProvider } from "./ui/live-region";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
-const fixture = vi.hoisted(() => ({ dispatch: vi.fn(() => ({ ok: true, destination: "workspace" })) }));
-vi.mock("@/lib/agents-new-chat", () => ({ requestAgentsNewChat: fixture.dispatch, subscribeRightChatFailures: () => () => {} }));
+const fixture = vi.hoisted(() => ({ dispatch: vi.fn(() => ({ ok: true, destination: "workspace" })), failure: undefined as undefined | ((detail: { requestId: string; error: string }) => void) }));
+vi.mock("@/lib/agents-new-chat", () => ({ requestAgentsNewChat: fixture.dispatch, subscribeRightChatFailures: (listener: (detail: { requestId: string; error: string }) => void) => { fixture.failure = listener; return () => { fixture.failure = undefined; }; } }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const report: ThreadSelfReport = {
   id: "report-6484", familiarId: "nova", sessionId: "synthetic-source", reportedAt: "2026-11-14T10:00:00Z",
@@ -31,4 +31,25 @@ test("an unsupported write boundary is explained before a signal thread can disp
   if (fix && !fix.props.disabled) await act(async () => fix.props.onClick());
   expect(fixture.dispatch).not.toHaveBeenCalled();
   expect(JSON.stringify(renderer!.toJSON())).toContain("Choose a compatible runtime");
+});
+
+
+test("a launch failure arriving before receipt commit remains visible and restores its action", async () => {
+  vi.stubGlobal("window", Object.assign(new EventTarget(), { setTimeout, clearTimeout }));
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, options?: RequestInit) => {
+    if (!options?.body) return Response.json({ ok: true, available: true });
+    const body = JSON.parse(options.body as string);
+    if (body.action === "commit") {
+      fixture.failure?.({ requestId: "early-receipt", error: "Synthetic source project lookup failed" });
+      return Response.json({ ok: true });
+    }
+    return Response.json({ ok: true, requestId: "early-receipt", accepted: ["blocker:write-boundary"] });
+  }));
+  await act(async () => { renderer = create(createElement(LiveRegionProvider, null,
+    createElement(ThreadSignalCard, { report, onViewFull() {}, onDismiss() {} }))); });
+  const primary = () => renderer!.root.findAllByType("button").find((entry: { children: unknown[] }) => entry.children.some((child) => typeof child === "string" && child.includes("critical in Build")));
+  await act(async () => { primary()!.props.onClick(); });
+  expect(fixture.dispatch).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(renderer!.toJSON())).toContain("Synthetic source project lookup failed");
+  expect(primary()!.props.disabled).toBeFalsy();
 });

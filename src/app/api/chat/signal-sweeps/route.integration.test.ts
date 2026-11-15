@@ -50,6 +50,7 @@ try {
   const first = await (await post(request)).json(); assert.equal(first.ok, true);
   assert.equal((await post({ action: "commit", familiarId: "nova", requestId: first.requestId })).status, 200);
   assert.equal((await post(request)).status, 409);
+  assert.equal((await post({ ...request, identities: [JSON.stringify(["blocker", "write-boundary", "synthetic-source"])] })).status, 409, "alternate encodings cannot mint another receipt for the same blocker");
   await appendSelfReport("nova", { ...report, id: "healthy-unrelated", sessionId: "other-source", reportedAt: "2026-11-15T10:00:00Z", persistentBlockers: [] });
   assert.equal((await post(request)).status, 409, "an unrelated healthy report cannot erase an unresolved source’s receipt");
   assert.equal((await post({ ...request, familiarId: "sage" })).status, 409, "a familiar cannot claim another familiar’s persisted report");

@@ -82,12 +82,13 @@ describe("thread-signal-card module wiring", () => {
     assert.match(source, /await launchSignalSweep\(report\.familiarId, targets/);
     assert.doesNotMatch(source, /requestAgentsNewChat\(/, "the card cannot bypass shared admission");
     assert.match(source, /requestedRows\.current\.keys\.has/);
-    assert.match(source, /if \(result\.ok && result\.requestId\) \{/);
+    assert.match(source, /if \(result\.ok && result\.requestId && !earlyError\) \{/);
     assert.match(source, /subscribeRightChatFailures\(\(detail\)/);
     assert.match(source, /requestedRows\.current\.requests\.get\(detail\.requestId\)/);
     assert.match(source, /disabled=\{!access\.available \|\| launchPending \|\| launchRequested\.has\(rowKey\(row\)\)\}/);
     assert.match(source, /destination: "right-panel"/);
-    assert.match(source, /setLaunchError\(result\.ok \? null : result\.error\)/);
+    assert.match(source, /const error = earlyError \?\? \(result\.ok \? null : result\.error\)/);
+    assert.match(source, /setLaunchError\(error\)/);
     assert.doesNotMatch(source, /Thread launched/, "an acknowledged request is not yet a launched thread");
     assert.match(source, /buildThreadSignalResolutionPrompt\(accepted\[0\]\)/);
     assert.match(source, /buildThreadSignalBatchResolutionPrompt\(accepted\)/);

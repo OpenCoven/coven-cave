@@ -1,4 +1,4 @@
-import { buildThreadSignalRows, selfReportSourceSessionId, type ThreadSelfReport, type ThreadSignalReviewItem } from "./thread-self-report";
+import { selfReportSourceSessionId, type ThreadSelfReport, type ThreadSignalReviewItem } from "./thread-self-report";
 import { signalIdentity } from "./thread-signal-dismissals";
 
 /** Persistent prerequisites belong to the familiar; score/context problems
@@ -14,17 +14,30 @@ export function signalReportScope(report: ThreadSelfReport): string {
 /** Validate the requested identity against its actual persisted source.
  * Omission in another thread never proves a familiar-wide blocker resolved. */
 export function signalSweepIsPresent(identity: string, report: ThreadSelfReport): boolean {
-  let base = identity;
-  if (identity.startsWith("[")) {
-    try {
-      const tuple: unknown = JSON.parse(identity);
-      if (!Array.isArray(tuple) || tuple.length !== 3 || !tuple.every((entry) => typeof entry === "string") || tuple[2] !== signalReportScope(report)) return false;
-      base = `${tuple[0]}:${tuple[1]}`;
-    } catch { return false; }
-  }
-  return buildThreadSignalRows(report).some((row) => signalIdentity(row) === base)
-    || report.capabilitiesVital.some((capability) => capability.currentState !== "available" && `capability:${capability.name}` === base
-      && !report.capabilitiesLacking.some((gap) => gap.name === capability.name && gap.blockerId && report.persistentBlockers.some((blocker) => blocker.id === gap.blockerId)));
+  const allowed = new Set(report.persistentBlockers.map((blocker) => signalSweepIdentity({ kind: "blocker", sourceId: blocker.id }, signalReportScope(report))));
+  const add = (kind: ThreadSignalReviewItem["kind"], sourceId: string) => allowed.add(signalSweepIdentity({ kind, sourceId }, signalReportScope(report)));
+  for (const skill of report.skillsNeedingAccess) add("skill-access", skill.skillId);
+  for (const skill of report.skillsNeedingClarity) add("skill-clarity", skill.skillId);
+  const linked = (name: string) => report.capabilitiesLacking.some((gap) => gap.name === name && gap.blockerId?.trim()
+    && report.persistentBlockers.some((blocker) => blocker.id === gap.blockerId!.trim()));
+  for (const capability of report.capabilitiesLacking) if (!linked(capability.name)) add("capability", capability.name);
+  for (const capability of report.capabilitiesVital) if (capability.currentState !== "available" && !linked(capability.name)) add("capability", capability.name);
+  if (report.contextPressure !== "adequate") add("context-pressure", "context-pressure");
+  const scores = { confidence: report.overallConfidence, "tool-reliability": report.toolReliability.score,
+    "memory-recall": report.memoryRecallScore, "file-locatability": report.fileLocatabilityScore };
+  for (const [sourceId, score] of Object.entries(scores)) if (score >= 0 && score < 60) add("low-score", sourceId);
+  // Compare only exact server-generated encodings. Accepting alternate raw or
+  // tuple spellings would give the same signal multiple durable receipt keys.
+  return allowed.has(identity);
+}
+
+/** A queue may show a linked capability whose blocker fell outside its own
+ * preview. Its launch still owns the underlying blocker's single receipt. */
+export function canonicalSignalSweepItem<T extends Pick<ThreadSignalReviewItem, "kind" | "sourceId">>(item: T, report: ThreadSelfReport): Omit<T, "kind" | "sourceId"> & Pick<ThreadSignalReviewItem, "kind" | "sourceId"> {
+  if (item.kind !== "capability") return item;
+  const blockerId = report.capabilitiesLacking.find((gap) => gap.name === item.sourceId)?.blockerId?.trim();
+  return blockerId && report.persistentBlockers.some((blocker) => blocker.id === blockerId)
+    ? { ...item, kind: "blocker", sourceId: blockerId } : item;
 }
 
 export function latestSignalReports(reports: readonly ThreadSelfReport[]): ThreadSelfReport[] {
@@ -40,5 +53,5 @@ export function latestSignalReports(reports: readonly ThreadSelfReport[]): Threa
  * source that actually contains it, rather than attributing every row to the
  * newest unrelated report. */
 export function signalSweepSource(item: Pick<ThreadSignalReviewItem, "kind" | "sourceId">, reports: readonly ThreadSelfReport[]): ThreadSelfReport | null {
-  return latestSignalReports(reports).find((report) => signalSweepIsPresent(signalSweepIdentity(item, signalReportScope(report)), report)) ?? null;
+  return latestSignalReports(reports).find((report) => signalSweepIsPresent(signalSweepIdentity(canonicalSignalSweepItem(item, report), signalReportScope(report)), report)) ?? null;
 }

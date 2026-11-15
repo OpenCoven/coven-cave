@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { signalReportScope, signalSweepIsPresent, signalSweepIdentity, signalSweepSource } from "./signal-sweep-identity.ts";
+import { canonicalSignalSweepItem, signalReportScope, signalSweepIsPresent, signalSweepIdentity, signalSweepSource } from "./signal-sweep-identity.ts";
 import type { ThreadSelfReport } from "./thread-self-report.ts";
 
 function report(id: string, date: string, patch: Partial<ThreadSelfReport> = {}): ThreadSelfReport {
@@ -29,4 +29,21 @@ const linked = report("linked", "2026-11-07T00:00:00Z", { capabilitiesLacking: [
 assert.equal(signalSweepIsPresent("capability:provider-api", linked), false, "a linked capability cannot bypass its blocker identity");
 assert.equal(signalSweepIsPresent("blocker:auth", linked), true);
 assert.equal(signalSweepSource(blocker, []), null, "missing source history is not new work");
+const dense = report("dense", "2026-11-09T00:00:00Z", {
+  persistentBlockers: Array.from({ length: 7 }, (_, index) => ({ ...first.persistentBlockers[0], id: `blocker-${index}`, title: `Synthetic blocker ${index}` })),
+  skillsNeedingAccess: [{ skillId: "access", reason: "Synthetic gap" }],
+  skillsNeedingClarity: [{ skillId: "clarity", reason: "Synthetic gap" }],
+  capabilitiesLacking: [{ name: "optional", importance: "nice-to-have", detail: "Synthetic gap" }],
+  contextPressure: "critical", overallConfidence: 0,
+});
+for (const identity of ["blocker:blocker-6", "skill-access:access", "skill-clarity:clarity", "capability:optional",
+  signalSweepIdentity(pressure, signalReportScope(dense)), signalSweepIdentity({ kind: "low-score", sourceId: "confidence" }, signalReportScope(dense))]) {
+  assert.equal(signalSweepIsPresent(identity, dense), true, `the complete report, not the six-row card projection, authorizes ${identity}`);
+}
+assert.equal(signalSweepSource({ kind: "blocker", sourceId: "blocker-6" }, [dense])?.id, "dense");
+assert.equal(signalSweepIsPresent(JSON.stringify(["blocker", "auth", signalReportScope(first)]), first), false, "a scoped encoding cannot bypass a familiar-wide blocker receipt");
+assert.equal(signalSweepIsPresent("context-pressure:context-pressure", a), false, "thread-specific signals require their exact canonical scoped identity");
+const cutLink = { ...dense, capabilitiesLacking: [{ name: "linked-outside-preview", importance: "blocking" as const, detail: "Synthetic linked gap", blockerId: " blocker-6 " }] };
+assert.equal(signalSweepSource({ kind: "capability", sourceId: "linked-outside-preview" }, [cutLink])?.id, "dense", "an analytics queue alias still resolves its canonical blocker beyond the preview limit");
+assert.deepEqual(canonicalSignalSweepItem({ kind: "capability", sourceId: "linked-outside-preview" }, cutLink), { kind: "blocker", sourceId: "blocker-6" });
 console.log("signal-sweep-identity: ok");

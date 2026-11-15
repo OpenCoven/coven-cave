@@ -24,7 +24,7 @@ import {
 } from "@/lib/thread-signal-dismissals";
 import { launchSignalSweep } from "@/lib/signal-sweep-launch";
 import { useSignalSweepAccess } from "@/lib/use-signal-sweep-access";
-import { signalReportScope, signalSweepSource } from "@/lib/signal-sweep-identity";
+import { canonicalSignalSweepItem, signalReportScope, signalSweepSource } from "@/lib/signal-sweep-identity";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   aggregateThreadSignals,
@@ -73,7 +73,7 @@ function latestReportDate(reports: ThreadSelfReport[]): string {
 
 function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSection[] {
   const cause = (name: string) => {
-    const linked = aggregate.capabilitiesLacking.find((item) => item.name === name)?.blockerId;
+    const linked = aggregate.capabilitiesLacking.find((item) => item.name === name)?.blockerId?.trim();
     return linked && aggregate.persistentBlockers.some((blocker) => blocker.id === linked)
       ? { kind: "blocker" as const, sourceId: linked } : { kind: "capability" as const, sourceId: name };
   };
@@ -175,6 +175,7 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
  *  there would be a silent no-op (cave-hbpb). */
 function launchResolutionThread(familiarId: string, item: ThreadSignalReviewItem, retry = false, canDispatch?: () => boolean, source: ThreadSelfReport | null = null) {
   if (!source) return Promise.resolve({ ok: false as const, error: "This signal is not in its current source report. Refresh thread signals before requesting a fix." });
+  item = canonicalSignalSweepItem(item, source);
   const analyticsPath = `/dashboard/familiars/${encodeURIComponent(familiarId)}/analytics`;
   return launchSignalSweep(familiarId, [item], {
     destination: "right-panel",
