@@ -125,6 +125,33 @@ final class ChatScrollStateTests: XCTestCase {
         XCTAssertEqual(anchor.takeCorrection(viewportTop: 3_800, viewportHeight: 600, preserving: true), 0,
                        "growth absorbed while following is not corrected again later")
     }
+
+    /// Hosted trace: content grew to 68,116 pt while the scroll view still
+    /// reported 11,205 pt, and clamping to that kept only 993 of 56,911 pt.
+    @MainActor
+    func testACorrectionIsNotLimitedByAContentSizeThatHasNotCaughtUp() {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
+        scrollView.contentSize = CGSize(width: 400, height: 11_205)
+        scrollView.contentOffset.y = 9_444
+        ChatScrollAnchor.apply(56_911, to: scrollView, dragging: false)
+        XCTAssertEqual(scrollView.contentOffset.y, 66_355)
+    }
+
+    @MainActor
+    func testACorrectionNeverLeavesEmptySpaceAboveTheTranscript() {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
+        scrollView.contentSize = CGSize(width: 400, height: 5_000)
+        scrollView.contentOffset.y = 100
+        ChatScrollAnchor.apply(-500, to: scrollView, dragging: false)
+        XCTAssertEqual(scrollView.contentOffset.y, 0)
+    }
+
+    /// offset = startOffset - translation, so lowering the translation by the
+    /// correction raises the offset the pan computes next by the same amount.
+    func testADragKeepsACorrectionByMovingItsTranslation() {
+        let moved = ChatScrollAnchor.translation(CGPoint(x: 3, y: -52), compensating: 1_180)
+        XCTAssertEqual(moved, CGPoint(x: 3, y: -1_232))
+    }
 }
 
 final class ChatViewportRecoveryTests: XCTestCase {

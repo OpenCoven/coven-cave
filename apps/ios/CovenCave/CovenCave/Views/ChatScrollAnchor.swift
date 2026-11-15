@@ -63,6 +63,28 @@ struct ChatScrollAnchor {
         }
         return inView?.id ?? spanning?.id
     }
+
+    /// A pan computes the offset as its starting offset minus its translation,
+    /// so a drag would overwrite a correction on its next touch unless the
+    /// translation moves with it.
+    static func translation(_ translation: CGPoint, compensating delta: CGFloat) -> CGPoint {
+        CGPoint(x: translation.x, y: translation.y - delta)
+    }
+
+    /// Only the top is clamped. The anchor row has already moved to its new
+    /// position, so the target is valid in the new layout even when
+    /// `contentSize` still reports the old one: clamping to that stale size
+    /// discarded a 56,911 pt correction and stranded the reader in older text.
+    @MainActor
+    static func apply(_ delta: CGFloat, to scrollView: UIScrollView, dragging: Bool) {
+        if dragging {
+            let pan = scrollView.panGestureRecognizer
+            pan.setTranslation(translation(pan.translation(in: scrollView), compensating: delta), in: scrollView)
+        }
+        // Assigning the offset directly keeps a drag or deceleration running;
+        // `setContentOffset(_:animated:)` would stop it.
+        scrollView.contentOffset.y = max(scrollView.contentOffset.y + delta, -scrollView.adjustedContentInset.top)
+    }
 }
 
 /// Not observable on purpose: row positions change on layout passes, and the
@@ -93,20 +115,18 @@ final class ChatScrollAnchorCoordinator {
         flushScheduled = false
         guard let scrollView else { return }
         let insets = scrollView.adjustedContentInset
-        let offset = scrollView.contentOffset.y
         let delta = anchor.takeCorrection(
-            viewportTop: offset + insets.top,
+            viewportTop: scrollView.contentOffset.y + insets.top,
             viewportHeight: scrollView.bounds.height - insets.top - insets.bottom,
             preserving: preserving?() ?? false
         )
         guard delta != 0 else { return }
-        let lowest = -insets.top
-        let highest = max(offset, scrollView.contentSize.height + insets.bottom - scrollView.bounds.height)
-        // Assigning the offset directly keeps a drag or deceleration running;
-        // `setContentOffset(_:animated:)` would stop it.
-        scrollView.contentOffset.y = min(max(offset + delta, lowest), highest)
+        ChatScrollAnchor.apply(delta, to: scrollView, dragging: scrollView.isDragging)
         #if DEBUG
-        ChatScrollTrace.shared.note("anchorCorrection delta=\(Int(delta.rounded()))")
+        ChatScrollTrace.shared.note(
+            "anchorCorrection delta=\(Int(delta.rounded())) dragging=\(scrollView.isDragging) "
+                + "y=\(Int(scrollView.contentOffset.y.rounded()))"
+        )
         #endif
     }
 }
