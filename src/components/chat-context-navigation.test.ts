@@ -37,7 +37,7 @@ assert.match(chatList, /browseScope \? "all" : normalizeSelection/,
 assert.match(router, /const activeSession = retainOpenChatSession\(retainedSessionRef\.current, sessions, activeSessionId\)/);
 assert.match(router, /if \(browseScope !== undefined\) return;\s*const nextFamiliarId/,
   "async familiar hydration and restored project crew cannot navigate a workspace chat");
-assert.match(router, /key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}/,
+assert.match(router, /key=\{`chat-compose-\$\{viewComposerDraftKey\}-\$\{composeInstance\}`\}/,
   "project browse changes are not part of ChatView's mount identity");
 const paletteSwitch = workspace.slice(workspace.indexOf('if (intent.kind === "switch-familiar")'), workspace.indexOf('if (intent.kind === "open-session")'));
 assert.match(paletteSwitch, /selectFamiliarScope\(intent\.familiarId\)/);

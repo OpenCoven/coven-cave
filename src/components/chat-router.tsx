@@ -5,6 +5,7 @@ import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import type { ProjectsRetryRoute } from "@/lib/chat-projects-retry";
 import { ChatList } from "@/components/chat-list";
 import { ChatView, DEFAULT_CHAT_COMPOSER_DRAFT_KEY } from "@/components/chat-view";
 import { ChatSplitHost, CHAT_SPLIT_PANE_ATTR, type ChatSplitTile } from "@/components/chat-split-host";
@@ -60,9 +61,11 @@ import { blankChatProjectRoot, retainOpenChatSession, scopeChatBrowseSessions, t
 
 type View =
   | { kind: "list" }
-  | { kind: "chat"; sessionId: string | null; started?: boolean; projectRoot?: string; projectScopeAtOpen?: ProjectSelection; initialPrompt?: string; initialDraft?: string; initialAttachments?: ChatAttachment[]; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin };
+  | { kind: "chat"; sessionId: string | null; started?: boolean; retryComposeId?: string; retryRuntimeHost?: string | null; retryComposerDraftKey?: string; projectRoot?: string; projectScopeAtOpen?: ProjectSelection; initialPrompt?: string; initialDraft?: string; initialAttachments?: ChatAttachment[]; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin };
 
 type Props = {
+  /** Only the explicit refused-send round trip may restore an unmounted route. */
+  initialProjectsRetryRoute?: ProjectsRetryRoute | null;
   /** Imperative-handle bridge for a next/dynamic consumer. `next/dynamic`
    * does not forward element refs, but normal props pass through unchanged. */
   handleRef?: Ref<ChatRouterHandle>;
@@ -178,6 +181,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     sessions,
     browseScope,
     composeProjectRoot,
+    initialProjectsRetryRoute,
     daemonRunning,
     onSetActiveFamiliar,
     onSessionStarted,
@@ -206,7 +210,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   },
   ref,
 ) {
-  const [view, setView] = useState<View>({ kind: "list" });
+  const [view, setView] = useState<View>(() => initialProjectsRetryRoute
+    ? { kind: "chat", sessionId: initialProjectsRetryRoute.sessionId, started: true,
+        familiarId: initialProjectsRetryRoute.familiarId, projectRoot: initialProjectsRetryRoute.projectRoot,
+        retryComposeId: initialProjectsRetryRoute.composeId, retryRuntimeHost: initialProjectsRetryRoute.runtimeHost, retryComposerDraftKey: initialProjectsRetryRoute.composerDraftKey }
+    : { kind: "list" });
   // Always-current ref so effects that use functional setView can still read
   // the latest view without a stale closure (e.g. familiar-switch nonce guard).
   const viewRef = useRef<View>(view);
@@ -446,9 +454,9 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     splitHydratedRef.current = true;
     const restored = parsePersistedChatSplit(window.localStorage.getItem(CHAT_SPLIT_STORAGE_KEY));
     if (!restored || !hasChatSplit(restored.layout)) return;
-    setSplit(restored.layout);
+    setSplit(primarySessionId ? removeChatSplitPane(restored.layout, primarySessionId) : restored.layout);
     setSplitSizes(restored.sizes);
-  }, [enableSplitPanes]);
+  }, [enableSplitPanes, primarySessionId]);
   useEffect(() => {
     if (!enableSplitPanes || !splitHydratedRef.current || typeof window === "undefined") return;
     try {
@@ -899,12 +907,15 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     );
   }
 
+  const viewComposerDraftKey = view.kind === "chat" ? view.retryComposerDraftKey ?? composerDraftKey : composerDraftKey;
   const primaryChat = caveChatoutCodex() ? (
     <FamiliarChatoutCodexSurface />
   ) : (
     <ChatView
-      composerDraftKey={composerDraftKey}
-      key={`chat-compose-${composerDraftKey}-${composeInstance}`}
+      composerDraftKey={viewComposerDraftKey}
+      retryComposeId={view.kind === "chat" ? view.retryComposeId : undefined}
+      initialRetryRuntimeHost={view.kind === "chat" ? view.retryRuntimeHost : undefined}
+      key={`chat-compose-${viewComposerDraftKey}-${composeInstance}`}
       ref={viewHandle}
       familiar={chatFamiliar}
       familiars={familiars}
@@ -969,6 +980,9 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             sessionId: request.newSessionId,
             projectRoot: viewProjectRoot,
             familiarId: prev.familiarId,
+            retryComposerDraftKey: prev.retryComposerDraftKey,
+            retryComposeId: prev.retryComposeId,
+            retryRuntimeHost: prev.retryRuntimeHost,
           };
         });
         onSessionStarted?.();
@@ -979,7 +993,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         // and arm the auto-open nonce so the overlay opens once the session mounts.
         setView((prev) =>
           prev.kind === "chat" && prev.sessionId === null && viewProjectRootRef.current === viewProjectRoot
-            ? { kind: "chat", sessionId: sid, projectRoot: viewProjectRoot, familiarId: prev.familiarId }
+            ? { kind: "chat", sessionId: sid, projectRoot: viewProjectRoot, familiarId: prev.familiarId,
+                retryComposerDraftKey: prev.retryComposerDraftKey, retryComposeId: prev.retryComposeId, retryRuntimeHost: prev.retryRuntimeHost }
             : prev,
         );
         setPendingVoice({ nonce: Date.now(), sessionId: sid });
@@ -1040,6 +1055,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           title: sessionRailTitle(paneSession),
           content: (
             <ChatView
+              projectsRetryPassive
               composerDraftKey={`${composerDraftKey}:split:${paneId}`}
               key={`${composerDraftKey}:split:${paneId}`}
               familiar={paneFamiliar}
