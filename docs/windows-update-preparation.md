@@ -57,8 +57,12 @@ prompt or a failed install used to leave Cave closed.
 
 Before **Restart & install** on Windows, the webview calls
 `arm_update_install_recovery`, which copies the executable to
-`%LOCALAPPDATA%\ai.opencoven.cave\update-install-watch\`. The copy runs
-outside the install directory, so it never holds a file the MSI replaces. If
+`%LOCALAPPDATA%\ai.opencoven.cave\update-install-watch\cave-recovery-<pid>.exe`.
+The copy runs outside the install directory, so it never holds a file the MSI
+replaces. Its file name must not contain words such as "install", "setup" or
+"update". With UAC on, Windows installer detection refuses to start an
+executable named like that unless its manifest declares a
+`requestedExecutionLevel`, and Tauri's default manifest declares none. If
 arming fails, the install does not start and the banner shows the usual update
 failure with the release page. If `install()` returns an error, the webview
 disarms recovery. Since updater 2.14, a failed `ShellExecuteW` returns that error
@@ -87,6 +91,15 @@ later successful relaunch.
 Rust tests cover exit classification, the watcher's argument contract and the
 outcome record. Component tests cover arm-before-install ordering, refusal when
 arming fails, disarm on install error, and the outcome banner's Retry and
-dismissal. Real-Windows acceptance is still required: declining UAC must
-relaunch a working app showing this banner. It also confirms that the client
-`msiexec.exe` reports the final code on decline.
+dismissal. A Rust test keeps the copy's file name free of installer keywords.
+
+Packaged Windows 11 acceptance on #5981 (v0.5.21 to v0.5.22) found the
+original `install-watch-<pid>.exe` name refused: the copy exited with
+`STATUS_ELEVATION_REQUIRED` within milliseconds, so a declined prompt left Cave
+closed. The same bytes started under a neutral name. Started that way with
+Cave's own arguments, the watcher found the client `msiexec.exe`, read `1602`
+after the decline, recorded *cancelled* and relaunched Cave. The UI banner also
+needs the packaged origin's grant for `update_install_outcome` (#6503). The
+end-to-end UI row, a declined prompt that relaunches a working app showing this
+banner, still needs a release that carries both fixes plus a newer release to
+update to.
