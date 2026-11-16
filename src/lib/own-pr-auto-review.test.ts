@@ -47,6 +47,26 @@ test("turning it on records a baseline: PRs already ready do not fire", () => {
   assert.equal(state.prs[URL_A].reviewedAt, null);
 });
 
+test("a partial first observation retries the baseline on the next complete poll", () => {
+  const partial = planOwnPrAutoReviews(
+    emptyOwnPrWatchState(),
+    seen([pr(URL_A, false)], false),
+    { enabled: true, now: T0 },
+  );
+  assert.deepEqual(partial.fire, []);
+  assert.equal(partial.state.baselineAt, null);
+  assert.deepEqual(partial.state.prs, {});
+
+  const complete = planOwnPrAutoReviews(
+    partial.state,
+    seen([pr(URL_A, false), pr(URL_B, false)]),
+    { enabled: true, now: T1 },
+  );
+  assert.deepEqual(complete.fire, []);
+  assert.equal(complete.state.baselineAt, T1);
+  assert.deepEqual(Object.keys(complete.state.prs).sort(), [URL_A, URL_B]);
+});
+
 test("a draft seen going ready fires once, and records what was reviewed", () => {
   const start = baseline([pr(URL_A, true)]);
   const { state, fire } = planOwnPrAutoReviews(start, seen([pr(URL_A, false, "abc123")]), {

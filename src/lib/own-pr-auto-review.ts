@@ -77,6 +77,9 @@ export function planOwnPrAutoReviews(
   const closed = new Set(observed.prs.filter((pr) => (pr.state ?? "open") !== "open").map((pr) => pr.url));
 
   if (prev.baselineAt == null) {
+    if (!observed.complete) {
+      return { state: { ...prev, prs: { ...prev.prs } }, fire: [] };
+    }
     const prs: Record<string, OwnPrWatchEntry> = {};
     for (const pr of open) prs[pr.url] = entry(pr.draft);
     return { state: { version: 1, baselineAt: opts.now, prs }, fire: [] };
