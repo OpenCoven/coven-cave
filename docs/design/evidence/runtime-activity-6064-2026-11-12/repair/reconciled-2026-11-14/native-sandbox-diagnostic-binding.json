@@ -1,0 +1,15 @@
+{
+  "observedAt": "2026-11-15T22:33:19.141539+00:00",
+  "documentedKey": "UITargetAppEnvironmentVariables.CAVE_SCROLL_TRACE_PATH",
+  "documentation": "trace-environment-documentation.txt",
+  "configuredTracePath": "/Users/buns/Library/Developer/CoreSimulator/Devices/64878DF0-DB73-45A9-8D68-3F22393F7D64/data/Containers/Data/Application/D9F1F8B9-A496-45FF-9A4C-73DBF28873FF/tmp/nova6064-earlier-tool-scroll-diagnostic-20261115.log",
+  "configuredParentExists": false,
+  "currentAppDataContainer": "/Users/buns/Library/Developer/CoreSimulator/Devices/64878DF0-DB73-45A9-8D68-3F22393F7D64/data/Containers/Data/Application/3577A7A8-3679-4727-B983-CF2C844EB96C",
+  "configuredPathInsideCurrentContainer": false,
+  "configuredTraceExists": false,
+  "currentEquivalentTraceExists": false,
+  "observedGate": "Target app data container was replaced after configuration; no trace available",
+  "appEnvironmentDeliveryIndependentlyConfirmed": false,
+  "workaroundOrRetryPerformed": false,
+  "acceptanceOrCausalClaim": false
+}

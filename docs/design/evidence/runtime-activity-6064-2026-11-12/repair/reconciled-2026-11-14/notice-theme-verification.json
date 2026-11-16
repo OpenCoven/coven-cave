@@ -1,0 +1,19 @@
+{
+  "sourceCommit": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "buildId": "I9UBVuj3J-4egKiEKItaT",
+  "stats": {
+    "startTime": "2026-11-14T09:46:16.800Z",
+    "duration": 23570.305,
+    "expected": 6,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "retries": 0,
+  "captures": 6,
+  "actualScratchPreferencesPatched": true,
+  "effectiveThemeAndModeAsserted": true,
+  "existingCanonicalWithholdingAssertionsRetained": true,
+  "reportRaw": "/private/tmp/nova6064-resume-20261114-mo25t69y/theme-checks/report-integrated.json",
+  "reportSha256": "1d6c54f721f4ff30f80702166daf8e2edc81d5ed04257a0454fc0cd014f929af"
+}

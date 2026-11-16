@@ -1,0 +1,11 @@
+{
+  "observedAt": "2026-11-15T22:19:08.881250+00:00",
+  "sourceHead": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "retainedAndWorktreeBundlesFileCountEach": 9778,
+  "allFilesUnchanged": true,
+  "strictSignaturesPassedBoth": true,
+  "productionWebFilesUnchanged": 5,
+  "nativeFilesUnchanged": 300,
+  "binarySHA256": "3d57eea67a25000ad19cc41dd50af360c4d769a2ce9f2954cf2f89397dc31829",
+  "buildId": "I9UBVuj3J-4egKiEKItaT"
+}

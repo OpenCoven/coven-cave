@@ -1,0 +1,20 @@
+{
+  "sourceCommit": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "buildId": "I9UBVuj3J-4egKiEKItaT",
+  "binarySha256": "3d57eea67a25000ad19cc41dd50af360c4d769a2ce9f2954cf2f89397dc31829",
+  "bundle": "/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/issue-6064-webkit-retry-nova/src-tauri/target/release/bundle/macos/Cave6064Qualification.app",
+  "retainedBundle": "/private/tmp/nova6064-resume-20261114-mo25t69y/qualified-integrated-build-I9UB/Cave6064Qualification.app",
+  "bundleFileCount": 9778,
+  "sourceSHA256": {
+    "src/lib/server/chat-display-projection.ts": "a2c688cb0695999f9f9a698f6db03808548fe8342f109998f6951d55f2cee12e",
+    "src/lib/server/conversation-display-projection.ts": "b186ef55bbb030b2e4cd5af82f82b1e876819955c7d17ef9529b3db9595c65f3",
+    "src/lib/chat-turn-state.ts": "dd2e2c83fd447b37c79710a47737adae102003b965643aca4221810dd6b28959",
+    "src/lib/cave-conversations.ts": "71cc7ab036f83a1f580e703cb423ffc949d8161a50cca843d1f0b7b5db8786d1",
+    "src/components/chat-view.tsx": "596bdbe9b5c7b2328999eb5d6cd0b8987ea06ea966ddbc2b02946f00e99a0a90"
+  },
+  "strictSignaturesVerified": true,
+  "fullManifest": {
+    "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/integrated-artifact-identity.json",
+    "sha256": "2b9ee559e021ea26735f9efed3b5a0a3b217f95049fed857bbf8c7aad003064e"
+  }
+}

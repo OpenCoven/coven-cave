@@ -1,0 +1,34 @@
+{
+  "startedAt": "2026-11-14T11:02:02.079607+00:00",
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/private/tmp/nova6064-native-integrated-20261114/release-exact-three.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "-parallel-testing-enabled",
+    "NO",
+    "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney",
+    "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichChronologicalTimelineRenderJourney",
+    "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+    "-resultBundlePath",
+    "/private/tmp/nova6064-native-integrated-20261114/release-exact-three.xcresult",
+    "-test-timeouts-enabled",
+    "YES",
+    "-default-test-execution-time-allowance",
+    "180",
+    "-maximum-test-execution-time-allowance",
+    "300"
+  ],
+  "preflightEnabledExactly": [
+    "CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney()",
+    "CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichChronologicalTimelineRenderJourney()",
+    "CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling()"
+  ],
+  "configuration": "Release",
+  "automaticRetries": false,
+  "assertionsSelectorsAndTimeoutsUnchanged": true,
+  "exitCode": 65,
+  "finishedAt": "2026-11-14T11:10:26.185120+00:00"
+}

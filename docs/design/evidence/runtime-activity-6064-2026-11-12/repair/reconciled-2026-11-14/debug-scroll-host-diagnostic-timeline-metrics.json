@@ -1,0 +1,181 @@
+{
+  "captures" : [
+    {
+      "activityCount" : 120,
+      "appPhysicalFootprintBytes" : 247106416,
+      "attachedWebViews" : 10,
+      "counters" : {
+        "markdown.webview.created" : 14,
+        "markdown.webview.failed" : 0,
+        "markdown.webview.first-render" : 10,
+        "markdown.webview.invalidated" : 4
+      },
+      "expandedCount" : 0,
+      "index" : 0,
+      "messageCount" : 1,
+      "shape" : "rich",
+      "spans" : {
+        "chat.first-rich-render" : {
+          "count" : 10,
+          "latestMilliseconds" : 3493.016208,
+          "maximumMilliseconds" : 3902.7844580000001
+        },
+        "chat.list-projection" : {
+          "count" : 4,
+          "latestMilliseconds" : 3.1284160000000001,
+          "maximumMilliseconds" : 28.757041999999998
+        },
+        "drawer.open" : {
+          "count" : 1,
+          "latestMilliseconds" : 632.74991599999998,
+          "maximumMilliseconds" : 632.74991599999998
+        },
+        "markdown.render.settled" : {
+          "count" : 10,
+          "latestMilliseconds" : 113.930792,
+          "maximumMilliseconds" : 113.930792
+        },
+        "markdown.webview.init" : {
+          "count" : 14,
+          "latestMilliseconds" : 2614.0956249999999,
+          "maximumMilliseconds" : 3652.1593330000001
+        }
+      },
+      "threadID" : "performance-fixture-chat-0000",
+      "unixSeconds" : 1794786749.5112209
+    },
+    {
+      "activityCount" : 120,
+      "appPhysicalFootprintBytes" : 256199560,
+      "attachedWebViews" : 17,
+      "counters" : {
+        "markdown.webview.created" : 71,
+        "markdown.webview.failed" : 0,
+        "markdown.webview.first-render" : 67,
+        "markdown.webview.invalidated" : 54
+      },
+      "expandedCount" : 0,
+      "index" : 1,
+      "messageCount" : 1,
+      "shape" : "rich",
+      "spans" : {
+        "chat.first-rich-render" : {
+          "count" : 67,
+          "latestMilliseconds" : 7071.5747920000003,
+          "maximumMilliseconds" : 7121.4117919999999
+        },
+        "chat.list-projection" : {
+          "count" : 4,
+          "latestMilliseconds" : 3.1284160000000001,
+          "maximumMilliseconds" : 28.757041999999998
+        },
+        "drawer.open" : {
+          "count" : 1,
+          "latestMilliseconds" : 632.74991599999998,
+          "maximumMilliseconds" : 632.74991599999998
+        },
+        "markdown.render.settled" : {
+          "count" : 67,
+          "latestMilliseconds" : 39.093083999999998,
+          "maximumMilliseconds" : 2462.3263750000001
+        },
+        "markdown.webview.init" : {
+          "count" : 71,
+          "latestMilliseconds" : 6951.875583,
+          "maximumMilliseconds" : 6951.875583
+        }
+      },
+      "threadID" : "performance-fixture-chat-0000",
+      "unixSeconds" : 1794786882.578846
+    },
+    {
+      "activityCount" : 120,
+      "appPhysicalFootprintBytes" : 256445320,
+      "attachedWebViews" : 15,
+      "counters" : {
+        "markdown.webview.created" : 71,
+        "markdown.webview.failed" : 0,
+        "markdown.webview.first-render" : 67,
+        "markdown.webview.invalidated" : 56
+      },
+      "expandedCount" : 1,
+      "index" : 2,
+      "messageCount" : 1,
+      "shape" : "rich",
+      "spans" : {
+        "chat.first-rich-render" : {
+          "count" : 67,
+          "latestMilliseconds" : 7071.5747920000003,
+          "maximumMilliseconds" : 7121.4117919999999
+        },
+        "chat.list-projection" : {
+          "count" : 4,
+          "latestMilliseconds" : 3.1284160000000001,
+          "maximumMilliseconds" : 28.757041999999998
+        },
+        "drawer.open" : {
+          "count" : 1,
+          "latestMilliseconds" : 632.74991599999998,
+          "maximumMilliseconds" : 632.74991599999998
+        },
+        "markdown.render.settled" : {
+          "count" : 67,
+          "latestMilliseconds" : 39.093083999999998,
+          "maximumMilliseconds" : 2462.3263750000001
+        },
+        "markdown.webview.init" : {
+          "count" : 71,
+          "latestMilliseconds" : 6951.875583,
+          "maximumMilliseconds" : 6951.875583
+        }
+      },
+      "threadID" : "performance-fixture-chat-0000",
+      "unixSeconds" : 1794786898.4288459
+    },
+    {
+      "activityCount" : 120,
+      "appPhysicalFootprintBytes" : 261475208,
+      "attachedWebViews" : 10,
+      "counters" : {
+        "markdown.webview.created" : 97,
+        "markdown.webview.failed" : 0,
+        "markdown.webview.first-render" : 76,
+        "markdown.webview.invalidated" : 87
+      },
+      "expandedCount" : 1,
+      "index" : 3,
+      "messageCount" : 1,
+      "shape" : "rich",
+      "spans" : {
+        "chat.first-rich-render" : {
+          "count" : 76,
+          "latestMilliseconds" : 35371.946708000003,
+          "maximumMilliseconds" : 35393.326916999999
+        },
+        "chat.list-projection" : {
+          "count" : 4,
+          "latestMilliseconds" : 3.1284160000000001,
+          "maximumMilliseconds" : 28.757041999999998
+        },
+        "drawer.open" : {
+          "count" : 1,
+          "latestMilliseconds" : 632.74991599999998,
+          "maximumMilliseconds" : 632.74991599999998
+        },
+        "markdown.render.settled" : {
+          "count" : 76,
+          "latestMilliseconds" : 68.955332999999996,
+          "maximumMilliseconds" : 2462.3263750000001
+        },
+        "markdown.webview.init" : {
+          "count" : 97,
+          "latestMilliseconds" : 35234.027584000003,
+          "maximumMilliseconds" : 35240.442666000003
+        }
+      },
+      "threadID" : "performance-fixture-chat-0000",
+      "unixSeconds" : 1794786940.8956561
+    }
+  ],
+  "scope" : "Offline fixture; footprint is app process only, excludes WebKit processes. Reopen is same-process navigation, not network\/history reload."
+}

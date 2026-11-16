@@ -1,0 +1,36 @@
+{
+  "scope": "Read-only second agent review on shared account; not independent human acceptance",
+  "sourceHead": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "findings": [
+    {
+      "severity": "P2",
+      "finding": "Packaged tail transition causal claim exceeded retained observation",
+      "resolution": "Removed causal claim; recorded visible tail and unassigned transition cause."
+    },
+    {
+      "severity": "P3",
+      "finding": "README verification/reconciliation verbs implied work not performed",
+      "resolution": "Reflowed as past completed verification with failures retained."
+    },
+    {
+      "severity": "timing correction",
+      "finding": "Second traversal in valid host diagnostic occurs after180-second timeout; app and XCTest timestamps differ",
+      "resolution": "README explicitly classifies later gestures and final acquisition maximum as post-timeout observations."
+    }
+  ],
+  "verified": [
+    "18 original raw-log hashes match",
+    "5 native summaries equal raw JSON",
+    "300 native and5 web hashes match",
+    "Hosted1118executed58skipped0retry arithmetic",
+    "README links resolve and prose has no artificial source wraps",
+    "No credential patterns found in reviewed JSON"
+  ],
+  "unresolved": [
+    "Mixed reopen AX hittability in Debug and Release",
+    "Earlier-tool original180-second timeout in Debug and Release",
+    "Attribution of AX wait versus WebKit/app acquisition",
+    "Canonical TCP teardown failure not reproduced by one isolated CLI probe"
+  ],
+  "nextExperiment": "Diagnostic-only comparison using the same rich fixture and slow gestures but a fixed12-gesture traversal to isolate the contribution of repeated per-swipe AX polling; retain final assertions and canonical journey failures."
+}

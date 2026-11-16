@@ -1,0 +1,26 @@
+{
+  "classification": "Synthetic raw legacy/external saved history through production HTTP server and real native client; no provider dispatch or physical ingress",
+  "root": "/private/tmp/n6064/g14-history-gsZVDa",
+  "sessionId": "history6064-026ff57e-8671-4294-8ac4-542b3d9ef179",
+  "storedHash": "64e8aac03f80f90f4fff3a9b30849cc9e65fc8d0392c466402fb2d64b92d07eb",
+  "outputMarker": "\"[redacted]\"",
+  "startedAt": "2026-11-14T09:37:51.872Z",
+  "origin": "http://127.0.0.1:60353",
+  "serverPid": 31782,
+  "buildId": "I9UBVuj3J-4egKiEKItaT",
+  "sourceCommit": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "nativeFixture": {
+    "origin": "http://127.0.0.1:60353",
+    "sessionId": "history6064-026ff57e-8671-4294-8ac4-542b3d9ef179",
+    "withheldTool": "BothWithheld6064",
+    "inputOnlyTool": "InputWithheld6064",
+    "legacyTool": "LegacyAbsent6064",
+    "outputMarker": "\"[redacted]\""
+  },
+  "storedBytesUnchanged": true,
+  "serverStopped": true,
+  "cleanup": {
+    "removed": true
+  },
+  "finishedAt": "2026-11-15T22:16:57.088Z"
+}

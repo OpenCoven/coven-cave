@@ -1,0 +1,1036 @@
+{
+  "sourceHead": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "buildId": "I9UBVuj3J-4egKiEKItaT",
+  "rawReport": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/integrated-browser-functional.json",
+  "rawReportSHA256": "dd5b6f83cf225e1aa79f32e07c2bd8e72a9cc49ed74846addcda36d9357d7211",
+  "stats": {
+    "startTime": "2026-11-14T09:33:33.746Z",
+    "duration": 238418.16,
+    "expected": 60,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "tests": [
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "reasoning and parallel same-name calls retain failed attempts live and after reload (summaries=true)"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 5024,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "reasoning and parallel same-name calls retain failed attempts live and after reload (summaries=false)"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2096,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "large mixed trace keeps capped payloads explicit and draft interactive"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2262,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "lazy output 401 withholds bodies and rechecks or revokes access"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2692,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "lazy output 403 withholds bodies and rechecks or revokes access"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1732,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "lazy output 404 withholds bodies and rechecks or revokes access"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1926,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "lazy output 409 withholds bodies and rechecks or revokes access"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1819,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "lazy output oversized withholds bodies and rechecks or revokes access"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1846,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "Retry keeps a stationary press through deferred input highlighting"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3722,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "hostile prose, reasoning and tool results never become execution authority"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2239,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "denied approval stays rejected when stale frames are replayed, live and after reload"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1973,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "live region announces each parallel tool milestone without token chatter"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2293,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "typed reasoning preference default survives hydration without hiding failed tools"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1690,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "typed reasoning preference 0 survives hydration without hiding failed tools"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1317,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "typed reasoning preference 1 survives hydration without hiding failed tools"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2089,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "typed reasoning preference unrecognized survives hydration without hiding failed tools"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2002,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "legacy reasoning preference default survives hydration without hiding failed tools"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1856,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "legacy reasoning preference 0 survives hydration without hiding failed tools"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1534,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "legacy reasoning preference 1 survives hydration without hiding failed tools"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2475,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "legacy reasoning preference unrecognized survives hydration without hiding failed tools"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1512,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "typed reasoning toggle during streaming persists through history hydration"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2184,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "legacy reasoning toggle during streaming persists through history hydration"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3332,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "output access revocation clears history and a live owner without replaying a send"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2638,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "tool payload sentinels stay inside the authorized card and leave on revocation"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 4265,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "withheld and unavailable reasoning report no invented summary live and after reload (reasoning=unknown)"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 4875,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "withheld and unavailable reasoning report no invented summary live and after reload (reasoning=disabled)"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 4731,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "accepted saved output at byte limit preserves draft when returning to latest (#6064)"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 4481,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "reasoning and parallel same-name calls retain failed attempts live and after reload (summaries=true)"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 4622,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "reasoning and parallel same-name calls retain failed attempts live and after reload (summaries=false)"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 4547,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "large mixed trace keeps capped payloads explicit and draft interactive"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3982,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "lazy output 401 withholds bodies and rechecks or revokes access"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3644,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "lazy output 403 withholds bodies and rechecks or revokes access"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2981,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "lazy output 404 withholds bodies and rechecks or revokes access"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3743,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "lazy output 409 withholds bodies and rechecks or revokes access"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3983,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "lazy output oversized withholds bodies and rechecks or revokes access"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3084,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "Retry keeps a stationary press through deferred input highlighting"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 6891,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "hostile prose, reasoning and tool results never become execution authority"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3576,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "denied approval stays rejected when stale frames are replayed, live and after reload"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 4233,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "live region announces each parallel tool milestone without token chatter"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3908,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "typed reasoning preference default survives hydration without hiding failed tools"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2575,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "typed reasoning preference 0 survives hydration without hiding failed tools"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2006,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "typed reasoning preference 1 survives hydration without hiding failed tools"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1816,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "typed reasoning preference unrecognized survives hydration without hiding failed tools"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2286,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "legacy reasoning preference default survives hydration without hiding failed tools"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 1854,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "legacy reasoning preference 0 survives hydration without hiding failed tools"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2097,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "legacy reasoning preference 1 survives hydration without hiding failed tools"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2142,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "legacy reasoning preference unrecognized survives hydration without hiding failed tools"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2114,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "typed reasoning toggle during streaming persists through history hydration"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2971,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "legacy reasoning toggle during streaming persists through history hydration"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 6064,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "output access revocation clears history and a live owner without replaying a send"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 7525,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "tool payload sentinels stay inside the authorized card and leave on revocation"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 8189,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "withheld and unavailable reasoning report no invented summary live and after reload (reasoning=unknown)"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 12551,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "withheld and unavailable reasoning report no invented summary live and after reload (reasoning=disabled)"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 6434,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "accepted saved output at byte limit preserves draft when returning to latest (#6064)"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 6078,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-tool-cards.spec.ts",
+        "withheld saved input and output explain their absence without lazy reads (#6064)"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 6884,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-tool-cards.spec.ts",
+        "turn activity, tool groups and tool cards mount only once opened (#5572)"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3260,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-tool-cards.spec.ts",
+        "an omitted tool output loads when its card opens, with Retry on failure (#5581)"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2839,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-tool-cards.spec.ts",
+        "withheld saved input and output explain their absence without lazy reads (#6064)"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3411,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-tool-cards.spec.ts",
+        "turn activity, tool groups and tool cards mount only once opened (#5572)"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 3101,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-tool-cards.spec.ts",
+        "an omitted tool output loads when its card opens, with Retry on failure (#5581)"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 2561,
+          "errors": []
+        }
+      ]
+    }
+  ]
+}

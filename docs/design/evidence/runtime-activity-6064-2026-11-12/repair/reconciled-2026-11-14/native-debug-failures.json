@@ -1,0 +1,84 @@
+{
+  "observedAt": "2026-11-14T09:05:56.499039+00:00",
+  "configuration": "Debug",
+  "scheme": "CovenCave",
+  "appVersion": "0.5.22",
+  "appBuild": "2026111302",
+  "buildIdentity": "native-build-identity.json",
+  "nativeAggregateSHA256": "b7ec6c136bcc8ad7c41aa0dd8ce9696ab6dd205a41f21ee63ad41dc958f1e08b",
+  "allNativeFilesUnchanged": true,
+  "currentHead": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "firstExactRun": {
+    "terminal": 65,
+    "total": 3,
+    "passed": 1,
+    "failed": 2,
+    "skipped": 0,
+    "result": "longtrace-exact.xcresult",
+    "log": "longtrace-exact.log",
+    "failures": [
+      {
+        "failureText": "Failed to determine hittability of \"Timeline fixture tail\" Link: Activation point invalid and no suggested hit points based on element frame",
+        "targetName": "CovenCaveUITests",
+        "testIdentifier": 1,
+        "testIdentifierString": "PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney()",
+        "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney",
+        "testName": "testRetainedChronologicalTimelineRenderJourney()"
+      },
+      {
+        "failureText": "Test exceeded execution time allowance of 3 minutes",
+        "targetName": "CovenCaveUITests",
+        "testIdentifier": 3,
+        "testIdentifierString": "PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling()",
+        "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+        "testName": "testRetainedRichTimelinePreservesEarlierToolThroughScrolling()"
+      }
+    ],
+    "attachmentsManifest": "longtrace-failure-attachments/manifest.json"
+  },
+  "mixedFirstFailure": {
+    "selector": "CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney",
+    "sourceLine": 102,
+    "phase": "After leaving and reopening the same fixture thread; waiting for Timeline fixture tail hittable=true",
+    "tailAXFrame": "{{26.0,615.1},{130.0,20.0}} within window{{0,0},{402,874}}",
+    "axDebug": "longtrace-failure-attachments/8A9AB7C5-E5DC-4F11-A82E-CD3A71120A82.txt",
+    "fullHierarchy": "longtrace-failure-attachments/DC1AF680-A2C0-4776-9BBE-F9BBBEDD35D7.txt",
+    "nearFailureVideoFrame": "mixed-reopen-near-failure-127_7s.png",
+    "frameProvenance": "failure-frame-provenance.json",
+    "observation": "Near-failure video frame visibly contains the tail link; raw AX failure remains unresolved. No environment or product root cause established."
+  },
+  "earlierToolFailure": {
+    "selector": "CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+    "phase": "Second scrollToMiddle after Scroll to latest; original 180-second execution allowance",
+    "firstExpansionPassedImage": "longtrace-failure-attachments/6865434E-A140-40AE-9196-A6B011631564.png",
+    "nearTimeoutFrame": "earlier-tool-near-timeout-178s.png",
+    "lastVisibleRows": "90 through95; requested fixture60 still not revisited",
+    "spindump": "longtrace-failure-attachments/2224462E-4B7C-48A1-9760-D50DD84D3AFD.txt",
+    "disposition": "unresolved; no retry performed"
+  },
+  "singleMixedRetry": {
+    "terminal": 65,
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "result": "mixed-unchanged-retry.xcresult",
+    "log": "mixed-unchanged-retry.log",
+    "failures": [
+      {
+        "failureText": "Test exceeded execution time allowance of 3 minutes",
+        "targetName": "CovenCaveUITests",
+        "testIdentifier": 1,
+        "testIdentifierString": "PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney()",
+        "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney",
+        "testName": "testRetainedChronologicalTimelineRenderJourney()"
+      }
+    ],
+    "attachmentsManifest": "mixed-retry-attachments/manifest.json",
+    "assertionsSelectorsAndTimeoutsUnchanged": true,
+    "heavyWorkHeldByRoot": true,
+    "disposition": "failed original180-second allowance; does not resolve original AX failure"
+  },
+  "sourceOrSigningOrSecurityChanges": false,
+  "profilingPerformed": false
+}

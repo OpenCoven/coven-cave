@@ -1,0 +1,20 @@
+{
+  "classification": "Actual alternate signed Tauri/WKWebView plus its packaged sidecar, synthetic503savedtools; functional observations, no frame-budget/human acceptance",
+  "sourceCommit": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "buildId": "I9UBVuj3J-4egKiEKItaT",
+  "binarySha256": "3d57eea67a25000ad19cc41dd50af360c4d769a2ce9f2954cf2f89397dc31829",
+  "observed": [
+    "Both saved omission notices visibly rendered",
+    "262144-byte admitted output HTTP equality checked; unique first marker and rows visibly paint",
+    "80-deep opaque saved input/output rendered as quoted redacted text",
+    "503-call trace expanded, earlier calls inspected, tail visibly captured; no claim of uninterrupted position stability or cause of the later tail transition",
+    "Unsent draft remained visible; no Send action performed"
+  ],
+  "limitations": [
+    "AX snapshot omitted large Read subtree; coordinate and outer-margin scroll used with fresh screenshots",
+    "Two coordinate actions were refused by stale-surface guard and refreshed; later refreshed surface was at tail, cause unassigned",
+    "Show more expansion was not confirmed; no claim every admitted line painted or uninterrupted reading-position stability",
+    "Project context remained unverified; no blanket absence-of-startup-effects claim"
+  ],
+  "teardown": "App/server/daemon stopped and fixture removed; controller terminal0"
+}

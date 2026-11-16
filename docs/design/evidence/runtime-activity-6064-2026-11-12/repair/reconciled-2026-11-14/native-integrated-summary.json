@@ -1,0 +1,262 @@
+{
+  "observedAt": "2026-11-16T00:06:41.411761+00:00",
+  "baseHead": "0b437d4af17495944b1a854b696e3c2ca9a6c71d",
+  "nativeSourceAudit": "native-source-audit.json",
+  "nativeAggregateSHA256": "b7ec6c136bcc8ad7c41aa0dd8ce9696ab6dd205a41f21ee63ad41dc958f1e08b",
+  "productionSwiftAndPriorSevenFilesUnchanged": true,
+  "mainNativeDelta": [
+    "ThreadSnapshotStoreTests.swift adds one golden13 privacy test",
+    "project.yml metadata0.5.22/2026111302"
+  ],
+  "build": {
+    "passed": true,
+    "terminal": 0,
+    "command": "build-for-testing-command.json",
+    "identity": "native-build-identity.json",
+    "appVersion": "0.5.22",
+    "appBuild": "2026111302",
+    "codesignVerifyExitCode": 0
+  },
+  "broadUnits": {
+    "terminal": 0,
+    "result": "broad-native-units.xcresult",
+    "summary": "broad-native-units-summary.json",
+    "total": 1226,
+    "passed": 1225,
+    "skipped": 1,
+    "failed": 0,
+    "skip": "ActivityTransportTests.testRealHTTPStreamReconnectHistoryAndAuthorizedOutput requires a new built-server TCP gate"
+  },
+  "focusedUI": {
+    "terminal": 0,
+    "requested": 9,
+    "total": 6,
+    "passed": 6,
+    "skipped": 0,
+    "failed": 0,
+    "schemeExcludedNotExecuted": 3,
+    "schemeExclusion": "PerformanceBaselineUITests",
+    "result": "focused-native-ui.xcresult",
+    "summary": "focused-native-ui-summary.json",
+    "selectionCorrection": "ui-selection-correction.json",
+    "attachmentsManifest": "focused-ui-attachments/manifest.json"
+  },
+  "broadenedSelectionAttempt": {
+    "terminal": 75,
+    "outcome": "owned run interrupted after class-level CLI selection broadened beyond temporary method list",
+    "result": "longtrace-functional.xcresult",
+    "log": "longtrace-functional.log",
+    "interruption": "longtrace-selection-interruption.json",
+    "additionalCompleted": [
+      "testCurrentShellColdJourneys passed",
+      "testCurrentShellWarmJourneys passed"
+    ],
+    "lastStarted": "testImageZoomCycles",
+    "countsNotIncludedInRequestedCoverage": true
+  },
+  "actualHistory": {
+    "status": "passed",
+    "terminal": 0,
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "configuration": "Debug",
+    "result": "real-server-history.xcresult",
+    "summary": "real-server-history-summary.json",
+    "log": "real-server-history.log",
+    "connection": "real-server-history-connection.json",
+    "buildId": "I9UBVuj3J-4egKiEKItaT",
+    "currentSourceHead": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+    "sessionId": "history6064-026ff57e-8671-4294-8ac4-542b3d9ef179",
+    "storedHash": "64e8aac03f80f90f4fff3a9b30849cc9e65fc8d0392c466402fb2d64b92d07eb",
+    "outputMarkerUTF8Bytes": 12,
+    "providerRequests": 0
+  },
+  "canonicalTCP": {
+    "status": "functional tests passed; canonical overall teardown failed",
+    "terminal": 1,
+    "canonicalPassed": false,
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "result": "tcp-transport-final/result.json",
+    "nativeTests": "tcp-transport-final/native-transport.xcresult",
+    "nativeTestsSummary": "tcp-native-tests-summary.json",
+    "buildId": "I9UBVuj3J-4egKiEKItaT",
+    "head": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+    "sourceFingerprint": "84f6354ba5302259377868887c319a824e31cebf6fc21f9ae22dd03ecd293905",
+    "sourceUnchanged": true,
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "providerBoundary": "controlled local synthetic Hermes API",
+    "serverStopped": true,
+    "providerStopped": true,
+    "daemonStopped": false,
+    "noDaemonState": true,
+    "preservedRoot": "/private/var/folders/5b/njd1qhwx4h97r9lvy_wpf5lc0000gn/T/cave-native-activity-Qpm6fe",
+    "lateReadOnlyAudit": "tcp-daemon-teardown-audit.json",
+    "firstFailureRetained": true
+  },
+  "sourceEditsByNativeVerifier": false,
+  "limits": [
+    "Synthetic functional fixture counters are not responsiveness, frame or profiling evidence",
+    "No physical device, human VoiceOver, managed pairing, release or TestFlight acceptance"
+  ],
+  "exactLongTraceRun": {
+    "terminal": 65,
+    "total": 3,
+    "passed": 1,
+    "failed": 2,
+    "skipped": 0,
+    "result": "longtrace-exact.xcresult",
+    "log": "longtrace-exact.log",
+    "failures": [
+      {
+        "failureText": "Failed to determine hittability of \"Timeline fixture tail\" Link: Activation point invalid and no suggested hit points based on element frame",
+        "targetName": "CovenCaveUITests",
+        "testIdentifier": 1,
+        "testIdentifierString": "PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney()",
+        "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney",
+        "testName": "testRetainedChronologicalTimelineRenderJourney()"
+      },
+      {
+        "failureText": "Test exceeded execution time allowance of 3 minutes",
+        "targetName": "CovenCaveUITests",
+        "testIdentifier": 3,
+        "testIdentifierString": "PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling()",
+        "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+        "testName": "testRetainedRichTimelinePreservesEarlierToolThroughScrolling()"
+      }
+    ],
+    "attachmentsManifest": "longtrace-failure-attachments/manifest.json"
+  },
+  "singleMixedRetry": {
+    "terminal": 65,
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "result": "mixed-unchanged-retry.xcresult",
+    "log": "mixed-unchanged-retry.log",
+    "failures": [
+      {
+        "failureText": "Test exceeded execution time allowance of 3 minutes",
+        "targetName": "CovenCaveUITests",
+        "testIdentifier": 1,
+        "testIdentifierString": "PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney()",
+        "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney",
+        "testName": "testRetainedChronologicalTimelineRenderJourney()"
+      }
+    ],
+    "attachmentsManifest": "mixed-retry-attachments/manifest.json",
+    "assertionsSelectorsAndTimeoutsUnchanged": true,
+    "heavyWorkHeldByRoot": true,
+    "disposition": "failed original180-second allowance; does not resolve original AX failure"
+  },
+  "debugFailurePacket": "debug-failure-packet.json",
+  "currentHead": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "allTrackedNativeUnchanged": true,
+  "unresolvedNativeDebugFailures": [
+    "Mixed reopen AX hittability first failure",
+    "Earlier rich tool second-revisit180-second timeout",
+    "Unchanged mixed retry180-second timeout"
+  ],
+  "releaseFunctionalGate": {
+    "status": "executed once; unresolved failures",
+    "configuration": "Release",
+    "scheme": "CovenCavePerformance",
+    "doesNotReplaceDebugFailures": true,
+    "buildCommand": "release-build-for-testing-command.json",
+    "buildLog": "release-build-for-testing.log",
+    "buildTerminal": 0,
+    "identity": "release-build-identity.json",
+    "plan": "release-exact-three.xctestrun",
+    "testsExecuted": true,
+    "terminal": 65,
+    "total": 3,
+    "passed": 1,
+    "failed": 2,
+    "skipped": 0,
+    "result": "release-exact-three.xcresult",
+    "summary": "release-exact-three-summary.json",
+    "log": "release-exact-three.log",
+    "attachments": "release-exact-three-attachments/manifest.json",
+    "failures": [
+      {
+        "failureText": "Failed to determine hittability of \"Timeline fixture tail\" Link: Activation point invalid and no suggested hit points based on element frame",
+        "targetName": "CovenCaveUITests",
+        "testIdentifier": 1,
+        "testIdentifierString": "PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney()",
+        "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney",
+        "testName": "testRetainedChronologicalTimelineRenderJourney()"
+      },
+      {
+        "failureText": "Test exceeded execution time allowance of 3 minutes",
+        "targetName": "CovenCaveUITests",
+        "testIdentifier": 3,
+        "testIdentifierString": "PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling()",
+        "testIdentifierURL": "test://com.apple.xcode/CovenCave/CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+        "testName": "testRetainedRichTimelinePreservesEarlierToolThroughScrolling()"
+      }
+    ],
+    "noRerun": true,
+    "unresolved": true
+  },
+  "existingAppSpanDiagnostic": {
+    "receipt": "root-read-mixed-metrics.json",
+    "classification": "Root-exported existing app spans/counters only; not main-thread, frame, hitch, responsiveness or causal evidence",
+    "noNewCapturePerformed": true
+  },
+  "debugScrollDiagnostic": {
+    "diagnosticOnly": true,
+    "noAcceptanceClaim": true,
+    "terminal": 65,
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "result": "debug-scroll-diagnostic.xcresult",
+    "summary": "debug-scroll-diagnostic-summary.json",
+    "command": "debug-scroll-diagnostic-command.json",
+    "attachments": "debug-scroll-diagnostic-attachments/manifest.json",
+    "environmentAudit": "debug-scroll-diagnostic-environment-audit.json",
+    "traceAvailable": false,
+    "bindingGate": "Target app data container was replaced after configuration; no trace available",
+    "sourceAssertionsGesturesTimeoutsChanged": false,
+    "retryPerformed": false
+  },
+  "liveOwnedXcodebuilds": [],
+  "sourceSecuritySigningOrProfilerChangesByVerifier": false,
+  "finalCleanup": "final-native-cleanup-host-diagnostic-20261116.json",
+  "finalOwnedSimulatorState": "Shutdown",
+  "finalSourceAudit": "host-diagnostic-final-source-audit.json",
+  "debugScrollHostDiagnostic": {
+    "diagnosticOnly": true,
+    "noAcceptanceClaim": true,
+    "terminal": 65,
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "failure": "Original180-second execution allowance exceeded",
+    "result": "debug-scroll-host-diagnostic.xcresult",
+    "summary": "debug-scroll-host-diagnostic-summary.json",
+    "command": "debug-scroll-host-diagnostic-command.json",
+    "log": "debug-scroll-host-diagnostic.log",
+    "attachments": "debug-scroll-host-diagnostic-attachments/manifest.json",
+    "traceAvailable": true,
+    "trace": "debug-scroll-host-diagnostic-trace.log",
+    "traceBytes": 149599,
+    "traceSHA256": "b47be6e3e4c56c1d24192a62400a5ceaf85dd2dc4e604c4171ebe8c91cd06734",
+    "earlyBinding": "debug-scroll-host-diagnostic-early-binding.json",
+    "metrics": "debug-scroll-host-diagnostic-timeline-metrics.json",
+    "metricsProvenance": "debug-scroll-host-diagnostic-metrics-provenance.json",
+    "metricsLimit": "Existing async app spans and counters only; not main-thread, frame, hitch, responsiveness or causal evidence",
+    "sourceAssertionsGesturesTimeoutsChanged": false,
+    "protectionsOrSigningChanged": false,
+    "firstFailuresPreserved": true,
+    "noFurtherTestStarted": true
+  }
+}
