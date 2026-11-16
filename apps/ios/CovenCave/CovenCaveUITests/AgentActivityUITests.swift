@@ -336,13 +336,19 @@ final class AgentActivityUITests: XCTestCase {
     func testDeniedToolOutputNeverShowsServerErrorBody() throws {
         let app = launchToolOutput()
         app.buttons["Show output for Bash"].tap()
-        let refusal = app.staticTexts["Access to this output was denied. Check your desktop connection and access."]
+        let refusal = app.staticTexts["Chat access was denied. Check your desktop connection."]
         XCTAssertTrue(refusal.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Close tool output"].waitForNonExistence(timeout: 5),
+                      "revoking the owning conversation dismisses its transient output sheet")
+        XCTAssertFalse(app.buttons["Show output for Bash"].exists,
+                       "an access-revoked tool row cannot be reopened")
+        XCTAssertFalse(app.buttons["Show output for Read"].exists,
+                       "other rows from the revoked conversation must also disappear")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Agent activity")).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["NATIVE_TOOL_OUTPUT_PREVIEW\nSecond result line."].exists)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "PRIVATE_ERROR_BODY")).firstMatch.exists)
         XCTAssertFalse(app.buttons["Load output again"].exists)
         try attachScreenshot(named: "tool-output-denied")
-        app.buttons["Close tool output"].tap()
-        XCTAssertTrue(app.buttons["Show output for Bash"].waitForExistence(timeout: 5))
     }
 
     @MainActor

@@ -1,0 +1,39 @@
+{
+  "observedAt": "2026-11-16T05:28:33.154741+00:00",
+  "scope": "Read-only final frozen five-file source review. No tests/builds, launches, edits, commits or external actions; only this report written.",
+  "head": "6ace503af163914e2d548496d4e960444ae10bb5",
+  "reviewedFileSHA256": {
+    "apps/ios/CovenCave/CovenCave/Networking/CaveClient+ToolOutput.swift": "505de1da2cbac79b30c029386a09fa6871ff69edb85bfbc5f44c3fa5b0be370d",
+    "apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift": "93f9aa4f1aca803db2a0b59924f822108ac0f5d1fc4ee443b1f0d40098eef150",
+    "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "b1d363a8e8cec4079bf4f8dd16f91fa90246213014602e32ca7d9c8809352009",
+    "apps/ios/CovenCave/CovenCaveTests/ThreadSnapshotStoreTests.swift": "b0e680399365e6cbcb64aaf3afb610f3587d63bf286fd446c395a64370998ed6",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "e115b1c6d82e0d90bd805a3f7f9ab67179a039ee7481d41dec5a1fd8fe1f92f9"
+  },
+  "blockers": [],
+  "assessment": "No implementation or test-policy blocker found. The patch closes the native lazy-output401/403 invalidation gap while preserving the existing bounded transport and selective revocation machinery.",
+  "securityAndOrdering": [
+    "CaveClient+ToolOutput validates HTTP response identity against the exact requested URL before invoking denial handling. Unrelated responses cannot purge the requested conversation.",
+    "Shared purge now precedes Task.checkCancellation, so a received validated401/403 reaches memory/disk invalidation even if sheet dismissal cancels its task. Deferred bytes.task.cancel and subsequent body cancellation checks remain.",
+    "Making the helper module-internal enables the sibling extension to reuse it without exposing private callback state or changing callback injection.",
+    "The helper still invokes denial only for nonempty session IDs and401/403.404 unavailable/withheld,409 ambiguity,400 invalid references and5xx/transport remain nonpurging.",
+    "Send-stream write-only/flow/harness403 exceptions are unchanged. No denial body is decoded or displayed by the lazy-output path.",
+    "Initial and post-store-await connection/configuration generation checks remain. Held-object, late hydration/rebinding and uncancellable selective disk-purge fences are unchanged.",
+    "Existing2MiB response envelope and256KiB UTF8 output limits, redirect protection, fixed errors and known-withheld no-load gates remain unchanged."
+  ],
+  "feedback": {
+    "assessment": "Appropriate minimal reuse of existing warning-toast surface.",
+    "details": "Toast occurs synchronously after the initial current-connection/current-generation guard and only when removeAccessRevokedThreads actually reduces held thread count. It precedes the disk await, carries fixed denial/connection copy with no payload or Retry action, and makes no claim disk purge succeeded. No second toast is emitted by an outdated post-await continuation."
+  },
+  "testReview": {
+    "unitRegression": "The seven-status table calls real app.client with URLProtocol transport, verifies preexisting disk/held state, then selective disk/memory/draft-mirror removal for401/403, preserved unrelated fields and exact errors. Nonpurging statuses assert preserved state and no warning toast. Denials assert fixed warning with no action.",
+    "UIRegression": "The same original Bash403 fixture now requires fixed warning feedback first, then output-sheet disappearance, absence of both revoked tool rows/activity, no private error body or loaded-output sentinel, and no retry action. The obsolete reopen-the-revoked-row requirement is removed; this is stronger privacy behavior, not acceptance of alternate outcomes.",
+    "executionBoundary": "The new source has not been executed by this reviewer. Worker pending builds/tests and actual rendered feedback/dismissal must be assessed from their terminal receipts; no green result is inferred here.",
+    "coverageLimits": "The table does not independently exercise tool-output cancellation or replaced-client timing, though it reuses the already tested shared fences and the source ordering is correct. The current UI method does not first load Read output before triggering Bash403, so its output-sentinel absence alone should not be cited as proof of revoking a previously loaded Read sheet."
+  },
+  "remainingAcceptance": [
+    "Actual focused native and UI terminal results for these exact five hashes",
+    "Transient toast visibility and sheet dismissal under the real rendered fixture; no automatic timeout/production-toast-duration change if a test fails",
+    "Broader canonical checks and existing strict/frame/device/human/admission gates remain separate"
+  ],
+  "result": "No repair requested by this final read-only review."
+}

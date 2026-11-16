@@ -123,6 +123,77 @@ final class ThreadSnapshotStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testToolOutputAccessDenialsPurgeOnlyTheirConversationAndKeepOtherFailuresCached() async throws {
+        let suite = "ThreadSnapshotStoreTests.toolOutput.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cases: [(Int, Bool, ToolOutputError)] = [
+            (401, true, .unauthorized), (403, true, .unauthorized),
+            (404, false, .unavailable), (409, false, .ambiguous),
+            (400, false, .invalidRequest), (500, false, .transport), (503, false, .transport)
+        ]
+        for (status, shouldPurge, expectedError) in cases {
+            var revoked = makeSnapshot(id: "output-thread", sessionId: "output-session")
+            revoked.messages = [DisplayMessage(role: .assistant, familiarId: "nova",
+                                               text: "private-output-cache-sentinel")]
+            var kept = makeSnapshot(id: "kept-thread", title: "Keep every field", sessionId: "other-session")
+            kept.archived = false
+            kept.muted = false
+            let statusFile = directory.appendingPathComponent("tool-output-\(status).json")
+            let store = ThreadSnapshotStore(url: statusFile)
+            try await store.save([revoked, kept])
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ThreadSnapshotRevocationProtocol.self]
+            let session = URLSession(configuration: configuration)
+            defer { session.invalidateAndCancel() }
+            let app = AppModel(defaults: defaults, restoreLocalState: false,
+                               loadPersistedConnection: false, threadStoreURL: statusFile,
+                               widgetSnapshotDefaults: defaults, clientSession: session)
+            app.connection = CaveConnection(host: "cache-tool-output-\(status).invalid")
+            app.threads = [ChatThread(snapshot: revoked), ChatThread(snapshot: kept)]
+            let heldThread = try XCTUnwrap(app.threads.first)
+            app.setThreadDraft(heldThread.id, text: "private output draft")
+            let beforeRequest = try await store.load()
+            XCTAssertEqual(beforeRequest, [revoked, kept], "HTTP \(status) must begin with two cached snapshots")
+            XCTAssertEqual(heldThread.messages, revoked.messages)
+            XCTAssertFalse(heldThread.transcriptRows.isEmpty)
+            XCTAssertEqual(heldThread.sessionIds, ["nova": "output-session"])
+            XCTAssertEqual(app.threadDrafts[heldThread.id], "private output draft")
+            let client = try XCTUnwrap(app.client)
+            do {
+                _ = try await client.toolOutput(sessionId: "output-session", toolId: "saved-tool")
+                XCTFail("Expected tool-output refusal for HTTP \(status)")
+            } catch let error as ToolOutputError {
+                XCTAssertEqual(error, expectedError, "HTTP \(status)")
+                XCTAssertFalse(error.message.contains("Controlled refusal"), "Server error text must remain private")
+                XCTAssertFalse(error.message.contains("project_access_denied"), "Server error codes are not display copy")
+            }
+            let afterRequest = try await store.load()
+            XCTAssertEqual(afterRequest, shouldPurge ? [kept] : [revoked, kept], "HTTP \(status) selective disk policy")
+            XCTAssertEqual(app.threads.map(\.id), shouldPurge ? [kept.id] : [revoked.id, kept.id],
+                           "HTTP \(status) held conversation policy")
+            XCTAssertEqual(app.threads.first(where: { $0.id == kept.id })?.snapshot, kept,
+                           "HTTP \(status) must preserve every unrelated snapshot field")
+            if shouldPurge {
+                XCTAssertTrue(heldThread.messages.isEmpty, "HTTP \(status) clears cached transcript memory")
+                XCTAssertTrue(heldThread.transcriptRows.isEmpty, "HTTP \(status) clears held transcript rows")
+                XCTAssertTrue(heldThread.sessionIds.isEmpty, "HTTP \(status) clears held session bindings")
+                XCTAssertNil(app.threadDrafts[heldThread.id], "HTTP \(status) clears the draft mirror")
+                XCTAssertEqual(app.toast?.text, "Chat access was denied. Check your desktop connection.")
+                XCTAssertEqual(app.toast?.style, .warning)
+                XCTAssertNil(app.toast?.actionTitle)
+                XCTAssertNil(app.toast?.action)
+            } else {
+                XCTAssertEqual(heldThread.messages, revoked.messages, "HTTP \(status) keeps cached transcript memory")
+                XCTAssertFalse(heldThread.transcriptRows.isEmpty, "HTTP \(status) keeps held transcript rows")
+                XCTAssertEqual(heldThread.sessionIds, ["nova": "output-session"])
+                XCTAssertEqual(app.threadDrafts[heldThread.id], "private output draft")
+                XCTAssertNil(app.toast, "HTTP \(status) must not announce an access revocation")
+            }
+        }
+    }
+
+    @MainActor
     func testConversationSpecificRequestsPurgeTheirRefusedSession() async throws {
         let suite = "ThreadSnapshotStoreTests.boundaries.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

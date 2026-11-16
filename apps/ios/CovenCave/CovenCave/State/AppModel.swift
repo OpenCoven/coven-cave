@@ -2217,7 +2217,12 @@ final class AppModel {
         // Cancellation alone does not undo an access denial already received.
         guard connectionConfigurationGeneration == generation, self.connection == connection else { return }
         revokedConversationIDs.insert(sessionId)
+        let heldThreadCount = threads.count
         removeAccessRevokedThreads()
+        if threads.count < heldThreadCount {
+            showToast("Chat access was denied. Check your desktop connection.",
+                      systemImage: "exclamationmark.triangle.fill", style: .warning)
+        }
         let removed = try await threadStore.purgeConversation(sessionId: sessionId,
                                                               snapshotIDs: revokedThreadIDs)
         guard connectionConfigurationGeneration == generation, self.connection == connection else { return }

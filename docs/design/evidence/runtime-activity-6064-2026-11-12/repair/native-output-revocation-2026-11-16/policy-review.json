@@ -1,0 +1,113 @@
+{
+  "observedAt": "2026-11-16T05:13:02.450866+00:00",
+  "scope": "Read-only reassessment against actual server and client policy; no edits/tests/launches, foreign raw evidence or issue execution inspected. Only this report written.",
+  "correctionToPriorReview": "The prior statement that native output-only401/403 should preserve the chat/draft was unsupported. Bypassing the callback is the current implementation, not an established intentional policy. This review supersedes that semantic conclusion.",
+  "decision": "A concrete native invalidation-path gap exists: authoritative401/403 from a validated lazy output read does not reach the adopted6487 conversation purge callback. Add a fail-first AppModel/URLProtocol regression and reuse the shared denial helper. No legitimate finer-grained output403 policy was found.",
+  "establishedEvidence": [
+    {
+      "path": "src/app/api/chat/conversation/[id]/tool-output/route.ts",
+      "lines": [
+        12,
+        31
+      ],
+      "finding": "The read handler returns400 for invalid references,200 for admitted output,409 for ambiguity and404 for unavailable/withheld output. It has no401/403 branch or output-specific authorization policy."
+    },
+    {
+      "path": "server.ts",
+      "lines": [
+        2403,
+        2420
+      ],
+      "finding": "Raw requests pass deviceAccess.handle before Next handles the route."
+    },
+    {
+      "path": "src/lib/server/device-access/gateway.ts",
+      "lines": [
+        304,
+        322
+      ],
+      "finding": "Managed-device tailnet/approval/credential gates can refuse the API request with403 before the handler. These apply to desktop access, not a per-tool output capability."
+    },
+    {
+      "path": "src/proxy.ts",
+      "lines": [
+        403,
+        446,
+        607,
+        623
+      ],
+      "finding": "Global API host/origin/credential policy applies to this request; invalid access can return401/403. Not every such response proves durable revocation, but no narrow output-only grant or403 exception was found."
+    },
+    {
+      "path": "src/lib/tool-output-fetch.ts",
+      "lines": [
+        37,
+        41
+      ],
+      "finding": "Web lazy output explicitly invalidatesChatAccess for the requested session on401/403. It does not invalidate on404."
+    },
+    {
+      "path": "src/lib/conversation-cache.ts",
+      "lines": [
+        175,
+        177,
+        247,
+        254
+      ],
+      "finding": "Web invalidation evicts conversation state and advances its generation; full conversation reads use the same401/403 denial policy."
+    },
+    {
+      "path": "src/components/chat-view.tsx",
+      "lines": [
+        3680,
+        3701
+      ],
+      "finding": "Access invalidation clears admitted turns/context/failed-send carry and aborts the live owner. This is broader than an output-card error."
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift",
+      "lines": [
+        934,
+        953
+      ],
+      "finding": "The adopted native conversation-read policy invokes the optional denial callback for401/403;404/5xx do not purge."
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Networking/CaveClient+ToolOutput.swift",
+      "lines": [
+        56,
+        71
+      ],
+      "finding": "Lazy read checks cancellation then maps401/403 to ToolOutputError.unauthorized without invoking that callback. Therefore this request alone leaves AppModel revoked sets/held object/draft mirror and persisted snapshots uninformed."
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/State/AppModel.swift",
+      "lines": [
+        2204,
+        2242
+      ],
+      "finding": "The shared callback is connection/generation-bound and performs held-object/memory/draft-mirror invalidation plus uncancellable selective disk purge. Reusing it preserves those fences."
+    }
+  ],
+  "minimalRepairRecommendation": [
+    "First add tool-output to the real AppModel/URLProtocol operation table, expecting ToolOutputError.unauthorized and selective disk removal. Current nine-operation table omits this path. Assert affected held memory/draft mirror cannot revive and unrelated snapshot remains unchanged; reproduce before implementation.",
+    "Make purgeConversationIfAccessDenied module-internal so CaveClient+ToolOutput.swift can reuse it; keep callback storage private. Invoke it only after validating HTTP response identity against the exact requested URL.",
+    "For a validated received401/403, await the shared purge before Task.checkCancellation can discard the denial. Existing6487 policy requires completed purge despite caller cancellation; merely inserting the callback after the current cancellation check leaves that gap.",
+    "Retain deferred task cancellation, strict same-endpoint/redirect checks, fixed error copy, no server-body exposure, byte-exact accepted data,2MiB envelope and256KiB UTF8 bounds. Do not read the denial body to decide whether this GET should purge.",
+    "Keep404 unavailable/withheld,409 ambiguity,400 invalid references,5xx/transport and local validation failures nonpurging. Known outputDisclosure=withheld continues to avoid the request entirely.",
+    "Do not alter sendStream403 classification: write-only project access, flow-read-only and harness refusals remain nonpurging; only its existing conversation-access/managed-device categories purge."
+  ],
+  "verificationNeededNotPerformed": [
+    "Fail-first tool-output403 in ThreadSnapshotStoreTests.testConversationSpecificRequestsPurgeTheirRefusedSession, then green after shared-helper reuse. Catch its specific ToolOutputError without weakening existing CaveError checks or selective-cache assertions.",
+    "Add/extend status boundaries for tool-output401/403 versus404/409/5xx; verify callback generation replacement and received-denial cancellation semantics through the shared AppModel path.",
+    "Keep direct-client ToolOutputTests unauthorized-message/no-body/no-retry assertions. They currently use callback nil and do not establish AppModel invalidation.",
+    "Run relevant native/store/transport contracts after implementation; current canonical green source evidence does not cover a change not yet made."
+  ],
+  "possibleUIEffects": {
+    "currentUITest": "AgentActivityUITests.testDeniedToolOutputNeverShowsServerErrorBody currently expects the refusal sheet to remain and the same Show output row to be reopenable. With an AppModel-bound401/403 purge, thread/message scope clears and ChatView dismissal guards can dismiss that sheet and remove the owning row.",
+    "testPolicy": "Inspect and update that scenario to assert the stronger intended revocation behavior while retaining no-private-error-body/no-unauthorized-retry requirements. Do not merely accept either behavior. Preserve separate404/known-withheld tests proving no cache purge and no unnecessary lazy read.",
+    "draftScope": "6487 clears the affected in-memory draft mirror; its README explicitly leaves user-authored composer preferences on their separate lifecycle. Do not broaden this repair into deleting all local drafts.",
+    "historyFixture": "The read-only history preview direct CaveClient has callback nil by design and remains outside AppModel revocation acceptance."
+  },
+  "certainty": "Server status distinctions, web invalidation and missing native callback are established by source inspection. Actual failing sentinel/UI behavior has not been executed in this review; proposed fail-first tests must supply runtime proof. No new server grant policy is inferred."
+}

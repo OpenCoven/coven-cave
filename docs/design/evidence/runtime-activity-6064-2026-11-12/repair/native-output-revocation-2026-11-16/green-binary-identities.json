@@ -1,0 +1,66 @@
+{
+  "observedAt": "2026-11-16T05:31:38.149866+00:00",
+  "artifacts": [
+    {
+      "role": "app-stub",
+      "path": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave",
+      "sha256": "722ef5717ec4fa7b22a056763d4e362aa47fe9a3884d866bd785f932aeb88507",
+      "uuid": "UUID: B07EEE3C-11E9-3B70-A326-6097EA0F7327 (arm64) /private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave",
+      "verifyExit": 0,
+      "verifyOutput": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave: valid on disk\n/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave: satisfies its Designated Requirement\n",
+      "signatureDetailsExit": 0,
+      "signatureDetails": "Executable=/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave\nIdentifier=ai.opencoven.cave\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20400 size=426 flags=0x2(adhoc) hashes=3+7 location=embedded\nVersionPlatform=7\nVersionMin=1179648\nVersionSDK=1769984\nHash type=sha256 size=32\nCandidateCDHash sha256=d18c800166e70500ebb228126c88a7c37e36ee7c\nCandidateCDHashFull sha256=d18c800166e70500ebb228126c88a7c37e36ee7c63467c4a8bdd229a5e52128d\nHash choices=sha256\nCMSDigest=d18c800166e70500ebb228126c88a7c37e36ee7c63467c4a8bdd229a5e52128d\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=16384\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=d18c800166e70500ebb228126c88a7c37e36ee7c\nSignature=adhoc\nInfo.plist entries=40\nTeamIdentifier=not set\nSealed Resources version=2 rules=10 files=32\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n"
+    },
+    {
+      "role": "app-debug-implementation",
+      "path": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib",
+      "sha256": "8d70a807feb6791f2ffc4cae38a294f34284b88c2d4079d09e89202409146ed9",
+      "uuid": "UUID: 9CEEDA81-6C01-3A6E-9EDD-185296C074E3 (arm64) /private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib",
+      "verifyExit": 0,
+      "verifyOutput": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib: valid on disk\n/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib: satisfies its Designated Requirement\n",
+      "signatureDetailsExit": 0,
+      "signatureDetails": "Executable=/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib\nIdentifier=CovenCave.debug\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=82024 flags=0x2(adhoc) hashes=2558+2 location=embedded\nVersionPlatform=7\nVersionMin=1179648\nVersionSDK=1769984\nHash type=sha256 size=32\nCandidateCDHash sha256=26242ac98095c25ed254d44172db0ce0c3c61f21\nCandidateCDHashFull sha256=26242ac98095c25ed254d44172db0ce0c3c61f21006a5d220686e299331d6116\nHash choices=sha256\nCMSDigest=26242ac98095c25ed254d44172db0ce0c3c61f21006a5d220686e299331d6116\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=16826368\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=26242ac98095c25ed254d44172db0ce0c3c61f21\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n"
+    },
+    {
+      "role": "unit-test-driver",
+      "path": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/PlugIns/CovenCaveTests.xctest/CovenCaveTests",
+      "sha256": "3c890c3d921a0d9f6fc43dc0708b4ccf3ed77c9cbf8e177c000dd3329743614d",
+      "uuid": "UUID: EFF78718-847D-3556-AB78-7F27CA5B3102 (arm64) /private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/PlugIns/CovenCaveTests.xctest/CovenCaveTests",
+      "verifyExit": 0,
+      "verifyOutput": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/PlugIns/CovenCaveTests.xctest/CovenCaveTests: valid on disk\n/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/PlugIns/CovenCaveTests.xctest/CovenCaveTests: satisfies its Designated Requirement\n",
+      "signatureDetailsExit": 0,
+      "signatureDetails": "Executable=/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/PlugIns/CovenCaveTests.xctest/CovenCaveTests\nIdentifier=ai.opencoven.cave.tests\nFormat=bundle with Mach-O thin (arm64)\nCodeDirectory v=20400 size=26352 flags=0x2(adhoc) hashes=817+3 location=embedded\nVersionPlatform=7\nVersionMin=1179648\nVersionSDK=1769984\nHash type=sha256 size=32\nCandidateCDHash sha256=886f39a863b524515bee0de85c84e22dade183c0\nCandidateCDHashFull sha256=886f39a863b524515bee0de85c84e22dade183c0545678841b4197462adf05d9\nHash choices=sha256\nCMSDigest=886f39a863b524515bee0de85c84e22dade183c0545678841b4197462adf05d9\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=6373376\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=886f39a863b524515bee0de85c84e22dade183c0\nSignature=adhoc\nInfo.plist entries=20\nTeamIdentifier=not set\nSealed Resources version=2 rules=10 files=8\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n"
+    },
+    {
+      "role": "ui-runner",
+      "path": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner",
+      "sha256": "914fd8d51db022e565f1e20ae002b0f944809abf11ccdc0aa664cf7bb988c71d",
+      "uuid": "UUID: CC1BBF6E-4DDE-3789-8413-8995F0EAB902 (arm64) /private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner",
+      "verifyExit": 0,
+      "verifyOutput": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner: valid on disk\n/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner: satisfies its Designated Requirement\n",
+      "signatureDetailsExit": 0,
+      "signatureDetails": "Executable=/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner\nIdentifier=ai.opencoven.cave.uitests.xctrunner\nFormat=app bundle with Mach-O universal (arm64)\nCodeDirectory v=20400 size=380 flags=0x2(adhoc) hashes=5+3 location=embedded\nVersionPlatform=7\nVersionMin=1114112\nVersionSDK=1769984\nHash type=sha256 size=32\nCandidateCDHash sha256=1c95b481942173a5c992931e4d45b29e42a746fe\nCandidateCDHashFull sha256=1c95b481942173a5c992931e4d45b29e42a746fe027655ae374fc39578078534\nHash choices=sha256\nCMSDigest=1c95b481942173a5c992931e4d45b29e42a746fe027655ae374fc39578078534\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=32768\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=1c95b481942173a5c992931e4d45b29e42a746fe\nSignature=adhoc\nInfo.plist entries=81\nTeamIdentifier=not set\nSealed Resources version=2 rules=10 files=3\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n"
+    },
+    {
+      "role": "ui-test-driver",
+      "path": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests",
+      "sha256": "f23cdae9af00d6e4da243b27f5608b52c07cae422cb3bb3fcfe86dea97c599f5",
+      "uuid": "UUID: 4C856715-F55B-3F2C-9D3D-33EB6E573455 (arm64) /private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests",
+      "verifyExit": 0,
+      "verifyOutput": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests: valid on disk\n/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests: satisfies its Designated Requirement\n",
+      "signatureDetailsExit": 0,
+      "signatureDetails": "Executable=/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests\nIdentifier=ai.opencoven.cave.uitests\nFormat=bundle with Mach-O thin (arm64)\nCodeDirectory v=20400 size=2610 flags=0x2(adhoc) hashes=75+3 location=embedded\nVersionPlatform=7\nVersionMin=1179648\nVersionSDK=1769984\nHash type=sha256 size=32\nCandidateCDHash sha256=dfa4fd8c78cfa16e9b840c0a980c2cca7c3cf540\nCandidateCDHashFull sha256=dfa4fd8c78cfa16e9b840c0a980c2cca7c3cf540ffdc3dda58c924deaa2acbce\nHash choices=sha256\nCMSDigest=dfa4fd8c78cfa16e9b840c0a980c2cca7c3cf540ffdc3dda58c924deaa2acbce\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=606208\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=dfa4fd8c78cfa16e9b840c0a980c2cca7c3cf540\nSignature=adhoc\nInfo.plist entries=21\nTeamIdentifier=not set\nSealed Resources version=2 rules=10 files=0\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n"
+    },
+    {
+      "role": "app-other-dylib",
+      "path": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/__preview.dylib",
+      "sha256": "cc08655a6e024b8cb8d21bb3fd8ed29a0f3fac2e94f92dcb93c14070b0888cd6",
+      "uuid": "UUID: A4CFA570-CCF0-33DF-A9EE-8EB2E05B7536 (arm64) /private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/__preview.dylib",
+      "verifyExit": 0,
+      "verifyOutput": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/__preview.dylib: valid on disk\n/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/__preview.dylib: satisfies its Designated Requirement\n",
+      "signatureDetailsExit": 0,
+      "signatureDetails": "Executable=/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/__preview.dylib\nIdentifier=__preview-55554944a4cfa570ccf033dfa9ee8eb2e05b7536\nFormat=Mach-O thin (arm64)\nCodeDirectory v=20400 size=267 flags=0x2(adhoc) hashes=2+2 location=embedded\nVersionPlatform=7\nVersionMin=1179648\nVersionSDK=1769984\nHash type=sha256 size=32\nCandidateCDHash sha256=f14e2a3499edc8abd445f18aac667946d7f4d080\nCandidateCDHashFull sha256=f14e2a3499edc8abd445f18aac667946d7f4d0808edd7f354457094831649b98\nHash choices=sha256\nCMSDigest=f14e2a3499edc8abd445f18aac667946d7f4d0808edd7f354457094831649b98\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=16384\nExecutable Segment flags=0x0\nPage size=16384\nCDHash=f14e2a3499edc8abd445f18aac667946d7f4d080\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n"
+    }
+  ],
+  "redIdentityLimit": "RED app stub/unit-driver SHA/UUID/signatures were retained; RED CovenCave.debug.dylib pre-overwrite hash was not captured or archived before GREEN rebuilt same derived path. It is unavailable, not reconstructed. RED source snapshots/build command/compiler log/xcresult remain retained."
+}

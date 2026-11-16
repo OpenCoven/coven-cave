@@ -1,0 +1,12 @@
+{
+  "command": [
+    "node",
+    "/private/tmp/nova6064-20261112/run.mjs",
+    "pnpm",
+    "test:mobile"
+  ],
+  "startedAt": "2026-11-16T05:27:48.720410+00:00",
+  "pid": 1771,
+  "exitCode": 0,
+  "finishedAt": "2026-11-16T05:28:10.320718+00:00"
+}

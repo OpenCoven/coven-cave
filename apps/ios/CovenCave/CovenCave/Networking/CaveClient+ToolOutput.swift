@@ -56,12 +56,15 @@ extension CaveClient: ToolOutputLoading {
         let (bytes, response) = try await (injectedSession ?? Self.toolOutputSession)
             .bytes(for: req, delegate: DeviceAccessRedirectGuard.shared)
         defer { bytes.task.cancel() }
-        try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, http.url == req.url else {
             // The shared redirect guard protects credentials. This detail read
             // also requires the response to belong to the exact requested tool.
             throw ToolOutputError.invalidResponse
         }
+        // A definitive refusal revokes the owning conversation even if the
+        // sheet's task is cancelled while the shared purge is completing.
+        try await purgeConversationIfAccessDenied(http, sessionId: sessionId)
+        try Task.checkCancellation()
         switch http.statusCode {
         case 200: break
         case 400: throw ToolOutputError.invalidRequest

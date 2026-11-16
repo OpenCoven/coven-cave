@@ -1,0 +1,77 @@
+{
+  "observedAt": "2026-11-16T05:25:56.001817+00:00",
+  "scope": "Read-only review of the new test-only regression and actual UI fixture/navigation/feedback wiring. No edit, build, test, launch or external action performed; only this report written.",
+  "sourceContext": "Current signed6ace503 with native worker test-only changes; worker execution/result not assessed.",
+  "regressionValidity": {
+    "path": "apps/ios/CovenCave/CovenCaveTests/ThreadSnapshotStoreTests.swift:126",
+    "assessment": "Valid behavioral regression against the real AppModel callback path, not a mocked purge-helper result. No test-validity blocker found by inspection.",
+    "strengths": [
+      "Uses app.client with injected ephemeral URLProtocol transport, so production CaveClient.toolOutput must propagate the refusal through the adopted AppModel callback.",
+      "Reads the actual snapshot file afterward using a separate ThreadSnapshotStore instance; no in-memory store filter can fake disk removal.",
+      "Checks401/403 purge and404/409/400/500/503 preservation, with specific ToolOutputError mapping and no raw server error copy.",
+      "Asserts two preexisting snapshots and held transcript/rows/session/draft mirror before the request; then asserts selective disk/memory removal and unchanged unrelated fields.",
+      "Explicit archived/muted false on the kept snapshot makes its equality oracle compatible with ChatThread snapshot normalization.",
+      "Existing write-only/flow/harness403 and unbound-recovery exceptions remain separate and untouched."
+    ],
+    "expectedFailFirst": "Without the production callback invocation,401/403 should retain snapshots and held state, causing the new purge assertions to fail. Runtime red proof must come from the pending retained run; this review ran none.",
+    "remainingTargetedCoverage": "The new table does not alone prove received-denial cancellation ordering, mismatched response-URL nonpurging or old-client generation behavior through toolOutput. Shared-helper reuse preserves existing fences, but targeted tests should guard these boundaries as appropriate."
+  },
+  "plannedHelperOrdering": [
+    "Obtain response and keep deferred bytes.task.cancel().",
+    "Validate HTTPURLResponse and exact requested response URL before any invalidation. An unrelated response must not purge this session.",
+    "Await the module-internal shared purgeConversationIfAccessDenied for a validated401/403 before Task.checkCancellation can discard an already received refusal.",
+    "Then preserve existing ToolOutputError status mapping, body non-exposure, streaming cancellation and envelope/output byte limits.",
+    "Do not change sendStream classification for write-only/flow/harness403; do not purge known-withheld/no-request or404 unavailable output."
+  ],
+  "actualUIFixtureTrace": [
+    {
+      "path": "Networking/ToolOutputPreview.swift:6-32",
+      "finding": "The DEBUG launch installs an ephemeral AppModel clientSession only for the preview host. Toola returns200; toolb returns403 and the controlled PRIVATE_ERROR_BODY_MUST_NOT_DISPLAY body."
+    },
+    {
+      "path": "State/AppModel.swift:2438-2455,3321-3358,3427",
+      "finding": "The preview sets a real CaveConnection, associates the visible thread with session ui-preview-tool-activity and gives the message the same ToolOutputReference. AppModel.client supplies the generation-bound denial callback; this is not the callback-nil history probe."
+    },
+    {
+      "path": "Views/ChatView.swift:1294-1296,1335-1339",
+      "finding": "The output target captures app.client, the message reference and current toolOutputScope."
+    },
+    {
+      "path": "State/AppModel.swift:2214-2242; State/ChatThread.swift:1609-1622",
+      "finding": "Successful denial propagation removes the owning thread from app.threads and clears the held transcript, rows, session IDs, root/title and draft mirror."
+    },
+    {
+      "path": "Views/ChatView.swift:559-570; Views/ToolOutputDetailView.swift:151",
+      "finding": "Scope/message-ID change clears toolOutputTarget and removes the presented detail; onDisappear clears its transient output store."
+    },
+    {
+      "path": "Views/ChatsHomeView.swift:241-243,279-331",
+      "finding": "Navigation may retain a ChatRoute containing the held thread object; these paths do not explicitly pop a removed selected thread. The object fence prevents transcript revival, but no automatic return-to-list should be asserted without implementation/evidence."
+    }
+  ],
+  "UIConflict": {
+    "path": "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift:336-346",
+    "finding": "The existing denial test expects a durable refusal sheet, manually closes it, and requires Show output for Bash to reappear. Once the AppModel-bound403 correctly revokes the owning thread, that same row must remain absent and the sheet may be dismissed before its local error text paints. The current assertion is incompatible with the intended privacy behavior.",
+    "preciseStrongerAssertions": [
+      "Trigger the same original Bash403 using the AppModel-bound fixture; do not swap it for404 or a callback-nil client.",
+      "Require fixed safe denial feedback from the surviving application surface.",
+      "Require tool-output detail/Close tool output to disappear and both originating Show output actions/old activity transcript to remain absent. Do not attempt to reopen the revoked row.",
+      "Require PRIVATE_ERROR_BODY and any formerly loaded output sentinel to be absent, and no Load output again action for the revoked detail.",
+      "Keep known-withheld/no-load and404 unavailable cases separate, asserting their original conversation remains available. Unit tests retain field-for-field unrelated-cache preservation."
+    ],
+    "noEitherOutcome": "Do not accept either reopened-row/error-sheet behavior or purge behavior; the401/403 case must prove revocation."
+  },
+  "minimalFeedbackRecommendation": {
+    "existingSurface": "AppModel.showToast atState/AppModel.swift:688 and RootView.swift:180 already provide a fixed warning banner without new persistent state. ToastView auto-dismisses after2.6seconds.",
+    "gap": "Currently the shared purge emits no user feedback; the local ToolOutputError may never paint because the owning sheet is dismissed. A successful privacy repair can therefore appear as unexplained disappearance.",
+    "proposal": "Use the existing banner for a short fixed denial message such as Chat access was denied. Emit only for a current-generation affected conversation, with no server body, path or retry action. Preserve local fixed ToolOutputError copy for callback-nil clients/unit coverage. Do not add persistent error/navigation state preemptively.",
+    "constraints": [
+      "Respect the same connection/generation fence so a stale client cannot display denial on its successor.",
+      "Do not claim successful disk clearing if the purge throws.",
+      "Assert transient feedback promptly before slower negative AX/screenshot checks; do not extend production toast duration merely to satisfy a slow test.",
+      "Rendered/VoiceOver behavior still requires actual UI/human evidence; source inspection does not establish it."
+    ],
+    "placement": "For initially affected held threads, a synchronous warning toast immediately after the initial connection+generation guard and memory removal, before the disk await, is valid. Its fixed copy must state denial only, not successful disk purge. Keep the post-await guard and emit no duplicate toast from an outdated continuation."
+  },
+  "result": "New unit regression is appropriate. The existing denial UI test must change to stronger revocation expectations, with minimal fixed feedback through the existing application banner. Planned helper must preserve identity-before-purge-before-cancellation ordering."
+}

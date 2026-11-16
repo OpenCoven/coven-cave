@@ -1,0 +1,32 @@
+{
+  "observedAt": "2026-11-16T05:36:23.038161+00:00",
+  "classification": "Synthetic focusedUI7 installed-normal-signed Debug functional proof only; no actual-history/TCP/productionserver/provider/frame/responsiveness qualification",
+  "counts": {
+    "totalTestCount": 7,
+    "passedTests": 7,
+    "failedTests": 0,
+    "skippedTests": 0
+  },
+  "terminal": 0,
+  "caseBoundaries": [
+    "Test Case '-[CovenCaveUITests.AgentActivityUITests testAtLimitDeepToolOutputRendersVerbatimAndSheetRemainsResponsive]' passed (25.517 seconds).",
+    "Test Case '-[CovenCaveUITests.AgentActivityUITests testDeepToolOutputEnvelopeIsWithheldAndSheetRemainsResponsive]' passed (15.198 seconds).",
+    "Test Case '-[CovenCaveUITests.AgentActivityUITests testDeniedToolOutputNeverShowsServerErrorBody]' passed (11.399 seconds).",
+    "Test Case '-[CovenCaveUITests.AgentActivityUITests testHistoricalWithholdingExplainsInputAndOutputWithoutOfferingUnavailableLoads]' passed (44.564 seconds).",
+    "Test Case '-[CovenCaveUITests.AgentActivityUITests testOversizedToolOutputIsExplicitlyWithheldAndSheetRemainsResponsive]' passed (23.953 seconds).",
+    "Test Case '-[CovenCaveUITests.AgentActivityUITests testToolOutputCanBeOpenedAndDismissed]' passed (11.809 seconds).",
+    "Test Case '-[CovenCaveUITests.AgentActivityUITests testToolOutputClearsWhenBackgroundedAndCanBeLoadedAgain]' passed (14.372 seconds)."
+  ],
+  "sourceUnchanged": true,
+  "headAfter": "6ace503af163914e2d548496d4e960444ae10bb5",
+  "ownedSimulatorShutdown": true,
+  "binaryIdentities": "verified-native-binary-identities.json (app.debug.dylib+stub+UIrunner+testdriver SHA/UUID/signature)",
+  "planDelta": "Only UI OnlyTestIdentifiers=7; original Skip Performance/defaults preserved; CLI180/300timeout-enabled; no retry",
+  "collection": {
+    "allCommandsTerminal0": true,
+    "exportedFiles": 16,
+    "manifest": "attachment-files-manifest.json"
+  },
+  "redImplementationIdentityGap": "RED pre-overwrite CovenCave.debug.dylib hash not retained; unavailable. Source/compiler/xcresult+stub/unitdriver identities retained.",
+  "remaining": "Full canonical native suite/TCP/recovery/actualhistory and Debug+Release3longtrace/strict21 gates remain separate and pending as root plan specifies; no extra native invocation made."
+}

@@ -1,0 +1,30 @@
+{
+  "phase": "focused-green40",
+  "argv": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/OutputRevocationGreen40.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "-only-testing:CovenCaveTests/ThreadSnapshotStoreTests",
+    "-only-testing:CovenCaveTests/ToolOutputTests",
+    "-resultBundlePath",
+    "/private/tmp/nova6064-native-output-revocation-20261116/green/focused-green40.xcresult",
+    "-parallel-testing-enabled",
+    "NO",
+    "-enablePerformanceTestsDiagnostics",
+    "NO",
+    "-test-timeouts-enabled",
+    "YES",
+    "-default-test-execution-time-allowance",
+    "60",
+    "-maximum-test-execution-time-allowance",
+    "180"
+  ],
+  "budgetSeconds": 600,
+  "startedAt": "2026-11-16T05:30:07.357293+00:00",
+  "pid": 15146,
+  "exitCode": 0,
+  "finishedAt": "2026-11-16T05:30:15.639526+00:00"
+}

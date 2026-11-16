@@ -1,0 +1,22 @@
+{
+  "observedAt": "2026-11-16T05:31:38.150614+00:00",
+  "classification": "Focused GREEN unit proof only; no server/TCP/UI/final qualification",
+  "counts": {
+    "totalTestCount": 40,
+    "passedTests": 40,
+    "failedTests": 0,
+    "skippedTests": 0
+  },
+  "classCounts": {
+    "ThreadSnapshotStoreTests": 19,
+    "ToolOutputTests": 21
+  },
+  "terminal": 0,
+  "sourceUnchanged": true,
+  "headAfter": "6ace503af163914e2d548496d4e960444ae10bb5",
+  "ownedSimulatorShutdown": true,
+  "redPreserved": "../focused-red.xcresult and ../ThreadSnapshotStoreTests.red.swift (66line) untouched",
+  "binaryIdentityReceipt": "complete-native-binary-identities.json",
+  "redImplementationBinaryLimit": "Original RED debug dylib hash not retained before authorized reuse/rebuild; unavailable. No retroactive identity claim.",
+  "uiRecipe": "proposed-ui-seven-recipe.json; NOT EXECUTED"
+}
