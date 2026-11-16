@@ -2,6 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans for the owned implementation and a fresh read-only review before publication. No extra worktree or delegated source editing.
 
+Checkbox state is not evidence of completion. Code, verification receipts and merged PRs establish delivered behavior; #6064 is the durable work record. This plan grants no execution or publication authority.
+
 **Goal:** Collect bounded native recognizer/routing evidence and independent write-error receipts on the failing hosted runtime without changing the original strict matrix.
 
 **Architecture:** Reuse the existing reviewed DEBUG observer at the trace-file boundary. Add simulator-scoped marker collection to the current workflow; preserve diagnostic and acceptance boundaries.
