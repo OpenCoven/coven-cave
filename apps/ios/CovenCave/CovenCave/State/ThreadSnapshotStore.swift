@@ -50,14 +50,15 @@ actor ThreadSnapshotStore {
 
     /// Complete the disk purge before the denied conversation read returns.
     /// This security invalidation must finish even if its caller is cancelled.
-    func purgeConversation(sessionId: String, snapshotIDs: Set<String> = []) throws {
-        guard !sessionId.isEmpty else { return }
+    @discardableResult
+    func purgeConversation(sessionId: String, snapshotIDs: Set<String> = []) throws -> Set<String> {
+        guard !sessionId.isEmpty else { return [] }
         refusedConversationIDs.insert(sessionId)
         refusedSnapshotIDs.formUnion(snapshotIDs)
         let snapshots = try load()
         let retained = retainedSnapshots(snapshots)
-        guard retained.count != snapshots.count else { return }
-        try write(retained, cancellable: false)
+        if retained.count != snapshots.count { try write(retained, cancellable: false) }
+        return refusedSnapshotIDs
     }
 
     private func retainedSnapshots(_ snapshots: [ThreadSnapshot]) -> [ThreadSnapshot] {

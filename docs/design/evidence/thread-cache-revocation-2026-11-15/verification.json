@@ -1,17 +1,17 @@
 {
   "issue": 6487,
-  "testedBaseCommit": "f21325cbcbfc09841ffaf6771021c02710700ece",
-  "testedSourceFingerprint": "488eb59159790ca3a7ec54444bbd8cea1d7d154a64c9da3911094d6857057341",
+  "testedBaseCommit": "53d6ad514b1aa9fc189b438e63c7919d852376fc",
+  "testedSourceFingerprint": "7391c7aaca6e117a2b9401e3154ca9ff2ae0caa3ae41703d5ab1ebe30a3da137",
   "sourceUnchangedDuringNativeRun": true,
-  "finishedAt": "2026-11-15T23:26:59.399Z",
+  "finishedAt": "2026-11-16T00:30:53.226Z",
   "host": {
     "node": "v24.22.0",
     "xcode": "Xcode 27.2\nBuild version 27B52"
   },
   "nativeSuite": {
     "result": "Passed",
-    "totalTestCount": 1228,
-    "passedTests": 1228,
+    "totalTestCount": 1229,
+    "passedTests": 1229,
     "failedTests": 0,
     "skippedTests": 0,
     "expectedFailures": 0,
@@ -28,7 +28,7 @@
         },
         "expectedFailures": 0,
         "failedTests": 0,
-        "passedTests": 1228,
+        "passedTests": 1229,
         "skippedTests": 0,
         "testPlanConfiguration": {
           "configurationId": "1",
@@ -51,10 +51,11 @@
   },
   "changedSourceSha256": {
     "apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift": "d505b9c73dc41f4d0651b920df471fcd7cda402710b7017997bb259dc3eab75d",
-    "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "b751281a68a9878d6d59d0db852be8109578245db4edd827c0d5b4c23377edc8",
-    "apps/ios/CovenCave/CovenCave/State/ChatThread.swift": "9d60c4cde08c1b3098e63f2187b20735f04201d6ec8e0686e6affc620d362576",
-    "apps/ios/CovenCave/CovenCave/State/ThreadSnapshotStore.swift": "6fe1df7c18af33eb57715bb27ac5168c52ff24b910cd33bb1a9ecbc783af5458",
-    "apps/ios/CovenCave/CovenCaveTests/ThreadSnapshotStoreTests.swift": "8eb29a55a9363abb07279032f8174c4b042a404912f2da0f8a60c7d1c64f4321"
+    "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "0b036a2ad9937c85f454e7d278936e17ea87460984f55ca5b870497eec534c7d",
+    "apps/ios/CovenCave/CovenCave/State/ChatThread.swift": "1ff60a7592410bd34e565c03d7bc946306e82cf31ab88502b528790c652225a6",
+    "apps/ios/CovenCave/CovenCave/State/ThreadSnapshotStore.swift": "2e81763f3717b3414373a8c77e199e8259e18e77eadcdc629d1e7a23591ac1a9",
+    "apps/ios/CovenCave/CovenCaveTests/ThreadSnapshotStoreTests.swift": "fffdd51bcbb28ab565562825fd7a1948e2d557cc8705cac8342a52a95d6720d9"
   },
-  "physicalDeviceVerified": false
+  "physicalDeviceVerified": false,
+  "sourceContractUpdateAfterNativeRun": "The mobile preflight and group reload source contracts were strengthened to require revocation guards while preserving the endpoint lease and accessible-group recovery checks. All five native source/test hashes identify unchanged bytes from the native run; the full mobile suite passed after these contract updates."
 }

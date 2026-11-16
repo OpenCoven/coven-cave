@@ -460,9 +460,8 @@ assert.doesNotMatch(
 );
 assert.match(
   thread,
-  /func reload\(client: CaveClient\) async throws \{\s*\n\s*guard !isStreaming else \{ return \}\s*\n\s*if isGroup \{/,
-  "reload must no longer refuse groups — the group re-sync is the recovery gesture, and " +
-    "the guard that made the old copy true is what changed",
+  /func reload\(client: CaveClient\) async throws \{\s*\n\s*guard !isAccessRevoked else \{ return \}\s*\n\s*guard !isStreaming else \{ return \}\s*\n\s*if isGroup \{/,
+  "reload must reject revoked threads while retaining group re-sync as the recovery gesture for accessible chats",
 );
 
 // -- A partial group delete is stated, never undone and never hidden --------

@@ -303,10 +303,17 @@ final class ChatThread: Identifiable, Hashable {
     nonisolated func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
 
     let id: String
-    var title: String
+    private(set) var isAccessRevoked = false
+    var title: String {
+        didSet { if isAccessRevoked && title != "Chat" { title = "Chat" } }
+    }
     var familiarIds: [String]
-    var sessionIds: [String: String]
-    var projectRoot: String?
+    var sessionIds: [String: String] {
+        didSet { if isAccessRevoked && !sessionIds.isEmpty { sessionIds = [:] } }
+    }
+    var projectRoot: String? {
+        didSet { if isAccessRevoked && projectRoot != nil { projectRoot = nil } }
+    }
     /// Thread-owned so two unsent chats never share a view-local model choice.
     var pendingModelOverride: String?
     /// Structural changes (append/insert/remove/replace — here or from
@@ -314,6 +321,9 @@ final class ChatThread: Identifiable, Hashable {
     /// deltas go through `mutate`, which updates one row in place instead.
     var messages: [DisplayMessage] {
         didSet {
+            // A held view or an already-started history read can outlive removal
+            // from AppModel. Never let either restore a revoked transcript.
+            if isAccessRevoked && !messages.isEmpty { messages = [] }
             guard !inPlaceMutation else { return }
             rebuildTranscript()
         }
@@ -1594,6 +1604,23 @@ final class ChatThread: Identifiable, Hashable {
         updatedAt = Date()
     }
 
+    /// Invalidate the object too: a view or suspended task may still retain it
+    /// after AppModel removes the row. This fence lasts for this object lifetime.
+    func revokeAccess() {
+        isAccessRevoked = true
+        pendingServerDelete?.cancel()
+        pendingServerDelete = nil
+        activeDeliveries.removeAll()
+        replayingQueued = false
+        clearMessages()
+        sessionIds.removeAll()
+        flowSessionIds.removeAll()
+        pendingModelOverride = nil
+        projectRoot = nil
+        title = "Chat"
+        needsProjectSelection = false
+    }
+
     /// Re-fetch this thread's conversation from the server and replace the local
     /// messages — backs pull-to-refresh, so a chat advanced on another device
     /// catches up. A group is N independent sessions with no shared turn
@@ -1605,6 +1632,7 @@ final class ChatThread: Identifiable, Hashable {
     /// failure so the caller (pull to refresh) can surface it instead of
     /// failing silently.
     func reload(client: CaveClient) async throws {
+        guard !isAccessRevoked else { return }
         guard !isStreaming else { return }
         if isGroup {
             try await reloadGroup(client: client)
@@ -1920,6 +1948,7 @@ final class ChatThread: Identifiable, Hashable {
     }
 
     private func canSend(to familiarIds: [String]) -> Bool {
+        guard !isAccessRevoked else { return false }
         guard !isFlowRun else { return false }
         if normalizedProjectRoot != nil { return true }
         return familiarIds.allSatisfy {
@@ -1948,6 +1977,7 @@ final class ChatThread: Identifiable, Hashable {
         modelOverrideScope: ChatModelOverrideScope? = nil,
         mentionedFiles: [String] = []
     ) -> CaveClient.SendBody? {
+        guard !isAccessRevoked else { return nil }
         guard !isFlowRun else { return nil }
         let rawSessionID = sessionIds[familiarId]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2112,7 +2142,7 @@ final class ChatThread: Identifiable, Hashable {
         do {
             for try await frame in client.sendStream(
                 body,
-                preflight: { liveDispatchLeaseIsCurrent?() ?? true },
+                preflight: { !self.isAccessRevoked && (liveDispatchLeaseIsCurrent?() ?? true) },
                 onRequestStarted: {
                     ChatTurnNotifier.shared.turnStarted(
                         thread: self,
@@ -2121,6 +2151,7 @@ final class ChatThread: Identifiable, Hashable {
                     )
                 }
             ) {
+                guard !isAccessRevoked else { throw CancellationError() }
                 receivedAnyEvent = true
                 apply(frame.event, into: messageId, familiarId: familiarId,
                       userMessageId: userMessageId, connection: client.connection,
@@ -2366,6 +2397,7 @@ final class ChatThread: Identifiable, Hashable {
     private func apply(_ event: StreamEvent, into messageId: String, familiarId: String,
                        userMessageId: String?, connection: CaveConnection,
                        sawDone: inout Bool, coalescer: StreamCoalescer, onChange: @escaping () -> Void) {
+        guard !isAccessRevoked else { _ = coalescer.drain(); return }
         switch event {
         case .session(let sid):
             if !sid.isEmpty {
@@ -2874,6 +2906,7 @@ final class ChatThread: Identifiable, Hashable {
     /// O(n) scan, and patches the matching row without re-deriving separators
     /// (a mutate never changes `createdAt`, so separators can't move).
     private func mutate(_ messageId: String, _ body: (inout DisplayMessage) -> Void) {
+        guard !isAccessRevoked else { return }
         guard let idx = transcriptIndex.position(of: messageId),
               idx < messages.count, messages[idx].id == messageId else { return }
         var message = messages[idx]

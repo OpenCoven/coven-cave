@@ -27,6 +27,19 @@ private final class ThreadSnapshotRevocationProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+private actor RevocationHydrationGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var started = false
+    func wait() async {
+        started = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 final class ThreadSnapshotStoreTests: XCTestCase {
     private var directory: URL!
     private var fileURL: URL!
@@ -62,6 +75,52 @@ final class ThreadSnapshotStoreTests: XCTestCase {
     }
 
     // MARK: - Access revocation
+
+    @MainActor
+    func testHydrationStartedBeforeRefusalCannotRestoreRevokedMemory() async throws {
+        let revoked = makeSnapshot(id: "late-hydrated", sessionId: "denied-session")
+        let kept = makeSnapshot(id: "kept", sessionId: "other-session")
+        let store = ThreadSnapshotStore(url: fileURL)
+        try await store.save([revoked, kept])
+        let suite = "ThreadSnapshotStoreTests.hydration.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ThreadSnapshotRevocationProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let gate = RevocationHydrationGate()
+        let app = AppModel(defaults: defaults, loadPersistedConnection: false,
+                           threadStoreURL: fileURL, widgetSnapshotDefaults: defaults,
+                           threadSnapshotLoader: {
+            await gate.wait()
+            return [revoked, kept]
+        }, clientSession: session)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !(await gate.started), ContinuousClock.now < deadline { await Task.yield() }
+        let started = await gate.started
+        XCTAssertTrue(started)
+        app.connection = CaveConnection(host: "cache-revocation.invalid")
+        let client = try XCTUnwrap(app.client)
+        do {
+            _ = try await client.conversation(sessionId: "denied-session")
+            XCTFail("Expected an access refusal")
+        } catch CaveError.badResponse(403) { }
+        await gate.release()
+        let hydrated = ContinuousClock.now.advanced(by: .seconds(5))
+        while !app.threads.contains(where: { $0.id == kept.id }), ContinuousClock.now < hydrated {
+            await Task.yield()
+        }
+        XCTAssertEqual(app.threads.map(\.id), [kept.id])
+        var rebound = revoked
+        rebound.sessionIds = ["nova": "new-session"]
+        let staleThread = ChatThread(snapshot: rebound)
+        app.threads.append(staleThread)
+        XCTAssertEqual(app.threads.map(\.id), [kept.id])
+        XCTAssertTrue(staleThread.messages.isEmpty)
+    }
 
     @MainActor
     func testConversationSpecificRequestsPurgeTheirRefusedSession() async throws {
@@ -120,12 +179,15 @@ final class ThreadSnapshotStoreTests: XCTestCase {
                            widgetSnapshotDefaults: defaults, clientSession: session)
         app.connection = CaveConnection(host: "cache-revocation.invalid")
         app.threads = [ChatThread(snapshot: makeSnapshot(id: "local-unsaved", sessionId: "denied-session"))]
+        let heldThread = app.threads[0]
         let client = try XCTUnwrap(app.client)
         do {
             _ = try await client.conversation(sessionId: "denied-session")
             XCTFail("Expected an access refusal")
         } catch CaveError.badResponse(403) { }
-        app.threads[0].sessionIds["nova"] = "replacement-session"
+        XCTAssertTrue(app.threads.isEmpty)
+        XCTAssertTrue(heldThread.messages.isEmpty)
+        heldThread.sessionIds["nova"] = "replacement-session"
         let flushed = await app.flushThreadsAndWait()
         XCTAssertTrue(flushed)
         let reloaded = try await ThreadSnapshotStore(url: fileURL).load()
@@ -282,6 +344,8 @@ final class ThreadSnapshotStoreTests: XCTestCase {
                            widgetSnapshotDefaults: defaults, clientSession: session)
         app.connection = CaveConnection(host: "cache-revocation.invalid")
         app.threads = [ChatThread(snapshot: revoked), ChatThread(snapshot: kept)]
+        let heldThread = app.threads[0]
+        app.setThreadDraft(heldThread.id, text: "private draft")
         let client = try XCTUnwrap(app.client)
 
         do {
@@ -293,9 +357,28 @@ final class ThreadSnapshotStoreTests: XCTestCase {
 
         let afterRefusal = try await store.load()
         XCTAssertEqual(afterRefusal, [kept])
+        XCTAssertEqual(app.threads.map(\.id), [kept.id])
+        XCTAssertTrue(heldThread.messages.isEmpty)
+        XCTAssertTrue(heldThread.transcriptRows.isEmpty)
+        XCTAssertTrue(heldThread.sessionIds.isEmpty)
+        XCTAssertNil(app.threadDrafts[heldThread.id])
         // A later background flush still holds the old in-memory snapshot.
         // Even session rebinding must not resurrect its revoked transcript.
-        app.threads[0].sessionIds["nova"] = "replacement-session"
+        heldThread.sessionIds["nova"] = "replacement-session"
+        heldThread.messages = revoked.messages
+        app.threads.append(heldThread)
+        XCTAssertTrue(heldThread.messages.isEmpty, "A late history response must not restore memory")
+        XCTAssertTrue(heldThread.sessionIds.isEmpty, "A late session event must not restore its binding")
+        XCTAssertEqual(app.threads.map(\.id), [kept.id], "A late rollback must not reinsert a revoked thread")
+        app.setThreadDraft(heldThread.id, text: "late draft callback")
+        XCTAssertNil(app.threadDrafts[heldThread.id])
+        for _ in 0..<2 {
+            heldThread.revokeAccess()
+            heldThread.messages = []
+            heldThread.sessionIds = [:]
+            heldThread.projectRoot = nil
+            heldThread.title = "Chat"
+        }
         let flushed = await app.flushThreadsAndWait()
         XCTAssertTrue(flushed)
         let afterFlush = try await ThreadSnapshotStore(url: fileURL).load()

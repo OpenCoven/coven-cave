@@ -515,7 +515,11 @@ final class AppModel {
     /// User's preferred familiar order (ids), applied over the server's order
     /// and persisted locally. Unknown/new familiars fall to the end.
 
-    var threads: [ChatThread] = []
+    var threads: [ChatThread] = [] {
+        didSet { removeAccessRevokedThreads() }
+    }
+    @ObservationIgnored private var revokedConversationIDs: Set<String> = []
+    @ObservationIgnored private var revokedThreadIDs: Set<String> = []
     /// Default Chats destination: the newest active conversation. Pinning only
     /// affects list order and never makes an older thread the launch default.
     var mostRecentThread: ChatThread? {
@@ -2212,11 +2216,30 @@ final class AppModel {
         // A delayed response from a replaced host cannot invalidate its successor.
         // Cancellation alone does not undo an access denial already received.
         guard connectionConfigurationGeneration == generation, self.connection == connection else { return }
-        let affected = Set(threads.filter {
-            $0.id == sessionId || $0.sessionIds.values.contains(sessionId)
-                || $0.snapshot.flowSessionIds?.contains(sessionId) == true
-        }.map(\.id))
-        try await threadStore.purgeConversation(sessionId: sessionId, snapshotIDs: affected)
+        revokedConversationIDs.insert(sessionId)
+        removeAccessRevokedThreads()
+        let removed = try await threadStore.purgeConversation(sessionId: sessionId,
+                                                              snapshotIDs: revokedThreadIDs)
+        guard connectionConfigurationGeneration == generation, self.connection == connection else { return }
+        revokedThreadIDs.formUnion(removed)
+        removeAccessRevokedThreads()
+    }
+
+    private func removeAccessRevokedThreads() {
+        let affected = threads.filter {
+            $0.isAccessRevoked || revokedThreadIDs.contains($0.id) || revokedConversationIDs.contains($0.id)
+                || $0.sessionIds.values.contains(where: { revokedConversationIDs.contains($0) })
+                || !$0.flowSessionIds.isDisjoint(with: revokedConversationIDs)
+        }
+        guard !affected.isEmpty else { return }
+        for thread in affected {
+            revokedThreadIDs.insert(thread.id)
+            threadDrafts.removeValue(forKey: thread.id)
+            thread.revokeAccess()
+        }
+        // Also runs on late hydration/rollback assignments, so a new instance
+        // created from an old snapshot cannot bypass the held-object fence.
+        threads.removeAll { $0.isAccessRevoked }
     }
 
     /// Drop cached model state for a familiar on the current host. Every model
@@ -6672,6 +6695,10 @@ final class AppModel {
     /// Keep the observable draft mirror in step with the composer's debounced
     /// UserDefaults persistence; list rows read this to badge drafted threads.
     func setThreadDraft(_ threadId: String, text: String?) {
+        guard !revokedThreadIDs.contains(threadId) else {
+            threadDrafts.removeValue(forKey: threadId)
+            return
+        }
         if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             if threadDrafts[threadId] != text { threadDrafts[threadId] = text }
         } else if threadDrafts[threadId] != nil {
