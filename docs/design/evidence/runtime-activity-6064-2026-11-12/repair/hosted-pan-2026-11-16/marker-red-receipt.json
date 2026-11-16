@@ -1,0 +1,11 @@
+{
+  "at": "2026-11-16T08:21:22.697995+00:00",
+  "argv": [
+    "node",
+    "--test",
+    "scripts/ios-native-command.test.mjs"
+  ],
+  "exitCode": 1,
+  "expected": "7pass1missing-collector assertionfail,0skip",
+  "firstObserverLimit": "Firstshell printedlogafterNode andreturned0; originalrawRED8/7/1retained, thisread-onlyrepeat captures actualNodeexit."
+}

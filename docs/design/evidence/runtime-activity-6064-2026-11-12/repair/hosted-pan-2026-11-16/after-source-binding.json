@@ -1,0 +1,19 @@
+{
+  "at": "2026-11-16T08:36:24.921060+00:00",
+  "head": "e9465e80c9d062ad579f3d1d24b0e83a2207dc15",
+  "sourceFiles": 7193,
+  "fingerprint": "f5bb8ad61a8e573614692d5948c3e31b2b52549da9e863a40d20d304d33a3069",
+  "reviewManifestAndOriginalUITestMatch": true,
+  "changedFiles": [
+    ".github/workflows/ios-transcript-regression.yml",
+    "apps/ios/CovenCave/CovenCave/Views/ChatScrollAnchor.swift",
+    "apps/ios/CovenCave/CovenCave/Views/ChatScrollTrace.swift",
+    "scripts/ios-native-command.test.mjs"
+  ],
+  "untracked": [
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md",
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md"
+  ],
+  "currentPackageBuildId": "a2AQ6bxnFbWWl0aGMmpds",
+  "nativeOfflineDiagnosticOnly": true
+}

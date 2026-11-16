@@ -1,0 +1,74 @@
+{
+  "observedAt": "2026-11-16T08:07:01.362969+00:00",
+  "classification": "Native measurement attempt not accepted; separate diagnostic functional pass retained, originalRelease3 matrix still1pass2fail",
+  "head": "e9465e80c9d062ad579f3d1d24b0e83a2207dc15",
+  "appSha256": "aeafceb04efa5b43273ae5c2c7a7ec5f9c5f53653af87026debec346c5b4d7d0",
+  "sourceFiles": 7191,
+  "normalSigningAndSourcePreserved": true,
+  "invocations": {
+    "first": "Originalearlier-tool diagnostic interruptedbyobserver at90s due stale pre-XCTest installationpath;0profilerattempts; not a functionalresult",
+    "identityProbe": "OneofflineCLIlaunch toproveactualinstalledpath/hash/PID andownedsimulator servicebinding; normalterminate/shutdown; notatest/capture",
+    "corrected": "Secondseparatenativeinvocation; originalearlier-toolmethod1pass163.243s0skip, unchanged180/300/900 andgesture/assertion bytes; no productfix inferred",
+    "actualProfilerAttempts": 1
+  },
+  "provenHarnessCause": "XCTest reinstalls candidate to a new container. The exact pretest path was stale; correctedfreshget_app_container bound actualPID41539 and current normal-signature binary, without any globalprocessname/foreigncatalog search.",
+  "cpuRecording": {
+    "targetPid": 41539,
+    "startAcknowledged": true,
+    "configuredSeconds": 60,
+    "normalTimeLimitReached": true,
+    "observerOuterSeconds": 100,
+    "observerInterruptAfterDeadline": true,
+    "exitCode": 1,
+    "traceComplete": false,
+    "traceFiles": 1,
+    "traceBytes": 40960,
+    "staticMetadataExit": 15,
+    "staticMetadataError": "Document Missing Template Error",
+    "acceptedSamples": 0,
+    "causeLimit": "The100secondobserver interruptedfinalization afterconfigured60s recording. This doesnotprove platform/attachunsupported or explainwhyfinalizationslow. No retry/deadlineextension/profilersubstitution/securitychange."
+  },
+  "separateFunctionalEvidence": {
+    "method": "PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+    "counts": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "durationSeconds": 163.243,
+    "automaticScreenshots": 2,
+    "visualObservation": "Both unedited automatic screenshots visibly retain fixture-60 expanded and richTimelineitem60 onfirstvisit andreturn. No additionalUI capture/taps were added.",
+    "limits": "Separateunder-profilerdiagnosticpass doesnotreplace firstoriginalRelease180s timeout, mixedAX failure, strict21 failure, or nativeCPU/frame/human/physical gate."
+  },
+  "cleanup": {
+    "pids": {
+      "at": "2026-11-16T07:59:25.672098+00:00",
+      "pids": {
+        "wrapper": {
+          "pid": 37250,
+          "state": "ESRCH"
+        },
+        "test": {
+          "pid": 41150,
+          "state": "ESRCH"
+        },
+        "recorder": {
+          "pid": 41596,
+          "state": "ESRCH"
+        },
+        "app": {
+          "pid": 41539,
+          "state": "ESRCH"
+        },
+        "notification": {
+          "pid": 41588,
+          "state": "ESRCH"
+        }
+      }
+    },
+    "ownedSimulator": "64878DF0-DB73-45A9-8D68-3F22393F7D64 Shutdown/preserved",
+    "traceFileHandles": "lsof exactownedtracefile exit1/nooutput; artifactretained",
+    "storedUserState": "Onlyowned offlinefixture/scratchhost; no installeduserCoven orforeignsimulatoroperation"
+  },
+  "next": "Review existing bounded pan observer for the failing hosted runtime; preserve originaltestbytes and all21strict executions, privacybounds and firstfailures. Frame/device/human/owner gates remain."
+}

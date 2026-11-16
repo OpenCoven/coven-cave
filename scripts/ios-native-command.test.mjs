@@ -182,8 +182,66 @@ await test('transcript workflow owns deadlines and uploads logs separately from 
   assert.ok(uploads.some((s) => String(s.with.path).includes('scroll-*.log')));
   assert.ok(uploads.some((s) => String(s.with.path).includes('transcript-evidence/results')));
   for (const s of uploads) assert.match(String(s.if), /always\(\)/);
-  const nonNative = steps.filter((s) => !native.includes(s) && !uploads.includes(s)).reduce((n, s) => n + (s['timeout-minutes'] ?? 0), 0);
+  const otherOwned = steps.filter((s) => !native.includes(s) && String(s.run).includes('ios-native-command.py run'));
+  let otherOwnedSeconds = 0;
+  for (const s of otherOwned) {
+    const command = String(s.run);
+    const total = ['timeout', 'grace', 'terminate', 'kill'].reduce((n, flag) => {
+      const value = Number(command.match(new RegExp(`--${flag}-seconds (\\d+)`))?.[1]);
+      assert.ok(value > 0, 'every owned command has an explicit shutdown bound');
+      return n + value;
+    }, 0);
+    assert.ok(total <= 30, 'independent marker collection fits the remaining resource allowance');
+    assert.ok(total < s['timeout-minutes'] * 60);
+    otherOwnedSeconds += total;
+  }
+  const nonNative = steps.filter((s) => !native.includes(s) && !otherOwned.includes(s) && !uploads.includes(s)).reduce((n, s) => n + (s['timeout-minutes'] ?? 0), 0);
   const uploadsMinutes = uploads.reduce((n, s) => n + s['timeout-minutes'], 0);
-  assert.ok(nativeSeconds / 60 + nonNative + uploadsMinutes <= job['timeout-minutes'] - 1, 'retain at least one minute inside the bounded job budget');
+  assert.ok((nativeSeconds + otherOwnedSeconds) / 60 + nonNative + uploadsMinutes <= job['timeout-minutes'] - 1, 'retain at least one minute inside the bounded job budget');
   assert.equal(job['timeout-minutes'], 108, 'allow the complete measured native matrix plus independent failure collection');
+});
+
+await test('hosted pan marker collection preserves query failures without broadening the selected simulator', async () => {
+  const workflow = parse(await readFile(path.join(root, '.github/workflows/ios-transcript-regression.yml'), 'utf8'));
+  const steps = workflow.jobs.transcript.steps;
+  const marker = steps.find((s) => String(s.run).includes('scroll-pan-marker.receipt.json'));
+  assert.ok(marker, 'a failed or missing trace needs an independent writer-error collection channel');
+  const strictIndex = steps.findIndex((s) => String(s.name).includes('three full runs'));
+  const releaseIndex = steps.findIndex((s) => String(s.name).includes('Release shrink'));
+  assert.ok(steps.indexOf(marker) > strictIndex && steps.indexOf(marker) < releaseIndex);
+  assert.match(String(marker.if), /!cancelled\(\)/, 'collection must still run after a strict failure');
+  assert.match(String(marker.if), /steps\.destination\.outcome == 'success'/);
+  assert.notEqual(marker['continue-on-error'], true);
+
+  const dir = await mkdtemp(path.join(tmpdir(), 'ios-pan-marker-'));
+  try {
+    const bin = path.join(dir, 'bin');
+    await mkdir(bin);
+    // The OS simulator is unavailable to this contract; run the real workflow
+    // shell and command owner against one deliberately failing external tool.
+    await writeFile(path.join(bin, 'xcrun'), '#!/usr/bin/env python3\nimport sys\nprint("CAVE_SCROLL_TRACE_WRITE_ERROR fixture")\nsys.exit(17)\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, RUNNER_TEMP: dir,
+      CAVE_TEST_DESTINATION: 'platform=iOS Simulator,id=12345678-1234-1234-1234-123456789ABC' };
+    const result = spawnSync('bash', ['-c', marker.run], { cwd: root, env, encoding: 'utf8', timeout: 10_000 });
+    assert.equal(result.status, 17, result.stderr);
+    const saved = await json(path.join(dir, 'scroll-pan-marker.receipt.json'));
+    assert.equal(saved.childExitCode, 17);
+    assert.equal(saved.terminal, true);
+    assert.equal(saved.timedOut, false);
+    assert.deepEqual(saved.command, ['xcrun', 'simctl', 'spawn', '12345678-1234-1234-1234-123456789ABC',
+      'log', 'show', '--style', 'compact', '--last', '70m', '--predicate',
+      'process == "CovenCave" AND eventMessage CONTAINS "CAVE_SCROLL_TRACE_WRITE_ERROR"']);
+    const log = await readFile(path.join(dir, 'scroll-pan-marker.log'), 'utf8');
+    assert.match(log, /Marker query started: \d{4}-\d\d-\d\dT/);
+    assert.match(log, /Marker query finished: \d{4}-\d\d-\d\dT.*status=17/);
+    assert.match(log, /CAVE_SCROLL_TRACE_WRITE_ERROR fixture/);
+    const invalidDir = path.join(dir, 'invalid');
+    await mkdir(invalidDir);
+    const invalid = spawnSync('bash', ['-c', marker.run], { cwd: root,
+      env: { ...env, RUNNER_TEMP: invalidDir, CAVE_TEST_DESTINATION: 'platform=iOS Simulator,id=invalid' },
+      encoding: 'utf8', timeout: 10_000 });
+    assert.notEqual(invalid.status, 0);
+    await assert.rejects(readFile(path.join(invalidDir, 'scroll-pan-marker.receipt.json')));
+    assert.doesNotMatch(await readFile(path.join(invalidDir, 'scroll-pan-marker.log'), 'utf8'), /fixture/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

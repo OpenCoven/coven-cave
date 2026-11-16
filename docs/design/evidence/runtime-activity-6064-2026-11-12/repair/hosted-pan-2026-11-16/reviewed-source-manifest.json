@@ -1,0 +1,17 @@
+{
+  "at": "2026-11-16T08:24:00.133267+00:00",
+  "baseHead": "e9465e80c9d062ad579f3d1d24b0e83a2207dc15",
+  "files": {
+    ".github/workflows/ios-transcript-regression.yml": "24e4e7bd32a5b8f7a5eb53343f706f05dc0e26cce06fae9b673fbcb56865dc72",
+    "apps/ios/CovenCave/CovenCave/Views/ChatScrollAnchor.swift": "3b0c1317dc96a9c6d996427351a0aaaab9d124c8eab760111b0ebeeb4c4a3cc9",
+    "apps/ios/CovenCave/CovenCave/Views/ChatScrollTrace.swift": "649ca56b6633d9d02e22d507a9a35a8dd1b1efb60a887180ebd90eaef179e946",
+    "scripts/ios-native-command.test.mjs": "efd14c73ba7217024313f784350d4868f588b7a6d279c3a3f4dbb7a4c9ab2880",
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "9c2b740f65ac0759960a4614894cf541966436f0e1c6f7e628de47d715d30a4a",
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "8fb1101c3492817ab52f9561f718b29cdd6d1bc1f13e7284868d2b763d911160"
+  },
+  "originalUITestSha256": "bf2c8ca1e8968cad2e4e11651aa9c881371f97365ffdf3baff0a704d62556211",
+  "newMarkerBoundSeconds": 30,
+  "jobBudgetSeconds": 6480,
+  "sumBoundedAndOtherStepSeconds": 6420,
+  "reserveSeconds": 60
+}

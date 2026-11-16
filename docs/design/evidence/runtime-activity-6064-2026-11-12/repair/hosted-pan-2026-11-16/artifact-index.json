@@ -1,0 +1,223 @@
+{
+  "createdAt": "2026-11-16T08:47:47.440958+00:00",
+  "sanitization": "Only listed absolute owned paths become tokens. Original and packet hashes are separate; no claim of byte-identical sanitized logs. Raw originals retained under designated local evidence root. No physical-device inventory or environment payload is published.",
+  "files": [
+    {
+      "file": "reviewed-source-manifest.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/concrete-review-manifest.json",
+      "originalSha256": "7695940c778e962bc0fa39b012e8947b59ec02103cc08239a7d26efd183c9fcd",
+      "packetSha256": "7695940c778e962bc0fa39b012e8947b59ec02103cc08239a7d26efd183c9fcd",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "marker-red-receipt.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/marker-contract-red-receipt.json",
+      "originalSha256": "e9f6e46acd20db628cf6fa87c5555648cc3a1d2a411f671b9f7b14b4f5d9fffb",
+      "packetSha256": "e9f6e46acd20db628cf6fa87c5555648cc3a1d2a411f671b9f7b14b4f5d9fffb",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "marker-red.log",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/marker-contract-red-terminal.log",
+      "originalSha256": "5fdb1be76d389c1551155d3a110a2503dd05280111080e1b9e202748de679b69",
+      "packetSha256": "2e33cf56f78eb3015acfb976d35bfa284642dc96a27aea21a62bd5be9d0793bd",
+      "pathTokensApplied": true
+    },
+    {
+      "file": "first-green-setup-failure-receipt.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/marker-contract-green-receipt.json",
+      "originalSha256": "38f4817f313f70e4bab3b9d2e39f224114640717ab6d2661772087cde71c2085",
+      "packetSha256": "38f4817f313f70e4bab3b9d2e39f224114640717ab6d2661772087cde71c2085",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "first-green-setup-failure.log",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/marker-contract-green.log",
+      "originalSha256": "0ebd22bcb75aefeed13249f9f17e64f9972484354862eb9bfec01ef0f108549d",
+      "packetSha256": "2419a3a26ab7f37402da0cf7b8ca9072ddeb380bf43487dce8fd1a52b46f08a3",
+      "pathTokensApplied": true
+    },
+    {
+      "file": "marker-green-receipt.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/marker-contract-green-v2-receipt.json",
+      "originalSha256": "c6bf5e47e8f26d826c7b1decdcf18731b4e7f0eeab80ae5e7b2321a109ee4682",
+      "packetSha256": "c6bf5e47e8f26d826c7b1decdcf18731b4e7f0eeab80ae5e7b2321a109ee4682",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "marker-green.log",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/marker-contract-green-v2.log",
+      "originalSha256": "88653e6402ed9aac5fcdf7a748626059097f5f529c1c82b5e9a1b206b73a42f5",
+      "packetSha256": "88653e6402ed9aac5fcdf7a748626059097f5f529c1c82b5e9a1b206b73a42f5",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "mobile-source-receipt.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/mobile-source-receipt.json",
+      "originalSha256": "55690bda121b58ddd67a10e18d608b9ab24d8ab2e80967a71a5249e3c141f54b",
+      "packetSha256": "55690bda121b58ddd67a10e18d608b9ab24d8ab2e80967a71a5249e3c141f54b",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "wiring-receipt.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/wiring-receipt.json",
+      "originalSha256": "05986eb736169f115fa8452cebe9b667d84d3fbbfce64ab132a4164572bf8325",
+      "packetSha256": "05986eb736169f115fa8452cebe9b667d84d3fbbfce64ab132a4164572bf8325",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "native-runner-self-review.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native-runner-self-review.json",
+      "originalSha256": "354fc193527d9080c13fbbe6851f3f65a94bae350d57c3ca152223c8c10368c2",
+      "packetSha256": "354fc193527d9080c13fbbe6851f3f65a94bae350d57c3ca152223c8c10368c2",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "early-source-review.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-review.json",
+      "originalSha256": "89a4f5c6191545d98af61b8e37368dff15bc9713bf47aa579a3b1ca020f4c320",
+      "packetSha256": "89a4f5c6191545d98af61b8e37368dff15bc9713bf47aa579a3b1ca020f4c320",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "final-source-review.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-final-review.json",
+      "originalSha256": "0c2f72304a9e8a873f35d586266d0306415f847f03d4aaa1d09e7efe552de829",
+      "packetSha256": "0c2f72304a9e8a873f35d586266d0306415f847f03d4aaa1d09e7efe552de829",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "cpu-first-harness-failure.json",
+      "source": "<raw-evidence>/remaining-qualification/native-cpu-diagnostic/first-harness-failure.json",
+      "originalSha256": "04614366a239f50c21d322c1b7c0ca6ecbe56df1f8f5cf4c398b7530d95cb8ab",
+      "packetSha256": "04614366a239f50c21d322c1b7c0ca6ecbe56df1f8f5cf4c398b7530d95cb8ab",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "cpu-measurement-not-accepted.json",
+      "source": "<raw-evidence>/remaining-qualification/native-cpu-diagnostic-current-path/proof-summary.json",
+      "originalSha256": "826b7af0cafc8e954b7e281585143f4d755563b776f6bb3d3686c80beddfd54b",
+      "packetSha256": "826b7af0cafc8e954b7e281585143f4d755563b776f6bb3d3686c80beddfd54b",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "execution-source-binding.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/before-binding.json",
+      "originalSha256": "ac4f6f466d4206816709f3f58ac39141675f665e48f39d2c9caa4f6ab389f604",
+      "packetSha256": "ac4f6f466d4206816709f3f58ac39141675f665e48f39d2c9caa4f6ab389f604",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "after-source-binding.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/after-binding.json",
+      "originalSha256": "2650238dd15154ffcdb2a66f00fdaf912100bb11761937ad19eb8d24271d248d",
+      "packetSha256": "2650238dd15154ffcdb2a66f00fdaf912100bb11761937ad19eb8d24271d248d",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "native-binary-identities.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/binary-identities.json",
+      "originalSha256": "bee881f1a75c070b3b83f53fb28357c6f561d0784a6d3c7aad5158c0139d3c79",
+      "packetSha256": "ee1eef0280278bbc92fde0974a497ca5042250b1cf42c6a2ab8b3dfb16e9ce3a",
+      "pathTokensApplied": true
+    },
+    {
+      "file": "renderer-identity.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/renderer-identity.json",
+      "originalSha256": "6efa8da477a180662186fef54e5da480905792ad4086645b0786df2acfa9d8d4",
+      "packetSha256": "6e7ad83603c273e90069cc20ff93ae498ed4e781607b23a83529447cd4175561",
+      "pathTokensApplied": true
+    },
+    {
+      "file": "native-diagnostic-proof.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/proof-summary.json",
+      "originalSha256": "803b87b7f99c822e089d483b1558ad1dc116984bf90d0f8d1add36d16358b7af",
+      "packetSha256": "803b87b7f99c822e089d483b1558ad1dc116984bf90d0f8d1add36d16358b7af",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "root-final-verification.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/root-final-verification.json",
+      "originalSha256": "7d41be4dff4bf74588115514eae8e23d0b47a507bf667b3e0f9e8425e87c56b7",
+      "packetSha256": "7d41be4dff4bf74588115514eae8e23d0b47a507bf667b3e0f9e8425e87c56b7",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "build-receipt.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/build-debug.receipt.json",
+      "originalSha256": "0ecece0d1dcf53f3eb2c525d9830f36613bd5537d8ada0f00a615dd00da1ffb8",
+      "packetSha256": "fea70cb46811b85d040665f73c35ca42a14270b029beecf3dc7d96d41f7f0cb3",
+      "pathTokensApplied": true
+    },
+    {
+      "file": "native-test-receipt.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/original-small-drag-three.receipt.json",
+      "originalSha256": "08d8d8787f6bc24ee2d681a36447d294c08a25664b5e6d13e9729323bb3245fe",
+      "packetSha256": "e9e6980761494eca28986928dfc231939875ac5d0e5be598aae18c2568c8cfca",
+      "pathTokensApplied": true
+    },
+    {
+      "file": "marker-query-receipt.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/scroll-pan-marker.receipt.json",
+      "originalSha256": "f41f9dee785226153691b6e3ffebd94b613799effa71bf1cf57423d4e75b4cb1",
+      "packetSha256": "f41f9dee785226153691b6e3ffebd94b613799effa71bf1cf57423d4e75b4cb1",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "marker-query.log",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/scroll-pan-marker.log",
+      "originalSha256": "4efbd7eebc658146ba5a84baf68d5d4e3b35189b5e8635125f67da48e8dfd08b",
+      "packetSha256": "4efbd7eebc658146ba5a84baf68d5d4e3b35189b5e8635125f67da48e8dfd08b",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "enumeration-proof.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/enumeration-proof.json",
+      "originalSha256": "127c8133b30a591428c46469dbaffbd4d01f146832c13b985b871af927c67eff",
+      "packetSha256": "127c8133b30a591428c46469dbaffbd4d01f146832c13b985b871af927c67eff",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "owned-simulator-after.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/owned-simulator-after.json",
+      "originalSha256": "d48f723af16f7f466bef020edd746bda23c39b6ddcc0b63f52ab0164f6102e83",
+      "packetSha256": "d48f723af16f7f466bef020edd746bda23c39b6ddcc0b63f52ab0164f6102e83",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "trace-1.txt",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/trace-1.txt",
+      "originalSha256": "782d074d2110097ae014c475790ddc207b319e857de9cdaa49d9a2ef853b82e6",
+      "packetSha256": "782d074d2110097ae014c475790ddc207b319e857de9cdaa49d9a2ef853b82e6",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "trace-2.txt",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/trace-2.txt",
+      "originalSha256": "5821305f63178448459bfae83b9966c877d7a934785c02d5a983dfdf3d5a4862",
+      "packetSha256": "5821305f63178448459bfae83b9966c877d7a934785c02d5a983dfdf3d5a4862",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "trace-3.txt",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/trace-3.txt",
+      "originalSha256": "c9a30a796dcd55b6e7b017fe54d4f4ec688234d5ff7f305ac516124ceb70cd18",
+      "packetSha256": "c9a30a796dcd55b6e7b017fe54d4f4ec688234d5ff7f305ac516124ceb70cd18",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "lint-receipt.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/lint-receipt.json",
+      "originalSha256": "263d3842703890b1f28411ec5741cc531c6da02d870d74e04cb162ac9abaa688",
+      "packetSha256": "263d3842703890b1f28411ec5741cc531c6da02d870d74e04cb162ac9abaa688",
+      "pathTokensApplied": false
+    },
+    {
+      "file": "typecheck-receipt.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/typecheck-receipt.json",
+      "originalSha256": "cd2b165733d6d58cb80440f368f593e429622c42b247c48c0cd3421603037fe7",
+      "packetSha256": "cd2b165733d6d58cb80440f368f593e429622c42b247c48c0cd3421603037fe7",
+      "pathTokensApplied": false
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "at": "2026-11-16T08:40:54.352278+00:00",
+  "traces": [
+    {
+      "iteration": 1,
+      "firstValidPanSeconds": 0.878,
+      "firstBeganSeconds": 4.839,
+      "invalidBoundsOnlyBeforeGesture": true,
+      "recordTruncated": false,
+      "globalCap": false,
+      "writeErrorText": false
+    },
+    {
+      "iteration": 2,
+      "firstValidPanSeconds": 1.006,
+      "firstBeganSeconds": 6.074,
+      "invalidBoundsOnlyBeforeGesture": true,
+      "recordTruncated": false,
+      "globalCap": false,
+      "writeErrorText": false
+    },
+    {
+      "iteration": 3,
+      "firstValidPanSeconds": 1.064,
+      "firstBeganSeconds": 6.319,
+      "invalidBoundsOnlyBeforeGesture": true,
+      "recordTruncated": false,
+      "globalCap": false,
+      "writeErrorText": false
+    }
+  ],
+  "pids": {
+    "42179": "ESRCH",
+    "45966": "ESRCH",
+    "49627": "ESRCH",
+    "26763": "ESRCH",
+    "27168": "ESRCH",
+    "27291": "ESRCH",
+    "27340": "ESRCH",
+    "40587": "ESRCH",
+    "40591": "ESRCH",
+    "40597": "ESRCH",
+    "40601": "ESRCH",
+    "40607": "ESRCH",
+    "41030": "ESRCH",
+    "41810": "ESRCH",
+    "53444": "ESRCH",
+    "53621": "ESRCH"
+  },
+  "ownedSimState": "Shutdown; seeowned-simulator-after.json",
+  "noActualDeliveryOrFrameAcceptanceInferred": true
+}

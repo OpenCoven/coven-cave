@@ -1,0 +1,10 @@
+{
+  "enabled": [
+    "testSmallDragsAtLatestStayOnLatest()"
+  ],
+  "uniqueOriginalMethods": 1,
+  "iterations": 3,
+  "retries": 0,
+  "generatedPlanUnchanged": true,
+  "perTestDefaultsUnchanged": true
+}

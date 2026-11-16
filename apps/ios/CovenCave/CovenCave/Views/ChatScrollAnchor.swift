@@ -74,6 +74,11 @@ final class ChatScrollAnchorCoordinator {
     weak var scrollView: UIScrollView? {
         didSet {
             guard scrollView !== oldValue else { return }
+            #if DEBUG
+            panDiagnostic?.stop(reason: "scroll-view-replaced")
+            panDiagnostic = nil
+            panAttachment = nil
+            #endif
             contentSizeObservation = nil
             if oldValue != nil { reset() }
             contentSizeObservation = scrollView?.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
@@ -92,6 +97,42 @@ final class ChatScrollAnchorCoordinator {
     /// native extent arrives, even if no row reports another position.
     private var unappliedCorrection: CGFloat = 0
     private var latestReportedGeometry: (id: String, geometry: ChatScrollGeometry)?
+
+    #if DEBUG
+    private var panDiagnostic: ChatScrollPanDiagnostic?
+    private var panAttachment: UUID?
+
+    fileprivate func attachPanDiagnostic(to scrollView: UIScrollView) -> UUID? {
+        panDiagnostic?.stop(reason: "probe-reattached")
+        panDiagnostic = nil
+        panAttachment = nil
+        guard ChatScrollTrace.shared.isRecording else { return nil }
+        let attachment = UUID()
+        panAttachment = attachment
+        panDiagnostic = ChatScrollPanDiagnostic(scrollView: scrollView)
+        return attachment
+    }
+
+    fileprivate func detachPanDiagnostic(attachment: UUID) {
+        // An old probe can dismantle after a new probe resolves the same view.
+        // Only its own opaque attachment may stop the current observer.
+        guard panAttachment == attachment else { return }
+        panDiagnostic?.stop(reason: "probe-detached")
+        panDiagnostic = nil
+        panAttachment = nil
+    }
+
+    deinit {
+        let observer = panDiagnostic
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { observer?.stop(reason: "coordinator-deinit") }
+        } else {
+            // UIKit target/timer teardown stays on the main actor. Retain only
+            // this exact observer until the next main-queue cleanup turn.
+            DispatchQueue.main.async { observer?.stop(reason: "coordinator-deinit") }
+        }
+    }
+    #endif
 
     func noteLatestGeometry(_ id: String, _ geometry: ChatScrollGeometry) {
         latestReportedGeometry = (id, geometry)
@@ -209,14 +250,29 @@ struct ChatScrollAnchorRowModifier: ViewModifier {
 
 private final class ChatScrollViewProbe: UIView {
     var onResolve: ((UIScrollView) -> Void)?
+    #if DEBUG
+    var onDiagnosticAttach: ((UIScrollView) -> UUID?)?
+    var onDetach: ((UUID) -> Void)?
+    var diagnosticAttachment: UUID?
+    #endif
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        guard window != nil else { return }
+        guard window != nil else {
+            #if DEBUG
+            if let diagnosticAttachment { onDetach?(diagnosticAttachment) }
+            diagnosticAttachment = nil
+            #endif
+            return
+        }
         var ancestor = superview
         while let view = ancestor {
             if let scrollView = view as? UIScrollView {
                 onResolve?(scrollView)
+                #if DEBUG
+                if let diagnosticAttachment { onDetach?(diagnosticAttachment) }
+                diagnosticAttachment = onDiagnosticAttach?(scrollView)
+                #endif
                 return
             }
             ancestor = view.superview
@@ -230,11 +286,25 @@ private struct ChatScrollViewFinder: UIViewRepresentable {
     func makeUIView(context: Context) -> ChatScrollViewProbe {
         let probe = ChatScrollViewProbe()
         probe.isUserInteractionEnabled = false
-        probe.onResolve = { [weak coordinator] in coordinator?.scrollView = $0 }
+        probe.onResolve = { [weak coordinator] scrollView in coordinator?.scrollView = scrollView }
+        #if DEBUG
+        probe.onDiagnosticAttach = { [weak coordinator] scrollView in coordinator?.attachPanDiagnostic(to: scrollView) }
+        probe.onDetach = { [weak coordinator] attachment in coordinator?.detachPanDiagnostic(attachment: attachment) }
+        #endif
         return probe
     }
 
     func updateUIView(_ uiView: ChatScrollViewProbe, context: Context) {}
+
+    #if DEBUG
+    static func dismantleUIView(_ uiView: ChatScrollViewProbe, coordinator: ()) {
+        if let attachment = uiView.diagnosticAttachment { uiView.onDetach?(attachment) }
+        uiView.diagnosticAttachment = nil
+        uiView.onDiagnosticAttach = nil
+        uiView.onDetach = nil
+        uiView.onResolve = nil
+    }
+    #endif
 }
 
 extension View {

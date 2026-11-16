@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-16T07:51:54.801468+00:00",
+  "classification": "First diagnostic harness failure, no recorder/profiler attempt",
+  "gateError": "OriginalownedappPID notobserved whiletestlive; no capture attempt",
+  "nativeTest": "Originalmethod started; runner normalSIGTERM at90s appPIDobservationgate interrupted it before assertionscompleted; not a testpass/fail result",
+  "testPid": 36338,
+  "cleanupExit": -15,
+  "allSourceAndBinariesUnchanged": true,
+  "ownedSimulatorShutdown": true,
+  "recorderStarted": false,
+  "next": "Prove owned simulator appPID discovery before any corrected originaljourney diagnostic; retainfirstinterruptedxcresult/log."
+}

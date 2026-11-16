@@ -1,0 +1,5 @@
+{
+  "at": "2026-11-16T08:22:23.659944+00:00",
+  "exitCode": 0,
+  "firstGreenSetupError": "Unnamed checkout/setup YAML steps had no name; corrected lookup only, assertions unchanged; firstgreenerror retained."
+}

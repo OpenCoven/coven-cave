@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-11-16T08:11:04.532046+00:00",
+  "scope": "Fresh read-only source and existing artifact review for Nova, OpenCoven/coven-cave#6064 / PR6469. Only this external report is written. No source edits, Git mutations, publication, tests, builds, runtime or simulator operations, cleanup, provider calls, or new hosted run.",
+  "continuity": {
+    "relationship": "same-work",
+    "owner": "Nova",
+    "coverage": "scoped to explicit task, files and supplied artifacts; live GitHub/Project/execution state not queried because provider calls were prohibited",
+    "ownershipTransfer": false
+  },
+  "candidateHead": "e9465e80c9d062ad579f3d1d24b0e83a2207dc15",
+  "decision": {
+    "sourceInspection": "The bounded v2 observer is suitable for separately authorized, explicitly instrumented hosted evidence collection, subject to the hosted collection and identity gates below. No source-inspected routing, recognizer policy, offset or inset mutation was introduced. This is conditional diagnostic suitability, not hosted execution clearance, acceptance, or a product fix.",
+    "hostedReadiness": "Original local-only preparation is insufficient by itself. The subsequently described minimal hosted delta is conditionally suitable: one immediate selected-simulator fixed-marker query over70m, bounded45s total, retained independently, while preserving the unchanged strict21 matrix. Exact workflow bytes and execution authorization remain outstanding.",
+    "cause": "Unresolved. The patch can establish positive outer-pan engagement and narrow hypotheses; it cannot conclusively distinguish absent app delivery from recognizer failure/routing when no target callback is observed.",
+    "newRunAuthorized": false
+  },
+  "identities": {
+    "patchSHA256": "f78f5274be2bc82675b2ac1de0a0cc82e25fac0bb9e1bf073e401d326e332397",
+    "manifestSHA256": "9b88d9611b7610173e5b58798cd69dfe6b32d98f822c5fd220952d0910d34425",
+    "uiTestSHA256": "bf2c8ca1e8968cad2e4e11651aa9c881371f97365ffdf3baff0a704d62556211",
+    "uiTestMatchesManifestAndPreparedOriginal": true,
+    "sourceChecks": [
+      {
+        "path": "apps/ios/CovenCave/CovenCave/Views/ChatScrollTrace.swift",
+        "currentSHA256": "aae8e91b3b4d37103073fe6b867e64ab5d26d85205446348dcaa36dae0f3a4ab",
+        "preparedOriginalSHA256": "aae8e91b3b4d37103073fe6b867e64ab5d26d85205446348dcaa36dae0f3a4ab",
+        "revisedSHA256": "649ca56b6633d9d02e22d507a9a35a8dd1b1efb60a887180ebd90eaef179e946",
+        "currentMatchesOriginalAndManifest": true,
+        "revisedMatchesManifest": true,
+        "headBlob": "69b4c47919b665e03d520b33e7440ac3e2612941",
+        "baseBlob": "69b4c47919b665e03d520b33e7440ac3e2612941"
+      },
+      {
+        "path": "apps/ios/CovenCave/CovenCave/Views/ChatScrollAnchor.swift",
+        "currentSHA256": "3e1b84972aa89cdfe9849c00684f4ac2e0630b4eed803df0b7a20cef7683f495",
+        "preparedOriginalSHA256": "3e1b84972aa89cdfe9849c00684f4ac2e0630b4eed803df0b7a20cef7683f495",
+        "revisedSHA256": "3b0c1317dc96a9c6d996427351a0aaaab9d124c8eab760111b0ebeeb4c4a3cc9",
+        "currentMatchesOriginalAndManifest": true,
+        "revisedMatchesManifest": true,
+        "headBlob": "817571379fed0fd401aa8edf696c4caf3f288268",
+        "baseBlob": "817571379fed0fd401aa8edf696c4caf3f288268"
+      }
+    ],
+    "patchExactlyRegeneratedFromPreparedOriginalAndRevised": true,
+    "limits": "No repository cleanliness claim is independently made; identity was checked by direct bytes and read-only HEAD/blob queries. Both Swift blobs at HEAD equal the recorded native base blobs. Prior review conclusions were read only after inspecting the current concrete source and were not used as validation substitutes."
+  },
+  "findings": [
+    {
+      "id": "H1",
+      "priority": "P2",
+      "kind": "hosted-readiness gate",
+      "title": "Independent write-error collection must cover the complete hosted stage",
+      "evidence": [
+        "ChatScrollTrace.swift:92-104 emits the fixed NSLog marker only on a throwing write; an absent or partial trace cannot carry its own reliable terminal evidence.",
+        ".github/workflows/ios-transcript-regression.yml:101-116 allows a 3600-second strict command and :135-164 freezes/uploads logs/results, but contains no scoped unified-log marker query.",
+        "preparation-manifest.json futureExecution.writeErrorMarkerCollectionGate specifies a local --last 20m query, appropriate to the bounded targeted local run but shorter than the hosted strict-stage budget."
+      ],
+      "impact": "A hosted run could lose early out-of-band write errors, falsely treating absent pan records as complete negative evidence. xcodebuild console tee is not a demonstrated substitute for app NSLog retention.",
+      "requiredBeforeExecution": "Prepare and review a bounded marker collection channel covering the actual strict-stage start/end on the selected simulator, restricted to the app and fixed marker, with retained terminal receipt and output even if trace binding fails. Do not copy the 20-minute lookback unchanged after a possible one-hour stage. Map marker timestamps/process metadata to app launches where available; ambiguous attribution is incomplete coverage.",
+      "proposedResolution": "The later root-described immediate post-strict --last70m collector would resolve the lookback/channel design gap subject to the exact-payload, retention, failure-condition and attribution requirements in proposedHostedDeltaAssessment. It has not been applied or executed."
+    },
+    {
+      "id": "H2",
+      "priority": "P2",
+      "kind": "hosted-readiness gate",
+      "title": "Local targeted manifest does not preserve the hosted matrix by itself",
+      "evidence": [
+        "IMPLEMENTATION-PLAN.md and preparation-manifest.json describe one new local iPhone17 on 26.5/23F73, normal ad-hoc signing, and only testSmallDragsAtLatestStayOnLatest for three iterations.",
+        "Current hosted workflow uses its selected hosted simulator, CODE_SIGNING_ALLOWED=NO, Debug/strict/Release stages, and strict class-level selection with three intentional iterations and no retry flag."
+      ],
+      "impact": "Using the prepared local argv as the hosted follow-up would replace the requested seven-method, 21-execution stage with a narrower diagnostic.",
+      "requiredBeforeExecution": "Prepare a hosted-specific delta preserving original test bytes, fixture launch/path generation, assertions/OCR/sleeps/gestures, generated per-test defaults, three intentional strict iterations, retry policy, stage commands/budgets and independent failure collection. Keep the seven original methods selected; audit exactly 21 terminal executions, all skips and first failure. Retain distinct candidate and instrumented source identities. Do not infer execution permission from this review."
+    },
+    {
+      "id": "D1",
+      "priority": "P2",
+      "kind": "inference limit, not a source blocker",
+      "title": "No actual touch-delivery ledger exists in this observer",
+      "evidence": [
+        "ChatScrollTrace.swift:148-150 observes target actions on the stored outer pan recognizer. It records recognizer state/touches, tracking/dragging/deceleration and geometry, not UIEvent/UITouch identities, phases, recipients, or recognizer failure reasons.",
+        "ChatScrollTrace.swift:170-200 queries potential hit-test ancestry at snapshot time with a nil event. Hard-coded host points match the supplied failed return archive, but not automatically a future runtime/layout."
+      ],
+      "impact": "Positive correlated began/changed target callbacks demonstrate that outer recognition/action dispatch occurred in that time window. No callback, even with nearby polls, cannot distinguish a not-delivered event, a recognizer remaining possible/failed, routing elsewhere, cancellation, a detached observer, or missed/stalled sampling.",
+      "requiredInterpretation": "Use current synthesized-event archive timestamps/coordinates/display scale/orientation, trace epoch/uptime, attach/stop boundaries, and adjacent geometry to correlate individual away/return windows. Treat ancestry and enabled-state findings as hypotheses. If the failure reproduces with complete trace and no outer target callback, stop at unresolved delivery/admission; a separate reviewed passive event-delivery design would be needed, without adding recognizers, swizzling/routing changes, extra gestures or test weakening by inference."
+    },
+    {
+      "id": "D2",
+      "priority": "P3",
+      "kind": "diagnostic coverage limit",
+      "title": "Bounds are correct but full-matrix pan coverage is not guaranteed",
+      "evidence": [
+        "ChatScrollTrace.swift:29-31,53-63 shares 240s, 1600 attempted pan samples and 2MiB per app process; reserve occurs before deduplication at :155 and :202.",
+        "The timer samples every 200ms; pan-target callbacks force full sampling. Suppressed poll records still consume attempts, so sample-number gaps alone are not lost output.",
+        "The 240s and byte limits apply to all existing trace lines, not only the added pan observer; hosted long-history test wall durations were 256.28/278.17/319.61s, which makes per-trace cap coverage a live concern, not proof those traces must cap."
+      ],
+      "impact": "The full test matrix can run unchanged while diagnostic coverage stops earlier. A changed or stalled sample schedule can obscure the short approximately 0.204s return sequence; a one-second heartbeat is not a 200ms completeness receipt.",
+      "requiredInterpretation": "Preserve raw origins, sample numbers, epoch/uptime, traceLimit/panObserverStop/recordTruncated markers and final bytes. Classify each event interval as covered/partial/unavailable. Do not expand/rearm caps, retry, select fallback tests, or infer no input after cap. Do not infer a missing transition from a missing deduplicated poll."
+    },
+    {
+      "id": "D3",
+      "priority": "P3",
+      "kind": "metadata limit",
+      "title": "Ancestry and coordinate snapshots cannot identify every competitor",
+      "evidence": [
+        "ChatScrollTrace.swift:215-223 retains six ancestors and only the first three recognizers per ancestor, with 40-character class names. Ancestry truncation is marked; recognizer-list truncation has no explicit flag.",
+        "Window bounds and converted scroll frame are logged, but current event-screen/window conversion, window identity, and actual touch recipients are not."
+      ],
+      "impact": "A relevant recognizer may be omitted or class names may collide; an inOuter=true hit snapshot does not establish that the actual touch reached the outer view. Hard-coded endpoints must not be interpreted across a different event archive/layout without verification.",
+      "requiredInterpretation": "Use present recognizer states as positive metadata only. Do not infer absence of competing recognizers from the capped list, and do not claim delivery from inOuter. Restrict endpoint conclusions to verified matching coordinate spaces."
+    }
+  ],
+  "sourceInspection": {
+    "testPreservation": "The patch contains exactly two Swift source diffs and no UI test/workflow changes. Current UI-test bytes match the prepared original. Unchanged launch() creates a new trace UUID path for each app launch, and tearDown terminates the app, prints the trace, and removes the trace/metrics files; do not override those paths in a hosted adapter.",
+    "runtimeGate": "Observer target/timer starts only under DEBUG with a nonempty path, open FileHandle, active shared trace and resolved scroll view. Release excludes the new observer and UIKit import; the only non-DEBUG changed closure spelling is semantically equivalent, not proof of identical Release binary bytes.",
+    "mutationReview": "Added code reads UIKit state and calls existing recognizer addTarget/removeTarget. It does not install a recognizer, replace delegates, change failure/cancellation/policy flags, inject input, or assign offset/content size/insets. Existing anchor correction behavior is unchanged by the patch.",
+    "perturbation": "Target actions run synchronously and execute hit testing, ancestry enumeration, String formatting, locking and FileHandle writes on the main actor. Every poll performs snapshot/hit-test work before deduplication. Common-mode timer and these synchronous operations can perturb the intermittent failure and do not establish a frame/main-thread cost bound. UIKit hitTest executes normal hit-testing code, not an actual event acknowledgement. Green instrumented runs cannot erase the existing failing candidate result.",
+    "privacy": "Added record payloads contain class/state/geometry metadata and timestamps; no new view text, accessibility labels/values/identifiers, URL, pointer address, gesture delegate, or arbitrary error/path interpolation is collected. Fixed NSLog marker contains no payload. Existing UI tests already print fixture OCR/trace and produce screenshots; those preexisting screenshot-bearing artifacts remain separate from the metadata-only claim. Keep collection restricted to the synthetic fixtures and the selected run, not normal user sessions.",
+    "writer": "NSLock serializes reservations and writes. Only successful complete write calls credit bytes; the nominal cap reserves 256 bytes for its terminal marker. A throwing write permanently latches write-error and emits one fixed out-of-band marker without reopen/retry. Later reservations reject it; a current observation may finish after a different callback latched failure. A failing write may leave a partial last record; counters do not prove atomic completeness. Open/create failure is trace-unavailable and does not emit the throwing-write marker, so traceOrigin and actual printed trace availability are separate required gates. The singleton handle lasts for the process, as in the original design; this is not a per-probe descriptor leak.",
+    "cleanup": "stop is idempotent, invalidates its timer and removes only this target/action from the exact stored weak recognizer. Coordinator owns the observer; observer weakly owns scroll/recognizer; timer callback is weak; probe closures are weak toward coordinator. Per-attachment UUID matching prevents stale same-view detach/dismantle from stopping a newer generation. Scroll replacement and coordinator deinit stop the exact observer on the main actor, with one queued cleanup turn when necessary. Removal while a pan callback is active and delayed main-actor teardown remain runtime observations, not source-proven zero perturbation.",
+    "newSourceBlockerFound": false,
+    "validationLimit": "No compilation, tests, app launch, simulator operation or timing measurement occurred in this review."
+  },
+  "existingEvidenceIndependentlyChecked": {
+    "retainedAudit": "hosted-e946/native/exact-stage-audit.json reports Debug60/60, strict21 executions with20pass1fail0skip, Release2/2; device26.5/23F77. This review read the retained audit, not live provider state.",
+    "rawActivities": "small-drags-all3-activities.json contains nine Synthesize event activities in each repetition. The failing third run includes the pass1 return archive 6BD33D5D-C7A2-4400-8BB7-D963442E70B7 after away archive 9B7BA5E6-A72C-482C-819F-BB2631E133CF.",
+    "rawReturnArchive": "The return NSKeyedArchive requests process74398, display1, orientation1, point201,460.8 to201,384, hold0.05s and end offset approximately0.2036s; activity metadata records Scale3. This is issuance metadata, not actual recipient/delivery proof.",
+    "rawPhaseCounts": "Printed original small-drag traces contain interacting counts8,8,7 for repetitions1,2,3. Thus even passing repetitions do not supply a one-to-one nine-event phase ledger; the failing run lacks one additional phase, which remains a correlation.",
+    "rawGeometry": "Third trace last heightChange is7.231s and all subsequent geo h values are14058. Outer interacting starts31.496,54.576,71.487,75.058,92.205,107.094,111.210s. Existing trace lacks an epoch origin, so a future origin-bearing diagnostic is useful; no new clock-alignment guarantee is inferred for this original trace.",
+    "rawLossScreenshots": "The three pass1 loss PNG bytes independently hash to5f4a75bccae441df9081f3f862460e5a645f4b2856d7f05a9220a4629f3ed10e. Screenshot appearance was not re-rendered in this review; visual descriptions remain supplied context.",
+    "priorLocalResult": "Local instrumented three-pass result on26.5/23F73 is task-supplied context and not rerun or independently qualified here; it does not cover hosted23F77."
+  },
+  "supportedCausesAndUnresolvedGates": {
+    "supported": "The observed failing interval includes a visible-test loss assertion, unchanged recorded content height, synthetic return issuance and a missing corresponding outer-phase transition compared with adjacent windows. These support investigating delivery/recognition/scroll engagement; they do not establish a root cause.",
+    "notEstablished": [
+      "actual pass1 return delivery into UIKit or its touch recipient",
+      "outer recognizer failure reason or competing recognizer ownership",
+      "renderer/WebKit routing defect",
+      "anchoring/follow-policy defect requiring a repair",
+      "main-thread stall, frame/hitch budget, responsiveness, physical-device or human acceptance"
+    ],
+    "acceptance": "Exact-head candidate remains strict20pass1fail. An instrumented hosted21/21 would be diagnostic evidence with perturbation limits, not a substitute for unchanged-source candidate qualification or required broader acceptance."
+  },
+  "minimalSafeFollowUp": [
+    "Prepare a hosted-specific bounded evidence plan and exact reviewable delta only, retaining the current seven-method x3 strict matrix, untouched tests/defaults/gestures/assertions/deadlines and stage retry policies. Keep candidate e9465e80c9d062ad579f3d1d24b0e83a2207dc15 separate from the diagnostic tree and retain exact two-file hashes.",
+    "Add a scoped independent marker collection/retention gate covering the whole actual hosted stage, plus per-launch traceOrigin/binding/cap/cleanup accounting; preserve console, command receipts, xcresult and synthesized archives even on failure. This review does not authorize implementing or executing that delta.",
+    "Obtain separate execution authority for any hosted run. If separately authorized, run the reviewed matrix once without retry/fallback expansion, record actual runtime/build identity, and correlate each original away/return event with pan-target/poll/geometry and available clock metadata. Stop after the bounded collection.",
+    "If the failure reproduces and correlated outer began/changed callbacks exist, investigate downstream geometry/scroll behavior using that positive evidence. If complete evidence contains no callback, retain unresolved delivery/admission and prepare a separately reviewed minimal passive event-delivery observation design only if needed. Do not invent a renderer/routing repair or launch another same-failure run from this review."
+  ],
+  "reviewedReferences": [
+    "AGENTS.md",
+    ".agents/skills/work-continuity/SKILL.md",
+    "docs/workflows/work-continuity.md",
+    "revised/ChatScrollTrace.swift",
+    "revised/ChatScrollAnchor.swift",
+    "pan-observer.patch",
+    "preparation-manifest.json",
+    "instrumentation-review-v2.json",
+    "IMPLEMENTATION-PLAN.md",
+    "current original ChatScrollTrace.swift",
+    "current original ChatScrollAnchor.swift",
+    "current ChatScrollBounceUITests.swift",
+    "current .github/workflows/ios-transcript-regression.yml",
+    "supplied hosted diagnosis, exact-stage audit, raw small-drag activities, printed scroll-bounce traces and relevant attachments"
+  ],
+  "proposedHostedDeltaAssessment": {
+    "reviewedAt": "2026-11-16T08:12:11.093493+00:00",
+    "proposal": "Reuse the exact two-file v2 DEBUG/trace-file-gated observer without UI-test changes; add one selected-simulator, CovenCave-process, fixed-marker collection step immediately after strict, including strict failure, before Release; query --last70m under wrapper30s +5/5/5 shutdown budgets; retain scroll-*.log and scroll-*.receipt.json; keep all existing matrix/defaults/Debug/strict/Release/job/UI deadlines unchanged.",
+    "sourceAssessment": "Conditionally suitable and smaller than adding event/routing instrumentation now. It closes the local20m versus hosted3600s lookback mismatch and supplies the missing independent marker channel while preserving every test and gesture. No new source cap or cleanup repair is identified by this read-only inspection. Exact workflow payload, event conditions, output names and argv have not been supplied as bytes, so this is assessment of the described delta only.",
+    "timing": "70minutes covers the unchanged60minute strict wrapper plus30seconds shutdown and immediate collection with margin. The collector30+5+5+5 budget is45seconds, fitting a one-minute step. A delayed collector beyond the70minute scope, job timeout/cancellation, or inaccessible selected simulator leaves incomplete evidence. Existing108minute job budget remains unchanged; the extra bounded step consumes remaining wall-clock allowance and does not guarantee all stages finish at their individual maxima.",
+    "necessaryCollectionProperties": [
+      "Run immediately after strict even when strict exits nonzero or times out; do not use the default success-only condition. Guard actual selected destination availability and make skipped/cancelled collection explicitly incomplete rather than a negative marker result.",
+      "Use the selected simulator UUID with the exact app-process plus fixed-marker predicate. No unfiltered system log export, trace path override, app relaunch, retry or simulator mutation is needed.",
+      "Retain both stdout and stderr, actual query start/end times, terminal exit status and wrapper receipt. Use filenames matching existing scroll-*.log and scroll-*.receipt.json upload globs and inspect the frozen/upload manifest. Preserve a query failure; do not continue by silently weakening the predicate or running unbounded fallback collection.",
+      "A70minute query can include earlier Debug app processes. Retain process/timestamp metadata and correlate with actual strict launch intervals. If attribution to a strict trace is ambiguous, report it as ambiguous/incomplete; do not assume every marker belongs to the failing small-drag launch.",
+      "Independently require traceOrigin, actual printed trace binding, attachment continuity and absence of caps/truncation/dropout over each interpreted event window. No marker alone does not establish that the file opened or that all intended observations were collected."
+    ],
+    "dropoutAndCapLimits": "The observer still cannot recover a failed-open trace, a partial failing record, a delayed main-loop poll, an unlogged deduplicated poll, an omitted capped recognizer, an observer detach interval, or a cap ending collection. The one-hour test command is not a one-hour per-process trace budget: the existing240s/1600attempt/2MiB limits stay intact and remain explicit coverage boundaries.",
+    "prominentRawCountFinding": "All three small-drag repetitions issue nine synthetic gestures. Passing repetitions have8 and8 outer interacting transitions; failing repetition has7. Missing outer phases are therefore not a one-to-one event-delivery diagnostic, including in otherwise green runs.",
+    "requiredNextStep": "Prepare and inspect the exact proposed hosted delta and serialized collection command, then seek any separately required publication/execution authority. This review grants neither. If authorized execution later fails to discriminate delivery, retain the unresolved gate rather than rerunning the same failure or adding a speculative fix."
+  }
+}

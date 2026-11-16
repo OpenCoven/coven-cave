@@ -1,0 +1,81 @@
+{
+  "at": "2026-11-16T08:39:26.195244+00:00",
+  "executionSourceFingerprint": "f5bb8ad61a8e573614692d5948c3e31b2b52549da9e863a40d20d304d33a3069",
+  "baseHead": "e9465e80c9d062ad579f3d1d24b0e83a2207dc15",
+  "originalUITestSha256": "bf2c8ca1e8968cad2e4e11651aa9c881371f97365ffdf3baff0a704d62556211",
+  "buildExit": 0,
+  "testExit": 0,
+  "uniqueMethods": 1,
+  "executions": 3,
+  "passed": 3,
+  "failed": 0,
+  "skipped": 0,
+  "retries": 0,
+  "durationsSeconds": [
+    45.79,
+    49.172,
+    47.85
+  ],
+  "traces": [
+    {
+      "iteration": 1,
+      "traceSha256": "782d074d2110097ae014c475790ddc207b319e857de9cdaa49d9a2ef853b82e6",
+      "lines": 634,
+      "panRecords": 151,
+      "outerInteracting": 9,
+      "panBegan": 9,
+      "panEnded": 9,
+      "origins": [
+        "   0.000 traceOrigin epoch=1794818041.3910441 uptime=458513.765982375 byteCap=2097152 secondsCap=240.0 panSampleCap=1600 epoch=1794818041.391468 uptime=458513.76637245837"
+      ],
+      "limits": [
+        "   0.189 panProbe sample=1 trigger=attach invalidBounds epoch=1794818041.5803452 uptime=458513.95526845835"
+      ],
+      "observerStops": []
+    },
+    {
+      "iteration": 2,
+      "traceSha256": "5821305f63178448459bfae83b9966c877d7a934785c02d5a983dfdf3d5a4862",
+      "lines": 635,
+      "panRecords": 157,
+      "outerInteracting": 9,
+      "panBegan": 9,
+      "panEnded": 9,
+      "origins": [
+        "   0.000 traceOrigin epoch=1794818086.590012 uptime=458558.96469983336 byteCap=2097152 secondsCap=240.0 panSampleCap=1600 epoch=1794818086.590539 uptime=458558.96517133334"
+      ],
+      "limits": [
+        "   0.328 panProbe sample=1 trigger=attach invalidBounds epoch=1794818086.918467 uptime=458559.2931359167"
+      ],
+      "observerStops": []
+    },
+    {
+      "iteration": 3,
+      "traceSha256": "c9a30a796dcd55b6e7b017fe54d4f4ec688234d5ff7f305ac516124ceb70cd18",
+      "lines": 647,
+      "panRecords": 157,
+      "outerInteracting": 9,
+      "panBegan": 9,
+      "panEnded": 9,
+      "origins": [
+        "   0.000 traceOrigin epoch=1794818136.296958 uptime=458608.67136850004 byteCap=2097152 secondsCap=240.0 panSampleCap=1600 epoch=1794818136.297457 uptime=458608.67182725004"
+      ],
+      "limits": [
+        "   0.287 panProbe sample=1 trigger=attach invalidBounds epoch=1794818136.5842419 uptime=458608.95863625006"
+      ],
+      "observerStops": []
+    }
+  ],
+  "markerQuery": {
+    "exitCode": 0,
+    "eventRows": [],
+    "warning": "getpwuid_r did not find a match for uid501",
+    "interpretation": "EmptyquerynotproofnoI/Oerror; retainwarningandcorrelateorigins/epochs/source/limits. No platformcause inferred."
+  },
+  "normalSignatures": "4rolesallstrict0; binary-identities.json",
+  "renderer": "CompiledHTMLhashmatchescurrenthard-builtprojectresource",
+  "sourceAndBinaryBytesUnchanged": true,
+  "ownedSimulatorShutdown": true,
+  "runtime": "iOS27.2/24B8117, distinct fromhosted26.5/23F77",
+  "limits": "Instrumentedlocaldiagnosticpassdoesnotclearoriginale946strictfailure/localRelease3failures/frame/device/human/owneradmission; hitTest andphasecountsnot actualdeliveryproof"
+}
