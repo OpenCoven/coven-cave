@@ -1,0 +1,10 @@
+{
+  "startedAt": "2026-11-16T12:41:38.814420+00:00",
+  "finishedAt": "2026-11-16T12:41:39.006866+00:00",
+  "elapsedSeconds": 0.19245779199991375,
+  "command": [
+    "pnpm",
+    "check:tests-wired"
+  ],
+  "exitCode": 0
+}

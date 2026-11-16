@@ -343,3 +343,109 @@ sys.exit(int(os.environ.get('MARKER_QUERY_EXIT','0')))
     }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+await test('marker budget admits a delayed reader and still drains an unresponsive owned reader', { skip: process.platform === 'win32' }, async () => {
+  const workflow = parse(await readFile(path.join(root, '.github/workflows/ios-transcript-regression.yml'), 'utf8'));
+  const marker = workflow.jobs.transcript.steps.find((s) => String(s.run).includes('scroll-pan-marker.receipt.json'));
+  const phases = ['timeout', 'grace', 'terminate', 'kill'].map((flag) => Number(marker.run.match(new RegExp(`--${flag}-seconds (\\d+)`))?.[1]));
+  assert.equal(phases.reduce((total, value) => total + value, 0), 30, 'reallocate the existing owner without spending the job reserve');
+  const dir = await mkdtemp(path.join(tmpdir(), 'ios-marker-budget-'));
+  const udid = '12345678-1234-1234-1234-123456789ABC';
+  let cleanupVerified = true;
+  try {
+    const bin = path.join(dir, 'bin');
+    const data = path.join(dir, 'Devices', udid, 'data');
+    const store = path.join(data, 'var', 'db', 'diagnostics');
+    await mkdir(bin);
+    await mkdir(store, { recursive: true });
+    const metadata = path.join(dir, 'metadata.json');
+    await writeFile(metadata, JSON.stringify({ devices: { runtime: [{ udid, state: 'Shutdown', dataPath: data }] } }));
+    const query = ['--sdk', 'macosx', 'log', 'show', '--directory', await realpath(store),
+      '--style', 'compact', '--last', '70m', '--predicate', 'process == "CovenCave" AND eventMessage CONTAINS "CAVE_SCROLL_TRACE_WRITE_ERROR"'];
+    await writeFile(path.join(bin, 'xcrun'), `#!/usr/bin/env python3
+import json,os,pathlib,signal,sys,time
+args=sys.argv[1:]
+with pathlib.Path(os.environ['MARKER_CALLS']).open('a') as f: f.write(json.dumps(args)+chr(10))
+if args == ['simctl','list','devices',os.environ['MARKER_UDID'],'--json']:
+    print(pathlib.Path(os.environ['MARKER_METADATA']).read_text())
+    sys.exit(0)
+assert args == json.loads(os.environ['MARKER_EXPECTED_QUERY'])
+if os.environ['MARKER_READER_MODE'] == 'unresponsive':
+    signal.signal(signal.SIGINT,signal.SIG_IGN)
+    signal.signal(signal.SIGTERM,signal.SIG_IGN)
+pathlib.Path(os.environ['MARKER_READER_PID']).write_text(str(os.getpid()))
+if os.environ['MARKER_READER_MODE'] == 'unresponsive':
+    deadline=time.monotonic()+31
+    while not pathlib.Path(os.environ['MARKER_READER_STOP']).exists() and time.monotonic()<deadline: time.sleep(0.1)
+    sys.exit(0)
+time.sleep(17)
+print('Fixture reader completed',flush=True)
+`, { mode: 0o755 });
+    for (const mode of ['delayed', 'unresponsive']) {
+      const runnerTemp = path.join(dir, mode);
+      await mkdir(runnerTemp);
+      const calls = path.join(runnerTemp, 'calls.jsonl');
+      const pidFile = path.join(runnerTemp, 'reader.pid');
+      const stopFile = path.join(runnerTemp, 'reader.stop');
+      let readerPid;
+      try {
+        const started = process.hrtime.bigint();
+        const result = spawnSync('bash', ['-c', marker.run], { cwd: root, encoding: 'utf8', timeout: 35_000,
+          env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, RUNNER_TEMP: runnerTemp,
+            CAVE_TEST_DESTINATION: `platform=iOS Simulator,id=${udid}`, MARKER_UDID: udid,
+            MARKER_METADATA: metadata, MARKER_CALLS: calls, MARKER_EXPECTED_QUERY: JSON.stringify(query),
+            MARKER_READER_MODE: mode, MARKER_READER_PID: pidFile, MARKER_READER_STOP: stopFile } });
+        const observedSeconds = Number(process.hrtime.bigint() - started) / 1e9;
+        readerPid = Number(await readFile(pidFile, 'utf8'));
+        assert.ok(Number.isInteger(readerPid) && readerPid > 0);
+        const saved = await json(path.join(runnerTemp, 'scroll-pan-marker.receipt.json'));
+        const expected = mode === 'delayed' ? 0 : 124;
+        assert.equal(result.status, expected, `${mode}: ${JSON.stringify(saved)}; ${result.stderr}`);
+        assert.equal(saved.exitCode, expected);
+        assert.equal(saved.terminal, true);
+        assert.equal(saved.failure, null);
+        assert.equal(saved.timedOut, mode === 'unresponsive');
+        assert.ok(observedSeconds < 30, `command and inherited output finish inside the same total bound: ${observedSeconds}s`);
+        const invoked = (await readFile(calls, 'utf8')).trim().split('\n').map(JSON.parse);
+        assert.deepEqual(invoked, [['simctl', 'list', 'devices', udid, '--json'], query]);
+        const log = await readFile(path.join(runnerTemp, 'scroll-pan-marker.log'), 'utf8');
+        if (mode === 'delayed') {
+          assert.equal(saved.childExitCode, 0);
+          assert.ok(saved.elapsedSeconds > 15, 'the completed read must exercise the previously truncated interval');
+          assert.match(log, /Fixture reader completed/);
+          assert.match(log, /Marker reader exit: 0/);
+        } else {
+          let readerAliveAtReceipt = true;
+          try { process.kill(readerPid, 0); } catch (error) { if (error.code !== 'ESRCH') throw error; readerAliveAtReceipt = false; }
+          assert.equal(readerAliveAtReceipt, false, `owner returned while the exact reader ${readerPid} was still alive: ${JSON.stringify(saved)}`);
+          assert.ok(saved.elapsedSeconds >= phases[0], 'timeout remains a failure after the helper has drained its child');
+          assert.doesNotMatch(log, /Fixture reader completed|Marker reader exit: 0/);
+        }
+        assert.ok(saved.elapsedSeconds < 30, 'owned completion stays inside the existing total bound');
+        const deadline = Date.now() + 1000;
+        let absent = false;
+        while (Date.now() < deadline) {
+          try { process.kill(readerPid, 0); } catch (error) { if (error.code !== 'ESRCH') throw error; absent = true; break; }
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        assert.ok(absent, 'the exact owned reader is gone before accepting its receipt');
+      } finally {
+        // The fixture's private stop file can clean up a regressed reader
+        // without signalling a PID after its terminal state is known.
+        await writeFile(stopFile, 'test finished');
+        if (readerPid) {
+          const deadline = Date.now() + 1000;
+          let absent = false;
+          while (Date.now() < deadline) {
+            try { process.kill(readerPid, 0); } catch (error) { if (error.code !== 'ESRCH') throw error; absent = true; break; }
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          cleanupVerified &&= absent;
+        }
+      }
+    }
+  } finally {
+    if (cleanupVerified) await rm(dir, { recursive: true, force: true });
+    else assert.fail(`owned reader cleanup remains uncertain; fixture preserved at ${dir}`);
+  }
+});

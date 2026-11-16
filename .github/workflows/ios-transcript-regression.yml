@@ -129,8 +129,10 @@ jobs:
           fi
           printf 'Marker query started: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           set +e
-          python3 scripts/ios-native-command.py run --timeout-seconds 15 \
-            --grace-seconds 5 --terminate-seconds 5 --kill-seconds 5 \
+          # Run 43851100840 admitted the offline reader but exhausted its 15s
+          # query phase. Reallocate the same 30s owner; keep the job reserve.
+          python3 scripts/ios-native-command.py run --timeout-seconds 20 \
+            --grace-seconds 1 --terminate-seconds 4 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-pan-marker.receipt.json" -- \
             python3 scripts/ios-scroll-marker.py "$udid"
           status=$?

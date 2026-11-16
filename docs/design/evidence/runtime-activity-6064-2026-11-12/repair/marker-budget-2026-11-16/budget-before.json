@@ -1,0 +1,22 @@
+{
+  "at": "2026-11-16T12:19:53.231256+00:00",
+  "sourceHead": "5bbe2df6d484f2e65f25f9e1f10a2c151ed1630e",
+  "markerTotalOwnerSeconds": 30,
+  "markerCurrentAllocation": {
+    "read": 15,
+    "interruptGrace": 5,
+    "terminate": 5,
+    "kill": 5
+  },
+  "nativeOwnerSeconds": 5670,
+  "nonNativeStepMinutes": 9,
+  "uploadStepMinutes": 3,
+  "allOwnedAndStepBoundSeconds": 6420,
+  "jobSeconds": 6480,
+  "reserveSeconds": 60,
+  "finding": "Current accounting uses exactly107of108minutes, preserving exactly60seconds reserve. Increasing total marker ownership beyond30seconds would violate the existing reserve unless some other budget changed; do not do that.",
+  "observedHostedTimeoutElapsedSeconds": 15.060701291999976,
+  "observedPostTimeoutDrainSecondsApproximately": 0.060701291999976,
+  "candidateNextInvestigation": "Consider reallocating only the existing30second marker owner between query and bounded shutdown, retaining all phases, true timeout/failure status, one-minute step and global reserve. A delayed-read contract must fail under current allocation before any correction. No native UI selector/assertion/ceiling or stored-data scope changes.",
+  "status": "Source budget inspected; no edit or parameter decision implemented."
+}

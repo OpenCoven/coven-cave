@@ -1,0 +1,15 @@
+{
+  "startedAt": "2026-11-16T12:39:27.597522+00:00",
+  "wrapperPid": 49105,
+  "command": "node --test scripts/ios-native-command.test.mjs\nnode scripts/build-ios-markdown.mjs\n",
+  "outerSeconds": 60,
+  "step": "Require bundled WebKit markdown rather than native fallback",
+  "sourceManifest": "source-before-verification.json",
+  "pid": 49107,
+  "exitCode": 0,
+  "elapsedSeconds": 41.35546633298509,
+  "finishedAt": "2026-11-16T12:40:08.953238+00:00",
+  "trackedSourceUnchangedDuringPrerequisite": true,
+  "prerequisiteFitsUnchangedOneMinute": true,
+  "scope": "Current four reviewed Task3 files; same exact shell as workflow, no app/simulator operation."
+}

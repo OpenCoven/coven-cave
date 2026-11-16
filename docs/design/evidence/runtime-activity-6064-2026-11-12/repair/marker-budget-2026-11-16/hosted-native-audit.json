@@ -1,0 +1,122 @@
+{
+  "at": "2026-11-16T12:10:50.641546+00:00",
+  "head": "5bbe2df6d484f2e65f25f9e1f10a2c151ed1630e",
+  "run": 43851100840,
+  "job": 133243544467,
+  "workflowConclusion": "failure",
+  "attemptAudit": "root-attempt-audit.json",
+  "stages": {
+    "scroll-debug": {
+      "uniqueCases": 60,
+      "executions": 60,
+      "results": {
+        "Passed": 60
+      },
+      "strictThreeRepetitionsPresent": null,
+      "nonFirstAttempts": []
+    },
+    "scroll-bounce": {
+      "uniqueCases": 7,
+      "executions": 21,
+      "results": {
+        "Passed": 21
+      },
+      "strictThreeRepetitionsPresent": true,
+      "nonFirstAttempts": []
+    },
+    "scroll-release": {
+      "uniqueCases": 2,
+      "executions": 2,
+      "results": {
+        "Passed": 2
+      },
+      "strictThreeRepetitionsPresent": null,
+      "nonFirstAttempts": []
+    }
+  },
+  "integrity": {
+    "artifacts": [
+      {
+        "id": 14224752173,
+        "bytes": 28304454,
+        "sha256": "1592fb02fd57facb8da651c4dc30d5800e909ee665bfd7b15dd54df5148aef82"
+      },
+      {
+        "id": 14223239730,
+        "bytes": 692458,
+        "sha256": "1ac390c4541e2fe4dd5635dc4a207892773f310471c3fbab98ad881aff08fa61"
+      }
+    ],
+    "bundles": 3,
+    "originalResultFiles": 395,
+    "frozenLogs": 9,
+    "globalAndPerBundleIssues": [],
+    "originalZipEntriesAndOriginalResultBytesVerified": true,
+    "queryDerivedOnlyFiles": {
+      "scroll-debug": [
+        "database.sqlite3"
+      ],
+      "scroll-bounce": [
+        "database.sqlite3"
+      ],
+      "scroll-release": [
+        "database.sqlite3"
+      ]
+    },
+    "allOriginalFrozenBytesUnchanged": true
+  },
+  "marker": {
+    "selectedResultDevice": {
+      "architecture": "arm64",
+      "deviceId": "23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+      "deviceName": "iPhone 17",
+      "modelName": "iPhone 17",
+      "osBuildNumber": "23F77",
+      "osVersion": "26.5",
+      "platform": "iOS Simulator"
+    },
+    "reader": {
+      "selectedUUID": "23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+      "command": [
+        "xcrun",
+        "--sdk",
+        "macosx",
+        "log",
+        "show",
+        "--directory",
+        "/Users/runner/Library/Developer/CoreSimulator/Devices/23C8F95C-765D-46A9-AE82-0BEE2921C8D7/data/var/db/diagnostics",
+        "--style",
+        "compact",
+        "--last",
+        "70m",
+        "--predicate",
+        "process == \"CovenCave\" AND eventMessage CONTAINS \"CAVE_SCROLL_TRACE_WRITE_ERROR\""
+      ]
+    },
+    "receipt": {
+      "command": [
+        "python3",
+        "scripts/ios-scroll-marker.py",
+        "23C8F95C-765D-46A9-AE82-0BEE2921C8D7"
+      ],
+      "pid": 24407,
+      "elapsedSeconds": 15.060701291999976,
+      "timedOut": true,
+      "interruptedSignal": null,
+      "terminal": true,
+      "childExitCode": -2,
+      "exitCode": 124,
+      "failure": null
+    },
+    "stateAdmission": "Selected simulator Shutdown branch admitted exact canonical offline store; selected UUID equals recorded result device.",
+    "failureEstablished": "The actual fixed-predicate offline log-show command reached output header, then its existing15second owner interrupted while helper waited for child. Terminal exit124/child-2, elapsed15.060701292s; not missing-path or booted-device refusal.",
+    "writerErrorQueryCompleted": false,
+    "writerErrorAbsenceProven": false,
+    "causeLimits": "Log-reader runtime exceeded its cap; frozen artifacts do not retain underlying simulator store or CPU/profile evidence explaining that query latency. No arbitrary deadline extension, unchanged workflow rerun, store substitution or zero-error claim."
+  },
+  "limits": [
+    "60Debug+21strict+2Release executions passed with0retries/skips/expectedfailures in these suites; original uninstrumented e946 strict and original Release3long-trace failures are not replaced.",
+    "DEBUG pan observer is timing-perturbing diagnostic evidence; not responsiveness or physical/human acceptance.",
+    "Full golden14 still lacks package visual/deep expansion, OS frame/main-thread/CPU costs, physical/human and owner admission."
+  ]
+}

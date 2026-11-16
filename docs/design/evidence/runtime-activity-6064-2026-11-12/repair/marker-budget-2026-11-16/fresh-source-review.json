@@ -1,0 +1,160 @@
+{
+  "reviewedAt": "2026-11-16T12:41:40.858707+00:00",
+  "reviewer": "Fresh source reviewer / shared account / review_marker_budget_6064",
+  "issue": 6064,
+  "task": "Task 3: marker owner budget reallocation",
+  "baseAndHead": "5bbe2df6d484f2e65f25f9e1f10a2c151ed1630e",
+  "reviewedRevision": "Uncommitted four-file diff, not a commit range",
+  "worktree": "<worktree>",
+  "scope": [
+    ".github/workflows/ios-transcript-regression.yml",
+    "scripts/ios-native-command.test.mjs",
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md",
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md"
+  ],
+  "continuity": {
+    "relationship": "same-work",
+    "coverage": "scoped",
+    "owner": "Nova / current authorized root session",
+    "basis": "Explicit delegated Task 3, frozen manifest and issue-scope receipt; no independent execution or ownership takeover."
+  },
+  "sourceOnlyLimitation": "Read-only source review of the frozen diff and relevant existing code, with inspection of executor-provided verification receipts. This is a shared-account source review, not human review or independent execution acceptance. Reviewer ran no duplicate tests, app, simulator or hosted query and made no source/index/HEAD/branch/GitHub changes. Only this report was written.",
+  "hashesBefore": {
+    ".github/workflows/ios-transcript-regression.yml": "8b3ee5dc09502fd224bd22bb3b44d34301ce74cee0e4901f9c1b42e7415d0aa4",
+    "scripts/ios-native-command.test.mjs": "a6b2eadcb6eacb22feb6a477a3c6cf3560d2498ef7147665ac259ea247db32c1",
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "4324fb2309828aa3c64c02439b6ecafcd2a8ad5ed221e72e4ddbad3e95c6b7d1",
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "4f880702a5b9d769e5c33659311a113ff75d0ada833d52766137fcaf159179a6"
+  },
+  "hashesAfter": {
+    ".github/workflows/ios-transcript-regression.yml": "8b3ee5dc09502fd224bd22bb3b44d34301ce74cee0e4901f9c1b42e7415d0aa4",
+    "scripts/ios-native-command.test.mjs": "a6b2eadcb6eacb22feb6a477a3c6cf3560d2498ef7147665ac259ea247db32c1",
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "4324fb2309828aa3c64c02439b6ecafcd2a8ad5ed221e72e4ddbad3e95c6b7d1",
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "4f880702a5b9d769e5c33659311a113ff75d0ada833d52766137fcaf159179a6"
+  },
+  "allFourHashesMatchedBeforeAndAfter": true,
+  "patchSha256": "678580ee3d2b02685ef614b59e56758c04ba94e9eab9179e08b16ccf0e48043f",
+  "frozenPatchMatchesCurrentDiff": true,
+  "unchangedRelevantCode": {
+    "scripts/ios-native-command.py": "Confirmed byte-identical to HEAD",
+    "scripts/ios-scroll-marker.py": "Confirmed byte-identical to HEAD",
+    "appAndNativeTestBytes": "No app, Swift, renderer or UI-test files appear in the HEAD diff; only the four manifest paths differ."
+  },
+  "strengths": [
+    {
+      "location": ".github/workflows/ios-transcript-regression.yml:134",
+      "detail": "The only executable production delta is 15/5/5/5 to 20/1/4/5. The total remains 30 seconds, the step remains one minute and the job remains 108 minutes. Selected UUID, fixed predicate, lookback, receipt/log retention, post-failure destination guard and true status propagation remain unchanged."
+    },
+    {
+      "location": "scripts/ios-native-command.test.mjs:347",
+      "detail": "The new contract executes the real workflow shell, helper and owner with only xcrun replaced. A 17-second delayed query crosses the old cutoff, must return success and must emit its completed-reader output. The unresponsive reader installs ignored INT/TERM handlers before recording its PID, must return timeout 124 with a terminal failure-preserving receipt, must be absent immediately on readback and must finish external inherited output within 30 seconds."
+    },
+    {
+      "location": "scripts/ios-native-command.test.mjs:432",
+      "detail": "Fixture cleanup uses a private stop-file and a 31-second safety lease instead of a late nonzero signal to a saved PID. PID checks are signal-zero probes. Known uncertain cleanup preserves the fixture and fails. Temporary directories and environment variables isolate the fake query from user simulator data."
+    },
+    {
+      "location": "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md:27",
+      "detail": "The updated design and Task 3 preserve the actual hosted timeout, failed test oracles and incomplete acceptance boundaries. They describe the new read allowance as a bounded hypothesis and do not identify a latency cause or claim writer-error absence."
+    },
+    {
+      "location": "scripts/ios-native-command.test.mjs:417",
+      "detail": "The corrected shutdown oracle judges timeout failure, terminal state and the actual reader PID rather than requiring unused escalation phases to consume time. This aligns with unchanged local subprocess.run interrupt cleanup; the owner still retains all configured escalation phases and its unreaped-child PID-reuse guard."
+    }
+  ],
+  "resourceAccounting": {
+    "nativeOwnersSeconds": 5670,
+    "markerOwnerSeconds": 30,
+    "nonNativeMinutes": 9,
+    "uploadMinutes": 3,
+    "accountedMinutes": 107,
+    "jobMinutes": 108,
+    "reserveSeconds": 60,
+    "nativeReadCeilingsSeconds": {
+      "Debug": 1080,
+      "strict": 3600,
+      "Release": 900
+    },
+    "nativeOwnerTotalsSeconds": {
+      "Debug": 1110,
+      "strict": 3630,
+      "Release": 930
+    },
+    "note": "Existing command and job resource ceilings, selectors, retries and UI allowances remain unchanged. Local prerequisite timing is a measured fit, not a guarantee about every future hosted runner."
+  },
+  "verificationEvidence": {
+    "reviewerExecution": "No tests rerun by reviewer; receipts and exact source snapshots inspected.",
+    "red": {
+      "receipt": "contract-red-receipt.json",
+      "result": "9 passed / 1 failed at old 15-second delayed-reader cutoff; timeout 124 and elapsed 15.0368 seconds retained."
+    },
+    "retainedErroneousOracles": [
+      "contract-green-receipt.json and contract-green.stdout: lower-bound shutdown-duration expectation failed after delayed read succeeded.",
+      "ownership-red-receipt.json and ownership-red.stdout: same unsupported duration oracle retained after the explicit PID readback."
+    ],
+    "priorGreen": {
+      "receipt": "contract-green-final-receipt.json",
+      "testSha256": "fab7c48b0bddcf2c370df1ece1c9d1329ecb9f6f21ffb25a163e4baabab06444",
+      "result": "10/10 passed at earlier test hash; not used as current-hash acceptance."
+    },
+    "currentPrerequisite": {
+      "receipt": "prerequisite-summary.json",
+      "stdout": "prerequisite.stdout",
+      "stderr": "prerequisite.stderr",
+      "testSha256": "a6b2eadcb6eacb22feb6a477a3c6cf3560d2498ef7147665ac259ea247db32c1",
+      "sourceBinding": "source-before-verification.json matches all four reviewed hashes; executor receipt reports all 7273 tracked files unchanged during prerequisite.",
+      "command": "node --test scripts/ios-native-command.test.mjs\nnode scripts/build-ios-markdown.mjs\n",
+      "exitCode": 0,
+      "elapsedSeconds": 41.35546633298509,
+      "limitSeconds": 60,
+      "headroomSeconds": 18.64453366701491,
+      "result": "10/10 contracts passed, zero skips/cancellations/failures, then renderer resources built; stderr empty."
+    }
+  },
+  "issues": {
+    "Critical": [],
+    "Important": [],
+    "Minor": []
+  },
+  "recommendations": [
+    "Proceed with normal feature publication only through the already-authorized root workflow after its remaining scoped hygiene/wiring gates; no review-driven source repair is requested.",
+    "Keep the current a6b2 test hash and 41.355466-second prerequisite receipt attached to the evidence packet instead of substituting the earlier fab7 GREEN.",
+    "Collect the automatically triggered exact-head hosted result and retain the true marker status and attributable output; continue to treat hosted query completion and all original acceptance gates as pending."
+  ],
+  "declinedToJudge": [
+    {
+      "behavior": "Whether the actual hosted offline query completes within 20 seconds",
+      "reason": "No post-change hosted query exists in the reviewed evidence; the previous query timed out and the full hosted log store is unavailable."
+    },
+    {
+      "behavior": "The cause of hosted log-reader latency and a product performance repair",
+      "reason": "The local 1.694-second comparison and previous 15.061-second timeout do not isolate causation; Task 3 changes allocation only."
+    },
+    {
+      "behavior": "Writer-error absence, actual gesture delivery, native/package/frame/device/human or full golden-14 acceptance",
+      "reason": "No completed attributable hosted query or new user/device acceptance evidence is supplied, and this source-only collector change preserves those separate open requirements."
+    },
+    {
+      "behavior": "Independent native/UI execution or current simulator/installed-user-app behavior",
+      "reason": "Reviewer authority explicitly excludes apps, simulators and duplicate tests; all app and UI-test bytes are unchanged."
+    },
+    {
+      "behavior": "Universal process-tree cleanup under arbitrary uninterruptible OS states, detached descendants or future Python implementations",
+      "reason": "Owner/helper implementations are unchanged; review examined the actual current helper/reader path and fixture lifecycle, not a redesign of generic process ownership."
+    },
+    {
+      "behavior": "Guaranteed one-minute prerequisite completion on every future hosted runner",
+      "reason": "Current exact-hash local shell completed in 41.355466 seconds under the unchanged 60-second limit; runner variance remains unmeasured."
+    },
+    {
+      "behavior": "PR mergeability, live review threads/checks, protected merge, release or issue closure",
+      "reason": "No new publication exists for this uncommitted diff and the review authorizes no GitHub changes, merge, release or completion substitution."
+    }
+  ],
+  "assessment": {
+    "readyForNormalFeaturePublication": "Yes, from this source review; root must complete any remaining already-required local publication gates.",
+    "sourceReviewBlockers": [],
+    "reasoning": "The minimal production reallocation matches Task 3, retains exact resource and failure boundaries, and has meaningful real-shell/helper/owner contracts. The exact current-hash full prerequisite passes within its existing one-minute limit. No Critical, Important or Minor source finding was identified.",
+    "hostedCompletion": "Pending; allocation is an unproven hosted collection hypothesis.",
+    "mergeAuthority": "Outside this review."
+  }
+}

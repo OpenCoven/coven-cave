@@ -60,3 +60,17 @@ The plan adds observation at the unresolved boundary and independently verifies 
 - [ ] Collect the automatically triggered exact-revision checks, including raw marker and first-failure evidence, without clearing original uninstrumented/native/frame/device/human gates from instrumented passes.
 
 The local positive probe has already established the proposed offline channel across shutdown. Task completion still requires the implemented helper and actual hosted collector evidence; the probe is not a production-client qualification or approval record.
+
+### Task 3: Reallocate the marker owner's existing 30 seconds
+
+**Files:** `.github/workflows/ios-transcript-regression.yml`, `scripts/ios-native-command.test.mjs`, and the existing design/plan documents. The helper, native application/UI-test files and command owner's PID-reuse policy remain unchanged.
+
+**Interface:** Keep the selected UUID, canonical store, predicate, lookback, logs and true failure status unchanged. Change only the marker allocation from 15/5/5/5 to 20/1/4/5 seconds. Both total 30 seconds; the one-minute step, 108-minute job, exact one-minute reserve and all native ceilings remain invariant. The observed hosted query timeout and local comparison are evidence for investigating this allocation, not proof of hosted completion or a performance repair.
+
+- [ ] Add a real-shell/helper/owner contract with a 17-second external reader; run it against the current workflow and retain the expected timeout-124 failure.
+- [ ] Change only the marker phase allocation and require the delayed reader to complete successfully. Exercise a reader that ignores interrupt and terminate; retain timeout 124, owned-process cleanup and all escalation phases.
+- [ ] Preserve the first attempted GREEN failure and its explicit PID readback. Correct the unsupported assumption that every shutdown phase must consume time after the helper has already killed and waited for its child; require timeout failure, terminal receipt and exact reader absence instead. Keep the helper and native-command owner unchanged.
+- [ ] Run the complete native-command contracts and renderer prerequisite within its unchanged one-minute step budget, existing hygiene/wiring and scoped verification. Preserve source/test hashes and every first failure.
+- [ ] Obtain a fresh source review, retain a compact evidence packet and publish normally under the existing feature-branch authority after local gates. Collect the new exact-head hosted evidence without a manual rerun or acceptance substitution.
+
+Hosted completion remains incomplete until the actual query finishes with attributable results. Original native failures, package/frame/device/human acceptance and owner admission remain separate open requirements.

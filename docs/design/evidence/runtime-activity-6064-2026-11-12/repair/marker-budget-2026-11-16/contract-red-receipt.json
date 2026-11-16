@@ -1,0 +1,13 @@
+{
+  "startedAt": "2026-11-16T12:26:22.680566+00:00",
+  "finishedAt": "2026-11-16T12:26:40.979115+00:00",
+  "command": [
+    "node",
+    "--test",
+    "scripts/ios-native-command.test.mjs"
+  ],
+  "exitCode": 1,
+  "workflowSha256": "cd6f642ffb9ceffdda3c4047cec9308f112e2b72f8b47cea5a156551528f0668",
+  "testSha256": "883a5034baa8d51e6120e64de86a06d2705561e6c8f2b4ae33a31319b9e025d1",
+  "purpose": "Full suite RED before workflow allocation edit; real shell/helper/owner with external reader only mocked."
+}
