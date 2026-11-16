@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-windows-recovery",
+  "description": "allows only the trusted main loopback webview to follow and retry Windows local-service startup and to arm, read, and clear Windows update install recovery",
+  "webviews": ["main"],
+  "platforms": ["windows"],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*",
+      "http://[\\:\\:1]:*/*"
+    ]
+  },
+  "permissions": [
+    "allow-sidecar-startup-status",
+    "allow-retry-sidecar-startup",
+    "allow-arm-update-install-recovery",
+    "allow-disarm-update-install-recovery",
+    "allow-update-install-outcome",
+    "allow-clear-update-install-outcome"
+  ]
+}
