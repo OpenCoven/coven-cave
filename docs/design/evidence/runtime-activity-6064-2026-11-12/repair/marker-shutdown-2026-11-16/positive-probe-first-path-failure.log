@@ -1,0 +1,4 @@
+An error was encountered processing the command (domain=com.apple.CoreSimulator.LaunchdSimError, code=111):
+Process spawn via launchd failed.
+Underlying error (domain=SimXPCErrorDomain, code=111):
+	Invalid or missing Program/ProgramArguments

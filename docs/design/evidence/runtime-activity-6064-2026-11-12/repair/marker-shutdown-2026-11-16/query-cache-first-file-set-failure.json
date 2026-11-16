@@ -1,0 +1,32 @@
+{
+  "at": "2026-11-16T09:53:48.042390+00:00",
+  "firstAuditExitCode": 1,
+  "failedAssertion": "Extracted result file set equals original frozen manifest after xcresulttool queries.",
+  "beforeQueries": "Collector verified complete original file sets/hash/size before invoking xcresulttool.",
+  "differences": [
+    {
+      "bundle": "scroll-bounce.xcresult",
+      "extraFiles": [
+        "database.sqlite3"
+      ],
+      "missingFiles": [],
+      "changedOriginalFiles": []
+    },
+    {
+      "bundle": "scroll-debug.xcresult",
+      "extraFiles": [
+        "database.sqlite3"
+      ],
+      "missingFiles": [],
+      "changedOriginalFiles": []
+    },
+    {
+      "bundle": "scroll-release.xcresult",
+      "extraFiles": [
+        "database.sqlite3"
+      ],
+      "missingFiles": [],
+      "changedOriginalFiles": []
+    }
+  ]
+}

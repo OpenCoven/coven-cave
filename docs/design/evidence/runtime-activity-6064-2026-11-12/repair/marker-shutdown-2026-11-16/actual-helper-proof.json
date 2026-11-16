@@ -1,0 +1,42 @@
+{
+  "at": "2026-11-16T10:25:30.594812+00:00",
+  "sourceManifest": "offline-collector-review-manifest-v2.json",
+  "exitCode": 0,
+  "actualWorkflowShellOwnerAndHelper": true,
+  "receipt": {
+    "command": [
+      "python3",
+      "scripts/ios-scroll-marker.py",
+      "64878DF0-DB73-45A9-8D68-3F22393F7D64"
+    ],
+    "pid": 95612,
+    "elapsedSeconds": 0.7812943340395577,
+    "timedOut": false,
+    "interruptedSignal": null,
+    "terminal": true,
+    "childExitCode": 0,
+    "exitCode": 0,
+    "failure": null
+  },
+  "reader": {
+    "selectedUUID": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "command": [
+      "xcrun",
+      "--sdk",
+      "macosx",
+      "log",
+      "show",
+      "--directory",
+      "<owned-simulator-data>/var/db/diagnostics",
+      "--style",
+      "compact",
+      "--last",
+      "70m",
+      "--predicate",
+      "process == \"CovenCave\" AND eventMessage CONTAINS \"CAVE_SCROLL_TRACE_WRITE_ERROR\""
+    ]
+  },
+  "probeMarkerExcludedByFixedCovenCavePredicate": true,
+  "finalSimulatorState": "Shutdown",
+  "interpretation": "Actual selected-store query succeeds after strict redirection admission. It is not a writer-error-free/app/frame/device claim."
+}

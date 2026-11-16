@@ -1,0 +1,17 @@
+✔ native command preserves its real exit status and output (53.233834ms)
+✔ timeout waits for owned child finalization and cannot become green (652.944958ms)
+✔ operator interruption drains only the owned command and preserves cancellation (237.917958ms)
+✔ frozen evidence survives later movement of xcresult staging files (58.992625ms)
+✔ a second collection cannot overwrite retained evidence (56.066292ms)
+✔ incomplete evidence stays available and fails visibly without following links (45.393667ms)
+✔ transcript workflow owns deadlines and uploads logs separately from frozen results (5.526875ms)
+✔ hosted pan marker collection preserves query failures without broadening the selected simulator (187.521875ms)
+✔ hosted pan marker collection reads only the selected shutdown store and rejects uncertain metadata (1092.732833ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2448.84675

@@ -8,6 +8,7 @@ on:
       - scripts/build-ios-markdown.mjs
       - scripts/ios-native-command.py
       - scripts/ios-native-command.test.mjs
+      - scripts/ios-scroll-marker.py
       - package.json
       - pnpm-lock.yaml
       - .github/workflows/ios-transcript-regression.yml
@@ -131,8 +132,7 @@ jobs:
           python3 scripts/ios-native-command.py run --timeout-seconds 15 \
             --grace-seconds 5 --terminate-seconds 5 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-pan-marker.receipt.json" -- \
-            xcrun simctl spawn "$udid" log show --style compact --last 70m \
-            --predicate 'process == "CovenCave" AND eventMessage CONTAINS "CAVE_SCROLL_TRACE_WRITE_ERROR"'
+            python3 scripts/ios-scroll-marker.py "$udid"
           status=$?
           set -e
           printf 'Marker query finished: %s status=%d\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$status"

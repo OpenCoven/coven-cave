@@ -1,0 +1,7 @@
+Marker query started: 2026-11-16T09:38:12Z
+An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):
+Process spawn via launchd failed because device is not booted.
+Underlying error (domain=com.apple.SimLaunchHostService.RequestError, code=3):
+	Bad or unknown session: com.apple.CoreSimulator.SimDevice.23C8F95C-765D-46A9-AE82-0BEE2921C8D7
+Native command receipt: {"command": ["xcrun", "simctl", "spawn", "23C8F95C-765D-46A9-AE82-0BEE2921C8D7", "log", "show", "--style", "compact", "--last", "70m", "--predicate", "process == \"CovenCave\" AND eventMessage CONTAINS \"CAVE_SCROLL_TRACE_WRITE_ERROR\""], "pid": 11878, "elapsedSeconds": 1.5844233340003484, "timedOut": false, "interruptedSignal": null, "terminal": true, "childExitCode": 149, "exitCode": 149, "failure": null}
+Marker query finished: 2026-11-16T09:38:14Z status=149

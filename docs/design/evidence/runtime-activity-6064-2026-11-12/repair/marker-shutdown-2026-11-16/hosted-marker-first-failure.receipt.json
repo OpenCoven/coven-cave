@@ -1,0 +1,24 @@
+{
+  "command": [
+    "xcrun",
+    "simctl",
+    "spawn",
+    "23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+    "log",
+    "show",
+    "--style",
+    "compact",
+    "--last",
+    "70m",
+    "--predicate",
+    "process == \"CovenCave\" AND eventMessage CONTAINS \"CAVE_SCROLL_TRACE_WRITE_ERROR\""
+  ],
+  "pid": 11878,
+  "elapsedSeconds": 1.5844233340003484,
+  "timedOut": false,
+  "interruptedSignal": null,
+  "terminal": true,
+  "childExitCode": 149,
+  "exitCode": 149,
+  "failure": null
+}

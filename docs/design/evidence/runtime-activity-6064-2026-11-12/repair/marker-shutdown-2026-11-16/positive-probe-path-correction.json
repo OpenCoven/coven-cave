@@ -1,0 +1,8 @@
+{
+  "at": "2026-11-16T10:08:52.144697+00:00",
+  "priorSpawnExit": 111,
+  "priorEmissionCount": 0,
+  "priorTemporaryProbeExistsAfterLifecycle": false,
+  "correction": "Use the exact retained normal-signature host binary path, per installed simctl spawn help. Check its existence/executable/hash after boot, immediately before spawn. No recompile, test allowance extension, app/candidate mutation or ignored first failure.",
+  "phase": "Prepared host-path control; first attempt remains retained."
+}

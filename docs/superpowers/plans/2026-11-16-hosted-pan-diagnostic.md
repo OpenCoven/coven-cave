@@ -44,3 +44,19 @@ Checkbox state is not evidence of completion. Code, verification receipts and me
 ## Self-review
 
 The plan adds observation at the unresolved boundary and independently verifies writer integrity. It preserves the product goal and every functional gate. An empty marker result, missing phase, hit test or passing instrumented run cannot establish actual delivery, frame/device acceptance or goal completion.
+
+### Task 2: Collect the selected simulator's marker after XCTest shutdown
+
+**Files:** Create `scripts/ios-scroll-marker.py`; modify `.github/workflows/ios-transcript-regression.yml`, `scripts/ios-native-command.test.mjs` and the linked design/plan. Keep both Swift observer files and every original native UI-test byte unchanged.
+
+**Interface:** The helper accepts one selected UUID, discovers that exact device through xcrun and returns the actual log query status. Booted uses the existing device-scoped live query; Shutdown uses `xcrun --sdk macosx log show --directory <selected data>/var/db/diagnostics`. Admit the offline directory only after exact UUID, path, existence and confinement checks. Never boot, query another simulator or query the global host store. The existing 15/5/5/5 wrapper bounds metadata discovery and reading together.
+
+- [ ] Add a failing real-workflow contract for a Shutdown device and exact offline-store query; retain the original query-failure and invalid-destination contracts.
+- [ ] Run the focused suite and retain the missing-helper failure before implementation.
+- [ ] Implement the small helper and workflow invocation; keep fixed predicate/lookback, true status propagation, 108-minute job and one-minute reserve unchanged.
+- [ ] Run real-shell/helper contracts for live failure 17, offline success/failure and rejection of redirected/ambiguous/transitional metadata; preserve first failures and keep all native UI tests unchanged.
+- [ ] Verify the exact helper against the already-owned Shutdown simulator without launching the app, then run relevant source, hygiene, wiring and app checks.
+- [ ] Obtain fresh read-only source review of the helper, state/path admission and whole-command resource budget, then publish by normal signed fast-forward on the existing branch with current evidence and limits.
+- [ ] Collect the automatically triggered exact-revision checks, including raw marker and first-failure evidence, without clearing original uninstrumented/native/frame/device/human gates from instrumented passes.
+
+The local positive probe has already established the proposed offline channel across shutdown. Task completion still requires the implemented helper and actual hosted collector evidence; the probe is not a production-client qualification or approval record.

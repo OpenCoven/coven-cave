@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -219,7 +219,17 @@ await test('hosted pan marker collection preserves query failures without broade
     await mkdir(bin);
     // The OS simulator is unavailable to this contract; run the real workflow
     // shell and command owner against one deliberately failing external tool.
-    await writeFile(path.join(bin, 'xcrun'), '#!/usr/bin/env python3\nimport sys\nprint("CAVE_SCROLL_TRACE_WRITE_ERROR fixture")\nsys.exit(17)\n', { mode: 0o755 });
+    const calls = path.join(dir, 'calls.jsonl');
+    await writeFile(path.join(bin, 'xcrun'), `#!/usr/bin/env python3
+import json,pathlib,sys
+args=sys.argv[1:]
+with pathlib.Path(${JSON.stringify(calls)}).open('a') as f: f.write(json.dumps(args)+'\\n')
+if args == ['simctl','list','devices','12345678-1234-1234-1234-123456789ABC','--json']:
+    print(json.dumps({'devices':{'runtime':[{'udid':'12345678-1234-1234-1234-123456789ABC','state':'Booted'}]}}))
+    sys.exit(0)
+print('CAVE_SCROLL_TRACE_WRITE_ERROR fixture')
+sys.exit(17)
+`, { mode: 0o755 });
     const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, RUNNER_TEMP: dir,
       CAVE_TEST_DESTINATION: 'platform=iOS Simulator,id=12345678-1234-1234-1234-123456789ABC' };
     const result = spawnSync('bash', ['-c', marker.run], { cwd: root, env, encoding: 'utf8', timeout: 10_000 });
@@ -228,13 +238,17 @@ await test('hosted pan marker collection preserves query failures without broade
     assert.equal(saved.childExitCode, 17);
     assert.equal(saved.terminal, true);
     assert.equal(saved.timedOut, false);
-    assert.deepEqual(saved.command, ['xcrun', 'simctl', 'spawn', '12345678-1234-1234-1234-123456789ABC',
+    assert.deepEqual(saved.command, ['python3', 'scripts/ios-scroll-marker.py', '12345678-1234-1234-1234-123456789ABC']);
+    const invoked = (await readFile(calls, 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.deepEqual(invoked[0], ['simctl', 'list', 'devices', '12345678-1234-1234-1234-123456789ABC', '--json']);
+    assert.deepEqual(invoked[1], ['simctl', 'spawn', '12345678-1234-1234-1234-123456789ABC',
       'log', 'show', '--style', 'compact', '--last', '70m', '--predicate',
       'process == "CovenCave" AND eventMessage CONTAINS "CAVE_SCROLL_TRACE_WRITE_ERROR"']);
     const log = await readFile(path.join(dir, 'scroll-pan-marker.log'), 'utf8');
     assert.match(log, /Marker query started: \d{4}-\d\d-\d\dT/);
     assert.match(log, /Marker query finished: \d{4}-\d\d-\d\dT.*status=17/);
     assert.match(log, /CAVE_SCROLL_TRACE_WRITE_ERROR fixture/);
+    assert.match(log, /Marker reader exit: 17/);
     const invalidDir = path.join(dir, 'invalid');
     await mkdir(invalidDir);
     const invalid = spawnSync('bash', ['-c', marker.run], { cwd: root,
@@ -243,5 +257,89 @@ await test('hosted pan marker collection preserves query failures without broade
     assert.notEqual(invalid.status, 0);
     await assert.rejects(readFile(path.join(invalidDir, 'scroll-pan-marker.receipt.json')));
     assert.doesNotMatch(await readFile(path.join(invalidDir, 'scroll-pan-marker.log'), 'utf8'), /fixture/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+await test('hosted pan marker collection reads only the selected shutdown store and rejects uncertain metadata', async () => {
+  const workflow = parse(await readFile(path.join(root, '.github/workflows/ios-transcript-regression.yml'), 'utf8'));
+  const marker = workflow.jobs.transcript.steps.find((s) => String(s.run).includes('scroll-pan-marker.receipt.json'));
+  assert.match(marker.run, /scripts\/ios-scroll-marker\.py/, 'the collector must handle the selected simulator after XCTest shuts it down');
+  assert.ok(workflow.on.pull_request.paths.includes('scripts/ios-scroll-marker.py'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'ios-offline-marker-'));
+  const udid = '12345678-1234-1234-1234-123456789ABC';
+  try {
+    const bin = path.join(dir, 'bin');
+    await mkdir(bin);
+    const data = path.join(dir, 'Devices', udid, 'data');
+    const store = path.join(data, 'var', 'db', 'diagnostics');
+    await mkdir(store, { recursive: true });
+    const escapedData = path.join(dir, 'escaped', udid, 'data');
+    await mkdir(path.join(escapedData, 'var', 'db'), { recursive: true });
+    const outside = path.join(dir, 'outside');
+    await mkdir(outside);
+    await symlink(outside, path.join(escapedData, 'var', 'db', 'diagnostics'));
+    const internalData = path.join(dir, 'internal', udid, 'data');
+    await mkdir(path.join(internalData, 'var', 'db'), { recursive: true });
+    const substitutedStore = path.join(internalData, 'substituted-store');
+    await mkdir(substitutedStore);
+    await symlink(substitutedStore, path.join(internalData, 'var', 'db', 'diagnostics'));
+    const aliasedData = path.join(dir, 'alias', udid, 'data');
+    await mkdir(path.dirname(aliasedData), { recursive: true });
+    await symlink(data, aliasedData);
+    const fixture = path.join(dir, 'metadata.json');
+    const calls = path.join(dir, 'calls.jsonl');
+    await writeFile(path.join(bin, 'xcrun'), `#!/usr/bin/env python3
+import json,os,pathlib,sys
+args=sys.argv[1:]
+with pathlib.Path(os.environ['MARKER_CALLS']).open('a') as f: f.write(json.dumps(args)+'\\n')
+if args == ['simctl','list','devices','${udid}','--json']:
+    code=int(os.environ.get('MARKER_METADATA_EXIT','0'))
+    if not code: print(pathlib.Path(os.environ['MARKER_METADATA']).read_text())
+    sys.exit(code)
+print('CAVE_SCROLL_TRACE_WRITE_ERROR fixture')
+sys.exit(int(os.environ.get('MARKER_QUERY_EXIT','0')))
+`, { mode: 0o755 });
+    const device = { udid, state: 'Shutdown', dataPath: data };
+    const metadata = (devices) => ({ devices: { runtime: devices } });
+    const scenarios = [
+      { name: 'shutdown-success', body: metadata([device]), exit: 0, queried: true },
+      { name: 'shutdown-query-failure', body: metadata([device]), queryExit: 17, exit: 17, queried: true },
+      { name: 'wrong-data-owner', body: metadata([{ ...device, dataPath: path.join(dir, 'another-device', 'data') }]), exit: 2 },
+      { name: 'escaped-store', body: metadata([{ ...device, dataPath: escapedData }]), exit: 2 },
+      { name: 'internal-substituted-store', body: metadata([{ ...device, dataPath: internalData }]), exit: 2 },
+      { name: 'redirected-same-uuid-data', body: metadata([{ ...device, dataPath: aliasedData }]), exit: 2 },
+      { name: 'ambiguous-device', body: metadata([device, device]), exit: 2 },
+      { name: 'missing-device', body: metadata([]), exit: 2 },
+      { name: 'transitional-device', body: metadata([{ ...device, state: 'Shutting Down' }]), exit: 2 },
+      { name: 'malformed-metadata', raw: 'not JSON', exit: 2 },
+      { name: 'metadata-command-failure', body: metadata([device]), metadataExit: 23, exit: 23 },
+    ];
+    for (const scenario of scenarios) {
+      const runnerTemp = path.join(dir, scenario.name);
+      await mkdir(runnerTemp);
+      await writeFile(fixture, scenario.raw ?? JSON.stringify(scenario.body));
+      await writeFile(calls, '');
+      const result = spawnSync('bash', ['-c', marker.run], { cwd: root, encoding: 'utf8', timeout: 10_000,
+        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, RUNNER_TEMP: runnerTemp,
+          CAVE_TEST_DESTINATION: `platform=iOS Simulator,id=${udid}`, MARKER_CALLS: calls, MARKER_METADATA: fixture,
+          MARKER_QUERY_EXIT: String(scenario.queryExit ?? 0), MARKER_METADATA_EXIT: String(scenario.metadataExit ?? 0) } });
+      assert.equal(result.status, scenario.exit, `${scenario.name}: ${result.stderr}`);
+      const saved = await json(path.join(runnerTemp, 'scroll-pan-marker.receipt.json'));
+      assert.equal(saved.childExitCode, scenario.exit);
+      assert.equal(saved.terminal, true);
+      assert.equal(saved.timedOut, false);
+      const invoked = (await readFile(calls, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
+      assert.deepEqual(invoked[0], ['simctl', 'list', 'devices', udid, '--json']);
+      assert.equal(invoked.length, scenario.queried ? 2 : 1, `${scenario.name}: reject before any log read`);
+      if (scenario.queried) {
+        assert.deepEqual(invoked[1], ['--sdk', 'macosx', 'log', 'show', '--directory', await realpath(store),
+          '--style', 'compact', '--last', '70m', '--predicate', 'process == "CovenCave" AND eventMessage CONTAINS "CAVE_SCROLL_TRACE_WRITE_ERROR"']);
+        const log = await readFile(path.join(runnerTemp, 'scroll-pan-marker.log'), 'utf8');
+        const reader = JSON.parse(log.split('\n').find((line) => line.startsWith('Marker reader: ')).slice('Marker reader: '.length));
+        assert.equal(reader.selectedUUID, udid);
+        assert.deepEqual(reader.command, ['xcrun', ...invoked[1]]);
+        assert.match(log, new RegExp(`Marker reader exit: ${scenario.exit}`));
+      }
+    }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

@@ -1,0 +1,5 @@
+{
+  "at": "2026-11-16T10:13:31.617154+00:00",
+  "exitCode": 1,
+  "expectedFailure": "new shutdown-store contract requires helper invocation before implementation"
+}
