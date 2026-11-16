@@ -1,0 +1,5 @@
+
+> coven-cave@0.5.22 check:tests-wired <owned-worktree>
+> node scripts/check-tests-wired.mjs
+
+✓ all 2262 test files wired into CI

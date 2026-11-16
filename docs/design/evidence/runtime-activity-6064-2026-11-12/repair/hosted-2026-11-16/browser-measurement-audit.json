@@ -1,0 +1,47 @@
+{
+  "run": 43789410398,
+  "testedMergeTree": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+  "measurements": [
+    {
+      "project": "desktop",
+      "sourceReport": "playwright-evidence-shard-1-43789410398-1/run-M0gOMu/results.json",
+      "attachmentSHA256": "e28e1477873d321a69ac40cd2fd225bf6461e89f81d5fc247d5a5ae453d33db0",
+      "calls": 500,
+      "samples": 5,
+      "reloadMs": {
+        "min": 1099.2292310000048,
+        "median": 1140.618730000002,
+        "max": 1192.5023890000011
+      },
+      "openMs": {
+        "min": 193.63160599999537,
+        "median": 198.10016100000212,
+        "max": 206.2004409999936
+      },
+      "nodes": [
+        6869
+      ],
+      "subsequentRAFIntervals": 20,
+      "subsequentRAFIntervalMs": {
+        "min": 16.600000000000136,
+        "median": 33.299999999999955,
+        "max": 50
+      },
+      "excludedInitialRAFValues": [
+        34.39799999997672,
+        28.199999999976626,
+        22.03199999998833,
+        -10.401999999965028,
+        -2.9359999999883257
+      ],
+      "raw": "browser-measurements-desktop.json"
+    }
+  ],
+  "limits": [
+    "The first interval in each sample mixes performance.now with rAF timestamp and is excluded from frame interval summaries; raw values retained.",
+    "Only desktop Chromium measurement execution is present in this hosted report; seven WebKit activity functional cases are not a WebKit measurement run.",
+    "Five synthetic samples with twenty subsequent rAF intervals are not a p95 or universal frame-budget qualification.",
+    "Reload/open/scroll elapsed values are end-to-end intervals, not CPU/main-thread/frame-cost attribution.",
+    "No matched baseline/candidate hardware or physical/native/human acceptance claim is inferred."
+  ]
+}

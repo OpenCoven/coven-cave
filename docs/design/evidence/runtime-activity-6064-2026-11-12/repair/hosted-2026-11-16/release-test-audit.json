@@ -1,0 +1,65 @@
+{
+  "stage": "scroll-release",
+  "receipt": {
+    "command": [
+      "xcodebuild",
+      "test",
+      "-project",
+      "apps/ios/CovenCave/CovenCave.xcodeproj",
+      "-scheme",
+      "CovenCavePerformance",
+      "-destination",
+      "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+      "-derivedDataPath",
+      "/Users/runner/work/_temp/CaveDerived",
+      "-resultBundlePath",
+      "/Users/runner/work/_temp/scroll-release.xcresult",
+      "CODE_SIGNING_ALLOWED=NO",
+      "-retry-tests-on-failure",
+      "-test-iterations",
+      "3",
+      "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess",
+      "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink"
+    ],
+    "pid": 15587,
+    "elapsedSeconds": 571.1007183339998,
+    "timedOut": false,
+    "interruptedSignal": null,
+    "terminal": true,
+    "childExitCode": 0,
+    "exitCode": 0,
+    "failure": null
+  },
+  "starts": 2,
+  "terminals": 2,
+  "passed": 2,
+  "failed": 0,
+  "unterminated": {},
+  "events": [
+    {
+      "line": 2100,
+      "identity": "-[CovenCaveUITests.PerformanceBaselineUITests testTranscriptColdAndRepeatedOpenWithoutShrink]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 2312,
+      "identity": "-[CovenCaveUITests.PerformanceBaselineUITests testTranscriptColdAndRepeatedOpenWithoutShrink]",
+      "outcome": "passed",
+      "detail": " (109.600 seconds)."
+    },
+    {
+      "line": 2313,
+      "identity": "-[CovenCaveUITests.PerformanceBaselineUITests testTranscriptShrinkRecoversAndReopensInSameProcess]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 2453,
+      "identity": "-[CovenCaveUITests.PerformanceBaselineUITests testTranscriptShrinkRecoversAndReopensInSameProcess]",
+      "outcome": "passed",
+      "detail": " (83.029 seconds)."
+    }
+  ],
+  "inlineAssertions": []
+}

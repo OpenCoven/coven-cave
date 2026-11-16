@@ -1,0 +1,45 @@
+{
+  "total_count": 2,
+  "artifacts": [
+    {
+      "id": 14194414225,
+      "node_id": "MDg6QXJ0aWZhY3QxNDE5NDQxNDIyNQ==",
+      "name": "transcript-logs-43789410401",
+      "size_in_bytes": 439412,
+      "url": "https://api.github.com/repos/OpenCoven/coven-cave/actions/artifacts/14194414225",
+      "archive_download_url": "https://api.github.com/repos/OpenCoven/coven-cave/actions/artifacts/14194414225/zip",
+      "expired": false,
+      "digest": "sha256:ed5e1182f967e8adb655a491c7e71e50eec06e53f991b58276dc0eb581b926b9",
+      "created_at": "2026-11-16T03:24:12Z",
+      "updated_at": "2026-11-16T03:24:12Z",
+      "expires_at": "2026-11-23T03:24:10Z",
+      "workflow_run": {
+        "id": 43789410401,
+        "repository_id": 1254421728,
+        "head_repository_id": 1254421728,
+        "head_branch": "fix/issue-6064-webkit-retry-nova",
+        "head_sha": "7fd1e8daf7117789117453aed91349fb349026ae"
+      }
+    },
+    {
+      "id": 14194314852,
+      "node_id": "MDg6QXJ0aWZhY3QxNDE5NDMxNDg1Mg==",
+      "name": "transcript-results-43789410401",
+      "size_in_bytes": 286763079,
+      "url": "https://api.github.com/repos/OpenCoven/coven-cave/actions/artifacts/14194314852",
+      "archive_download_url": "https://api.github.com/repos/OpenCoven/coven-cave/actions/artifacts/14194314852/zip",
+      "expired": false,
+      "digest": "sha256:7ba25d4c5e91f9e3ea3c6e17da3742d95dd9dfc40b7766e38e8ca6b0f320242c",
+      "created_at": "2026-11-16T03:24:19Z",
+      "updated_at": "2026-11-16T03:24:19Z",
+      "expires_at": "2026-11-23T03:24:13Z",
+      "workflow_run": {
+        "id": 43789410401,
+        "repository_id": 1254421728,
+        "head_repository_id": 1254421728,
+        "head_branch": "fix/issue-6064-webkit-retry-nova",
+        "head_sha": "7fd1e8daf7117789117453aed91349fb349026ae"
+      }
+    }
+  ]
+}

@@ -27,8 +27,9 @@ jobs:
     # three long-history and three accessibility audits. Run 43778586069
     # exhausted the 55-minute command with 20/21 executions passed; the last
     # case had under 40 seconds left versus its preceding 74–78 second executions.
-    # Allow the complete unchanged matrix and independent failure collection.
-    timeout-minutes: 105
+    # Run 43789410401 also exhausted Debug's 900s after 59/60 cases passed.
+    # Allow the complete unchanged matrices and independent failure collection.
+    timeout-minutes: 108
     steps:
       - timeout-minutes: 1
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -72,13 +73,16 @@ jobs:
       # passed and failed different ChatScrollingUITests cases across runs.
       # A retry re-runs only a failed test, and every assertion must pass in
       # full on the retry, so a consistent regression still fails the job.
+      # Run 43789410401 left its final case ~166s versus a prior complete
+      # 172.598s execution. This bounded completion allowance preserves every
+      # case and UI deadline; it is not an application responsiveness budget.
       - name: Debug scroll state and existing long-chat UI regressions
         if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
-        timeout-minutes: 16
+        timeout-minutes: 19
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ios-native-command.py run --timeout-seconds 900 \
+          python3 scripts/ios-native-command.py run --timeout-seconds 1080 \
             --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-debug.receipt.json" -- \
             xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \

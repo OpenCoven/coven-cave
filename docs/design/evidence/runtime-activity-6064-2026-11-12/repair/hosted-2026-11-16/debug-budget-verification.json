@@ -1,0 +1,39 @@
+[
+  {
+    "command": [
+      "node",
+      "--test",
+      "scripts/ci-paths.test.mjs",
+      "scripts/ios-build-ci.test.mjs",
+      "scripts/ios-native-command.test.mjs"
+    ],
+    "exitCode": 0,
+    "log": "debug-budget-contracts.log"
+  },
+  {
+    "command": [
+      "pnpm",
+      "test:wiring"
+    ],
+    "exitCode": 254,
+    "log": "debug-budget-wiring-first-command-error.log",
+    "interpretation": "Wrong script name; no test execution. Corrected using package.json and ci.yml."
+  },
+  {
+    "command": [
+      "pnpm",
+      "check:tests-wired"
+    ],
+    "exitCode": 0,
+    "log": "debug-budget-wiring.log"
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exitCode": 0,
+    "log": "debug-budget-diff-check.log"
+  }
+]

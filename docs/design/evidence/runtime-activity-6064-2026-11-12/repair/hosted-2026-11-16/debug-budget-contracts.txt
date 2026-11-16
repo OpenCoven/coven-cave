@@ -1,0 +1,31 @@
+✔ documentation changes run the docs contract and nothing heavier (1.643458ms)
+✔ workflow and script changes run their validation lanes (0.116875ms)
+✔ standalone continuity sources always run the lightweight docs contracts (0.090334ms)
+✔ protocol changes run conformance in normal Linux pull-request CI (0.820875ms)
+✔ PR checks cannot silently skip suites after an earlier failure (cave-t8p1a) (0.3305ms)
+✔ editing E2E's own browser setup runs E2E (#5722, #6191) (0.08625ms)
+✔ bumping the pinned Coven release runs Automations and native TCP gates (#5217) (0.062916ms)
+✔ Rust-only changes avoid frontend and E2E work (0.061458ms)
+✔ user-facing frontend changes include E2E (0.073041ms)
+✔ shared dependency changes exercise every relevant web gate (0.1015ms)
+✔ root runtime hooks receive frontend and end-to-end validation (0.108542ms)
+✔ iOS sources and generators request the macOS build (0.078958ms)
+✔ public client v1 changes run Cave API, E2E, and documentation validation (0.081ms)
+✔ unrelated scripts do not enter the public client v1 lane (0.041541ms)
+ios-build-ci.test.mjs: ok
+✔ scripts/ios-build-ci.test.mjs (90.056916ms)
+✔ native command preserves its real exit status and output (204.781875ms)
+✔ timeout waits for owned child finalization and cannot become green (690.712875ms)
+✔ operator interruption drains only the owned command and preserves cancellation (175.657208ms)
+✔ frozen evidence survives later movement of xcresult staging files (228.869208ms)
+✔ a second collection cannot overwrite retained evidence (104.152292ms)
+✔ incomplete evidence stays available and fails visibly without following links (162.537416ms)
+✔ transcript workflow owns deadlines and uploads logs separately from frozen results (6.354791ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1636.990916

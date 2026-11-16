@@ -136,7 +136,15 @@ await test('transcript workflow owns deadlines and uploads logs separately from 
   const native = steps.filter((s) => String(s.run).includes('xcodebuild test '));
   assert.equal(native.length, 3);
   const debug = native.find((s) => String(s.run).includes("scroll-debug.receipt.json"));
-  assert.match(debug.run, /--timeout-seconds 900\b/, "retain all Debug cases after the measured cold run rather than cutting off the last case");
+  // Run 43789410401 exhausted 900s after 59 cases passed. The final case
+  // received about 166s, versus its preceding complete 172.598s execution.
+  // Combine the observed 59-case work with that complete final case and the
+  // preceding wrapper residual; reserve owned shutdown rather than cutting a case.
+  const retainedCompleteDebugSeconds = 319.142 + 172.598 + 459.713;
+  const debugBound = Number(debug.run.match(/--timeout-seconds (\d+)/)?.[1]);
+  assert.ok(debugBound > retainedCompleteDebugSeconds + 30,
+    'the complete observed Debug workload and owned shutdown must fit the command allowance');
+  assert.ok(debugBound <= 1080, 'keep the reviewed Debug command resource ceiling bounded');
   const destination = steps.find((s) => s.id === 'destination');
   assert.ok(destination, 'native execution requires an identified simulator-selection prerequisite');
   assert.ok(destination['timeout-minutes'] >= 3, 'cold CoreSimulator selection needs its own bounded setup budget');
@@ -177,5 +185,5 @@ await test('transcript workflow owns deadlines and uploads logs separately from 
   const nonNative = steps.filter((s) => !native.includes(s) && !uploads.includes(s)).reduce((n, s) => n + (s['timeout-minutes'] ?? 0), 0);
   const uploadsMinutes = uploads.reduce((n, s) => n + s['timeout-minutes'], 0);
   assert.ok(nativeSeconds / 60 + nonNative + uploadsMinutes <= job['timeout-minutes'] - 1, 'retain at least one minute inside the bounded job budget');
-  assert.equal(job['timeout-minutes'], 105, 'allow the complete measured native matrix plus independent failure collection');
+  assert.equal(job['timeout-minutes'], 108, 'allow the complete measured native matrix plus independent failure collection');
 });

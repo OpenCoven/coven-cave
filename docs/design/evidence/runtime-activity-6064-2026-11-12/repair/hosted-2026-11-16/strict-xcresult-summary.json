@@ -1,0 +1,55 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+        "deviceName" : "iPhone 17",
+        "modelName" : "iPhone 17",
+        "osBuildNumber" : "23F77",
+        "osVersion" : "26.5",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 1,
+      "passedTests" : 20,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "CovenCave · Built with macOS 26.7.2",
+  "expectedFailures" : 0,
+  "failedTests" : 1,
+  "finishTime" : 1794798856.075,
+  "passedTests" : 6,
+  "result" : "Failed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1794795415.181,
+  "statistics" : [
+    {
+      "subtitle" : "21 test runs",
+      "title" : "1 configuration ran with test repetitions"
+    }
+  ],
+  "testFailures" : [
+    {
+      "failureText" : "XCTAssertEqual failed: (\"6\") is not equal to (\"0\") - small drags at the end of the transcript do not move it away",
+      "targetName" : "CovenCaveUITests",
+      "testIdentifier" : 4,
+      "testIdentifierString" : "ChatScrollBounceUITests/testSmallDragsAtLatestStayOnLatest()",
+      "testIdentifierURL" : "test://com.apple.xcode/CovenCave/CovenCaveUITests/ChatScrollBounceUITests/testSmallDragsAtLatestStayOnLatest",
+      "testName" : "testSmallDragsAtLatestStayOnLatest()"
+    }
+  ],
+  "title" : "Test - CovenCave",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 7
+}

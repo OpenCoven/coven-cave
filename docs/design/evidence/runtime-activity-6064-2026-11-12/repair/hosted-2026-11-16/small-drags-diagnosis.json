@@ -1,0 +1,432 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-11-16T03:32:27.658686+00:00",
+  "classification": "Read-only hosted-candidate diagnosis; no source edits, tests, launches, cleanup or GitHub writes",
+  "head": "7fd1e8daf7117789117453aed91349fb349026ae",
+  "treeCleanAtCompletion": true,
+  "hostedRun": "43789410401",
+  "hostedMerge": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+  "matrix": {
+    "uniqueTests": 7,
+    "completedRuns": 21,
+    "passed": 20,
+    "failed": 1,
+    "retries": 0,
+    "commandTimeout": false,
+    "earlierPhysicalAcceptanceDoesNotTransfer": true
+  },
+  "failure": {
+    "test": "ChatScrollBounceUITests/testSmallDragsAtLatestStayOnLatest",
+    "iteration": 3,
+    "lost": 6,
+    "assertionSource": "apps/ios/CovenCave/CovenCaveUITests/ChatScrollBounceUITests.swift:176",
+    "testDurationSeconds": 132.189,
+    "log": "<retained-raw-root>/hosted-7fd/transcript/logs/scroll-bounce.log",
+    "logSHA256": "e2bcff7dddbf38e66cdc51a865ee04529bdda8081d92de1b39c4cccc320f80a0",
+    "iterationLogLines": [
+      13763,
+      14417
+    ],
+    "traceLogLines": [
+      14062,
+      14416
+    ],
+    "assertionLogLine": 14058
+  },
+  "observedPattern": "Loss is confined to passes3 and5, three samples each. The last traced movement for each is the intentional away nudge; the subsequent recorded return has no new outer-scroll phase/offset sequence. Screenshots demonstrate actual marker clipping/absence, not solely an accessibility or OCR predicate failure.",
+  "perPass": [
+    {
+      "pass": 0,
+      "awayNudge": null,
+      "returnPull": {
+        "actionLogLine": 13775,
+        "xctestActionSeconds": 20.11,
+        "synthesizedEventFile": "03763E7B-45D3-4493-B462-923C9FB6805D",
+        "eventTimestampUnixSeconds": 1794797303.247,
+        "outerPhaseStart": {
+          "logLine": 14107,
+          "record": "16.698 phase interacting"
+        },
+        "outerIdleGeometry": {
+          "logLine": 14131,
+          "record": "17.441 idleGeometry height=636.3333333333339 visibleBottom=661.3333333333303 previousBottom=661.9999999999964"
+        },
+        "outerLastGeometry": {
+          "logLine": 14133,
+          "record": "17.441 geo y=13290 h=14058 fromEnd=116 follow=false user=true atBottom=true"
+        }
+      },
+      "lostSamples": [],
+      "lossScreenshots": [],
+      "observation": "No failed samples; delivered return sequence settles latest visibleBottom661.333 versus latest-row height636.333."
+    },
+    {
+      "pass": 1,
+      "awayNudge": {
+        "actionLogLine": 13786,
+        "xctestActionSeconds": 33.91,
+        "synthesizedEventFile": "2993D886-F9AF-4521-96BA-E55BEFB1D13C",
+        "eventTimestampUnixSeconds": 1794797316.336,
+        "outerPhaseStart": {
+          "logLine": 14134,
+          "record": "29.950 phase interacting"
+        },
+        "outerIdleGeometry": {
+          "logLine": 14198,
+          "record": "31.759 idleGeometry height=636.3333333333339 visibleBottom=517.3333333333303 previousBottom=517.6666666666624"
+        },
+        "outerLastGeometry": {
+          "logLine": 14200,
+          "record": "31.759 geo y=13146 h=14058 fromEnd=260 follow=false user=true atBottom=false"
+        }
+      },
+      "returnPull": {
+        "actionLogLine": 13797,
+        "xctestActionSeconds": 36.9,
+        "synthesizedEventFile": "77DC89D2-9CCA-46EF-A9A4-2A4D7DAB7A87",
+        "eventTimestampUnixSeconds": 1794797320.207,
+        "outerPhaseStart": {
+          "logLine": 14201,
+          "record": "33.692 phase interacting"
+        },
+        "outerIdleGeometry": {
+          "logLine": 14228,
+          "record": "34.542 idleGeometry height=636.3333333333339 visibleBottom=661.3333333333303 previousBottom=661.9999999999964"
+        },
+        "outerLastGeometry": {
+          "logLine": 14230,
+          "record": "34.543 geo y=13290 h=14058 fromEnd=116 follow=false user=true atBottom=true"
+        }
+      },
+      "lostSamples": [],
+      "lossScreenshots": [],
+      "observation": "No failed samples; delivered return sequence settles latest visibleBottom661.333 versus latest-row height636.333."
+    },
+    {
+      "pass": 2,
+      "awayNudge": null,
+      "returnPull": {
+        "actionLogLine": 13808,
+        "xctestActionSeconds": 51.36,
+        "synthesizedEventFile": "56CDB540-44F1-42B5-A58B-AB6EEC9A0AB6",
+        "eventTimestampUnixSeconds": 1794797334.127,
+        "outerPhaseStart": {
+          "logLine": 14231,
+          "record": "47.612 phase interacting"
+        },
+        "outerIdleGeometry": {
+          "logLine": 14255,
+          "record": "48.341 idleGeometry height=636.3333333333339 visibleBottom=661.3333333333303 previousBottom=661.9999999999964"
+        },
+        "outerLastGeometry": {
+          "logLine": 14257,
+          "record": "48.342 geo y=13290 h=14058 fromEnd=116 follow=false user=true atBottom=true"
+        }
+      },
+      "lostSamples": [],
+      "lossScreenshots": [],
+      "observation": "No failed samples; delivered return sequence settles latest visibleBottom661.333 versus latest-row height636.333."
+    },
+    {
+      "pass": 3,
+      "awayNudge": {
+        "actionLogLine": 13819,
+        "xctestActionSeconds": 64.53,
+        "synthesizedEventFile": "535CAF68-0A47-45EB-A70B-B459CF7C4A2E",
+        "eventTimestampUnixSeconds": 1794797346.949,
+        "outerPhaseStart": {
+          "logLine": 14258,
+          "record": "60.543 phase interacting"
+        },
+        "outerIdleGeometry": {
+          "logLine": 14319,
+          "record": "62.355 idleGeometry height=636.3333333333339 visibleBottom=525.3333333333303 previousBottom=525.3333333333303"
+        },
+        "outerLastGeometry": {
+          "logLine": 14318,
+          "record": "62.339 geo y=13154 h=14058 fromEnd=252 follow=false user=true atBottom=false"
+        }
+      },
+      "returnPull": {
+        "actionLogLine": 13830,
+        "xctestActionSeconds": 67.48,
+        "synthesizedEventFile": "686069A5-5215-4BBE-B15C-8BB0DD7E4A61",
+        "eventTimestampUnixSeconds": 1794797350.741,
+        "outerPhaseStart": null,
+        "outerIdleGeometry": null,
+        "outerLastGeometry": null
+      },
+      "lostSamples": [
+        {
+          "logLine": 13842,
+          "record": "=== Small drag pass 3 sample 0 rendered text: 2:49"
+        },
+        {
+          "logLine": 13873,
+          "record": "=== Small drag pass 3 sample 1 rendered text: 2:49"
+        },
+        {
+          "logLine": 13904,
+          "record": "=== Small drag pass 3 sample 2 rendered text: 2:49"
+        }
+      ],
+      "lossScreenshots": [
+        {
+          "file": "AD187272-D6D1-4B66-9C39-7ED582BDD127.png",
+          "timestampUnixSeconds": 1794797369.119
+        },
+        {
+          "file": "75A14899-275F-4DFC-A640-E035C616EAF3.png",
+          "timestampUnixSeconds": 1794797362.227
+        },
+        {
+          "file": "1B20BB39-A318-47B4-B717-9167AF7C9203.png",
+          "timestampUnixSeconds": 1794797354.849
+        }
+      ],
+      "observation": "All three samples fail after away nudge; no additional outer-scroll phase/offset sequence is recorded for the return."
+    },
+    {
+      "pass": 4,
+      "awayNudge": null,
+      "returnPull": {
+        "actionLogLine": 13934,
+        "xctestActionSeconds": 91.32,
+        "synthesizedEventFile": "AA5A40E9-299B-42A2-B476-06F1D3C83122",
+        "eventTimestampUnixSeconds": 1794797373.962,
+        "outerPhaseStart": {
+          "logLine": 14321,
+          "record": "87.428 phase interacting"
+        },
+        "outerIdleGeometry": {
+          "logLine": 14342,
+          "record": "88.292 idleGeometry height=636.3333333333339 visibleBottom=661.3333333333303 previousBottom=661.9999999999964"
+        },
+        "outerLastGeometry": {
+          "logLine": 14344,
+          "record": "88.292 geo y=13290 h=14058 fromEnd=116 follow=false user=true atBottom=true"
+        }
+      },
+      "lostSamples": [],
+      "lossScreenshots": [],
+      "observation": "No failed samples; delivered return sequence settles latest visibleBottom661.333 versus latest-row height636.333."
+    },
+    {
+      "pass": 5,
+      "awayNudge": {
+        "actionLogLine": 13945,
+        "xctestActionSeconds": 104.01,
+        "synthesizedEventFile": "027971F2-1C73-4EEC-8D6C-B80B600C7D69",
+        "eventTimestampUnixSeconds": 1794797386.381,
+        "outerPhaseStart": {
+          "logLine": 14345,
+          "record": "99.975 phase interacting"
+        },
+        "outerIdleGeometry": {
+          "logLine": 14412,
+          "record": "101.755 idleGeometry height=636.3333333333339 visibleBottom=517.3333333333303 previousBottom=517.6666666666624"
+        },
+        "outerLastGeometry": {
+          "logLine": 14414,
+          "record": "101.755 geo y=13146 h=14058 fromEnd=260 follow=false user=true atBottom=false"
+        }
+      },
+      "returnPull": {
+        "actionLogLine": 13956,
+        "xctestActionSeconds": 106.87,
+        "synthesizedEventFile": "B6897E28-5FEC-4810-8B4F-00824F0D6DD8",
+        "eventTimestampUnixSeconds": 1794797389.394,
+        "outerPhaseStart": null,
+        "outerIdleGeometry": null,
+        "outerLastGeometry": null
+      },
+      "lostSamples": [
+        {
+          "logLine": 13968,
+          "record": "=== Small drag pass 5 sample 0 rendered text: 2:49"
+        },
+        {
+          "logLine": 13998,
+          "record": "=== Small drag pass 5 sample 1 rendered text: 2:49"
+        },
+        {
+          "logLine": 14028,
+          "record": "=== Small drag pass 5 sample 2 rendered text: 2:50"
+        }
+      ],
+      "lossScreenshots": [
+        {
+          "file": "463689DB-827F-49EF-B80F-AD49C2B83506.png",
+          "timestampUnixSeconds": 1794797407.668
+        },
+        {
+          "file": "A8908DF7-1706-472E-BDCE-A9A0EFA343E9.png",
+          "timestampUnixSeconds": 1794797399.741
+        },
+        {
+          "file": "D900E3E5-6921-40E6-B2E0-FF37DAEE8205.png",
+          "timestampUnixSeconds": 1794797393.089
+        }
+      ],
+      "observation": "All three samples fail after away nudge; no additional outer-scroll phase/offset sequence is recorded for the return."
+    }
+  ],
+  "passingIterationControls": [
+    {
+      "iteration": 1,
+      "loggedDragActions": 9,
+      "recordedInteractingSequences": 9,
+      "lostSamples": 0,
+      "terminalRecord": "Test Case '-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]' passed (114.312 seconds)."
+    },
+    {
+      "iteration": 2,
+      "loggedDragActions": 9,
+      "recordedInteractingSequences": 8,
+      "lostSamples": 0,
+      "terminalRecord": "Test Case '-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]' passed (110.925 seconds)."
+    }
+  ],
+  "geometrySummary": {
+    "contentHeightDuringGestures": 14058,
+    "heightChangesAfterTraceSeconds10_4": 0,
+    "anchorCorrectionCount": 0,
+    "viewportRecoveryCount": 0,
+    "followCommands": [
+      {
+        "logLine": 14074,
+        "record": "1.902 scrollToLatest animated=false"
+      },
+      {
+        "logLine": 14089,
+        "record": "5.501 scrollToLatest animated=false"
+      },
+      {
+        "logLine": 14101,
+        "record": "10.326 scrollToLatest animated=false"
+      }
+    ],
+    "pass3AwayEnd": "trace62.339 y13154 fromEnd252; idle62.355 latestHeight636.333 visibleBottom525.333",
+    "pass5AwayEnd": "trace101.755 y13146 fromEnd260; idle latestHeight636.333 visibleBottom517.333",
+    "deliveredReturnEnd": "y13290 fromEnd116; latest visibleBottom661.333, height636.333; latest is in range"
+  },
+  "synthesizedEventComparison": {
+    "returnCount": 6,
+    "allReturnBytesIdentical": true,
+    "returnSHA256": "9fa2ece497e8f8d2a12eb64e83a217367df1c4f3d9ea0a46af5d18a70ddceb65",
+    "awayNudgeCount": 3,
+    "allAwayNudgeBytesIdentical": true,
+    "awayNudgeSHA256": "0ad879ded1d8340fd2c64d90644418ed47915de86922c978b92f2ba964adcfd9",
+    "returnPathPoints": [
+      [
+        201,
+        460.8
+      ],
+      [
+        201,
+        384
+      ]
+    ],
+    "holdSeconds": 0.05,
+    "endAndUpOffsetSeconds": 0.2036,
+    "targetAppPID": 72531,
+    "recipientLimit": "Records identify app PID only. Target frame fields are all zero; no child view, hit-test result, gesture-recognizer owner/state or delivery acknowledgement is stored. Equal synthesized bytes do not prove equal recipient/delivery.",
+    "returnEventFiles": [
+      "03763E7B-45D3-4493-B462-923C9FB6805D",
+      "77DC89D2-9CCA-46EF-A9A4-2A4D7DAB7A87",
+      "56CDB540-44F1-42B5-A58B-AB6EEC9A0AB6",
+      "686069A5-5215-4BBE-B15C-8BB0DD7E4A61",
+      "AA5A40E9-299B-42A2-B476-06F1D3C83122",
+      "B6897E28-5FEC-4810-8B4F-00824F0D6DD8"
+    ],
+    "awayEventFiles": [
+      "2993D886-F9AF-4521-96BA-E55BEFB1D13C",
+      "535CAF68-0A47-45EB-A70B-B459CF7C4A2E",
+      "027971F2-1C73-4EEC-8D6C-B80B600C7D69"
+    ]
+  },
+  "visualEvidence": [
+    {
+      "file": "1B20BB39-A318-47B4-B717-9167AF7C9203.png",
+      "observation": "Pass3 sample0: latest marker line partly clipped immediately above composer, jump-to-latest visible; directly inspected by this reader and root."
+    },
+    {
+      "file": "6046F50A-822C-4629-AAFE-82402138B7B1.png",
+      "observation": "Root inspection: final settled marker absent, prior history table above latest bubble, jump visible."
+    },
+    {
+      "file": "975F5E7F-B444-42C7-BFA3-2EAC9707E842.png",
+      "observation": "Root inspection: earlier passing iteration settled with marker fully visible, footer/actions visible, no jump."
+    }
+  ],
+  "sourceInterpretation": [
+    {
+      "reference": "apps/ios/CovenCave/CovenCaveUITests/ChatScrollBounceUITests.swift:151",
+      "meaning": "Six passes; odd passes intentionally nudge away, every pass returns0.6\u21920.5, then exact OCR substring is asserted by three samples. Do not remove or reinterpret these assertions."
+    },
+    {
+      "reference": "apps/ios/CovenCave/CovenCaveUITests/ChatScrollBounceUITests.swift:49",
+      "meaning": "Failure predicate, attached screenshot and printed OCR currently use separate screenshots. Printed garbled marker is not proof the predicate screenshot was fully visible; physical clipping is independently observed."
+    },
+    {
+      "reference": "apps/ios/CovenCave/CovenCave/Views/ChatView.swift:1183",
+      "meaning": "Tracking/interacting/decelerating begin user scroll and cancel coalesced follow; idle samples native latest geometry before endUserScroll. Last geo flag user=true can precede idle handler and does not prove a stuck scrolling state."
+    },
+    {
+      "reference": "apps/ios/CovenCave/CovenCave/State/ChatScrollState.swift:30",
+      "meaning": "Idle re-enables following only for at-bottom or returned-to-bottom intent. Off-bottom nudge geometry explains continued non-follow; without a recorded return, forcing follow would override legitimate away intent."
+    },
+    {
+      "reference": "apps/ios/CovenCave/CovenCave/State/ChatScrollState.swift:108",
+      "meaning": "At bottom means latest visibleBottom>=height-24;525/517 are below612.333 threshold, while661.333 is above."
+    },
+    {
+      "reference": "apps/ios/CovenCave/CovenCave/Views/ChatView.swift:1035",
+      "meaning": "Viewport recovery only runs for pending beyond-end correction outside user scrolling; no such event recorded here."
+    },
+    {
+      "reference": "apps/ios/CovenCave/CovenCave/Views/ChatScrollAnchor.swift:147",
+      "meaning": "Row anchoring logs any applied/requested correction. No anchorCorrection record or post-initial content-height change is present."
+    },
+    {
+      "reference": "apps/ios/CovenCave/CovenCave/Views/ChatScrollTrace.swift:72",
+      "meaning": "Logs on scroll-phase transitions and geometry changes, not every touch or recognizer decision. Missing phase alone cannot establish absence of an injected event or recipient."
+    },
+    {
+      "reference": "apps/ios/CovenCave/CovenCave/Views/MarkdownWebView.swift:221",
+      "meaning": "Chat Markdown WKWebView inner scrollView scrolling and bounce are disabled, but source does not eliminate all child gesture arbitration. Return coordinates lie through latest prose on the observed pass3 image, away from top/bottom native chrome."
+    }
+  ],
+  "hypotheses": [
+    {
+      "hypothesis": "Return touch reaches a different child/recognizer path or fails to engage outer transcript pan",
+      "status": "Supported investigation target, unproven cause",
+      "evidence": "Two identical recorded returns lack outer phase/offset sequences; one passing iteration also lacks one away-nudge sequence. Recipient/state are not captured."
+    },
+    {
+      "hypothesis": "Layout growth, anchor correction or viewport recovery yanks latest away after return",
+      "status": "Not established by this trace",
+      "evidence": "No post-initial height changes, no anchor/recovery logs, and failed passes remain at the preceding away-nudge offset."
+    },
+    {
+      "hypothesis": "Follow-state classification loses a successfully completed return",
+      "status": "Unproven; no successfully delivered failed return is recorded",
+      "evidence": "Delivered return sequences reach bottom and subsequent checks pass. Phase trace callback ordering means raw user/follow flags alone cannot prove a state-handler defect."
+    },
+    {
+      "hypothesis": "OCR-only false loss",
+      "status": "Insufficient explanation",
+      "evidence": "Pass3 printed OCR is garbled, but direct screenshot shows clipping and final settled screenshot shows marker absent."
+    }
+  ],
+  "oneBoundedNextDiagnosticProposal": {
+    "purpose": "Distinguish injected path from actual outer-pan engagement and child hit-test routing without a scroll-policy repair.",
+    "scope": "One diagnostic-only normal-signature invocation of the same seven methods\u00d7three repetitions, exact current gestures/actions/assertions and all existing invocation/test deadlines; no retries, extra drags/taps, sleeps, fallback test or narrowed acceptance.",
+    "loggingOnlyDelta": "If separately authorized, append bounded logging to the existing native scroll-view probe/recognizer rather than adding a competing recognizer: record existing pan-recognizer state/enablement and native offset/insets/bounds, plus read-only window hit-test ancestry for the exact recorded return endpoints at existing gesture callbacks. Add an absolute origin to trace records and driver pass/action labels for clock correlation. Retain the exact image and OCR boxes/confidence from each already-performed predicate screenshot when it fails, avoiding a replacement predicate or fuzzy matching.",
+    "decisionGate": "A failed original return with native pan engagement but unchanged/misclassified geometry would justify investigating scroll policy; absence of engagement with a captured child hit target would direct gesture routing diagnosis. Missing recipient/engagement evidence remains inconclusive. A green diagnostic never erases this hosted failure.",
+    "instrumentationLimit": "Additional logging/attachments add diagnostic work and cannot establish frame cost, responsiveness, or physical-device acceptance."
+  },
+  "clockLimit": "XCTest elapsed test clock, app-relative Date trace clock and archived event Unix timestamps have different origins. Per-pass mapping uses ordered sequences; no exact app/test clock offset or main-thread timing is inferred.",
+  "noActionBeyondAuthorizedNewReport": true,
+  "attachmentDirectory": "<retained-raw-root>/hosted-7fd/transcript/small-drags-attachments"
+}

@@ -1,0 +1,1706 @@
+{
+  "head": "7fd1e8daf7117789117453aed91349fb349026ae",
+  "testedMergeTree": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+  "run": 43789410398,
+  "summaries": [
+    {
+      "artifactId": 14192021092,
+      "artifactName": "playwright-evidence-agentic-43789410398-1",
+      "summary": {
+        "version": 1,
+        "arguments": [
+          "tests/agentic-enhance.spec.ts",
+          "tests/research-desk-tabs.spec.ts",
+          "--project=desktop",
+          "--workers=1",
+          "--no-deps"
+        ],
+        "phase": "complete",
+        "passed": true,
+        "runId": "43789410398",
+        "runAttempt": "1",
+        "workflowSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "workflowDefinitionSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "collectionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "planned": 34,
+        "identitySha256": "06f3c813e9b389524da67255c2b2082c2f66dad2ba617844da31b971d7384252",
+        "executionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "counts": {
+          "planned": 34,
+          "executed": 33,
+          "expected": 33,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 1,
+          "attempts": 33,
+          "retries": 0,
+          "identitySha256": "06f3c813e9b389524da67255c2b2082c2f66dad2ba617844da31b971d7384252"
+        }
+      },
+      "planResultIdentityMultisetEqual": true,
+      "rawCountsEqualSummary": true
+    },
+    {
+      "artifactId": 14191759680,
+      "artifactName": "playwright-evidence-shard-1-43789410398-1",
+      "summary": {
+        "version": 1,
+        "arguments": [
+          "--shard=1/6",
+          "--workers=1"
+        ],
+        "phase": "complete",
+        "passed": true,
+        "runId": "43789410398",
+        "runAttempt": "1",
+        "workflowSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "workflowDefinitionSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "collectionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "planned": 195,
+        "identitySha256": "ea2e3261b522bfbc76551a540507dfe7b29ccac1af50eefacd520666d4d35669",
+        "executionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "counts": {
+          "planned": 195,
+          "executed": 189,
+          "expected": 189,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 6,
+          "attempts": 189,
+          "retries": 0,
+          "identitySha256": "ea2e3261b522bfbc76551a540507dfe7b29ccac1af50eefacd520666d4d35669"
+        }
+      },
+      "planResultIdentityMultisetEqual": true,
+      "rawCountsEqualSummary": true
+    },
+    {
+      "artifactId": 14192680698,
+      "artifactName": "playwright-evidence-shard-2-43789410398-1",
+      "summary": {
+        "version": 1,
+        "arguments": [
+          "--shard=2/6",
+          "--workers=1"
+        ],
+        "phase": "complete",
+        "passed": true,
+        "runId": "43789410398",
+        "runAttempt": "1",
+        "workflowSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "workflowDefinitionSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "collectionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "planned": 206,
+        "identitySha256": "2c2ceeeeb25d629968cce81ab6e8a94631f5da354e6e010031100989efa3b279",
+        "executionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "counts": {
+          "planned": 206,
+          "executed": 204,
+          "expected": 204,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 2,
+          "attempts": 204,
+          "retries": 0,
+          "identitySha256": "2c2ceeeeb25d629968cce81ab6e8a94631f5da354e6e010031100989efa3b279"
+        }
+      },
+      "planResultIdentityMultisetEqual": true,
+      "rawCountsEqualSummary": true
+    },
+    {
+      "artifactId": 14192620104,
+      "artifactName": "playwright-evidence-shard-3-43789410398-1",
+      "summary": {
+        "version": 1,
+        "arguments": [
+          "--shard=3/6",
+          "--workers=1"
+        ],
+        "phase": "complete",
+        "passed": true,
+        "runId": "43789410398",
+        "runAttempt": "1",
+        "workflowSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "workflowDefinitionSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "collectionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "planned": 184,
+        "identitySha256": "a7feac4cbbe9ab841c20e027cddc2af88c348a98c1fe4dcf95b1fbb8e936022c",
+        "executionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "counts": {
+          "planned": 184,
+          "executed": 182,
+          "expected": 182,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 2,
+          "attempts": 182,
+          "retries": 0,
+          "identitySha256": "a7feac4cbbe9ab841c20e027cddc2af88c348a98c1fe4dcf95b1fbb8e936022c"
+        }
+      },
+      "planResultIdentityMultisetEqual": true,
+      "rawCountsEqualSummary": true
+    },
+    {
+      "artifactId": 14192326042,
+      "artifactName": "playwright-evidence-shard-4-43789410398-1",
+      "summary": {
+        "version": 1,
+        "arguments": [
+          "--shard=4/6",
+          "--workers=1"
+        ],
+        "phase": "complete",
+        "passed": true,
+        "runId": "43789410398",
+        "runAttempt": "1",
+        "workflowSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "workflowDefinitionSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "collectionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "planned": 195,
+        "identitySha256": "77495642bf143b6c78ad9af76bde1590f3fc479a1708eabeae38f201d5356779",
+        "executionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "counts": {
+          "planned": 195,
+          "executed": 193,
+          "expected": 193,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 2,
+          "attempts": 193,
+          "retries": 0,
+          "identitySha256": "77495642bf143b6c78ad9af76bde1590f3fc479a1708eabeae38f201d5356779"
+        }
+      },
+      "planResultIdentityMultisetEqual": true,
+      "rawCountsEqualSummary": true
+    },
+    {
+      "artifactId": 14191834091,
+      "artifactName": "playwright-evidence-shard-5-43789410398-1",
+      "summary": {
+        "version": 1,
+        "arguments": [
+          "--shard=5/6",
+          "--workers=1"
+        ],
+        "phase": "complete",
+        "passed": true,
+        "runId": "43789410398",
+        "runAttempt": "1",
+        "workflowSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "workflowDefinitionSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "collectionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "planned": 195,
+        "identitySha256": "3d00e75d051d9dc9cd9b897d2646bbf3d406364ba50ab9c50d3836867ddbf4c3",
+        "executionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "counts": {
+          "planned": 195,
+          "executed": 188,
+          "expected": 188,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 7,
+          "attempts": 188,
+          "retries": 0,
+          "identitySha256": "3d00e75d051d9dc9cd9b897d2646bbf3d406364ba50ab9c50d3836867ddbf4c3"
+        }
+      },
+      "planResultIdentityMultisetEqual": true,
+      "rawCountsEqualSummary": true
+    },
+    {
+      "artifactId": 14192295525,
+      "artifactName": "playwright-evidence-shard-6-43789410398-1",
+      "summary": {
+        "version": 1,
+        "arguments": [
+          "--shard=6/6",
+          "--workers=1"
+        ],
+        "phase": "complete",
+        "passed": true,
+        "runId": "43789410398",
+        "runAttempt": "1",
+        "workflowSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "workflowDefinitionSha": "8ae377e20edba0aed01cbb563ff64f0c881dee20",
+        "collectionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "planned": 195,
+        "identitySha256": "2448fd33f83ed02d7819fa2c720bda5b29cf6711fe055678a915402a9cb3133b",
+        "executionExit": {
+          "status": 0,
+          "signal": null
+        },
+        "counts": {
+          "planned": 195,
+          "executed": 157,
+          "expected": 157,
+          "unexpected": 0,
+          "flaky": 0,
+          "skipped": 38,
+          "attempts": 157,
+          "retries": 0,
+          "identitySha256": "2448fd33f83ed02d7819fa2c720bda5b29cf6711fe055678a915402a9cb3133b"
+        }
+      },
+      "planResultIdentityMultisetEqual": true,
+      "rawCountsEqualSummary": true
+    }
+  ],
+  "aggregate": {
+    "planned": 1204,
+    "skipped": 58,
+    "executed": 1146,
+    "expected": 1146,
+    "attempts": 1146,
+    "retries": 0
+  },
+  "skipped": [
+    {
+      "artifact": "playwright-evidence-agentic-43789410398-1",
+      "file": "agentic-enhance.spec.ts",
+      "title": "keeps Board recommendations hidden and idle when the capability is disabled",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "this behavioral gate runs in the disabled capability build",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/agentic-enhance.spec.ts",
+            "line": 361,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "agentic-enhance.spec.ts",
+      "title": "generates persisted proposals, explains exact diffs, and applies governed independent reversions",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "run with NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS=1",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/agentic-enhance.spec.ts",
+            "line": 381,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "agentic-enhance.spec.ts",
+      "title": "regenerates after a task changes while retaining prior proposal history",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "run with NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS=1",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/agentic-enhance.spec.ts",
+            "line": 381,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "agentic-enhance.spec.ts",
+      "title": "loads proposals for a lean list card from the single-card endpoint",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "run with NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS=1",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/agentic-enhance.spec.ts",
+            "line": 381,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "agentic-enhance.spec.ts",
+      "title": "generic needs-human recovery retains Retry and Cancel",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "run with NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS=1",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/agentic-enhance.spec.ts",
+            "line": 381,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "agentic-enhance.spec.ts",
+      "title": "renders malformed blocked payloads without dereferencing them",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "run with NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS=1",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/agentic-enhance.spec.ts",
+            "line": 381,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "agentic-enhance.spec.ts",
+      "title": "prevents reverse-order response races by locking proposal controls",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "run with NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS=1",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/agentic-enhance.spec.ts",
+            "line": 381,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-2-43789410398-1",
+      "file": "chat-stream-performance.spec.ts",
+      "title": "10,000-event burst stream meets its production p95 budget",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "Run pnpm performance:stream",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/chat-stream-performance.spec.ts",
+            "line": 28,
+            "column": 6
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-2-43789410398-1",
+      "file": "chat-stream-performance.spec.ts",
+      "title": "10,000-event paced stream meets its production p95 budget",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "Run pnpm performance:stream",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/chat-stream-performance.spec.ts",
+            "line": 28,
+            "column": 6
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-3-43789410398-1",
+      "file": "composer-environment-popover.spec.ts",
+      "title": "on a phone the popover opens from the engaged composer, stays in the viewport, and its rows are touch targets",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "phone-only",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/composer-environment-popover.spec.ts",
+            "line": 198,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-3-43789410398-1",
+      "file": "doctor-exec-performance.spec.ts",
+      "title": "coven doctor through the exec route answers within its production p95 budget",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "Run pnpm performance:doctor",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/doctor-exec-performance.spec.ts",
+            "line": 18,
+            "column": 6
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-4-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "mobile uses one focus-trapped right drawer and returns focus",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 272,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-4-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "full-bleed right drawer's close control is reachable by keyboard",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 335,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-5-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "tablet-width right drawer keeps a genuinely pointer-reachable backdrop",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 598,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-5-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "mobile fix handoff opens the Chat drawer and restores the main draft on close",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 630,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-5-43789410398-1",
+      "file": "shell-boot-performance.spec.ts",
+      "title": "warm shell boot reaches an interactive Home composer within its production p95 budget",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "Run pnpm performance:shell",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/shell-boot-performance.spec.ts",
+            "line": 33,
+            "column": 6
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-5-43789410398-1",
+      "file": "shell-boot-performance.spec.ts",
+      "title": "offline shell boot reaches an interactive Home composer within its production p95 budget",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "Run pnpm performance:shell",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/shell-boot-performance.spec.ts",
+            "line": 33,
+            "column": 6
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-5-43789410398-1",
+      "file": "soak-performance.spec.ts",
+      "title": "the production shell holds steady resource counts over a sustained soak",
+      "project": "desktop",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "Run pnpm performance:soak",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/soak-performance.spec.ts",
+            "line": 28,
+            "column": 6
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-5-43789410398-1",
+      "file": "composer-environment-popover.spec.ts",
+      "title": "pointer opening keeps focus on the chip; keyboard opening lands on the first row and arrows rove",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "phone journeys are below",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/composer-environment-popover.spec.ts",
+            "line": 116,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-5-43789410398-1",
+      "file": "composer-environment-popover.spec.ts",
+      "title": "rows launch the Changes rail, the pull request and the branch list; Escape returns to the chip",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "phone journeys are below",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/composer-environment-popover.spec.ts",
+            "line": 160,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "private-state-access.spec.ts",
+      "title": "Open projects works from the Chat panel beside Home",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "the side Chat panel is a desktop layout",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/private-state-access.spec.ts",
+            "line": 429,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "private-state-access.spec.ts",
+      "title": "Open projects works from the Chat panel beside Home",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "the side Chat panel is a desktop layout",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/private-state-access.spec.ts",
+            "line": 429,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "desktop keeps the panel across surfaces and supports a second Chat conversation",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 125,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "widening past the mobile breakpoint restores an open panel without a layout error",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 238,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread popup opens sidechat and sends once without replacing main Chat",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 496,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread bridge retains the requested actor when main Chat belongs to another familiar",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 537,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread explicit target authorizes Alpha without replacing All projects scope",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 565,
+            "column": 10
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread explicit target authorizes Alpha without replacing fix-project scope",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 565,
+            "column": 10
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread explicit target fails closed when the requested actor lacks that project's grant",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 583,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "tablet-width right drawer keeps a genuinely pointer-reachable backdrop",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 598,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread source lookup failure remains unsent and supports explicit retry",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 656,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "superseding a pending fix request makes its original action retryable",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 682,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "failure from another window releases the originating fix action",
+      "project": "pixel-5",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 713,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "desktop keeps the panel across surfaces and supports a second Chat conversation",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 125,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "widening past the mobile breakpoint restores an open panel without a layout error",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 238,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread popup opens sidechat and sends once without replacing main Chat",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 496,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread bridge retains the requested actor when main Chat belongs to another familiar",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 537,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread explicit target authorizes Alpha without replacing All projects scope",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 565,
+            "column": 10
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread explicit target authorizes Alpha without replacing fix-project scope",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 565,
+            "column": 10
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread explicit target fails closed when the requested actor lacks that project's grant",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 583,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "tablet-width right drawer keeps a genuinely pointer-reachable backdrop",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 598,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread source lookup failure remains unsent and supports explicit retry",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 656,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "superseding a pending fix request makes its original action retryable",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 682,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "failure from another window releases the originating fix action",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 713,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "desktop keeps the panel across surfaces and supports a second Chat conversation",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 125,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "widening past the mobile breakpoint restores an open panel without a layout error",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 238,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "mobile uses one focus-trapped right drawer and returns focus",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 272,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "full-bleed right drawer's close control is reachable by keyboard",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 335,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread popup opens sidechat and sends once without replacing main Chat",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 496,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread bridge retains the requested actor when main Chat belongs to another familiar",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 537,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread explicit target authorizes Alpha without replacing All projects scope",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 565,
+            "column": 10
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread explicit target authorizes Alpha without replacing fix-project scope",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 565,
+            "column": 10
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread explicit target fails closed when the requested actor lacks that project's grant",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 583,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "fix-thread source lookup failure remains unsent and supports explicit retry",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 656,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "superseding a pending fix request makes its original action retryable",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 682,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "right-chat-panel.spec.ts",
+      "title": "failure from another window releases the originating fix action",
+      "project": "tablet",
+      "annotations": [
+        {
+          "type": "skip",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/right-chat-panel.spec.ts",
+            "line": 713,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "composer-environment-popover.spec.ts",
+      "title": "pointer opening keeps focus on the chip; keyboard opening lands on the first row and arrows rove",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "phone journeys are below",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/composer-environment-popover.spec.ts",
+            "line": 116,
+            "column": 8
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43789410398-1",
+      "file": "composer-environment-popover.spec.ts",
+      "title": "rows launch the Changes rail, the pull request and the branch list; Escape returns to the chip",
+      "project": "iphone-13",
+      "annotations": [
+        {
+          "type": "skip",
+          "description": "phone journeys are below",
+          "location": {
+            "file": "/home/runner/work/coven-cave/coven-cave/tests/composer-environment-popover.spec.ts",
+            "line": 160,
+            "column": 8
+          }
+        }
+      ]
+    }
+  ],
+  "goldenActivityCases": [
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "large mixed trace keeps capped payloads explicit and draft interactive",
+      "project": "desktop-webkit-tool-output",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "lazy output 401 withholds bodies and rechecks or revokes access",
+      "project": "desktop-webkit-tool-output",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "lazy output 403 withholds bodies and rechecks or revokes access",
+      "project": "desktop-webkit-tool-output",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "project": "desktop-webkit-tool-output",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "project": "desktop-webkit-tool-output",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "project": "desktop-webkit-tool-output",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "Retry keeps a stationary press through deferred input highlighting",
+      "project": "desktop-webkit-tool-output",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "reasoning and parallel same-name calls retain failed attempts live and after reload (summaries=true)",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "reasoning and parallel same-name calls retain failed attempts live and after reload (summaries=false)",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "large trace production measurements",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "large mixed trace keeps capped payloads explicit and draft interactive",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "lazy output 401 withholds bodies and rechecks or revokes access",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "lazy output 403 withholds bodies and rechecks or revokes access",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "Retry keeps a stationary press through deferred input highlighting",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "hostile prose, reasoning and tool results never become execution authority",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "denied approval stays rejected when stale frames are replayed, live and after reload",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "live region announces each parallel tool milestone without token chatter",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "typed reasoning preference default survives hydration without hiding failed tools",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "typed reasoning toggle during streaming persists through history hydration",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "legacy reasoning toggle during streaming persists through history hydration",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "output access revocation clears history and a live owner without replaying a send",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "withheld and unavailable reasoning report no invented summary live and after reload (reasoning=unknown)",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "withheld and unavailable reasoning report no invented summary live and after reload (reasoning=disabled)",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43789410398-1",
+      "file": "chat-activity-acceptance.spec.ts",
+      "title": "accepted saved output at byte limit preserves draft when returning to latest (#6064)",
+      "project": "desktop",
+      "status": "expected",
+      "results": [
+        {
+          "status": "passed",
+          "retry": 0
+        }
+      ]
+    }
+  ],
+  "qualificationLimit": "Hosted browser reports do not establish installed native, physical device, frame-cost or human acceptance. Shard and dedicated-agentic counts are job executions and may repeat identities across separate jobs."
+}

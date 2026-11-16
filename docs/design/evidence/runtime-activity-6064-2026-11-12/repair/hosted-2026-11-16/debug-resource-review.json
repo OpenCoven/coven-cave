@@ -1,0 +1,92 @@
+{
+  "observedAt": "2026-11-16T03:40:57.597482+00:00",
+  "scope": "Independent read-only Debug command-resource diagnosis; no tests, simulator/app launches, CI actions or repository edits performed.",
+  "sourceHead": "7fd1e8daf7117789117453aed91349fb349026ae",
+  "sourceWorktreeClean": true,
+  "hostedRun": 43789410401,
+  "hostedMergeTree": "8ae377e",
+  "evidence": [
+    "transcript/logs/scroll-debug.receipt.json",
+    "transcript/logs/scroll-debug.log",
+    "transcript/scroll-debug-audit.json",
+    "debug-baseline-comparison.json"
+  ],
+  "firstFailure": {
+    "classification": "Failed incomplete Debug command, not an observed assertion failure or completed test matrix.",
+    "commandBudgetSeconds": 900,
+    "receiptElapsedSeconds": 926.2029018750001,
+    "timedOut": true,
+    "exitCode": 124,
+    "childExitCode": -9,
+    "startedCases": 60,
+    "passedCases": 59,
+    "observedFailedCaseTerminals": 0,
+    "observedInlineAssertionFailures": 0,
+    "observedRepeatedIdentities": 0,
+    "unterminatedCase": "ChatScrollingUITests.testScrollToLatestFromOlderContentShowsNewestReply",
+    "lastCaseStartUTC": "2026-11-16 02:13:27.452",
+    "lastLoggedCaseSeconds": 170.99,
+    "timingCaveat": "The supplied step-start timestamp implies about166 seconds remained at case start. The170.99-second log milestone may overlap controller shutdown; it is not proof of progress before the900-second deadline or a completed final jump.",
+    "finalBundleUnfinalized": true
+  },
+  "comparison": {
+    "baselineRun": 43778586069,
+    "baselinePassed": 60,
+    "baselineWrapperSeconds": 792.853637709,
+    "baselineLastCaseSeconds": 172.598,
+    "currentOther59CaseSeconds": 319.142,
+    "baselineAll60CaseSeconds": 333.141,
+    "baselineWrapperResidualSeconds": 459.712637709,
+    "currentEarlierUICaseSeconds": [
+      93.798,
+      127.996,
+      78.487
+    ],
+    "baselineEarlierUICaseSeconds": [
+      51.009,
+      69.255,
+      26.437
+    ],
+    "onlyNativeSourceDiff": "One stop-condition query in unselected PerformanceBaselineUITests; compiled but not executed by the Debug selectors.",
+    "limits": "Earlier UI cases were materially slower. Command wall time and the residual include build/setup/gaps/teardown; neither an environment-only cause nor a product cause or responsiveness verdict is established."
+  },
+  "recommendation": {
+    "decision": "Do not ritual-rerun the unchanged900-second command or automatically raise budgets. A separately reviewed, one-time bounded Debug completion allowance is defensible if root chooses an infrastructure change; it is not a product repair or evidence that the interrupted case would pass.",
+    "conditionalCommandCeilingSeconds": 1080,
+    "conditionalDebugStepMinutes": 19,
+    "conditionalJobMinutes": 108,
+    "measuredJustification": "The interrupted case received about166 seconds versus a prior complete172.598-second execution and was still before its final jump at logged170.99. Adding180 seconds reserves one rounded prior final-case interval beyond the existing cap. A conservative cross-run accounting estimate is319.142+172.598+459.713=951.453 seconds, or981.453 including30 seconds of shutdown allowance;1080 provides bounded additional room, without guaranteeing completion.",
+    "nestedMath": {
+      "debugCommandPlusShutdownSeconds": 1110,
+      "debugStepSeconds": 1140,
+      "debugStepHeadroomSeconds": 30,
+      "strictCommandCeilingSecondsUnchanged": 3600,
+      "strictStepMinutesUnchanged": 61,
+      "releaseCommandSecondsUnchanged": 900,
+      "allThreeCommandsPlusShutdownSeconds": 5670,
+      "setupFreezeUploadMinutes": 12,
+      "aggregateConfiguredMinutes": 106.5,
+      "jobMinutes": 108,
+      "jobMarginMinutes": 1.5
+    },
+    "preserve": [
+      "Every Debug selector and existing retry policy/-test-iterations setting",
+      "All per-action/per-case waits, gestures, visibility/assertion conditions and renderer/resource bounds",
+      "Strict command3600-second ceiling and all21 strict executions without retries",
+      "Owned shutdown, independent evidence freezing/uploads and fail-closed timeout semantics",
+      "Original900-second failure, incomplete bundle and prior passing evidence as separate immutable receipts"
+    ],
+    "requiredBeforeOutcomeClaim": [
+      "Fail-first measured-workload and upper-ceiling budget-contract coverage; retain nested budget guard and exact-source review",
+      "If executed later, require the complete Debug matrix with terminal receipt and audit every retry/skip/assertion; prior59 cases cannot be aggregated into a pass",
+      "No further automatic allowance extension if1080 is insufficient; preserve failure and investigate the actual incomplete stage"
+    ],
+    "alternatives": "Separating verified build-for-testing from test-without-building could isolate cold build/setup cost, but current residual is not exclusively compilation. It changes invocation/artifact boundaries and needs exact binary/selection and budget proof. Editing polling/gestures or selecting only the final case would be a different intervention and would not complete the unchanged hosted Debug matrix. No extra experiment is proposed here."
+  },
+  "separateStrictFailure": "The3600-second strict command completed its21 executions, but small-drag iteration3 failed lost6. That actual assertion failure remains independently unresolved; additional Debug time cannot qualify the overall hosted job.",
+  "actionsTaken": [
+    "Read retained files and scoped repository source",
+    "Wrote only this requested report"
+  ],
+  "noAcceptanceOrRootCauseClaim": true
+}

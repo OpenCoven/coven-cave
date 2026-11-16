@@ -1,0 +1,30 @@
+{
+  "command": [
+    "xcodebuild",
+    "test",
+    "-project",
+    "apps/ios/CovenCave/CovenCave.xcodeproj",
+    "-scheme",
+    "CovenCavePerformance",
+    "-destination",
+    "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+    "-derivedDataPath",
+    "/Users/runner/work/_temp/CaveDerived",
+    "-resultBundlePath",
+    "/Users/runner/work/_temp/scroll-release.xcresult",
+    "CODE_SIGNING_ALLOWED=NO",
+    "-retry-tests-on-failure",
+    "-test-iterations",
+    "3",
+    "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess",
+    "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink"
+  ],
+  "pid": 15587,
+  "elapsedSeconds": 571.1007183339998,
+  "timedOut": false,
+  "interruptedSignal": null,
+  "terminal": true,
+  "childExitCode": 0,
+  "exitCode": 0,
+  "failure": null
+}
