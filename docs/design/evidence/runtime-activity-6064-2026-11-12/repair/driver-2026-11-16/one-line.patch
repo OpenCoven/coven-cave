@@ -1,0 +1,11 @@
+--- a/apps/ios/CovenCave/CovenCaveUITests/PerformanceBaselineUITests.swift
++++ b/apps/ios/CovenCave/CovenCaveUITests/PerformanceBaselineUITests.swift
+@@ -39,7 +39,7 @@
+         let middle = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "fixture-60.txt")).firstMatch
+         func scrollToMiddle() {
+             for _ in 0..<32 {
+-                if middle.exists && middle.isHittable { break }
++                if middle.isHittable { break }
+                 transcript.swipeDown(velocity: .slow)
+             }
+             XCTAssertTrue(middle.isHittable, "An earlier retained tool must remain reachable")

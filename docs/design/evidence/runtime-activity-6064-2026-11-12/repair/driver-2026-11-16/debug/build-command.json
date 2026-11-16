@@ -1,0 +1,34 @@
+{
+  "command": [
+    "xcodebuild",
+    "build-for-testing",
+    "-project",
+    "apps/ios/CovenCave/CovenCave.xcodeproj",
+    "-scheme",
+    "CovenCave",
+    "-destination",
+    "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "-derivedDataPath",
+    "/private/tmp/nova6064-native-single-hittable-20261116/debug/derived-data",
+    "-parallel-testing-enabled",
+    "NO",
+    "-jobs",
+    "2",
+    "CODE_SIGNING_ALLOWED=YES",
+    "CODE_SIGN_IDENTITY=-"
+  ],
+  "environment": {
+    "COVEN_HOME": "/private/tmp/nova6064-native-single-hittable-20261116/debug/state/coven",
+    "COVEN_CAVE_HOME": "/private/tmp/nova6064-native-single-hittable-20261116/debug/state/coven/cave",
+    "COVEN_CAVE_ENV_FILE": "/private/tmp/nova6064-native-single-hittable-20261116/debug/state/env.local",
+    "COVEN_VAULT_FILE": "/private/tmp/nova6064-native-single-hittable-20261116/debug/state/vault.yaml",
+    "COVEN_CAVE_LOCAL_VAULT_FILE": "/private/tmp/nova6064-native-single-hittable-20261116/debug/state/local-vault.enc.json",
+    "COVEN_CAVE_LOCAL_VAULT_KEY_FILE": "/private/tmp/nova6064-native-single-hittable-20261116/debug/state/local-vault.key",
+    "COVEN_SOCKET": "/private/tmp/nova6064-native-single-hittable-20261116/debug/state/coven/coven.sock"
+  },
+  "configuration": "debug",
+  "normalSigning": true,
+  "startedAt": "2026-11-16T00:18:10.919882+00:00",
+  "exitCode": 0,
+  "finishedAt": "2026-11-16T00:20:06.573914+00:00"
+}

@@ -1,0 +1,36 @@
+{
+  "rawRoots": {
+    "revisedDriver": "/private/tmp/nova6064-native-single-hittable-20261116",
+    "fixed12Experiment": "/private/tmp/nova6064-native-axpoll-diagnostic-20261116"
+  },
+  "rawLogHashes": [
+    {
+      "path": "/private/tmp/nova6064-native-single-hittable-20261116/debug/original-case.log",
+      "bytes": 25526,
+      "sha256": "d32c7facc0507c10b45ee7f7e3771ea13e2285d36944e6bccf3bc6b33e6f5aa1"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-single-hittable-20261116/release/original-case.log",
+      "bytes": 25922,
+      "sha256": "e4772994588daf052d69bbdd8dc7a83a6f1250e04b47a5f34c591d4686f539fa"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-single-hittable-20261116/mobile-contracts.log",
+      "bytes": 16647,
+      "sha256": "357b253124038c57a2fe6246f94380e95c30fa6659abdab2215afdf500cc3325"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-axpoll-diagnostic-20261116/diagnostic.log",
+      "bytes": 22486,
+      "sha256": "ee6f8029f6bd2d2ce3212f3fa05bf288fc070cb749f6516aac96a2ae1f57a8a5"
+    }
+  ],
+  "mobileSourceContracts": {
+    "command": "NOVA6064_UNIT=1 node /private/tmp/nova6064-20261112/run.mjs pnpm test:mobile",
+    "terminal": 0,
+    "filesPassed": 107
+  },
+  "review": "Read-only second agent accepted documented logical stop-condition equivalence, with framework errors, adaptive32 bound, assertions and original allowances preserved. Shared account, not independent human acceptance.",
+  "officialContract": "https://developer.apple.com/documentation/xcuiautomation/xcuielement/ishittable",
+  "traceLimits": "Debug trace and app metrics are retained raw diagnostics, not frame-cost or main-thread proof."
+}

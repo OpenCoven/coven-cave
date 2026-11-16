@@ -1,0 +1,7 @@
+{
+  "error": "KeyError: environment",
+  "phase": "Preparing Release command metadata before any Release build/test",
+  "cause": "Prior Release receipt referenced scratch env separately rather than an inline environment key",
+  "correction": "Use identical explicit scratch environment mapping from current Debug metadata with Release-owned paths",
+  "noTestInvocationOccurredInThisFailure": true
+}

@@ -1,0 +1,19 @@
+--- canonical-method
++++ diagnostic-method
+@@ -1,5 +1,5 @@
+     @MainActor
+-    func testRetainedRichTimelinePreservesEarlierToolThroughScrolling() {
++    func testDiagnosticRichEarlierToolTwelveSwipesWithoutPerSwipeAXPolling6064() {
+         let app = XCUIApplication()
+         app.launchArguments = ["--performance-instrumentation", "--performance-fixture",
+                                "--timeline-performance-fixture", "--timeline-performance-count", "120",
+@@ -17,8 +17,7 @@
+         let transcript = app.scrollViews["Chat transcript"].firstMatch
+         let middle = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "fixture-60.txt")).firstMatch
+         func scrollToMiddle() {
+-            for _ in 0..<32 {
+-                if middle.exists && middle.isHittable { break }
++            for _ in 0..<12 {
+                 transcript.swipeDown(velocity: .slow)
+             }
+             XCTAssertTrue(middle.isHittable, "An earlier retained tool must remain reachable")
