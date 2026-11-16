@@ -27,7 +27,11 @@ The release-runtime test asserts that Windows creates the local startup window b
 
 The release manifest includes GitHub's release body as optional `notes`. The
 native updater exposes this as `Update.body`; the fallback release API carries
-it as optional `notes`. Existing releases without notes remain usable. Empty or
+it as optional `notes`. `updater-manifest` waits for `checksums` and
+`partial-release-notes`, which replace the placeholder body that
+`release-object` creates, and the generator never publishes that placeholder.
+v0.5.18, v0.5.21 and v0.5.22 shipped it as their notes because the manifest
+was read first (#5981). Existing releases without notes remain usable. Empty or
 non-string fallback notes are omitted without changing update availability.
 
 Available updates expose **Release notes** in the shell banner and Settings →
