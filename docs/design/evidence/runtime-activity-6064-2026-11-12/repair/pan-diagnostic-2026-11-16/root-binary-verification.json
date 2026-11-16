@@ -1,0 +1,17 @@
+{
+  "app": {
+    "sha256Verified": true,
+    "codesignVerifyExitCode": 0
+  },
+  "runner": {
+    "sha256Verified": true,
+    "codesignVerifyExitCode": 0
+  },
+  "testDriver": {
+    "sha256Verified": true,
+    "codesignVerifyExitCode": 0
+  },
+  "appDebugDylib": {
+    "sha256Verified": true
+  }
+}

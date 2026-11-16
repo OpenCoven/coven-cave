@@ -1,0 +1,112 @@
+[
+  {
+    "file": "execution-summary.json",
+    "sourceSHA256": "d67c7e9f369e51dcbb78e001f3a113adc36aa16d31a958d0914ca3e6bc8526c2",
+    "pathTokensSanitized": true
+  },
+  {
+    "file": "build.receipt.json",
+    "sourceSHA256": "7f0353a53b4704d0f81082acda8cc2c5d98edc7767710b07693420f34eb14f78",
+    "pathTokensSanitized": true
+  },
+  {
+    "file": "small-drags-pan.receipt.json",
+    "sourceSHA256": "29f24d64f52065cd7666595e64c23122ce10af4bf67f085c5e1df12033d0ddcf",
+    "pathTokensSanitized": true
+  },
+  {
+    "file": "enumeration.receipt.json",
+    "sourceSHA256": "257b559e26d544e65ba3a8ebb5901d713f2de766f32452e3a6214808e194575b",
+    "pathTokensSanitized": true
+  },
+  {
+    "file": "instrumentation-review.json",
+    "sourceSHA256": "b6f52d010830b0138949a6206af424c44c202cab7f5d8df95080536a6e065f6a",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "instrumentation-review-v2.json",
+    "sourceSHA256": "5217b1c9b9b93d882f064159399e780413cd2c229afeb305f15bdbc8d4181713",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "instrumented-binary-identities.json",
+    "sourceSHA256": "52c76e12d48da6db1a733fdb23bea33c4bc3a1990ffbe867fc4ecc3d3e0bb10f",
+    "pathTokensSanitized": true
+  },
+  {
+    "file": "postbuild-source-restoration.json",
+    "sourceSHA256": "b9c2e7012df886f31d2d954edfe170ad12c68a63580a2f4937181324f2b838a9",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "postrun-binary-audit.json",
+    "sourceSHA256": "b6c21f57c3b0798aa6080964680f23654ef139dca2135e9563e450fc0ea433e9",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "per-iteration-execution.json",
+    "sourceSHA256": "1fbd44bf41b30383e056226eeb02857e7a539dde5a1f4fd4845d78ada2210d22",
+    "pathTokensSanitized": true
+  },
+  {
+    "file": "pan-observation-analysis.json",
+    "sourceSHA256": "9d22fca63fd56fb513817f438d2c4e424f7bc09c6710d7fa7d94eb036e66e604",
+    "pathTokensSanitized": true
+  },
+  {
+    "file": "artifact-availability.json",
+    "sourceSHA256": "60f5713f1da41816f0d3e867cbe53f2c106dfa9a6bedc5d8ea552b37ef79fc00",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "sandbox-binding-monitor.json",
+    "sourceSHA256": "606bb4b61bcb2de305f5d5ef3f59ba4369b141fa0e40b6b182539b0c247fc3aa",
+    "pathTokensSanitized": true
+  },
+  {
+    "file": "trace-write-error-marker-command.json",
+    "sourceSHA256": "57a53c6207691d249a9bd580adbed6222be3fad0e30e655e9c94fcefedfdc941",
+    "pathTokensSanitized": true
+  },
+  {
+    "file": "trace-write-error-marker.receipt.json",
+    "sourceSHA256": "441f1c2ff8e5b2f988034c7a06065a3231941b9e5c379633a92651bb439ba5ad",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "final-owned-cleanup.json",
+    "sourceSHA256": "8c18fb9192d06125d70db4b989b6a50d3e6b13532fa8ac7f0b3731ae9c543638",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "test-plan-preserved-defaults.json",
+    "sourceSHA256": "fec25a70f43095f509203b9a2dc58d3d9287ccc219821ddc791ca591f327c63f",
+    "pathTokensSanitized": true
+  },
+  {
+    "file": "root-final-diagnostic-verification.json",
+    "sourceSHA256": "2d34a6d23c18438e5b0ffc19c238e410325baa43672fa2f3ffd7618dadd50544",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "root-test-outcome-verification.json",
+    "sourceSHA256": "d1872c5203d321d8daeb0c16f302f28668981dd79c96ed7046acc132c0535c16",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "root-binary-verification.json",
+    "sourceSHA256": "4a588bbfb6ebe01bf4753cabb27c90624c1906662d189be512ede3af08978e8d",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "simulator-create.receipt.json",
+    "sourceSHA256": "03708d511ec68e58a91490228f607c172c52d1bd35061957c272e20986f775b8",
+    "pathTokensSanitized": false
+  },
+  {
+    "file": "xcresult-summary.json",
+    "sourceSHA256": "213c075c8f522f5c2f169e9a70052c82047f2596c5d20243d3ed05d1f91a888e",
+    "pathTokensSanitized": false
+  }
+]

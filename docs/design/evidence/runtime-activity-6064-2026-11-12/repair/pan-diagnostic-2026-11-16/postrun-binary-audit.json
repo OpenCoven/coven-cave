@@ -1,0 +1,18 @@
+{
+  "app": {
+    "retainedExecutableSHA256": "80cc5312f4f7aef9386fc9acfe6054e709169b804632df007436b7825d775b09",
+    "matchesPretestIdentity": true
+  },
+  "runner": {
+    "retainedExecutableSHA256": "40f1bab6dc8c4b7010b167e03b205626b004ca8cf0aeb17369c7c99542f4a38c",
+    "matchesPretestIdentity": true
+  },
+  "testDriver": {
+    "retainedExecutableSHA256": "0b32e545149e9d14aaa9384bb723fc41b017fa54fb153e95e9ddde1add6b1557",
+    "matchesPretestIdentity": true
+  },
+  "appDebugDylib": {
+    "retainedExecutableSHA256": "99d0360b9d23064d99de12db38e6affa174d6ff3ddae91fadfcf017b02086179",
+    "matchesPretestIdentity": true
+  }
+}

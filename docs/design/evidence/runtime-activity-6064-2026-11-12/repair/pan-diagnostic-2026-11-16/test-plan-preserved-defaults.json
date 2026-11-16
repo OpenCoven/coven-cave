@@ -1,0 +1,14 @@
+{
+  "generatedPlan": "<retained-native-root>/derived-data/Build/Products/CovenCave_iphonesimulator27.2-arm64.xctestrun",
+  "generatedSHA256": "63fdcf5ed083192dfe5faffe47d6daaf2c80703ec21fc4b952f79a3dfdb554f0",
+  "selectedOnly": "ChatScrollBounceUITests/testSmallDragsAtLatestStayOnLatest",
+  "preservedDefaults": {
+    "DefaultTestExecutionTimeAllowance": 600,
+    "SkipTestIdentifiers": [
+      "PerformanceBaselineUITests"
+    ],
+    "TestTimeoutsEnabled": false
+  },
+  "CAVE_SCROLL_TRACE_PATHOverride": false,
+  "originalTestGeneratesPath": true
+}

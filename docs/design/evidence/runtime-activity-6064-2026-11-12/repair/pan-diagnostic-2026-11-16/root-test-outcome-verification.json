@@ -1,0 +1,15 @@
+{
+  "starts": 3,
+  "passed": 3,
+  "failed": 0,
+  "uniqueIdentities": [
+    "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]"
+  ],
+  "terminalDetails": [
+    " (72.569 seconds).",
+    " (74.964 seconds).",
+    " (77.388 seconds)."
+  ],
+  "receiptExit": 0,
+  "testCommandRetryFlag": false
+}

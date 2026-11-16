@@ -1,0 +1,52 @@
+{
+  "observedAt": "2026-11-16T03:55:28.318730+00:00",
+  "scope": "Read-only review of stable external preparation. No apply, edit to preparation/source, compiler invocation, build/test, simulator, signing, GUI or cleanup action performed. Only this requested report written.",
+  "reviewedPatchSHA256": "e2d77f9aa1b92ca5d9fd2902e741f790efddc55334bfeabb341d248d6f730a20",
+  "expectedPatchSHA256": "e2d77f9aa1b92ca5d9fd2902e741f790efddc55334bfeabb341d248d6f730a20",
+  "preparationArtifactHashesMatch": true,
+  "assessment": "Two diagnostic reliability blockers should be resolved before execution; no direct gesture-routing, recognizer-policy or scroll-offset mutation found.",
+  "executionBlockers": [
+    {
+      "priority": "P2",
+      "file": "revised/ChatScrollTrace.swift",
+      "lines": [
+        79,
+        87
+      ],
+      "issue": "Both FileHandle writes discard errors with try? and then credit bytesWritten. A successfully opened but subsequently failing trace can continue pan/timer observation with apparently available recording and silently missing data.",
+      "requestedChange": "Handle write failure explicitly: latch a fixed write-error stop reason, credit bytes only after a successful write, disable further observation without retry/reopen, and expose one bounded generic failure indication through a collection channel that does not depend on the failed file. Do not log arbitrary private error/path payloads.",
+      "impact": "Otherwise missing pan records or byte counts cannot reliably distinguish an I/O failure from an absent transition. A terminal marker cannot be assumed writable after an I/O error."
+    },
+    {
+      "priority": "P2",
+      "file": "revised/ChatScrollAnchor.swift",
+      "lines": [
+        103,
+        113,
+        278,
+        297
+      ],
+      "issue": "Detach is bound only to UIScrollView identity, not to the observer/probe instance. attachPanDiagnostic replaces the coordinator observer even for the same scroll view. If a replacement finder resolves that same view before the old finder detaches/dismantles, the old callback matches the new observer and stops it.",
+      "requestedChange": "Bind each finder attachment to the exact observer or an opaque generation token, and allow its detach/dismantle callback to stop only that attachment. Preserve old-recognizer cleanup on actual scroll-view replacement.",
+      "impact": "This is a concrete possible lifecycle ordering permitted by the current callbacks, not an observed run failure. It can prematurely remove current diagnostic coverage and contradicts the design claim that detach stops only the exact old observer."
+    }
+  ],
+  "reviewedProperties": {
+    "gating": "New recognizer target and timer are DEBUG-only and require a nonempty trace path with an opened handle. Without it, no new target/timer is created; small DEBUG bookkeeping/probe hooks still exist.",
+    "gestureRouting": "Uses addTarget/removeTarget on the existing pan recognizer. No new recognizer, delegate, enablement, policy, injected touch or contentOffset/inset assignment found. Repeated hitTest calls are observation work, not delivery acknowledgements.",
+    "lifecycle": "Timer closure weakly captures observer; nil view/window stops; stop invalidates timer and removes the stored recognizer target; coordinator deinit queues exact observer cleanup when needed. Probe-owner race above remains.",
+    "actors": "UIKit observer is MainActor-isolated; timer is registered on RunLoop.main and queued cleanup uses DispatchQueue.main. No statically evident wrong-actor UIKit call found. Deinit/closure compiler validation remains a future gate, not a claimed pass.",
+    "bounds": "Shared monotonic240-second origin,1600 reserved pan samples,2MiB byte cap,8000-character payload truncation, bounded ancestry and recognizer/class metadata. Deduplicated polls still consume sample reservations. Write-success accounting needs the fix above.",
+    "privacy": "New pan records contain bounded class/state/geometry metadata rather than text, accessibility payloads, URLs or object addresses. Existing trace message IDs remain part of preexisting logging; the planned fixture is synthetic.",
+    "plan": "Untouched original UI test, three iterations without retries, bounded900-second build and900-second test, normal ad-hoc signing, scratch host state, guarded two-file restoration and newly owned simulator are explicit. No sandbox/entitlement workaround is authorized by trace failure."
+  },
+  "observationalLimits": [
+    "Main-loop200ms sampling may miss short transitions and is delayed by main-thread stalls. Missing samples cannot prove no gesture occurred.",
+    "hitTest(with:nil) identifies a potential view at sampling time, not the actual touch recipient. Native-derived endpoints and archived hosted endpoints require comparison with actual new synthesized events and window geometry.",
+    "Adding a target, timers, hit testing, formatting and synchronous file writes can perturb timing. Bounds are collection limits, not proof of a frame/CPU/liveness budget.",
+    "Installed iOS26.5 build23F73 is distinct from hosted23F77. A local pass/failure is not exact hosted-runtime equivalence.",
+    "Any cap, unavailable binding, write error, compiler/signing failure or incomplete iteration must remain a qualification limit; no rearm, timeout expansion or fallback case is implied.",
+    "The targeted diagnostic does not replace the full unchanged seven-method/three-iteration acceptance matrix or establish product cause, responsiveness, frame cost, physical-device or human acceptance."
+  ],
+  "futureGate": "After external fixes, refresh patch/source/manifest hashes and re-review before any separately authorized execution. Retain the first compiler/signing/runtime failure; no validation was run in this review."
+}

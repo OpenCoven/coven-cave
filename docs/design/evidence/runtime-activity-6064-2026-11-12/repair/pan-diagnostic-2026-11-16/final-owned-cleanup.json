@@ -1,0 +1,33 @@
+{
+  "observedAt": "2026-11-16T04:20:56.817163+00:00",
+  "ownedSimulatorUUID": "F8D29620-D485-475F-9D45-1F2D3925BFB1",
+  "before": "Booted",
+  "all300CanonicalNativeHashesRestored": true,
+  "uiTestUnchanged": true,
+  "onlyOwnedSimulatorTouched": true,
+  "simulatorAndAllRootsPreserved": true,
+  "shutdownExitCode": 0,
+  "stdout": "",
+  "stderr": "",
+  "after": "Shutdown",
+  "appPIDAudit": {
+    "15018": {
+      "present": false,
+      "exitCode": 1,
+      "stdout": ""
+    },
+    "32914": {
+      "present": false,
+      "exitCode": 1,
+      "stdout": ""
+    },
+    "42766": {
+      "present": false,
+      "exitCode": 1,
+      "stdout": ""
+    }
+  },
+  "liveOwnedXcodebuilds": [],
+  "head": "f1b0e48023c2a95adad60d9930309636c0ef7f19",
+  "nativeDiff": []
+}

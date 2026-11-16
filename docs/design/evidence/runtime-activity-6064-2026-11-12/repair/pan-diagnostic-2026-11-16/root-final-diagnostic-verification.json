@@ -1,0 +1,33 @@
+{
+  "traces": [
+    {
+      "iteration": 1,
+      "bytes": 231219,
+      "sha256": "96a7bcc780eda33615948055da714e6dd047ebe93451e30246e59538342559e7",
+      "panBegan": 9,
+      "panEnded": 9,
+      "interacting": 9
+    },
+    {
+      "iteration": 2,
+      "bytes": 258067,
+      "sha256": "384c57cf73bc223d339f77807050866a5f10699e1448c332f11ed64d4f9036c9",
+      "panBegan": 9,
+      "panEnded": 9,
+      "interacting": 9
+    },
+    {
+      "iteration": 3,
+      "bytes": 234388,
+      "sha256": "5550c1dd97e1d413d2f0c21e2040b58504060a3722c5d2987d81c8c94722d90f",
+      "panBegan": 9,
+      "panEnded": 9,
+      "interacting": 9
+    }
+  ],
+  "canonicalFilesVerified": 300,
+  "recordedAppPIDsAbsent": true,
+  "ownedSimulatorState": "Shutdown",
+  "worktreeClean": true,
+  "causeOfHostedFailureProven": false
+}

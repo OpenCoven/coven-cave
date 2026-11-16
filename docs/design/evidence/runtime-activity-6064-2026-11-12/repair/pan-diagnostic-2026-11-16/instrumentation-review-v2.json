@@ -1,0 +1,47 @@
+{
+  "observedAt": "2026-11-16T04:03:26.012625+00:00",
+  "scope": "Read-only stable external v2 review; no worktree application, compilation, tests, simulator/app launch, cleanup or preparation edit performed. Only this report written.",
+  "patchSHA256": "f78f5274be2bc82675b2ac1de0a0cc82e25fac0bb9e1bf073e401d326e332397",
+  "manifestSHA256": "9b88d9611b7610173e5b58798cd69dfe6b32d98f822c5fd220952d0910d34425",
+  "plannedNativeFingerprint": "dfe08b63ff8e8dd525ec82f3113065e1074ade4aa5a96afd1aae7acbe8450000",
+  "identityChecks": {
+    "patchAndManifestMatchRequested": true,
+    "bothCanonicalFilesMatchPreparedOriginals": true,
+    "bothRevisedFilesMatchManifestHashes": true,
+    "originalUITestHashUnchanged": true
+  },
+  "blockers": [],
+  "decision": "Both prior P2 blockers are resolved by source inspection. Clear for the separately authorized bounded build stage; this review is not execution permission, compiler validation or runtime qualification.",
+  "resolvedFindings": [
+    {
+      "priorIssue": "Silent trace-write failure and credited failed bytes",
+      "resolution": "All writes use appendLocked. Success alone credits data bytes; failure permanently latches write-error and emits the fixed out-of-band CAVE_SCROLL_TRACE_WRITE_ERROR marker once. No arbitrary path/error payload, retry or reopen. note returns false and the pan observer stops; preexisting callback failures prevent subsequent reservations. Terminal write failures cannot be replaced by nominal deadline/byte-cap reasons.",
+      "residualLimit": "A failing write can partially commit its final record. Counter completeness and marker collection remain observational limits; the manifest now states this."
+    },
+    {
+      "priorIssue": "Stale same-scroll-view probe detach could stop replacement observer",
+      "resolution": "Each attachment now has a UUID stored by its probe and coordinator. Detach/dismantle supplies that token and only matching generation can stop the current observer. Actual scroll-view replacement stops the stored old observer and clears its token. Same-view replacement followed by old-probe detach no longer matches the new token."
+    }
+  ],
+  "unchangedReviewProperties": [
+    "DEBUG/nonempty-open-trace runtime gating; no new target/timer for unavailable recording",
+    "Existing recognizer addTarget/removeTarget only; no routing, delegate, policy, enablement, injected gesture, offset or inset mutation",
+    "MainActor UIKit observer, main-runloop timer and main-queue deinit cleanup; no statically evident new actor misuse",
+    "Shared240-second monotonic origin,1600 pan reservations,2MiB byte limit and bounded payload/ancestry metadata",
+    "Byte-identical original UI method, three iterations without retries, existing per-test defaults and900-second outer build/test commands",
+    "Normal ad-hoc signing, scratch host state, normal new simulator sandbox, guarded canonical-source restoration and retained identities",
+    "v1 preserved separately, no acceptance claimed from the diagnostic"
+  ],
+  "remainingGatesAndLimits": [
+    "Prepared Swift remains uncompiled. Retain the first compiler/signing failure; no speculative security or compiler-mode workaround is implied.",
+    "Recheck source hashes immediately before applying only these two files and preserve unrelated worktree edits. Restore originals only under the guarded exact-revision condition and audit canonical source before using retained instrumented binaries.",
+    "Confirm actual trace binding and the independent bounded console/scoped-log collection channel for the fixed write-error marker. Missing/failed collection is incomplete evidence, not proof no I/O error occurred.",
+    "A current reservation may finish after a concurrent preexisting callback latches a write failure; that interval is incomplete. Future reservations fail closed.",
+    "Timer sampling and synchronous file/format/hit-test work perturb timing; polls may miss short events or be delayed by main-thread stalls. Missing samples never prove no input.",
+    "hitTest(with:nil) reports a potential target at observation time, not actual touch delivery. Compare actual synthesized event coordinates and window geometry; hosted and native-derived coordinates are separate.",
+    "Caps stop collection and cannot authorize rearming, extra attempts, timeout expansion or fallback test selection.",
+    "Installed iOS26.5 build23F73 remains distinct from hosted23F77. No exact-hosted-runtime, product-cause, frame/hitch, physical-device or human-acceptance claim follows.",
+    "The targeted three-iteration diagnostic never substitutes for the full unchanged21-execution strict acceptance matrix."
+  ],
+  "nextPermittedByReview": "A separately instructed bounded build using the reviewed manifest, with no automatic app/test execution inferred from this report."
+}

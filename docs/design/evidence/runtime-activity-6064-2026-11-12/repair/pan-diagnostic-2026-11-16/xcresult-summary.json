@@ -1,0 +1,48 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "F8D29620-D485-475F-9D45-1F2D3925BFB1",
+        "deviceName" : "cave-6064-pan-diagnostic-20261116",
+        "modelName" : "iPhone 17",
+        "osBuildNumber" : "23F73",
+        "osVersion" : "26.5",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 0,
+      "passedTests" : 3,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "CovenCave · Built with macOS 27.2.1",
+  "expectedFailures" : 0,
+  "failedTests" : 0,
+  "finishTime" : 1794802613.046,
+  "passedTests" : 1,
+  "result" : "Passed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1794802385.432,
+  "statistics" : [
+    {
+      "subtitle" : "3 test runs",
+      "title" : "1 configuration ran with test repetitions"
+    }
+  ],
+  "testFailures" : [
+
+  ],
+  "title" : "Test - CovenCave",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 1
+}

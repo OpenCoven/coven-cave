@@ -1,0 +1,17 @@
+{
+  "observedAt": "2026-11-16T04:10:11.380219+00:00",
+  "sourceRestoration": [
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Views/ChatScrollTrace.swift",
+      "restored": true
+    },
+    {
+      "path": "apps/ios/CovenCave/CovenCave/Views/ChatScrollAnchor.swift",
+      "restored": true
+    }
+  ],
+  "all300CanonicalRestored": true,
+  "canonicalNativeFingerprint": "e0efb6d29d0c755e4677ddec6770fd8947a9ce13b2f7e3dc0fd798ff5827561c",
+  "uiTestSHA256": "bf2c8ca1e8968cad2e4e11651aa9c881371f97365ffdf3baff0a704d62556211",
+  "head": "f1b0e48023c2a95adad60d9930309636c0ef7f19"
+}

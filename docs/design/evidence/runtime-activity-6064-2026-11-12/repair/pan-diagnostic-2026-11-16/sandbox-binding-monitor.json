@@ -1,0 +1,57 @@
+{
+  "simulatorUUID": "F8D29620-D485-475F-9D45-1F2D3925BFB1",
+  "scope": "Only this new owned simulator, exact app/runner container IDs and original trace/metrics prefixes; no permission/path override",
+  "bindings": {
+    "/Users/buns/Library/Developer/CoreSimulator/Devices/F8D29620-D485-475F-9D45-1F2D3925BFB1/data/Containers/Data/Application/395CCEAD-8F23-404A-BFBD-C3577223EE61/tmp/cave-scroll-trace-A7E4CF1E-E2CE-492A-BCA9-BD89A80A2B00.log": {
+      "firstSeenAt": "2026-11-16T04:13:13.189844+00:00",
+      "containerBundleID": "ai.opencoven.cave.uitests.xctrunner",
+      "source": "/Users/buns/Library/Developer/CoreSimulator/Devices/F8D29620-D485-475F-9D45-1F2D3925BFB1/data/Containers/Data/Application/395CCEAD-8F23-404A-BFBD-C3577223EE61/tmp/cave-scroll-trace-A7E4CF1E-E2CE-492A-BCA9-BD89A80A2B00.log",
+      "capture": "<retained-native-root>/sandbox-captures/395CCEAD-8F23-404A-BFBD-C3577223EE61-cave-scroll-trace-A7E4CF1E-E2CE-492A-BCA9-BD89A80A2B00.log",
+      "copiedBytes": 231219,
+      "capBytes": 2097152,
+      "isOriginalSandboxTrace": true,
+      "lastObservedAt": "2026-11-16T04:14:19.852525+00:00",
+      "lastObservedSize": 231219
+    },
+    "/Users/buns/Library/Developer/CoreSimulator/Devices/F8D29620-D485-475F-9D45-1F2D3925BFB1/data/Containers/Data/Application/395CCEAD-8F23-404A-BFBD-C3577223EE61/tmp/cave-scroll-trace-C9155EAB-5128-4632-B175-B4C23CF32527.log": {
+      "firstSeenAt": "2026-11-16T04:14:21.871225+00:00",
+      "containerBundleID": "ai.opencoven.cave.uitests.xctrunner",
+      "source": "/Users/buns/Library/Developer/CoreSimulator/Devices/F8D29620-D485-475F-9D45-1F2D3925BFB1/data/Containers/Data/Application/395CCEAD-8F23-404A-BFBD-C3577223EE61/tmp/cave-scroll-trace-C9155EAB-5128-4632-B175-B4C23CF32527.log",
+      "capture": "<retained-native-root>/sandbox-captures/395CCEAD-8F23-404A-BFBD-C3577223EE61-cave-scroll-trace-C9155EAB-5128-4632-B175-B4C23CF32527.log",
+      "copiedBytes": 258067,
+      "capBytes": 2097152,
+      "isOriginalSandboxTrace": true,
+      "lastObservedAt": "2026-11-16T04:15:34.747602+00:00",
+      "lastObservedSize": 258067
+    },
+    "/Users/buns/Library/Developer/CoreSimulator/Devices/F8D29620-D485-475F-9D45-1F2D3925BFB1/data/Containers/Data/Application/395CCEAD-8F23-404A-BFBD-C3577223EE61/tmp/cave-scroll-trace-1ABC72F6-0D2D-4D80-AA30-0C3CCCDBEF82.log": {
+      "firstSeenAt": "2026-11-16T04:15:36.771452+00:00",
+      "containerBundleID": "ai.opencoven.cave.uitests.xctrunner",
+      "source": "/Users/buns/Library/Developer/CoreSimulator/Devices/F8D29620-D485-475F-9D45-1F2D3925BFB1/data/Containers/Data/Application/395CCEAD-8F23-404A-BFBD-C3577223EE61/tmp/cave-scroll-trace-1ABC72F6-0D2D-4D80-AA30-0C3CCCDBEF82.log",
+      "capture": "<retained-native-root>/sandbox-captures/395CCEAD-8F23-404A-BFBD-C3577223EE61-cave-scroll-trace-1ABC72F6-0D2D-4D80-AA30-0C3CCCDBEF82.log",
+      "copiedBytes": 234388,
+      "capBytes": 2097152,
+      "isOriginalSandboxTrace": true,
+      "lastObservedAt": "2026-11-16T04:16:51.535428+00:00",
+      "lastObservedSize": 234388
+    }
+  },
+  "appProcesses": {
+    "15018": {
+      "firstSeenAt": "2026-11-16T04:13:14.743686+00:00",
+      "lastSeenAt": "2026-11-16T04:14:17.837695+00:00",
+      "ownedDevicePathMatched": true
+    },
+    "32914": {
+      "firstSeenAt": "2026-11-16T04:14:23.389903+00:00",
+      "lastSeenAt": "2026-11-16T04:15:32.719332+00:00",
+      "ownedDevicePathMatched": true
+    },
+    "42766": {
+      "firstSeenAt": "2026-11-16T04:15:38.460449+00:00",
+      "lastSeenAt": "2026-11-16T04:16:47.479507+00:00",
+      "ownedDevicePathMatched": true
+    }
+  },
+  "errors": []
+}

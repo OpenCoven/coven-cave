@@ -1,0 +1,26 @@
+{
+  "command": [
+    "xcrun",
+    "simctl",
+    "spawn",
+    "F8D29620-D485-475F-9D45-1F2D3925BFB1",
+    "log",
+    "show",
+    "--style",
+    "compact",
+    "--start",
+    "2026-11-15 22:13:03",
+    "--end",
+    "2026-11-15 22:16:54",
+    "--predicate",
+    "process == \"CovenCave\" AND (processIdentifier == 15018 OR processIdentifier == 32914 OR processIdentifier == 42766) AND composedMessage CONTAINS \"CAVE_SCROLL_TRACE_WRITE_ERROR\""
+  ],
+  "pid": 33361,
+  "elapsedSeconds": 2.3572124170023017,
+  "timedOut": false,
+  "interruptedSignal": null,
+  "terminal": true,
+  "childExitCode": 0,
+  "exitCode": 0,
+  "failure": null
+}
