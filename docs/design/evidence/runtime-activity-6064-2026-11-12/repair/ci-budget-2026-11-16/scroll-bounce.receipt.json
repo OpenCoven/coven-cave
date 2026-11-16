@@ -1,0 +1,29 @@
+{
+  "command": [
+    "xcodebuild",
+    "test",
+    "-project",
+    "apps/ios/CovenCave/CovenCave.xcodeproj",
+    "-scheme",
+    "CovenCave",
+    "-destination",
+    "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+    "-derivedDataPath",
+    "/Users/runner/work/_temp/CaveDerived",
+    "-resultBundlePath",
+    "/Users/runner/work/_temp/scroll-bounce.xcresult",
+    "CODE_SIGNING_ALLOWED=NO",
+    "-test-iterations",
+    "3",
+    "-only-testing:CovenCaveUITests/ChatScrollBounceUITests",
+    "-only-testing:CovenCaveUITests/TranscriptAccessibilityUITests"
+  ],
+  "pid": 20734,
+  "elapsedSeconds": 3325.8527387080003,
+  "timedOut": true,
+  "interruptedSignal": null,
+  "terminal": true,
+  "childExitCode": -9,
+  "exitCode": 124,
+  "failure": null
+}

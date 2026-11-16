@@ -1,0 +1,977 @@
+{
+  "observedAt": "2026-11-16T01:53:25.094958+00:00",
+  "head": "603877a0413532fc3e958918064143e6e39a4050",
+  "checkoutMerge": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+  "mergeBase": "2d6fda4ed0c5a115b171215a3407cfd618e5e535",
+  "run": 43778586069,
+  "conclusion": "failure",
+  "logsArtifact": {
+    "id": 14190079563,
+    "name": "transcript-logs-43778586069",
+    "sha256": "7eadaabdf8238fd85c55a27702dd7f5d55d29ca93c571ccb70ea2b863306b76c",
+    "apiDigest": "sha256:7eadaabdf8238fd85c55a27702dd7f5d55d29ca93c571ccb70ea2b863306b76c",
+    "digestVerified": true
+  },
+  "resultsArtifact": {
+    "id": 14190776420,
+    "downloaded": false,
+    "sizeBytes": 130965451
+  },
+  "stages": {
+    "scroll-debug": {
+      "countsFromLog": {
+        "started": 60,
+        "passed": 60
+      },
+      "receipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCave",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-debug.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-retry-tests-on-failure",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveTests/ChatScrollStateTests",
+          "-only-testing:CovenCaveTests/ChatViewportRecoveryTests",
+          "-only-testing:CovenCaveTests/MarkdownReflowTests",
+          "-only-testing:CovenCaveTests/MarkdownPaintedReflowTests",
+          "-only-testing:CovenCaveTests/MessageBubbleAppearanceTests",
+          "-only-testing:CovenCaveUITests/ChatScrollingUITests"
+        ],
+        "pid": 3813,
+        "elapsedSeconds": 792.853637709,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "logSHA256": "98707be822bc3c539298f7ffde0488a385df27c439f32fe0dc410500a2d5703e",
+      "completedCaseSeconds": 333.141,
+      "cases": [
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testAdditionalLayoutGrowthUsesThePendingAnchorPosition]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testAdditionalLayoutGrowthUsesThePendingAnchorPosition]",
+          "event": "passed",
+          "seconds": 0.038
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testAnchorCorrectionSurvivesDelayedNativeContentSize]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testAnchorCorrectionSurvivesDelayedNativeContentSize]",
+          "event": "passed",
+          "seconds": 0.008
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testAnchorCorrectionSurvivesPartiallyAvailableNativeExtent]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testAnchorCorrectionSurvivesPartiallyAvailableNativeExtent]",
+          "event": "passed",
+          "seconds": 0.007
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testAnchorIsTheTopmostRowInViewNotOneBelowAGrowingVisibleRow]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testAnchorIsTheTopmostRowInViewNotOneBelowAGrowingVisibleRow]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testBeginningToReadHistoryNearBottomDoesNotLatchAReturn]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testBeginningToReadHistoryNearBottomDoesNotLatchAReturn]",
+          "event": "passed",
+          "seconds": 0.003
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testDecelerationDoesNotResetTheSameGestureReturn]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testDecelerationDoesNotResetTheSameGestureReturn]",
+          "event": "passed",
+          "seconds": 0.004
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testDeferredResourcesWaitForValidViewport]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testDeferredResourcesWaitForValidViewport]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testExplicitJumpResumesFollowingWithoutPretendingItArrived]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testExplicitJumpResumesFollowingWithoutPretendingItArrived]",
+          "event": "passed",
+          "seconds": 0.121
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testFollowingLatestCancelsAnUnappliedAnchorCorrection]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testFollowingLatestCancelsAnUnappliedAnchorCorrection]",
+          "event": "passed",
+          "seconds": 0.003
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testFollowingLeavesTheOffsetToTheFollowPathButKeepsTheBaseline]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testFollowingLeavesTheOffsetToTheFollowPathButKeepsTheBaseline]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testFreshIdleGeometryCancelsAReturnWhenTheReaderMovesAwayAgain]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testFreshIdleGeometryCancelsAReturnWhenTheReaderMovesAwayAgain]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testFreshIdleGeometryKeepsAReturnWhenOnlyTheLatestReplyGrew]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testFreshIdleGeometryKeepsAReturnWhenOnlyTheLatestReplyGrew]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testGeometryTracksRepeatedGrowthWhileStillAwayFromBottom]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testGeometryTracksRepeatedGrowthWhileStillAwayFromBottom]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testGrowthAboveKeepsAReaderInsideTheLatestReplyInPlace]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testGrowthAboveKeepsAReaderInsideTheLatestReplyInPlace]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testGrowthBelowTheReaderDoesNotMoveThem]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testGrowthBelowTheReaderDoesNotMoveThem]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testHistoricalMarkdownStaysBoundedIncludingUnderVoiceOver]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testHistoricalMarkdownStaysBoundedIncludingUnderVoiceOver]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testIdleReconcilesTheCurrentNativeViewportBeforeLateRowCallbacks]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testIdleReconcilesTheCurrentNativeViewportBeforeLateRowCallbacks]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testIdleUsesFreshGeometryWhenTheRowCallbackArrivesLate]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testIdleUsesFreshGeometryWhenTheRowCallbackArrivesLate]",
+          "event": "passed",
+          "seconds": 0.007
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testInitialAndDelayedLayoutKeepFollowing]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testInitialAndDelayedLayoutKeepFollowing]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testLatestMarkdownAndVoiceOverTimelineStayAvailable]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testLatestMarkdownAndVoiceOverTimelineStayAvailable]",
+          "event": "passed",
+          "seconds": 0.0
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testMovingAwayAfterReturningCancelsFollowEvenAfterGrowth]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testMovingAwayAfterReturningCancelsFollowEvenAfterGrowth]",
+          "event": "passed",
+          "seconds": 0.0
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testNativeRowGeometryKeepsViewportBoundsWithBottomContentInsets]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testNativeRowGeometryKeepsViewportBoundsWithBottomContentInsets]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testNativeRowGeometryUsesPendingLayoutAndResetsItsReportedBaseline]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testNativeRowGeometryUsesPendingLayoutAndResetsItsReportedBaseline]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testOnePassCorrectsOnceHoweverManyRowsMoved]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testOnePassCorrectsOnceHoweverManyRowsMoved]",
+          "event": "passed",
+          "seconds": 0.0
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testResetDropsCorrectionsFromThePreviousConversation]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testResetDropsCorrectionsFromThePreviousConversation]",
+          "event": "passed",
+          "seconds": 0.008
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testReturningToBottomResumesFollowingAfterGesture]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testReturningToBottomResumesFollowingAfterGesture]",
+          "event": "passed",
+          "seconds": 0.0
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testReturningToBottomSurvivesStreamingGrowthBeforeGestureIdle]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testReturningToBottomSurvivesStreamingGrowthBeforeGestureIdle]",
+          "event": "passed",
+          "seconds": 0.0
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testRowRemovedAboveMovesTheReaderBackWithTheirContent]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testRowRemovedAboveMovesTheReaderBackWithTheirContent]",
+          "event": "passed",
+          "seconds": 0.0
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testTheLatestReplyStreamingUnderItsReaderDoesNotMoveThem]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testTheLatestReplyStreamingUnderItsReaderDoesNotMoveThem]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testUserReadingHistoryIsNotOverriddenByLayout]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatScrollStateTests testUserReadingHistoryIsNotOverriddenByLayout]",
+          "event": "passed",
+          "seconds": 0.0
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testCorrectionWaitsUntilGestureAndDecelerationEnd]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testCorrectionWaitsUntilGestureAndDecelerationEnd]",
+          "event": "passed",
+          "seconds": 0.096
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testFollowingNeverInterruptsAGesture]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testFollowingNeverInterruptsAGesture]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testFollowingReaderBeyondTheEndRecoversWithoutShrinkEvidence]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testFollowingReaderBeyondTheEndRecoversWithoutShrinkEvidence]",
+          "event": "passed",
+          "seconds": 0.003
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testInsetsAndToleranceDoNotCreateFalseOutOfRangeSignals]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testInsetsAndToleranceDoNotCreateFalseOutOfRangeSignals]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testInvalidTransientGeometryDoesNotErasePendingShrink]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testInvalidTransientGeometryDoesNotErasePendingShrink]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testLazyHistoryReestimationNeverPullsReaderToLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testLazyHistoryReestimationNeverPullsReaderToLatest]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testLazyHistoryReestimationStillNeverPullsANonFollowingReader]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testLazyHistoryReestimationStillNeverPullsANonFollowingReader]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testNewLatestMessageIsAFreshBaselineNotAShrink]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testNewLatestMessageIsAFreshBaselineNotAShrink]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testNewLatestRowDoesNotInheritPreviousRowsPendingRecovery]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testNewLatestRowDoesNotInheritPreviousRowsPendingRecovery]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testOrdinaryScrollOffsetsDoNotInvalidateSwiftUIStateEveryFrame]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testOrdinaryScrollOffsetsDoNotInvalidateSwiftUIStateEveryFrame]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testRemovalWithAValidOffsetDoesNotMoveTheReader]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testRemovalWithAValidOffsetDoesNotMoveTheReader]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testRemovedLatestMessageRecoversAnOffsetBeyondTheShorterTranscript]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testRemovedLatestMessageRecoversAnOffsetBeyondTheShorterTranscript]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testResumingFollowWhileAlreadyBeyondTheEndRecovers]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testResumingFollowWhileAlreadyBeyondTheEndRecovers]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testShortTranscriptOffsetBeyondItsEndRecoversWhileFollowing]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testShortTranscriptOffsetBeyondItsEndRecoversWhileFollowing]",
+          "event": "passed",
+          "seconds": 0.004
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testShrinkBeyondNewExtentRecoversWithoutLatestRowGeometry]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testShrinkBeyondNewExtentRecoversWithoutLatestRowGeometry]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testStaleInRangeGeometryDoesNotDiscardLatestRowShrink]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testStaleInRangeGeometryDoesNotDiscardLatestRowShrink]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testStoppingFollowDropsAFollowOnlyCorrection]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testStoppingFollowDropsAFollowOnlyCorrection]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testStreamingGrowthAndOrdinaryOverscrollDoNotTriggerRecovery]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testStreamingGrowthAndOrdinaryOverscrollDoNotTriggerRecovery]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testUIKitSelfCorrectionCancelsPendingRecovery]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testUIKitSelfCorrectionCancelsPendingRecovery]",
+          "event": "passed",
+          "seconds": 0.002
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testValidHistoryPositionIsNotMovedByShrink]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testValidHistoryPositionIsNotMovedByShrink]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testViewportReportingBeforeLatestRowStillRecovers]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.ChatViewportRecoveryTests testViewportReportingBeforeLatestRowStillRecovers]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveTests.MarkdownPaintedReflowTests testWidthReflowKeepsTheLastLinePaintedInsideTheNativeBubble]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.MarkdownPaintedReflowTests testWidthReflowKeepsTheLastLinePaintedInsideTheNativeBubble]",
+          "event": "passed",
+          "seconds": 12.472
+        },
+        {
+          "name": "-[CovenCaveTests.MarkdownReflowTests testWidthReflowPublishesTheNewNativeHeightWithoutRenderingAgain]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.MarkdownReflowTests testWidthReflowPublishesTheNewNativeHeightWithoutRenderingAgain]",
+          "event": "passed",
+          "seconds": 1.011
+        },
+        {
+          "name": "-[CovenCaveTests.MessageBubbleAppearanceTests testEquivalentResolvedInputsKeepTheBubbleEqual]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.MessageBubbleAppearanceTests testEquivalentResolvedInputsKeepTheBubbleEqual]",
+          "event": "passed",
+          "seconds": 0.007
+        },
+        {
+          "name": "-[CovenCaveTests.MessageBubbleAppearanceTests testLightModeInvalidatesTheDarkBubble]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.MessageBubbleAppearanceTests testLightModeInvalidatesTheDarkBubble]",
+          "event": "passed",
+          "seconds": 0.005
+        },
+        {
+          "name": "-[CovenCaveTests.MessageBubbleAppearanceTests testPaletteChangesInvalidateTheBubble]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveTests.MessageBubbleAppearanceTests testPaletteChangesInvalidateTheBubble]",
+          "event": "passed",
+          "seconds": 0.001
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollingUITests testDelayedHistoryLoadsAtLatestReply]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollingUITests testDelayedHistoryLoadsAtLatestReply]",
+          "event": "passed",
+          "seconds": 51.009
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollingUITests testLatestReplyRemainsStableAfterJump]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollingUITests testLatestReplyRemainsStableAfterJump]",
+          "event": "passed",
+          "seconds": 69.255
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollingUITests testLongUnreadThreadOpensAtLatestReply]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollingUITests testLongUnreadThreadOpensAtLatestReply]",
+          "event": "passed",
+          "seconds": 26.437
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollingUITests testScrollToLatestFromOlderContentShowsNewestReply]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollingUITests testScrollToLatestFromOlderContentShowsNewestReply]",
+          "event": "passed",
+          "seconds": 172.598
+        }
+      ]
+    },
+    "scroll-bounce": {
+      "countsFromLog": {
+        "started": 21,
+        "passed": 20
+      },
+      "receipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCave",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-bounce.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveUITests/ChatScrollBounceUITests",
+          "-only-testing:CovenCaveUITests/TranscriptAccessibilityUITests"
+        ],
+        "pid": 20734,
+        "elapsedSeconds": 3325.8527387080003,
+        "timedOut": true,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": -9,
+        "exitCode": 124,
+        "failure": null
+      },
+      "logSHA256": "b1f30dd884e08ba3ddaace311c81bf594eb8479b193196373282ab777edee866",
+      "completedCaseSeconds": 3063.685,
+      "cases": [
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+          "event": "passed",
+          "seconds": 176.116
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+          "event": "passed",
+          "seconds": 176.089
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+          "event": "passed",
+          "seconds": 156.196
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+          "event": "passed",
+          "seconds": 240.756
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+          "event": "passed",
+          "seconds": 184.499
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+          "event": "passed",
+          "seconds": 194.867
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+          "event": "passed",
+          "seconds": 107.707
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+          "event": "passed",
+          "seconds": 109.368
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+          "event": "passed",
+          "seconds": 110.89
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+          "event": "passed",
+          "seconds": 128.43
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+          "event": "passed",
+          "seconds": 138.189
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+          "event": "passed",
+          "seconds": 126.779
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+          "event": "passed",
+          "seconds": 72.067
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+          "event": "passed",
+          "seconds": 75.797
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+          "event": "passed",
+          "seconds": 88.606
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+          "event": "passed",
+          "seconds": 269.629
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+          "event": "passed",
+          "seconds": 348.422
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+          "event": "passed",
+          "seconds": 206.932
+        },
+        {
+          "name": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+          "event": "passed",
+          "seconds": 74.265
+        },
+        {
+          "name": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+          "event": "passed",
+          "seconds": 78.081
+        },
+        {
+          "name": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+          "event": "started",
+          "seconds": null
+        }
+      ]
+    },
+    "scroll-release": {
+      "countsFromLog": {
+        "started": 2,
+        "passed": 2
+      },
+      "receipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-release.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-retry-tests-on-failure",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink"
+        ],
+        "pid": 18915,
+        "elapsedSeconds": 576.301095584,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "logSHA256": "fa9a8f3c7bbc610965299b6c2fd4a2ccc9481cca12c8bf23273f5814d478bf23",
+      "completedCaseSeconds": 169.239,
+      "cases": [
+        {
+          "name": "-[CovenCaveUITests.PerformanceBaselineUITests testTranscriptColdAndRepeatedOpenWithoutShrink]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.PerformanceBaselineUITests testTranscriptColdAndRepeatedOpenWithoutShrink]",
+          "event": "passed",
+          "seconds": 109.535
+        },
+        {
+          "name": "-[CovenCaveUITests.PerformanceBaselineUITests testTranscriptShrinkRecoversAndReopensInSameProcess]",
+          "event": "started",
+          "seconds": null
+        },
+        {
+          "name": "-[CovenCaveUITests.PerformanceBaselineUITests testTranscriptShrinkRecoversAndReopensInSameProcess]",
+          "event": "passed",
+          "seconds": 59.704
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Third accessibility iteration started but has no terminal assertion/pass in the retained log; its result is unknown.",
+    "Outer3300-second deadline, not an asserted application crash, ended the bounce invocation.",
+    "Debug/Release configure retries; retained logs must distinguish configured retry from observed repeat.",
+    "A larger completion allowance does not qualify product responsiveness or erase this failed run.",
+    "Raw log ZIP verified;130MB result ZIP not downloaded or claimed verified."
+  ]
+}

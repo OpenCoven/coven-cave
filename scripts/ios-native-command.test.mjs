@@ -156,6 +156,14 @@ await test('transcript workflow owns deadlines and uploads logs separately from 
     assert.notEqual(s['continue-on-error'], true);
   }
   const strict = native.find((s) => s.name.includes('three full runs'));
+  // Run 43778586069 completed 20/21 executions in 3063.685s; setup and
+  // inter-case gaps added about 200s. Its final case previously took 78.081s
+  // but started with under 40s left. Reserve shutdown after the full matrix.
+  const retainedCompleteMatrixSeconds = 3063.685 + 200 + 78.081;
+  const strictBound = Number(strict.run.match(/--timeout-seconds (\d+)/)?.[1]);
+  assert.ok(strictBound > retainedCompleteMatrixSeconds + 30,
+    'the unchanged complete matrix and owned shutdown must fit the command allowance');
+  assert.ok(strictBound <= 3600, 'keep the reviewed strict command resource ceiling bounded');
   assert.match(strict.run, /-test-iterations 3/);
   assert.doesNotMatch(strict.run, /-retry-tests-on-failure/);
   assert.match(strict.run, /-only-testing:CovenCaveUITests\/TranscriptAccessibilityUITests/);
@@ -169,5 +177,5 @@ await test('transcript workflow owns deadlines and uploads logs separately from 
   const nonNative = steps.filter((s) => !native.includes(s) && !uploads.includes(s)).reduce((n, s) => n + (s['timeout-minutes'] ?? 0), 0);
   const uploadsMinutes = uploads.reduce((n, s) => n + s['timeout-minutes'], 0);
   assert.ok(nativeSeconds / 60 + nonNative + uploadsMinutes <= job['timeout-minutes'] - 1, 'retain at least one minute inside the bounded job budget');
-  assert.equal(job['timeout-minutes'], 100, 'allow the complete measured native matrix plus independent failure collection');
+  assert.equal(job['timeout-minutes'], 105, 'allow the complete measured native matrix plus independent failure collection');
 });

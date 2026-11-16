@@ -1,0 +1,271 @@
+{
+  "head": "603877a0413532fc3e958918064143e6e39a4050",
+  "run": 43778586089,
+  "summaries": [
+    {
+      "artifactId": 14187876015,
+      "artifactName": "playwright-evidence-shard-6-43778586089-1",
+      "version": 1,
+      "arguments": [
+        "--shard=6/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43778586089",
+      "runAttempt": "1",
+      "workflowSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "workflowDefinitionSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 195,
+      "identitySha256": "2448fd33f83ed02d7819fa2c720bda5b29cf6711fe055678a915402a9cb3133b",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 195,
+        "executed": 157,
+        "expected": 157,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 38,
+        "attempts": 157,
+        "retries": 0,
+        "identitySha256": "2448fd33f83ed02d7819fa2c720bda5b29cf6711fe055678a915402a9cb3133b"
+      }
+    },
+    {
+      "artifactId": 14187810899,
+      "artifactName": "playwright-evidence-agentic-43778586089-1",
+      "version": 1,
+      "arguments": [
+        "tests/agentic-enhance.spec.ts",
+        "tests/research-desk-tabs.spec.ts",
+        "--project=desktop",
+        "--workers=1",
+        "--no-deps"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43778586089",
+      "runAttempt": "1",
+      "workflowSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "workflowDefinitionSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 34,
+      "identitySha256": "06f3c813e9b389524da67255c2b2082c2f66dad2ba617844da31b971d7384252",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 34,
+        "executed": 33,
+        "expected": 33,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 1,
+        "attempts": 33,
+        "retries": 0,
+        "identitySha256": "06f3c813e9b389524da67255c2b2082c2f66dad2ba617844da31b971d7384252"
+      }
+    },
+    {
+      "artifactId": 14187711555,
+      "artifactName": "playwright-evidence-shard-5-43778586089-1",
+      "version": 1,
+      "arguments": [
+        "--shard=5/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43778586089",
+      "runAttempt": "1",
+      "workflowSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "workflowDefinitionSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 195,
+      "identitySha256": "3d00e75d051d9dc9cd9b897d2646bbf3d406364ba50ab9c50d3836867ddbf4c3",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 195,
+        "executed": 188,
+        "expected": 188,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 7,
+        "attempts": 188,
+        "retries": 0,
+        "identitySha256": "3d00e75d051d9dc9cd9b897d2646bbf3d406364ba50ab9c50d3836867ddbf4c3"
+      }
+    },
+    {
+      "artifactId": 14187379984,
+      "artifactName": "playwright-evidence-shard-2-43778586089-1",
+      "version": 1,
+      "arguments": [
+        "--shard=2/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43778586089",
+      "runAttempt": "1",
+      "workflowSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "workflowDefinitionSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 206,
+      "identitySha256": "2c2ceeeeb25d629968cce81ab6e8a94631f5da354e6e010031100989efa3b279",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 206,
+        "executed": 204,
+        "expected": 204,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 2,
+        "attempts": 204,
+        "retries": 0,
+        "identitySha256": "2c2ceeeeb25d629968cce81ab6e8a94631f5da354e6e010031100989efa3b279"
+      }
+    },
+    {
+      "artifactId": 14187354495,
+      "artifactName": "playwright-evidence-shard-4-43778586089-1",
+      "version": 1,
+      "arguments": [
+        "--shard=4/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43778586089",
+      "runAttempt": "1",
+      "workflowSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "workflowDefinitionSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 195,
+      "identitySha256": "77495642bf143b6c78ad9af76bde1590f3fc479a1708eabeae38f201d5356779",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 195,
+        "executed": 193,
+        "expected": 193,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 2,
+        "attempts": 193,
+        "retries": 0,
+        "identitySha256": "77495642bf143b6c78ad9af76bde1590f3fc479a1708eabeae38f201d5356779"
+      }
+    },
+    {
+      "artifactId": 14187249934,
+      "artifactName": "playwright-evidence-shard-3-43778586089-1",
+      "version": 1,
+      "arguments": [
+        "--shard=3/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43778586089",
+      "runAttempt": "1",
+      "workflowSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "workflowDefinitionSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 184,
+      "identitySha256": "a7feac4cbbe9ab841c20e027cddc2af88c348a98c1fe4dcf95b1fbb8e936022c",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 184,
+        "executed": 182,
+        "expected": 182,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 2,
+        "attempts": 182,
+        "retries": 0,
+        "identitySha256": "a7feac4cbbe9ab841c20e027cddc2af88c348a98c1fe4dcf95b1fbb8e936022c"
+      }
+    },
+    {
+      "artifactId": 14187214710,
+      "artifactName": "playwright-evidence-shard-1-43778586089-1",
+      "version": 1,
+      "arguments": [
+        "--shard=1/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43778586089",
+      "runAttempt": "1",
+      "workflowSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "workflowDefinitionSha": "eaa5ae481bdfbf05e6e1bf3d03a397ab265e9249",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 195,
+      "identitySha256": "ea2e3261b522bfbc76551a540507dfe7b29ccac1af50eefacd520666d4d35669",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 195,
+        "executed": 189,
+        "expected": 189,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 6,
+        "attempts": 189,
+        "retries": 0,
+        "identitySha256": "ea2e3261b522bfbc76551a540507dfe7b29ccac1af50eefacd520666d4d35669"
+      }
+    }
+  ],
+  "aggregate": {
+    "planned": 1204,
+    "executed": 1146,
+    "expected": 1146,
+    "unexpected": 0,
+    "flaky": 0,
+    "skipped": 58,
+    "attempts": 1146,
+    "retries": 0
+  }
+}
