@@ -13,6 +13,7 @@
 import { sessionDayKey } from "@/lib/session-pulse";
 import { activityHeatmapWindowDays } from "@/lib/activity-heatmap-window";
 import type { SessionRow } from "@/lib/types";
+import { COUNT_LABELS, isFamiliarConversation, memoryCountDisplay, recentSessionCount } from "@/lib/familiar-counts";
 
 export type ProfileKind = "familiar" | "human";
 
@@ -53,8 +54,15 @@ export type ProfileCollaborator = { familiarId: string; count: number };
 
 export type ProfileCardModel = {
   kind: ProfileKind;
-  /** Sessions attributed to the subject inside the selected window. */
+  /**
+   * The rail chip's count. For a familiar it is the shared
+   * `COUNT_LABELS.recentSessions` definition (issue 6357), so the card agrees with
+   * the roster and the analytics dock; for the human card it is the windowed
+   * total.
+   */
   sessionsTotal: number;
+  /** Label for {@link sessionsTotal}. */
+  sessionsTotalLabel: string;
   statTiles: ProfileStatTile[];
   heatmap: ProfileHeatmap;
   sessionsPanel: {
@@ -361,12 +369,18 @@ export function buildProfileCardModel(input: ProfileCardInput): ProfileCardModel
   let last30d = 0;
   let activeNow = 0;
   for (const session of subject) {
+    // The same conversation rule as the shared 90-day count, so the 30-day
+    // tile can never read higher than it (issue 6357).
+    if (!isFamiliarConversation(session)) continue;
     const ms = Date.parse(session.updated_at);
     if (!Number.isFinite(ms)) continue;
     if (ms > thirtyCutoff) last30d += 1;
     if (ms > activeCutoff && !session.archived_at) activeNow += 1;
   }
 
+  const familiarRecent = input.kind === "familiar" && input.familiarId
+    ? recentSessionCount(input.sessions, input.familiarId, now)
+    : 0;
   const statTiles: ProfileStatTile[] =
     input.kind === "human"
       ? [
@@ -379,18 +393,19 @@ export function buildProfileCardModel(input: ProfileCardInput): ProfileCardModel
           { label: "projects", value: compactCount(new Set(allWindowed.map((s) => s.project_root).filter(Boolean)).size) },
         ]
       : [
-          { label: "total sessions", value: compactCount(subject.length) },
+          { label: COUNT_LABELS.recentSessions.toLowerCase(), value: compactCount(familiarRecent) },
           { label: "sessions (30d)", value: compactCount(last30d) },
           {
-            label: "memories",
-            value: input.memoryCount == null ? "—" : compactCount(input.memoryCount),
+            label: COUNT_LABELS.memories.toLowerCase(),
+            value: memoryCountDisplay(input.memoryCount ?? null, compactCount).value,
           },
           { label: "active now", value: compactCount(activeNow) },
         ];
 
   return {
     kind: input.kind,
-    sessionsTotal: subject.length,
+    sessionsTotal: input.kind === "human" ? subject.length : familiarRecent,
+    sessionsTotalLabel: input.kind === "human" ? "coven sessions" : COUNT_LABELS.recentSessions.toLowerCase(),
     statTiles,
     heatmap,
     sessionsPanel: {

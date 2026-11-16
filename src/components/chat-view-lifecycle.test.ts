@@ -454,7 +454,7 @@ assert.match(
 
 assert.match(
   source,
-  /function regenerateFor\(turn: Turn\)[\s\S]*?const prevUser = precedingUserTurn\(turn\);[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?retryTurnModelRequest\(prevUser, turn\)[\s\S]*?modelControls: prevUser\.modelControls \?\? \{\}/,
+  /function regenerateFor\(turn: Turn\)[\s\S]*?const prevUser = precedingUserTurn\(turn\);[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?retryTurnModelRequest\(prevUser, turn, modelStateRef\.current\?\.harness\)[\s\S]*?modelControls: prevUser\.modelControls \?\? \{\}/,
   "Regenerate reuses the preceding user turn's controls and the assistant's authoritative retry model (CHAT-D6-02)",
 );
 
@@ -750,7 +750,7 @@ assert.match(
 );
 assert.match(
   routerSource,
-  /<ChatView[\s\S]*?composerDraftKey=\{composerDraftKey\}[\s\S]*?key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}/,
+  /<ChatView[\s\S]*?composerDraftKey=\{viewComposerDraftKey\}[\s\S]*?key=\{`chat-compose-\$\{viewComposerDraftKey\}-\$\{composeInstance\}`\}/,
   "ChatRouter keys the primary ChatView by draft namespace and compose lineage so namespace changes restore the matching draft",
 );
 assert.match(

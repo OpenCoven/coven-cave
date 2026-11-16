@@ -28,6 +28,8 @@ import { sanitizeGithubObjectSha } from "@/lib/github-object-sha";
 import { parseGitHubDiffRevision } from "@/lib/github-review";
 import { assertCurrentGitHubRevision, GitHubRevisionError } from "@/lib/server/github-review-revision";
 import { branchPrCache } from "@/lib/branch-pr-context";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, writeThrew, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -100,18 +102,29 @@ export async function POST(req: Request) {
   try {
     await assertCurrentGitHubRevision(repo, number, token, headSha, reviewedRevision);
     // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/merge`, {
-      method: "PUT",
-      headers: ghHeaders(token),
-      cache: "no-store",
-      // GitHub atomically refuses a head that changed after confirmation.
-      body: JSON.stringify({ merge_method: method, ...(headSha ? { sha: headSha } : {}) }),
-    });
+    let res: Response;
+    try {
+      res = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}/merge`, {
+        method: "PUT",
+        headers: ghHeaders(token),
+        cache: "no-store",
+        // GitHub atomically refuses a head that changed after confirmation.
+        body: JSON.stringify({ merge_method: method, ...(headSha ? { sha: headSha } : {}) }),
+      });
+    } catch (e) {
+      // The request may have reached GitHub before this failed; only a
+      // write that provably never left is a plain, retryable failure (#6369).
+      return writeThrew("GitHub", "merge", e, "failed to merge");
+    }
+    // A 5xx after GitHub received the write leaves its outcome unknown (#6369).
+    if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", "merge");
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    // GitHub accepted the merge request; an unreadable answer leaves it unconfirmed.
+    if (res.ok && (!isRecord(data) || typeof data.merged !== "boolean")) return ambiguousWrite("GitHub", "merge");
     if (!res.ok || !data || data.merged !== true) {
       // 405/409 carry GitHub's protection/mergeability reason — pass verbatim.
       const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamFailureResponse(res, "GitHub", message, res.status === 403 ? 403 : 502);
     }
     // The branch's PR was cached as open (#5795): the PR tab kept offering
     // Squash merge, and a second click got GitHub's "not mergeable".
@@ -123,7 +136,7 @@ export async function POST(req: Request) {
       try {
         // Ask GitHub which branch this PR merged from, rather than believing the
         // caller. `head.ref` survives the merge, so this is available here.
-        const prRes = await fetch(`${GH}/repos/${repo}/pulls/${number}`, {
+        const prRes = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}`, {
           headers: ghHeaders(token),
           cache: "no-store",
         });
@@ -164,7 +177,7 @@ export async function POST(req: Request) {
         }
         // `ref` is GitHub's own value and passed isSafeBranch — safe to
         // interpolate, and not reachable from the request body.
-        const del = await fetch(`${GH}/repos/${repo}/git/refs/heads/${ref}`, {
+        const del = await upstreamFetch("github", `${GH}/repos/${repo}/git/refs/heads/${ref}`, {
           method: "DELETE",
           headers: ghHeaders(token),
           cache: "no-store",
@@ -192,8 +205,8 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "failed to merge" },
-      { status: e instanceof GitHubRevisionError ? e.status : 502 },
+      { ok: false, error: e instanceof Error ? e.message : "failed to merge", ...(e instanceof GitHubRevisionError ? e.fields : {}) },
+      { status: e instanceof GitHubRevisionError ? e.status : 502, headers: e instanceof GitHubRevisionError ? e.headers : undefined },
     );
   }
 }

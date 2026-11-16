@@ -29,6 +29,7 @@ let lastFetchCall: { url: string; init: RequestInit } | null = null;
 
 const { POST } = await import("./route.ts");
 const { ELEVENLABS_TTS_MAX_CHARS } = await import("../../../../../lib/voice/elevenlabs-shared.ts");
+const { resetUpstreamHealth } = await import("../../../../../lib/server/upstream-fetch.ts");
 
 const VOICE_ID = "AbCdEf123456";
 const MODEL_ID = "eleven_turbo_v2_5";
@@ -44,6 +45,9 @@ beforeEach(() => {
   delete process.env.ELEVENLABS_API_KEY;
   nextFetchResponse = null;
   lastFetchCall = null;
+  // A 429 in one test opens upstreamFetch's cooldown on the host; that window
+  // is the primitive's own contract, not this proxy's.
+  resetUpstreamHealth("elevenlabs");
 });
 
 test("400 invalid_json on an unparseable body", async () => {
@@ -113,6 +117,7 @@ test("502 with a hint when ElevenLabs rejects, 502 key-invalid on 401", async ()
   assert.equal(rejectedJson.error, "elevenlabs_tts_failed");
   assert.match(rejectedJson.hint, /quota exceeded/);
 
+  resetUpstreamHealth("elevenlabs");
   nextFetchResponse = new Response("{}", { status: 401 });
   const unauthorized = await POST(req({ voiceId: VOICE_ID, modelId: MODEL_ID, text: "hello" }));
   const unauthorizedJson = await unauthorized.json();
@@ -123,7 +128,7 @@ test("502 with a hint when ElevenLabs rejects, 502 key-invalid on 401", async ()
 test("streams the first PCM chunk without waiting for synthesis to finish", async () => {
   process.env.ELEVENLABS_API_KEY = "xi-secret";
   let upstream;
-  nextFetchResponse = new Response(new ReadableStream({ start(controller) { upstream = controller; controller.enqueue(new Uint8Array([1, 2])); } }));
+  nextFetchResponse = new Response(new ReadableStream({ start(controller) { upstream = controller; controller.enqueue(new Uint8Array([1, 2])); } }), { headers: { "content-type": "audio/pcm" } });
   let response;
   const pending = POST(req({ voiceId: VOICE_ID, modelId: "eleven_v3_conversational", text: "hello", format: "pcm" })).then(r => { response = r; return r; });
   await new Promise(setImmediate);
@@ -138,7 +143,7 @@ test("streams the first PCM chunk without waiting for synthesis to finish", asyn
 
 test("client interruption aborts the upstream synthesis request", async () => {
   process.env.ELEVENLABS_API_KEY = "xi-secret";
-  nextFetchResponse = new Response(new Uint8Array([1, 2]));
+  nextFetchResponse = new Response(new Uint8Array([1, 2]), { headers: { "content-type": "audio/mpeg" } });
   const controller = new AbortController();
   await POST(new Request("http://test/api/voice/elevenlabs/tts", { method: "POST", signal: controller.signal,
     body: JSON.stringify({ voiceId: VOICE_ID, modelId: MODEL_ID, text: "hello" }) }));
@@ -150,4 +155,18 @@ test("rejects unsupported audio formats and null request bodies", async () => {
   const invalidFormat = await POST(req({ voiceId: VOICE_ID, modelId: MODEL_ID, text: "hello", format: "wav" }));
   assert.equal((await invalidFormat.json()).error, "invalid_format");
   assert.equal((await POST(req("null"))).status, 400);
+});
+
+
+test("rejects non-audio, empty audio and failed audio before playback", async () => {
+  process.env.ELEVENLABS_API_KEY = "xi-secret";
+  for (const contentType of [undefined, "text/html", "application/json", "application/octet-stream", "audio/pcm"]) {
+    nextFetchResponse = new Response(new Uint8Array([1]), { headers: contentType ? { "content-type": contentType } : {} });
+    const response = await POST(req({ voiceId: VOICE_ID, modelId: MODEL_ID, text: "hello" }));
+    assert.equal(response.status, 502, String(contentType));
+  }
+  nextFetchResponse = new Response(new Uint8Array(), { headers: { "content-type": "audio/mpeg" } });
+  assert.equal((await POST(req({ voiceId: VOICE_ID, modelId: MODEL_ID, text: "hello" }))).status, 502);
+  nextFetchResponse = new Response(new ReadableStream({ pull(controller) { controller.error(new Error("failed")); } }), { headers: { "content-type": "audio/mpeg" } });
+  assert.equal((await POST(req({ voiceId: VOICE_ID, modelId: MODEL_ID, text: "hello" }))).status, 502);
 });

@@ -11,6 +11,8 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, resourceId, userLogin, writeThrew, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -62,33 +64,45 @@ export async function POST(req: Request) {
 
   try {
     // repo, number, and commentId are validated above — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/comments/${commentId}/replies`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-      body: JSON.stringify({ body: text }),
-    });
+    let res: Response;
+    try {
+      res = await upstreamFetch("github", `${GH}/repos/${repo}/pulls/${number}/comments/${commentId}/replies`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        body: JSON.stringify({ body: text }),
+      });
+    } catch (e) {
+      // The request may have reached GitHub before this failed; only a
+      // write that provably never left is a plain, retryable failure (#6369).
+      return writeThrew("GitHub", "reply", e, "failed to post reply");
+    }
+    // A 5xx after GitHub received the write leaves its outcome unknown (#6369).
+    if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", "reply");
     const data = await res.json().catch(() => null);
+    // GitHub accepted the reply; an unreadable answer leaves it unconfirmed,
+    // and a blind retry could post it twice (#6368).
+    if (res.ok && !isRecord(data)) return ambiguousWrite("GitHub", "reply");
     if (!res.ok || !data || typeof data !== "object") {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
     }
     const d = data as Record<string, unknown>;
-    const user = d.user as Record<string, unknown> | undefined;
+    const id = resourceId(d.id);
+    if (!id) return ambiguousWrite("GitHub", "reply");
+    const user = isRecord(d.user) ? d.user : undefined;
+    const authorLogin = userLogin(user);
     return NextResponse.json({
       ok: true,
       comment: {
-        id: String(d.id ?? ""),
-        author: user?.login
+        id,
+        author: user && authorLogin
           ? {
-              login: String(user.login),
+              login: authorLogin,
               avatarUrl: typeof user.avatar_url === "string" ? user.avatar_url : null,
               url: typeof user.html_url === "string" ? user.html_url : null,
             }

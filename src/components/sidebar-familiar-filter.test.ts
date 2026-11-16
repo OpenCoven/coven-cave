@@ -90,7 +90,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /onSelectFamiliar=\{selectFamiliarScope\}/,
+  /onSelectFamiliar: \(id, opts\) => selectFamiliarScope\(id, \{ \.\.\.opts, preserveSurface: modeRef\.current === "chat" \}\)/,
   "Workspace wires the top-bar familiar switcher into nullable familiar scope state",
 );
 

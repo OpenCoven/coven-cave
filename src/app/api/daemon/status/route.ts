@@ -14,7 +14,7 @@ import {
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
-import { localRuntimeEvidence, observeDaemonLifecycle } from "@/lib/server/daemon-lifecycle-owner";
+import { localRuntimeEvidence, beginDaemonLifecycleObservation, observeDaemonLifecycle } from "@/lib/server/daemon-lifecycle-owner";
 import { executorStatusesForConfig } from "@/lib/executor-status";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "@/lib/server/daemon-health-request";
 import { assessDaemonStartupCompatibility, type DaemonStartupHealth } from "@/lib/daemon-startup-contract";
@@ -142,8 +142,8 @@ export async function GET(request: Request) {
   }
   const { config } = snapshot;
   const target = daemonTargetForConfig(config);
-  const checkedAt = new Date().toISOString();
   const executorStatuses = await executorStatusesForConfig(config);
+  const checkedAt = new Date().toISOString();
   const travelState = snapshot.state.travel;
   if (target.mode === "unconfigured-hub") {
     const root = covenWorkspaceRoot();
@@ -175,6 +175,7 @@ export async function GET(request: Request) {
   // and failure classification. Reloading config inside callDaemon() created
   // a race where a connection-mode change could query one target while the
   // response claimed (and classified) another.
+  const observeHealthLifecycle = beginDaemonLifecycleObservation();
   const res = await callDaemonTarget<Health>(target, {
     ...daemonHealthRequest(),
     diagnostics,
@@ -208,7 +209,7 @@ export async function GET(request: Request) {
       running: false,
       availability,
       reason,
-      lifecycle: observeDaemonLifecycle({
+      lifecycle: observeHealthLifecycle({
         targetMode: target.mode,
         availability,
         serviceConflict: null,
@@ -237,7 +238,7 @@ export async function GET(request: Request) {
   return respond({
     running: true,
     availability: "online",
-    lifecycle: observeDaemonLifecycle({
+    lifecycle: observeHealthLifecycle({
       targetMode: target.mode,
       availability: "online",
       serviceConflict,

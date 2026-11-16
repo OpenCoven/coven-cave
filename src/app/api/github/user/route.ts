@@ -12,6 +12,8 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { login as loginField, upstreamDrift, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,7 +50,7 @@ async function ghFetch(path: string, token: string | null) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store" });
+  const res = await upstreamFetch("github", `${GH}${path}`, { headers, cache: "no-store" });
   const data = await res.json().catch(() => null);
   return { res, data };
 }
@@ -78,18 +80,19 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
     }
     if (!res.ok || !data || typeof data !== "object") {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
     }
 
     const d = data as Record<string, unknown>;
+    // The profile is of the login GitHub reports; without one it is not a
+    // profile at all (#6368).
+    const profileLogin = loginField(d.login);
+    if (!profileLogin) return upstreamDrift("GitHub", "a login");
     const blog = str(d.blog);
     const twitter = str(d.twitter_username);
     const profile: Profile = {
       ok: true,
-      login: String(d.login ?? login),
+      login: profileLogin,
       name: str(d.name),
       avatarUrl: str(d.avatar_url),
       htmlUrl: str(d.html_url),

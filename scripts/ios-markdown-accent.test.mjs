@@ -16,6 +16,7 @@ const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const base = "apps/ios/CovenCave/CovenCave";
 const theme = await read(`${base}/Theme/Theme.swift`);
 const bubble = await read(`${base}/Views/MessageBubble.swift`);
+const chat = await read(`${base}/Views/ChatView.swift`);
 const prose = await read(`${base}/Views/MessageProseView.swift`);
 const webview = await read(`${base}/Views/MarkdownWebView.swift`);
 const entry = await read("apps/ios/markdown/entry.mjs");
@@ -34,11 +35,14 @@ assert.match(
 );
 
 // --- MessageBubble threads the chrome accent into the renderer --------------
-assert.match(
-  bubble,
-  /@Environment\(\\\.chrome\) private var chrome/,
-  "MessageBubble should read the chrome palette from the environment",
-);
+assert.match(chat, /@Environment\(\\\.chrome\) private var chrome/,
+  "The installed ChatView resolves the selected chrome palette");
+assert.match(chat, /MessageBubble\(message: message,[\s\S]*?chrome: chrome,/,
+  "ChatView must pass the resolved palette into the equatable bubble");
+assert.match(bubble, /let chrome: ChromePalette/,
+  "Bubble equality must compare a resolved palette, not an uninstalled environment wrapper");
+assert.doesNotMatch(bubble, /@Environment\(\\\.chrome\)/,
+  "Bubble equality must not read an uninstalled chrome environment");
 assert.match(
   prose,
   /accentHex: chrome\.accentHex/,

@@ -112,10 +112,13 @@ test("a mount inside an already-mounted directory is skipped", () => {
   assert.ok(!volumes.includes(`${temp}:${temp}`));
 });
 
-test("both E2E jobs pull the image and run their tests through it, never apt", () => {
+test("both E2E jobs pull the image and require execution evidence through it, never apt", () => {
   const workflow = readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
   assert.equal(workflow.match(/run: bash scripts\/playwright-ci-image\.sh pull$/gm)?.length, 2);
-  assert.equal(workflow.match(/bash scripts\/playwright-ci-image\.sh run pnpm exec playwright test/g)?.length, 2);
+  assert.equal(workflow.match(/node scripts\/playwright-ci-evidence\.mjs/g)?.length, 2);
+  const evidence = readFileSync(path.join(root, "scripts", "playwright-ci-evidence.mjs"), "utf8");
+  assert.match(evidence, /spawnSync\("bash", \["scripts\/playwright-ci-image\.sh", "run", "pnpm", "exec", "playwright", "test", \.\.\.args\]/,
+    "the evidence runner retains the existing pinned-image execution boundary");
   assert.doesNotMatch(workflow, /playwright install --with-deps/);
   assert.doesNotMatch(workflow, /playwright install-deps/);
   assert.doesNotMatch(workflow, /install-playwright-ci\.sh/);

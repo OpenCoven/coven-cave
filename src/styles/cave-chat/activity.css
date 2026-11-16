@@ -808,12 +808,20 @@ details[open] > .cave-tool-summary::before {
 /* Dense linear session view */
 .cave-chat-linear {
   position: relative; /* anchors .cave-drop-overlay */
-  /* The reading column: wide enough for code and tables, and the one frame
-     the composer, header, strips and spine align to (#5950). */
-  --cave-chat-measure: 64rem;
+  /* The reading column: the full pane, and the one frame the composer,
+     header, strips and spine align to (#5950). Each use resolves 100% against
+     its own box, so every `(100% - measure) / 2` inset equals the gutter. */
+  --cave-chat-gutter: 0px;
+  --cave-chat-measure: calc(100% - 2 * var(--cave-chat-gutter));
   background:
     linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 18%, transparent), transparent 150px),
     var(--bg-base);
+}
+
+/* The turn spine sits just left of the column, so a thread that renders it
+   keeps a gutter wide enough for an 8-character stamp lane plus the ring. */
+.cave-chat-linear:has(.cave-thread-spine) {
+  --cave-chat-gutter: 8rem;
 }
 
 .cave-chat-linear-header {
@@ -1692,10 +1700,9 @@ details[open] > .cave-tool-summary::before {
 .cave-chat-linear .cave-chat-thread {
   /* Chat-revamp 1b: turns separate by whitespace (26px), not hairlines. */
   gap: 26px;
-  /* Centered reading column (cave-xsq.1): cap the transcript to a comfortable
-     measure and center it, so long responses read like ChatGPT instead of
-     running edge-to-edge on a wide pane. The composer caps at the same
-     measure (transcript.css) so the input lines up under the conversation. */
+  /* Reading column (cave-xsq.1): the transcript fills the pane, less the
+     spine gutter when one renders. The composer uses the same measure
+     (transcript.css) so the input lines up under the conversation. */
   width: 100%;
   max-width: var(--cave-chat-measure);
   margin-block: 0;

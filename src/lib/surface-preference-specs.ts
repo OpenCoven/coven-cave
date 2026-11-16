@@ -82,6 +82,7 @@ export const surfacePreferenceSpecs = {
   familiars: {
     selectedId: nullableStringSpec("familiars.selectedId"),
     viewMode: enumSpec("familiars.viewMode", "roster", ["roster", "detail", "agent-memory"] as const),
+    // Keep Feed parseable for rollback; the reduced detail panel projects it to Memory.
     detailTab: enumSpec("familiars.detailTab", "memory", ["memory", "daily-notes", "files", "sessions", "feed"] as const),
   },
   familiarMemory: {

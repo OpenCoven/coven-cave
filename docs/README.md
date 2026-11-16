@@ -25,6 +25,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 - [`workflows/github-work-tracking.md`](workflows/github-work-tracking.md): GitHub Issues and the Cave Project, ownership, Git-only hooks, worktrees, and handoff
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
+- [`workflows/release-train.md`](workflows/release-train.md) — the ordered release runbook behind `pnpm release:train`: cut, validate, publish, roll out, then README screenshots, docs review and the handoff record
 - [`workflows/work-continuity.md`](workflows/work-continuity.md) — skill-driven discovery of existing work before planning or dispatch, with scoped evidence and honest handoff receipts
 - [`source-text-pins.md`](source-text-pins.md) — contract-first source-reading tests, deliberate adoption counts, parser-over-regex guidance, safe extraction, and mutation testing
 - [`performance-budgets.md`](performance-budgets.md) — the single catalogue of approved production performance budgets: which gate enforces each, why a missing measurement fails closed, and how a limit is seeded and re-seeded
@@ -42,7 +43,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`event-plane-operations.md`](event-plane-operations.md) — the invalidation WebSocket: switches, rollout modes, what each platform pauses, security, recovery and diagnostics
 - [`device-access.md`](device-access.md) — opt-in tailnet allowlists, desktop-managed browser/iOS pairing, durable grants, revocation, and audit
 - [`cross-environment.md`](cross-environment.md) — neutral defaults across Linux, macOS, and Windows, plus the per-OS deltas and the suite that enforces them
-- [`runtime-startup-supervision.md`](runtime-startup-supervision.md) — why a reachable socket is transport availability, not runtime readiness
+- [`runtime-startup-supervision.md`](runtime-startup-supervision.md) — how Cave supervises the daemon and its own startup workers: the readiness contract, the projected lifecycle states, the one mutation owner, where the fault matrix and diagnostics live, and the startup-worker coordinator with its switches; pinned to the code by `scripts/runtime-startup-supervision-doc.test.mjs` (#6334)
 - [`model-catalog-pipeline.md`](model-catalog-pipeline.md) — the declarative source, generator, and validation workflow for harness model catalogs and context metadata
 - [`first-run-setup-diagnostics.md`](first-run-setup-diagnostics.md) — server-classified failure codes for the first-run bootstrap
 - [`settings-persistence.md`](settings-persistence.md) — why the desktop shell cannot use origin-keyed browser storage as its authoritative store
@@ -52,6 +53,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`windows-sidecar-recovery.md`](windows-sidecar-recovery.md) — loaded-shell recovery, native Retry and Windows qualification limits
 - [`windows-update-preparation.md`](windows-update-preparation.md) — download, verify, and install as three distinct phases
 - [`windows-upgrade-benchmark.md`](windows-upgrade-benchmark.md) — what `scripts/windows-upgrade-diagnostics.ps1` captures
+- [`workflows/windows-msi-signing.md`](workflows/windows-msi-signing.md) — SSL.com eSigner setup, the five signing inputs, and the release gate that publishes only the Authenticode-verified MSI (#5739)
 - [`performance/daemon-lifecycle.md`](performance/daemon-lifecycle.md) — the opt-in real-daemon lifecycle probe and its 2026-10-20 diagnostic observation (#6120)
 - [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the daemon connectivity launch flow, readiness checks, fault coverage, and measurement contract; the `cave-58eoq` program's tracked work all merged (#4485–#4528); #6298 owns the lifecycle, fault-matrix and diagnostics-export follow-ups and #6303 the boundary proof
 
@@ -89,7 +91,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 - [`chat-github-integration.md`](chat-github-integration.md) — the shipped GitHub integration and its turn-marker protocol
 - [`chat-image-carousel.md`](chat-image-carousel.md) — image carousel markers, reusing the protocol above
 - [`chat-proposal-review-card.md`](chat-proposal-review-card.md) — proposal-review receipt marker and evidence-only card (#5520)
-- [`research-host-contract.md`](research-host-contract.md) — explicit core adapters and shared saved links for the optional Research package
+- [`research-host-contract.md`](research-host-contract.md) — explicit core adapters and shared saved links for the optional Research package, plus the activation owner and hot-disable teardown contract (#6332)
 - [`research-core-boundary.md`](research-core-boundary.md) — the optional Research boundary and the shared contracts core keeps; shipped in #6025 and enforced by `research-core-boundary.test.ts` and `research-maintenance-boundary.test.ts`
 - [`research-run-surface.md`](research-run-surface.md) — durable ResearchMission projections across Chat, Quick Chat, and Research Desk
 - [`execution-analytics.md`](execution-analytics.md) — model- and harness-level analytics: the three model identities, why harness version is never recorded, coverage as the honesty layer, and what the aggregate discards
@@ -102,7 +104,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 - [`prompt-packs.md`](prompt-packs.md) — where prompt templates come from and how they merge
 - [`authoring-assist.md`](authoring-assist.md) — templating and agentic assistance across stitches, skills, and crafts
 - [`marketplace.md`](marketplace.md) — the checked-in publisher catalog, and why the in-app view is deliberately narrower
-- [`opencoven-submissions.md`](opencoven-submissions.md) — runtime and harness submission, validation, and publication
+- [`opencoven-submissions.md`](opencoven-submissions.md) — runtime and harness submission, validation, and publication; left out of the default build since v0.5.20 (#6401), so this describes the optional feature
 - [`mcp-doctor.md`](mcp-doctor.md) — debugging the two places MCP servers are listed
 
 ### Compatibility registries
@@ -118,6 +120,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 
 ### Integrity and integrations
 
+- [`upstream-api-anomaly-suite.md`](upstream-api-anomaly-suite.md) — the registry of every upstream API the server calls, the relevance scan that keeps it honest, the `upstreamFetch` primitive that classifies, retries, cools down and publishes a live health ledger, and the anomaly matrix each caller is proven against (#6359)
 - [`dependency-advisories.md`](dependency-advisories.md) — open Dependabot alerts whose patched version is unreachable from this dependency graph: the resolver refusal, the exposure assessment, and the upstream change that would lift each
 - [`stuck-action-runs.md`](stuck-action-runs.md) — the four Actions runs wedged in `queued` since 2026-07-25 (issue #4905, closed as not planned 2026-09-16; the runs remain queued): the HTTP-500 history, the 2026-08-30 HTTP-403 retry record, the do-not-delete-workflow-history rule, and the retry tooling
 - [`project-permission-integrity.md`](project-permission-integrity.md) — reconciling stale grants against the project registry

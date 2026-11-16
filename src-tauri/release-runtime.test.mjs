@@ -418,6 +418,23 @@ test("native updater cleanup stops the sidecar before Windows exits", async () =
   );
 });
 
+// `tauri dev` runs the bare target/debug/app. Accepting an update there made
+// the macOS installer replace target/debug wholesale (binary and cargo cache
+// gone, "failed to restart app"). Debug builds must not register the updater.
+test("debug builds never register the native updater", async () => {
+  const setup = await readNativeHost("tauri_setup.rs");
+  assert.match(
+    setup,
+    /if cfg!\(debug_assertions\) \{\s*log::info!\("\[cave\] updater disabled: debug builds never install releases"\);\s*\} else \{\s*app\.handle\(\)\.plugin\(updater_builder\.build\(\)\)\?;\s*\}/,
+    "the updater plugin is registered only in release builds",
+  );
+  assert.equal(
+    (setup.match(/updater_builder\.build\(\)/g) ?? []).length,
+    1,
+    "no other path registers the updater",
+  );
+});
+
 test("Windows native close remains authoritative when the WebView is unresponsive", async () => {
   const launcher = await readNativeHost("tauri_setup.rs", "platform_lifecycle.rs");
 
@@ -713,7 +730,7 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   );
   assert.match(workflow, /windows_diagnostics_only:/);
   assert.match(workflow, /Validate Windows diagnostics mode/);
-  const publishStart = workflow.indexOf("- name: Publish validated Windows MSI");
+  const publishStart = workflow.indexOf("- name: Publish verified signed Windows MSI");
   const signStart = workflow.indexOf("- name: Sign Linux/Windows updater artifact");
   assert.ok(publishStart >= 0 && signStart > publishStart);
   const publishBlock = workflow.slice(publishStart, signStart);
@@ -740,7 +757,7 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   assert.match(updaterManifestHeader, /!inputs\.windows_diagnostics_only/);
   assert.match(
     workflow,
-    /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish validated Windows MSI/,
+    /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish verified signed Windows MSI/,
     "the MSI must pass its budget before it becomes a release asset",
   );
   const buildOnlyStart = workflow.indexOf("- name: Build Windows MSI without publishing");
@@ -1013,7 +1030,7 @@ test("Windows first launch paints progress and supports recovery while the sidec
   );
   assert.match(
     launcher,
-    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*NOTCH_WINDOW_LABEL/,
+    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*CHAT_WINDOW_LABEL/,
     "sidecar recovery must rotate auth for already-open auxiliary windows",
   );
   assert.match(
@@ -1230,7 +1247,7 @@ test("Windows startup PRs compile native code without release authority", async 
   assert.match(workflow, /Invoke-NativeTest 'sidecar_archive::tests' 24/);
   assert.match(workflow, /Invoke-NativeTest 'sidecar_runtime_retention::tests' 5/);
   // Declined or failed msiexec recovery (#5981) must compile and run on Windows for every PR.
-  assert.match(workflow, /Invoke-NativeTest 'windows_update_recovery::tests' 5/);
+  assert.match(workflow, /Invoke-NativeTest 'windows_update_recovery::tests' 6/);
   assert.match(workflow, /if \(\$testExitCode -ne 0\) \{ throw/);
   assert.match(workflow, /if \(\(\$output -join "`n"\) -notmatch \$summary\) \{ throw/);
   assert.doesNotMatch(workflow, /pull_request_target|secrets:|contents: write|workflow_dispatch|release\.yml|release-candidate\.yml/);

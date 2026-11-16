@@ -20,6 +20,7 @@ struct CaveClient {
     /// it too: a test that injects a session sees every request this client
     /// sends. Production never injects one.
     let injectedSession: URLSession?
+    private let onConversationAccessDenied: (@Sendable (String) async throws -> Void)?
     private let idempotentMutationRetryBudget: Duration
     // Internal rather than private so sibling client extensions in other files
     // (e.g. the Familiar dashboard read) encode a familiar id EXACTLY the way
@@ -32,11 +33,13 @@ struct CaveClient {
     init(
         connection: CaveConnection,
         session: URLSession? = nil,
-        idempotentMutationRetryBudget: Duration = Self.defaultIdempotentMutationRetryBudget
+        idempotentMutationRetryBudget: Duration = Self.defaultIdempotentMutationRetryBudget,
+        onConversationAccessDenied: (@Sendable (String) async throws -> Void)? = nil
     ) {
         self.connection = connection
         self.injectedSession = session
         self.idempotentMutationRetryBudget = idempotentMutationRetryBudget
+        self.onConversationAccessDenied = onConversationAccessDenied
     }
 
     /// `POST /api/voice/session` request. The desktop resolves the familiar's
@@ -502,6 +505,7 @@ struct CaveClient {
         )
         let req = try request("api/voice/session", method: "POST", body: payload)
         let (data, resp) = try await data(for: req)
+        try await purgeConversationIfAccessDenied(resp, sessionId: sessionId)
         if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             if let envelope = try? JSONDecoder().decode(VoiceSessionErrorEnvelope.self, from: data),
                let message = envelope.message {
@@ -571,6 +575,7 @@ struct CaveClient {
         let escaped = try Self.encodedPathSegment(sessionId)
         let req = try request("api/chat/conversation/\(escaped)?ifEmpty=1", method: "DELETE")
         let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try await purgeConversationIfAccessDenied(resp, sessionId: sessionId)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
 
         guard (200..<300).contains(status) else {
@@ -855,6 +860,7 @@ struct CaveClient {
         let payload = try JSONEncoder().encode(SessionFlagsPatch(archived: archived, pinned: pinned))
         let req = try request("api/sessions/\(escaped)", method: "PATCH", body: payload)
         let (_, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try await purgeConversationIfAccessDenied(resp, sessionId: sessionId)
         try Self.check(resp)
     }
 
@@ -864,6 +870,7 @@ struct CaveClient {
         let escaped = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
         let req = try request("api/sessions/\(escaped)", method: "DELETE")
         let (_, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try await purgeConversationIfAccessDenied(resp, sessionId: sessionId)
         try Self.checkDelete(resp)
     }
 
@@ -907,6 +914,7 @@ struct CaveClient {
         let turn = try Self.encodedPathSegment(turnId, describing: "message identifier")
         let req = try request("api/chat/conversation/\(session)/turns/\(turn)", method: "DELETE")
         let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try await purgeConversationIfAccessDenied(resp, sessionId: sessionId)
         try Self.checkDelete(resp)
         struct TurnDeleteResponse: Decodable { var ok: Bool?; var deleted: Bool? }
         let decoded = try? JSONDecoder().decode(TurnDeleteResponse.self, from: data)
@@ -926,11 +934,21 @@ struct CaveClient {
     func conversation(sessionId: String) async throws -> Conversation? {
         let req = try request("api/chat/conversation/\(sessionId)")
         let (data, resp) = try await data(for: req)
+        try await purgeConversationIfAccessDenied(resp, sessionId: sessionId)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ConversationResponse.self, from: data).conversation
         } catch {
             throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    private func purgeConversationIfAccessDenied(_ response: URLResponse, sessionId: String?) async throws {
+        if let sessionId, !sessionId.isEmpty,
+           let status = (response as? HTTPURLResponse)?.statusCode, status == 401 || status == 403 {
+            // Match the web conversation cache: an authoritative access refusal
+            // invalidates this conversation, while offline/404/5xx do not.
+            try await onConversationAccessDenied?(sessionId)
         }
     }
 
@@ -962,6 +980,7 @@ struct CaveClient {
         if let previewModel { path += "&model=\(urlQuery(previewModel))" }
         let req = try request(path)
         let (data, resp) = try await data(for: req)
+        try await purgeConversationIfAccessDenied(resp, sessionId: sessionId)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ChatModelStateResponse.self, from: data)
@@ -999,6 +1018,7 @@ struct CaveClient {
             Body(familiarId: familiarId, sessionId: sessionId, model: model, scope: scope))
         let req = try request("api/chat/model-state", method: "PATCH", body: payload)
         let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try await purgeConversationIfAccessDenied(resp, sessionId: sessionId)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ChatModelStateResponse.self, from: data)
@@ -1135,7 +1155,18 @@ struct CaveClient {
                     let (bytes, resp) = try await (injectedSession ?? Self.streamSession).bytes(for: req)
                     if let http = resp as? HTTPURLResponse,
                        !(200..<300).contains(http.statusCode) {
+                        if http.statusCode == 401 {
+                            try await purgeConversationIfAccessDenied(resp, sessionId: body.sessionId)
+                        }
                         let data = try await Self.readServerErrorBody(from: bytes)
+                        let envelope = try? JSONDecoder().decode(ServerErrorEnvelope.self, from: data)
+                        let managedDeviceRefusal = http.value(forHTTPHeaderField: "x-coven-device-pairing") == "1"
+                            && envelope?.error == "forbidden"
+                        if http.statusCode == 403, envelope?.code == "project_access_denied" || managedDeviceRefusal {
+                            // Write-only, flow and harness refusals do not revoke
+                            // access to an existing conversation's cached data.
+                            try await purgeConversationIfAccessDenied(resp, sessionId: body.sessionId)
+                        }
                         throw Self.serverResponseError(
                             statusCode: http.statusCode,
                             data: data
@@ -1170,7 +1201,7 @@ struct CaveClient {
     /// Replays buffered events past `cursor` (the last applied frame id),
     /// then tails the run live; the server disarms its detach-cap kill while
     /// a tail is attached. Throws `NoResumableRun` on 404.
-    func resumeStream(runId: String, cursor: Int) -> AsyncThrowingStream<StreamFrame, Error> {
+    func resumeStream(runId: String, cursor: Int, sessionId: String? = nil) -> AsyncThrowingStream<StreamFrame, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -1179,6 +1210,7 @@ struct CaveClient {
                     req.timeoutInterval = 600
 
                     let (bytes, resp) = try await (injectedSession ?? Self.streamSession).bytes(for: req)
+                    try await purgeConversationIfAccessDenied(resp, sessionId: sessionId)
                     if (resp as? HTTPURLResponse)?.statusCode == 404 {
                         throw NoResumableRun()
                     }

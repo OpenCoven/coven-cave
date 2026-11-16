@@ -1,6 +1,8 @@
 "use client";
 
+import { createProjectsRetryCarry, type ProjectsRetryRoute } from "@/lib/chat-projects-retry";
 import { runAutoReflectionIfMissing } from "@/lib/auto-thread-reflection";
+import { useFirstUse } from "@/components/first-use-provider";
 
 import { mergeReasoningBlock, normalizeReasoningBlock, normalizeReasoningBlocks } from "@/lib/chat-reasoning-blocks";
 import { ResponseRunDetails } from "@/components/response-run-details";
@@ -67,10 +69,13 @@ import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
 import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
+  CHAT_FOCUS_PROJECT_EVENT,
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
   markCovenGroupPending,
   markCovenTabPending,
+  markProjectFocusPending,
+  markProjectsTabPending,
 } from "@/lib/chat-tab-events";
 import { addableFamiliars, promoteSessionToCoven } from "@/lib/coven-promotion";
 import {
@@ -95,6 +100,7 @@ import {
   readLiveChatGeneration,
   reconcileLiveChatGenerationSession,
   recordLiveChatGeneration,
+  forgetFailedSendModel,
   retryTurnModelRequest,
   stageLiveChatGenerationMetadata,
   subscribeLiveChatGeneration,
@@ -122,7 +128,7 @@ import {
   chatFoldLabel,
   chatTranscriptFold,
 } from "@/lib/chat-transcript-fold";
-import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
+import { CHAT_COMPOSER_PREFS_CHANGED_EVENT, readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import { shouldShowDockedComposer } from "@/lib/chat-composer-visibility";
 import { isFlowSession, useFlowDiscussion } from "@/lib/flow-discussion";
 import {
@@ -358,7 +364,7 @@ import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
-import { chatComposerDraftKey, readComposerDraft, useComposerDraft, writeComposerDraft } from "@/lib/use-composer-draft";
+import { chatComposerDraftKey, initialComposerDraftDecision, readComposerDraft, useComposerDraft, writeComposerDraft } from "@/lib/use-composer-draft";
 import { useAddProjectFlow } from "@/components/project-picker";
 import { ProjectRootWorkspaceNotice } from "@/components/project-root-workspace-notice";
 import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
@@ -420,6 +426,7 @@ import { startSpan } from "@/lib/perf/marks";
 import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 import { markStartupSettled } from "@/lib/startup-gate";
 import { sharedJsonFetch } from "@/lib/shared-json-fetch";
+import { createPointerPressTracker, type PointerPressTracker } from "@/lib/pointer-press";
 
 /** How long an identical usage-meter request is shared across re-runs (#5668). */
 const USAGE_PLAN_REUSE_MS = 10_000;
@@ -468,11 +475,17 @@ const APPROVAL_RELOAD_REQUIRED = "Reload this chat before sending answers so the
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
+  /** Opaque identity restored only for the original refused blank compose. */
+  retryComposeId?: string;
+  initialRetryRuntimeHost?: string | null;
+  projectsRetryPassive?: boolean;
   session?: SessionRow | null;
   projectRoot?: string;
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  /** A reviewed onboarding starter, preserved as editable text without dispatch. */
+  initialDraft?: string;
   /** Explicit task-card model forwarded through a native Board handoff. */
   initialModelOverride?: string;
   /** Task work can reserve its conversation id before mounting the bridge.
@@ -595,6 +608,21 @@ type FailedSend = {
   /** Snapshot from the attempt, never the controls currently visible later. */
   controls?: ChatSendControls;
 };
+const projectsRetryCarry = createProjectsRetryCarry<{
+  failed: FailedSend;
+  message: string;
+  root: string;
+  route: ProjectsRetryRoute;
+}>();
+
+export function readProjectsRetryRoute(): ProjectsRetryRoute | null {
+  return projectsRetryCarry.peek()?.route ?? null;
+}
+
+export function discardProjectsRetry(): void {
+  projectsRetryCarry.drop();
+}
+
 type ChatSendOptions = {
   promptOverride?: string;
   parentTurnId?: string | null;
@@ -1026,15 +1054,18 @@ function ChatErrorStrip({
       className="cave-chat-error-strip shrink-0 border-t border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
     >
       <div className="mx-auto w-full max-w-[var(--cave-chat-measure)]">
-      <div className="flex items-center gap-2 px-5 py-2 text-xs">
+      {/* The row wraps so the code badge and buttons never squeeze the
+          reason to zero width in a phone composer (#6445). */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-5 py-2 text-xs">
         <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
+        <span className="min-w-0 flex-1 basis-56 break-words font-medium">{message}</span>
         {code && code !== "harness_auth_required" && code !== "harness_auth_configuration_required" && !usageLimit ? (
           <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[length:var(--text-2xs)]">
             {code}
           </span>
         ) : null}
-        <div className="flex shrink-0 items-center gap-1">
+        {/* Six buttons are wider than a phone: they wrap, so Dismiss stays reachable. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           {hasDetail ? (
             <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={btn}>
               <Icon name={open ? "ph:caret-down-bold" : "ph:caret-right-bold"} width={11} aria-hidden />
@@ -2126,9 +2157,10 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
+  { familiar, sessionId, retryComposeId, initialRetryRuntimeHost, projectsRetryPassive = false, session, projectRoot, initialPrompt, initialDraft, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onComposeStarted, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
 ) {
+  const firstUse = useFirstUse();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [streamHealth, dispatchStreamHealth] = useReducer(
     chatStreamHealthReducer,
@@ -2466,12 +2498,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).responseSpeed);
-  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode);
+  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>(() => {
+    const reviewed = !sessionId ? initialControls?.permissionMode : undefined;
+    return reviewed === "read" || reviewed === "full" ? reviewed : readChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage).permissionMode;
+  });
+  useEffect(() => {
+    if (sessionId) return;
+    const updateUnsentChoice = () => setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode);
+    window.addEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
+    return () => window.removeEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, updateUnsentChoice);
+  }, [sessionId]);
   // Composer Host chip: null = auto — the conversation's recorded host, else
   // the familiar's own runtime binding. Only an explicit pick rides the send
   // body (deliberately per-session, not a sticky global pref: a forgotten
   // sticky remote host would silently run every new chat elsewhere).
-  const [runtimeHost, setRuntimeHost] = useState<string | null>(() => initialControls?.runtimeHost ?? null);
+  const [runtimeHost, setRuntimeHost] = useState<string | null>(() => initialRetryRuntimeHost !== undefined ? initialRetryRuntimeHost : initialControls?.runtimeHost ?? null);
   const sessionRuntimeHost = useMemo(() => {
     const parsed = parseConversationRuntime(session?.runtime);
     return parsed?.kind === "ssh" ? parsed.host : null;
@@ -2590,6 +2631,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // send 400s with code project_root_unavailable and Retry can never succeed —
   // the recovery is re-pointing the project, not retrying (cave-ivcc).
   const [projectRootMissing, setProjectRootMissing] = useState(false);
+  // A project whose Write grant overlaps Cave's private state: Projects is
+  // where that grant changes, so the error offers to open it there (#6451).
+  const [privateStateProjectRoot, setPrivateStateProjectRoot] = useState<string | null>(null);
+  // Projects unmounts Chat. Keep only this explicit round trip in memory;
+  // opening any other recipient discards it, including in a reused view.
+  const [localRetryComposeId] = useState(() => crypto.randomUUID());
+  const retryChatId = sessionId ?? retryComposeId ?? localRetryComposeId;
+  const projectsRetryOwnedRef = useRef(false);
+  useEffect(() => {
+    const target = { familiarId: familiar.id, chatId: retryChatId };
+    const carried = projectsRetryPassive ? projectsRetryCarry.read(target) : projectsRetryCarry.returnTo(target);
+    if (!carried && !projectsRetryOwnedRef.current) return;
+    projectsRetryOwnedRef.current = Boolean(carried);
+    setLastFailedSend(carried?.failed ?? null);
+    setError(carried?.message ?? null);
+    setDebugError(null);
+    setPrivateStateProjectRoot(carried?.root ?? null);
+    if (carried) announce("Your refused message is ready to retry.");
+  }, [familiar.id, retryChatId, projectsRetryPassive, announce]);
+
   // 409 chat_run_active: the server still runs an earlier turn of this chat
   // that this view no longer tracks. Holds that chat's id so the error strip
   // can stop the earlier run; Retry then sends the preserved message.
@@ -2636,6 +2697,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // pre-session (voice new-chat) creates the conversation first, then the
   // router promotes it and re-enters through the openVoiceNonce effect.
   const openVoiceCall = useCallback(async () => {
+    if (!firstUse.ensureIntroduction()) return;
     const launch = projectLaunchRef.current;
     if (!launch.ready) {
       setError(launch.message);
@@ -2677,7 +2739,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setVoiceCallPending(false);
     }
-  }, [sessionId, busy, voiceCallPending, familiar.id, scopedDraftKey, announce, freezeComposeContext, onVoiceSessionCreated, promoteDraft, raiseDebugError]);
+  }, [firstUse, sessionId, busy, voiceCallPending, familiar.id, scopedDraftKey, announce, freezeComposeContext, onVoiceSessionCreated, promoteDraft, raiseDebugError]);
   // Composer dictation (voice new-chat): finals append to the draft for
   // review — never auto-sent. The mic hides when no ears engine exists.
   const dictation = useDictation(
@@ -3132,7 +3194,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [refreshUsagePlan]);
 
   useEffect(() => {
-    writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode });
+    writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode }, "automatic");
   }, [thinkingEffort, responseSpeed, permissionMode]);
 
   // Persist a model choice through the existing channels: session scope when a
@@ -3141,6 +3203,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectModel = useCallback(
     (modelId: string | null) => {
       const selectionRevision = ++modelSelectionRevisionRef.current;
+      setLastFailedSend((failed) => failed && forgetFailedSendModel(failed));
       const stagedModel = modelId ?? "";
       pendingModelOverrideRef.current = stagedModel;
       pendingModelScopeRef.current = modelId
@@ -3258,6 +3321,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleSelectRuntime = useCallback(
     (runtime: string) => {
       const selectionRevision = ++modelSelectionRevisionRef.current;
+      // The saved failure belongs to the old runtime, as in handleUseHarnessFix.
+      setLastFailedSend((failed) => failed && forgetFailedSendModel(failed));
       const nextModel = modelForRuntimeSwitch(runtime);
       pendingModelOverrideRef.current = nextModel;
       pendingModelScopeRef.current = "next-message";
@@ -3461,6 +3526,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     sessionId: null,
   });
   const initialPromptSentRef = useRef(false);
+  const initialDraftConsumedRef = useRef(false);
+  const [starterDraftConflict, setStarterDraftConflict] = useState<{ key: string; text: string } | null>(null);
+  const currentStarterConflict = starterDraftConflict?.key === scopedDraftKey ? starterDraftConflict : null;
+  useEffect(() => {
+    if (!initialDraft || initialDraftConsumedRef.current) return;
+    const decision = initialComposerDraftDecision({ incoming: initialDraft, current: input, sessionId, expectedProject: projectRoot, project: activeProjectRoot, ready: projectLaunchReady });
+    if (decision === "wait") return;
+    initialDraftConsumedRef.current = true;
+    if (decision === "apply") setInput(initialDraft);
+    else if (decision === "review") setStarterDraftConflict({ key: scopedDraftKey, text: initialDraft });
+  }, [initialDraft, input, sessionId, projectRoot, activeProjectRoot, projectLaunchReady, scopedDraftKey, setInput]);
   /** True while THIS instance's sendRaw reader loop is running. The owner
    *  applies stream events itself (handleEvent), so it never needs the
    *  settle-refetch below; an instance that merely ADOPTED a live snapshot
@@ -3610,6 +3686,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setLinkedContext(null);
     setFlowTranscriptFallback(null);
     setLastFailedSend(null);
+    projectsRetryCarry.drop();
     abortRef.current?.abort();
     abortRef.current = null;
     streamOwnerRef.current = false;
@@ -3875,10 +3952,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     if (!openVoiceNonce || openVoiceNonce === openVoiceNonceRef.current) return;
     if (!sessionId || sessionId !== openVoiceSessionId) return;
+    if (!firstUse.ensureIntroduction()) return;
+    if (!projectLaunchReady) return;
     openVoiceNonceRef.current = openVoiceNonce;
     voiceAutoCreatedRef.current = sessionId;
-    setVoiceCallOpen(true);
-  }, [openVoiceNonce, sessionId, openVoiceSessionId]);
+    void openVoiceCall();
+  }, [firstUse, openVoiceCall, openVoiceNonce, projectLaunchReady, sessionId, openVoiceSessionId]);
 
   // ⌘F/Ctrl+F is scoped to the chat section via this React keydown handler
   // on the section root — NOT a window-level listener — so ChatList's ⌘F
@@ -3912,6 +3991,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // anywhere in the composer dock (Tab to Send or a chip, a tap on Tools), so
   // the phone composer never collapses under the control being used.
   const [composerEngaged, setComposerEngaged] = useState(false);
+  // #5840: leaving the composer rests it only once the press that moved focus
+  // has been released, so the control being tapped stays under the finger.
+  const pointerPressRef = useRef<PointerPressTracker | null>(null);
+  const cancelComposerRestRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const tracker = createPointerPressTracker(window);
+    pointerPressRef.current = tracker;
+    return () => {
+      cancelComposerRestRef.current?.();
+      cancelComposerRestRef.current = null;
+      tracker.dispose();
+      pointerPressRef.current = null;
+    };
+  }, []);
+  const engageComposer = useCallback(() => {
+    cancelComposerRestRef.current?.();
+    cancelComposerRestRef.current = null;
+    setComposerEngaged(true);
+  }, []);
+  const restComposerAfterPress = useCallback((dock: Element) => {
+    cancelComposerRestRef.current?.();
+    const rest = () => {
+      cancelComposerRestRef.current = null;
+      if (!dock.contains(document.activeElement)) setComposerEngaged(false);
+    };
+    const tracker = pointerPressRef.current;
+    if (tracker) cancelComposerRestRef.current = tracker.afterPress(rest);
+    else rest();
+  }, []);
   const keyboardOffset =
     typeof window !== "undefined" && vv.height > 0
       ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
@@ -4002,7 +4110,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         { value: "full", label: "Build · full access" },
       ],
       onChange: (value: string) => {
-        if (value === "read" || value === "full") setPermissionMode(value);
+        if (value === "read" || value === "full") {
+          writeChatComposerPrefs(typeof window === "undefined" ? null : window.localStorage, { thinkingEffort, responseSpeed, permissionMode: value });
+          setPermissionMode(value);
+        }
       },
     },
     ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0 || composerModelInventory.loading
@@ -4102,7 +4213,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         .flatMap((turn) => turn.tools ?? [])
         .filter((tool) => tool.status === "ok" || tool.status === "error")
         .slice(-3)
-        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status, output: tool.output ?? "" })),
+        // Names and outcomes only: a loaded tool result stays in its card (#6486).
+        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status })),
       linkedTask: linkedContext?.task ?? null,
     },
     disabled: busy,
@@ -5317,6 +5429,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     allowBusy = false,
     submission?: { canSend: () => boolean; onPersisted: () => void },
   ) => {
+    if (!firstUse.ensureIntroduction()) return;
+    if (text.trim() || outgoingAttachments.length > 0) projectsRetryCarry.drop();
     // A runtime picker writes the familiar binding through /api/config. Wait
     // for that read-modify-write before resolving the send body; otherwise an
     // immediate send can launch the old harness even though the chip already
@@ -5528,6 +5642,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setLastFailedSend(null);
     setProjectAccessRoot(null);
     setProjectRootMissing(false);
+    setPrivateStateProjectRoot(null);
     setProjectRootRequired(false);
     setEarlierRunSessionId(null);
     setEarlierRunId(null);
@@ -5728,8 +5843,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(startNewConversation ? { startNewConversation: true } : {}),
           projectRoot: projectRootForRequest,
           modelControls: controlsOverride?.modelControls ?? modelControls,
-          // Advisory permission mode for the picked access level; the daemon may
-          // ignore it if the harness doesn't support per-turn permission scoping.
+          // Send the selected access level; the server refuses unsupported modes.
           permissionMode: controlsOverride?.permissionMode ?? permissionMode,
           // Composer Host chip: only an explicit pick rides; the server
           // resolves it against the registered-host registry fail-closed.
@@ -5792,7 +5906,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           : null;
         const message = await chatBridgeFailureMessage(res);
         let surfacedMessage = message;
-        setLastFailedSend(request);
+        // Resending a model the server refused can only be refused again, so
+        // Retry follows the composer and the composer catches up (#6419).
+        const modelRefused = /model_runtime_mismatch|unsupported_model_override/.test(message);
+        setLastFailedSend(modelRefused ? forgetFailedSendModel(request) : request);
+        if (modelRefused) void refreshModelState();
         // A 403 here is the project-access gate: the chat's cwd belongs to no
         // registered project the familiar can reach. Capture that cwd so the
         // error strip can offer a one-click "register + grant, then retry".
@@ -5840,6 +5958,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           surfacedMessage = blockingRunId
             ? "This chat is still running an earlier turn, so your message was not sent. Stop the earlier turn, or wait for it to finish, then retry."
             : "This chat is still running an earlier turn, so your message was not sent. Wait for it to finish, then retry.";
+        }
+        // The message names the folder and the grant behind it; Projects is
+        // where a project's grant changes.
+        const overlapRefusal = refusal as {
+          error?: unknown;
+          reason?: unknown;
+          overlap?: { source?: unknown; root?: unknown } | null;
+        } | null;
+        if (res.status === 409 && overlapRefusal?.reason === "cave_private_state_overlap") {
+          if (typeof overlapRefusal.error === "string" && overlapRefusal.error.trim()) surfacedMessage = overlapRefusal.error;
+          if (overlapRefusal.overlap?.source === "project" && typeof overlapRefusal.overlap.root === "string") {
+            setPrivateStateProjectRoot(overlapRefusal.overlap.root);
+          }
         }
         setError(surfacedMessage);
         upsertTurnProgress(assistantId, {
@@ -6375,7 +6506,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         next,
         prevAttachments ?? [],
         [],
-        { parentTurnId: parentId ?? null, ...retryTurnModelRequest(prevUser, turn) },
+        { parentTurnId: parentId ?? null, ...retryTurnModelRequest(prevUser, turn, modelStateRef.current?.harness) },
         {
           thinkingEffort,
           responseSpeed,
@@ -6402,7 +6533,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       [],
       {
         parentTurnId: parentId ?? null,
-        ...retryTurnModelRequest(prevUser, turn),
+        ...retryTurnModelRequest(prevUser, turn, modelStateRef.current?.harness),
       },
       {
         thinkingEffort,
@@ -6448,7 +6579,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     const text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
-    if (attachments.length === 0 && intentFromSlash(text)) return;
     // Global stop phrases (cave-uf2x): while a task is running, typing any
     // configured phrase is a command — halt the turn (same path as the Stop
     // button) instead of leaving the draft stranded behind the busy bail.
@@ -6458,6 +6588,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearDraft();
       return;
     }
+    if (!firstUse.ensureIntroduction()) return;
+    if (attachments.length === 0 && intentFromSlash(text)) return;
     if (attachmentsReading) return;
     if (!projectLaunchReady) {
       setError(projectLaunchMessage);
@@ -6640,6 +6772,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       return;
     }
     if (!projectLaunchReady) return;
+    if (!firstUse.ensureIntroduction()) return;
     if (initialPromptSentRef.current || (sessionId && !autoSendInitialPrompt)) return;
     // A caller that can remount this view under a live handoff (the Task Work
     // cockpit, whose Group is keyed by the visible pane set) supplies a stable
@@ -6712,7 +6845,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSendInitialPrompt, initialPrompt, initialPromptHandoffId, projectLaunchReady, sessionId]);
+  }, [autoSendInitialPrompt, initialPrompt, initialPromptHandoffId, projectLaunchReady, sessionId, firstUse.payload?.state.step]);
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -7598,6 +7731,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
+  const guidanceLabel = firstUse.payload?.state.step !== "complete" ? "Continue introduction" : firstUse.payload.resolution.kind === "repair" ? "Review default context" : "Working with familiars";
   const offlineReadOnly = historyState === "offline" || flowBackedSession;
   // Native UI tier host: opts this chat's transcript into coven:ui rendering.
   // Memoized so the context value is stable across composer keystrokes.
@@ -7645,7 +7779,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       popoverPlacement={composerPopoverPlacement}
       ariaLabel={inlineComposer ? "New chat context" : "Session context"}
-      executionRuntime={session?.runtime ?? null}
+      executionRuntime={runtimeHost && runtimeHost !== LOCAL_HOST_ID
+        ? `ssh:${runtimeHost}`
+        : modelState?.runtime ?? session?.runtime ?? (modelState ? "local" : null)}
     />
   );
   // One Tools menu, placed by width (#5954): desktop puts it in the action
@@ -7736,7 +7872,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         },
         retry: { disabled: !lastFailedSend || busy, onSelect: retryLastSend },
         summarize: { disabled: busy, onSelect: summarizeSession },
-        call: { disabled: !sessionId, onSelect: () => setVoiceCallOpen(true) },
+        call: { disabled: !sessionId, onSelect: () => void openVoiceCall() },
+        guidance: { label: guidanceLabel, onSelect: firstUse.openGuide },
       } : undefined}
     />
   );
@@ -8031,7 +8168,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onStop={cancelSend}
               onSummarize={summarizeSession}
               onAttach={() => fileInputRef.current?.click()}
-              onVoice={() => setVoiceCallOpen(true)}
+              onVoice={() => void openVoiceCall()}
             />
 
             <div
@@ -8044,7 +8181,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 // moving into its rows is still the composer being used, so
                 // the phone's rest state must not hide the chip it hangs from.
                 if (next instanceof Element && next.closest(".ui-popover-portal")) return;
-                if (!dock.contains(next)) setComposerEngaged(false);
+                if (!dock.contains(next)) restComposerAfterPress(dock);
               }}
             >
               <div className="cave-composer-edge-actions">
@@ -8144,7 +8281,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
               <textarea
                 ref={inputRef}
-                onFocus={() => setComposerEngaged(true)}
+                onFocus={engageComposer}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
@@ -8328,6 +8465,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         title={`Send message (${keys.enter})`}
                         aria-label="Send message"
                       >
+                        {firstUse.payload?.state.version === 2 && !sessionId && turns.length === 0 ? <span className="first-chat-send-label">Send message</span> : null}
                         <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
                       </button>
                     ) : null}
@@ -8369,6 +8507,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
       {...(offlineReadOnly ? {} : dropHandlers)}
+      data-first-use={firstUse.payload?.state.version === 2 && !sessionId && turns.length === 0 ? "true" : undefined}
       // On the root, not the dock: the dock rides up by it and the transcript
       // reserves the same height so its last turn is never under the keyboard.
       style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
@@ -8481,7 +8620,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <VoiceCallButton
                 familiar={familiar}
                 voiceActive={voiceCallOpen}
-                onOpenVoice={() => setVoiceCallOpen(true)}
+                onOpenVoice={() => void openVoiceCall()}
               />
             ) : null}
             {sessionId && session && !offlineReadOnly ? (
@@ -8514,6 +8653,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 sessionId={sessionId}
                 hasTurns={turns.length > 0}
                 onOpenDebug={openDebug}
+                onOpenGuidance={firstUse.openGuide}
+                guidanceLabel={guidanceLabel}
                 promotableFamiliars={promotableFamiliars}
                 onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}
@@ -8573,6 +8714,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         onPrev={findPrev}
         onClose={closeFind}
       />
+      {currentStarterConflict ? <aside className="first-use-nudge" aria-label="Starter request needs review"><span>Your existing draft is kept. Use the onboarding starter instead?</span><Button variant="ghost" size="xs" onClick={() => { if (currentDraftKeyRef.current !== currentStarterConflict.key) return; setInput(currentStarterConflict.text); setStarterDraftConflict(null); }}>Use starter request</Button><Button variant="ghost" size="xs" onClick={() => setStarterDraftConflict(null)}>Keep my draft</Button></aside> : null}
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <CodeReadingContext.Provider value={codeReading}>
@@ -8681,6 +8823,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               // quieter ChatEmptyState below.
               <ChatNewDashboard
                 familiar={familiar}
+                firstUse={firstUse.payload?.state.version === 2}
+                onPrompt={(text) => { setInput(text); inputRef.current?.focus(); }}
                 sessions={sessions}
                 composer={composerNode}
                 onSaveDefaults={saveNewSessionDefaults}
@@ -8899,7 +9043,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onOpenProjects={
             projectRootMissing
               ? () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT))
-              : undefined
+              : privateStateProjectRoot
+                ? () => {
+                    const root = privateStateProjectRoot;
+                    // Carry Retry’s original attachments and controls across Projects.
+                    // Preserve the existing text draft unless something newer
+                    // is typed there; attachments belong only to Retry.
+                    const failed = lastFailedSend;
+                    if (failed) {
+                      projectsRetryOwnedRef.current = true;
+                      projectsRetryCarry.save({ familiarId: familiar.id, chatId: retryChatId }, {
+                        failed, message: error, root,
+                        route: { sessionId, familiarId: familiar.id, projectRoot: activeProjectRoot, composerDraftKey, composeId: retryChatId, runtimeHost },
+                      });
+                    }
+                    if (failed && !failed.promptOverride && failed.text.trim() && !input.trim()) {
+                      setInput(failed.text);
+                      writeComposerDraft(scopedDraftKey, failed.text);
+                    }
+                    // Latches cover a Projects tab that hasn't mounted yet.
+                    // This chat's familiar goes along: a split or side chat
+                    // can belong to a different one from the sidebar's.
+                    markProjectsTabPending();
+                    markProjectFocusPending(root, familiar.id);
+                    // A side chat sits beside Home or Tasks, where nothing is
+                    // listening for the Projects tab. Go to Chat first.
+                    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+                    window.setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+                      window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root, familiarId: familiar.id } }));
+                    }, 0);
+                  }
+                : undefined
           }
           pickProjectOptions={
             projectRootRequired
@@ -8921,10 +9096,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : undefined
           }
           onDismiss={() => {
+            projectsRetryCarry.drop();
+            setLastFailedSend(null);
             setError(null);
             setDebugError(null);
             setProjectAccessRoot(null);
             setProjectRootMissing(false);
+            setPrivateStateProjectRoot(null);
             setProjectRootRequired(false);
             setEarlierRunSessionId(null);
             setEarlierRunId(null);

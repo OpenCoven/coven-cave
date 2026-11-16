@@ -1,0 +1,96 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index e038a37543543df67dca614cb6992c3cc9ce671c..42c25774720a3c7a9120fa690ebbbba010db321b 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -1265,6 +1265,24 @@ function matchLink(text2, start, isImage = false) {
+     end: isImage ? urlEnd + 1 : urlEnd
+   };
+ }
++// Cave #6391: underscore delimiters follow CommonMark flanking rules.
++// Keep this at the parser seam so code/URLs are never rewritten as prose.
++function underscoreFlanking(text2, start, end) {
++  const previous = start === 0 ? "" : String.fromCodePoint(text2.codePointAt(
++    start - (/[\uDC00-\uDFFF]/.test(text2[start - 1]) && start > 1 ? 2 : 1)
++  ));
++  const next = end === text2.length ? "" : String.fromCodePoint(text2.codePointAt(end));
++  const previousSpace = previous === "" || /[\p{Zs}\t\n\f\r]/u.test(previous);
++  const nextSpace = next === "" || /[\p{Zs}\t\n\f\r]/u.test(next);
++  const previousPunctuation = /[\p{P}\p{S}]/u.test(previous);
++  const nextPunctuation = /[\p{P}\p{S}]/u.test(next);
++  const left = !nextSpace && (!nextPunctuation || previousSpace || previousPunctuation);
++  const right = !previousSpace && (!previousPunctuation || nextSpace || nextPunctuation);
++  return {
++    open: left && (!right || previousPunctuation),
++    close: right && (!left || nextPunctuation)
++  };
++}
+ function matchEmphasis(text2, start) {
+   const char = text2[start];
+   if (char !== "*" && char !== "_") return null;
+@@ -1275,6 +1293,7 @@ function matchEmphasis(text2, start) {
+     i++;
+   }
+   if (count === 0) return null;
++  if (char === "_" && (text2[start - 1] === "_" || !underscoreFlanking(text2, start, i).open)) return null;
+   const closePattern = char.repeat(count);
+   let searchStart = i;
+   while (searchStart < text2.length) {
+@@ -1284,6 +1303,10 @@ function matchEmphasis(text2, start) {
+       searchStart = closeIndex + 1;
+       continue;
+     }
++    if (char === "_" && !underscoreFlanking(text2, closeIndex, closeIndex + count).close) {
++      searchStart = closeIndex + 1;
++      continue;
++    }
+     if (text2[closeIndex - 1] === " ") {
+       searchStart = closeIndex + 1;
+       continue;
+diff --git a/dist/index.js b/dist/index.js
+index eaabfc5ff30414ab20c717e925ea0e7bcb4a6eb2..83f35a5d127ede4a78265eb923cb7effc5a8d4a4 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1134,6 +1134,24 @@ function matchLink(text2, start, isImage = false) {
+     end: isImage ? urlEnd + 1 : urlEnd
+   };
+ }
++// Cave #6391: underscore delimiters follow CommonMark flanking rules.
++// Keep this at the parser seam so code/URLs are never rewritten as prose.
++function underscoreFlanking(text2, start, end) {
++  const previous = start === 0 ? "" : String.fromCodePoint(text2.codePointAt(
++    start - (/[\uDC00-\uDFFF]/.test(text2[start - 1]) && start > 1 ? 2 : 1)
++  ));
++  const next = end === text2.length ? "" : String.fromCodePoint(text2.codePointAt(end));
++  const previousSpace = previous === "" || /[\p{Zs}\t\n\f\r]/u.test(previous);
++  const nextSpace = next === "" || /[\p{Zs}\t\n\f\r]/u.test(next);
++  const previousPunctuation = /[\p{P}\p{S}]/u.test(previous);
++  const nextPunctuation = /[\p{P}\p{S}]/u.test(next);
++  const left = !nextSpace && (!nextPunctuation || previousSpace || previousPunctuation);
++  const right = !previousSpace && (!previousPunctuation || nextSpace || nextPunctuation);
++  return {
++    open: left && (!right || previousPunctuation),
++    close: right && (!left || nextPunctuation)
++  };
++}
+ function matchEmphasis(text2, start) {
+   const char = text2[start];
+   if (char !== "*" && char !== "_") return null;
+@@ -1144,6 +1162,7 @@ function matchEmphasis(text2, start) {
+     i++;
+   }
+   if (count === 0) return null;
++  if (char === "_" && (text2[start - 1] === "_" || !underscoreFlanking(text2, start, i).open)) return null;
+   const closePattern = char.repeat(count);
+   let searchStart = i;
+   while (searchStart < text2.length) {
+@@ -1153,6 +1172,10 @@ function matchEmphasis(text2, start) {
+       searchStart = closeIndex + 1;
+       continue;
+     }
++    if (char === "_" && !underscoreFlanking(text2, closeIndex, closeIndex + count).close) {
++      searchStart = closeIndex + 1;
++      continue;
++    }
+     if (text2[closeIndex - 1] === " ") {
+       searchStart = closeIndex + 1;
+       continue;

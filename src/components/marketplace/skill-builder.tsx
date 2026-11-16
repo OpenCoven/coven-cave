@@ -20,6 +20,7 @@
 //  - a dry-run tester on the success panel — trigger check + narration-only
 //    walkthrough through POST /api/skills/dry-run (cave-cyfc).
 
+import { firstUseAllowsExecution } from "@/lib/first-use-execution";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
@@ -134,7 +135,7 @@ export function SkillBuilder({ onSaved, onViewSkills, activeFamiliarId = null }:
   const [draftError, setDraftError] = useState<string | null>(null);
   const draftWithAi = useCallback(async () => {
     const goal = draftGoal.trim();
-    if (!goal || drafting) return;
+    if (!goal || drafting || !(await firstUseAllowsExecution())) return;
     setDrafting(true);
     setDraftError(null);
     try {
@@ -226,7 +227,7 @@ export function SkillBuilder({ onSaved, onViewSkills, activeFamiliarId = null }:
   const proseFieldsRef = useRef({ name, description, instructions });
   proseFieldsRef.current = { name, description, instructions };
   const cavemanize = useCallback(async () => {
-    if (!instructions.trim() || cavemanning || saving) return;
+    if (!instructions.trim() || cavemanning || saving || !(await firstUseAllowsExecution())) return;
     setCavemanning(true);
     setCavemanError(null);
     try {
@@ -642,7 +643,7 @@ export function SkillDryRunTester({
   const probe = useCallback(
     async (mode: "trigger" | "walkthrough") => {
       const line = scenario.trim();
-      if (!line || probing) return;
+      if (!line || probing || !(await firstUseAllowsExecution())) return;
       setProbing(mode);
       setError(null);
       setVerdict(null);

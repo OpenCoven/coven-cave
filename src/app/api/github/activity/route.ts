@@ -29,6 +29,8 @@ import {
 } from "@/lib/github-activity";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { summarizeChecks, type CheckSummary } from "@/lib/github-checks";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { login as loginField } from "@/lib/server/upstream-answer";
 import { resolveSecret } from "@/lib/vault";
 
 export const dynamic = "force-dynamic";
@@ -137,7 +139,7 @@ async function ghFetch(path: string, token: string | null, signal?: AbortSignal)
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store", signal });
+  const res = await upstreamFetch("github", `${GH}${path}`, { headers, cache: "no-store", signal });
   const rateRemaining = Number(res.headers.get("x-ratelimit-remaining") ?? -1);
   const rateLimit = Number(res.headers.get("x-ratelimit-limit") ?? -1);
   const retryAfter = res.headers.get("retry-after");
@@ -328,7 +330,18 @@ export async function GET() {
           responseMessage: githubResponseMessage(data),
         });
       }
-      login = data?.login ?? login;
+      // Only a string login may reach the search queries below. A 2xx without
+      // one is GitHub failing to identify the account, not a missing
+      // GITHUB_USERNAME, so it is reported as such (#6368).
+      const reported = loginField(data?.login);
+      if (res.ok && !reported) {
+        identityFailure = {
+          message: "GitHub answered without identifying the configured account.",
+          rateLimited: false,
+          retryAfterSeconds: null,
+        };
+      }
+      login = reported ?? login;
       if (rateRemaining >= 0) rateInfo = { remaining: rateRemaining, limit: rateLimit };
     } catch {
       identityFailure = {

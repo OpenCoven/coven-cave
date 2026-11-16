@@ -342,8 +342,16 @@
   gap: var(--space-1);
 }
 
-.tsc-foot { display: flex; align-items: center; gap: var(--space-2); }
+.tsc-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.tsc-foot > .ui-btn { max-width: 100%; white-space: normal; }
 .tsc-foot-spacer { flex: 1; }
+@media (pointer: coarse) {
+  .tsc-foot .ui-btn,
+  .tsc-pop-actions .ui-btn {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+}
 .tsc-done {
   display: inline-flex;
   align-items: center;
@@ -393,6 +401,7 @@
   .cave-thread-signal-overlay > .tsc-card {
     display: grid;
     grid-template-areas:
+      "status status"
       "head head"
       "tiles section"
       "why queue"
@@ -431,6 +440,7 @@
      beside the tiles instead. */
   .cave-thread-signal-overlay > .tsc-card--no-signals {
     grid-template-areas:
+      "status status"
       "head head"
       "tiles why"
       "foot foot";
@@ -439,6 +449,7 @@
   /* With no rationale open either, the tiles take the whole width. */
   .cave-thread-signal-overlay > .tsc-card--no-signals.tsc-card--no-detail {
     grid-template-areas:
+      "status"
       "head"
       "tiles"
       "foot";

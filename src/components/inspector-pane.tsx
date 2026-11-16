@@ -238,7 +238,7 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
             </div>
           </div>
           {isMarkdown ? (
-            <MarkdownBlock text={text} className="min-h-0 flex-1 overflow-auto px-8 py-6 max-w-4xl mx-auto w-full" />
+            <MarkdownBlock text={text} className="min-h-0 flex-1 overflow-auto px-8 py-6 w-full" />
           ) : (
             <SyntaxBlock text={text} className="min-h-0 flex-1 overflow-auto px-6 py-4 text-[length:var(--text-sm)]" />
           )}

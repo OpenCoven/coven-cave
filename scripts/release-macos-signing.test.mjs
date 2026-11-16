@@ -304,9 +304,9 @@ test("release packages and checksum manifest receive GitHub artifact attestation
     "the final repacked AppImage must be uploaded and re-signed before it is attested",
   );
   assert(
-    buildJob.indexOf("name: Publish validated Windows MSI") <
+    buildJob.indexOf("name: Publish verified signed Windows MSI") <
       buildJob.indexOf("name: Attest Windows MSI"),
-    "the budget-approved MSI must be uploaded before it is attested",
+    "the verified signed MSI must be uploaded before it is attested",
   );
   assert(
     buildJob.indexOf("name: Verify macOS DMG is notarized") <
@@ -488,7 +488,7 @@ test("each build leg claims the release right before its first upload", () => {
     "Build Linux AppImage without publishing",
     "Measure and enforce Windows MSI budget",
     "Claim the release for the Linux/Windows upload",
-    "Publish validated Windows MSI",
+    "Publish verified signed Windows MSI",
     "Sign Linux/Windows updater artifact",
     "Upload and re-sign stripped AppImage",
   ]);
@@ -504,7 +504,7 @@ test("each build leg claims the release right before its first upload", () => {
   );
   const claimStep = buildJob.slice(
     position("Claim the release for the Linux/Windows upload"),
-    position("Publish validated Windows MSI"),
+    position("Publish verified signed Windows MSI"),
   );
   assert.match(claimStep, /!inputs\.windows_diagnostics_only/, "a diagnostics run claims nothing");
 });
@@ -537,27 +537,203 @@ test("a claim promotes only an empty release and stops on a release it did not e
   assert.deepEqual(promotions(missing.calls), []);
 });
 
-test("Windows publishes the budget-approved MSI before updater signing and attestation", () => {
+const WINDOWS_SIGNING_INPUTS = [
+  "ES_USERNAME",
+  "ES_PASSWORD",
+  "CREDENTIAL_ID",
+  "ES_TOTP_SECRET",
+  "WINDOWS_SIGNING_CERT_THUMBPRINT",
+];
+
+function windowsReleaseStep(name) {
+  const step = parsedReleaseWorkflow.jobs.build.steps.find((candidate) => candidate.name === name);
+  assert.ok(step, `build must define "${name}"`);
+  return step;
+}
+
+function assertSkippedForDiagnostics(step) {
+  assert.match(step.if ?? "", /matrix\.family == 'windows'/, `${step.name} must be Windows-only`);
+  assert.match(
+    step.if ?? "",
+    /\(github\.event_name != 'workflow_dispatch' \|\| !inputs\.windows_diagnostics_only\)/,
+    `${step.name} must not run on a diagnostics-only dispatch`,
+  );
+  assert.equal(step["continue-on-error"], undefined, `${step.name} must fail closed`);
+}
+
+function runWindowsSigningGate(env) {
+  const script = windowsReleaseStep("Require Windows signing configuration").run;
+  const filtered = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !WINDOWS_SIGNING_INPUTS.includes(key)),
+  );
+  return spawnSync("bash", ["-c", script], { encoding: "utf8", env: { ...filtered, ...env } });
+}
+
+const COMPLETE_WINDOWS_SIGNING_INPUTS = {
+  MATRIX_FAMILY: "windows",
+  ES_USERNAME: "user",
+  ES_PASSWORD: "password",
+  CREDENTIAL_ID: "credential",
+  ES_TOTP_SECRET: "totp",
+  WINDOWS_SIGNING_CERT_THUMBPRINT: "0123456789abcdef0123456789ABCDEF01234567",
+};
+
+test("Windows signing inputs are required by name before the MSI is built (#5739)", () => {
+  const gate = windowsReleaseStep("Require Windows signing configuration");
+  assert.equal(gate.shell, "bash");
+  assert.equal(gate["continue-on-error"], undefined);
+  assert.doesNotMatch(gate.if, /matrix\./, "a tag push must always evaluate the gate");
+  assert.match(gate.if, /\(github\.event_name != 'workflow_dispatch' \|\| !inputs\.windows_diagnostics_only\)/);
+  for (const name of WINDOWS_SIGNING_INPUTS) {
+    const source = name === "WINDOWS_SIGNING_CERT_THUMBPRINT" ? `vars.${name}` : `secrets.${name}`;
+    assert.equal(
+      gate.env[name],
+      `\${{ matrix.family == 'windows' && ${source} || '' }}`,
+      `${name} reaches only the Windows leg`,
+    );
+  }
+  assert.doesNotMatch(gate.run, /echo[^\n]*\$(ES_|CREDENTIAL|value|\{!name)/, "never print a secret");
+
+  const complete = runWindowsSigningGate(COMPLETE_WINDOWS_SIGNING_INPUTS);
+  assert.equal(complete.status, 0, complete.stdout + complete.stderr);
+
+  for (const name of WINDOWS_SIGNING_INPUTS) {
+    for (const value of ["", "   "]) {
+      const result = runWindowsSigningGate({ ...COMPLETE_WINDOWS_SIGNING_INPUTS, [name]: value });
+      assert.notEqual(result.status, 0, `a ${value ? "blank" : "missing"} ${name} must stop the leg`);
+      assert.match(
+        result.stdout,
+        new RegExp(`::error::Windows signing configuration is missing ${name}\\. See docs/workflows/windows-msi-signing\\.md\\.`),
+      );
+    }
+  }
+  for (const thumbprint of ["0123", "0123456789abcdef0123456789abcdef0123456g", "01:23:45:67:89:ab:cd:ef:01:23:45:67:89:ab:cd:ef:01:23:45:67"]) {
+    const result = runWindowsSigningGate({ ...COMPLETE_WINDOWS_SIGNING_INPUTS, WINDOWS_SIGNING_CERT_THUMBPRINT: thumbprint });
+    assert.notEqual(result.status, 0, `${thumbprint} is not a thumbprint`);
+    assert.match(result.stdout, /::error::WINDOWS_SIGNING_CERT_THUMBPRINT must be 40 hexadecimal digits/);
+  }
+  for (const family of ["macos", "linux"]) {
+    const result = runWindowsSigningGate({ MATRIX_FAMILY: family });
+    assert.equal(result.status, 0, `the ${family} leg needs no Windows input`);
+  }
+
+  const steps = parsedReleaseWorkflow.jobs.build.steps.map((step) => step.name);
+  assert.ok(
+    steps.indexOf("Require Windows signing configuration") < steps.indexOf("Build Windows MSI without publishing"),
+    "a missing input must stop the leg before the MSI build",
+  );
+});
+
+test("Windows signer archive is verified before signing credentials are in scope", () => {
+  const verify = windowsReleaseStep("Verify Windows signing tool");
+  assertSkippedForDiagnostics(verify);
+  assert.equal(verify.env, undefined, "no secret is in scope while the archive is downloaded");
+  assert.match(verify.run, /e22094505decbe622afe5b0c27abc618ed2ba179bd94f3450490352399d5ef2a/);
+  assert.ok(verify.run.indexOf("SHA-256 mismatch") < verify.run.indexOf("Expand-Archive"));
+  assert.ok(verify.run.indexOf("Expand-Archive") < verify.run.indexOf("CODESIGNTOOL_PATH="));
+
+  const sign = windowsReleaseStep("Sign Windows MSI with SSL.com eSigner");
+  assertSkippedForDiagnostics(sign);
+  assert.match(sign.uses, /^SSLcom\/esigner-codesign@[0-9a-f]{40}$/);
+  assert.equal(sign.with.file_path, "${{ env.WINDOWS_MSI_PATH }}");
+  assert.equal(sign.with.output_path, "${{ env.WINDOWS_SIGNED_DIR }}");
+  assert.equal(sign.with.environment_name, "PROD");
+  for (const [input, secret] of [
+    ["username", "ES_USERNAME"],
+    ["password", "ES_PASSWORD"],
+    ["credential_id", "CREDENTIAL_ID"],
+    ["totp_secret", "ES_TOTP_SECRET"],
+  ]) {
+    assert.equal(sign.with[input], `\${{ secrets.${secret} }}`);
+  }
+});
+
+test("Windows MSI is signed, Authenticode-verified and hashed before the release is claimed", () => {
   const buildJob = getWorkflowJob("build");
-  const stepNames = [
+  const ordered = [
+    "Require Windows signing configuration",
     "Build Windows MSI without publishing",
     "Measure and enforce Windows MSI budget",
-    "Publish validated Windows MSI",
+    "Verify Windows signing tool",
+    "Stage Windows MSI for code signing",
+    "Sign Windows MSI with SSL.com eSigner",
+    "Verify signed Windows MSI",
+    "Claim the release for the Linux/Windows upload",
+    "Publish verified signed Windows MSI",
+    "Recheck the signed Windows MSI before updater signing",
     "Sign Linux/Windows updater artifact",
+    "Recheck the signed Windows MSI before attestation",
     "Attest Windows MSI",
   ];
-  const positions = stepNames.map((name) => buildJob.indexOf(`name: ${name}`));
-  assert.ok(positions.every((position) => position !== -1));
-  assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
+  const positions = ordered.map((name) => buildJob.indexOf(`- name: ${name}\n`));
+  ordered.forEach((name, index) => assert.notEqual(positions[index], -1, `build must define "${name}"`));
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b), ordered.join(" < "));
+  assert.doesNotMatch(
+    buildJob.slice(positions[1], positions[7]),
+    /gh release upload|make_latest/,
+    "an unsigned or unverified MSI never reaches or promotes the release",
+  );
 
-  const measureStep = buildJob.slice(positions[1], positions[2]);
-  assert.match(measureStep, /windows-msi-budget\.ps1/);
-  const publishStep = buildJob.slice(positions[2], positions[3]);
-  assert.match(publishStep, /gh release upload \$env:RELEASE_TAG \$msis\[0\]\.FullName --clobber/);
-  assert.match(publishStep, /!inputs\.windows_diagnostics_only/);
-  assert.doesNotMatch(buildJob.slice(positions[0], positions[2]), /gh release upload/);
-  assert.doesNotMatch(buildJob, /SSLcom\/esigner-codesign|Get-AuthenticodeSignature|secrets\.ES_USERNAME/);
-  assert.match(buildJob.slice(positions[3], positions[4]), /pnpm exec tauri signer sign/);
+  const verify = windowsReleaseStep("Verify signed Windows MSI");
+  assertSkippedForDiagnostics(verify);
+  assert.equal(verify.env.WINDOWS_SIGNING_CERT_THUMBPRINT, "${{ vars.WINDOWS_SIGNING_CERT_THUMBPRINT }}");
+  assert.match(verify.run, /Get-AuthenticodeSignature -LiteralPath \$signedMsi\.FullName/);
+  assert.match(verify.run, /\$signature\.Status -ne 'Valid'/);
+  assert.match(verify.run, /SignerCertificate\.Thumbprint -ne \$env:WINDOWS_SIGNING_CERT_THUMBPRINT/);
+  assert.match(verify.run, /\$null -eq \$signature\.TimeStamperCertificate/);
+  assert.match(verify.run, /windows-msi-budget\.ps1[\s\S]*-MsiPath \$signedMsi\.FullName/);
+  assert.match(verify.run, /Copy-Item -LiteralPath \$signedMsi\.FullName -Destination \$env:WINDOWS_MSI_PATH/);
+  assert.match(verify.run, /"WINDOWS_MSI_SHA256=\$signedHash"/, "the verified hash is the one every later step binds to");
+  assert.ok(
+    verify.run.indexOf("Get-AuthenticodeSignature") < verify.run.indexOf("Copy-Item"),
+    "the release path is replaced only after verification passes",
+  );
+});
+
+test("Windows upload, updater signature and attestation bind the verified MSI hash", () => {
+  const publish = windowsReleaseStep("Publish verified signed Windows MSI");
+  assertSkippedForDiagnostics(publish);
+  assert.ok(
+    publish.run.indexOf("WINDOWS_MSI_SHA256") < publish.run.indexOf("gh release upload"),
+    "the MSI is rechecked before it is uploaded",
+  );
+  assert.match(publish.run, /gh release upload \$env:RELEASE_TAG \$env:WINDOWS_MSI_PATH --clobber/);
+  assert.match(publish.run, /\.digest/, "the uploaded asset digest is compared with the verified hash");
+  assert.match(publish.run, /"sha256:\$\(\$env:WINDOWS_MSI_SHA256\.ToLowerInvariant\(\)\)"/);
+
+  const beforeUpdater = windowsReleaseStep("Recheck the signed Windows MSI before updater signing");
+  const beforeAttest = windowsReleaseStep("Recheck the signed Windows MSI before attestation");
+  assert.equal(beforeUpdater.run, beforeAttest.run, "both rechecks apply one rule");
+  for (const step of [beforeUpdater, beforeAttest]) {
+    assertSkippedForDiagnostics(step);
+    assert.match(step.run, /Get-ChildItem -Path src-tauri\/target\/release\/bundle -Recurse -Filter \*\.msi -File/);
+    assert.match(step.run, /\$msis\.Count -ne 1 -or \$msis\[0\]\.FullName -ne \$env:WINDOWS_MSI_PATH/);
+    assert.match(step.run, /Get-FileHash -LiteralPath \$env:WINDOWS_MSI_PATH -Algorithm SHA256/);
+    assert.match(step.run, /-ne \$env:WINDOWS_MSI_SHA256/);
+  }
+  assert.equal(
+    windowsReleaseStep("Attest Windows MSI").with["subject-path"],
+    "src-tauri/target/release/bundle/**/*.msi",
+  );
+});
+
+test("a diagnostics-only Windows dispatch builds and measures without signing or publishing", () => {
+  const steps = parsedReleaseWorkflow.jobs.build.steps;
+  for (const name of ["Build Windows MSI without publishing", "Measure and enforce Windows MSI budget"]) {
+    const step = steps.find((candidate) => candidate.name === name);
+    assert.doesNotMatch(step.if, /windows_diagnostics_only/, `${name} still runs for diagnostics`);
+  }
+  for (const step of steps) {
+    const touchesSigning =
+      /esigner|Authenticode|signing configuration|signing tool|signed Windows MSI|Attest Windows MSI/i.test(step.name ?? "") ||
+      Object.keys(step.env ?? {}).some((key) => WINDOWS_SIGNING_INPUTS.includes(key));
+    if (!touchesSigning) continue;
+    if (step.name === "Require Windows signing configuration") {
+      assert.match(step.if, /!inputs\.windows_diagnostics_only/);
+    } else {
+      assertSkippedForDiagnostics(step);
+    }
+  }
 });
 
 test("sidecar bundle prunes foreign native packages before release bundling", () => {

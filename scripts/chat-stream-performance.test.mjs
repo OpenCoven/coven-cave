@@ -9,6 +9,7 @@ import {
   assertIsolatedStreamBuild,
   buildStreamInvocation,
   parseStreamArguments,
+  parseStreamRooms,
 } from "./run-stream-performance.mjs";
 import {
   createStreamWorkload,
@@ -194,6 +195,26 @@ test("the real CLI invocation strips credentials and injection while fixing the 
     stateRoot: "/synthetic/state", artifactRoot: "/synthetic/artifacts",
     sourceEnv: {}, control: true,
   }).env.CAVE_STREAM_CONTROL, "1");
+});
+
+test("the measured room visibility is explicit, validated and recorded, never implied (#6338)", () => {
+  // Blank is the lane default; the ordinary suite's `all` is what the build
+  // then receives. The runner passes a chosen visibility through verbatim and
+  // the workload cannot be touched by it.
+  assert.equal(parseStreamRooms(undefined), null);
+  assert.equal(parseStreamRooms("   "), null);
+  assert.equal(parseStreamRooms(" None "), "none");
+  assert.equal(parseStreamRooms("researcher-desk,code"), "researcher-desk,code");
+  for (const raw of ["none;all", "rooms none", "a,,b", ","]) assert.throws(() => parseStreamRooms(raw), raw);
+
+  const base = { stateRoot: "/synthetic/state", artifactRoot: "/synthetic/artifacts", control: false };
+  const defaults = buildStreamInvocation({ ...base, sourceEnv: { PATH: "/bin", CAVE_STREAM_ROOMS: "none" } });
+  assert.equal(defaults.env.CAVE_STREAM_ROOMS, undefined,
+    "an unparsed source setting must not leak into the build; the runner decides");
+  const absent = buildStreamInvocation({ ...base, sourceEnv: { PATH: "/bin" }, rooms: "none" });
+  assert.equal(absent.env.CAVE_STREAM_ROOMS, "none");
+  assert.equal(absent.env.CAVE_STREAM_PERFORMANCE, "1");
+  assert.deepEqual(absent.args, defaults.args, "room visibility never changes the measured workload");
 });
 
 const controlHead = "a".repeat(40);

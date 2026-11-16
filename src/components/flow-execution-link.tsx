@@ -6,6 +6,7 @@ import { FlowExecutionsDialog } from "./flow-executions-dialog";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 import { Modal } from "@/components/ui/modal";
+import { replaceHistoryUrl } from "@/lib/history-url";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type Props = {
@@ -70,7 +71,7 @@ export function FlowExecutionLink({
     const query = params.toString();
     const href = `${pathname}${query ? `?${query}` : ""}${window.location.hash}`;
     // Next synchronizes this History write; dismissal must not wait for an RSC request.
-    window.history.replaceState(null, "", href);
+    replaceHistoryUrl(href);
     router.replace(href, { scroll: false });
   };
 

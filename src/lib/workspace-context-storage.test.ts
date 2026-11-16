@@ -1,3 +1,4 @@
+import test from "node:test";
 import assert from "node:assert/strict";
 import {
   readWorkspaceCrew,
@@ -249,3 +250,13 @@ function memoryStorage(): StorageLike {
 
 // 14. Log passage
 console.log("workspace context storage passed");
+
+
+test("a missing project choice restores host defaults without replacing an explicit all-projects overview", () => {
+  const stored = new Map<string, string>();
+  const storage = { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) };
+  const fallback = { projectId: "host-project", familiarIds: ["nova", "sage"] };
+  assert.deepEqual(readWorkspaceContext(storage, [], fallback), fallback);
+  writeWorkspaceContext(storage, { projectId: null, familiarIds: ["sage"] });
+  assert.deepEqual(readWorkspaceContext(storage, [], fallback), { projectId: null, familiarIds: ["sage"] });
+});

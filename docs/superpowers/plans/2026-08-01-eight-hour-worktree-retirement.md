@@ -1,7 +1,6 @@
 # Eight-Hour Worktree Retirement Implementation Plan
 
-> Historical implementation record. Superseded on 2026-08-25 by `cave-0pu26`;
-> the current mandatory retirement recency window is 15 minutes.
+> Historical implementation record. Both the eight-hour window and its later fifteen-minute replacement are retired. Current [branch-curator](../../../.agents/skills/branch-curator/SKILL.md) has no age wait; current ownership, retention, clean-state, exclusion and strict-guard proofs still apply. Follow [GitHub work tracking](../../workflows/github-work-tracking.md), not this historical implementation sequence.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. **Checkbox state in this document is not evidence of completion. Verify what has shipped against code and merged PRs.**
 

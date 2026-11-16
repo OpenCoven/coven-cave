@@ -36,9 +36,10 @@ assert.match(
 // active either way — only its onEscape callback is withheld.
 assert.match(src, /dismissOnEscape\?: boolean/, "Modal exposes a dismissOnEscape prop");
 assert.match(src, /dismissOnEscape = true/, "dismissOnEscape defaults to true");
+assert.match(src, /cycleTabFocus = false/, "existing Modal callers retain the ordinary native focus behavior unless explicitly opted in");
 assert.match(
   src,
-  /useFocusTrap\(open, dialogRef, \{\s*onEscape: dismissOnEscape \? onClose : undefined,\s*portalLayers,\s*portalRootId: portalLayerRootId,\s*\}\)/,
+  /useFocusTrap\(open, dialogRef, \{\s*onEscape: dismissOnEscape \? onClose : undefined,\s*portalLayers,\s*portalRootId: portalLayerRootId,\s*cycleTabFocus,\s*\}\)/,
   "the trap stays active while busy; only the Esc dismissal callback is gated",
 );
 assert.match(

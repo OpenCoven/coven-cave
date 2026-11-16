@@ -166,7 +166,8 @@ export const RailTerminalPanel = dynamic(
 
 export const OpenCovenSubmissionPage = dynamic(
   timed("submissions", () =>
-    import("@/components/opencoven-submission-page").then((m) => m.OpenCovenSubmissionPage),
+    // Resolves to the page or the absent page, decided at build time (#6401).
+    import("@opencoven/submissions-page").then((m) => m.OpenCovenSubmissionPage),
   ),
   { ssr: false, loading: SurfaceFallback },
 );
@@ -178,15 +179,8 @@ export const RailInspector = dynamic(
   { ssr: false, loading: SurfaceFallback },
 );
 
-export const SalemChatPanel = dynamic(
-  timed("salem", () =>
-    import("@/components/salem/salem-widget").then((m) => m.SalemChatPanel),
-  ),
-  { ssr: false, loading: SurfaceFallback },
-);
-
 export const AskSalemView = dynamic(
-  timed("ask-salem", () =>
+  timed("salem-retired", () =>
     import("@/components/salem/ask-salem-view").then((m) => m.AskSalemView),
   ),
   { ssr: false, loading: SurfaceFallback },

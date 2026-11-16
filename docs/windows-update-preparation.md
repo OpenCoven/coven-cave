@@ -11,7 +11,7 @@ Prepared sidecar caches are reused by the existing archive marker checks. A fail
 
 ## Updater constraints
 
-Tauri updater 2.10.1 keeps the downloaded MSI in a native in-memory resource. It does not expose its bytes or a network abort handle to application JavaScript. The MSI is also opaque until installation. Therefore:
+Tauri updater 2.14.1 keeps the downloaded MSI in a native in-memory resource. It does not expose its bytes or a network abort handle to application JavaScript. The MSI is also opaque until installation. Therefore:
 
 - cancellation during download is cooperative: the current app stays usable, the request is allowed to settle, and the native bytes are released without installing;
 - CovenCave cannot safely pre-extract the next sidecar from the MSI before restart;
@@ -50,8 +50,8 @@ Rollback is a revert of this slice; no stored-data migration is required.
 
 ## Declined or failed install recovery
 
-The MSI stays per-machine (decision B1 on #5981). Tauri updater 2.10.1 starts
-`msiexec` with `ShellExecuteW`, ignores the result and exits. The Tauri MSI
+The MSI stays per-machine (decision B1 on #5981). Tauri updater 2.14.1 starts
+`msiexec` with `ShellExecuteW` and exits once it launches. The Tauri MSI
 relaunches Cave only after a successful `InstallFinalize`, so a declined UAC
 prompt or a failed install used to leave Cave closed.
 
@@ -61,7 +61,10 @@ Before **Restart & install** on Windows, the webview calls
 outside the install directory, so it never holds a file the MSI replaces. If
 arming fails, the install does not start and the banner shows the usual update
 failure with the release page. If `install()` returns an error, the webview
-disarms recovery.
+disarms recovery. Since updater 2.14, a failed `ShellExecuteW` returns that error
+after the pre-exit teardown has already stopped the sidecar, so the disarm command
+ends this process instead of leaving it running: the watcher then relaunches
+Cave with a *not started* outcome, or Cave restarts itself if no watcher started.
 
 The updater's pre-exit `cleanup_before_exit` drops the resource table, and the
 dropped guard starts the copied watcher. That is the same drop that stops the

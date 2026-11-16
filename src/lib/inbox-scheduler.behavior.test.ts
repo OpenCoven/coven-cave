@@ -3,6 +3,7 @@
 // fencing, coordinated shutdown, and the automations-domain gate. The real
 // store, filesystem and catch-up semantics stay in inbox-scheduler.test.ts.
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { registerAllStartupWorkersExcept } from "./server/startup-worker-shutdown-fixtures.ts";
 
 type Item = { id: string; status: string; fireAt: string | null; firedAt?: string | null };
 type File = { version: number; items: Item[] };
@@ -147,8 +148,7 @@ test("a request finishing after coordinated shutdown cannot restart reminders", 
   await scheduler.startScheduler();
   const shutdown = await import("./server/startup-worker-shutdown.ts");
   shutdown.registerStartupWorker("inbox-reminders", scheduler.stopScheduler);
-  shutdown.registerStartupWorker("scheduled-chat", async () => undefined);
-  shutdown.registerStartupWorker("backup-sync", async () => undefined);
+  registerAllStartupWorkersExcept("inbox-reminders");
   const result = await shutdown.coordinateStartupWorkerShutdown(async () => undefined);
   expect(result.workers["inbox-reminders"].status).toBe("drained");
   await scheduler.startScheduler();

@@ -110,17 +110,20 @@ assert.match(
   /\.cave-chat-linear \{[^}]*--cave-chat-measure:/,
   "the chat surface defines a shared reading measure token",
 );
-// The 2026-07-21 wide-column pass supersedes chat-revamp 1b's 760px: the
-// transcript reads on a roomier 1024px (64rem) column — long responses and
-// code blocks get width — still shared by the suggestion row.
-// Pin the exact value so drift in either direction is a deliberate decision.
-{
-  const measure = /--cave-chat-measure:\s*([\d.]+)rem/.exec(css);
-  assert.ok(
-    measure && Number(measure[1]) === 64,
-    `the reading measure is the wide-column 1024px column (64rem; got ${measure?.[1] ?? "none"})`,
-  );
-}
+// The full-width pass supersedes the 2026-07-21 64rem column: the transcript
+// fills the pane, less a gutter only when the turn spine renders. Pin both so
+// drift back to a fixed cap is a deliberate decision.
+assert.match(
+  css,
+  /--cave-chat-gutter:\s*0px;\s*--cave-chat-measure:\s*calc\(100% - 2 \* var\(--cave-chat-gutter\)\);/,
+  "the reading measure is the full pane (no fixed rem cap)",
+);
+assert.doesNotMatch(css, /--cave-chat-measure:\s*[\d.]+rem/, "no fixed rem reading measure returns");
+assert.match(
+  css,
+  /\.cave-chat-linear:has\(\.cave-thread-spine\) \{[^}]*--cave-chat-gutter:\s*8rem;/,
+  "a thread with a spine keeps a gutter wide enough for the spine",
+);
 const linearThread = /\.cave-chat-linear \.cave-chat-thread \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearThread,

@@ -78,6 +78,11 @@ const EMPTY_RUNNING_ACTIVITY = {
 async function gotoGrimoire(page: Page, readyTimeout = 60_000, extraDocuments = 0, extraMemories = 0) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    // These fixtures are shared Coven memory and coven-wide journal entries,
+    // so save the All projects / All familiars view rather than inheriting
+    // the installation's configured default familiar scope.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [] }));
     // Pin the shared MdEditor to MARKDOWN (CodeMirror) mode — typing goes
     // through the same updateRaw → debounce → save pipeline as VISUAL mode,
     // without Milkdown's cold-compile flake.

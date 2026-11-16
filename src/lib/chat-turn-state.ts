@@ -8,6 +8,7 @@ import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type { ModelControlValues } from "@/lib/model-control-capabilities";
 import type { ChatStreamClientHealth } from "@/lib/chat-stream-health";
 import { cleanModelId } from "@/lib/chat-model-state";
+import { runtimeModelProviderMismatch } from "@/lib/runtime-models";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import type { TurnUsage } from "@/lib/usage-format";
 
@@ -129,6 +130,24 @@ export type ConversationHistoryPayload = {
   };
 };
 
+/** Select the tool display schema explicitly, as the server's stored-tool
+ * projection does. Opaque provider siblings in a history payload (signatures,
+ * encrypted content) never ride along into the turn in a spread. */
+function historyToolEvent(tool: ToolEvent, outputSessionId: string | undefined): ToolEvent {
+  return {
+    id: tool.id,
+    name: tool.name,
+    status: tool.status,
+    ...(tool.input !== undefined ? { input: tool.input } : {}),
+    ...(tool.output !== undefined ? { output: tool.output } : {}),
+    ...(tool.outputChars !== undefined ? { outputChars: tool.outputChars } : {}),
+    ...(tool.durationMs !== undefined ? { durationMs: tool.durationMs } : {}),
+    ...(tool.textOffset !== undefined ? { textOffset: tool.textOffset } : {}),
+    ...("activity" in tool ? { activity: tool.activity } : {}),
+    outputSessionId,
+  };
+}
+
 /** Normalize the API's permissive persisted turn shape for ChatView. */
 export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[], outputSessionId?: string): Turn[] {
   return rawTurns
@@ -144,7 +163,7 @@ export function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[],
       attachments: turn.attachments,
       reasoning: turn.reasoning,
       reasoningBlocks: turn.reasoningBlocks,
-      tools: settleToolObservations(turn.tools)?.map((tool) => ({ ...tool, outputSessionId })),
+      tools: settleToolObservations(turn.tools)?.map((tool) => historyToolEvent(tool, outputSessionId)),
       progress: turn.progress ? turn.progress.map((progress) => ({ ...progress })) : undefined,
       durationMs: turn.durationMs,
       usage: turn.usage,
@@ -172,15 +191,43 @@ export type RetryTurnModelRequest = {
 export function retryTurnModelRequest(
   userTurn: Pick<Turn, "modelOverrideScope">,
   assistantTurn: Pick<Turn, "responseMetadata">,
+  currentHarness?: string | null,
 ): RetryTurnModelRequest {
   const retryModel = cleanModelId(assistantTurn.responseMetadata?.retryModel);
   if (retryModel) {
-    return { modelOverride: retryModel, modelOverrideScope: "next-message" };
+    // The model belongs to the runtime this turn ran on. Once the chat has
+    // moved, the new runtime resolves its own instead of refusing this one (#6419).
+    const ranOn = assistantTurn.responseMetadata?.harness;
+    const runtimeMoved = Boolean(currentHarness) && (
+      (Boolean(ranOn) && ranOn !== currentHarness) ||
+      runtimeModelProviderMismatch(currentHarness!, retryModel)
+    );
+    return runtimeMoved ? {} : { modelOverride: retryModel, modelOverrideScope: "next-message" };
   }
   if (userTurn.modelOverrideScope === "runtime-default") {
     return { modelOverride: "", modelOverrideScope: "next-message" };
   }
   return {};
+}
+
+/** A saved failure replays its own attempt, but a runtime or model picked since
+ * then outranks it, and so does a server refusal of that model. The keys are
+ * removed rather than nulled so Retry resolves the model and its controls the
+ * way a new send would, including a pick still being saved (#6419). */
+export function forgetFailedSendModel<T extends {
+  options?: { modelOverride?: unknown; modelOverrideScope?: unknown };
+  controls?: { modelControls?: unknown };
+}>(failed: T): T {
+  const next = { ...failed };
+  if (failed.options) {
+    const { modelOverride: _model, modelOverrideScope: _scope, ...options } = failed.options;
+    next.options = options as T["options"];
+  }
+  if (failed.controls) {
+    const { modelControls: _controls, ...controls } = failed.controls;
+    next.controls = controls as T["controls"];
+  }
+  return next;
 }
 
 function cloneLiveTurn(turn: Turn): Turn {

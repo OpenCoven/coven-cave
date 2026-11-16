@@ -17,6 +17,8 @@ import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
 import { githubTokenIdentity } from "@/lib/server/github-item-cache";
 import { joinInFlightResponse } from "@/lib/server/join-inflight-response";
+import { upstreamFailureResponse } from "@/lib/server/upstream-answer";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 import { summarizeCheckSignals, summarizeChecks, type CheckRun } from "@/lib/github-checks";
 
 /** Pages of 100 check runs read for one head: a thousand runs. */
@@ -60,7 +62,7 @@ async function ghFetch(path: string, token: string | null) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${GH}${path}`, { headers, cache: "no-store" });
+  const res = await upstreamFetch("github", `${GH}${path}`, { headers, cache: "no-store" });
   const data = await res.json().catch(() => null);
   return { res, data };
 }
@@ -95,10 +97,7 @@ async function load(req: Request): Promise<Response> {
     }
     const sha = (pr.data as { head?: { sha?: string } } | null)?.head?.sha ?? null;
     if (!pr.res.ok || !sha) {
-      return NextResponse.json(
-        { ok: false, error: `github error (${pr.res.status})` },
-        { status: pr.res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(pr.res, "GitHub", `github error (${pr.res.status})`, pr.res.status === 403 ? 403 : 502);
     }
 
     const [runsResp, statusResp] = await Promise.all([
@@ -108,9 +107,11 @@ async function load(req: Request): Promise<Response> {
 
     if (!runsResp.res.ok && !statusResp.res.ok) {
       const status = runsResp.res.status === 403 || statusResp.res.status === 403 ? 403 : 502;
-      return NextResponse.json(
-        { ok: false, error: `github error (${runsResp.res.status}, ${statusResp.res.status})` },
-        { status },
+      return upstreamFailureResponse(
+        runsResp.res,
+        "GitHub",
+        `github error (${runsResp.res.status}, ${statusResp.res.status})`,
+        status,
       );
     }
 

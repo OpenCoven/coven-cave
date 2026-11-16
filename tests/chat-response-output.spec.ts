@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installCompletedFirstUse } from "./fixtures/first-use";
+
+test.use({ serviceWorkers: "block" });
 
 const ISO = "2026-08-10T12:00:00.000Z";
+const PROJECT = { id: "response-project", name: "Response project", root: "/tmp/coven-cave", access: "write" };
 
 const SESSIONS = [
   {
@@ -50,7 +54,8 @@ const SESSIONS = [
 const WIDE_MARKDOWN = `Here is the plan.
 
 \`\`\`ts
-const reallyLongIdentifierThatShouldScrollHorizontallyInsideTheCodeBlockAndNotBreakThePageLayoutEvenOnADesktopWideColumn = await reconcileServeRoutes();
+// The reply column fills the pane, so the line must outrun a 2400px window too.
+const reallyLongIdentifierThatShouldScrollHorizontallyInsideTheCodeBlockAndNotBreakThePageLayoutEvenOnADesktopWideColumn${"AndKeepsGoing".repeat(24)} = await reconcileServeRoutes();
 \`\`\`
 
 | Column A | Column B | Column C | Column D | Column E | Column F | Column G |
@@ -153,6 +158,7 @@ async function setup(page: Page) {
       },
     });
   });
+  await installCompletedFirstUse(page, { project: PROJECT, familiarIds: ["nova"], actingFamiliarId: "nova", permissionMode: "full", harness: "claude" });
 }
 
 test("completed assistant responses render editorial Markdown and accessible controls", async ({
@@ -184,10 +190,14 @@ test("completed assistant responses render editorial Markdown and accessible con
   await expect(prose.locator("strong")).toContainText("bold");
   await expect(prose.locator("em")).toContainText("italics");
 
-  const width = await bubble.locator(".cave-response-frame").evaluate(
-    (element) => element.getBoundingClientRect().width,
+  // Under the default "Full" reading width the reply fills its bubble (#6318).
+  const { frameWidth, bubbleWidth } = await bubble.locator(".cave-response-frame").evaluate(
+    (element) => ({
+      frameWidth: element.getBoundingClientRect().width,
+      bubbleWidth: element.closest(".cave-bubble-assistant")!.getBoundingClientRect().width,
+    }),
   );
-  expect(width).toBeLessThanOrEqual(768);
+  expect(Math.abs(frameWidth - bubbleWidth)).toBeLessThanOrEqual(1);
 
   await bubble.hover();
   await expect(
@@ -300,6 +310,9 @@ test("reading older output retains the same visible composer", async ({ page }) 
 test("the header archive button sends one archive mutation and leaves the session", async ({
   page,
 }) => {
+  // Below 768px the header folds its session actions away; a phone archives
+  // from the chat list row it lands on (chat-list.tsx).
+  test.skip((page.viewportSize()?.width ?? 1280) < 768, "phone header has no session actions");
   await setup(page);
   let archiveRequests = 0;
   await page.route("**/api/sessions/s-response-complete", async (route) => {
@@ -323,7 +336,7 @@ test("the header archive button sends one archive mutation and leaves the sessio
 
 async function openControlledStream(page: Page, surface: "main" | "quick") {
   await setup(page);
-  const project = { id: "response-project", name: "Response project", root: "/tmp/coven-cave", access: "write" };
+  const project = PROJECT;
   await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [project] } }));
   await page.route("**/api/queue/project", (route) => route.fulfill({ json: { ok: true, projectId: project.id, project } }));
   await page.route("**/api/daemon/connection", (route) => route.fulfill({ json: { ok: true, running: true, connected: true, target: { mode: "local" } } }));
@@ -332,6 +345,7 @@ async function openControlledStream(page: Page, surface: "main" | "quick") {
     localStorage.setItem("cave.quick-chat.last-familiar", "nova");
     const originalFetch = window.fetch.bind(window);
     let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+    Object.assign(window, { caveTestStreamReady: false });
     Object.assign(window, {
       caveTestFrame(frame: object) {
         if (!stream) throw new Error("Chat stream has not opened");
@@ -343,7 +357,7 @@ async function openControlledStream(page: Page, surface: "main" | "quick") {
       const input = args[0];
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (new URL(url, location.href).pathname === "/api/chat/send") {
-        return new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } }), {
+        return new Response(new ReadableStream<Uint8Array>({ start(controller) { stream = controller; Object.assign(window, { caveTestStreamReady: true }); } }), {
           headers: { "Content-Type": "text/event-stream" },
         });
       }
@@ -355,11 +369,11 @@ async function openControlledStream(page: Page, surface: "main" | "quick") {
   if (surface === "main") {
     await expect(main.locator('.cave-bubble-assistant[data-state="complete"]').last()).toBeVisible({ timeout: 30_000 });
   } else {
-    await page.getByRole("button", { name: "Project", exact: true }).click();
-    await page.getByRole("menu", { name: "Project options" }).getByText("Response project · Full", { exact: true }).click();
+    await expect(main.getByLabel("Project: Response project, Full access (locked for this chat)", { exact: true })).toBeVisible();
   }
   await main.getByRole(surface === "main" ? "textbox" : "combobox", { name: "Message", exact: true }).fill("Stream a selection fixture");
   await main.getByRole("button", { name: surface === "main" ? "Send message" : "Send", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { caveTestStreamReady: boolean }).caveTestStreamReady)).toBe(true);
   const emit = async (frame: object) => page.evaluate((value) => {
     (window as unknown as { caveTestFrame(frame: object): void }).caveTestFrame(value);
   }, frame);
@@ -391,8 +405,10 @@ test(`${surface}: reading older output preserves position until unseen content i
   const originalComposer = await composer.elementHandle();
   const live = main.locator(".streaming-turn-response").last();
   const bottomGap = () => transcript.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop);
-  await emit({ kind: "assistant_chunk", text: Array.from({ length: 40 }, (_, i) => `Streaming detail ${i + 1} keeps this response scrollable.`).join("\n\n") + "\n\n" });
-  await expect(live.getByText("Streaming detail 40 keeps this response scrollable.", { exact: true })).toBeVisible();
+  // Enough rows to scroll 600px back even when a 2400px window lays each one
+  // out as a single short line.
+  await emit({ kind: "assistant_chunk", text: Array.from({ length: 120 }, (_, i) => `Streaming detail ${i + 1} keeps this response scrollable.`).join("\n\n") + "\n\n" });
+  await expect(live.getByText("Streaming detail 120 keeps this response scrollable.", { exact: true })).toBeVisible();
   await expect.poll(bottomGap).toBeLessThanOrEqual(4);
   await transcript.hover();
   await page.mouse.wheel(0, -600);

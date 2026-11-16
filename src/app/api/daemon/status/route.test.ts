@@ -6,6 +6,12 @@ const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
+  /await executorStatusesForConfig\(config\)[\s\S]*const observeHealthLifecycle = beginDaemonLifecycleObservation\(\);\s*const res = await callDaemonTarget<Health>\(target,/,
+  "health observations start after config/executor waits, immediately before their own probe",
+);
+
+assert.match(
+  source,
   /import \{[^}]*loadDaemonStatusSnapshot[^}]*\} from "@\/lib\/cave-config"/,
   "daemon status should read a lock-protected Cave snapshot before calling the daemon",
 );
@@ -170,11 +176,11 @@ assert.match(
 // owner, so a start in flight reads as starting/recovering, not stopped (#6298).
 assert.match(
   source,
-  /import \{ localRuntimeEvidence, observeDaemonLifecycle \} from "@\/lib\/server\/daemon-lifecycle-owner"/,
+  /import \{ localRuntimeEvidence, beginDaemonLifecycleObservation, observeDaemonLifecycle \} from "@\/lib\/server\/daemon-lifecycle-owner"/,
   "status projects lifecycle through the shared owner",
 );
 assert.equal(
-  (source.match(/lifecycle: observeDaemonLifecycle\(\{/g) ?? []).length,
+  (source.match(/lifecycle: observe(?:Daemon|Health)Lifecycle\(\{/g) ?? []).length,
   5,
   "each of the five response shapes carries a lifecycle projection",
 );

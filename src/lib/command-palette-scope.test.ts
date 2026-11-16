@@ -82,9 +82,5 @@ test("no-match regression: an unmatched @token shows suggestions only", () => {
     /if \(noFamiliarMatch\) return familiarRows;/,
     "when the @token resolves to nothing, no non-familiar rows are returned",
   );
-  assert.match(
-    source,
-    /const salemRows: Row\[\] = query\.trim\(\) && !slashCanonical && !noFamiliarMatch/,
-    "the unmatched @token path does not prepend the Salem answer row",
-  );
+  assert.doesNotMatch(source, /salemRows|salem-answer/, "no query can offer the retired assistant");
 });

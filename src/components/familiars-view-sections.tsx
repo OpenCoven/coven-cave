@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { COUNT_DEFINITIONS, COUNT_LABELS, memoryCountDisplay } from "@/lib/familiar-counts";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 // Shared relative-time formatter, imported as `age` so the call sites read the
@@ -15,7 +16,6 @@ import { AuthedImage } from "@/components/ui/authed-image";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
 import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-view";
 import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
-import { HomeFeed } from "@/components/home/home-feed";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,6 +45,7 @@ export function emptyStats(
     lastSessionAt: null,
     sessionsTotal: 0,
     sessionsLast7d: 0,
+    sessionsLast90d: 0,
     hasActiveSession: false,
     streakDays: 0,
     activity: new Array<number>(ACTIVITY_DAYS).fill(0),
@@ -172,20 +173,28 @@ export function FamiliarRosterCard({
         ) : null}
 
         <span className="familiars-view__statband mt-3">
-          <span className="familiars-view__stat">
-            <span className="familiars-view__stat-label">sessions</span>
-            <span className="familiars-view__stat-value">{compactCount(stats.sessionsTotal)}</span>
+          <span className="familiars-view__stat" title={COUNT_DEFINITIONS.recentSessions}>
+            <span className="familiars-view__stat-label">{COUNT_LABELS.recentSessions}</span>
+            <span className="familiars-view__stat-value">{compactCount(stats.sessionsLast90d)}</span>
           </span>
           <span className="familiars-view__stat">
             <span className="familiars-view__stat-label">this week</span>
             <span className="familiars-view__stat-value">{compactCount(stats.sessionsLast7d)}</span>
           </span>
-          <span className="familiars-view__stat">
-            <span className="familiars-view__stat-label">memories</span>
-            <span className="familiars-view__stat-value">
-              {stats.memoryAvailability === "ready"
-                ? compactCount(stats.memoryCount)
-                : "—"}
+          <span
+            className="familiars-view__stat"
+            title={stats.memoryAvailability === "ready"
+              ? COUNT_DEFINITIONS.memories
+              : "Workspace memory could not be read, so the count is unknown."}
+          >
+            <span className="familiars-view__stat-label">{COUNT_LABELS.memories}</span>
+            <span
+              className={`familiars-view__stat-value${stats.memoryAvailability === "ready" ? "" : " familiars-view__stat-value--unavailable"}`}
+            >
+              {memoryCountDisplay(
+                stats.memoryAvailability === "ready" ? stats.memoryCount : null,
+                compactCount,
+              ).value}
             </span>
           </span>
           <span className="familiars-view__stat" title={streakTitle}>
@@ -381,14 +390,13 @@ export function FamiliarDetailRail({ familiars, selectedId, onSelect, onPreview,
 // FamiliarDetailPanel — right-side panel with Memory / Files / Sessions tabs
 // ────────────────────────────────────────────────────────────────────────────
 
-type DetailTab = "memory" | "daily-notes" | "files" | "sessions" | "feed";
+type DetailTab = "memory" | "daily-notes" | "files" | "sessions";
 
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "memory", label: "Memory" },
   { id: "daily-notes", label: "Daily Notes" },
   { id: "files", label: "Files" },
   { id: "sessions", label: "Sessions" },
-  { id: "feed", label: "Feed" },
 ];
 
 type AgentDetailPanelProps = {
@@ -406,7 +414,6 @@ type AgentDetailPanelProps = {
   onEnhance: () => void;
   onOpenSession: (sessionId: string) => void;
   onOpenMemoryFile: (path: string) => void;
-  onOpenUrl: (url: string) => void;
 };
 
 // Per-familiar overflow menu on the detail panel header. Remove routes to the
@@ -481,14 +488,15 @@ export function FamiliarDetailPanel({
   onEnhance,
   onOpenSession,
   onOpenMemoryFile,
-  onOpenUrl,
 }: AgentDetailPanelProps) {
-  const [tab, setTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
-  // Memory / Daily Notes / Files / Sessions / Feed are destinations inside the
+  const [storedTab, setTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
+  // Do not rewrite a hidden destination merely by mounting the reduced UI.
+  const tab = storedTab === "feed" ? "memory" : storedTab;
+  // Memory / Daily Notes / Files / Sessions are destinations inside the
   // familiar detail, not a view toggle.
   const selectTab = useTrackedSurfaceValue({
     id: "familiars:detail-tab",
-    value: tab,
+    value: storedTab,
     onRestore: setTab,
   });
   // Session trace overlay — the daemon event timeline behind one session.
@@ -622,10 +630,6 @@ export function FamiliarDetailPanel({
             <p className="mt-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
               Only files traced to {familiar.display_name} are shown here.
             </p>
-          </div>
-        ) : tab === "feed" ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-            <HomeFeed onOpenUrl={onOpenUrl} />
           </div>
         ) : (
           <div className="h-full overflow-y-auto p-4">

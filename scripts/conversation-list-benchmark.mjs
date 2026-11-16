@@ -139,13 +139,18 @@ function summarize(label, durations, bytesRead) {
   };
 }
 
+// Imported after the env pins above: the module computes its index path from
+// the pinned home at load. Hoisted out of the `try` so teardown can reach the
+// flush seam (#6344).
+const {
+  clearConversationListMetadataCache,
+  CONV_DIR,
+  flushConversationSummaryIndex,
+  getConversationListMetrics,
+  listConversations,
+} = await import("../src/lib/cave-conversations.ts");
+
 try {
-  const {
-    clearConversationListMetadataCache,
-    CONV_DIR,
-    getConversationListMetrics,
-    listConversations,
-  } = await import("../src/lib/cave-conversations.ts");
   if (!path.resolve(CONV_DIR).startsWith(path.resolve(benchHome))) {
     throw new Error(
       `benchmark refused to run: CONV_DIR (${CONV_DIR}) escaped the fixture home (${benchHome})`,
@@ -224,5 +229,11 @@ try {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
   }
-  await rm(benchHome, { recursive: true, force: true });
+  // Every cold scan schedules the summary index write on an unreferenced
+  // timer. Drain it before removing the home, or the atomic write can land a
+  // `.tmp` file inside the directory mid-removal and fail a complete
+  // measurement with ENOTEMPTY (#6344). The retries cover the same class from
+  // anything else still finishing a write.
+  await flushConversationSummaryIndex();
+  await rm(benchHome, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 }

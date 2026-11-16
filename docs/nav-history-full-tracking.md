@@ -172,7 +172,7 @@ Every row gets tracked. `kind` picks the semantics from §3.3.
 
 | Surface | Anchor | Values |
 | --- | --- | --- |
-| Workspace mode | `workspace.tsx:358` | agents, home, chat, board, inbox, browser, github, marketplace, submissions, grimoire, salem, `surface:<id>` |
+| Workspace mode | `workspace.tsx:358` | agents, home, chat, board, inbox, browser, github, marketplace, submissions, grimoire, salem (retired compatibility notice only), `surface:<id>` |
 | Mobile bottom tabs | `mobile-bottom-tabs.tsx:28` | mirror of L1 — route through the same entry point, do not double-push |
 
 ### L2+ — path levels (`kind: "path"`)

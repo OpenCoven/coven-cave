@@ -338,6 +338,11 @@ export function covenRunSupportsPermissionFlag(helpText: string): boolean {
   return /(^|\s)--permission(?![\w-])/m.test(helpText);
 }
 
+/** A separate contract; legacy unrestricted Full is never a substitute. */
+export function covenRunSupportsWriteScopeFlag(helpText: string): boolean {
+  return typeof helpText === "string" && /(^|\s)--write-scope(?![\w-])/m.test(helpText);
+}
+
 // Gated-forwarding probe for `coven run --add-dir <DIR>` (repeatable). Granted
 // project roots are only real grants if the spawned harness also trusts those
 // directories — the runtime-scope preamble alone leaves the harness denying

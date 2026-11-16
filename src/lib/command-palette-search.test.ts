@@ -21,7 +21,6 @@ const rows = [
   { id: "surface:1", kind: "command" },
   { id: "shortcut:1", kind: "shortcut" },
   { id: "create:1", kind: "create-task" },
-  { id: "salem:1", kind: "salem-answer" },
 ] as const;
 
 test("palette categories are stable and user-facing", () => {
@@ -36,7 +35,6 @@ test("palette categories are stable and user-facing", () => {
     "the retired vault kind is no longer special-cased; it falls to the default like any unknown kind",
   );
   assert.equal(paletteCategoryForKind("setting"), "settings");
-  assert.equal(paletteCategoryForKind("salem-answer"), "actions");
 });
 
 test("scope filtering keeps only the requested result family", () => {
@@ -44,11 +42,11 @@ test("scope filtering keeps only the requested result family", () => {
   assert.deepEqual(filterPaletteRows(rows, "chats").map((row) => row.id), ["f:1", "s:1", "conv:1"]);
   assert.deepEqual(filterPaletteRows(rows, "memory").map((row) => row.id), ["fm:1"]);
   assert.deepEqual(filterPaletteRows(rows, "actions").map((row) => row.id), [
-    "surface:1", "shortcut:1", "create:1", "salem:1",
+    "surface:1", "shortcut:1", "create:1",
   ]);
 });
 
-test("counts and announcements exclude the Salem fallback from local-result totals", () => {
+test("counts and announcements total every result row", () => {
   assert.deepEqual(paletteResultCounts(rows), {
     all: 9,
     chats: 3,

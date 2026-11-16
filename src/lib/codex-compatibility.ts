@@ -15,6 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { parseHarnessAuthFailure, parseHarnessUsageLimit } from "./harness-failure.ts";
+import { upstreamFetch } from "./server/upstream-fetch.ts";
 
 const execFileAsync = promisify(execFile);
 const MAX_SCHEMA_DOCUMENT_BYTES = 1_048_576;
@@ -819,12 +820,11 @@ export async function productionCodexSchemaSources(options: {
     const pending = refreshCodexSchemaCache(
       cachePath,
       async () => {
-        const response = await fetchImpl(registryUrl, {
+        const response = await upstreamFetch("github-raw", registryUrl, {
           headers: { Accept: "application/json", "User-Agent": "coven-cave" },
-          signal: AbortSignal.timeout(4_000),
           cache: "no-store",
           redirect: "error",
-        });
+        }, { fetchImpl, timeoutMs: 4_000 });
         if (!response.ok) throw new Error(`registry fetch failed: ${response.status}`);
         return readBoundedCodexSchemaResponse(response);
       },

@@ -142,8 +142,8 @@ assert.match(
 );
 assert.match(
   source,
-  /stats\.memoryAvailability === "ready"\s*\?\s*compactCount\(stats\.memoryCount\)\s*:\s*"—"/,
-  "the roster never presents an unavailable count as zero",
+  /memoryCountDisplay\(\s*stats\.memoryAvailability === "ready" \? stats\.memoryCount : null,/,
+  "the roster never presents an unavailable count as zero (it says unavailable, #6357)",
 );
 assert.match(
   source,

@@ -52,7 +52,6 @@ type AgentsViewProps = {
   onOpenSession: (sessionId: string, familiarId?: string | null) => void;
   onOpenMemoryFile: (path: string) => void;
   onOpenOnboarding: () => void;
-  onOpenUrl: (url: string) => void;
   /** Refresh the roster after a familiar is created and focus the new one. */
   onFamiliarCreated?: (id: string) => void;
   /** Last roster-load failure. When set with an empty roster the surface must
@@ -84,7 +83,6 @@ export function FamiliarsView({
   onOpenSession,
   onOpenMemoryFile,
   onOpenOnboarding,
-  onOpenUrl,
   onFamiliarCreated,
   familiarsError,
   onRetryFamiliars,
@@ -458,7 +456,6 @@ export function FamiliarsView({
               onEnhance={() => setEnhanceTarget(selectedFamiliar)}
               onOpenSession={(sid) => onOpenSession(sid, selectedFamiliar.id)}
               onOpenMemoryFile={onOpenMemoryFile}
-              onOpenUrl={onOpenUrl}
             />
           </div>
         ) : visibleFamiliars.length === 0 ? (

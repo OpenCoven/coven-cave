@@ -72,7 +72,7 @@ export function grokCandidateBinNames(
 }
 
 /** Resolve an explicit override, native installer binary, or npm shim. */
-export function grokBin(): string {
+export function grokBin(env?: NodeJS.ProcessEnv): string {
   if (cachedBin) return cachedBin;
 
   const override = process.env.GROK_BIN;
@@ -88,7 +88,12 @@ export function grokBin(): string {
     }
   }
 
-  const fromPath = grokBinFromPath(covenSpawnEnv()) ?? grokBinFromPath(refreshCovenSpawnEnv());
+  // Catalog callers already acquired a fresh environment off the event loop.
+  // Reuse it without invalidating PATH or running another login shell while
+  // other runtimes have bounded probes in flight.
+  const fromPath = env
+    ? grokBinFromPath(env)
+    : grokBinFromPath(covenSpawnEnv()) ?? grokBinFromPath(refreshCovenSpawnEnv());
   if (fromPath) {
     cachedBin = fromPath;
     return cachedBin;
@@ -96,7 +101,7 @@ export function grokBin(): string {
 
   // `where` preserves Windows' PATHEXT/PATH lookup, including Node's global
   // npm shim directory when it was not present at Cave startup.
-  if (process.platform === "win32") {
+  if (process.platform === "win32" && env === undefined) {
     try {
       const output = execFileSync("where", ["grok"], {
         windowsHide: true,

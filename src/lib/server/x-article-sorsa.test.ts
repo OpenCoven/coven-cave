@@ -17,6 +17,11 @@ import {
   configuredXArticleProviderWithDependencies,
 } from "./x-article-provider.ts";
 import { fetchSorsaXArticle } from "./x-article-sorsa.ts";
+import { resetUpstreamHealth } from "./upstream-fetch.ts";
+
+// Each test starts a fresh upstreamFetch episode: a 429 in one case must not
+// leave the "sorsa" host cooling for the next.
+test.beforeEach(() => resetUpstreamHealth());
 
 type Equal<Actual, Expected> =
   (<Value>() => Value extends Actual ? 1 : 2) extends
@@ -181,6 +186,7 @@ test("maps non-2xx responses without surfacing provider diagnostics", async () =
   ] as const;
 
   for (const entry of cases) {
+    resetUpstreamHealth();
     let cancelCalls = 0;
     let getReaderCalls = 0;
     await expectProviderError(

@@ -1,3 +1,11 @@
+# Retired Cave integration — 4 November 2026
+
+Val has an alternative and requested removal of built-in Ask Salem (#6399). Cave no longer retrieves or synthesizes Salem answers. Its legacy Salem/pathfinder APIs return HTTP 410 `salem-retired` without reading request bodies or calling providers. The historical handoff below is retained as reference; it is not active Cave implementation work and does not direct changes to an external alternative.
+
+Saved `salem` mode/split links resolve to an inert retirement notice with a local history export. Browser storage `cave:ask-salem:thread:v1`, `salem-pathfinder.json`, its backup entry and existing migration handling are retained without modification or automatic deletion. No alternative-assistant integration is required.
+
+---
+
 # opencoven-chat-api: serve a `mode: "context"` retrieval response
 
 > Hand this to the agent/dev working in the **opencoven-chat-api** repo (the

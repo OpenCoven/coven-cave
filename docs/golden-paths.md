@@ -237,6 +237,9 @@ covers sessions, tasks, familiars, memory, settings, and commands.
 with honest progress, so shipping doesn't consume an evening of babysitting
 flaky CI.
 
+**The runbook:** [Release train](workflows/release-train.md); `pnpm
+release:train` reports the current step and the next command.
+
 **The path today:** managed release worktree → `pnpm release:preview` →
 `pnpm release:prepare` stamps five manifests, both iOS release values, and
 CHANGELOG → `pnpm release:verify` → signed stamp PR → merge → signed `v*` tag → `release.yml`

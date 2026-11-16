@@ -311,8 +311,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
-  "Salem should remain available as a registered page in the drag-to-split pane",
+  /<AskSalemView \/>/,
+  "legacy Salem panes render only the retirement notice without a familiar binding",
 );
 assert.doesNotMatch(
   workspace,

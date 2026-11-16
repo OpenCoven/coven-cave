@@ -56,7 +56,7 @@ assert.match(
 );
 assert.match(
   runner,
-  /startLocalDaemon\(\{ automatic: true \}\)/,
+  /start: startLocalDaemon,[\s\S]*dependencies\.start\(\{ automatic: true \}\)/,
   "bootstrap uses the shared idempotent local daemon starter",
 );
 assert.match(

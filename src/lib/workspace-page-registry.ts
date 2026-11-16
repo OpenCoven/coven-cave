@@ -186,7 +186,7 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     title: "Marketplace",
     canonicalId: "marketplace",
     variant: "default",
-    nav: "quiet",
+    nav: "hidden",
     palette: "secondary",
     statusContext: "contextual",
     split: "always",
@@ -260,14 +260,14 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
   },
   salem: {
     id: "salem",
-    title: "Ask Salem",
+    title: "Ask Salem retired",
     canonicalId: "salem",
     variant: "default",
     nav: "hidden",
-    palette: "secondary",
+    palette: "hidden",
     statusContext: "contextual",
     split: "contextual",
-    landmark: "Ask Salem",
+    landmark: "Ask Salem retired",
   },
 } satisfies Record<WorkspaceMode, WorkspacePageDefinition>);
 

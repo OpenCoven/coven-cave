@@ -11,6 +11,8 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
+import { ambiguousWrite, isAmbiguousWriteStatus, isRecord, resourceId, writeThrew, upstreamFailureResponse } from "@/lib/server/upstream-answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,30 +45,51 @@ export async function POST(req: Request) {
     : `mutation($id:ID!){ unresolveReviewThread(input:{threadId:$id}){ thread{ id isResolved } } }`;
 
   try {
-    const res = await fetch(`${GH}/graphql`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-      body: JSON.stringify({ query: mutation, variables: { id: threadId } }),
-    });
+    let res: Response;
+    try {
+      res = await upstreamFetch("github", `${GH}/graphql`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        body: JSON.stringify({ query: mutation, variables: { id: threadId } }),
+      });
+    } catch (e) {
+      // The request may have reached GitHub before this failed; only a
+      // write that provably never left is a plain, retryable failure (#6369).
+      return writeThrew("GitHub", resolved ? "resolve" : "unresolve", e, "failed to resolve thread");
+    }
+    // A 5xx after GitHub received the write leaves its outcome unknown (#6369).
+    if (isAmbiguousWriteStatus(res.status)) return ambiguousWrite("GitHub", resolved ? "resolve" : "unresolve");
     const json = await res.json().catch(() => null);
+    // The mutation was sent and GitHub answered 2xx; an unreadable answer
+    // leaves the thread's state unconfirmed (#6368).
+    if (res.ok && !isRecord(json)) return ambiguousWrite("GitHub", resolved ? "resolve" : "unresolve");
     if (!res.ok || json?.errors) {
       const msg = Array.isArray(json?.errors) && json.errors[0]?.message
         ? String(json.errors[0].message)
         : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: msg }, { status: res.status === 403 ? 403 : 502 });
+      return upstreamFailureResponse(res, "GitHub", msg, res.status === 403 ? 403 : 502);
     }
     const thread = resolved
       ? json?.data?.resolveReviewThread?.thread
       : json?.data?.unresolveReviewThread?.thread;
-    return NextResponse.json({
-      ok: true,
-      threadId: String(thread?.id ?? threadId),
-      isResolved: Boolean(thread?.isResolved),
-    });
+    // Success means GitHub reported the thread in the state we asked for.
+    // A missing thread or state is unconfirmed; the opposite state is a
+    // definite "it didn't take" (#6368).
+    const id = isRecord(thread) ? resourceId(thread.id) : null;
+    if (!isRecord(thread) || typeof thread.isResolved !== "boolean" || !id) {
+      return ambiguousWrite("GitHub", resolved ? "resolve" : "unresolve");
+    }
+    if (thread.isResolved !== resolved) {
+      return NextResponse.json(
+        { ok: false, error: `GitHub reports the thread is still ${thread.isResolved ? "resolved" : "unresolved"}` },
+        { status: 502 },
+      );
+    }
+    return NextResponse.json({ ok: true, threadId: id, isResolved: thread.isResolved });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to resolve thread" },

@@ -5,9 +5,8 @@
  * through it: every step is a real card, every stage is a real board lane, and
  * every move the room offers is a real write. Dependencies are canonical on the
  * card (`Card.dependencies`, phase 1 of cave-wqzf2) and every dependency edit
- * writes canonically; the room's old per-familiar `dependsOn` overlay survives
- * only as a read-side legacy store, unioned in until its edges are imported
- * onto the cards (see `overlayImportPlan`) and the store is retired (phase 7).
+ * writes canonically. The room's old per-familiar `dependsOn` overlay was
+ * imported onto the cards for one release and is no longer read (#6258).
  *
  * Everything here is pure and JSX-free so the rules stay unit-testable under
  * plain `node --experimental-strip-types`.
@@ -76,9 +75,8 @@ export function previousStage(id: ChartStageId): ChartStage | null {
  *  room never stores a state of its own. */
 export type ChartStepState = "decision" | "overdue" | "running" | "high" | "queued" | "done";
 
-/** Where an upstream edge came from. Canonical records carry their card origin;
- *  `"overlay"` marks a surviving legacy overlay edge not yet imported. */
-export type ChartEdgeOrigin = TaskRecordOrigin | "overlay";
+/** Where an upstream edge came from: the canonical record's origin. */
+export type ChartEdgeOrigin = TaskRecordOrigin;
 
 /** One upstream task edge, with the canonical facts the room reasons over. */
 export type ChartStepEdge = {
@@ -116,8 +114,8 @@ export type ChartStep = {
   owner: string | null;
   /** Project id, or null when the card is not tied to one. */
   project: string | null;
-  /** Upstream card ids — the union of the card's canonical task dependencies
-   *  and any surviving overlay edge. Empty when nothing blocks it. */
+  /** Upstream card ids — the card's canonical task dependencies. Empty when
+   *  nothing blocks it. */
   needs: string[];
   /** The same upstreams with their canonical facts, in card priority order. */
   edges: ChartStepEdge[];
@@ -149,90 +147,9 @@ export function stepState(
   return "queued";
 }
 
-// ── The legacy chart overlay ─────────────────────────────────────────────────
-
-/**
- * The room's pre-canonical dependency store: step id → the one step it waits
- * on, per-familiar and per-browser. Kept read-only so divergent maps from other
- * navigators or devices are never clobbered — each edge is imported onto the
- * card (`overlayImportPlan`) and survives here only until that import lands.
- * Dependency edits write canonically; the only overlay writes left are prunes.
- */
-export type ChartOverlay = {
-  /** step id → the step it waits on. One upstream per step — the legacy shape. */
-  dependsOn: Record<string, string>;
-};
-
-export const EMPTY_OVERLAY: ChartOverlay = { dependsOn: {} };
-
-/**
- * Drop edges that no longer point at a real card, and any self-edge. Cards get
- * archived and deleted underneath the chart; a dangling edge would draw a line
- * to nowhere, so it is pruned on every read rather than left to rot.
- */
-export function normalizeOverlay(
-  overlay: ChartOverlay | null | undefined,
-  liveIds: Iterable<string>,
-): ChartOverlay {
-  const live = new Set(liveIds);
-  const dependsOn: Record<string, string> = {};
-  for (const [id, needs] of Object.entries(overlay?.dependsOn ?? {})) {
-    if (id === needs) continue;
-    if (!live.has(id) || !live.has(needs)) continue;
-    dependsOn[id] = needs;
-  }
-  return { dependsOn };
-}
-
-/** Prune one legacy edge — used when a canonical edit supersedes it. */
-export function setDependency(overlay: ChartOverlay, stepId: string, needs: string | null): ChartOverlay {
-  const dependsOn = { ...overlay.dependsOn };
-  if (needs == null || needs === stepId) delete dependsOn[stepId];
-  else dependsOn[stepId] = needs;
-  return { dependsOn };
-}
-
-/** Cut every legacy edge into and out of a step — used when its card leaves the board. */
-export function forgetStep(overlay: ChartOverlay, stepId: string): ChartOverlay {
-  const dependsOn: Record<string, string> = {};
-  for (const [id, needs] of Object.entries(overlay.dependsOn)) {
-    if (id === stepId || needs === stepId) continue;
-    dependsOn[id] = needs;
-  }
-  return { dependsOn };
-}
-
-/**
- * The overlay edges that still need importing as canonical dependencies:
- * every normalized edge whose card has no canonical task dependency naming the
- * same upstream, in a deterministic order. The import merges — it never
- * overwrites a canonical edge — so once an edge is canonical it drops out of
- * the plan and a re-run is a no-op. Divergent maps from two navigators or two
- * browsers therefore union instead of clobbering each other.
- */
-export function overlayImportPlan(
-  cards: readonly Card[],
-  overlay: ChartOverlay | null | undefined,
-): Array<{ stepId: string; needs: string }> {
-  const byId = new Map(cards.map((card) => [card.id, card]));
-  const plan: Array<{ stepId: string; needs: string }> = [];
-  for (const [stepId, needs] of Object.entries(overlay?.dependsOn ?? {})) {
-    if (stepId === needs) continue;
-    const card = byId.get(stepId);
-    if (!card || !byId.has(needs)) continue;
-    const already = dependenciesOf(card).some((dep) => isGraphEdge(dep) && dep.taskId === needs);
-    if (!already) plan.push({ stepId, needs });
-  }
-  return plan.sort((a, b) => a.stepId.localeCompare(b.stepId) || a.needs.localeCompare(b.needs));
-}
-
 // ── Card → step ──────────────────────────────────────────────────────────────
 
-export function toChartSteps(
-  cards: readonly Card[],
-  overlay: ChartOverlay,
-  today: string,
-): ChartStep[] {
+export function toChartSteps(cards: readonly Card[], today: string): ChartStep[] {
   const live = new Set(cards.map((card) => card.id));
   return cards.map((card) => {
     const canonical = dependenciesOf(card);
@@ -254,10 +171,6 @@ export function toChartSteps(
       // record wins so the room never loses the pin.
       if (existing === -1) edges.push(edge);
       else if (primary && !edges[existing].primary) edges[existing] = edge;
-    }
-    const legacy = overlay.dependsOn[card.id];
-    if (legacy != null && legacy !== card.id && live.has(legacy) && !edges.some((edge) => edge.needs === legacy)) {
-      edges.push({ needs: legacy, origin: "overlay", state: "unresolved", primary: false, pinned: false });
     }
     return {
       id: card.id,
@@ -568,7 +481,7 @@ export function weakestCycleEdge(
     const parent = byId.get(cycle[(index + 1) % cycle.length]);
     if (!child || !parent) continue;
     const edge = child.edges.find((entry) => entry.needs === parent.id);
-    if (!edge || edge.pinned || edge.origin === "human" || edge.origin === "overlay") continue;
+    if (!edge || edge.pinned || edge.origin === "human") continue;
     const score =
       parent.state === "done" || edge.state !== "unresolved"
         ? 0

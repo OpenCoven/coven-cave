@@ -80,6 +80,11 @@ for (const [boundaryName, boundary] of [
     t.after(() => gateway.close());
     t.mock.timers.tick(1_000);
     await setImmediate();
+    assert.equal(policyReads.mock.callCount(), 0, "an idle gateway does not poll policy");
+    // Background revalidation serves live remote connections (#6119).
+    gateway.holdRemoteConnection();
+    t.mock.timers.tick(1_000);
+    await setImmediate();
     assert.equal(policyReads.mock.callCount(), 1);
     assert.equal(closures, 0, "initialization pending is not a policy failure");
     initialization.reject(new Error("synthetic terminal initialization failure"));
@@ -139,6 +144,11 @@ for (const [boundaryName, boundary] of [
         store.close();
         await rm(root, { recursive: true, force: true });
       });
+      t.mock.timers.tick(1_000);
+      await setImmediate();
+      assert.equal(policyReads.mock.callCount(), 0, "an idle gateway does not poll policy");
+      // Background revalidation serves live remote connections (#6119).
+      gateway.holdRemoteConnection();
       t.mock.timers.tick(1_000);
       await setImmediate();
       assert.equal(policyReads.mock.callCount(), 1, "healthy legacy policy is observed");
@@ -325,3 +335,109 @@ test("managed proxy uses only the gateway-verified external HTTPS origin", async
     }
   }
 });
+
+// Inject only the OS dependency into the freshly built server boundary. No
+// application option can override the audit identity or the authorization gates.
+function gatewayWithAuditLookup(lookup: () => { username: unknown }) {
+  return new Function(...Object.keys(bundledDependencies),
+    `${serverBundle.slice(errorsStart, errorsEnd)}\n${serverBundle.slice(gatewayStart, gatewayEnd)}
+    return createDeviceAccessGateway;`,
+  )(...Object.values({ ...bundledDependencies, userInfo: lookup })) as typeof createDeviceAccessGateway;
+}
+
+test("audit identity: startup and reads survive lookup failure; writes fail closed and recover", async (t) => {
+  let lookups = 0;
+  let available = false;
+  const writes: Array<{ operation: string; actor: string }> = [];
+  const store = {
+    policy: async () => ({ enabled: true, allowedTailnets: [] }),
+    snapshot: async () => ({ enabled: true, allowedTailnets: [], devices: [], events: [] }),
+    setAllowedTailnets: async (_tailnets: string[], actor: string) => { writes.push({ operation: "tailnets", actor }); },
+    decide: async (id: string, status: string, actor: string) => {
+      writes.push({ operation: "decision", actor });
+      return { id, status };
+    },
+  } as unknown as Parameters<typeof createDeviceAccessGateway>[0]["store"];
+  const gateway = gatewayWithAuditLookup(() => {
+    lookups++;
+    if (!available) throw new Error("synthetic private directory-service details");
+    return { username: "verified-account" };
+  })({
+    store, isDirectLoopback: (req) => req.headers.host === "localhost",
+    sidecarToken: "synthetic-sidecar", packaged: true, stampSecret: "synthetic-stamp",
+    inventory: async () => ({ host: "desktop.example.ts.net", tailnet: "example.ts.net", peers: new Map() }),
+  });
+  t.after(() => gateway.close());
+  const send = async (pathname: string, method = "GET", input?: unknown, headers: Record<string, string> = {}) => {
+    const req = new IncomingMessage(new Socket());
+    req.url = pathname;
+    req.method = method;
+    req.headers = {
+      host: "localhost", origin: "http://localhost", "content-type": "application/json",
+      "x-coven-cave-token": "synthetic-sidecar", ...headers,
+    };
+    if (input !== undefined) req.push(JSON.stringify(input));
+    req.push(null);
+    const res = new ServerResponse(req);
+    const end = t.mock.method(res, "end", () => res);
+    const handled = await gateway.handle(req, res);
+    return { handled, status: res.statusCode, output: end.mock.calls.map((call) => String(call.arguments[0] ?? "")).join("") };
+  };
+  assert.equal(lookups, 0, "startup does not resolve an administrative audit identity");
+  assert.equal((await send("/api/example")).handled, false);
+  assert.equal((await send("/api/device-access/admin")).status, 200);
+  const deniedHeaders: Record<string, string>[] = [
+    { host: "desktop.example.ts.net", origin: "https://desktop.example.ts.net" },
+    { "x-coven-cave-token": "wrong-token" },
+  ];
+  for (const headers of deniedHeaders) {
+    assert.equal((await send("/api/device-access/admin/tailnets", "PUT", { tailnets: [] }, headers)).status, 403);
+  }
+  assert.equal((await send("/api/device-access/admin/tailnets", "PUT", { tailnets: "invalid" })).status, 400);
+  assert.equal((await send("/api/device-access/admin/decision", "POST", { id: "device", decision: "invalid" })).status, 400);
+  assert.equal(lookups, 0, "reads, denied callers and malformed writes need no audit lookup");
+  const mutations = [
+    ["/api/device-access/admin/tailnets", "PUT", { tailnets: ["example.ts.net"] }],
+    ["/api/device-access/admin/decision", "POST", { id: "device", decision: "revoked" }],
+  ] as const;
+  for (const [pathname, method, input] of mutations) {
+    const result = await send(pathname, method, input);
+    assert.equal(result.status, 503);
+    assert.equal(JSON.parse(result.output).error, "unavailable");
+    assert.doesNotMatch(result.output, /private directory-service details/);
+  }
+  assert.deepEqual(writes, [], "unattributed mutations must not reach storage");
+  assert.equal(lookups, 2, "failed lookups remain retryable");
+  available = true;
+  for (const [pathname, method, input] of mutations) assert.equal((await send(pathname, method, input)).status, 200);
+  assert.deepEqual(writes, [
+    { operation: "tailnets", actor: "desktop:verified-account" },
+    { operation: "decision", actor: "desktop:verified-account" },
+  ]);
+  assert.equal(lookups, 3, "successful verified attribution remains stable for this gateway");
+});
+
+for (const username of ["", undefined, null]) {
+  test(`audit identity: missing username ${String(username)} refuses administrative writes`, async (t) => {
+    let writes = 0;
+    const gateway = gatewayWithAuditLookup(() => ({ username }))({
+      store: {
+        policy: async () => ({ enabled: false, allowedTailnets: [] }),
+        setAllowedTailnets: async () => { writes++; },
+      } as unknown as Parameters<typeof createDeviceAccessGateway>[0]["store"],
+      isDirectLoopback: () => true, sidecarToken: "synthetic-sidecar", packaged: true, stampSecret: "synthetic-stamp",
+    });
+    t.after(() => gateway.close());
+    const req = new IncomingMessage(new Socket());
+    req.url = "/api/device-access/admin/tailnets";
+    req.method = "PUT";
+    req.headers = { host: "localhost", origin: "http://localhost", "content-type": "application/json", "x-coven-cave-token": "synthetic-sidecar" };
+    req.push(JSON.stringify({ tailnets: [] }));
+    req.push(null);
+    const res = new ServerResponse(req);
+    t.mock.method(res, "end", () => res);
+    assert.equal(await gateway.handle(req, res), true);
+    assert.equal(res.statusCode, 503);
+    assert.equal(writes, 0);
+  });
+}

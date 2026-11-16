@@ -4,8 +4,10 @@ import "@/styles/dashboard.css";
 import "@/styles/settings-familiars.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { replaceHistoryUrl } from "@/lib/history-url";
 import { observeSettingsTarget } from "@/lib/settings-search-target";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Icon } from "@/lib/icon";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { relativeTime } from "@/lib/relative-time";
@@ -138,7 +140,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   function backToPicker() {
     setPickerView(true);
     if (!embedded && typeof window !== "undefined") {
-      window.history.replaceState(null, "", window.location.pathname);
+      replaceHistoryUrl(window.location.pathname);
     }
   }
 
@@ -152,7 +154,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     if (embedded || typeof window === "undefined" || !hashHydrated || pickerView) return;
     if (window.location.hash === `#${section}`) return;
-    window.history.replaceState(null, "", `#${section}`);
+    replaceHistoryUrl(`#${section}`);
   }, [embedded, hashHydrated, pickerView, section]);
 
   // Support hash-based deep-linking. Read it after hydration so SSR and the
@@ -388,6 +390,20 @@ function GeneralSection() {
         <SetupStatusRow />
       </SettingsGroup>
       <BackupSettingsGroup />
+      <SettingsGroup label="Installed capabilities" variant="ruled" panel={false}>
+        <SettingsRow
+          label="Skills, tools and connectors"
+          description="Check health and compatibility, change access, or uninstall."
+          variant="sheet"
+        >
+          {/* Settings is its own route with no Workspace listening for
+              cave:navigate-mode, so this is a real navigation to the saved-link
+              form of the surface. */}
+          <Link className="ui-btn ui-btn--secondary focus-ring" href="/?mode=marketplace">
+            Manage installed items
+          </Link>
+        </SettingsRow>
+      </SettingsGroup>
     </SettingsPage>
     </GeneralSettingsDataProvider>
   );

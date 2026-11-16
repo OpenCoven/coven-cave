@@ -13,6 +13,8 @@
  * (message-feedback-rollup.test.ts).
  */
 
+import { canonicalModelId } from "./canonical-model-id.ts";
+
 export type FeedbackRollupEntry = {
   messageId: string;
   vote: "up" | "down";
@@ -36,7 +38,11 @@ export type MessageFeedbackRollup = {
   up: number;
   down: number;
   total: number;
-  /** Per-model buckets, most-voted first. Votes without a model stamp are omitted. */
+  /**
+   * Per-model buckets keyed by `canonicalModelId().id`, most-voted first, so
+   * `github/claude-fable-5` and `anthropic/claude-fable-5` share one bucket.
+   * Votes without a model stamp are omitted.
+   */
   models: FeedbackSliceStat[];
   /** Per-runtime buckets, most-voted first. Votes without a runtime stamp are omitted. */
   runtimes: FeedbackSliceStat[];
@@ -90,7 +96,8 @@ export function rollupMessageFeedback(
   for (const entry of finalVotes.values()) {
     if (entry.vote === "up") up += 1;
     else down += 1;
-    if (entry.model) bump(models, entry.model, entry.vote);
+    const modelKey = entry.model ? canonicalModelId(entry.model).id : "";
+    if (modelKey) bump(models, modelKey, entry.vote);
     if (entry.runtime) bump(runtimes, entry.runtime, entry.vote);
   }
 

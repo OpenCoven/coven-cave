@@ -152,6 +152,22 @@ export function classifyDaemonConnectionTravelCadence(
  * "the local daemon is stopped". The legacy fallback keeps rolling upgrades
  * honest when an older status route returns the exact local-offline response.
  */
+/**
+ * The browser's own deadline on the status read. Cave's server didn't answer,
+ * so this says nothing about the daemon (#6388).
+ */
+export const DAEMON_STATUS_READ_TIMEOUT_REASON = "status request timed out";
+
+/**
+ * Consecutive unavailable reads before the shell shows a notice. A busy Cave
+ * server can miss the deadline several times while the daemon stays healthy,
+ * so timeouts after a confirmed-running answer wait about a minute. Every
+ * other failure, and a cold load with no answer yet, surfaces on the second.
+ */
+export function daemonUnavailableReadsBeforeNotice(reason: string, confirmedRunning: boolean): number {
+  return confirmedRunning && reason === DAEMON_STATUS_READ_TIMEOUT_REASON ? 4 : 2;
+}
+
 export type DaemonStatusProblemCopy = {
   /** Plain status fragment for the banner headline. */
   title: string;
@@ -185,6 +201,9 @@ export function describeDaemonStatusProblem(reason: string): DaemonStatusProblem
     return { title: "Couldn’t confirm access to the Coven daemon", detail: null };
   }
   if (!trimmed) return { title: "Can’t confirm the Coven daemon’s status", detail: null };
+  if (trimmed === DAEMON_STATUS_READ_TIMEOUT_REASON) {
+    return { title: "Cave’s server is taking too long to answer", detail: trimmed };
+  }
   const match = DAEMON_STATUS_PROBLEMS.find(([pattern]) => pattern.test(trimmed));
   return { title: match?.[1] ?? "Can’t confirm the Coven daemon’s status", detail: trimmed };
 }

@@ -6,6 +6,7 @@ import {
   type ReleaseAsset,
   type UpdateStatus,
 } from "@/lib/app-update";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export async function GET() {
   };
 
   try {
-    const res = await fetch(RELEASES_API, {
+    const res = await upstreamFetch("github", RELEASES_API, {
       headers: { Accept: "application/vnd.github+json", "User-Agent": "coven-cave" },
       cache: "no-store",
       signal: AbortSignal.timeout(4000),

@@ -635,9 +635,8 @@ textarea.coven-tab__field-input {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  /* The reading measure stays bounded; code may extend to the section edge. */
-  max-width: 50rem;
-  margin: 0 auto;
+  /* Runs span the pane, like the 1:1 chat's reading column. */
+  width: 100%;
 }
 
 /* ── One run ─────────────────────────────────────────────────────────────── */
@@ -1420,8 +1419,6 @@ textarea.coven-tab__field-input {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-width: 50rem;
-  margin: 0 auto;
   padding: var(--space-3) var(--space-5);
 }
 

@@ -28,11 +28,6 @@
     },
     {
       "rule": "components/no-native-select",
-      "path": "src/components/salem/ask-salem-view.tsx",
-      "excerpt": "<select className=\"ask-salem__picker-select focus-ring\" aria-label=\"Familiar whose connected model writes the answers\" value={selectedFamiliar.id} onChange={(e) => setPickedFamiliarId(e.target.value)} >"
-    },
-    {
-      "rule": "components/no-native-select",
       "path": "src/components/stitch-intake.tsx",
       "excerpt": "<select value={collection} onChange={(e) => setCollection(e.target.value)} aria-label=\"Destination collection\" className=\"focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)]\" >"
     },
@@ -45,11 +40,6 @@
       "rule": "components/no-native-select",
       "path": "src/components/weave-rail.tsx",
       "excerpt": "<select className=\"wv-select focus-ring\" value={scope.familiar ?? \"\"} onChange={(e) => onScope({ ...scope, familiar: e.target.value === \"\" ? null : e.target.value }) } >"
-    },
-    {
-      "rule": "copy/no-generic-submit",
-      "path": "src/components/salem/salem-pathfinder-card.tsx",
-      "excerpt": "Submit"
     }
   ]
 }

@@ -36,7 +36,7 @@ export const SECTIONS: SectionMeta[] = [
 
 export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
   profile: ["Identity & pronouns", "Context & personality", "Portrait & links"],
-  general: ["Workspace path", "Encrypted backup", "Chat stop phrases"],
+  general: ["Workspace path", "Installed capabilities", "Encrypted backup"],
   voice: ["Provider readiness", "Voices & models", "New familiar defaults"],
   "local-models": ["Server status", "Addresses", "Tool-capable models"],
   daemon: ["Runtime health", "Local/hub routing", "Socket & version"],
@@ -60,6 +60,7 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "general", group: "Chat", keywords: "chat stop phrases cancel halt abort interrupt running task" },
   { section: "general", group: "Progression", keywords: "celebrations milestones renown streak toast flourish gamification quiet dial down" },
   { section: "general", group: "Setup", keywords: "setup first run onboarding local components node npm coven cli defaults local service resume retry" },
+  { section: "general", group: "Installed capabilities", keywords: "installed capabilities marketplace skills tools connectors plugins health compatibility uninstall permissions" },
   { section: "general", group: "Backup", keywords: "backup export restore encrypted passphrase archive vault recovery" },
   { section: "voice", group: "Default for new familiars", keywords: "voice provider model default new familiar tts speech" },
   { section: "voice", group: "ElevenLabs", keywords: "elevenlabs key vault saved voices tts models cloud" },

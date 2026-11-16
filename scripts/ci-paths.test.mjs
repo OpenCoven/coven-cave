@@ -28,6 +28,10 @@ test("workflow and script changes run their validation lanes", () => {
   assert.equal(classifyCiPaths(["scripts/rust-doctest-ci.test.mjs"]).rust, true);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).frontend, true);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).ios, false);
+  // The teardown helper decides whether the hosted iOS lane's harness passes
+  // or crashes (#6340), so a helper-only change must run that lane.
+  assert.equal(classifyCiPaths(["scripts/native-harness-teardown.mjs"]).ios, true);
+  assert.equal(classifyCiPaths(["scripts/native-harness-teardown.test.mjs"]).ios, true);
 });
 
 test("standalone continuity sources always run the lightweight docs contracts", () => {

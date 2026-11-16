@@ -5,12 +5,12 @@ import { coordinateStartupWorkerShutdown } from "./lib/server/startup-worker-shu
 const jobs = vi.hoisted(() => ({
   migration: vi.fn(), restore: vi.fn(), media: vi.fn(), xCache: vi.fn(), xRuntime: vi.fn(),
   inbox: vi.fn(), scheduled: vi.fn(), github: vi.fn(), backup: vi.fn(),
-  stopScheduled: vi.fn(), stopBackup: vi.fn(), stopInbox: vi.fn(),
+  stopScheduled: vi.fn(), stopBackup: vi.fn(), stopInbox: vi.fn(), stopResearch: vi.fn(),
   daemon: vi.fn(), familiars: vi.fn(), board: vi.fn(),
 }));
 vi.mock("@/lib/server/cave-home-migration", () => ({ migrateCaveHomeOnce: jobs.migration }));
 vi.mock("@/lib/server/research-resource-recovery", () => ({ recoverInterruptedResearchResourceRestore: jobs.restore }));
-vi.mock("@/lib/server/research-package", () => ({ startOptionalResearch: jobs.media }));
+vi.mock("@/lib/server/research-package", () => ({ startOptionalResearch: jobs.media, stopOptionalResearchForShutdown: jobs.stopResearch }));
 vi.mock("@/lib/server/x-sources", () => ({ sweepExpiredXCache: jobs.xCache }));
 vi.mock("@/lib/server/research-runtime-privacy", () => ({ sweepResearchMissionXRuntime: jobs.xRuntime }));
 vi.mock("@/lib/inbox-scheduler", () => ({ startScheduler: jobs.inbox, stopScheduler: jobs.stopInbox }));
@@ -73,9 +73,14 @@ test("registers the actual worker stops before startup and retains quit snapshot
   expect(jobs.stopScheduled).toHaveBeenCalledOnce();
   expect(jobs.stopBackup).toHaveBeenCalledExactlyOnceWith({ pushOnQuit: true });
   expect(jobs.stopInbox).toHaveBeenCalledOnce();
+  expect(jobs.stopResearch).toHaveBeenCalledOnce();
   expect(result.workers["inbox-reminders"].status).toBe("drained");
   expect(result.workers["scheduled-chat"].status).toBe("drained");
   expect(result.workers["backup-sync"].status).toBe("drained");
+  expect(result.workers.research.status).toBe("drained");
+  // The watcher registers its own drain on activation (#6350); the mocked
+  // start registers nothing, so its slot is the coordinator's "no owner" row.
+  expect(result.workers["github-watcher"].status).toBe("unavailable");
 });
 
 test("shutdown during registration fences services that have not started", async () => {
@@ -90,6 +95,12 @@ test("shutdown during registration fences services that have not started", async
   expect(jobs.stopScheduled).toHaveBeenCalledOnce();
   expect(jobs.stopBackup).toHaveBeenCalledOnce();
   expect(jobs.backup).not.toHaveBeenCalled();
+  // The watcher is started unconditionally; it fences itself on activation
+  // (github-watcher.behavior.test.ts covers the fence and the drain).
+  expect(jobs.github).toHaveBeenCalledOnce();
+  // Research registered and started before the race, so it drains like reminders.
+  expect(jobs.stopResearch).toHaveBeenCalledOnce();
+  expect(jobs.media).toHaveBeenCalledOnce();
   // Reminders registered and started before the race; their stop is drained, not skipped.
   expect(jobs.stopInbox).toHaveBeenCalledOnce();
   expect(jobs.inbox).toHaveBeenCalledOnce();

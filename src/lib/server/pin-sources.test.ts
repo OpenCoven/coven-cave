@@ -172,4 +172,12 @@ describe("githubApiTarget", () => {
     assert.equal(githubApiTarget(new URL("https://github.com/o/r/issues/notanumber")), null);
     assert.equal(githubApiTarget(new URL("https://github.com/o/r/blob/main/..%2f..%2fetc")), null, "encoded traversal");
   });
+
+  it("never builds a fixed-host request from a dot-only segment", () => {
+    // URL parsing already collapses `.`, `..` and `%2e%2e`; the segment check
+    // is the second line of defence and also refuses dot-only names like `...`.
+    assert.equal(githubApiTarget(new URL("https://github.com/o/r/blob/main/%2e%2e/secrets")), null);
+    assert.equal(githubApiTarget(new URL("https://github.com/o/r/blob/.../file")), null);
+    assert.equal(githubApiTarget(new URL("https://github.com/%2e%2e/r")), null);
+  });
 });

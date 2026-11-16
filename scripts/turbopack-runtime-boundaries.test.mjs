@@ -3,6 +3,23 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const expectedBoundaries = new Map([
+  ["../src/lib/claude-write-scope.ts", [
+    ['realpathSync.native(/* turbopackIgnore: true */ root)', 2],
+    ['path.join(/* turbopackIgnore: true */ authorityRoot, directoryName)', 1],
+    ['path.join(/* turbopackIgnore: true */ authorityRoot, "mcp-cwd")', 1],
+    ['path.join(/* turbopackIgnore: true */ parent, ".git")', 1],
+    ['path.join(/* turbopackIgnore: true */ homedir(), ".claude")', 1],
+    ['path.join(/* turbopackIgnore: true */ directory, "scope.json")', 1],
+    ['fileSystem.open(/* turbopackIgnore: true */ target, "wx", 0o600)', 1],
+    ['fileSystem.lstat(/* turbopackIgnore: true */ target)', 1],
+  ]],
+  // Claude's authority folder and the grant-time overlap test share this path.
+  ["../src/lib/cave-private-state.ts", [
+    ['path.join(/* turbopackIgnore: true */ caveHome(), "claude-authority")', 1],
+    ['realpathSync.native(/* turbopackIgnore: true */ next)', 1],
+    ['lstatSync(/* turbopackIgnore: true */ next)', 1],
+    ['readlinkSync(/* turbopackIgnore: true */ next)', 1],
+  ]],
   ["../src/lib/server/journal-command-intent.ts", [
     ['path.join(/* turbopackIgnore: true */ await realpath(/* turbopackIgnore: true */ directory), ".cave-command-intents")', 1],
     ['path.join(/* turbopackIgnore: true */ root, `${digest(adoptionKey)}.json`)', 1],

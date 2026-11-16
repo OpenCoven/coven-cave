@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.5.18",
+  "version": "0.5.22",
   "private": true,
   "type": "module",
   "description": "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions.",
@@ -24,6 +24,9 @@
     "release:verify-updater": "node scripts/verify-release-updater.mjs",
     "release:acceptance": "node scripts/release-acceptance.mjs",
     "release:rollout": "node scripts/release-rollout.mjs",
+    "release:train": "node scripts/release-train.mjs",
+    "screenshots:readme": "node scripts/capture-screenshots.mjs",
+    "docs:check": "node scripts/docs-check.mjs",
     "appstore:apps": "node scripts/app-store-connect.mjs apps",
     "appstore:validate": "node scripts/app-store-connect.mjs validate",
     "appstore:upload": "node scripts/app-store-connect.mjs upload",
@@ -56,6 +59,9 @@
     "bench:daemon-lifecycle": "node --experimental-strip-types scripts/daemon-lifecycle-probe.mjs",
     "performance:report": "node --experimental-strip-types scripts/cave-performance-report.mjs",
     "performance:stream": "node scripts/run-stream-performance.mjs",
+    "performance:shell": "node scripts/run-shell-performance.mjs",
+    "performance:doctor": "node scripts/run-doctor-performance.mjs",
+    "performance:soak": "node scripts/run-soak-performance.mjs",
     "ios:performance:capture": "node scripts/ios-performance-capture.mjs",
     "test:performance-report": "node --test scripts/cave-performance-report.test.mjs",
     "analyze:bundle": "next experimental-analyze --output",
@@ -84,6 +90,10 @@
     "test:daemon-faults": "node --experimental-strip-types scripts/daemon-connectivity-faults.test.ts",
     "work:issues": "gh issue list --repo OpenCoven/coven-cave --state open --limit 20",
     "work:project": "gh project view 9 --owner OpenCoven",
+    "work:queue": "node scripts/work-queue.mjs list",
+    "work:lint": "node scripts/work-queue.mjs lint",
+    "work:propose": "node scripts/work-queue.mjs propose",
+    "work:apply": "node scripts/work-queue.mjs apply",
     "ci:recovery": "node scripts/ci-recovery.mjs",
     "ci:recovery:apply": "node scripts/ci-recovery.mjs --apply",
     "main:health": "node scripts/main-health.mjs",
@@ -126,11 +136,11 @@
     "@opencoven/coven-client": "file:vendor/opencoven-sdk/opencoven-coven-client-0.0.1.tgz",
     "@opencoven/sdk-core": "file:vendor/opencoven-sdk/opencoven-sdk-core-0.0.1.tgz",
     "@tailwindcss/browser": "4.3.3",
-    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/api": "2.12.4",
     "@tauri-apps/plugin-notification": "2.3.3",
     "@tauri-apps/plugin-os": "2.3.2",
     "@tauri-apps/plugin-process": "2.3.1",
-    "@tauri-apps/plugin-updater": "2.10.1",
+    "@tauri-apps/plugin-updater": "2.14.1",
     "@types/qrcode": "1.5.6",
     "@uiw/codemirror-extensions-langs": "4.25.11",
     "@uiw/react-codemirror": "4.25.11",
@@ -167,7 +177,7 @@
     "@next/bundle-analyzer": "16.2.12",
     "@playwright/test": "1.62.0",
     "@tailwindcss/postcss": "4.3.3",
-    "@tauri-apps/cli": "2.11.4",
+    "@tauri-apps/cli": "2.12.4",
     "@types/node": "24.13.2",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
@@ -188,6 +198,7 @@
   "packageManager": "pnpm@10.34.0",
   "pnpm": {
     "overrides": {
+      "twitter-text>@babel/runtime": "7.29.7",
       "@hpke/common": "1.10.0",
       "enhanced-resolve": "5.23.0",
       "nanoid@3": "3.3.18",
@@ -200,7 +211,8 @@
       "source-map-js@<1.2.2": "1.2.2",
       "vue@<3.5.42": "3.5.42",
       "prosemirror-view@<1.42.3": "1.42.3",
-      "brace-expansion@>=4.0.0 <5.0.12": "5.0.12"
+      "brace-expansion@>=4.0.0 <5.0.12": "5.0.12",
+      "minimatch@>=10.0.0 <11.0.1": "11.0.1"
     },
     "supportedArchitectures": {
       "os": [
@@ -216,6 +228,9 @@
         "glibc",
         "musl"
       ]
+    },
+    "patchedDependencies": {
+      "@create-markdown/core@2.0.3": "patches/@create-markdown__core@2.0.3.patch"
     }
   },
   "optionalDependencies": {

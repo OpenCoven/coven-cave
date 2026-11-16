@@ -91,3 +91,10 @@ console.log("chat-browse-scope.test.ts: ok");
   assert.equal(chatBrowseEmptyMessage({ selection: "alpha", ready: false }, true), "No threads match your search.");
 }
 
+
+// Optional Chat browsing is independent of the saved actor and project.
+assert.equal(scopeChatBrowseSessions(sessions, projects, {}, { selection: "all", familiarIds: [], ready: true }), sessions);
+assert.deepEqual(scopeChatBrowseSessions(sessions, projects, {}, { selection: "all", familiarIds: ["sage"], ready: true }), [beta]);
+assert.deepEqual(scopeChatBrowseSessions(sessions, projects, {}, { selection: "alpha", familiarIds: ["sage"], ready: true }), []);
+assert.equal(chatBrowseEmptyMessage({ selection: "all", familiarIds: ["sage"], ready: true }), "No chats match these filters. Clear filters to see all chats.");
+assert.equal(beta.project_root, "/work/beta", "filtering leaves the stored conversation target untouched");

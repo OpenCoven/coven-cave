@@ -16,6 +16,8 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { upstreamDrift, upstreamFailureResponse } from "@/lib/server/upstream-answer";
+import { upstreamFetch } from "@/lib/server/upstream-fetch";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,7 +47,8 @@ async function listPullCommits(repo: string, numberRaw: string) {
   const token = resolveGitHubToken();
   try {
     // repo passed REPO_RE and number is a validated positive integer.
-    const res = await fetch(
+    const res = await upstreamFetch(
+      "github",
       `${GH}/repos/${repo}/pulls/${number}/commits?per_page=${MAX_COMMITS}`,
       { headers: ghHeaders(token), cache: "no-store" },
     );
@@ -54,10 +57,11 @@ async function listPullCommits(repo: string, numberRaw: string) {
     }
     const data = (await res.json().catch(() => null)) as Array<Record<string, unknown>> | null;
     if (!res.ok || !Array.isArray(data)) {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
+    }
+    // A commit with no sha cannot be opened or cited, so don't list it.
+    if (data.some((entry) => typeof entry?.sha !== "string" || !entry.sha)) {
+      return upstreamDrift("GitHub", "the commit shas");
     }
     const commits = data.map((entry) => {
       const commit = entry.commit as Record<string, unknown> | undefined;
@@ -67,7 +71,7 @@ async function listPullCommits(repo: string, numberRaw: string) {
       const message = typeof commit?.message === "string" ? commit.message : "";
       const split = message.indexOf("\n");
       return {
-        sha: String(entry.sha ?? ""),
+        sha: entry.sha as string,
         // Subject and body separately: the reader shows the subject in the row
         // and the body only when the row is expanded.
         subject: split < 0 ? message : message.slice(0, split),
@@ -118,7 +122,7 @@ export async function GET(req: Request) {
 
   try {
     // repo passed REPO_RE and sha passed SHA_RE — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/commits/${sha}`, {
+    const res = await upstreamFetch("github", `${GH}/repos/${repo}/commits/${sha}`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -131,11 +135,11 @@ export async function GET(req: Request) {
     }
     const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok || !data || typeof data !== "object") {
-      return NextResponse.json(
-        { ok: false, error: `github error (${res.status})` },
-        { status: res.status === 403 ? 403 : 502 },
-      );
+      return upstreamFailureResponse(res, "GitHub", `github error (${res.status})`, res.status === 403 ? 403 : 502);
     }
+
+    // Echoing the requested sha over an empty message would invent a commit.
+    if (typeof data.sha !== "string" || !data.sha) return upstreamDrift("GitHub", "the commit");
 
     const commit = data.commit as Record<string, unknown> | undefined;
     const commitAuthor = commit?.author as Record<string, unknown> | undefined;
@@ -147,7 +151,7 @@ export async function GET(req: Request) {
       ok: true,
       authed: Boolean(token),
       commit: {
-        sha: String(data.sha ?? sha),
+        sha: data.sha,
         message: typeof commit?.message === "string" ? commit.message : "",
         authorLogin: typeof user?.login === "string" ? user.login : null,
         authorName: typeof commitAuthor?.name === "string" ? commitAuthor.name : null,

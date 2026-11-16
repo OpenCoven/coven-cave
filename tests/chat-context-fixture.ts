@@ -1,4 +1,6 @@
 import { expect, type Page } from "@playwright/test";
+import { openChatFilter } from "./fixtures/chat-filter";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 import {
   createOnboardingBootstrapState,
   ONBOARDING_BOOTSTRAP_BOUNDARIES,
@@ -49,6 +51,9 @@ export async function setup(page: Page, betaFamiliar = "cody", pendingSessions?:
     // renders .chat-surface. Same seed the split-pane spec uses.
     localStorage.setItem("cave:familiar:cody:last-surface", "chat");
     localStorage.setItem("cave:shell:nav-open", "1");
+    // These cases start in the browsing overview; the composer may still use
+    // its saved default without converting that explicit All projects choice.
+    localStorage.setItem("cave:workspace:project-scope:v1", "null");
     localStorage.setItem("cave:workspace:familiar-scope-by-project:v1",
       JSON.stringify({ "__all-projects__": ["cody"], alpha: ["cody"], beta: [betaFamiliar] }));
   }, betaFamiliar);
@@ -64,7 +69,7 @@ export async function setup(page: Page, betaFamiliar = "cody", pendingSessions?:
       payload = { ok: true, ...completedBootstrap, boundaries: ONBOARDING_BOOTSTRAP_BOUNDARIES };
     }
     else if (url.pathname === "/api/onboarding/status") payload = { ok: true, complete: true, steps: {}, tools: [] };
-    else if (url.pathname === "/api/familiars") payload = { ok: true, familiars };
+    else if (url.pathname === "/api/familiars") payload = { ok: true, familiars: familiars.map((f) => ({ ...f, projectAccess: "write" })) };
     else if (url.pathname === "/api/projects") payload = { ok: true, projects };
     else if (url.pathname === "/api/sessions/list") {
       if (pendingSessions) await pendingSessions;
@@ -92,6 +97,7 @@ export async function setup(page: Page, betaFamiliar = "cody", pendingSessions?:
     }
     await route.fulfill({ json: payload });
   });
+  await installCompletedFirstUse(page, { project: projects[0], familiarIds: ["cody"], actingFamiliarId: "cody", permissionMode: "full" });
   // The root route resolves bootstrap state on the SERVER, before Playwright can
   // intercept any client API call, and it reads a cookie — not localStorage. So
   // `cave:onboarding:dismissed` alone leaves the first-run "Set up Cave" dialog
@@ -120,7 +126,13 @@ export async function openThread(page: Page, letter: "A" | "B") {
 }
 
 export async function switchProject(page: Page, projectId: "alpha" | "beta") {
-  const switcher = page.locator(".workspace-context-switcher:visible").first();
-  await switcher.getByRole("button", { name: /^Switch project:/ }).click();
+  const filter = await openChatFilter(page);
+  await filter.controls.getByRole("button", { name: /^Switch project:/ }).click();
+  await page.locator(".cave-project-picker__row").filter({ hasText: `Context ${projectId}` }).first().locator(".ui-popover-item").click();
+  await filter.close();
+}
+
+export async function switchComposeProject(page: Page, projectId: "alpha" | "beta") {
+  await page.getByTestId("chat-main").getByRole("button", { name: /^Project:/ }).click();
   await page.locator(".cave-project-picker__row").filter({ hasText: `Context ${projectId}` }).first().locator(".ui-popover-item").click();
 }

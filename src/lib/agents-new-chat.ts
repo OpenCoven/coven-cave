@@ -49,6 +49,9 @@ function isInitialCommandControls(value: unknown): value is InitialCommandContro
       || controls.responseSpeed === "fast"
       || controls.responseSpeed === "balanced"
       || controls.responseSpeed === "careful")
+    && (controls.permissionMode === undefined
+      || controls.permissionMode === "read"
+      || controls.permissionMode === "full")
     && (controls.runtimeHost === undefined || typeof controls.runtimeHost === "string")
     && (controls.modelOverride === undefined || typeof controls.modelOverride === "string")
     && (controls.modelOverrideScope === undefined
@@ -127,7 +130,7 @@ export async function resolveRightChatProjectRoot(request: AgentsNewChatRequest)
   return source.project_root;
 }
 
-export function requestAgentsNewChat(detail: AgentsNewChatRequest): AgentsNewChatDispatchResult {
+export function requestAgentsNewChat(detail: AgentsNewChatRequest, options?: { reservedWindow: Window }): AgentsNewChatDispatchResult {
   if (typeof window === "undefined") return { ok: false, error: "Chat is unavailable outside the app." };
   if (detail.destination === "right-panel") {
     if (window.location.pathname === "/") {
@@ -143,7 +146,7 @@ export function requestAgentsNewChat(detail: AgentsNewChatRequest): AgentsNewCha
     // handoff before loading a workspace in a separate browsing context.
     let target: Window | null = null;
     try {
-      target = window.open("about:blank", "_blank");
+      target = options?.reservedWindow ?? window.open("about:blank", "_blank");
       if (!target) return { ok: false, error: "Allow pop-ups to open the Chat panel in a new tab." };
       target.opener = null;
       target.sessionStorage.setItem(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify(detail));

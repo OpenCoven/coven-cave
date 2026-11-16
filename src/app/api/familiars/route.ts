@@ -6,7 +6,7 @@ import { bindingFor, saveConfig } from "@/lib/cave-config";
 import { covenHome } from "@/lib/coven-paths";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
-import { filterFamiliarsForProject, loadProjectPermissions } from "@/lib/project-permissions";
+import { effectiveProjectAccess, filterFamiliarsForProject, loadProjectPermissions } from "@/lib/project-permissions";
 import {
   buildFamiliarsToml,
   familiarsTomlContainsId,
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     // Auth failures (401/403) mean the hub/daemon rejected our access token
     // — typically a stale or missing token after a hub reconnect. Surface
     // that distinctly and actionably instead of collapsing every daemon
-    // failure into a bare 503/401 code in the notch ("Failed to load
+    // failure into a bare 503/401 code in quick chat ("Failed to load
     // familiars (401)"), which tells the user nothing about how to recover.
     if (rosterResult.status === 401 || rosterResult.status === 403) {
       return NextResponse.json(
@@ -148,13 +148,15 @@ export async function GET(req: Request) {
           projectId,
           (rostersByProject.get(projectId) ?? []).flatMap((familiar) => {
             const enriched = familiarById.get(familiar.id);
-            return enriched ? [enriched] : [];
+            return enriched ? [{ ...enriched, projectAccess: effectiveProjectAccess(permissions!, familiar.id, projectId).level }] : [];
           }),
         ]),
       ),
     });
   }
-  return NextResponse.json({ ok: true, familiars });
+  return NextResponse.json({ ok: true, familiars: projectIds.length === 1
+    ? familiars.map((familiar) => ({ ...familiar, projectAccess: effectiveProjectAccess(permissions!, familiar.id, projectIds[0]).level }))
+    : familiars });
 }
 
 async function pathExists(p: string): Promise<boolean> {

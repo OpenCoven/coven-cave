@@ -13,6 +13,7 @@ import {
   covenRunSupportsAddDirFlag,
   covenRunSupportsModelFlag,
   covenRunSupportsPermissionFlag,
+  covenRunSupportsWriteScopeFlag,
   covenRunSupportsSpeedFlag,
 } from "@/lib/harness-adapters";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
@@ -707,6 +708,18 @@ export function covenRunSupportsPermission(): Promise<boolean> {
     covenRunSupportsPermissionFlag,
     covenWrapperSpawnEnv(harnessSpawnEnv()),
   ));
+}
+
+export function covenRunSupportsWriteScope(): Promise<boolean> {
+  let launch;
+  try { launch = covenLaunchCommand(); } catch { return Promise.resolve(false); }
+  const { command, fixedArgs } = launch;
+  // This answer admits filesystem writes. Re-probe the resolved launcher on
+  // every admission: executable replacement, PATH/shim changes and upgrades
+  // must take effect without restarting Cave. Even a completed negative
+  // answer is unsafe to retain across a later explicit recovery attempt.
+  return probeOutput(command, [...fixedArgs, "run", "--help"], covenWrapperSpawnEnv(harnessSpawnEnv()))
+    .then((outcome) => outcome.complete && covenRunSupportsWriteScopeFlag(outcome.output));
 }
 
 export function covenRunSupportsAddDir(): Promise<boolean> {

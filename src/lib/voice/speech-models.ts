@@ -4,6 +4,7 @@ import { mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import path from "node:path";
 import { covenHome } from "../coven-paths.ts";
+import { upstreamFetch } from "../server/upstream-fetch.ts";
 
 export type SpeechEngineKind = "stt" | "tts";
 
@@ -690,7 +691,9 @@ export async function runSpeechModelDownload(
       const temp = path.join(/* turbopackIgnore: true */ stagingDir, asset.fileName);
       const timeout = setTimeout(() => abortController.abort(), 30 * 60_000);
       try {
-        const res = await fetchImpl(asset.url, { signal: abortController.signal });
+        // Model weights are large: the per-asset budget is the route's own
+        // 30-minute timer, and the primitive's deadline must not undercut it.
+        const res = await upstreamFetch("huggingface", asset.url, { signal: abortController.signal }, { fetchImpl, timeoutMs: 30 * 60_000 });
         if (!res.ok) throw new Error(`download_http_${res.status}`);
         const headerSize = Number(res.headers.get("content-length"));
         if (

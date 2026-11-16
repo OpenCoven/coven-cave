@@ -32,6 +32,8 @@ type ModalProps = {
   ariaLabel?: string;
   /** Description element inside the modal body. */
   ariaDescribedBy?: string;
+  /** Explicit keyboard cycle for dialogs made entirely of standard controls. */
+  cycleTabFocus?: boolean;
   /** Called with the complete backdrop layer once mounted, and null on
    *  unmount. This lets a caller register the whole Modal — including backdrop
    *  presses — with an owning portaled layer such as Popover. */
@@ -50,6 +52,7 @@ export function Modal({
   dismissOnEscape = true,
   ariaLabel,
   ariaDescribedBy,
+  cycleTabFocus = false,
   onLayerElement,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -92,6 +95,7 @@ export function Modal({
     onEscape: dismissOnEscape ? onClose : undefined,
     portalLayers,
     portalRootId: portalLayerRootId,
+    cycleTabFocus,
   });
 
   if (!open || typeof document === "undefined") return null;
