@@ -1,0 +1,7 @@
+{
+  "observedAt": "2026-11-16T01:00:47.802605+00:00",
+  "ownedNodeTestPid": 38272,
+  "signal": "SIGINT",
+  "reason": "First EOF test awaited a probe the unmodified old harness does not call; test timed out and retained IPC child. Corrected test now races teardown completion so finally releases its child.",
+  "productionDaemonSignallingChanged": false
+}

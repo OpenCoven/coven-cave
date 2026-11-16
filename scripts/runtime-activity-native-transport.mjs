@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startCave, stopCave, freePort } from './client-v1-conformance.mjs';
-import { lateWriteRecord, removeFixtureRoot } from './native-harness-teardown.mjs';
+import { lateWriteRecord, observeOwnedProcessExit, removeFixtureRoot } from './native-harness-teardown.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 async function sourceFingerprint() {
@@ -523,13 +523,20 @@ try {
   if (daemonStarted) {
     try {
       native(['daemon', 'stop']);
-      runReport.daemonStopped = true;
-      if (Number.isSafeInteger(runReport.daemon?.pid)) {
-        try { process.kill(runReport.daemon.pid, 0); runReport.daemonStopped = false; }
-        catch (error) { runReport.daemonStopped = error.code === 'ESRCH'; }
-      }
-    } catch { runReport.daemonStopped = false; }
-    if (!runReport.daemonStopped) { runReport.passed = false; process.exitCode = 1; }
+      runReport.daemonStop = { succeeded: true };
+      runReport.daemonExitObservation = await observeOwnedProcessExit(runReport.daemon?.pid);
+    } catch (error) {
+      const detail = { code: typeof error?.code === 'string' ? error.code : 'UNKNOWN',
+        message: (error instanceof Error ? error.message : String(error)).slice(0, 500) };
+      runReport.daemonStop ??= { succeeded: false, error: detail };
+      runReport.daemonExitObservation ??= { disappeared: false,
+        status: runReport.daemonStop.succeeded ? 'observation-error' : 'stop-failed', error: detail };
+    }
+    runReport.daemonStopped = runReport.daemonStop.succeeded && runReport.daemonExitObservation.disappeared;
+    if (!runReport.daemonStopped) {
+      runReport.failure ??= `daemon disappearance not verified: ${runReport.daemonExitObservation.status}`;
+      runReport.passed = false; process.exitCode = 1;
+    }
   }
   // Nothing below may throw out of this finally: a crash here loses
   // result.json for a run whose suite may have passed (#6340).

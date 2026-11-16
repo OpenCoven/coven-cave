@@ -1,0 +1,28 @@
+{
+  "observedAt": "2026-11-16T01:11:11.066463+00:00",
+  "binaries": {
+    "app": {
+      "path": "/private/tmp/nova6064-native-teardown-20261116/native-derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app",
+      "executableSHA256": "1eac98a3a81c3279377d226422c2c550953a7e3606a5c09d469c510394ff4f72",
+      "uuid": "UUID: B07EEE3C-11E9-3B70-A326-6097EA0F7327 (arm64) /private/tmp/nova6064-native-teardown-20261116/native-derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave\n",
+      "version": "0.5.22",
+      "build": "2026111302",
+      "codesignVerifyTerminal": 0,
+      "fileManifest": "app-files-sha256.json"
+    },
+    "runner": {
+      "path": "/private/tmp/nova6064-native-teardown-20261116/native-derived-data/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app",
+      "executableSHA256": "1d06e35377918acd1cfdbc613cb95fa7d2cb991b6ce7e64aabaee1036ee12664",
+      "uuid": "UUID: CC1BBF6E-4DDE-3789-8413-8995F0EAB902 (arm64) /private/tmp/nova6064-native-teardown-20261116/native-derived-data/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner\n",
+      "version": "1.0",
+      "build": "1",
+      "codesignVerifyTerminal": 0,
+      "fileManifest": "runner-files-sha256.json"
+    },
+    "unitDriver": {
+      "path": "/private/tmp/nova6064-native-teardown-20261116/native-derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/PlugIns/CovenCaveTests.xctest/CovenCaveTests",
+      "sha256": "4da176858ed27f822c2fa4e1f48df9904dc53a2d044336b052a18c315d4398d3",
+      "uuid": "UUID: 6F0150E0-46C3-382B-A0C2-3E22C832F746 (arm64) /private/tmp/nova6064-native-teardown-20261116/native-derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/PlugIns/CovenCaveTests.xctest/CovenCaveTests\n"
+    }
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "observedAt": "2026-11-16T01:13:00.162593+00:00",
+  "head": "0bd6f189eb788550e3c2c3cf2ed624f4b2549201",
+  "changedFiles": [
+    "scripts/native-harness-teardown.mjs",
+    "scripts/native-harness-teardown.test.mjs",
+    "scripts/runtime-activity-native-transport.mjs"
+  ],
+  "sourcePatch": "source.patch",
+  "sourceAudit": "final-source-audit.json",
+  "testResults": {
+    "helper-first-red": {
+      "tests": 29,
+      "pass": 9,
+      "fail": 18,
+      "cancelled": 2,
+      "skipped": 0
+    },
+    "helper-corrected-red": {
+      "tests": 28,
+      "pass": 9,
+      "fail": 19,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "helper-first-green": {
+      "tests": 28,
+      "pass": 28,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "non-error-first-red": {
+      "tests": 31,
+      "pass": 29,
+      "fail": 2,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "helper-final-green": {
+      "tests": 31,
+      "pass": 31,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "helper-reviewed-green": {
+      "tests": 31,
+      "pass": 31,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "reviewed-script-contracts": {
+      "tests": 46,
+      "pass": 46,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    }
+  },
+  "firstRedTestLifecycleIssue": "Original IPC integration wait expected a new observer call absent from old code; first timeout/interruption and test root retained. Corrected failure race then independently failed against old canonical missing-PID/EOF behavior.",
+  "firstRedCleanupReceipts": [
+    "helper-first-red-interruption.json",
+    "first-red-process-audit.json",
+    "test-first-failure-root-audit.json"
+  ],
+  "observerContract": "Successful stop and valid recorded positive owned PID; only definitive ESRCH within one monotonic5000ms budget succeeds. Poll interval50ms, no daemon termination signals. All uncertain states preserve fixture.",
+  "canonical": {
+    "command": "tcp-launcher-command.json",
+    "terminal": 0,
+    "result": "tcp-evidence/result.json",
+    "passed": true,
+    "buildId": "I9UBVuj3J-4egKiEKItaT",
+    "sourceBefore": "d9f22db110b4ae92bb71c09c63b2b604ddd16660271f3a79d11df4b6ee2b77d2",
+    "sourceAfter": "d9f22db110b4ae92bb71c09c63b2b604ddd16660271f3a79d11df4b6ee2b77d2",
+    "sourceUnchanged": true,
+    "nativeTotal": 2,
+    "nativePassed": 2,
+    "nativeFailed": 0,
+    "nativeSkipped": 0,
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "providerBoundary": "Controlled local synthetic Hermes API, no real external provider",
+    "daemonStop": {
+      "succeeded": true
+    },
+    "daemonExitObservation": {
+      "pid": 53748,
+      "disappeared": true,
+      "status": "absent",
+      "budgetMs": 5000,
+      "pollIntervalMs": 50,
+      "probes": 1,
+      "elapsedMs": 0.09962500000256114,
+      "error": {
+        "code": "ESRCH",
+        "message": "kill ESRCH"
+      }
+    },
+    "daemonStopped": true,
+    "serverStopped": true,
+    "providerStopped": true,
+    "noDaemonState": true,
+    "fixtureRootRemoved": true,
+    "installedCLI": {
+      "path": "/Users/buns/.nvm/versions/node/v24.22.0/lib/node_modules/@opencoven/cli/node_modules/@opencoven/cli-macos/bin/coven",
+      "sha256": "d8d0d800602cf708d85074c905a55632703aadf2a1f6edcc9ed8f72b063cf684",
+      "version": "coven v0.5.0 (engine coven-code 0.9.0, pinned 0.9.0)",
+      "statSize": 42458400
+    },
+    "nativeIdentities": "native-binary-identities.json",
+    "oneInvocationNoRetry": true,
+    "invocationHOMEAndXDGIsolated": true
+  },
+  "oldCanonicalFailureRetained": true,
+  "originalFailureCauseProven": false,
+  "limit": "This run observed immediate ESRCH, so it does not itself exercise the delayed PID path or establish the original failure cause; deterministic and real owned-child tests cover delayed observation. No product responsiveness/UI/physical-device acceptance.",
+  "cleanup": "final-cleanup.json",
+  "finalOwnedSimulatorState": "Shutdown",
+  "noCommitPushOrImmutablePacketEdit": true,
+  "noFurtherTestsStarted": true
+}
