@@ -218,6 +218,13 @@
       "originalSha256": "cd2b165733d6d58cb80440f368f593e429622c42b247c48c0cd3421603037fe7",
       "packetSha256": "cd2b165733d6d58cb80440f368f593e429622c42b247c48c0cd3421603037fe7",
       "pathTokensApplied": false
+    },
+    {
+      "file": "first-publication-preflight-failure.json",
+      "source": "<raw-evidence>/remaining-qualification/hosted-pan-preparation/first-publication-preflight-failure.json",
+      "originalSha256": "e8679e38a115717847903cc242d07b74ebd13ea4bf4d0d492396d5c2c65dc1e9",
+      "packetSha256": "e8679e38a115717847903cc242d07b74ebd13ea4bf4d0d492396d5c2c65dc1e9",
+      "pathTokensApplied": false
     }
   ]
 }

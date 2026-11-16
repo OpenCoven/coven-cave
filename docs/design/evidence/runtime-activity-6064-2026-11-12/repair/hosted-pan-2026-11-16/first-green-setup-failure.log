@@ -1,0 +1,28 @@
+✔ native command preserves its real exit status and output (53.438125ms)
+✔ timeout waits for owned child finalization and cannot become green (627.834292ms)
+✔ operator interruption drains only the owned command and preserves cancellation (157.363ms)
+✔ frozen evidence survives later movement of xcresult staging files (42.567209ms)
+✔ a second collection cannot overwrite retained evidence (53.656333ms)
+✔ incomplete evidence stays available and fails visibly without following links (40.397542ms)
+✔ transcript workflow owns deadlines and uploads logs separately from frozen results (5.065ms)
+✖ hosted pan marker collection preserves query failures without broadening the selected simulator (1.72925ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 7
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1029.952
+
+✖ failing tests:
+
+test at scripts/ios-native-command.test.mjs:204:7
+✖ hosted pan marker collection preserves query failures without broadening the selected simulator (1.72925ms)
+  TypeError [Error]: Cannot read properties of undefined (reading 'includes')
+      at file://<owned-worktree>/scripts/ios-native-command.test.mjs:209:53
+      at Array.findIndex (<anonymous>)
+      at TestContext.<anonymous> (file://<owned-worktree>/scripts/ios-native-command.test.mjs:209:29)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+      at async file://<owned-worktree>/scripts/ios-native-command.test.mjs:204:1

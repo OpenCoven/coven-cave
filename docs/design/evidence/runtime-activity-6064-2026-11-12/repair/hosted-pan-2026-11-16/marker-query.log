@@ -1,0 +1,5 @@
+Marker query started: 2026-11-16T08:36:20Z
+getpwuid_r did not find a match for uid 501
+Timestamp               Ty Process[PID:TID]
+Native command receipt: {"command": ["xcrun", "simctl", "spawn", "64878DF0-DB73-45A9-8D68-3F22393F7D64", "log", "show", "--style", "compact", "--last", "70m", "--predicate", "process == \"CovenCave\" AND eventMessage CONTAINS \"CAVE_SCROLL_TRACE_WRITE_ERROR\""], "pid": 53450, "elapsedSeconds": 3.1473287499975413, "timedOut": false, "interruptedSignal": null, "terminal": true, "childExitCode": 0, "exitCode": 0, "failure": null}
+Marker query finished: 2026-11-16T08:36:24Z status=0
