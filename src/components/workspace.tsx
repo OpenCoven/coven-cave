@@ -190,6 +190,7 @@ import {
 } from "@/components/lazy-surfaces";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, hasFamiliarSettingsPending, markCovenTabPending, markProjectFocusPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
+import { HomeOverview } from "@/components/home/home-overview";
 import { homeOverviewConnection, type HomeConnectionObservation, type HomeOverviewObservation } from "@/lib/home-overview";
 import { AutoMissionSupervisor } from "@/components/auto-mission-supervisor";
 import { RightChatPanel, type RightChatLaunchRequest, type RightChatPopOutTarget } from "@/components/right-chat-panel";
@@ -340,7 +341,6 @@ function splitTargetRendersMode(target: WorkspacePaneRequest, mode: WorkspaceMod
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
-const HomeOverview = lazy(() => import("./home/home-overview").then((module) => ({ default: module.HomeOverview })));
 const FlowExecutionLink = lazy(() => import("./flow-execution-link").then((module) => ({
   default: module.FlowExecutionLink,
 })));

@@ -2,7 +2,7 @@
 
 ## Current audit — 16 November 2026
 
-Status: incomplete, continuing draft PR #6438. The [current delivery packet](DELIVERY.md) records Val's delegated product decisions, integration with main `ea2f41fbcf618cc80a1b6ab6ce03b912a347ea26`, final production build `dDk6V-_wg8zd9MVjZri81`, tests, review, source binding and first failures. The following requirement-by-requirement audit supersedes the historical status below without reducing the original #6403 scope.
+Status: incomplete, continuing draft PR #6438. The [current delivery packet](DELIVERY.md) records Val's delegated product decisions, integration with main `ea2f41fbcf618cc80a1b6ab6ce03b912a347ea26`, production builds `dDk6V-_wg8zd9MVjZri81` and packaging follow-up `EFY6M3a7gR-UKv-NDFKO3`, tests, review, source binding and first failures. The following requirement-by-requirement audit supersedes the historical status below without reducing the original #6403 scope.
 
 | Original requirement | Current proof | Remaining gate / responsible owner |
 | --- | --- | --- |
@@ -13,6 +13,8 @@ Status: incomplete, continuing draft PR #6438. The [current delivery packet](DEL
 | Redaction before display/cache/copy/export/notifications | Canonical privacy fixes from current main retained exactly; focused cache/conversation tests and full API pass; existing browser sentinels retained; Home stores no tool bodies or raw connection diagnostics | The production HTTP split-secret run checks live/replay/history, lazy output, persisted projection and server logs, including fragmented Unicode; all five HTTP scenarios retain private-sentinel absence checks. Native notifications, real-provider and complete rendered-client privacy acceptance remain with #5761–#5767. No blanket privacy-complete claim follows. |
 | Separate component/producer/browser/native/human/visual evidence | Delivery packet separates each class, exact builds, failed attempts, retries/skips and omissions; draft status retained | No native/device/human/visual sign-off or release/deployment is established. Preserve #6358 and #6200 ownership. |
 | Identity, grants, approvals, provenance, recovery and rollback | Current-main policy/projection/navigation retained; first-use regressions distinguish existing Full project grants from Read new-chat mode; compatibility routes and document-owned drafts remain | Complete installed pairing/revocation and native focus/recovery through T1/T2 owners; #6479 remains separate. No hidden UI, prompt or model text grants authority. |
+
+The packaging follow-up passes the unchanged native runtime budget at the main baseline of 9,041 files. Its release-profile native attempt still captures a blank center despite populated accessibility controls and was aborted before any provider call, with teardown verified. Signing, build and accessibility-tree presence do not establish native rendering or human acceptance.
 
 Val's delegated choices settle the pending layout, duplicate-session presentation, reload warning, static Activity icon and public-source questions. They do not dispose of the remaining acceptance rows. Do not close #6403 or related #6358 items from this local implementation, green fixtures, or planned replacement alone.
 
