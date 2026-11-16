@@ -1,11 +1,14 @@
 "use client";
 
+import "@/styles/thread-signal-launch.css";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { ErrorState } from "@/components/ui/error-state";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { subscribeRightChatFailures, requestAgentsNewChat } from "@/lib/agents-new-chat";
+import { subscribeRightChatFailures } from "@/lib/agents-new-chat";
+import { launchSignalSweep } from "@/lib/signal-sweep-launch";
+import { useSignalSweepAccess } from "@/lib/use-signal-sweep-access";
+import { signalReportScope, signalSweepIdentity } from "@/lib/signal-sweep-identity";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
@@ -69,8 +72,15 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
   const [selectedTile, setSelectedTile] = useState<string | null>(() => weakestTileId(tiles));
   const [openRow, setOpenRow] = useState<string | null>(null);
   const requestedRows = useRef({ reportId: report.id, keys: new Set<string>(), requests: new Map<string, string[]>() });
+  const pendingFailures = useRef<Map<string, string> | null>(null);
   const [launchRequested, setLaunchRequested] = useState<Set<string>>(() => new Set());
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const access = useSignalSweepAccess(report.familiarId);
+  const [launchPending, setLaunchPending] = useState(false);
+  const [lastTargets, setLastTargets] = useState<ThreadSignalRow[]>([]);
+  const liveReport = useRef<string | null>(report.id);
+  liveReport.current = report.id;
+  useEffect(() => { liveReport.current = report.id; return () => { liveReport.current = null; }; }, [report.id]);
   const [tasked, setTasked] = useState<Set<string>>(() => new Set());
   const [taskPending, setTaskPending] = useState<Set<string>>(() => new Set());
   const [dismissed, setDismissed] = useState(false);
@@ -89,6 +99,9 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
     setOpenRow(null);
     setLaunchError(null);
     setLaunchRequested(new Set());
+    setLaunchPending(false);
+    setLastTargets([]);
+    pendingFailures.current = null;
     setTasked(new Set());
     setTaskPending(new Set());
     setDismissed(false);
@@ -116,7 +129,13 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
     return subscribeRightChatFailures((detail) => {
       if (!detail || requestedRows.current.reportId !== report.id) return;
       const keys = requestedRows.current.requests.get(detail.requestId);
-      if (!keys) return;
+      if (!keys) {
+        // The workspace can refuse asynchronously while the shared launcher
+        // still awaits its receipt commit. Correlate that early failure once
+        // the handoff returns, without surfacing another request's error.
+        if (pendingFailures.current && pendingFailures.current.size < 100) pendingFailures.current.set(detail.requestId, detail.error);
+        return;
+      }
       requestedRows.current.requests.delete(detail.requestId);
       for (const key of keys) requestedRows.current.keys.delete(key);
       setLaunchRequested(new Set(requestedRows.current.keys));
@@ -130,35 +149,37 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
   const warnings = rows.filter((row) => row.severity === "warning").length;
 
   const launch = useCallback(
-    (targets: ThreadSignalRow[], label: string) => {
+    async (targets: ThreadSignalRow[], label: string, retry = false) => {
+      if (!access.available || launchPending) return;
       if (requestedRows.current.reportId !== report.id) requestedRows.current = { reportId: report.id, keys: new Set(), requests: new Map() };
-      targets = targets.filter((row) => !requestedRows.current.keys.has(rowKey(row)));
+      targets = targets.filter((row) => retry || !requestedRows.current.keys.has(rowKey(row)));
       if (targets.length === 0) return;
-      const prompt =
-        targets.length === 1
-          ? buildThreadSignalResolutionPrompt(targets[0])
-          : buildThreadSignalBatchResolutionPrompt(targets);
-      const requestId = crypto.randomUUID();
+      setLaunchPending(true);
+      pendingFailures.current = new Map();
+      setLastTargets(targets);
       // A report without a linkable thread (stored while the id was redacted)
       // opens in the current workspace project rather than failing the lookup.
       const sourceSessionId = selfReportSourceSessionId(report);
-      const result = requestAgentsNewChat({
-        requestId,
+      const result = await launchSignalSweep(report.familiarId, targets, {
         destination: "right-panel",
-        familiarId: report.familiarId,
         ...(sourceSessionId ? { sourceSessionId } : {}),
-        initialPrompt: `${prompt}\n\nSource: ${selfReportSourceLabel(report)}.`,
         origin: "chat" as const,
-      });
-      if (result.ok) {
-        requestedRows.current.requests.set(requestId, targets.map(rowKey));
-        for (const row of targets) requestedRows.current.keys.add(rowKey(row));
+      }, (accepted) => `${accepted.length === 1 ? buildThreadSignalResolutionPrompt(accepted[0]) : buildThreadSignalBatchResolutionPrompt(accepted)}\n\nSource: ${selfReportSourceLabel(report)}.`, retry, () => liveReport.current === report.id, signalReportScope(report), report.id);
+      if (liveReport.current !== report.id) return;
+      const earlyError = result.requestId ? pendingFailures.current?.get(result.requestId) : undefined;
+      pendingFailures.current = null;
+      setLaunchPending(false);
+      if (result.ok && result.requestId && !earlyError) {
+        const keys = targets.filter((row) => result.accepted?.includes(signalSweepIdentity(row, signalReportScope(report)))).map(rowKey);
+        requestedRows.current.requests.set(result.requestId, keys);
+        for (const key of keys) requestedRows.current.keys.add(key);
         setLaunchRequested(new Set(requestedRows.current.keys));
       }
-      setLaunchError(result.ok ? null : result.error);
-      announce(result.ok ? label : result.error, result.ok ? "polite" : "assertive");
+      const error = earlyError ?? (result.ok ? null : result.error);
+      setLaunchError(error);
+      announce(error ?? label, error ? "assertive" : "polite");
     },
-    [announce, report],
+    [access.available, announce, launchPending, report],
   );
 
   const createTask = useCallback(
@@ -233,7 +254,18 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
       className={`tsc-card${rows.length === 0 ? " tsc-card--no-signals" : ""}${selected ? "" : " tsc-card--no-detail"}`}
       aria-label="Thread Signal"
     >
-      {launchError ? <ErrorState compact headline="Couldn't open the Chat panel" subtitle={launchError} /> : null}
+      <div className="tsc-launch-status">
+        {access.checking ? <p role="status">Checking signal fix access…</p> : !access.available ? (
+          <>
+          <p role="alert"><strong>Signal fix unavailable. </strong>{access.error}</p>
+          <Button size="xs" variant="secondary" onClick={() => void access.refresh()}>Check again</Button>
+          </>
+        ) : <p>Signal fixes start in Build. Project access is checked again before sending.</p>}
+      {launchError ? <p role="alert">{launchError}</p> : null}
+      {access.available && lastTargets.length > 0 && (launchError || launchRequested.size > 0) ? (
+        <Button size="xs" variant="secondary" loading={launchPending} onClick={() => void launch(lastTargets, "Requested a signal fix after changes.", true)}>Retry fix after changes</Button>
+      ) : null}
+      </div>
       <div className="tsc-head">
         <span className={`tsc-ring tsc-tone--${compositeTone(score)}`}>
           <svg width="34" height="34" viewBox="0 0 36 36" aria-hidden focusable="false">
@@ -362,10 +394,10 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
                             size="xs"
                             variant="secondary"
                             leadingIcon="ph:lightning-fill"
-                            disabled={launchRequested.has(rowKey(row))}
+                            disabled={!access.available || launchPending || launchRequested.has(rowKey(row))}
                             onClick={() => launch([row], `Requested a Chat panel thread to fix ${row.title}.`)}
                           >
-                            Fix in new thread
+                            Fix in Build
                         </Button>
                         <Button
                           size="xs"
@@ -405,6 +437,7 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
           <Button
             size="sm"
             variant="primary"
+            disabled={!access.available || launchPending}
             leadingIcon="ph:lightning-fill"
             onClick={() =>
               launch(
@@ -416,8 +449,8 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss, onOpenDailyNot
             }
           >
             {openCriticals.length === 1
-              ? "Fix 1 critical in one thread"
-              : `Fix ${openCriticals.length} critical in one thread`}
+              ? "Fix 1 critical in Build"
+              : `Fix ${openCriticals.length} critical in Build`}
           </Button>
         ) : null}
       </div>

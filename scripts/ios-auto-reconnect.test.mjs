@@ -240,8 +240,8 @@ assert.ok(
 );
 assert.match(
   streamImplementation,
-  /client\.sendStream\(\s*\n\s*body,\s*\n\s*preflight: \{ liveDispatchLeaseIsCurrent\?\(\) \?\? true \},[\s\S]{0,260}onRequestStarted:[\s\S]{0,260}ChatTurnNotifier\.shared\.turnStarted/,
-  "the actual deferred POST task owns the final lease check and only then announces a started turn",
+  /client\.sendStream\(\s*\n\s*body,\s*\n\s*preflight: \{ !self\.isAccessRevoked && \(liveDispatchLeaseIsCurrent\?\(\) \?\? true\) \},[\s\S]{0,260}onRequestStarted:[\s\S]{0,260}ChatTurnNotifier\.shared\.turnStarted/,
+  "the actual deferred POST task requires both an unrevoked thread and the final connection lease check before announcing a started turn",
 );
 assert.match(
   streamImplementation,

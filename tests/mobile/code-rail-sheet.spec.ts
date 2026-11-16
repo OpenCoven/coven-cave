@@ -33,6 +33,8 @@ const REPO_SESSION = {
 async function base(page: Page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
+    // This list fixture explicitly browses all projects using the shared scope.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:code-rail:pinned:v1", "false");

@@ -12,13 +12,16 @@ const ISO = "2026-10-15T10:00:00.000Z";
 const ROOT = "/Users/dev/Documents/GitHub/OpenCoven/coven-cave";
 const session = (id: string, title: string) => ({
   id, title, status: "idle", project_root: ROOT, harness: "codex", familiarId: "nova", model: "openai/gpt-6-astra",
-  runtime: `local:${ROOT}`, exit_code: null, archived_at: null, created_at: ISO, updated_at: ISO,
+  runtime: `local:${ROOT}`, exit_code: null, archived_at: null,
+  attention: { state: "none", since: null, reason: null }, created_at: ISO, updated_at: ISO,
 });
 const SESSIONS = [session("s-alpha", "Alpha planning thread"), session("s-beta", "Beta review thread")];
 
 async function setup(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem("cave:active-familiar", "nova");
+    // Both split candidates must stay visible across projects.
+    localStorage.setItem("cave:workspace:project-scope:v1", "null");
     localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");

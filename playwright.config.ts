@@ -80,7 +80,7 @@ const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
 // on phones as well as desktop. private-state-access joins too (#6451): the
 // grant flags and Chat's Open projects action must work at phone width.
 const MOBILE_SURFACE_SPECS =
-  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore|first-use-journey|private-state-access)\.spec\.ts/;
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance|composer-environment-popover|history-state-restore|first-use-journey|private-state-access|signal-sweep-recovery)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 
