@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 // These journeys mock API responses, including after a full navigation.
 // A production service worker would otherwise bypass those browser routes.
@@ -43,6 +44,9 @@ async function seed(page: Page, active = true) {
       source: "runtime-default", applicationState: "saved", reason: "e2e",
     } },
   }));
+  await installCompletedFirstUse(page, active
+    ? { project: PROJECT, familiarIds: ["nova"], actingFamiliarId: "nova", permissionMode: "full", seedWorkspaceScope: true }
+    : { project: PROJECT, familiarIds: ["former-familiar"], actingFamiliarId: "former-familiar", repairReason: "familiar" });
 }
 
 test("Home names Chat and Task actions and preserves the draft across selection and reload", async ({ page }) => {

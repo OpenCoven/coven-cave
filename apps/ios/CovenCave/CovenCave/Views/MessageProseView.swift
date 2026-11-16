@@ -9,6 +9,9 @@ struct MessageProseView: View {
     var isLast: Bool = false
     var preferNativePlainText = false
     var deferOffscreenMarkdown = false
+    /// Historical messages retain lightweight geometry, including for
+    /// VoiceOver; their WebKit content mounts when the message approaches.
+    var deferOffscreenMessage = false
     var onOpenReader: ((String) -> Void)? = nil
     var onContentHeightChange: (() -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
@@ -23,19 +26,32 @@ struct MessageProseView: View {
     var body: some View {
         bubble(projection)
             .onGeometryChange(for: Bool.self) { geometry in
-                guard deferOffscreenMarkdown, let viewport = geometry.bounds(of: .scrollView) else { return true }
-                // Prefetch one viewport on either side. Report only crossings,
-                // not a state mutation for every scrolling pixel.
-                return CGRect(origin: .zero, size: geometry.size)
-                    .intersects(viewport.insetBy(dx: 0, dy: -viewport.height))
+                guard deferOffscreenMarkdown || deferOffscreenMessage else { return true }
+                // Unknown bounds are not evidence that history is visible.
+                return ChatResourceViewport.isNearby(size: geometry.size,
+                    viewport: geometry.bounds(of: .scrollView))
             } action: { isNearViewport = $0 }
             .onChange(of: keepsMarkdownMounted) { _, mounted in
                 if !mounted { markdownReady = false }
+                #if DEBUG
+                ChatScrollTrace.shared.note("markdownMount \(message.id) mounted=\(mounted) height=\(Int(mdHeight.rounded()))")
+                #endif
             }
     }
 
     private var keepsMarkdownMounted: Bool {
-        !deferOffscreenMarkdown || message.streaming || voiceOverEnabled || isNearViewport
+        Self.shouldMountMarkdown(historical: deferOffscreenMessage, deferredSpan: deferOffscreenMarkdown,
+                                 streaming: message.streaming, voiceOver: voiceOverEnabled, nearby: isNearViewport)
+    }
+
+    nonisolated static func shouldMountMarkdown(historical: Bool, deferredSpan: Bool,
+                                    streaming: Bool, voiceOver: Bool, nearby: Bool) -> Bool {
+        if streaming || nearby { return true }
+        // Offscreen history remains accessible as the full native-text
+        // placeholder. Loading every historical WebView under VoiceOver would
+        // defeat virtualization; nearby messages still expose rich semantics.
+        if historical { return false }
+        return !deferredSpan || voiceOver
     }
 
     private var measuredHeight: Binding<CGFloat> {
@@ -150,6 +166,9 @@ struct MessageProseView: View {
             .buttonStyle(.plain)
             .padding(6)
             .accessibilityLabel("Open response in reader")
+            // Preserve the real reader action identity when the message owns
+            // an explicit accessibility container instead of inheriting IDs.
+            .accessibilityIdentifier("Message bubble \(message.id)")
         }
     }
 

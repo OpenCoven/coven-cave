@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { seedFirstProjectGate } from "./fixtures/first-project-gate";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 // Home before the first familiar or project exists (#5982). Daemon-less:
 // every route is mocked, so these journeys run on CI's E2E path.
@@ -7,6 +8,12 @@ test.use({ serviceWorkers: "block" });
 
 test.describe("home before the first familiar", () => {
   test.describe.configure({ timeout: 120_000 });
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("cave:workspace:project-scope:v1", "null");
+      localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [] }));
+    });
+  });
 
   test("zero familiars: Home offers Summon a familiar and opens the Summoning circle", async ({ page }) => {
     await page.context().addCookies([
@@ -18,6 +25,7 @@ test.describe("home before the first familiar", () => {
     await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars: [] } }));
     await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [] } }));
     await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+    await installCompletedFirstUse(page, { project: { id: "removed-home-project", name: "Previous project", root: "/tmp/removed-home-project" }, familiarIds: ["former-familiar"], actingFamiliarId: "former-familiar", repairReason: "project" });
     await page.goto("/?mode=home");
 
     const summon = page.getByRole("button", { name: "Summon a familiar", exact: true });
@@ -38,6 +46,7 @@ test.describe("home before the first familiar", () => {
 
   test("one familiar, none active, no project: sending opens the first-project gate", async ({ page }) => {
     await seedFirstProjectGate(page, { activeFamiliar: false });
+    await installCompletedFirstUse(page, { project: { id: "removed-home-project", name: "Previous project", root: "/tmp/removed-home-project" }, familiarIds: ["cody"], actingFamiliarId: "cody", repairReason: "project" });
     await page.goto("/?mode=home");
 
     const composer = page.getByRole("textbox", { name: "Chat message" });

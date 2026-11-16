@@ -47,7 +47,10 @@ assert.match(messageBubble, /onOpenReader: message\.streaming \? nil : onOpenRea
 assert.match(messageBubble, /let display = ChatActivityTimeline\.collapsingRepeats\(timeline\)\s*ForEach\(display\)/,
   "timeline entries keep stable identities and mounted geometry");
 assert.match(messageBubble, /deferOffscreenMarkdown: !isTail/, "the tail renderer stays mounted for viewport recovery");
-assert.match(messageProse, /!deferOffscreenMarkdown \|\| message\.streaming \|\| voiceOverEnabled \|\| isNearViewport/, "streaming, VoiceOver and nearby prose keep rich rendering");
+assert.equal((messageBubble.match(/deferOffscreenMessage: !isLast/g) ?? []).length, 2,
+  "historical message tails and unsegmented replies must also defer offscreen WebKit");
+assert.match(messageProse, /Self\.shouldMountMarkdown\(historical: deferOffscreenMessage/,
+  "whole-message and within-message mounting must use the tested rendering policy");
 assert.match(messageProse, /@State private var mdHeight/, "each prose span owns its measured WebView height");
 assert.doesNotMatch(messageBubble, /@State private var mdHeight/, "segmented prose cannot share one height binding");
 

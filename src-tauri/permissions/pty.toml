@@ -74,6 +74,11 @@ description = "Allows opening a URL in the system browser."
 commands.allow = ["shell_open"]
 
 [[permission]]
+identifier = "allow-shell-reveal-path"
+description = "Allows showing an existing local file or folder in the system file manager, without opening the file."
+commands.allow = ["shell_reveal_path"]
+
+[[permission]]
 identifier = "allow-open-x-oauth-url"
 description = "Allows opening only a validated X OAuth authorization URL."
 commands.allow = ["open_x_oauth_url"]
@@ -82,6 +87,11 @@ commands.allow = ["open_x_oauth_url"]
 identifier = "allow-set-traffic-lights-visible"
 description = "Allows trusted app chrome to synchronize macOS traffic-light visibility with the navigation rail."
 commands.allow = ["set_traffic_lights_visible"]
+
+[[permission]]
+identifier = "allow-open-chat-window"
+description = "Allows the trusted main app webview to pop its Chat panel out into the detached Chat window."
+commands.allow = ["open_chat_window"]
 
 [[permission]]
 identifier = "allow-browser-report-title"

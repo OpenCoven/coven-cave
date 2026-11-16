@@ -941,11 +941,21 @@ fn load_or_create_instance_id(root: &Path) -> Result<String, String> {
     Ok(instance_id)
 }
 
+// Keep the installed application's existing credential stable. Alternate
+// bundles have separate data directories and must not rotate or share its key.
+fn cache_keychain_service(application_id: &str) -> String {
+    if application_id == "ai.opencoven.cave" {
+        KEYCHAIN_SERVICE.to_string()
+    } else {
+        format!("{KEYCHAIN_SERVICE}:{application_id}")
+    }
+}
+
 /// The root secret lives only in the OS keychain. A value we cannot read back
 /// as 32 bytes is replaced rather than repaired, and the caller purges the
 /// cache so nothing is left encrypted under a key that no longer exists.
-fn keychain_secret() -> Result<(Zeroizing<[u8; KEY_BYTES]>, bool), String> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+fn keychain_secret(service: &str) -> Result<(Zeroizing<[u8; KEY_BYTES]>, bool), String> {
+    let entry = keyring::Entry::new(service, KEYCHAIN_ACCOUNT)
         .map_err(|_| "the offline cache keychain entry is unavailable".to_string())?;
     // Both hex forms of the root secret are held in `Zeroizing`: the one the
     // keychain hands back and the one written to it. They are the plaintext
@@ -996,6 +1006,7 @@ fn new_secret() -> Zeroizing<[u8; KEY_BYTES]> {
 #[derive(Default)]
 struct OfflineCacheInner {
     directory: Option<PathBuf>,
+    keychain_service: Option<String>,
     context: Option<OfflineCacheContext>,
 }
 
@@ -1009,11 +1020,12 @@ pub(super) struct OfflineCacheState {
 }
 
 impl OfflineCacheState {
-    pub(super) fn configure(&self, app_local_data_dir: PathBuf) {
+    pub(super) fn configure(&self, app_local_data_dir: PathBuf, application_id: &str) {
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
         inner.directory = Some(app_local_data_dir.join(OFFLINE_CACHE_DIR));
+        inner.keychain_service = Some(cache_keychain_service(application_id));
         inner.context = None;
     }
 
@@ -1050,7 +1062,11 @@ impl OfflineCacheState {
             std::fs::create_dir_all(&root)
                 .map_err(|_| "could not create the offline cache directory".to_string())?;
             let instance_id = load_or_create_instance_id(&root)?;
-            let (secret, rotated) = keychain_secret()?;
+            let service = inner
+                .keychain_service
+                .as_deref()
+                .ok_or_else(|| "the offline cache is not configured".to_string())?;
+            let (secret, rotated) = keychain_secret(service)?;
             let context = OfflineCacheContext {
                 root,
                 instance_id,
@@ -1162,6 +1178,54 @@ mod tests {
     use sha2::Digest;
 
     static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn qualification_cache_uses_its_own_keychain_service() {
+        let first = OfflineCacheState::default();
+        first.configure(
+            PathBuf::from("qualification-a"),
+            "ai.opencoven.cave.qualification.a",
+        );
+        let first_service = first
+            .inner
+            .lock()
+            .unwrap()
+            .keychain_service
+            .clone()
+            .unwrap();
+        assert_ne!(
+            first_service, KEYCHAIN_SERVICE,
+            "qualification must never select the production credential"
+        );
+        let second = OfflineCacheState::default();
+        second.configure(
+            PathBuf::from("qualification-b"),
+            "ai.opencoven.cave.qualification.b",
+        );
+        let second_service = second
+            .inner
+            .lock()
+            .unwrap()
+            .keychain_service
+            .clone()
+            .unwrap();
+        assert_ne!(
+            first_service, second_service,
+            "alternate bundles must not share cache credentials"
+        );
+    }
+
+    #[test]
+    fn production_cache_keeps_its_existing_keychain_service() {
+        let state = OfflineCacheState::default();
+        state.configure(PathBuf::from("production"), "ai.opencoven.cave");
+        assert_eq!(
+            state.inner.lock().unwrap().keychain_service.as_deref(),
+            Some(KEYCHAIN_SERVICE)
+        );
+        assert_eq!(KEYCHAIN_ACCOUNT, "offline-cache-root-key-v1");
+    }
+
 
     fn test_root(name: &str) -> PathBuf {
         let id = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);

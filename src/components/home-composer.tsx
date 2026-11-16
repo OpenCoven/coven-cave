@@ -935,8 +935,6 @@ export function HomeComposer({
 
   return (
     <div className="home-composer-root" data-overview={overview ? true : undefined}>
-      {overview}
-
       {/* The hearth card (chat revamp 1a): one centered panel holding the
           greeting, the composer, and the resume/work/snippet sections. */}
       <div className="home-hearth-card">
@@ -1415,6 +1413,8 @@ export function HomeComposer({
       {taskOrigin ? (
         <HomeFromTaskRow origin={taskOrigin} onPickSuggestion={insertPrompt} />
       ) : null}
+
+      {overview}
 
       {/* "Continue where you left off" (reference parity 2026-07-22): up to
           three recent resumable sessions as horizontal cards. Only on a blank

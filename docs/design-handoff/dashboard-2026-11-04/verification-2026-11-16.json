@@ -1,0 +1,988 @@
+{
+  "schemaVersion": 1,
+  "issue": 6403,
+  "originalPrHead": "94c90e7f34873fb8e2ba4825028024bdfef9d491",
+  "integratedMain": "ea2f41fbcf618cc80a1b6ab6ce03b912a347ea26",
+  "buildId": "dDk6V-_wg8zd9MVjZri81",
+  "sourceTupleSha256": "cefa7645a092c88bc92097186c9bd1734f3ef9b5b0611b30231fe28d053aa8aa",
+  "app": {
+    "filesPassed": 1528,
+    "nativeSupervisorCasesSkipped": 2
+  },
+  "api": {
+    "filesPassed": 625,
+    "skipped": 0
+  },
+  "browser": {
+    "homeActivityPassed": 55,
+    "retainedAndModePassed": 37,
+    "retries": 0,
+    "skipped": 0
+  },
+  "productionHttp": [
+    {
+      "schemaVersion": 1,
+      "scenario": "hermes-durable-effect-split-secrets",
+      "buildId": "dDk6V-_wg8zd9MVjZri81",
+      "passed": true,
+      "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
+      "host": {
+        "node": "v24.22.0",
+        "platform": "darwin",
+        "architecture": "arm64"
+      },
+      "options": {
+        "includeExpiry": false,
+        "ringEviction": false,
+        "persistenceFailure": false,
+        "splitSecrets": true,
+        "parallelCalls": false,
+        "cancelAfterEffect": false
+      },
+      "covenVersion": "coven v0.5.0 (engine coven-code 0.9.1, pinned 0.9.0)",
+      "sourceHashes": {
+        "scripts/runtime-activity-effect-recovery.mjs": "a9b9b411eefff203f35440b78d8242f5604b18a1694cb1fda40b4662ac977a0f",
+        "scripts/runtime-activity-access-probes.mjs": "0ffc42cc8e0fc5390986bf7d996e0e90319dc38b559c221e60c5abc3720e24ef",
+        "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+        "scripts/runtime-activity-effect-counter.test.mjs": "3ae3a911d278a5fe8f8791043e9a132e92d52ebc5aec20abc9e06f76623b947a",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json": "5d3b65362b74858f28607099f45c8b1ae0e8bdf6654d368de03a27974bc58589",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json": "0731688a457b7e178dc7d4cc60995d79f5f3a28a9a41671bc02f32e19ba8f32c",
+        "src/app/api/chat/send/route.ts": "f9590404f631a3a410c80bb5c8785052ddc58f947f63a0e7970ac4590c465d08",
+        "src/lib/chat-tool-events.ts": "9f70857b6d9c4a18633aef8a017dab5b9534ec555ce1aebf34e7c6ba2fab50df",
+        "src/lib/hermes-responses-stream.ts": "cca8ba3476adb946afa2da4ce79a671487fd42987dec3ce2067d1ea9b585fb0f"
+      },
+      "checkpoints": [
+        {
+          "label": "transport drop before effect",
+          "counter": 0
+        },
+        {
+          "label": "effect after initial transport drop",
+          "counter": 1
+        },
+        {
+          "label": "transport drop after effect and final replay",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 0",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 1",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 2",
+          "counter": 1
+        },
+        {
+          "label": "server restart: ring absent, authorized history readable",
+          "counter": 1
+        },
+        {
+          "label": "final qualification counter after independent negative control",
+          "counter": 1
+        }
+      ],
+      "providerRequests": 1,
+      "uniqueDurableInvocationIds": 1,
+      "managedAccess": {
+        "classification": "Production HTTP device gateway with controlled external peer inventory; not physical Tailscale ingress or per-project delegation.",
+        "reads": [
+          {
+            "surface": "/api/chat/stream",
+            "status": 403
+          },
+          {
+            "surface": "/api/chat/conversation/:id",
+            "status": 403
+          },
+          {
+            "surface": "/api/chat/conversation/:id/tool-output",
+            "status": 403
+          }
+        ],
+        "activeStreamClosedOnRevocation": true
+      },
+      "negativeReadCredentials": [
+        {
+          "label": "finished-ring-retained",
+          "surface": "reconnect",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "reconnect",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "history",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "history",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "tool-output",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "tool-output",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "reconnect",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "reconnect",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "history",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "history",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "tool-output",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "tool-output",
+          "credential": "invalid",
+          "status": 403
+        }
+      ],
+      "historyNegativeControls": {
+        "missingConversationRejected": true,
+        "wrongAnswerRejected": true
+      },
+      "inputSnapshotNegativeControls": {
+        "missingRejected": true,
+        "partialRejected": true,
+        "unsafeRejected": true
+      },
+      "completeSafeInputSnapshots": 3,
+      "finishedBufferExpiryVerified": false,
+      "disclosureSurfaces": {
+        "providerWriteChunkBytes": 7,
+        "providerUtf8SplitBoundaries": 2,
+        "argumentDeltaCharacters": 1,
+        "liveReplayAndHistoryChecked": true,
+        "lazyOutputChecked": true,
+        "rawPersistedConversationChecked": true,
+        "serverLogBytesChecked": 275,
+        "knownDaemonLogBytesChecked": 0,
+        "rawPayloadRetained": false
+      },
+      "negativeControl": {
+        "secondRealInvocationDetected": true,
+        "counter": 2
+      },
+      "privateSentinelsAbsentFromRecoveryAndHistory": true,
+      "exactPersistedAssistantAndActivityRecovered": true,
+      "serverStopped": true,
+      "daemonStopped": true,
+      "fixtureRootRemoved": true,
+      "omissions": [
+        "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
+        "Coven-specific state is isolated; HOME is unchanged.",
+        "Physical remote ingress, per-project delegated authority and process-crash durability remain unverified; managed device revocation uses a controlled external peer inventory.",
+        "Ring eviction not run; use --ring-eviction.",
+        "Persistence failure not injected; use --persistence-failure separately.",
+        "Finished buffer expiration not run; use --include-expiry."
+      ],
+      "rawReportSha256": "2e1eeadf6ef86a4e74af67e68eacaa573fba254018058f675b1b45e038d5cee3",
+      "localEvidenceDirectory": "http-split-secrets"
+    },
+    {
+      "schemaVersion": 1,
+      "scenario": "hermes-durable-effect-parallel-reordered-results",
+      "buildId": "dDk6V-_wg8zd9MVjZri81",
+      "passed": true,
+      "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
+      "host": {
+        "node": "v24.22.0",
+        "platform": "darwin",
+        "architecture": "arm64"
+      },
+      "options": {
+        "includeExpiry": false,
+        "ringEviction": false,
+        "persistenceFailure": false,
+        "splitSecrets": false,
+        "parallelCalls": true,
+        "cancelAfterEffect": false
+      },
+      "covenVersion": "coven v0.5.0 (engine coven-code 0.9.1, pinned 0.9.0)",
+      "sourceHashes": {
+        "scripts/runtime-activity-effect-recovery.mjs": "a9b9b411eefff203f35440b78d8242f5604b18a1694cb1fda40b4662ac977a0f",
+        "scripts/runtime-activity-access-probes.mjs": "0ffc42cc8e0fc5390986bf7d996e0e90319dc38b559c221e60c5abc3720e24ef",
+        "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+        "scripts/runtime-activity-effect-counter.test.mjs": "3ae3a911d278a5fe8f8791043e9a132e92d52ebc5aec20abc9e06f76623b947a",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json": "5d3b65362b74858f28607099f45c8b1ae0e8bdf6654d368de03a27974bc58589",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json": "0731688a457b7e178dc7d4cc60995d79f5f3a28a9a41671bc02f32e19ba8f32c",
+        "src/app/api/chat/send/route.ts": "f9590404f631a3a410c80bb5c8785052ddc58f947f63a0e7970ac4590c465d08",
+        "src/lib/chat-tool-events.ts": "9f70857b6d9c4a18633aef8a017dab5b9534ec555ce1aebf34e7c6ba2fab50df",
+        "src/lib/hermes-responses-stream.ts": "cca8ba3476adb946afa2da4ce79a671487fd42987dec3ce2067d1ea9b585fb0f"
+      },
+      "checkpoints": [
+        {
+          "label": "transport drop before effect",
+          "counter": 0
+        },
+        {
+          "label": "effect after initial transport drop",
+          "counter": 3
+        },
+        {
+          "label": "transport drop after effect and final replay",
+          "counter": 3
+        },
+        {
+          "label": "repeat replay/history 0",
+          "counter": 3
+        },
+        {
+          "label": "repeat replay/history 1",
+          "counter": 3
+        },
+        {
+          "label": "repeat replay/history 2",
+          "counter": 3
+        },
+        {
+          "label": "server restart: ring absent, authorized history readable",
+          "counter": 3
+        },
+        {
+          "label": "final qualification counter after independent negative control",
+          "counter": 3
+        }
+      ],
+      "providerRequests": 1,
+      "uniqueDurableInvocationIds": 3,
+      "managedAccess": {
+        "classification": "Production HTTP device gateway with controlled external peer inventory; not physical Tailscale ingress or per-project delegation.",
+        "reads": [
+          {
+            "surface": "/api/chat/stream",
+            "status": 403
+          },
+          {
+            "surface": "/api/chat/conversation/:id",
+            "status": 403
+          },
+          {
+            "surface": "/api/chat/conversation/:id/tool-output",
+            "status": 403
+          }
+        ],
+        "activeStreamClosedOnRevocation": true
+      },
+      "negativeReadCredentials": [
+        {
+          "label": "finished-ring-retained",
+          "surface": "reconnect",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "reconnect",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "history",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "history",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "tool-output",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "tool-output",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "reconnect",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "reconnect",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "history",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "history",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "tool-output",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "tool-output",
+          "credential": "invalid",
+          "status": 403
+        }
+      ],
+      "historyNegativeControls": {
+        "missingConversationRejected": true,
+        "wrongAnswerRejected": true
+      },
+      "finishedBufferExpiryVerified": false,
+      "negativeControl": {
+        "secondRealInvocationDetected": true,
+        "counter": 2
+      },
+      "privateSentinelsAbsentFromRecoveryAndHistory": true,
+      "exactPersistedAssistantAndActivityRecovered": true,
+      "serverStopped": true,
+      "daemonStopped": true,
+      "fixtureRootRemoved": true,
+      "omissions": [
+        "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
+        "Coven-specific state is isolated; HOME is unchanged.",
+        "Physical remote ingress, per-project delegated authority and process-crash durability remain unverified; managed device revocation uses a controlled external peer inventory.",
+        "Ring eviction not run; use --ring-eviction.",
+        "Persistence failure not injected; use --persistence-failure separately.",
+        "Finished buffer expiration not run; use --include-expiry."
+      ],
+      "rawReportSha256": "e7579d1d84994fa63cf3a6a2dc79ca3faf6aed583f31dd71f3f38cc80e5689db",
+      "localEvidenceDirectory": "http-parallel"
+    },
+    {
+      "schemaVersion": 1,
+      "scenario": "hermes-durable-effect-persistence-failure",
+      "buildId": "dDk6V-_wg8zd9MVjZri81",
+      "passed": true,
+      "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
+      "host": {
+        "node": "v24.22.0",
+        "platform": "darwin",
+        "architecture": "arm64"
+      },
+      "options": {
+        "includeExpiry": false,
+        "ringEviction": false,
+        "persistenceFailure": true,
+        "splitSecrets": false,
+        "parallelCalls": false,
+        "cancelAfterEffect": false
+      },
+      "covenVersion": "coven v0.5.0 (engine coven-code 0.9.1, pinned 0.9.0)",
+      "sourceHashes": {
+        "scripts/runtime-activity-effect-recovery.mjs": "a9b9b411eefff203f35440b78d8242f5604b18a1694cb1fda40b4662ac977a0f",
+        "scripts/runtime-activity-access-probes.mjs": "0ffc42cc8e0fc5390986bf7d996e0e90319dc38b559c221e60c5abc3720e24ef",
+        "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+        "scripts/runtime-activity-effect-counter.test.mjs": "3ae3a911d278a5fe8f8791043e9a132e92d52ebc5aec20abc9e06f76623b947a",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json": "5d3b65362b74858f28607099f45c8b1ae0e8bdf6654d368de03a27974bc58589",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json": "0731688a457b7e178dc7d4cc60995d79f5f3a28a9a41671bc02f32e19ba8f32c",
+        "src/app/api/chat/send/route.ts": "f9590404f631a3a410c80bb5c8785052ddc58f947f63a0e7970ac4590c465d08",
+        "src/lib/chat-tool-events.ts": "9f70857b6d9c4a18633aef8a017dab5b9534ec555ce1aebf34e7c6ba2fab50df",
+        "src/lib/hermes-responses-stream.ts": "cca8ba3476adb946afa2da4ce79a671487fd42987dec3ce2067d1ea9b585fb0f"
+      },
+      "checkpoints": [
+        {
+          "label": "transport drop before effect",
+          "counter": 0
+        },
+        {
+          "label": "effect after initial transport drop",
+          "counter": 1
+        },
+        {
+          "label": "transport drop after effect and final replay",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 0",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 1",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 2",
+          "counter": 1
+        },
+        {
+          "label": "server restart: ring absent, authorized history readable",
+          "counter": 1
+        },
+        {
+          "label": "final qualification counter after independent negative control",
+          "counter": 1
+        }
+      ],
+      "providerRequests": 1,
+      "uniqueDurableInvocationIds": 1,
+      "managedAccess": {
+        "classification": "Production HTTP device gateway with controlled external peer inventory; not physical Tailscale ingress or per-project delegation.",
+        "reads": [
+          {
+            "surface": "/api/chat/stream",
+            "status": 403
+          },
+          {
+            "surface": "/api/chat/conversation/:id",
+            "status": 403
+          },
+          {
+            "surface": "/api/chat/conversation/:id/tool-output",
+            "status": 403
+          }
+        ],
+        "activeStreamClosedOnRevocation": true
+      },
+      "negativeReadCredentials": [
+        {
+          "label": "finished-ring-retained",
+          "surface": "reconnect",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "reconnect",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "history",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "history",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "tool-output",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "tool-output",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "reconnect",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "reconnect",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "history",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "history",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "tool-output",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "tool-output",
+          "credential": "invalid",
+          "status": 403
+        }
+      ],
+      "finishedBufferExpiryVerified": false,
+      "negativeControl": {
+        "secondRealInvocationDetected": true,
+        "counter": 2
+      },
+      "privateSentinelsAbsentFromRecoveryAndHistory": true,
+      "exactPersistedAssistantAndActivityRecovered": false,
+      "serverStopped": true,
+      "daemonStopped": true,
+      "fixtureRootRemoved": true,
+      "omissions": [
+        "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
+        "Coven-specific state is isolated; HOME is unchanged.",
+        "Physical remote ingress, per-project delegated authority and process-crash durability remain unverified; managed device revocation uses a controlled external peer inventory.",
+        "Ring eviction not run; use --ring-eviction.",
+        "Finished buffer expiration not run; use --include-expiry."
+      ],
+      "rawReportSha256": "0b41b2975fc087c5ab441fa27a7fa658eef7f427d4b6a98a76ec010d4f11087b",
+      "localEvidenceDirectory": "http-persistence-failure",
+      "visiblePersistenceFailureVerified": true
+    },
+    {
+      "schemaVersion": 1,
+      "scenario": "hermes-durable-effect-ring-eviction",
+      "buildId": "dDk6V-_wg8zd9MVjZri81",
+      "passed": true,
+      "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
+      "host": {
+        "node": "v24.22.0",
+        "platform": "darwin",
+        "architecture": "arm64"
+      },
+      "options": {
+        "includeExpiry": true,
+        "ringEviction": true,
+        "persistenceFailure": false,
+        "splitSecrets": false,
+        "parallelCalls": false,
+        "cancelAfterEffect": false
+      },
+      "covenVersion": "coven v0.5.0 (engine coven-code 0.9.1, pinned 0.9.0)",
+      "sourceHashes": {
+        "scripts/runtime-activity-effect-recovery.mjs": "a9b9b411eefff203f35440b78d8242f5604b18a1694cb1fda40b4662ac977a0f",
+        "scripts/runtime-activity-access-probes.mjs": "0ffc42cc8e0fc5390986bf7d996e0e90319dc38b559c221e60c5abc3720e24ef",
+        "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+        "scripts/runtime-activity-effect-counter.test.mjs": "3ae3a911d278a5fe8f8791043e9a132e92d52ebc5aec20abc9e06f76623b947a",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json": "5d3b65362b74858f28607099f45c8b1ae0e8bdf6654d368de03a27974bc58589",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json": "0731688a457b7e178dc7d4cc60995d79f5f3a28a9a41671bc02f32e19ba8f32c",
+        "src/app/api/chat/send/route.ts": "f9590404f631a3a410c80bb5c8785052ddc58f947f63a0e7970ac4590c465d08",
+        "src/lib/chat-tool-events.ts": "9f70857b6d9c4a18633aef8a017dab5b9534ec555ce1aebf34e7c6ba2fab50df",
+        "src/lib/hermes-responses-stream.ts": "cca8ba3476adb946afa2da4ce79a671487fd42987dec3ce2067d1ea9b585fb0f"
+      },
+      "checkpoints": [
+        {
+          "label": "transport drop before effect",
+          "counter": 0
+        },
+        {
+          "label": "effect after initial transport drop",
+          "counter": 1
+        },
+        {
+          "label": "transport drop after effect and final replay",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 0",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 1",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 2",
+          "counter": 1
+        },
+        {
+          "label": "finished ring expired: authorized history readable",
+          "counter": 1
+        },
+        {
+          "label": "server restart: ring absent, authorized history readable",
+          "counter": 1
+        },
+        {
+          "label": "final qualification counter after independent negative control",
+          "counter": 1
+        }
+      ],
+      "providerRequests": 1,
+      "uniqueDurableInvocationIds": 1,
+      "managedAccess": {
+        "classification": "Production HTTP device gateway with controlled external peer inventory; not physical Tailscale ingress or per-project delegation.",
+        "reads": [
+          {
+            "surface": "/api/chat/stream",
+            "status": 403
+          },
+          {
+            "surface": "/api/chat/conversation/:id",
+            "status": 403
+          },
+          {
+            "surface": "/api/chat/conversation/:id/tool-output",
+            "status": 403
+          }
+        ],
+        "activeStreamClosedOnRevocation": true
+      },
+      "negativeReadCredentials": [
+        {
+          "label": "finished-ring-retained",
+          "surface": "reconnect",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "reconnect",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "history",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "history",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "tool-output",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "tool-output",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "reconnect",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "reconnect",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "history",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "history",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "tool-output",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "tool-output",
+          "credential": "invalid",
+          "status": 403
+        }
+      ],
+      "historyNegativeControls": {
+        "missingConversationRejected": true,
+        "wrongAnswerRejected": true
+      },
+      "finishedBufferExpiryVerified": true,
+      "negativeControl": {
+        "secondRealInvocationDetected": true,
+        "counter": 2
+      },
+      "privateSentinelsAbsentFromRecoveryAndHistory": true,
+      "exactPersistedAssistantAndActivityRecovered": true,
+      "serverStopped": true,
+      "daemonStopped": true,
+      "fixtureRootRemoved": true,
+      "omissions": [
+        "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
+        "Coven-specific state is isolated; HOME is unchanged.",
+        "Physical remote ingress, per-project delegated authority and process-crash durability remain unverified; managed device revocation uses a controlled external peer inventory.",
+        "Persistence failure not injected; use --persistence-failure separately."
+      ],
+      "rawReportSha256": "2f25dd343a370e86e7fa3115d0f15657cf6969e5977846d67a09b7a3af146c82",
+      "localEvidenceDirectory": "http-ring-expiry",
+      "ringEvictionGapVerified": true
+    },
+    {
+      "schemaVersion": 1,
+      "scenario": "hermes-durable-effect-recovery",
+      "buildId": "dDk6V-_wg8zd9MVjZri81",
+      "passed": true,
+      "classification": "Production send/replay/history HTTP and process restart; synthetic external provider executing a real durable append counter in a child process. No browser/native rendering or protected-effect authority claim.",
+      "host": {
+        "node": "v24.22.0",
+        "platform": "darwin",
+        "architecture": "arm64"
+      },
+      "options": {
+        "includeExpiry": false,
+        "ringEviction": false,
+        "persistenceFailure": false,
+        "splitSecrets": false,
+        "parallelCalls": false,
+        "cancelAfterEffect": true
+      },
+      "covenVersion": "coven v0.5.0 (engine coven-code 0.9.1, pinned 0.9.0)",
+      "sourceHashes": {
+        "scripts/runtime-activity-effect-recovery.mjs": "a9b9b411eefff203f35440b78d8242f5604b18a1694cb1fda40b4662ac977a0f",
+        "scripts/runtime-activity-access-probes.mjs": "0ffc42cc8e0fc5390986bf7d996e0e90319dc38b559c221e60c5abc3720e24ef",
+        "scripts/runtime-activity-effect-counter.mjs": "5cce5d0d915bff67ace051abebb8c5ebd78f59612bf6063d10461ea82cc41b86",
+        "scripts/runtime-activity-effect-counter.test.mjs": "3ae3a911d278a5fe8f8791043e9a132e92d52ebc5aec20abc9e06f76623b947a",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-effect-http-v1.json": "5d3b65362b74858f28607099f45c8b1ae0e8bdf6654d368de03a27974bc58589",
+        "apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-reordered-results-v1.json": "0731688a457b7e178dc7d4cc60995d79f5f3a28a9a41671bc02f32e19ba8f32c",
+        "src/app/api/chat/send/route.ts": "f9590404f631a3a410c80bb5c8785052ddc58f947f63a0e7970ac4590c465d08",
+        "src/lib/chat-tool-events.ts": "9f70857b6d9c4a18633aef8a017dab5b9534ec555ce1aebf34e7c6ba2fab50df",
+        "src/lib/hermes-responses-stream.ts": "cca8ba3476adb946afa2da4ce79a671487fd42987dec3ce2067d1ea9b585fb0f"
+      },
+      "checkpoints": [
+        {
+          "label": "transport drop before effect",
+          "counter": 0
+        },
+        {
+          "label": "effect after initial transport drop",
+          "counter": 1
+        },
+        {
+          "label": "transport drop after effect and final replay",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 0",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 1",
+          "counter": 1
+        },
+        {
+          "label": "repeat replay/history 2",
+          "counter": 1
+        },
+        {
+          "label": "server restart: ring absent, authorized history readable",
+          "counter": 1
+        },
+        {
+          "label": "final qualification counter after independent negative control",
+          "counter": 1
+        }
+      ],
+      "providerRequests": 1,
+      "uniqueDurableInvocationIds": 1,
+      "managedAccess": {
+        "classification": "Production HTTP device gateway with controlled external peer inventory; not physical Tailscale ingress or per-project delegation.",
+        "reads": [
+          {
+            "surface": "/api/chat/stream",
+            "status": 403
+          },
+          {
+            "surface": "/api/chat/conversation/:id",
+            "status": 403
+          },
+          {
+            "surface": "/api/chat/conversation/:id/tool-output",
+            "status": 403
+          }
+        ],
+        "activeStreamClosedOnRevocation": true
+      },
+      "negativeReadCredentials": [
+        {
+          "label": "finished-ring-retained",
+          "surface": "reconnect",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "reconnect",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "history",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "history",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "tool-output",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "finished-ring-retained",
+          "surface": "tool-output",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "reconnect",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "reconnect",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "history",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "history",
+          "credential": "invalid",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "tool-output",
+          "credential": "missing",
+          "status": 403
+        },
+        {
+          "label": "after-server-restart",
+          "surface": "tool-output",
+          "credential": "invalid",
+          "status": 403
+        }
+      ],
+      "historyNegativeControls": {
+        "missingConversationRejected": true,
+        "wrongAnswerRejected": true
+      },
+      "finishedBufferExpiryVerified": false,
+      "negativeControl": {
+        "secondRealInvocationDetected": true,
+        "counter": 2
+      },
+      "privateSentinelsAbsentFromRecoveryAndHistory": true,
+      "exactPersistedAssistantAndActivityRecovered": true,
+      "serverStopped": true,
+      "daemonStopped": true,
+      "fixtureRootRemoved": true,
+      "omissions": [
+        "HTTP client only; no browser/native renderer, real provider, protected receipts or human acceptance.",
+        "Coven-specific state is isolated; HOME is unchanged.",
+        "Physical remote ingress, per-project delegated authority and process-crash durability remain unverified; managed device revocation uses a controlled external peer inventory.",
+        "Ring eviction not run; use --ring-eviction.",
+        "Persistence failure not injected; use --persistence-failure separately.",
+        "Finished buffer expiration not run; use --include-expiry."
+      ],
+      "rawReportSha256": "8b6427819095fdf6fe9092a7c749377648865891eb6cd65c42c71075bdc07fea",
+      "localEvidenceDirectory": "http-cancel-after-effect",
+      "cancellationObservation": {
+        "terminal": true,
+        "persisted": true,
+        "cancelled": false,
+        "isError": false,
+        "progress": [
+          {
+            "id": "resume-retry",
+            "status": "done"
+          },
+          {
+            "id": "harness-start",
+            "status": "running"
+          },
+          {
+            "id": "harness-start",
+            "status": "done"
+          },
+          {
+            "id": "save-transcript",
+            "status": "running"
+          },
+          {
+            "id": "save-transcript",
+            "status": "done"
+          }
+        ]
+      }
+    }
+  ]
+}

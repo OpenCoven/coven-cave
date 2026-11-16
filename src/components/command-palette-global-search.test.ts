@@ -50,10 +50,10 @@ assert.match(
 
 // Typing never touches history: the only history writes are replaceState
 // calls inside the committed close path.
-assert.doesNotMatch(palette, /pushState/, "typing never pushes browser history");
+assert.doesNotMatch(palette, /pushState|pushHistoryUrl/, "typing never pushes browser history");
 assert.match(
   palette,
-  /window\.history\.replaceState\(null, "", url\.toString\(\)\)/,
+  /replaceHistoryUrl\(url\.toString\(\)\)/,
   "a committed close serializes canonical query params",
 );
 assert.match(

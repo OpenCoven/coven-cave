@@ -1,8 +1,24 @@
 export const OPEN_IN_APP_BROWSER_EVENT = "cave:open-url-in-browser";
 export const PENDING_IN_APP_BROWSER_URL_KEY = "cave:pending-in-app-browser-url";
 
+let externalUrlsUseSystemBrowser = false;
+
+/**
+ * Declare that this window has no Browser surface of its own. The detached
+ * Chat window calls it once: Cave's in-app Browser lives in the main window,
+ * so "open in the Browser surface" there would navigate the Chat window
+ * itself to the main app. Links open in the system browser instead.
+ */
+export function routeExternalUrlsToSystemBrowser(): void {
+  externalUrlsUseSystemBrowser = true;
+}
+
 export function openInAppBrowserUrl(url: string): void {
   if (typeof window === "undefined") return;
+  if (externalUrlsUseSystemBrowser) {
+    void openSystemBrowserUrl(url, { fallback: () => {} });
+    return;
+  }
   window.sessionStorage.setItem(PENDING_IN_APP_BROWSER_URL_KEY, url);
   window.dispatchEvent(new CustomEvent(OPEN_IN_APP_BROWSER_EVENT, { detail: { url } }));
   if (window.location.pathname !== "/") {

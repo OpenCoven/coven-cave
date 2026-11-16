@@ -249,6 +249,13 @@
   background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
 }
 
+/* Write on a folder that holds Cave's private state (issue 6451). */
+.access-groups__level[data-private-state="true"] {
+  color: var(--color-warning);
+  border-color: color-mix(in oklch, var(--color-warning) 55%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+}
+
 .access-groups__create {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

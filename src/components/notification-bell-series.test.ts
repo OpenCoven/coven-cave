@@ -19,36 +19,48 @@ assert.match(
   /const grouped = useMemo\(\(\) => collapseInboxSeries\(feed\), \[feed\]\)/,
   "the feed collapses same-schedule occurrences before rendering",
 );
+// Rows come from the bell's arrangement (#6483): Needs you, then by day, with
+// daily reports folded into one row. notification-feed.test.ts covers it.
 assert.match(
   src,
-  /recent\.map\(\(group\) => \{\s*\n\s*const it = group\.latest;/,
-  "rows render the group's most recent occurrence",
+  /const sections = useMemo\(\s*\n\s*\(\) => buildNotificationSections\(filteredGroups, Date\.now\(\), MAX_ROWS\)/,
+  "the collapsed groups are arranged into sections before rendering",
+);
+assert.match(
+  src,
+  /const MAX_ROWS = 30;[\s\S]*sections\.hidden > 0 \?[\s\S]{0,160}\{sections\.hidden\} more/,
+  "the popover caps its rows and says how many more wait in Rituals",
+);
+assert.match(
+  src,
+  /const latest = notificationRowLatest\(row\);\s*\n\s*const members = notificationRowItems\(row\);/,
+  "rows render the group's most recent occurrence and act on every member",
 );
 
 // ── Collapsed rows surface their series: count badge + series-wide actions ──
 assert.match(
   src,
-  /notification-bell__series-count[\s\S]{0,400}×\{seriesCount\}/,
+  /notification-bell__series-count[\s\S]{0,400}×\{count\}/,
   "a collapsed row shows how many notifications it groups",
 );
 assert.match(
   src,
-  /const unread = group\.items\.some\(isInboxItemUnread\)/,
+  /const unreadIdsInRow = members\.filter\(isInboxItemUnread\)\.map\(\(m\) => m\.id\);\s*\n\s*const unread = unreadIdsInRow\.length > 0;/,
   "a row is unread when ANY occurrence in its series is unread",
 );
 assert.match(
   src,
-  /void markRead\(unreadIdsInGroup\)/,
+  /markRead\(unreadIdsInRow\)/,
   "Read acknowledges every unread occurrence in the series",
 );
 assert.match(
   src,
-  /void dismiss\(group\.items\.map\(\(m\) => m\.id\)\)/,
+  /void dismiss\(members\.map\(\(m\) => m\.id\)\)/,
   "Dismiss clears the whole series, not just the visible occurrence",
 );
 assert.match(
   src,
-  /\{seriesCount > 1 \? "Dismiss all" : "Dismiss"\}/,
+  /aria-label=\{count > 1 \? `Dismiss all \$\{count\}: \$\{title\}` : `Dismiss: \$\{title\}`\}/,
   "the dismiss button says what it will do to a collapsed series",
 );
 

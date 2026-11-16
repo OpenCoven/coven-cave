@@ -1,5 +1,34 @@
 # D0 local review and delivery packet
 
+## Continuation — 16 November 2026
+
+Status: local update to the existing draft PR #6438, not merged or accepted. Codex for Val continues the original `632c6f5d` candidate in `.worktrees/issue-6403-d0-on-main-632c6f5d`; no familiar identity is asserted. Both locked source/review worktrees remain untouched. Original PR head `94c90e7f34873fb8e2ba4825028024bdfef9d491` is integrated with main `ea2f41fbcf618cc80a1b6ab6ce03b912a347ea26` without conflicts. T1/T2's delivered changes and the delivered Settings Back repair #6444 remain included; #6479's separate pairing/device acceptance remains with its owner.
+
+Val delegated the outstanding product choices to the agent's recommendations in three replies. The resulting choices are composer first; keep Continue and disclose settled Overview history; leave attention, running work and unknown execution visible; retain the reload warning for document-owned staged files; use a static live Activity icon for everyone; and publish only source digests. These choices do not constitute human VoiceOver, visual, native or producer acceptance. Delivery remains a draft while the original acceptance gates are unmet.
+
+The focus correction preserves a collapsed row when its focused summary moves into settled history, opening enclosing history/overflow disclosures only. A focused expanded conversation action still retains its expansion and focus. The existing canonical state reducers, provenance, receipts and unavailable/unknown boundaries remain in use. Current main's history projection, offline-cache sanitization, search projection, URL history and native thread-cache revocation files are byte-identical after integration.
+
+| Gate | Current evidence |
+| --- | --- |
+| Final production artifact | Build `dDk6V-_wg8zd9MVjZri81`; TypeScript and build budgets pass. First-load JS 1,742 KB; root CSS 556 KB; first-load CSS 669 KB; standalone 7,833 files / 195,208,153 bytes. No matched-baseline performance improvement is claimed. |
+| Home and Activity | Final canonical production-build command passes 55 cases with one worker, zero retries and zero skips, including the new collapsed-summary assertion. |
+| Retained paths and effective mode | Same final build passes 37 cases: Continue on desktop/Pixel 5/iPhone 13, header geometry, retired Salem compatibility and selected first-use Read/Full regressions. Existing project-grant labels remain separate from the reviewed new-chat runtime mode. |
+| App | Both the initial and final post-correction runs pass all 1,528 files; each retains two real-native-supervisor skips because the exact binary was not supplied. |
+| API | 625 files pass, no skipped cases. Includes canonical disclosure/replay/history routes; this is not real-provider or packaged-client acceptance. |
+| Static | Full lint, final touched-component ESLint, 2,269-file test wiring, UI consistency and staged/unstaged whitespace checks pass. |
+| Production HTTP | Five first-attempt recovery scenarios pass on the final build: split secrets/Unicode fragmentation, parallel reordered calls, visible persistence failure, ring eviction plus finished-buffer expiry, and cancellation after an effect. Each uses a real scratch daemon, built server and fsynced child-process counter with a synthetic provider; replay/history/restart do not duplicate effects. Managed revocation and missing/invalid read credentials refuse access. All five verify server/daemon/state teardown. See [the sanitized receipt](verification-2026-11-16.json). These are HTTP results, not browser/native or real-provider acceptance. |
+| Source | All three supplied Downloads files still match their recorded digests; no private archive or extracted source is added. The source-location/adoption gate stays cleared. |
+| Review | Read-only review found the collapsed-summary issue, reproduced by a failing browser assertion and corrected before the final 55-case pass. No additional actionable regression was identified in the reviewed scope. |
+| Captures | 29 final browser captures retained locally. Wide Coven dark/light, narrow Coven dark and narrow history/Continue captures inspected and copied to `.github/pr-screenshots/issue-6403/home-composer-first-*` and `home-history-390-dark.png`. Fixture captures are not human visual sign-off. |
+
+Exact logs, source tuple, failed attempts, browser outputs and local production-probe receipts are retained in `artifacts/issue-6403/continuation-20261116/`. Source-tuple SHA-256: `cefa7645a092c88bc92097186c9bd1734f3ef9b5b0611b30231fe28d053aa8aa` (19 production/test/runner files). The ignored existing-build config preserves the canonical isolated state/access configuration and changes only test-directory/cwd resolution and the command to start the already-built artifact.
+
+Preserved first failures: the new composer-first browser assertion failed with zero viewport intersection before presentation changed; the collapsed-summary assertion failed because its row opened before the focus correction. The intermediate 55-case and 32-case passes remain separate from the final build's 55 and 37. No assertion, retry setting or skip was weakened to obtain a pass.
+
+The additional interactive scratch-daemon/browser qualification is incomplete; it is separate from the five passing HTTP scenarios above. The first reconnect harness reached setup without a browser credential and was explicitly aborted before a provider request. The supported browser fixture then reached the real setup and editable Chat draft using its scoped credential handoff. The UI controller timed out and rebound to another active browser window before effective-mode inspection or sending; no further action was taken in that window. Both attempts record zero provider requests, failure and verified fixture/server/daemon teardown; the supported browser fixture also records zero tool invocations. They are not producer acceptance. No real provider was called, and no installed app session was replaced or stopped.
+
+Remaining original gates are enumerated in [ACCEPTANCE.md](ACCEPTANCE.md). Keep #6403 open and the worktree intentionally preserved for the existing outcome. Next: finish draft publication, then complete the remaining rendered-producer/privacy, packaged/native, human accessibility and visual rows through their responsible owners.
+
 ## Rebuilt on main — 9 November 2026
 
 Status: draft PR for Val's review, not merged. Canonical outcome: [#6403](https://github.com/OpenCoven/coven-cave/issues/6403) under #6396. This section supersedes the status lines of the 7 November packet below, which describe the earlier uncommitted candidate and remain its record.

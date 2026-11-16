@@ -58,6 +58,11 @@ uncertain units rather than archiving them locally.
 
 ## Release And TestFlight
 
+[Release train](release-train.md) is the ordered runbook: `pnpm release:train`
+reports which of these steps a release is at and prints the next command. It
+continues after step 10 with the README screenshots, the docs review and the
+handoff record.
+
 Release work should start only after branch consolidation:
 
 1. Confirm no open PRs are intended for the release.

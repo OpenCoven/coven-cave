@@ -155,10 +155,8 @@ assert.match(
   /Git is optional/,
   "Git remains visibly optional",
 );
-assert.match(source, /<OnboardingRuntimeStep open=\{open\} onReadyChange=\{setRuntimeReady\} \/>/,
-  "the mounted setup dialog offers a runtime after local setup completes");
-assert.match(source, /!state\.complete \|\| !runtimeReady/,
-  "first run cannot auto-finish before a chat runtime is ready");
+assert.doesNotMatch(source, /<OnboardingRuntimeStep/,
+  "local bootstrap hands off to the single assistant chooser instead of duplicating it");
 assert.match(runtimeStep, /confirmInstall: true/,
   "a runtime install uses the existing confirmed allowlisted API");
 assert.match(runtimeStep, /"\/api\/harnesses"/,

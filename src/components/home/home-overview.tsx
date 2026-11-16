@@ -50,6 +50,8 @@ export function HomeOverview(props: Props) {
   const now = useMemo(() => Date.now(), [tick, props.observation.checkedAt, props.connection?.checkedAt]);
   const freshness = homeOverviewFreshness(props.observation, props.scopeFamiliarId, now);
   const rows = homeOverviewRows({ ...props, projectRoot: props.project?.root ?? null });
+  const unknownRows = rows.outcomes.filter((row) => homeOverviewSessionState(row).key === "unknown");
+  const settledRows = rows.outcomes.filter((row) => homeOverviewSessionState(row).key !== "unknown");
   const scopeMatches = props.observation.scopeFamiliarId === props.scopeFamiliarId;
   const names = new Map(props.familiars.map((familiar) => [familiar.id, familiar.display_name]));
   const context = props.familiarIds.length ? props.familiarIds.map((key) => names.get(key) ?? key).join(", ") : "All familiars in this session list";
@@ -73,8 +75,11 @@ export function HomeOverview(props: Props) {
     if (previous && !previous.node.isConnected && document.activeElement === document.body) {
       const button = buttons.current.get(previous.key);
       if (!button) { focused.current = null; return; }
-      const more = button.closest<HTMLDetailsElement>("details.home-overview__more");
-      if (more) more.open = true;
+      // A settled row can move into history, including a nested overflow
+      // disclosure. Open every ancestor so the restored control is usable.
+      for (let parent = button.parentElement; parent; parent = parent.parentElement) {
+        if (parent instanceof HTMLDetailsElement && parent.querySelector(":scope > summary") !== button) parent.open = true;
+      }
       button.focus({ preventScroll: true });
     }
   });
@@ -143,7 +148,11 @@ export function HomeOverview(props: Props) {
     {group("attention", "Needs you", rows.attention, canConfirmEmpty ? "No reported decisions, blocks or failures in this scope." : "Attention cannot be confirmed from the available observations.")}
     {rows.elsewhere.length ? group("elsewhere", "Needs you in other permitted projects", rows.elsewhere, "") : null}
     {group("running", "Reported work", rows.running, canConfirmEmpty ? "No running sessions reported in this scope." : "Current work cannot be confirmed from this view.")}
-    {group("outcomes", "Recent observations", rows.outcomes, canConfirmEmpty ? "No recent session observations in this scope. Start a conversation below." : "Outcomes are unavailable in this observation.")}
+    {unknownRows.length ? group("unknown", "Execution state unavailable", unknownRows, "") : null}
+    <details className="home-overview__history" onKeyDown={closeOnEscape}>
+      <summary className="focus-ring">Settled session observations</summary>
+      {group("outcomes", "Recent observations", settledRows, canConfirmEmpty ? "No settled session observations in this scope. Start a conversation above." : "Outcomes cannot be confirmed from the available observations.")}
+    </details>
     <p className="home-overview__note"><strong>Committed effects:</strong> Protected commit receipts are not supplied by this session list. A completed session is not proof of a committed effect. Open a conversation to inspect inline Activity and Run Details.</p>
     <p className="home-overview__note">Times describe when Cave received these observations, not when an effect committed. Session observations do not grant permission to act.</p>
   </section>;

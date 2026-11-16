@@ -47,6 +47,51 @@ fn validates_absolute_existing_directories_for_path_open() {
 }
 
 #[test]
+fn reveal_accepts_existing_files_and_folders_but_nothing_else() {
+    let current = std::env::current_dir().expect("current dir");
+    let file = std::env::current_exe().expect("test binary");
+    assert!(super::validate_shell_reveal_path(&current.to_string_lossy()).is_ok());
+    // Revealing selects a file without launching it, so files are allowed.
+    assert_eq!(
+        super::validate_shell_reveal_path(&format!("  {}  ", file.display())).expect("file"),
+        file
+    );
+    assert!(super::validate_shell_reveal_path("").is_err());
+    assert!(super::validate_shell_reveal_path("relative/path").is_err());
+    assert!(super::validate_shell_reveal_path(
+        &current.join("no-such-file-for-reveal.txt").to_string_lossy()
+    )
+    .is_err());
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        if home.is_dir() {
+            assert_eq!(super::validate_shell_reveal_path("~").expect("home"), home);
+        }
+    }
+    assert!(super::validate_shell_reveal_path("~someone/notes").is_err());
+}
+
+#[test]
+fn reveal_opens_only_plain_folders_never_packages() {
+    let root = std::env::temp_dir().join(format!("cave-reveal-{}", std::process::id()));
+    let plain = root.join("notes");
+    let app = root.join("Tool.app");
+    let bundle = root.join("NoExtension");
+    let file = root.join("report.md");
+    std::fs::create_dir_all(&plain).expect("plain folder");
+    std::fs::create_dir_all(app.join("Contents/MacOS")).expect("app bundle");
+    std::fs::create_dir_all(bundle.join("Contents")).expect("extensionless bundle");
+    std::fs::write(&file, "x").expect("file");
+
+    assert!(super::reveal_opens_as_folder(&plain));
+    // `open` would launch these, so they are selected in their folder instead.
+    assert!(!super::reveal_opens_as_folder(&app));
+    assert!(!super::reveal_opens_as_folder(&bundle));
+    assert!(!super::reveal_opens_as_folder(&file));
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn normalizes_only_absolute_existing_picked_directories() {
     let current = std::env::current_dir().expect("current dir");
     assert!(

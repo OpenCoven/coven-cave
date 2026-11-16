@@ -28,7 +28,12 @@ test("GitHub URL aliases render once and detach together", async ({ page }) => {
     if (route.request().method() === "PATCH") card = { ...card, ...route.request().postDataJSON() };
     await route.fulfill({ json: { ok: true, card } });
   });
-  await page.addInitScript(() => localStorage.setItem("cave:onboarding:dismissed", "1"));
+  await page.addInitScript(() => {
+    localStorage.setItem("cave:onboarding:dismissed", "1");
+    // This attachment fixture browses unassigned tasks across the whole coven.
+    localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [] }));
+  });
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".shell-frame");
   await page.keyboard.press("Meta+3");

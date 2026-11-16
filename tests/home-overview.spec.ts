@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createOnboardingBootstrapState, ONBOARDING_BOOTSTRAP_BOUNDARIES } from "../src/lib/onboarding-bootstrap";
 import { createDefaultPreferences } from "../src/lib/preferences-schema";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 const ISO = "2026-11-04T10:00:00.000Z";
 const PROJECT = { id: "overview-project", name: "Overview project", root: "/repo", access: "write", createdAt: ISO, updatedAt: ISO };
@@ -65,6 +66,7 @@ async function setup(page: Page, initialHttp = 200) {
     } else if (path.startsWith("/api/chat/conversation/")) payload = { ok: true, context: { task: null, tasks: [], github: [] }, conversation: { familiarId: "nova", activeLeafId: "answer", turns: [{ id: "answer", parentId: null, role: "assistant", text: "Exact existing conversation.", createdAt: ISO }] } };
     await route.fulfill({ json: payload });
   });
+  await installCompletedFirstUse(page, { project: PROJECT, familiarIds: ["nova", "echo"], actingFamiliarId: "nova", harness: "hermes" });
   await page.goto("/?mode=home", { waitUntil: "domcontentloaded" });
   // Next can retain a hidden server-rendered Suspense copy during hydration.
   // Qualify the actual visible client, and require exactly one such surface.
@@ -123,6 +125,21 @@ test("overview answers from canonical observations without inventing receipts an
   expect(errors).toEqual([]);
 });
 
+test("Home leads with the composer and keeps settled history behind disclosure", async ({ page }) => {
+  const { overview, errors } = await setup(page);
+  const composer = page.getByRole("textbox", { name: "Chat message", exact: true });
+  await expect(composer).toBeInViewport();
+  const composerBox = await composer.boundingBox();
+  const overviewBox = await overview.boundingBox();
+  expect(composerBox!.y + composerBox!.height).toBeLessThan(overviewBox!.y);
+  await expect(overview.locator('[data-home-session="unknown"]')).toBeVisible();
+  await expect(overview.locator('[data-home-session="complete"]')).not.toBeVisible();
+  await overview.getByText("Settled session observations", { exact: true }).click();
+  await expect(overview.locator('[data-home-session="complete"]')).toBeVisible();
+  await expect(overview).toContainText("A completed session is not proof of a committed effect");
+  expect(errors).toEqual([]);
+});
+
 test("failed and partial reads retain last-known rows and cannot declare an empty healthy view", async ({ page }) => {
   const { overview, state, errors } = await setup(page);
   state.http = 500; // Even an erroneous ok:true body cannot qualify a failed read.
@@ -150,6 +167,7 @@ test("updates preserve row focus and opening exact evidence preserves the Home d
   state.rows = state.rows.map((row) => row.id === "work" ? { ...row, status: "completed" } : row);
   await expect(work).toContainText("Completed", { timeout: 20_000 });
   await expect(work).toBeFocused();
+  await expect(work.locator("..")).not.toHaveAttribute("open", "");
   await overview.locator('[data-home-session="approval"]').click();
   await overview.locator("li", { has: page.locator('[data-home-session="approval"]') }).getByRole("button", { name: /^Open conversation:/ }).click();
   await expect(page).toHaveURL(/#chat-approval$/);
@@ -169,6 +187,7 @@ test("same-name familiar switch hides old rows while the new scope is pending", 
   await expect.poll(() => state.reads).toBeGreaterThan(1);
   state.holdEcho = false;
   state.releaseEcho();
+  await overview.getByText("Settled session observations", { exact: true }).click();
   await expect(overview.locator('[data-home-session="echo-session"]')).toBeVisible();
   await expect(overview.locator('[data-home-session="approval"]')).toHaveCount(0);
   expect(errors).toEqual([]);
@@ -223,8 +242,9 @@ test("overview disclosures close the innermost detail first and honor the app cl
   await context.press("Escape");
   await expect(context).toBeFocused();
   await expect(context.locator("..")).not.toHaveAttribute("open", "");
-  state.rows.push(session("more-a"), session("more-b"));
+  state.rows.push(session("more-a"), session("more-b"), session("more-c"));
   await overview.getByRole("button", { name: "Refresh observations", exact: true }).click();
+  await overview.getByText("Settled session observations", { exact: true }).click();
   const more = overview.locator(".home-overview__more");
   await more.locator(":scope > summary").press("Enter");
   const row = more.locator("[data-home-session]").first();

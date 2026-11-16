@@ -4,6 +4,7 @@ import { buildChatUsagePlanSnapshot } from "../src/lib/chat-usage-plan";
 import { createDefaultPreferences } from "../src/lib/preferences-schema";
 import { catalogForRuntime, runtimeModelInventoryScope } from "../src/lib/runtime-models";
 import { chatComposerDraftKey } from "../src/lib/use-composer-draft";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 const ISO = "2026-08-11T05:00:00.000Z";
 const PROJECT_ROOT = "/repo/alpha";
@@ -105,6 +106,8 @@ async function installDaemonlessFixture(page: Page): Promise<FixtureState> {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar-scope", JSON.stringify(["nova"]));
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": ["nova"] }));
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:code-rail:pinned:v1", "false");
@@ -116,6 +119,14 @@ async function installDaemonlessFixture(page: Page): Promise<FixtureState> {
     const request = route.request();
     const url = new URL(request.url());
     throw new Error(`Unexpected API request: ${request.method()} ${url.pathname}${url.search}`);
+  });
+  await installCompletedFirstUse(page, {
+    project: { id: "alpha", name: "alpha", root: PROJECT_ROOT, createdAt: ISO, updatedAt: ISO },
+    familiarIds: [FAMILIAR.id],
+    actingFamiliarId: FAMILIAR.id,
+    harness: FAMILIAR.harness,
+    access: "write",
+    permissionMode: "full",
   });
   // The event plane reads its capability once on load (#5854). Off, as the
   // server advertises by default, so nothing connects and polling is unchanged.

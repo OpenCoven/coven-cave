@@ -264,7 +264,7 @@ export function QuickChatComposer({
   draft: string;
   onDraftChange: (value: string) => void;
   /** Send the trimmed draft with the staged files (already id-stripped). */
-  onSend: (attachments: ChatAttachment[]) => void;
+  onSend: (attachments: ChatAttachment[], onAccepted: () => void) => void;
   sending: boolean;
   /** Blocks sending while true (e.g. the roster is still loading). */
   disabled?: boolean;
@@ -298,7 +298,7 @@ export function QuickChatComposer({
   /** Append a local assistant-styled note (slash output like /help). */
   onLocalNote?: (text: string) => void;
   /** Send an explicit text through the quick-chat pipeline (skill runs). */
-  onSendText?: (text: string) => void;
+  onSendText?: (text: string, onAccepted: () => void) => void;
   /** Current /model override (for the bare `/model` listing). */
   modelOverride?: string | null;
   /** /model pick — set the thread's model override. */
@@ -317,6 +317,8 @@ export function QuickChatComposer({
   // internally so every quick-chat surface (dropdown, tray tab, standalone
   // window) gets Enhance with zero consumer wiring.
   const { announce } = useAnnouncer();
+  const latestDraftRef = useRef(draft);
+  latestDraftRef.current = draft;
   const promptEnhance = usePromptEnhance({
     draft,
     setDraft: onDraftChange,
@@ -348,7 +350,6 @@ export function QuickChatComposer({
   const {
     attachments,
     removeAttachment,
-    clearAttachments,
     handlePaste,
     dropActive,
     dropHandlers,
@@ -444,8 +445,9 @@ export function QuickChatComposer({
         return;
       }
       if (!launchReady) return;
-      onDraftChange("");
-      onSendText?.(buildComposerSkillPrompt(skill, draft, args));
+      onSendText?.(buildComposerSkillPrompt(skill, draft, args), () => {
+        if (latestDraftRef.current === draft) onDraftChange("");
+      });
     },
     [draft, launchReady, onDraftChange, composerRef, onSendText],
   );
@@ -574,12 +576,13 @@ export function QuickChatComposer({
     promptEnhance.reset();
     // ComposerAttachment carries a local `id` for the chip row — strip it from
     // the outgoing payload (mirrors the chat composer's send).
-    onSend(attachments.map(({ id: _id, ...attachment }) => attachment));
-    clearAttachments();
+    onSend(attachments.map(({ id: _id, ...attachment }) => attachment), () => {
+      for (const attachment of attachments) removeAttachment(attachment.id);
+    });
   }, [
     attachments,
     attachmentsReading,
-    clearAttachments,
+    removeAttachment,
     draft,
     launchReady,
     onSend,

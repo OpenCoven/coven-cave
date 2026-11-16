@@ -30,6 +30,8 @@ export type RuntimeScope =
   | {
       kind: "local";
       root: string;
+      /** Effective native access after capability negotiation, not saved grants. */
+      permissionMode?: "read" | "full";
       allowedProjectRoots?: string[];
       /** Per-root effective access level (keyed by the exact string in
        * `allowedProjectRoots`), so the preamble can tell the familiar which
@@ -222,6 +224,18 @@ export function buildRuntimeScopePreamble(scope: RuntimeScope): string {
   if (scope.kind === "local") {
     const allowedProjectRoots = uniqueAllowedProjectRoots(scope.root, scope.allowedProjectRoots);
     const readOnlyResourceRoots = uniqueAllowedProjectRoots(scope.root, scope.readOnlyResourceRoots);
+    if (scope.permissionMode === "read") {
+      return [
+        "Runtime filesystem boundary:",
+        "- Effective access for this turn: Read-only, including the primary root and every granted project.",
+        `- Primary root: ${scope.root} (read-only)`,
+        ...allowedProjectRoots.map(({ root, spellings }) => `- Granted project root: ${root} (${mergedAccessLevel(spellings, scope.projectRootAccess) === "read" ? "read-only; no shell commands" : "read-only"})`),
+        ...readOnlyResourceRoots.map(({ root }) => `- Runtime resource: ${root} (read-only; no shell commands)`),
+        "- Project grants identify readable locations; they do not enable writes in this turn.",
+        "- Do not edit, create, delete, commit, or push, or run commands that change files. Preserve any stricter project or resource restrictions on running commands.",
+        "- Do not access files outside the listed roots.",
+      ].join("\n");
+    }
     if (allowedProjectRoots.length > 0 || readOnlyResourceRoots.length > 0) {
       const access = scope.projectRootAccess;
       // Only annotate when the caller actually threaded per-root levels

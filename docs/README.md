@@ -25,6 +25,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 - [`workflows/github-work-tracking.md`](workflows/github-work-tracking.md): GitHub Issues and the Cave Project, ownership, Git-only hooks, worktrees, and handoff
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
+- [`workflows/release-train.md`](workflows/release-train.md) — the ordered release runbook behind `pnpm release:train`: cut, validate, publish, roll out, then README screenshots, docs review and the handoff record
 - [`workflows/work-continuity.md`](workflows/work-continuity.md) — skill-driven discovery of existing work before planning or dispatch, with scoped evidence and honest handoff receipts
 - [`source-text-pins.md`](source-text-pins.md) — contract-first source-reading tests, deliberate adoption counts, parser-over-regex guidance, safe extraction, and mutation testing
 - [`performance-budgets.md`](performance-budgets.md) — the single catalogue of approved production performance budgets: which gate enforces each, why a missing measurement fails closed, and how a limit is seeded and re-seeded
@@ -103,7 +104,7 @@ transport reuses the existing authenticated cache and revision/write guards.
 - [`prompt-packs.md`](prompt-packs.md) — where prompt templates come from and how they merge
 - [`authoring-assist.md`](authoring-assist.md) — templating and agentic assistance across stitches, skills, and crafts
 - [`marketplace.md`](marketplace.md) — the checked-in publisher catalog, and why the in-app view is deliberately narrower
-- [`opencoven-submissions.md`](opencoven-submissions.md) — runtime and harness submission, validation, and publication
+- [`opencoven-submissions.md`](opencoven-submissions.md) — runtime and harness submission, validation, and publication; left out of the default build since v0.5.20 (#6401), so this describes the optional feature
 - [`mcp-doctor.md`](mcp-doctor.md) — debugging the two places MCP servers are listed
 
 ### Compatibility registries

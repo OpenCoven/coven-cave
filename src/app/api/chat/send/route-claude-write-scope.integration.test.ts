@@ -81,24 +81,31 @@ if (noPermission) {
   const refusal = refused.events.find(e=>e.kind === "error" && e.code === "scoped_write_unavailable");
   assert.ok(refusal,refused.body);
   assert.doesNotMatch(refusal.message,/Update Coven/,"no released Coven has the flag, so updating can't help");
-  assert.match(refusal.message,/Read-only/);
+  assert.match(refusal.message,/runtime that can enforce project write access/);
+  assert.doesNotMatch(refusal.message,/Switch Access to Read-only/);
   await assert.rejects(access(log),"a caller that didn't opt in must never receive a model launch");
   await assert.rejects(access(path.join(process.env.COVEN_CAVE_HOME,"claude-authority")),"a Coven that can't use authority files never gets any written");
-  // A person watching the chat gets the narrower turn and is told about it.
+  // Older Chat clients can still send the retired opt-in flag. A Build turn
+  // must refuse instead of launching Claude in native plan/read-only mode.
   const result = await send({allowReadOnlyFallback:true});
   assert.equal(result.status,200,result.body);
-  assert.ok(!result.events.some(e=>e.kind === "error"),result.body);
-  assert.equal(result.done?.isError,false,result.body);
+  assert.ok(result.events.some(e=>e.kind === "error" && e.code === "scoped_write_unavailable"),result.body);
+  assert.equal(result.done?.isError,true,result.body);
+  assert.ok(!result.events.some(e=>e.kind === "progress" && e.id === "runtime-write-scope-read-only"),result.body);
+  await assert.rejects(access(log),"even stale fallback opt-ins must never launch Claude");
+  // Explicit Explore requests still use the supported read-only boundary.
+  const explore = await send({permissionMode:"read"});
+  assert.equal(explore.done?.isError,false,explore.body);
   const launches = await calls();
   assert.equal(launches.length,1);
-  const {argv} = launches[0];
-  assert.equal(argv[argv.indexOf("--permission")+1],"read-only","the fallback must enforce Read-only");
-  assert.ok(!argv.includes("--write-scope"));
-  const notice = result.events.find(e=>e.kind === "progress" && e.id === "runtime-write-scope-read-only");
-  assert.equal(notice?.status,"notice",result.body);
-  assert.match(notice.detail,/can read but not edit/);
-  const saved = await loadConversation(result.done.sessionId);
-  assert.ok(saved?.turns.some(turn=>turn.progress?.some(p=>p.id==="runtime-write-scope-read-only")),"the notice survives reload");
+  assert.equal(launches[0].argv[launches[0].argv.indexOf("--permission")+1],"read-only");
+  assert.match(launches[0].argv.at(-1), /Effective access for this turn: Read-only/, "explicit Explore receives the truthful runtime boundary");
+  assert.match(launches[0].argv.at(-1), /Do not edit, create, delete, commit, or push/, "the preamble does not promise execution in Explore");
+  const buildAgain = await send({sessionId:explore.done.sessionId,allowReadOnlyFallback:true});
+  assert.equal(buildAgain.done?.isError,true,buildAgain.body);
+  assert.ok(buildAgain.events.some(e=>e.kind === "error" && e.code === "scoped_write_unavailable"),buildAgain.body);
+  assert.equal((await calls()).length,1,"switching back to Build cannot resume the read-only native session");
+
 } else {
   const first = await send({allowReadOnlyFallback:true});
   assert.equal(first.status,200,first.body);
@@ -107,6 +114,7 @@ if (noPermission) {
   assert.ok(!launches[0].argv.includes("--permission"),"a Coven with the flag keeps Full access even when the fallback is allowed");
   assert.ok(!first.events.some(e=>e.kind==="progress"&&e.id==="runtime-write-scope-read-only"),first.body);
   assert.ok(scope,"the real route must forward a separate scope document");
+  assert.doesNotMatch(launches[0].argv.at(-1),/Effective access for this turn: Read-only/);
   const authorityDirectory = path.dirname(launches[0].scopeFile);
   assert.equal(path.dirname(authorityDirectory),await realpath(path.join(process.env.COVEN_CAVE_HOME,"claude-authority")),"authority files live under Cave's home, not temp");
   assert.ok(scope.protectedRoots.includes(authorityDirectory),"a launch denies its own authority directory to its own sandbox");
@@ -148,6 +156,14 @@ if (noPermission) {
   assert.ok(!launches.at(-1).argv.includes("--continue"),"permission-mode changes replace native authority");
   assert.ok(!launches.at(-1).argv.includes("--write-scope"));
   assert.ok(launches.at(-1).argv.includes("read-only"));
+  assert.match(launches.at(-1).argv.at(-1),/Effective access for this turn: Read-only/);
+  assert.doesNotMatch(launches.at(-1).argv.at(-1),/You may read, edit|\(read \+ write\)/);
+  const buildAgain = await send({sessionId:readMode.done.sessionId});
+  assert.equal(buildAgain.done?.isError,false,buildAgain.body);
+  launches = await calls();
+  assert.ok(launches.at(-1).scope,"switching back to Build applies scoped write authority");
+  assert.ok(!launches.at(-1).argv.includes("--continue"),"Build starts a fresh native session after Explore");
+  assert.ok(!launches.at(-1).argv.includes("read-only"));
   for (const launch of launches.filter(call=>call.scopeFile)) await assert.rejects(access(launch.scopeFile), "per-turn scope files are retired after the stream");
   // A stale native session makes the route retry within the turn, reusing its authority files.
   const staleFirst = await send();
@@ -187,6 +203,47 @@ if (noPermission) {
   const mcpLaunch = (await calls())[beforeMcp];
   assert.deepEqual(mcpLaunch.scope.mcpServerNames,["kept"]);
   delete process.env.CLAUDE_CONFIG_DIR;
+  // #6451: a Write grant made before the grant-time rule, on a folder that
+  // holds Cave's private state, is named in the refusal with how it was given.
+  const stateProject = await createProject({ name: "Cave state", root: process.env.COVEN_CAVE_HOME });
+  const permissionsFile = path.join(process.env.COVEN_CAVE_HOME, "project-permissions.json");
+  const original = await readFile(permissionsFile, "utf8");
+  const seedGrant = async ({ group = false, direct = false }) => {
+    const file = JSON.parse(original);
+    if (direct) file.projectGrants.push({ familiarId: "sage", projectId: stateProject.id, access: "write", source: "human", grantedAt: "2026-08-20T00:00:00.000Z" });
+    if (group) file.accessGroups = [...(file.accessGroups ?? []), { id: "coders", name: "Coders", memberFamiliarIds: ["sage"], projectGrants: [{ projectId: stateProject.id, access: "write", grantedAt: "2026-08-20T00:00:00.000Z" }], createdAt: "2026-08-20T00:00:00.000Z", updatedAt: "2026-08-20T00:00:00.000Z" }];
+    await writeFile(permissionsFile, JSON.stringify(file));
+  };
+  const authorityEntries = async () => (await import("node:fs/promises")).readdir(path.join(process.env.COVEN_CAVE_HOME, "claude-authority"));
+  for (const [seedWith, via, fix] of [
+    [{ group: true }, /through the Coders access group/, /change Cave state to Read in Coders, then retry/],
+    [{ direct: true }, /through its own grant,/, /change Cave state to Read for .+, then retry/],
+    [{ group: true, direct: true }, /through its own grant and the Coders access group/, /to Read for .+ and in Coders, then retry/],
+  ]) {
+    await seedGrant(seedWith);
+    const beforeOverlap = (await calls()).length;
+    const entriesBefore = (await authorityEntries()).sort();
+    const overlapped = await send();
+    assert.equal(overlapped.status, 409, overlapped.body);
+    const refusal = JSON.parse(overlapped.body);
+    assert.equal(refusal.code, "scoped_write_unavailable");
+    assert.equal(refusal.reason, "cave_private_state_overlap");
+    assert.equal(refusal.overlap.source, "project");
+    assert.equal(refusal.overlap.projectId, stateProject.id);
+    assert.equal(refusal.overlap.root, stateProject.root);
+    assert.equal(refusal.overlap.relation, "contains");
+    assert.equal(refusal.overlap.direct, Boolean(seedWith.direct));
+    assert.deepEqual(refusal.overlap.groups, seedWith.group ? [{ id: "coders", name: "Coders" }] : []);
+    assert.match(refusal.error, /can write to Cave state \(.+\)/);
+    assert.match(refusal.error, via);
+    assert.match(refusal.error, /contains Cave’s private state, so Cave won’t start a Full access turn/);
+    assert.match(refusal.error, fix);
+    assert.equal((await calls()).length, beforeOverlap, "a refused turn never launches");
+    assert.deepEqual((await authorityEntries()).sort(), entriesBefore, "and writes no authority files");
+  }
+  await writeFile(permissionsFile, original);
+  const cleared = await send();
+  assert.equal(cleared.done?.isError, false, "once the grant is narrowed the turn runs: " + cleared.body);
   await grantProjectToFamiliar({familiarId:"sage",projectId:project.id,source:"human",access:"read"});
   const before = (await calls()).length;
   const readPrimary = await send();

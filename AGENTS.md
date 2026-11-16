@@ -20,6 +20,10 @@ Use **GitHub Issues** as the development queue and the existing
 [GitHub work tracking](docs/workflows/github-work-tracking.md) is the canonical
 guide for ownership, status, worktrees, handoff, and completion.
 
+`pnpm work:queue --ready` lists what can be started now. Keep each issue's
+`lane:*` and `state:*` labels and its work block current; `pnpm work:lint`
+checks them.
+
 Keep one issue per outcome. Record the acting familiar, scope, branch/worktree,
 evidence, blocker, and imperative next step on that issue. GitHub assignment
 and comments are not execution leases. Preserve human-authored dependencies
@@ -58,6 +62,8 @@ marked active.
   A chat approval does not expand filesystem access. De-registration is not
   directory deletion, and neither is justified by missing ownership evidence.
 - Before release or TestFlight work, reconcile and verify from clean `main`.
+  Follow the [release train](docs/workflows/release-train.md); `pnpm
+  release:train` reports the current step and prints the next command.
 
 Use the existing Git-only secret and attribution hooks, installed with
 `bash scripts/install-git-hooks.sh`; never replace safety hooks with an empty
@@ -173,7 +179,7 @@ The squash message carries `Coven-Familiar` onto `main` once per familiar;
 
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 

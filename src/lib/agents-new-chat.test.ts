@@ -58,6 +58,15 @@ function withWindow<T>(win: FakeWindow, fn: () => T): T {
 }
 
 describe("pending request typed controls (#5902)", () => {
+  it("preserves explicit Build/Explore handoffs and rejects an invalid access mode", () => {
+    const { win, store } = makeWindow("/");
+    for (const permissionMode of ["read", "full"]) {
+      store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify({ familiarId: "nova", initialControls: { permissionMode } }));
+      assert.equal(withWindow(win, () => readPendingAgentsNewChat())?.initialControls?.permissionMode, permissionMode);
+    }
+    store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify({ familiarId: "nova", initialControls: { permissionMode: "invalid" } }));
+    assert.equal(withWindow(win, () => readPendingAgentsNewChat()), null);
+  });
   it("round-trips Home Thinking · Speed picks through the persisted request", () => {
     const { win, store } = makeWindow("/");
     store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify({

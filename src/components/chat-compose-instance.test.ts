@@ -159,7 +159,7 @@ assert.doesNotMatch(
 
 assert.match(
   primaryChatViewRendering,
-  /key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}/,
+  /key=\{`chat-compose-\$\{viewComposerDraftKey\}-\$\{composeInstance\}`\}/,
   "The primary ChatView key must name the stable compose lineage rather than using an opaque numeric key",
 );
 

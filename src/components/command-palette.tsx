@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { replaceHistoryUrl } from "@/lib/history-url";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
 import { Icon, type IconName } from "@/lib/icon";
@@ -485,7 +486,7 @@ export function CommandPalette({
         if (typeof window !== "undefined" && window.location && window.history) {
           const url = new URL(window.location.href);
           url.search = searchQueryToUrlString(state);
-          window.history.replaceState(null, "", url.toString());
+          replaceHistoryUrl(url.toString());
         }
       }
     }
