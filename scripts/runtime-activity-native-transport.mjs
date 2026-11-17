@@ -3,18 +3,17 @@
 // selected owned simulator. Only the external Hermes API is synthetic; the
 // built Cave server and Swift client use their production transport and stores.
 import assert from 'node:assert/strict';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, writeFile, appendFile, readdir, rm, lstat, realpath } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
 import { once } from 'node:events';
-import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startCave, stopCave, freePort } from './client-v1-conformance.mjs';
 import { lateWriteRecord, removeFixtureRoot } from './native-harness-teardown.mjs';
+import { runNativeCommand } from './native-harness-command.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 async function sourceFingerprint() {
@@ -100,7 +99,17 @@ let restartTask;
 let uiRestartTask;
 let release;
 const released = new Promise((resolve) => { release = resolve; });
-let currentChild;
+const commandAbort = new AbortController();
+let commandCleanupComplete = true;
+let interruptedSignal;
+const interrupt = (name) => {
+  interruptedSignal ??= name;
+  commandAbort.abort();
+};
+const onInterrupt = () => interrupt('SIGINT');
+const onTerminate = () => interrupt('SIGTERM');
+process.on('SIGINT', onInterrupt);
+process.on('SIGTERM', onTerminate);
 let phoneStoreRoot;
 let interruptedPhone;
 
@@ -179,39 +188,29 @@ async function verifyRecoveredPhone() {
 }
 
 async function run(label, command, commandArgs, timeoutMs = 10 * 60_000) {
-  const log = createWriteStream(path.join(evidence, `${label}.log`), { flags: 'wx', mode: 0o600 });
-  const startedAt = new Date().toISOString();
-  const child = spawn(command, commandArgs, { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
-  currentChild = child;
-  child.stdout.pipe(log, { end: false });
-  child.stderr.pipe(log, { end: false });
-  // Keep named test boundaries in CI output even when a timeout prevents the
-  // result bundle from finalizing. Never emit fixture configuration or tokens.
-  const stageLines = label === 'native-transport' ? createInterface({ input: child.stdout, crlfDelay: Infinity }) : null;
-  stageLines?.on('line', (line) => {
+  const receiptPath = path.join(evidence, `${label}.json`);
+  const onLine = label === 'native-transport' ? (line) => {
     const match = /CAVE_NATIVE_ACTIVITY_STAGE ([a-z0-9-]+) elapsed_ms=(\d+(?:\.\d+)?)/.exec(line);
     if (!match) return;
     const stage = { stage: match[1], elapsedMs: Number(match[2]) };
     (runReport.testStages ??= []).push(stage);
     console.log(JSON.stringify({ phase: 'native-test-stage', ...stage }));
-  });
-  let forceTimer;
-  const timeout = setTimeout(() => {
-    child.kill('SIGTERM');
-    forceTimer = setTimeout(() => child.kill('SIGKILL'), 5_000);
-  }, timeoutMs);
-  let code;
-  try { [code] = await once(child, 'close'); }
-  finally {
-    clearTimeout(timeout); clearTimeout(forceTimer); currentChild = null;
-    stageLines?.close();
-    await new Promise((resolve) => log.end(resolve));
+  } : undefined;
+  try {
+    const receipt = await runNativeCommand({ command, args: commandArgs, cwd: repo,
+      env: process.env, timeoutMs, signal: commandAbort.signal, onLine,
+      logPath: path.join(evidence, `${label}.log`), receiptPath });
+    (runReport.commands ??= []).push({ label, receiptPath, exitCode: receipt.exitCode,
+      outputComplete: receipt.outputComplete, cleanupComplete: receipt.cleanupComplete });
+  } catch (error) {
+    commandCleanupComplete &&= error.receipt?.cleanupComplete === true;
+    (runReport.commands ??= []).push({ label, receiptPath, exitCode: error.receipt?.exitCode ?? null,
+      outputComplete: error.receipt?.outputComplete === true,
+      cleanupComplete: error.receipt?.cleanupComplete === true });
+    throw error;
   }
-  await writeFile(path.join(evidence, `${label}.json`), JSON.stringify({ command: [command, ...commandArgs], startedAt, finishedAt: new Date().toISOString(), exitCode: code }, null, 2));
-  assert.equal(code, 0, `${label} failed; see its retained log`);
   console.log(JSON.stringify({ phase: label, passed: true }));
 }
-
 function writeFrames(res, frames) {
   const bytes = Buffer.from(frames.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''));
   // Fragment across UTF-8 characters as well as JSON/SSE boundaries.
@@ -502,13 +501,15 @@ try {
   }
   assert.equal((await readFile(path.join(repo, '.next/BUILD_ID'), 'utf8')).trim(), runReport.candidate.buildId,
     'candidate build changed during qualification; serialize build-mutating suites');
+  if (interruptedSignal) throw new Error(`Native qualification interrupted (${interruptedSignal})`);
   runReport.passed = true;
 } catch (error) {
   runReport.failure = error instanceof Error ? error.message : 'native transport failed';
   process.exitCode = 1;
 } finally {
   release();
-  if (currentChild) currentChild.kill('SIGTERM');
+  commandAbort.abort();
+  runReport.commandCleanupComplete = commandCleanupComplete;
   if (restartTask) await restartTask.catch(() => { runReport.passed = false; process.exitCode = 1; });
   if (uiRestartTask) await uiRestartTask.catch(() => { runReport.passed = false; process.exitCode = 1; });
   if (caveServer) {
@@ -533,7 +534,7 @@ try {
   }
   // Nothing below may throw out of this finally: a crash here loses
   // result.json for a run whose suite may have passed (#6340).
-  if (fixturePlan) {
+  if (fixturePlan && commandCleanupComplete) {
     try { await rm(fixturePlan, { force: true }); }
     catch (error) {
       runReport.fixturePlanRemoved = false;
@@ -549,7 +550,7 @@ try {
     catch (error) { if (error.code !== 'ENOENT') unexpectedDaemonState = true; }
   }
   runReport.noDaemonState = !unexpectedDaemonState;
-  if (!unexpectedDaemonState && runReport.serverStopped !== false && runReport.daemonStopped !== false) {
+  if (commandCleanupComplete && !unexpectedDaemonState && runReport.serverStopped !== false && runReport.daemonStopped !== false) {
     // A late write under the Cave state directory after the acknowledged stops
     // once threw ENOTEMPTY out of this finally and lost result.json for a run
     // whose suite had passed (#6340). Retry; if the write persists, preserve
@@ -576,6 +577,14 @@ try {
     runReport.failure ??= `source fingerprint after the run failed: ${error instanceof Error ? error.message : String(error)}`;
   }
   if (!runReport.sourceUnchanged) { runReport.passed = false; process.exitCode = 1; }
+  if (!commandCleanupComplete && fixturePlan) runReport.preservedFixturePlan = fixturePlan;
+  if (interruptedSignal) {
+    runReport.interruptedSignal = interruptedSignal;
+    runReport.passed = false;
+    process.exitCode = interruptedSignal === 'SIGINT' ? 130 : 143;
+  }
+  process.off('SIGINT', onInterrupt);
+  process.off('SIGTERM', onTerminate);
   runReport.finishedAt = new Date().toISOString();
   await writeFile(path.join(evidence, 'result.json'), JSON.stringify(runReport, null, 2) + '\n');
   console.log(JSON.stringify(runReport));
