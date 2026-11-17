@@ -1,5 +1,13 @@
 # D0 local review and delivery packet
 
+## Further review triage — 17 November 2026
+
+The review summary's missing-binding concern reproduces in the Home model: a row explicitly belonging to another familiar but missing its project root makes the selected familiar's empty view uncertain. The correction excludes known other-familiar rows from this uncertainty count. Missing familiar IDs, selected-familiar missing project roots and all-familiar views remain uncertain; no row is attributed to the selected familiar by inference. Three new unit assertions first reproduce the failure and then pass; a browser regression checks both a genuinely empty selected scope and conservative handling of a missing familiar reference. Read-only review found no actionable issue in the correction.
+
+Build `_e2ne84pUpnQ0t1pjv1QQ` passes TypeScript and budgets: first-load JS 1,753 KB, first-load CSS 672 KB, root CSS 556 KB and standalone 7,816 files / 195,197,365 bytes. The unchanged build command again required a retry after the security-advisory stop; both attempts are retained without a dependency or check change. The model tests and ESLint pass. The 56-case Home/Activity run passes with zero retries/skips. A subsequently strengthened Settings Back assertion passes separately on the same immutable production artifact, preserving the Home draft and staged file through actual browser Back; the current-main Back repair is retained rather than duplicated.
+
+The attachment summary claim was also inspected: the current Home drop handler already focuses the composer, the guarded file-picker wrapper prevents focus theft after navigation, and the document-owned hook's persistent Attachment notice exposes limit/read feedback. These paths use existing staging limits; an optional local toast callback is not required for the shared notice. This source inspection is not a new human or native accessibility pass. The ready-for-review ledger correction and Continue repair are already in `be2ed6cbb5431525f126b9b278272437c6aab7f8`. Exact receipts and all first failures remain under `artifacts/issue-6403/review-20261117/`; native/producer/human/visual gates remain open. Fresh hosted verification must qualify the final pushed head.
+
 ## Review continuation — 17 November 2026
 
 Val marked #6438 ready for review at the retained `7d08a4e3d123cdf2f3998f904321f84f176aa1f5` head. This supersedes earlier draft-status statements below; it does not supply native, human or producer acceptance. Current main is `510c8f4378bb5d1ec70f334fe0e6729002755d67`; its three newer commits concern Windows update/recovery and are separate from this scoped repair.

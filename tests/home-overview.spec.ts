@@ -215,6 +215,20 @@ test("an unavailable first read is distinct from a successful empty scope", asyn
   expect(errors).toEqual([]);
 });
 
+test("missing project references in another familiar do not make this scope uncertain", async ({ page }) => {
+  const { overview, state, errors } = await setup(page);
+  state.rows = [session("other-unbound", { familiarId: "echo", project_root: "" })];
+  await overview.getByRole("button", { name: "Refresh observations", exact: true }).click();
+  await expect(overview).toHaveAttribute("data-observation", "current");
+  await expect(overview).toContainText("No reported decisions, blocks or failures in this scope.");
+  await expect(overview).not.toContainText("Some observations lack familiar or project references.");
+  state.rows = [session("unknown-familiar", { familiarId: null, project_root: "" })];
+  await overview.getByRole("button", { name: "Refresh observations", exact: true }).click();
+  await expect(overview).toContainText("Some observations lack familiar or project references.");
+  await expect(overview).not.toContainText("No reported decisions, blocks or failures in this scope.");
+  expect(errors).toEqual([]);
+});
+
 test.describe("touch overview", () => {
   test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
   test("local disclosure keeps a touch target and explicit exact-session action", async ({ page }) => {
@@ -493,6 +507,12 @@ test("overview Settings navigation retains the Home draft and staged file", asyn
   await overview.getByRole("button", { name: "Connection settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings/);
   await expect(page.getByRole("link", { name: "Manage installed items", exact: true })).toBeAttached();
+  await page.goBack();
+  await expect(page).not.toHaveURL(/\/settings/);
+  await expect(draft).toHaveValue("Check the connection without losing this draft");
+  await expect(page.locator(".hc-attachment-name")).toHaveText(file.name);
+  await overview.getByRole("button", { name: "Connection settings", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings/);
   await page.getByRole("button", { name: "Expand navigation", exact: true }).click();
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: /^Home/ }).click();
   await expect(draft).toHaveValue("Check the connection without losing this draft");

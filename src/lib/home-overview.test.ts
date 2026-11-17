@@ -51,6 +51,9 @@ assert.deepEqual(project([blocked], { dataScopeFamiliarId: "echo" }).attention, 
 assert.deepEqual(project([blocked], { observation: { ...observation, accessDenied: true } }).attention, [], "refused access never retains old row metadata in the view");
 assert.deepEqual(project([blocked], { observation: { ...observation, loaded: false, checkedAt: null } }).attention, [], "a cached scope is not painted before its read is established");
 assert.equal(project([row("unbound", { familiarId: null })]).unbound, 1, "missing bindings remain explicit");
+assert.equal(project([row("other-familiar-missing-root", { familiarId: "echo", project_root: "" })]).unbound, 0, "a known different familiar cannot make the selected familiar's empty scope uncertain");
+assert.equal(project([row("selected-familiar-missing-root", { project_root: "" })]).unbound, 1, "the selected familiar's missing project binding remains uncertain");
+assert.equal(project([row("all-familiars-missing-root", { familiarId: "echo", project_root: "" })], { familiarIds: [] }).unbound, 1, "an all-familiar view retains missing project bindings");
 assert.deepEqual(project([row("unbound", { familiarId: null })]).outcomes, [], "selected familiar never adopts an unbound row");
 assert.deepEqual(project([row("exact", { project_root: "/repo/" })]).outcomes.map((r) => r.id), ["exact"]);
 assert.deepEqual(project([row("remote", { runtime: "ssh:vm-1:/repo" })]).outcomes, [], "same root on a remote host is not the selected local project");

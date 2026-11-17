@@ -75,7 +75,10 @@ export function homeOverviewRows(input: {
   const empty = { attention: [] as SessionRow[], running: [] as SessionRow[], outcomes: [] as SessionRow[], elsewhere: [] as SessionRow[], unbound: 0 };
   if (input.observation.scopeFamiliarId !== input.scopeFamiliarId || input.dataScopeFamiliarId !== input.scopeFamiliarId || !input.observation.loaded || !input.observation.checkedAt || input.observation.accessDenied) return empty;
   const reachable = input.sessions.filter((row) => !row.archived_at && (!row.generated || row.hasLocalConversation === true));
-  const unbound = reachable.filter((row) => !row.familiarId || (input.projectRoot !== null && !row.project_root?.trim())).length;
+  const unbound = reachable.filter((row) => !row.familiarId || (
+    (input.familiarIds.length === 0 || input.familiarIds.includes(row.familiarId))
+    && input.projectRoot !== null && !row.project_root?.trim()
+  )).length;
   const selected = reachable.filter((row) => input.familiarIds.length === 0 || Boolean(row.familiarId && input.familiarIds.includes(row.familiarId)));
   const attention = needsYouItems(selected);
   const byId = new Map(selected.map((row) => [row.id, row]));
