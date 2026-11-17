@@ -1,5 +1,15 @@
 # D0 local review and delivery packet
 
+## Review continuation — 17 November 2026
+
+Val marked #6438 ready for review at the retained `7d08a4e3d123cdf2f3998f904321f84f176aa1f5` head. This supersedes earlier draft-status statements below; it does not supply native, human or producer acceptance. Current main is `510c8f4378bb5d1ec70f334fe0e6729002755d67`; its three newer commits concern Windows update/recovery and are separate from this scoped repair.
+
+Review comment `4596101456` identified that Continue retained the previous familiar's cards while Overview correctly hid its old rows. The extended held-request browser test reproduces this failure on the prior production artifact. HomeComposer now receives sessions only after the observation is loaded and both observation and data scope match the active familiar, with denied access excluded. Same-scope last-known observations remain available; a familiar switch hides old cards until the new read completes. The regression also requires the new familiar's Continue cards after release. The shared session list and other consumers remain unchanged. Read-only follow-up review found no actionable issue in this delta.
+
+The first build stopped after compiling on a Next.js security advisory. The unchanged canonical build command succeeds on retry without disabling a check or changing dependencies; the upgrade recommendation and first failure are retained. Production build `U48gl9ma6zkjrYQOXf771` passes TypeScript and budgets: first-load JS 1,752 KB, first-load CSS 672 KB, root CSS 556 KB, standalone 7,816 files / 195,197,299 bytes. Earlier packaged/native and HTTP receipts identify their original builds and do not become new-build acceptance. The prior head's green hosted CI does not qualify the repair before its own CI runs.
+
+Final review-repair verification: 55 Home/Activity browser cases and 32 retained navigation/header/Continue cases pass on the same new build, one worker, zero retries/skips. The app suite passes all 1,528 files with the same two native-supervisor skips; touched Workspace ESLint, the Home model tests and whitespace checks pass. Exact logs and the failed pre-fix assertion are retained under `artifacts/issue-6403/review-20261117/`. No native, real-provider, human VoiceOver or visual acceptance is inferred. Qualify the pushed repair head's hosted checks separately.
+
 ## Packaging follow-up — 16 November 2026
 
 Status: follow-up to draft PR head `5137337489fc1bf306aa899d9bac1937b7b2f426`, whose hosted CI passed (26 successful checks; iOS path selection skipped). That CI applies to the earlier head, not this follow-up. The package remains local, separately identified and ad hoc signed; no installed user app was replaced and no release was published.

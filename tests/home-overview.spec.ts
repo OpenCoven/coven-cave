@@ -179,14 +179,22 @@ test("updates preserve row focus and opening exact evidence preserves the Home d
 
 test("same-name familiar switch hides old rows while the new scope is pending", async ({ page }) => {
   const { overview, state, errors } = await setup(page);
+  const continuation = page.getByRole("region", { name: "Continue where you left off", exact: true });
+  await expect(continuation).toContainText("Review the bounded request");
   state.holdEcho = true;
   await page.locator(".home-composer-familiar-context").getByRole("button", { name: /^Switch familiar/ }).click();
   await page.getByRole("option").filter({ hasText: "Correspondence" }).click();
   await expect(overview).toHaveAttribute("data-observation", "loading");
   await expect(overview.locator("[data-home-session]")).toHaveCount(0);
-  await expect.poll(() => state.reads).toBeGreaterThan(1);
-  state.holdEcho = false;
-  state.releaseEcho();
+  try {
+    await expect(continuation).toHaveCount(0);
+    await expect.poll(() => state.reads).toBeGreaterThan(1);
+  } finally {
+    state.holdEcho = false;
+    state.releaseEcho();
+  }
+  await expect(continuation).toContainText("Echo’s exact session");
+  await expect(continuation).not.toContainText("Review the bounded request");
   await overview.getByText("Settled session observations", { exact: true }).click();
   await expect(overview.locator('[data-home-session="echo-session"]')).toBeVisible();
   await expect(overview.locator('[data-home-session="approval"]')).toHaveCount(0);

@@ -5026,7 +5026,9 @@ export function Workspace() {
         onSetActiveFamiliar={setActiveId}
         onRequestActingFamiliar={requestActingFamiliar}
         onValidateActingFamiliar={validateActingFamiliar}
-        sessions={sessions}
+        sessions={homeObservation.loaded && !homeObservation.accessDenied
+          && homeObservation.scopeFamiliarId === activeId
+          && sessionsScopeFamiliarId === activeId ? sessions : []}
         onStartChat={(prompt, fid, projectRoot, opts) =>
           startFamiliarChat(
             fid,
