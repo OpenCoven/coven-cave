@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "issue": 6195,
-  "observedAt": "2026-11-17T07:43:45.892512+00:00",
+  "observedAt": "2026-11-17T08:27:59.126112+00:00",
   "scope": "finite native command ownership; historical Simulator diagnostic-stall cause remains open",
   "formalLegacyRed": {
     "deadlineMs": 100,
@@ -17,7 +17,7 @@
   "app": {
     "passedFiles": 1528,
     "exitCode": 0,
-    "logSHA256": "17d6a4dae11dde503b85414e27e2653c17f3d45216d305fc99232645e384d220"
+    "logSHA256": "d6da639b47de40a7555ce75f58b2dbb18dcb639088c42310b5d1f04cc2d52a32"
   },
   "lintExitCode": 0,
   "testWiringFiles": 2269,
@@ -87,18 +87,49 @@
     "Review graceful-window/log-completeness regressions",
     "Plan checkbox-disclaimer contract",
     "libproc zero/EPERM fail-open",
-    "Missing owner-only native CI selection"
+    "Missing owner-only native CI selection",
+    "Hosted code-scanning test-command construction findings261/262/263"
   ],
   "review": {
     "kind": "Fresh shared-account whole-branch review; reproduced findings repaired with RED/GREEN",
     "importantFindingsAddressed": 2,
     "deferredMinors": 0,
-    "additionalBoundaryCorrection": "libproc zero/error handling independently reproduced and tested"
+    "additionalBoundaryCorrection": "libproc zero/error handling independently reproduced and tested",
+    "hostedFixtureFindings": {
+      "alerts": [
+        261,
+        262,
+        263
+      ],
+      "priorHead": "bcbd2aafddaabdbc4b44ae677f761658ee269569",
+      "refactor": "All fixture programs static; paths/options passed as argv data",
+      "focusedPass": 23,
+      "appPassedFiles": 1528,
+      "productionExploitClaim": false,
+      "latestHostedVerdict": "See canonical issue exact-head checkpoint after publication"
+    }
   },
   "limits": [
     "Historical collectSimulatorDiagnostics/simCtlDiagnose cause unproven; old raw paths unavailable",
     "Current runtime matches original iOS27.0; host/Xcode differ",
     "Binary comparison is post-execution, not contemporaneous PID profiling",
     "No physical/rendered/human, merge or release acceptance claim"
-  ]
+  ],
+  "firstHostedQualification": {
+    "head": "bcbd2aafddaabdbc4b44ae677f761658ee269569",
+    "CI": 44042203590,
+    "CodeQL": 44042198534,
+    "bothRunConclusions": "success",
+    "nativeCanonicalVerifier": {
+      "floor": 1229,
+      "executed": 1229,
+      "passed": 1229,
+      "failed": 0,
+      "skipped": 0,
+      "expected": 0,
+      "deferred": 0
+    },
+    "rawHostedBundleArchived": false,
+    "evidenceClass": "Retained job log and canonical hosted verifier; independent raw bundle audit is local only"
+  }
 }

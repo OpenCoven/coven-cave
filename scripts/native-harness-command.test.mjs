@@ -63,9 +63,9 @@ test('a root exit cannot turn a deadline with inherited open output into success
   const pidFile = path.join(options.root, 'child.pid');
   const child = path.join(options.root, 'child.cjs');
   const parent = path.join(options.root, 'parent.cjs');
-  await writeFile(child, `require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));console.log('descendant-ready');setTimeout(()=>process.exit(0),7000);`);
-  await writeFile(parent, `require('node:child_process').spawn(process.execPath,[${JSON.stringify(child)}],{stdio:['ignore',process.stdout,process.stderr]}).unref();process.exit(0);`);
-  options.args = [parent]; options.timeoutMs = 2000;
+  await writeFile(child, "require('node:fs').writeFileSync(process.argv[2],String(process.pid));console.log('descendant-ready');setTimeout(()=>process.exit(0),7000);");
+  await writeFile(parent, "require('node:child_process').spawn(process.execPath,process.argv.slice(2),{stdio:['ignore',process.stdout,process.stderr]}).unref();process.exit(0);");
+  options.args = [parent, child, pidFile]; options.timeoutMs = 2000;
   const receipt = await failedRun(options);
   assert.equal(receipt.exitCode, 124);
   assert.equal(receipt.timedOut, true);
@@ -97,7 +97,7 @@ test('a command ignoring graceful shutdown is killed only within its anchored gr
 test('cancellation is a failure and leaves a distinct unrelated leased process alive', async (t) => {
   const options = await fixture(t);
   const stop = path.join(options.root, 'stop-control');
-  const control = spawn(process.execPath, ['-e', `const fs=require('node:fs');const end=Date.now()+9000;setInterval(()=>{if(fs.existsSync(${JSON.stringify(stop)})||Date.now()>end)process.exit(0)},20)`], { stdio: 'ignore' });
+  const control = spawn(process.execPath, ['-e', "const fs=require('node:fs');const end=Date.now()+9000;setInterval(()=>{if(fs.existsSync(process.argv[1])||Date.now()>end)process.exit(0)},20)", stop], { stdio: 'ignore' });
   const controlClosed = once(control, 'close');
   const controller = new AbortController();
   options.signal = controller.signal;
@@ -140,7 +140,7 @@ test('unexpected anchor loss cannot report a successful command from a stale own
 test('the anchor refuses an inherited foreign session before launching its command', async (t) => {
   const options = await fixture(t);
   const forbidden = path.join(options.root, 'must-not-exist');
-  const child = spawn('python3', [anchor, '--receipt', options.receiptPath + '.owner.json', '--timeout-seconds', '1', '--', process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(forbidden)},'bad')`], { detached: false, stdio: 'ignore' });
+  const child = spawn('python3', [anchor, '--receipt', options.receiptPath + '.owner.json', '--timeout-seconds', '1', '--', process.execPath, '-e', "require('node:fs').writeFileSync(process.argv[1],'bad')", forbidden], { detached: false, stdio: 'ignore' });
   const [code] = await once(child, 'close');
   assert.equal(code, 125);
   await assert.rejects(readFile(forbidden), { code: 'ENOENT' });
@@ -173,8 +173,8 @@ test('output escaping the admitted session is incomplete failure, not a truncate
   const pidFile = path.join(options.root, 'escaped.pid');
   const stop = path.join(options.root, 'stop-escaped');
   const leaf = path.join(options.root, 'escaped.cjs');
-  await writeFile(leaf, `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));console.log('escaped-output');const end=Date.now()+9000;setInterval(()=>{if(fs.existsSync(${JSON.stringify(stop)})||Date.now()>end)process.exit(0)},20);`);
-  options.args = ['-e', `require('node:child_process').spawn(process.execPath,[${JSON.stringify(leaf)}],{detached:true,stdio:['ignore',process.stdout,process.stderr]}).unref();process.exit(0)`];
+  await writeFile(leaf, "const fs=require('node:fs');fs.writeFileSync(process.argv[2],String(process.pid));console.log('escaped-output');const end=Date.now()+9000;setInterval(()=>{if(fs.existsSync(process.argv[3])||Date.now()>end)process.exit(0)},20);");
+  options.args = ['-e', "require('node:child_process').spawn(process.execPath,process.argv.slice(1),{detached:true,stdio:['ignore',process.stdout,process.stderr]}).unref();process.exit(0)", leaf, pidFile, stop];
   options.timeoutMs = 1000;
   try {
     const receipt = await failedRun(options);
@@ -211,8 +211,8 @@ test('a failed log write cannot claim complete retained output', async (t) => {
   options.args = ['-e', "console.log('x'.repeat(20000));setTimeout(()=>process.exit(0),7000)"];
   const wrapper = path.join(options.root, 'limited.mjs');
   const moduleURL = new URL('./native-harness-command.mjs', import.meta.url).href;
-  await writeFile(wrapper, `import {runNativeCommand} from ${JSON.stringify(moduleURL)};setTimeout(()=>process.exit(90),10000).unref();try{await runNativeCommand(${JSON.stringify(options)});process.exitCode=91}catch(error){console.log(JSON.stringify(error.receipt))}`);
-  const child = spawn('python3', ['-c', 'import os,resource,sys;resource.setrlimit(resource.RLIMIT_FSIZE,(8192,8192));os.execv(sys.argv[1],[sys.argv[1],sys.argv[2]])', process.execPath, wrapper], { stdio: ['ignore', 'pipe', 'pipe'] });
+  await writeFile(wrapper, "const {runNativeCommand}=await import(process.argv[2]);setTimeout(()=>process.exit(90),10000).unref();try{await runNativeCommand(JSON.parse(process.argv[3]));process.exitCode=91}catch(error){console.log(JSON.stringify(error.receipt))}");
+  const child = spawn('python3', ['-c', 'import os,resource,sys;resource.setrlimit(resource.RLIMIT_FSIZE,(8192,8192));os.execv(sys.argv[1],sys.argv[1:])', process.execPath, wrapper, moduleURL, JSON.stringify(options)], { stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   child.stdout.on('data', (chunk) => { output += chunk; });
   const [code] = await once(child, 'close');

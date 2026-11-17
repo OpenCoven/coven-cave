@@ -17,7 +17,7 @@
     {
       "path": "scripts/native-harness-command.test.mjs",
       "baseBlobOid": null,
-      "finalSHA256": "a20313843e1e6eeb72572e573b0669fc4801daaa1e76d781b10771ef41174b58",
+      "finalSHA256": "74045f1e2b359512d2f64f2e1a1a057b15f2eeebace7e37d2c3f9f8b4606927c",
       "qualifiedNativeRuntime": false
     },
     {
@@ -72,6 +72,9 @@
     "planMetadataOnly": [
       "docs/superpowers/plans/2026-11-17-native-harness-ownership.md"
     ],
-    "validation": "CI15/15 and final app1528/1528; qualified runtime bytes unchanged"
+    "validation": "CI15/15, fixture runner/teardown23/23 and final app1528/1528; qualified runtime bytes unchanged",
+    "fixtureArgumentsOnly": [
+      "scripts/native-harness-command.test.mjs"
+    ]
   }
 }

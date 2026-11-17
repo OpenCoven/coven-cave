@@ -20,7 +20,9 @@ The default execution allowance remains 600000 ms, followed by the full existing
 | Command/service/state/source cleanup | All flags true; owned Simulator shut down and retained |
 | Normal signature and installed-copy comparison | Deep signature verification passed; three post-execution binary hashes match |
 
-The final native runtime used ordinary build `AcfOY-OjhoIhAGKqMOhkt`, Xcode 27.2/27B52 and an owned iPhone 17 Simulator running iOS 27.0/24A434. [source-manifest.json](source-manifest.json) binds the qualified runtime files to current bytes. The later CI-routing-only delta and plan annotation were separately tested, then included in the final app lane. [proof-summary.json](proof-summary.json) records counts, hashes, toolchain and limitations; [commands.txt](commands.txt) records invocation shapes. The eventual signed head/tree and PR are recorded on the canonical issue rather than embedded circularly in this packet.
+The final native runtime used ordinary build `AcfOY-OjhoIhAGKqMOhkt`, Xcode 27.2/27B52 and an owned iPhone 17 Simulator running iOS 27.0/24A434. [source-manifest.json](source-manifest.json) binds the qualified runtime files to current bytes. The later CI-routing-only delta, plan annotation and static fixture argument refactor were separately tested, then included in the final app lane. [proof-summary.json](proof-summary.json) records counts, hashes, toolchain and limitations; [commands.txt](commands.txt) records invocation shapes. The eventual signed head/tree and PR are recorded on the canonical issue rather than embedded circularly in this packet.
+
+Fixture programs use static source text with paths and options passed as argument data. This addresses three hosted code-scanning construction findings without suppressing the scanner or claiming a demonstrated production exploit. The affected real-process contracts and full app lane passed after the refactor; current hosted status belongs to the exact-head checkpoint on the canonical issue.
 
 ## First failures and limits
 
