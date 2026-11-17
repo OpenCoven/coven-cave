@@ -40,7 +40,8 @@ disclosure; Markdown and HTML are not executed. They belong to the reported
 version and are replaced by a successful new check.
 
 Updater release-page and installer actions open the operating system's default
-browser. A failed native handoff or blocked browser popup shows a warning with
+browser through `open_update_release_url`, which accepts only this repository's
+GitHub release pages and release assets. A failed native handoff or blocked browser popup shows a warning with
 **Retry** and a selectable address under **Details**; it does not silently open
 Cave's embedded Browser. After a signed-updater failure, recovery still uses the
 canonical GitHub release page, never a metadata-derived direct installer link.
@@ -51,6 +52,35 @@ MSI installation mode changes or declined-UAC recovery; see the sections below
 and #5981 for those. The automated browser
 and IPC fixtures do not qualify the real Windows installer or default browser.
 Rollback is a revert of this slice; no stored-data migration is required.
+
+## Packaged origin and IPC grants
+
+A packaged build loads its main UI from the sidecar's loopback origin (for
+example `http://127.0.0.1:3020`), not from bundled local content. The `default`
+capability is local-only, so it reaches only `startup.html`. Every command the
+main UI invokes needs an exact `loopback-*` capability for the `main` webview.
+Dev builds hide a missing grant, because `devUrl` counts as local. Unit tests
+hide it too, because they mock `invoke`.
+
+Packaged Windows acceptance for #5981 found the recovery path rejected with
+`not allowed by ACL` on every release from v0.5.16 to v0.5.22:
+
+- Startup status and Retry, so Retry never restarted services.
+- Install-recovery arming, so **Restart & install** always failed with
+  "couldn't prepare install recovery".
+- `shell_open`, so update links never opened a browser.
+
+`loopback-windows-recovery` now grants the Windows startup and install-recovery
+commands to the `main` webview. `loopback-update-links` grants only
+`open_update_release_url`; `shell_open` stays off loopback (#197). The update UI
+no longer reduces Tauri's string rejections to "unknown error".
+`desktop-permissions.test.mjs` fails whenever the loopback-served UI invokes a
+command that no loopback `main` capability grants. Its short list of known
+exceptions is tracked in #6502.
+
+Clients from v0.5.16 to v0.5.22 cannot install any update in-app, because their
+own arming call is denied. Each such Windows install needs one manual MSI
+install of a release with this fix. Later updates can then use the in-app path.
 
 ## Declined or failed install recovery
 
