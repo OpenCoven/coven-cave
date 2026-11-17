@@ -483,7 +483,7 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{[\s\S]*?\.\.\.\(!twoPane && \{ list: 260 \}\),[\s\S]*?\.\.\.\(desktopRightChat && \{ "right-chat": rightChatOpen \? preferredRightChatWidth : 0 \}\),[\s\S]*?\},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: NAV_COLLAPSED_PX,[\s\S]*?isMobile,/,
+  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{[\s\S]*?\.\.\.\(!twoPane && \{ list: 260 \}\),[\s\S]*?\.\.\.\(desktopRightChat && \{ "right-chat": rightChatOpen \? preferredRightChatWidth : 0 \}\),[\s\S]*?\},[\s\S]*?preferredNavPixels: navOpenWidth,[\s\S]*?collapsedNavPixels: NAV_COLLAPSED_PX,[\s\S]*?isMobile,/,
   "every desktop group transition resolves its own saved/default layout with the active shared nav width",
 );
 assert.match(
@@ -503,12 +503,12 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /\}, \[\s*mounted,\s*isMobile,\s*groupId,\s*chatContextual,\s*defaultLayout,\s*twoPane,\s*navPolicy,\s*desktopRightChat,\s*preferredNavWidth,\s*preferredRightChatWidth,\s*rightChatOpen,\s*\]\);/,
+  /\}, \[\s*mounted,\s*isMobile,\s*groupId,\s*chatContextual,\s*defaultLayout,\s*twoPane,\s*navPolicy,\s*desktopRightChat,\s*preferredNavWidth,\s*navOpenWidth,\s*preferredRightChatWidth,\s*rightChatOpen,\s*\]\);/,
   "destination restoration reruns with the active nav policy, shared nav width, and right chat width",
 );
 assert.match(
   shell,
-  /onLayoutChanged=\{\(layout, meta\) => \{\s*if \(layoutPersistenceGroupRef\.current !== groupId\) return;[\s\S]*?onLayoutChanged\(persistedLayout, meta\);[\s\S]*?const pixelWidth = navRef\.current\?\.getSize\(\)\.inPixels;[\s\S]*?!isMobile &&\s*meta\.isUserInteraction &&\s*!navCollapsed &&\s*Number\.isFinite\(pixelWidth\) &&\s*!railAutoCollapsedNavRef\.current[\s\S]*?writeNavWidthPref\(normalizedWidth\);[\s\S]*?setPreferredNavWidth\(normalizedWidth\);/,
+  /onLayoutChanged=\{\(layout, meta\) => \{\s*if \(layoutPersistenceGroupRef\.current !== groupId\) return;[\s\S]*?onLayoutChanged\(persistedLayout, meta\);[\s\S]*?const pixelWidth = navRef\.current\?\.getSize\(\)\.inPixels;[\s\S]*?!isMobile &&\s*!iconRail &&\s*meta\.isUserInteraction &&\s*!navCollapsed &&\s*Number\.isFinite\(pixelWidth\) &&\s*!railAutoCollapsedNavRef\.current[\s\S]*?writeNavWidthPref\(normalizedWidth\);[\s\S]*?setPreferredNavWidth\(normalizedWidth\);/,
   "nav width persists only after a completed user separator interaction and retains group, desktop, open, and code-rail guards",
 );
 const navResizeHandler =
