@@ -13,13 +13,13 @@ const foundations = await readFile(new URL("../styles/globals/foundations.css", 
 // 188px expanded size before paint. Chat's contextual sidebar uses that width.
 assert.match(
   shell,
-  /const defaultNavSize =\s*chatContextual \|\| mounted \? `\$\{NAV_OPEN_PX\}px` : `\$\{NAV_COLLAPSED_PX\}px`/,
+  /const defaultNavSize =\s*chatContextual \|\| mounted \? `\$\{iconRail \? navOpenWidth : NAV_OPEN_PX\}px` : `\$\{NAV_COLLAPSED_PX\}px`/,
   "normal nav hydrates fully closed before restoring its expanded size",
 );
 assert.match(
   shell,
-  /id="nav"[\s\S]{0,700}?defaultSize=\{defaultNavSize\}[\s\S]{0,120}?minSize=\{`\$\{SHELL_NAV_MIN_PX\}px`\}[\s\S]{0,60}?maxSize=\{`\$\{SHELL_NAV_MAX_PX\}px`\}/,
-  "Home and Chat share the 188–220px nav width band",
+  /id="nav"[\s\S]{0,700}?defaultSize=\{defaultNavSize\}[\s\S]{0,120}?minSize=\{`\$\{iconRail \? navOpenWidth : SHELL_NAV_MIN_PX\}px`\}[\s\S]{0,60}?maxSize=\{`\$\{iconRail \? navOpenWidth : SHELL_NAV_MAX_PX\}px`\}/,
+  "Browser navigation keeps the 188–220px band; native desktop uses its fixed icon width",
 );
 assert.match(
   shell,
@@ -108,7 +108,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /const chatContextual = navPolicy === "chat-contextual";\s*const baseGroupId = chatContextual\s*\? `\$\{SHELL_GROUP_ID\}\.chat-contextual`\s*: twoPane\s*\? `\$\{SHELL_GROUP_ID\}\.two-pane`\s*: listPolicy === "persistent"\s*\? `\$\{SHELL_GROUP_ID\}\.persistent-list`\s*: SHELL_GROUP_ID;\s*const groupId = desktopRightChat \? `\$\{baseGroupId\}\.right-chat` : baseGroupId;/,
+  /const chatContextual = navPolicy === "chat-contextual";\s*const baseGroupId = chatContextual\s*\? `\$\{SHELL_GROUP_ID\}\.chat-contextual`\s*: twoPane\s*\? `\$\{SHELL_GROUP_ID\}\.two-pane`\s*: listPolicy === "persistent"\s*\? `\$\{SHELL_GROUP_ID\}\.persistent-list`\s*: SHELL_GROUP_ID;\s*const layoutGroupId = desktopRightChat \? `\$\{baseGroupId\}\.right-chat` : baseGroupId;\s*const groupId = iconRail \? `\$\{layoutGroupId\}\.icon-nav` : layoutGroupId;/,
   "Chat contextual layouts keep their base groups and add a dedicated desktop right-chat suffix only when that fourth panel is mounted",
 );
 
