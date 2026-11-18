@@ -298,7 +298,7 @@ assert.equal(
 // progress detail uses the Claude Code `Name(arg)` shape.
 assert.match(
   source,
-  /function ToolBlock[\s\S]*?const argSummary = toolArgSummary\(tool\.name, tool\.input\)[\s\S]*?<summary[\s\S]*?\{tool\.name\}[\s\S]*?\{argSummary \?[\s\S]*?truncate[\s\S]*?\{argSummary\}/,
+  /function ToolBlock[\s\S]*?const input = inputWithheld \? undefined : tool\.input;[\s\S]*?const argSummary = toolArgSummary\(tool\.name, input\)[\s\S]*?<summary[\s\S]*?\{tool\.name\}[\s\S]*?\{argSummary \?[\s\S]*?truncate[\s\S]*?\{argSummary\}/,
   "ToolBlock collapsed summary renders the one-line arg summary next to the name",
 );
 assert.match(
@@ -408,7 +408,7 @@ assert.match(bigLines[bigLines.length - 1], /more lines truncated/, "capped diff
 // otherwise through ToolInputView (readable fields + raw-JSON toggle).
 assert.match(
   source,
-  /function ToolBlock[\s\S]*?const inputDiff = toolInputAsDiff\(tool\.name, tool\.input\)[\s\S]*?inputDiff \? \([\s\S]*?<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*?<ToolInputView input=\{tool\.input\} \/>/,
+  /function ToolBlock[\s\S]*?const inputDiff = toolInputAsDiff\(tool\.name, input\)[\s\S]*?inputDiff \? \([\s\S]*?<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*?<ToolInputView input=\{input\} \/>/,
   "ToolBlock Input renders the structured diff when available, readable fields otherwise",
 );
 

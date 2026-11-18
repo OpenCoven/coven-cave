@@ -1,0 +1,33 @@
+{
+  "observedAt": "2026-11-16T00:26:44.741206+00:00",
+  "configuration": "release",
+  "binaries": {
+    "app": {
+      "path": "/private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCave.app",
+      "executable": "/private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCave.app/CovenCave",
+      "sha256": "3d887547a9234e21332ee777b7a1fc508daa22afbc72f786f2fa4136d2e2f3a2",
+      "dwarfUUID": "UUID: 650176E2-A312-36E1-870F-187F1758070D (x86_64) /private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCave.app/CovenCave\nUUID: 34308759-B2E4-34C3-B0D9-AF3D826635DD (arm64) /private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCave.app/CovenCave\n",
+      "bundleIdentifier": "ai.opencoven.cave",
+      "version": "0.5.22",
+      "build": "2026111302",
+      "codesignVerifyExitCode": 0,
+      "manifest": "app-binary-file-hashes.json"
+    },
+    "runner": {
+      "path": "/private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCaveUITests-Runner.app",
+      "executable": "/private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner",
+      "sha256": "20dcba7ec2b116b5098b08f5583a2065b24260c74b7577dededb12e8c495db81",
+      "dwarfUUID": "UUID: 84D5E1B4-C2CF-34C1-882D-E717E626CF83 (x86_64) /private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner\nUUID: CC1BBF6E-4DDE-3789-8413-8995F0EAB902 (arm64) /private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner\n",
+      "bundleIdentifier": "ai.opencoven.cave.uitests.xctrunner",
+      "version": "1.0",
+      "build": "1",
+      "codesignVerifyExitCode": 0,
+      "manifest": "runner-binary-file-hashes.json"
+    },
+    "driver": {
+      "path": "/private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests",
+      "sha256": "96201c8ada3d8afefce6847aa813e978b0a3ccce20860cb4ca9bac24613e277f",
+      "dwarfUUID": "UUID: 6619C3E5-5344-3730-AC96-BC2B6E858152 (x86_64) /private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests\nUUID: 1E9BAC78-A836-312C-A132-1F25A0D6940E (arm64) /private/tmp/nova6064-native-single-hittable-20261116/release/derived-data/Build/Products/Release-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests\n"
+    }
+  }
+}

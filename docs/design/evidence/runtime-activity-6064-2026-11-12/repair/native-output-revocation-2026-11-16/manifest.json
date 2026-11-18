@@ -1,0 +1,134 @@
+{
+  "files": {
+    "README.md": {
+      "bytes": 5505,
+      "sha256": "9fbd64135355747abadf73ee6eb75c18eeedb3e18100c8319daca91afd21e4bd"
+    },
+    "final-source-review.json": {
+      "bytes": 4777,
+      "sha256": "103c3d8d31127038ad53878954e4dcc9108533d60da93c42a8c1414f4d681fa2"
+    },
+    "green-binary-identities.json": {
+      "bytes": 12273,
+      "sha256": "1edd9a26dc540560485b29acafc815865a1acd5eff36d2b4248ab4411eaa19f8"
+    },
+    "green-command.json": {
+      "bytes": 965,
+      "sha256": "69a1252e02de1443bb28aaaf4b31eab786ed24dd54568541e75fcaa8bba2f54a"
+    },
+    "green-execution.json": {
+      "bytes": 5922,
+      "sha256": "234eac39369fd6b398555523516b4d16da3bec1f4a24b3153cdb2a80701bcc61"
+    },
+    "green-log.json": {
+      "bytes": 12949,
+      "sha256": "4722ac0af128084b2050a897a48c69474e7d3ea5f1d37c583348e96e6bb290a5"
+    },
+    "green-proof-summary.json": {
+      "bytes": 874,
+      "sha256": "51f63d58a4fbd873a3ca8487ad6fc92fdf064fd01f0d5259c9faee77c1af5fa1"
+    },
+    "green-source-manifest.json": {
+      "bytes": 3834,
+      "sha256": "3f230dba51cd8b0599b93595c62ed132b22bd51634dfe6eb9b5cfab0f1dbe2dc"
+    },
+    "integrated-local-verification.json": {
+      "bytes": 2113,
+      "sha256": "abc672503b15d1e4a6b7fb48dd9f7d2352b045008a444516db26006f344236d9"
+    },
+    "policy-review.json": {
+      "bytes": 7538,
+      "sha256": "fc6bd13ae206410522ad8b5a26a759f81b7990b412839b7225a4cb17c44fa442"
+    },
+    "post-fix-mobile-source.json": {
+      "bytes": 246,
+      "sha256": "4c90bff58545bb93ae4ecd9704bd73c4c2fe6302aeb67aec4915afe60ee40bcc"
+    },
+    "raw-attachment-inventory.json": {
+      "bytes": 2831,
+      "sha256": "8601997411cc696fd74b0a2e8371b0d412849fdf675c32ee92ab614a30003753"
+    },
+    "raw-attachment-mapping.json": {
+      "bytes": 8560,
+      "sha256": "ba6362bb4b8087e2c51ade62bb969194815f0d293829b31e59bafca8ed728152"
+    },
+    "red-command.json": {
+      "bytes": 976,
+      "sha256": "532c5d9e7329d42be75318142045e2a08d07cc19ff0935d442f1a203e01d9e0e"
+    },
+    "red-execution.json": {
+      "bytes": 7181,
+      "sha256": "47ccf4c17e6247772f10167f0dd78d88fafa825ad0c8de036e28e9bdc05a6efa"
+    },
+    "red-log.json": {
+      "bytes": 21423,
+      "sha256": "6751f62160020361c217b745eef500a28c9f1e72c6cfc1e4058faef1d5e357f8"
+    },
+    "red-summary.json": {
+      "bytes": 25722,
+      "sha256": "d58fa41c573fce2f5a8488472fa0778e56227fd1b0d4796c9e3fe81e52d173c0"
+    },
+    "screenshots/at-limit-after-inner-scroll.png": {
+      "bytes": 201699,
+      "sha256": "62155996a340a63bec48e2aaf09ed4883fdea9396d2a0e0f27e57a49f28535f6"
+    },
+    "screenshots/denied-chat.png": {
+      "bytes": 451708,
+      "sha256": "d4db3daa66806640765fdae5b1f966e5b8170526ff957d7681f57520c19cd9b6"
+    },
+    "screenshots/history-both-withheld.png": {
+      "bytes": 618295,
+      "sha256": "540b5471389b452126069fdffa3a220bbe8f33c26772fc9cd35090cc8cbbe36d"
+    },
+    "source-diff.json": {
+      "bytes": 11365,
+      "sha256": "74477366660abcd5dd8fa0356ba0e317772056b17294d966945f487fc1e80df7"
+    },
+    "source-frozen.json": {
+      "bytes": 834,
+      "sha256": "6fee4d3db2b496889ab2268df37a7a506750398eaa37fba09deea799e79e6628"
+    },
+    "test-ui-review.json": {
+      "bytes": 7854,
+      "sha256": "78d1278f79580d140fc9ddc1a17c7608b03175966fe9a5b13bf48cb0608238ad"
+    },
+    "ui-binary-identities.json": {
+      "bytes": 2076,
+      "sha256": "bc8452cd69c83c59634b4e035ac22c92696a95a26dd4422fd10da5c5b32711fb"
+    },
+    "ui-command.json": {
+      "bytes": 1674,
+      "sha256": "dd4ae110400ddab0aa11b8deedc74d1c077f4536cd415345f5d6df4753044a7b"
+    },
+    "ui-execution.json": {
+      "bytes": 8514,
+      "sha256": "e3475e14fce64bab72b9febe6e78c13d2440bb43aca4c5813f023c6aee07e4f5"
+    },
+    "ui-log.json": {
+      "bytes": 59311,
+      "sha256": "6fe645e648166de7467bba4d33b125bff32956d2565456a8939b27d2a932a47b"
+    },
+    "ui-proof-summary.json": {
+      "bytes": 2279,
+      "sha256": "7ac84831bd004f0eda0a58cd151b105ea2bf77316a99ce0dafd69802e6347831"
+    }
+  },
+  "screenshotsOriginalNames": {
+    "denied-chat.png": "A3A7A7AD-A2F2-482F-984D-ECA07EC8DC2B.png",
+    "at-limit-after-inner-scroll.png": "743A5D02-E14F-461A-8B16-55F4A9162A1E.png",
+    "history-both-withheld.png": "94F1F380-1F68-44B0-8966-68B105368D6B.png"
+  },
+  "source": {
+    "observedAt": "2026-11-16T05:28:42.894628+00:00",
+    "head": "6ace503af163914e2d548496d4e960444ae10bb5",
+    "sourceFiles": {
+      "apps/ios/CovenCave/CovenCave/Networking/CaveClient+ToolOutput.swift": "505de1da2cbac79b30c029386a09fa6871ff69edb85bfbc5f44c3fa5b0be370d",
+      "apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift": "93f9aa4f1aca803db2a0b59924f822108ac0f5d1fc4ee443b1f0d40098eef150",
+      "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "b1d363a8e8cec4079bf4f8dd16f91fa90246213014602e32ca7d9c8809352009",
+      "apps/ios/CovenCave/CovenCaveTests/ThreadSnapshotStoreTests.swift": "b0e680399365e6cbcb64aaf3afb610f3587d63bf286fd446c395a64370998ed6",
+      "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "e115b1c6d82e0d90bd805a3f7f9ab67179a039ee7481d41dec5a1fd8fe1f92f9"
+    },
+    "redUnchanged": true
+  },
+  "observedAt": "2026-11-16T05:37:53.326979+00:00"
+}

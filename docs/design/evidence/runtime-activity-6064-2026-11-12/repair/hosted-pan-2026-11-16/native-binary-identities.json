@@ -1,0 +1,26 @@
+[
+  {
+    "role": "app-stub",
+    "path": "<native-derived>/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave",
+    "sha256": "2b3e7c67ce52947579f9846489acb8f71dee61e4dac3b03daa9fd3316779e259",
+    "uuid": "UUID: B07EEE3C-11E9-3B70-A326-6097EA0F7327 (arm64) <native-derived>/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave"
+  },
+  {
+    "role": "app-debug-implementation",
+    "path": "<native-derived>/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib",
+    "sha256": "1573de1ef3ccc55ee8fbb9aff432b32ff4eb5c70b3cf2bfb2362c59193c3e67b",
+    "uuid": "UUID: F89E9A77-97D3-3913-AFD6-FCD102768026 (arm64) <native-derived>/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib"
+  },
+  {
+    "role": "ui-runner",
+    "path": "<native-derived>/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner",
+    "sha256": "fdc75a6e425a658ef0e6183649b01d085f3040103c6ccabbecc172a712d2e022",
+    "uuid": "UUID: CC1BBF6E-4DDE-3789-8413-8995F0EAB902 (arm64) <native-derived>/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner"
+  },
+  {
+    "role": "ui-driver",
+    "path": "<native-derived>/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests",
+    "sha256": "e75f77c6ad3bbdb6ea7903b474bee858e6580ee87d170c493269440534891e23",
+    "uuid": "UUID: FFE16E91-129B-3786-8755-05A865B9BDF8 (arm64) <native-derived>/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests"
+  }
+]

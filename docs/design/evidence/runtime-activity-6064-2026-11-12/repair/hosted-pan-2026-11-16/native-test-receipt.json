@@ -1,0 +1,25 @@
+{
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "<native-derived>/Build/Products/CovenCave_iphonesimulator27.2-arm64.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "-parallel-testing-enabled",
+    "NO",
+    "-only-testing:CovenCaveUITests/ChatScrollBounceUITests/testSmallDragsAtLatestStayOnLatest",
+    "-test-iterations",
+    "3",
+    "-resultBundlePath",
+    "<raw-evidence>/remaining-qualification/hosted-pan-preparation/native/small-drag-three.xcresult"
+  ],
+  "pid": 41810,
+  "elapsedSeconds": 147.52347816701513,
+  "timedOut": false,
+  "interruptedSignal": null,
+  "terminal": true,
+  "childExitCode": 0,
+  "exitCode": 0,
+  "failure": null
+}

@@ -1,0 +1,211 @@
+{
+  "startedAt": "2026-11-16T05:33:01.359954+00:00",
+  "wrapperPid": 27396,
+  "head": "6ace503af163914e2d548496d4e960444ae10bb5",
+  "classification": "Focused synthetic UI7 only; no production server/.next/TCP/real-history/build/profiler",
+  "phases": [
+    {
+      "phase": "verify-app-stub",
+      "argv": [
+        "codesign",
+        "--verify",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave"
+      ],
+      "budgetSeconds": 60,
+      "startedAt": "2026-11-16T05:33:01.678013+00:00",
+      "pid": 27419,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:33:01.705150+00:00"
+    },
+    {
+      "phase": "verify-app-debug-implementation",
+      "argv": [
+        "codesign",
+        "--verify",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib"
+      ],
+      "budgetSeconds": 60,
+      "startedAt": "2026-11-16T05:33:01.733098+00:00",
+      "pid": 27422,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:33:01.759910+00:00"
+    },
+    {
+      "phase": "verify-ui-runner",
+      "argv": [
+        "codesign",
+        "--verify",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner"
+      ],
+      "budgetSeconds": 60,
+      "startedAt": "2026-11-16T05:33:01.769924+00:00",
+      "pid": 27425,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:33:01.781001+00:00"
+    },
+    {
+      "phase": "verify-ui-test-driver",
+      "argv": [
+        "codesign",
+        "--verify",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests"
+      ],
+      "budgetSeconds": 60,
+      "startedAt": "2026-11-16T05:33:01.790824+00:00",
+      "pid": 27427,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:33:01.801444+00:00"
+    },
+    {
+      "phase": "owned-boot",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "boot",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64"
+      ],
+      "budgetSeconds": 60,
+      "startedAt": "2026-11-16T05:33:01.921776+00:00",
+      "pid": 27439,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:33:02.373768+00:00"
+    },
+    {
+      "phase": "owned-bootstatus",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "bootstatus",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "-b"
+      ],
+      "budgetSeconds": 180,
+      "startedAt": "2026-11-16T05:33:02.374241+00:00",
+      "pid": 27506,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:33:03.588045+00:00"
+    },
+    {
+      "phase": "install-native-ui-app",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "install",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app"
+      ],
+      "budgetSeconds": 120,
+      "startedAt": "2026-11-16T05:33:03.588519+00:00",
+      "pid": 27606,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:33:08.805169+00:00"
+    },
+    {
+      "phase": "enumerate-focused-ui7",
+      "argv": [
+        "xcodebuild",
+        "test-without-building",
+        "-xctestrun",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/OutputRevocationFocusedUI7.xctestrun",
+        "-destination",
+        "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testHistoricalWithholdingExplainsInputAndOutputWithoutOfferingUnavailableLoads",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testDeniedToolOutputNeverShowsServerErrorBody",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testOversizedToolOutputIsExplicitlyWithheldAndSheetRemainsResponsive",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testDeepToolOutputEnvelopeIsWithheldAndSheetRemainsResponsive",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testAtLimitDeepToolOutputRendersVerbatimAndSheetRemainsResponsive",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testToolOutputClearsWhenBackgroundedAndCanBeLoadedAgain",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testToolOutputCanBeOpenedAndDismissed",
+        "-enumerate-tests",
+        "-test-enumeration-format",
+        "json",
+        "-test-enumeration-output-path",
+        "/private/tmp/nova6064-native-output-revocation-20261116/ui/enumeration.json"
+      ],
+      "budgetSeconds": 120,
+      "startedAt": "2026-11-16T05:33:08.805728+00:00",
+      "pid": 28257,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:33:20.574502+00:00"
+    },
+    {
+      "phase": "focused-ui7",
+      "argv": [
+        "xcodebuild",
+        "test-without-building",
+        "-xctestrun",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/OutputRevocationFocusedUI7.xctestrun",
+        "-destination",
+        "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testHistoricalWithholdingExplainsInputAndOutputWithoutOfferingUnavailableLoads",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testDeniedToolOutputNeverShowsServerErrorBody",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testOversizedToolOutputIsExplicitlyWithheldAndSheetRemainsResponsive",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testDeepToolOutputEnvelopeIsWithheldAndSheetRemainsResponsive",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testAtLimitDeepToolOutputRendersVerbatimAndSheetRemainsResponsive",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testToolOutputClearsWhenBackgroundedAndCanBeLoadedAgain",
+        "-only-testing:CovenCaveUITests/AgentActivityUITests/testToolOutputCanBeOpenedAndDismissed",
+        "-resultBundlePath",
+        "/private/tmp/nova6064-native-output-revocation-20261116/ui/focused-ui7.xcresult",
+        "-test-timeouts-enabled",
+        "YES",
+        "-default-test-execution-time-allowance",
+        "180",
+        "-maximum-test-execution-time-allowance",
+        "300"
+      ],
+      "budgetSeconds": 900,
+      "startedAt": "2026-11-16T05:33:20.575120+00:00",
+      "pid": 28745,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:35:52.008545+00:00"
+    },
+    {
+      "phase": "owned-shutdown",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "shutdown",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64"
+      ],
+      "budgetSeconds": 60,
+      "startedAt": "2026-11-16T05:35:52.009001+00:00",
+      "pid": 39214,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:35:55.287209+00:00"
+    }
+  ],
+  "expectedTests": 7,
+  "noRetries": true,
+  "sourceHashes": {
+    "apps/ios/CovenCave/CovenCave/Networking/CaveClient+ToolOutput.swift": "505de1da2cbac79b30c029386a09fa6871ff69edb85bfbc5f44c3fa5b0be370d",
+    "apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift": "93f9aa4f1aca803db2a0b59924f822108ac0f5d1fc4ee443b1f0d40098eef150",
+    "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "b1d363a8e8cec4079bf4f8dd16f91fa90246213014602e32ca7d9c8809352009",
+    "apps/ios/CovenCave/CovenCaveTests/ThreadSnapshotStoreTests.swift": "b0e680399365e6cbcb64aaf3afb610f3587d63bf286fd446c395a64370998ed6",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "e115b1c6d82e0d90bd805a3f7f9ab67179a039ee7481d41dec5a1fd8fe1f92f9"
+  },
+  "redImplementationIdentityGap": "RED pre-overwrite CovenCave.debug.dylib hash not retained; unavailable. Source/compiler/xcresult+stub/unitdriver identities retained.",
+  "testExit": 0,
+  "shutdownExit": 0,
+  "ownedSimulatorShutdown": true,
+  "changedDuringRun": [],
+  "sourceUnchanged": true,
+  "headAfter": "6ace503af163914e2d548496d4e960444ae10bb5",
+  "finishedAt": "2026-11-16T05:35:56.183203+00:00",
+  "passed": true
+}

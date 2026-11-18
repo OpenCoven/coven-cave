@@ -1,0 +1,609 @@
+{
+  "observedAt": "2026-11-15T22:19:22.962720+00:00",
+  "head": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "checks": [
+    {
+      "name": "Frontend build",
+      "id": 132405440713,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132405440713"
+    },
+    {
+      "name": "CodeQL",
+      "id": 132396760149,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/runs/132396760149"
+    },
+    {
+      "name": "Frontend E2E (2/6)",
+      "id": 132396680917,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680917"
+    },
+    {
+      "name": "Frontend validation (mobile tests)",
+      "id": 132396680794,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680794"
+    },
+    {
+      "name": "Frontend validation (Automations release canary)",
+      "id": 132396680773,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680773"
+    },
+    {
+      "name": "Frontend validation (app tests)",
+      "id": 132396680755,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680755"
+    },
+    {
+      "name": "Frontend bundle",
+      "id": 132396680742,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680742"
+    },
+    {
+      "name": "Frontend validation (lint)",
+      "id": 132396680732,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680732"
+    },
+    {
+      "name": "Frontend E2E (4/6)",
+      "id": 132396680720,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680720"
+    },
+    {
+      "name": "Frontend validation (API tests)",
+      "id": 132396680710,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680710"
+    },
+    {
+      "name": "Frontend validation (typecheck)",
+      "id": 132396680708,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680708"
+    },
+    {
+      "name": "Frontend validation (protocol conformance)",
+      "id": 132396680706,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680706"
+    },
+    {
+      "name": "Frontend validation (test wiring)",
+      "id": 132396680691,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680691"
+    },
+    {
+      "name": "Frontend E2E (5/6)",
+      "id": 132396680681,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680681"
+    },
+    {
+      "name": "Frontend E2E (6/6)",
+      "id": 132396680663,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680663"
+    },
+    {
+      "name": "Frontend E2E (3/6)",
+      "id": 132396680652,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680652"
+    },
+    {
+      "name": "Frontend E2E (1/6)",
+      "id": 132396680649,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680649"
+    },
+    {
+      "name": "Frontend validation (Windows startup controls)",
+      "id": 132396680622,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680622"
+    },
+    {
+      "name": "Frontend E2E (agentic)",
+      "id": 132396680594,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680594"
+    },
+    {
+      "name": "iOS build",
+      "id": 132396680589,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396680589"
+    },
+    {
+      "name": "Select validation",
+      "id": 132396624828,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396624828"
+    },
+    {
+      "name": "PR checks",
+      "id": 132396624624,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578077979/job/132396624624"
+    },
+    {
+      "name": "transcript",
+      "id": 132396624158,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578078115/job/132396624158"
+    },
+    {
+      "name": "Analyze (actions)",
+      "id": 132396614091,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578073441/job/132396614091"
+    },
+    {
+      "name": "Analyze (c-cpp)",
+      "id": 132396613912,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578073441/job/132396613912"
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "id": 132396613899,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578073441/job/132396613899"
+    },
+    {
+      "name": "Analyze (rust)",
+      "id": 132396613807,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578073441/job/132396613807"
+    },
+    {
+      "name": "Analyze (python)",
+      "id": 132396613663,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/OpenCoven/coven-cave/actions/runs/43578073441/job/132396613663"
+    }
+  ],
+  "frontendRun": 43578077979,
+  "frontendSummaries": [
+    {
+      "artifact": "playwright-evidence-agentic-43578077979-1/run-1CaHED/summary.json",
+      "version": 1,
+      "arguments": [
+        "tests/agentic-enhance.spec.ts",
+        "tests/research-desk-tabs.spec.ts",
+        "--project=desktop",
+        "--workers=1",
+        "--no-deps"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43578077979",
+      "runAttempt": "1",
+      "workflowSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "workflowDefinitionSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 34,
+      "identitySha256": "06f3c813e9b389524da67255c2b2082c2f66dad2ba617844da31b971d7384252",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 34,
+        "executed": 33,
+        "expected": 33,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 1,
+        "attempts": 33,
+        "retries": 0,
+        "identitySha256": "06f3c813e9b389524da67255c2b2082c2f66dad2ba617844da31b971d7384252"
+      }
+    },
+    {
+      "artifact": "playwright-evidence-shard-1-43578077979-1/run-9R6XtU/summary.json",
+      "version": 1,
+      "arguments": [
+        "--shard=1/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43578077979",
+      "runAttempt": "1",
+      "workflowSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "workflowDefinitionSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 191,
+      "identitySha256": "2c4da122e12a4203f70b39744179cb723ee443caed9c711298ad125b22f0530d",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 191,
+        "executed": 185,
+        "expected": 185,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 6,
+        "attempts": 185,
+        "retries": 0,
+        "identitySha256": "2c4da122e12a4203f70b39744179cb723ee443caed9c711298ad125b22f0530d"
+      }
+    },
+    {
+      "artifact": "playwright-evidence-shard-2-43578077979-1/run-tlkueJ/summary.json",
+      "version": 1,
+      "arguments": [
+        "--shard=2/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43578077979",
+      "runAttempt": "1",
+      "workflowSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "workflowDefinitionSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 206,
+      "identitySha256": "233ce55e4e53d01b59ee5ca0dd996ae0add5f3286d37ba2b6e05a331d42063a2",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 206,
+        "executed": 204,
+        "expected": 204,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 2,
+        "attempts": 204,
+        "retries": 0,
+        "identitySha256": "233ce55e4e53d01b59ee5ca0dd996ae0add5f3286d37ba2b6e05a331d42063a2"
+      }
+    },
+    {
+      "artifact": "playwright-evidence-shard-3-43578077979-1/run-Ii8fCB/summary.json",
+      "version": 1,
+      "arguments": [
+        "--shard=3/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43578077979",
+      "runAttempt": "1",
+      "workflowSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "workflowDefinitionSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 175,
+      "identitySha256": "98cd3cff216bffda447774ced19c4c3938a54b43a53da5693614f192f39986c4",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 175,
+        "executed": 173,
+        "expected": 173,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 2,
+        "attempts": 173,
+        "retries": 0,
+        "identitySha256": "98cd3cff216bffda447774ced19c4c3938a54b43a53da5693614f192f39986c4"
+      }
+    },
+    {
+      "artifact": "playwright-evidence-shard-4-43578077979-1/run-hKw3bZ/summary.json",
+      "version": 1,
+      "arguments": [
+        "--shard=4/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43578077979",
+      "runAttempt": "1",
+      "workflowSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "workflowDefinitionSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 191,
+      "identitySha256": "848de40ea340db9b34799486286c851b55d1b3a8c08be59802eaef954672d74f",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 191,
+        "executed": 191,
+        "expected": 191,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "attempts": 191,
+        "retries": 0,
+        "identitySha256": "848de40ea340db9b34799486286c851b55d1b3a8c08be59802eaef954672d74f"
+      }
+    },
+    {
+      "artifact": "playwright-evidence-shard-5-43578077979-1/run-n4d8iX/summary.json",
+      "version": 1,
+      "arguments": [
+        "--shard=5/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43578077979",
+      "runAttempt": "1",
+      "workflowSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "workflowDefinitionSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 189,
+      "identitySha256": "ccf367f584cd7871bc96831f504ff8ef146e433891fd7de9b9f798c8f229a450",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 189,
+        "executed": 180,
+        "expected": 180,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 9,
+        "attempts": 180,
+        "retries": 0,
+        "identitySha256": "ccf367f584cd7871bc96831f504ff8ef146e433891fd7de9b9f798c8f229a450"
+      }
+    },
+    {
+      "artifact": "playwright-evidence-shard-6-43578077979-1/run-vwqd3x/summary.json",
+      "version": 1,
+      "arguments": [
+        "--shard=6/6",
+        "--workers=1"
+      ],
+      "phase": "complete",
+      "passed": true,
+      "runId": "43578077979",
+      "runAttempt": "1",
+      "workflowSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "workflowDefinitionSha": "54a5a9428d57edee0d8cfe99e7c9a3177478bbb5",
+      "collectionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "planned": 190,
+      "identitySha256": "51b94b0aa67f8d418266d2334308dcaccd8076ec0220ddc8d49abafdba74970f",
+      "executionExit": {
+        "status": 0,
+        "signal": null
+      },
+      "counts": {
+        "planned": 190,
+        "executed": 152,
+        "expected": 152,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 38,
+        "attempts": 152,
+        "retries": 0,
+        "identitySha256": "51b94b0aa67f8d418266d2334308dcaccd8076ec0220ddc8d49abafdba74970f"
+      }
+    }
+  ],
+  "frontendAggregateCounts": {
+    "planned": 1176,
+    "executed": 1118,
+    "expected": 1118,
+    "unexpected": 0,
+    "flaky": 0,
+    "skipped": 58,
+    "attempts": 1118,
+    "retries": 0
+  },
+  "nativeRun": 43578078115,
+  "nativeLogAudit": [
+    {
+      "name": "scroll-debug",
+      "receipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCave",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-debug.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-retry-tests-on-failure",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveTests/ChatScrollStateTests",
+          "-only-testing:CovenCaveTests/ChatViewportRecoveryTests",
+          "-only-testing:CovenCaveTests/MarkdownReflowTests",
+          "-only-testing:CovenCaveTests/MarkdownPaintedReflowTests",
+          "-only-testing:CovenCaveTests/MessageBubbleAppearanceTests",
+          "-only-testing:CovenCaveUITests/ChatScrollingUITests"
+        ],
+        "pid": 3749,
+        "elapsedSeconds": 826.4236770829999,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "caseEvents": {
+        "passed": 60
+      },
+      "uniqueTestIdentities": 60,
+      "repeatedIdentities": {},
+      "logSHA256": "7ad8af720905d9af694de84749073329c61b04de056234d142eb331d4541dc5b",
+      "testTerminals": [
+        "** TEST SUCCEEDED **"
+      ]
+    },
+    {
+      "name": "scroll-release",
+      "receipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-release.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-retry-tests-on-failure",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink"
+        ],
+        "pid": 22141,
+        "elapsedSeconds": 555.9680306250002,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "caseEvents": {
+        "passed": 2
+      },
+      "uniqueTestIdentities": 2,
+      "repeatedIdentities": {},
+      "logSHA256": "bcabab3981448e5840e3c8062e7eca64c85104feac3fa77f9596aecf7522aa9e",
+      "testTerminals": [
+        "** TEST SUCCEEDED **"
+      ]
+    },
+    {
+      "name": "scroll-bounce",
+      "receipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCave",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-bounce.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveUITests/ChatScrollBounceUITests",
+          "-only-testing:CovenCaveUITests/TranscriptAccessibilityUITests"
+        ],
+        "pid": 25343,
+        "elapsedSeconds": 3004.326334083,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "caseEvents": {
+        "passed": 21
+      },
+      "uniqueTestIdentities": 7,
+      "repeatedIdentities": {
+        "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]": 3,
+        "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]": 3,
+        "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]": 3,
+        "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]": 3,
+        "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]": 3,
+        "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]": 3,
+        "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]": 3
+      },
+      "logSHA256": "fedc221ef74630e10359b6c56140806adfe0d97e7c94741e5e3a6c4c7bbc6d02",
+      "testTerminals": [
+        "** TEST SUCCEEDED **"
+      ]
+    }
+  ],
+  "limitations": [
+    "Hosted runs qualify this source head; a later evidence-only commit requires separate head check inspection.",
+    "XCTest Debug/Release commands configure up to three retry iterations; parsed logs contain no failed test-case events or repeated identity in these two jobs. Bounce command deliberately repeats all seven identities three times.",
+    "Hosted transcript jobs do not run the three local golden-14 retained-timeline methods; their green status does not resolve local Debug/Release failures.",
+    "Downloaded raw logs and artifacts retained at /private/tmp/nova6064-resume-20261114-mo25t69y/hosted-873"
+  ]
+}

@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-11-16T01:08:43.328Z",
+  "destination": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+  "fixtureId": "dbaf8411-6ed2-4c38-aba4-7fc9dd1982fb",
+  "candidate": {
+    "head": "0bd6f189eb788550e3c2c3cf2ed624f4b2549201",
+    "sourceBefore": "d9f22db110b4ae92bb71c09c63b2b604ddd16660271f3a79d11df4b6ee2b77d2",
+    "buildId": "I9UBVuj3J-4egKiEKItaT",
+    "sourceAfter": "d9f22db110b4ae92bb71c09c63b2b604ddd16660271f3a79d11df4b6ee2b77d2"
+  },
+  "host": {
+    "node": "v24.22.0",
+    "xcode": "Xcode 27.2\nBuild version 27B52"
+  },
+  "scenario": "native-tcp-recovery-only",
+  "classification": "real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider",
+  "passed": true,
+  "providerRequests": 1,
+  "toolInvocations": 1,
+  "limitations": [
+    "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+    "Native tests only; no rendered UI, human VoiceOver, physical-device performance or real provider qualification.",
+    "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+  ],
+  "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+  "daemon": {
+    "pid": 53748,
+    "version": "coven v0.5.0 (engine coven-code 0.9.0, pinned 0.9.0)"
+  },
+  "serverPid": 53760,
+  "ingressRefusalsVerified": true,
+  "realDaemonRosterVerified": true,
+  "testStages": [
+    {
+      "stage": "start",
+      "elapsedMs": 0.148958
+    },
+    {
+      "stage": "tool-running-wait",
+      "elapsedMs": 12.913583
+    },
+    {
+      "stage": "tool-running-wait-finished",
+      "elapsedMs": 174.504667
+    },
+    {
+      "stage": "send-cancellation-wait",
+      "elapsedMs": 174.536
+    },
+    {
+      "stage": "send-cancelled",
+      "elapsedMs": 174.57
+    },
+    {
+      "stage": "provider-release-wait",
+      "elapsedMs": 174.60625
+    },
+    {
+      "stage": "provider-released",
+      "elapsedMs": 189.131208
+    },
+    {
+      "stage": "resumed-stream-wait",
+      "elapsedMs": 189.171875
+    },
+    {
+      "stage": "resumed-stream-complete",
+      "elapsedMs": 221.092375
+    },
+    {
+      "stage": "initial-history-wait",
+      "elapsedMs": 221.238917
+    },
+    {
+      "stage": "initial-history-loaded",
+      "elapsedMs": 242.590208
+    },
+    {
+      "stage": "completed-replay-0-wait",
+      "elapsedMs": 244.103
+    },
+    {
+      "stage": "completed-replay-0-loaded",
+      "elapsedMs": 249.622792
+    },
+    {
+      "stage": "completed-replay-1-wait",
+      "elapsedMs": 249.658917
+    },
+    {
+      "stage": "completed-replay-1-loaded",
+      "elapsedMs": 254.417625
+    },
+    {
+      "stage": "initial-tool-output-wait",
+      "elapsedMs": 254.449
+    },
+    {
+      "stage": "initial-tool-output-loaded",
+      "elapsedMs": 265.262542
+    },
+    {
+      "stage": "server-restart-wait",
+      "elapsedMs": 265.548667
+    },
+    {
+      "stage": "server-restarted",
+      "elapsedMs": 831.309875
+    },
+    {
+      "stage": "lost-replay-0-wait",
+      "elapsedMs": 831.376208
+    },
+    {
+      "stage": "lost-replay-0-confirmed",
+      "elapsedMs": 841.624792
+    },
+    {
+      "stage": "lost-replay-1-wait",
+      "elapsedMs": 841.651667
+    },
+    {
+      "stage": "lost-replay-1-confirmed",
+      "elapsedMs": 846.363292
+    },
+    {
+      "stage": "saved-history-0-wait",
+      "elapsedMs": 846.392167
+    },
+    {
+      "stage": "saved-history-0-loaded",
+      "elapsedMs": 881.50075
+    },
+    {
+      "stage": "saved-tool-output-0-wait",
+      "elapsedMs": 881.649292
+    },
+    {
+      "stage": "saved-tool-output-0-loaded",
+      "elapsedMs": 889.751417
+    },
+    {
+      "stage": "saved-history-1-wait",
+      "elapsedMs": 889.793083
+    },
+    {
+      "stage": "saved-history-1-loaded",
+      "elapsedMs": 896.597875
+    },
+    {
+      "stage": "saved-tool-output-1-wait",
+      "elapsedMs": 896.716542
+    },
+    {
+      "stage": "saved-tool-output-1-loaded",
+      "elapsedMs": 901.727208
+    },
+    {
+      "stage": "empty-thread-reconcile-wait",
+      "elapsedMs": 902.068042
+    },
+    {
+      "stage": "empty-thread-reconciled",
+      "elapsedMs": 914.775792
+    },
+    {
+      "stage": "partial-thread-reconcile-wait",
+      "elapsedMs": 914.897125
+    },
+    {
+      "stage": "partial-thread-reconciled",
+      "elapsedMs": 925.187042
+    },
+    {
+      "stage": "denied-output-wait",
+      "elapsedMs": 925.252375
+    },
+    {
+      "stage": "denied-output-returned-error",
+      "elapsedMs": 934.686667
+    },
+    {
+      "stage": "test-exit",
+      "elapsedMs": 936.814833
+    }
+  ],
+  "restartStages": [
+    {
+      "stage": "stop-wait",
+      "elapsedMs": 0.06170900000142865
+    },
+    {
+      "stage": "stopped",
+      "elapsedMs": 8.31112500000745
+    },
+    {
+      "stage": "ready",
+      "elapsedMs": 557.5708750000049
+    },
+    {
+      "stage": "ingress-verified",
+      "elapsedMs": 564.0129589999997
+    }
+  ],
+  "restart": {
+    "previousPid": 53760,
+    "newPid": 60665,
+    "previousStopped": true,
+    "sameOrigin": true,
+    "ingressRefusalsVerified": true
+  },
+  "savedConversations": 1,
+  "transportOnlyExecuted": true,
+  "serverStopped": true,
+  "providerStopped": true,
+  "daemonStop": {
+    "succeeded": true
+  },
+  "daemonExitObservation": {
+    "pid": 53748,
+    "disappeared": true,
+    "status": "absent",
+    "budgetMs": 5000,
+    "pollIntervalMs": 50,
+    "probes": 1,
+    "elapsedMs": 0.09962500000256114,
+    "error": {
+      "code": "ESRCH",
+      "message": "kill ESRCH"
+    }
+  },
+  "daemonStopped": true,
+  "noDaemonState": true,
+  "fixtureRootRemoved": true,
+  "sourceUnchanged": true,
+  "finishedAt": "2026-11-16T01:10:21.523Z"
+}

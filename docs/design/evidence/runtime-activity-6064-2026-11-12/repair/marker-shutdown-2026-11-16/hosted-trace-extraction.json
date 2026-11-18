@@ -1,0 +1,63 @@
+{
+  "at": "2026-11-16T09:55:26.415998+00:00",
+  "iterations": [
+    {
+      "iteration": 1,
+      "lines": 625,
+      "bytes": 241466,
+      "sha256": "e30ed7708cdbfff57fa9e1b1ac12ebd7119528ed2c9f69410875aa24d92b84dc",
+      "file": "strict-small-drags-trace-1.txt",
+      "origin": "   0.000 traceOrigin epoch=1794820931.9201012 uptime=1778.4233627916667 byteCap=2097152 secondsCap=240.0 panSampleCap=1600 epoch=1794820931.920558 uptime=1778.4237895",
+      "panBegan": 9,
+      "panEnded": 9,
+      "outerInteractingPhases": 9,
+      "panProbeRecords": 165,
+      "invalidBoundsRecords": 1,
+      "metadataTruncationRecords": 164,
+      "finalRecords": [
+        "  63.911 panProbe sample=366 trigger=poll pan=0:enabled=true:touches=0 tracking=false dragging=false decelerating=false enabled=true offset=0.00,13290.33 content=402.00,14058.33 bounds=0.00,13290.33,402.00,768.00 frameWindow=0.00,0.00,402.00,768.00 window=0.00,0.00,402.00,874.00 inset=116.00,0.00,0.00,0.00 hits=[native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated] epoch=1794820995.831603 uptime=1842.3348600000002",
+        "  64.912 panProbe sample=371 trigger=poll pan=0:enabled=true:touches=0 tracking=false dragging=false decelerating=false enabled=true offset=0.00,13290.33 content=402.00,14058.33 bounds=0.00,13290.33,402.00,768.00 frameWindow=0.00,0.00,402.00,768.00 window=0.00,0.00,402.00,874.00 inset=116.00,0.00,0.00,0.00 hits=[native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated] epoch=1794820996.8318539 uptime=1843.3351112916669",
+        ""
+      ]
+    },
+    {
+      "iteration": 2,
+      "lines": 509,
+      "bytes": 206827,
+      "sha256": "f80e726a2698c59beecb9a3d7a24a70d9a52ee07c932a5c97fd6b4517e5802aa",
+      "file": "strict-small-drags-trace-2.txt",
+      "origin": "   0.000 traceOrigin epoch=1794821001.020235 uptime=1847.5234969166668 byteCap=2097152 secondsCap=240.0 panSampleCap=1600 epoch=1794821001.020746 uptime=1847.5239764583334",
+      "panBegan": 8,
+      "panEnded": 8,
+      "outerInteractingPhases": 8,
+      "panProbeRecords": 145,
+      "invalidBoundsRecords": 1,
+      "metadataTruncationRecords": 144,
+      "finalRecords": [
+        "  63.318 panProbe sample=356 trigger=poll pan=0:enabled=true:touches=0 tracking=false dragging=false decelerating=false enabled=true offset=0.00,13277.33 content=402.00,14058.33 bounds=0.00,13277.33,402.00,768.00 frameWindow=0.00,0.00,402.00,768.00 window=0.00,0.00,402.00,874.00 inset=116.00,0.00,0.00,0.00 hits=[native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated] epoch=1794821064.337957 uptime=1910.8412144166668",
+        "  64.518 panProbe sample=362 trigger=poll pan=0:enabled=true:touches=0 tracking=false dragging=false decelerating=false enabled=true offset=0.00,13277.33 content=402.00,14058.33 bounds=0.00,13277.33,402.00,768.00 frameWindow=0.00,0.00,402.00,768.00 window=0.00,0.00,402.00,874.00 inset=116.00,0.00,0.00,0.00 hits=[native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated] epoch=1794821065.537924 uptime=1912.0411809583334",
+        ""
+      ]
+    },
+    {
+      "iteration": 3,
+      "lines": 575,
+      "bytes": 224977,
+      "sha256": "38fef3951d7223b7328965c5f14d3f43253c694b1f960c7ec2423958364aca5a",
+      "file": "strict-small-drags-trace-3.txt",
+      "origin": "   0.001 traceOrigin epoch=1794821069.631736 uptime=1916.134997375 byteCap=2097152 secondsCap=240.0 panSampleCap=1600 epoch=1794821069.632293 uptime=1916.1355265416669",
+      "panBegan": 8,
+      "panEnded": 8,
+      "outerInteractingPhases": 8,
+      "panProbeRecords": 155,
+      "invalidBoundsRecords": 1,
+      "metadataTruncationRecords": 154,
+      "finalRecords": [
+        "  68.919 panProbe sample=364 trigger=poll pan=0:enabled=true:touches=0 tracking=false dragging=false decelerating=false enabled=true offset=0.00,13290.33 content=402.00,14058.33 bounds=0.00,13290.33,402.00,768.00 frameWindow=0.00,0.00,402.00,768.00 window=0.00,0.00,402.00,874.00 inset=116.00,0.00,0.00,0.00 hits=[native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated] epoch=1794821138.5507588 uptime=1985.0540163333335",
+        "  69.919 panProbe sample=369 trigger=poll pan=0:enabled=true:touches=0 tracking=false dragging=false decelerating=false enabled=true offset=0.00,13290.33 content=402.00,14058.33 bounds=0.00,13290.33,402.00,768.00 frameWindow=0.00,0.00,402.00,768.00 window=0.00,0.00,402.00,874.00 inset=116.00,0.00,0.00,0.00 hits=[native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:0:true,UITextTapRecognizer:0:true,UITextTapRecognizer:0:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:0:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated] epoch=1794821139.550973 uptime=1986.054230375",
+        ""
+      ]
+    }
+  ],
+  "limits": "File contents copied exactly from original test stdout delimiters; no screenshot or trace editing. Metadata ancestry truncation is separate from trace byte/sample/time coverage caps. Marker query failed, so writer integrity is not independently established."
+}

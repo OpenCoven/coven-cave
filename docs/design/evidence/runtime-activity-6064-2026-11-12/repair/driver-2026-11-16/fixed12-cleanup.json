@@ -1,0 +1,16 @@
+{
+  "observedAt": "2026-11-16T00:16:52.058286+00:00",
+  "ownedSimulator": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+  "finalState": "Shutdown",
+  "shutdownObservedWithoutIntervention": true,
+  "liveOwnedXcodebuilds": [],
+  "trackedTemporaryTestFileRestoredBeforeExecution": true,
+  "canonicalNativeSourceUnchanged": true,
+  "metricsCopied": "metrics-provenance.json",
+  "originalAndCopiedTraceRetained": true,
+  "noRetry": true,
+  "noExtraGUIActions": true,
+  "foreignSimSharedServicesUserStateUntouched": true,
+  "noSecuritySigningOrEntitlementChanges": true,
+  "priorEvidenceUnmodified": true
+}

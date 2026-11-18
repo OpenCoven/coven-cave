@@ -1,0 +1,18 @@
+{
+  "at": "2026-11-16T08:30:59.300810+00:00",
+  "scope": "Root concrete ephemeral native runner self-review, not independent execution result",
+  "runnerSha256": "8b37485944a6b0b029d6c7bbf887ada597bfe9548414c0f114a1b79c96f25016",
+  "sourceReview": "hosted-pan-final-review.json six-file hashes unchanged/no findings",
+  "checks": [
+    "7191base plus2docs source manifest overlay exact6reviewhashes; no foreigndirtypaths; originalUITesthash unchanged",
+    "Onlyalreadyowned64878UUID initiallyShutdown, same27.2/24B8117; no new/foreignsim",
+    "Hardfail markdownbuild/currentgeneratedHTML equalscompiledHTML; normal Debug build900/normaladHoc, currentartifactSHA/UUID/signatures",
+    "Untouchedgeneratedplan + exactCLIselector, enumeration1unique, originalsmall-drag3iterations/noRetry/noPerTestoverride/900outer",
+    "No source restoration whilediagnosticcandidate intentionallyretainedowned; allsourcebeforeafter equal",
+    "ActualreviewedmarkerBashstage withownedsim and15/5/5/5 innerwrapper; actualrows separatedfromcommandreceipt/filterheader",
+    "Normalownedshutdownfinally, firstbuild/test/query failure retained nofallbacksigning/deadlinechange"
+  ],
+  "preExecutionCorrection": "Removed draft PyYAML placeholder; extract reviewed YAML through existing Node yaml dependency, not new dependency or modified generatedplan",
+  "acceptance": "Nativebuild/diagnostic only. Instrumentedpass doesnotclearoriginalhosted/localReleasefailures or frame/device/human/owner gates",
+  "status": "READY_NOT_EXECUTED"
+}

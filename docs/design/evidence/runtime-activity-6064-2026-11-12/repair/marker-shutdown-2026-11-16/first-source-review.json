@@ -1,0 +1,70 @@
+{
+  "reviewedAt": "2026-11-16T10:20:25.290072+00:00",
+  "reviewType": "Source-only shared-account sub-agent review under requesting-code-review; not independent human review or execution acceptance.",
+  "worktree": "<worktree>",
+  "baseHead": "0557dff29063aa64311352fcd882cb1d3e5fe7eb",
+  "observedHead": "0557dff29063aa64311352fcd882cb1d3e5fe7eb",
+  "scope": "Five concrete uncommitted files, including the untracked helper; exact owned #6064 continuation. No source, Git, GitHub, app, simulator or provider mutation; no tests or native commands executed by this reviewer. Only this report was written.",
+  "hashVerification": {
+    "beforeMatchesManifest": true,
+    "afterMatchesManifest": true,
+    "beforeSHA256": {
+      "scripts/ios-scroll-marker.py": "2f4570e3ba7ce18b8ddf7b0e9c44b9abd967e03d5089a7c864004a2fdc4d8473",
+      "scripts/ios-native-command.test.mjs": "91a1918f7c5c94c54a98b2207e1e2ae396adea1a5e3f777392490a8770b49ccc",
+      ".github/workflows/ios-transcript-regression.yml": "cd6f642ffb9ceffdda3c4047cec9308f112e2b72f8b47cea5a156551528f0668",
+      "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "6cc7617d4aade57029989afaa472c257087e2a8b342a5f891ef237ddc4f2df6e",
+      "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "8a878e896f559bb60a9a0c071756678bdd00daa17a4a7c023f33f8b995b04f8e"
+    },
+    "afterSHA256": {
+      "scripts/ios-scroll-marker.py": "2f4570e3ba7ce18b8ddf7b0e9c44b9abd967e03d5089a7c864004a2fdc4d8473",
+      "scripts/ios-native-command.test.mjs": "91a1918f7c5c94c54a98b2207e1e2ae396adea1a5e3f777392490a8770b49ccc",
+      ".github/workflows/ios-transcript-regression.yml": "cd6f642ffb9ceffdda3c4047cec9308f112e2b72f8b47cea5a156551528f0668",
+      "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "6cc7617d4aade57029989afaa472c257087e2a8b342a5f891ef237ddc4f2df6e",
+      "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "8a878e896f559bb60a9a0c071756678bdd00daa17a4a7c023f33f8b995b04f8e"
+    }
+  },
+  "strengths": [
+    "The helper requires exactly one metadata row whose UUID matches the selected device, admits only Booted or Shutdown, and preserves nonzero discovery/query exits as failures.",
+    "The live path preserves the original selected-device query; the offline path explicitly supplies --directory. Both preserve the fixed CovenCave process/marker predicate and 70-minute lookback, with no simulator boot or global-host fallback.",
+    "The workflow keeps discovery and reading under the same 15+5+5+5-second owner, keeps the marker after strict and before Release even after strict failure, and retains independent logs and receipts.",
+    "Budget accounting remains 95 minutes for all native/marker wrapper bounds plus 9 minutes for other bounded steps and 3 minutes for uploads: 107 minutes inside the unchanged 108-minute job, retaining one minute.",
+    "Real-shell/wrapper/helper contract source preserves live query failure 17 and invalid-destination rejection, and adds shutdown success/failure plus malformed, missing, duplicate, transitional and escaped-store cases. The retained RED log has 8 passes/1 failure; retained GREEN-final has 9 passes/0 failures. These are inspected prior receipts, not a fresh reviewer execution.",
+    "Tracked apps/ios bytes match the base and there are no untracked apps/ios files. The original bounce UI-test SHA256 matches bf2c8ca1e8968cad2e4e11651aa9c881371f97365ffdf3baff0a704d62556211.",
+    "The design accurately limits the normal-signature local iOS27.2 probe to positive channel evidence and preserves the original shutdown149 and Debug first failure; instrumented strict success does not become uninstrumented/native/frame/device/human acceptance."
+  ],
+  "findings": [
+    {
+      "id": "R1",
+      "severity": "Important",
+      "mustRepairBeforePublication": true,
+      "file": "scripts/ios-scroll-marker.py",
+      "line": 40,
+      "relatedLines": [
+        41,
+        43,
+        44,
+        46
+      ],
+      "title": "Reject redirected data and diagnostics directories before choosing the offline store",
+      "issue": "resolve(strict=True) discards evidence of redirection. The data check then tests only the final UUID/data suffix, and the store check tests only confinement within data. A diagnostics symlink to another directory inside the same data directory is therefore accepted; a data symlink whose target also ends in the selected UUID/data is accepted too. The command then reads the redirected target instead of proving that it is the selected device data/var/db/diagnostics store.",
+      "concreteTrigger": "For valid Shutdown metadata and an existing selected data directory, let data/var/db/diagnostics be a symlink to data/Library/stale-diagnostics. Lines 43-45 admit the resolved directory because it is a directory beneath data, and line 46 passes that different store to log show. No existing scenario rejects this: escaped-store only points outside data.",
+      "impact": "A successful query of a substituted or stale store can produce an empty or misleading marker result and contradicts the explicit requirement that redirected directories/stores fail before reading. The design line 19 and plan line 57 currently promise a stronger admission rule than this helper implements.",
+      "recommendedRepair": "Reject redirection of the selected UUID/data directory and the var/db/diagnostics path components after normalizing any legitimate system-prefix alias such as /var to /private/var. Require the admitted store to remain the actual diagnostics path, rather than any resolved descendant of data. Add real-shell/helper fixtures for an internal diagnostics symlink and a redirected data directory whose target retains the same UUID/data suffix; both must fail before any log invocation.",
+      "testFile": "scripts/ios-native-command.test.mjs",
+      "testLine": 296,
+      "evidenceClass": "Direct source reasoning; no reproduction executed by reviewer."
+    }
+  ],
+  "criticalFindings": [],
+  "minorFindings": [],
+  "declinedToJudge": [
+    "Hosted iOS26.5 behavior and actual app writer-error absence require the future exact-revision collector run; a local iOS27.2 channel probe cannot settle them.",
+    "Original uninstrumented e946 strict/local Release failures, frame cost, physical-device behavior and human acceptance remain outside this source-only collector review and are not cleared.",
+    "No additional process-ownership finding is asserted from the new Python intermediary: the inspected subprocess.run KeyboardInterrupt path kills its direct child. Adversarial descendant execution was not performed in this source-only review."
+  ],
+  "assessment": {
+    "readyToProceed": "With fixes",
+    "importantDefectsMustBeRepaired": true,
+    "reasoning": "The collector boundary and evidence limits are otherwise aligned with the requested correction. Repair R1 and extend the focused contracts before publication; this verdict grants no merge, release or acceptance authority."
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "at": "2026-11-16T10:21:49.271002+00:00",
+  "exitCode": 1,
+  "finding": "Fresh reviewer found redirected store/data accepted; new actual-workflow fixture must reject"
+}

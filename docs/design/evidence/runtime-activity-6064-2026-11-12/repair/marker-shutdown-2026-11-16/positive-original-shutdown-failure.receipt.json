@@ -1,0 +1,24 @@
+{
+  "command": [
+    "xcrun",
+    "simctl",
+    "spawn",
+    "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "log",
+    "show",
+    "--style",
+    "compact",
+    "--last",
+    "70m",
+    "--predicate",
+    "process == \"Cave6064LogProbe\" AND eventMessage CONTAINS \"CAVE_SCROLL_TRACE_WRITE_ERROR_CHANNEL_PROBE_4eec368c1c3a48aea8ffcd4635e2a5a5\""
+  ],
+  "pid": 6682,
+  "elapsedSeconds": 0.15876891696825624,
+  "timedOut": false,
+  "interruptedSignal": null,
+  "terminal": true,
+  "childExitCode": 149,
+  "exitCode": 149,
+  "failure": null
+}

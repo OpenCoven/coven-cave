@@ -1,0 +1,13 @@
+{
+  "observedAt": "2026-11-16T01:12:08.438541+00:00",
+  "head": "0bd6f189eb788550e3c2c3cf2ed624f4b2549201",
+  "workingFilesSHA256": {
+    "scripts/native-harness-teardown.mjs": "6d890bb40c40d51470af4dba3e55fc62f99437356893f370ce0fbcea6719b7cc",
+    "scripts/native-harness-teardown.test.mjs": "30de4da42d5d5a89648b167cf48b15cf7c0927bccb1f6db60cd6e7cbbbc60198",
+    "scripts/runtime-activity-native-transport.mjs": "31f861049f42ab5863c84879b08236c8e1c669c38d7ee10ef36ead4123e5617e"
+  },
+  "canonicalBeforeAndAfterFingerprint": "d9f22db110b4ae92bb71c09c63b2b604ddd16660271f3a79d11df4b6ee2b77d2",
+  "sourceUnchanged": true,
+  "buildId": "I9UBVuj3J-4egKiEKItaT",
+  "onlyAuthorizedThreeFilesChanged": true
+}

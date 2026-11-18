@@ -1,0 +1,11 @@
+{
+  "head": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+  "phase": "bounded TextKit2 native output viewport; full selection and privacy clearing; 16unit+6UI",
+  "files": {
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift": "1b9231645210338e45b4fa899dc1375a7f3ff0a668e5c52e7a06939f4c00344a",
+    "apps/ios/CovenCave/CovenCave/Networking/ToolOutputPreview.swift": "975ad369216b95567f9b36135452a9e6b2a9fdef21c06245d1b36dd7d81f3d6b",
+    "apps/ios/CovenCave/CovenCaveTests/ToolOutputTests.swift": "d2f903cb3b4774bf132093b915adbb1e22a504e3a5c291238f6630d106ecabb1",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "66973a47c54ca8d92f7acd1ab1354963e8fdc65865b0ba519ea695ed715dc0e2"
+  },
+  "diff_sha256": "69af6e0fed95fe6d4627cd701f3de223e8f9afd757b3c449f047e4621498e1cf"
+}

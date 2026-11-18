@@ -246,6 +246,12 @@ extension ToolActivity {
     }
 }
 
+/// Display-only fact from historical projection. Unknown future values and
+/// malformed fields are ignored by consumers; no value authorizes a read.
+enum ToolPayloadDisclosure: String, Codable {
+    case withheld
+}
+
 struct ToolCall: Identifiable, Codable, Hashable {
     let id: String
     var name: String
@@ -257,6 +263,8 @@ struct ToolCall: Identifiable, Codable, Hashable {
     var durationMs: Int?
     var activity: ToolActivity? = nil
     var textOffset: Int? = nil
+    var inputDisclosure: ToolPayloadDisclosure? = nil
+    var outputDisclosure: ToolPayloadDisclosure? = nil
 }
 
 extension ToolCall {
@@ -264,8 +272,10 @@ extension ToolCall {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
         name = try values.decode(String.self, forKey: .name)
-        input = try values.decodeIfPresent(String.self, forKey: .input)
-        output = try values.decodeIfPresent(String.self, forKey: .output)
+        inputDisclosure = try? values.decodeIfPresent(ToolPayloadDisclosure.self, forKey: .inputDisclosure)
+        outputDisclosure = try? values.decodeIfPresent(ToolPayloadDisclosure.self, forKey: .outputDisclosure)
+        input = inputDisclosure == .withheld ? nil : try values.decodeIfPresent(String.self, forKey: .input)
+        output = outputDisclosure == .withheld ? nil : try values.decodeIfPresent(String.self, forKey: .output)
         status = try values.decodeIfPresent(String.self, forKey: .status)
         durationMs = try values.decodeIfPresent(Int.self, forKey: .durationMs)
         activity = (try? values.decodeIfPresent(ToolActivity.self, forKey: .activity))?.validated(callId: id, status: status)

@@ -1,0 +1,22 @@
+{
+  "baseHead": "d0e436bdb571133318705c833ff6b30e63a4b9ea",
+  "workingTreeDiffSha256": "5108d8a18ab56d1f21f845ea08bebfecad9aec41b679e081b44fad4cffde0271",
+  "binarySha256": "21164217fe51dbcb6689c912f16f09efce261e1b279aff50ca94cde7f1e17d00",
+  "buildId": "FJ56LSVjtucX8EXCP6UMW",
+  "sourceSHA256": {
+    "src/lib/server/chat-display-projection.ts": "a2c688cb0695999f9f9a698f6db03808548fe8342f109998f6951d55f2cee12e",
+    "src/lib/server/conversation-display-projection.ts": "b186ef55bbb030b2e4cd5af82f82b1e876819955c7d17ef9529b3db9595c65f3",
+    "src/lib/chat-turn-state.ts": "9fe2a91acf5495d7b26c461bee3182d75e32545a925ae32ef3035d4854fb0d15",
+    "src/lib/cave-conversations.ts": "052abf01b39999c87162b96694715e71c2fd9672ba12ed680d0b930ee48a9e77",
+    "src/components/chat-view.tsx": "0f66b522aff6d1cf934ee2a6ecbb5fb677a3e99d7ecc4b0e683cc5208f66e2a2"
+  },
+  "completeBundleManifest": {
+    "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/probe4/source-bundle-identity.json",
+    "sha256": "b341965f3e89263eb58a01213e4ddd8ce73d3329fed39457baf7244306187ceb",
+    "files": 9724
+  },
+  "retainedBundle": {
+    "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/qualified-privacy-build-FJ56/Cave6064Qualification.app",
+    "strictSignatureVerification": 0
+  }
+}

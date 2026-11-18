@@ -1,0 +1,11 @@
+{
+  "head": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+  "phase": "TextKit2 after-scroll actual viewport glyph predicate baseline, five-second bounded snapshot observations",
+  "files": {
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift": "5486fc51b146fd7b64c8beb1cfbba283de1e802968c1500005bdcbf31666f3f6",
+    "apps/ios/CovenCave/CovenCave/Networking/ToolOutputPreview.swift": "975ad369216b95567f9b36135452a9e6b2a9fdef21c06245d1b36dd7d81f3d6b",
+    "apps/ios/CovenCave/CovenCaveTests/ToolOutputTests.swift": "e241f1433c3dba507c66b019a9c9b865d28bbd827e98a15f75066586e40325ae",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "d4c505c1423a367d894c37a658993aa51686f0d74b75d77291a5eb2d3c006d94"
+  },
+  "diff_sha256": "7a9eb5ef756d62adeee9cf06ffd3156a24bbe140710d7f344f6bb2f895b3dabf"
+}

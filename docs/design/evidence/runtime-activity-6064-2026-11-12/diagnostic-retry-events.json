@@ -1,0 +1,1444 @@
+{
+  "stats": {
+    "startTime": "2026-11-12T20:46:28.560Z",
+    "duration": 102192.828,
+    "expected": 28,
+    "skipped": 0,
+    "unexpected": 2,
+    "flaky": 0
+  },
+  "attempts": [
+    {
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 404,
+      "requests": [
+        {
+          "status": 404,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "failed",
+      "refusal": 409,
+      "requests": [
+        {
+          "status": 409,
+          "allowed": false
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "SPAN",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "DETAILS",
+          "retry": false
+        }
+      ]
+    },
+    {
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": "oversized",
+      "requests": [
+        {
+          "status": 200,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 404,
+      "requests": [
+        {
+          "status": 404,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 409,
+      "requests": [
+        {
+          "status": 409,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": "oversized",
+      "requests": [
+        {
+          "status": 200,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 404,
+      "requests": [
+        {
+          "status": 404,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 409,
+      "requests": [
+        {
+          "status": 409,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": "oversized",
+      "requests": [
+        {
+          "status": 200,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 404,
+      "requests": [
+        {
+          "status": 404,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 409,
+      "requests": [
+        {
+          "status": 409,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": "oversized",
+      "requests": [
+        {
+          "status": 200,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 404,
+      "requests": [
+        {
+          "status": 404,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 409,
+      "requests": [
+        {
+          "status": 409,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": "oversized",
+      "requests": [
+        {
+          "status": 200,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "failed",
+      "refusal": 404,
+      "requests": [
+        {
+          "status": 404,
+          "allowed": false
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "SPAN",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "DETAILS",
+          "retry": false
+        }
+      ]
+    },
+    {
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 409,
+      "requests": [
+        {
+          "status": 409,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": "oversized",
+      "requests": [
+        {
+          "status": 200,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 404,
+      "requests": [
+        {
+          "status": 404,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 409,
+      "requests": [
+        {
+          "status": 409,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": "oversized",
+      "requests": [
+        {
+          "status": 200,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 404,
+      "requests": [
+        {
+          "status": 404,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 409,
+      "requests": [
+        {
+          "status": 409,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": "oversized",
+      "requests": [
+        {
+          "status": 200,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 404,
+      "requests": [
+        {
+          "status": 404,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 409,
+      "requests": [
+        {
+          "status": 409,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": "oversized",
+      "requests": [
+        {
+          "status": 200,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 404 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 404,
+      "requests": [
+        {
+          "status": 404,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output 409 withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": 409,
+      "requests": [
+        {
+          "status": 409,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    },
+    {
+      "title": "lazy output oversized withholds bodies and rechecks or revokes access",
+      "repeatEachIndex": null,
+      "status": "passed",
+      "refusal": "oversized",
+      "requests": [
+        {
+          "status": 200,
+          "allowed": false
+        },
+        {
+          "status": 200,
+          "allowed": true
+        }
+      ],
+      "events": [
+        {
+          "type": "pointerdown",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerup",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "click",
+          "tag": "SUMMARY",
+          "retry": false
+        },
+        {
+          "type": "pointerdown",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "pointerup",
+          "tag": "BUTTON",
+          "retry": true
+        },
+        {
+          "type": "click",
+          "tag": "BUTTON",
+          "retry": true
+        }
+      ]
+    }
+  ]
+}

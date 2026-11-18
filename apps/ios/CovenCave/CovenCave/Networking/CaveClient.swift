@@ -943,7 +943,7 @@ struct CaveClient {
         }
     }
 
-    private func purgeConversationIfAccessDenied(_ response: URLResponse, sessionId: String?) async throws {
+    func purgeConversationIfAccessDenied(_ response: URLResponse, sessionId: String?) async throws {
         if let sessionId, !sessionId.isEmpty,
            let status = (response as? HTTPURLResponse)?.statusCode, status == 401 || status == 403 {
             // Match the web conversation cache: an authoritative access refusal

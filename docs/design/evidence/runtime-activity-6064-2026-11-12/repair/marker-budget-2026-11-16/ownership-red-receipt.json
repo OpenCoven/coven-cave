@@ -1,0 +1,14 @@
+{
+  "startedAt": "2026-11-16T12:30:27.897751+00:00",
+  "finishedAt": "2026-11-16T12:31:08.416186+00:00",
+  "elapsedSeconds": 40.518104334012605,
+  "exitCode": 1,
+  "command": [
+    "node",
+    "--test",
+    "scripts/ios-native-command.test.mjs"
+  ],
+  "helperSha256": "eec8e2f33cf1195e7db6f5692e28660ea713c77070e16177af9037dbfb57b817",
+  "testSha256": "b7e897366c9ef88b494cf033f032affcbb21300bbc2309349084dda3533ebf38",
+  "purpose": "Explicit direct-reader liveness RED after phase-only correction; existing native command owner remains unchanged."
+}

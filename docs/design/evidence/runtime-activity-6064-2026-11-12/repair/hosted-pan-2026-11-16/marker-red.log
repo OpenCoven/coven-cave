@@ -1,0 +1,33 @@
+✔ native command preserves its real exit status and output (55.466584ms)
+✔ timeout waits for owned child finalization and cannot become green (631.341542ms)
+✔ operator interruption drains only the owned command and preserves cancellation (150.342125ms)
+✔ frozen evidence survives later movement of xcresult staging files (43.789583ms)
+✔ a second collection cannot overwrite retained evidence (50.714541ms)
+✔ incomplete evidence stays available and fails visibly without following links (40.719541ms)
+✔ transcript workflow owns deadlines and uploads logs separately from frozen results (5.210167ms)
+✖ hosted pan marker collection preserves query failures without broadening the selected simulator (1.8805ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 7
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1033.978625
+
+✖ failing tests:
+
+test at scripts/ios-native-command.test.mjs:191:7
+✖ hosted pan marker collection preserves query failures without broadening the selected simulator (1.8805ms)
+  AssertionError [ERR_ASSERTION]: a failed or missing trace needs an independent writer-error collection channel
+      at TestContext.<anonymous> (file://<owned-worktree>/scripts/ios-native-command.test.mjs:195:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+      at async file://<owned-worktree>/scripts/ios-native-command.test.mjs:191:1 {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

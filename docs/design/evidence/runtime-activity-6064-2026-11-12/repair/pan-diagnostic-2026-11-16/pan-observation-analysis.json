@@ -1,0 +1,772 @@
+{
+  "observedAt": "2026-11-16T04:23:04.924275+00:00",
+  "diagnosticOnly": true,
+  "method": "ChatScrollBounceUITests/testSmallDragsAtLatestStayOnLatest",
+  "runs": [
+    {
+      "iteration": 1,
+      "outcome": {
+        "outcome": "passed",
+        "seconds": 72.569
+      },
+      "trace": "<retained-native-root>/iteration-1-printed-trace.log",
+      "outerInteractingSequences": 9,
+      "outerPanBeganCount": 9,
+      "outerPanEndedCount": 9,
+      "cancelledPanCallbacks": 0,
+      "failedPanCallbacks": 0,
+      "nativeFrameWindow": [
+        "0.00,-0.00,402.00,768.00",
+        "0.00,0.00,402.00,768.00"
+      ],
+      "windowBounds": [
+        "0.00,0.00,402.00,874.00"
+      ],
+      "coincidentNativeAndHostedPoints": [
+        "201.00,384.00",
+        "201.00,460.80"
+      ],
+      "hitTestOutsideOuterSampleCount": 0,
+      "anchorCorrections": 0,
+      "viewportRecoveries": 0,
+      "perAction": [
+        {
+          "actionIndex": 0,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802397.935,
+          "synthesisActivityStartEpoch": 1794802398.51,
+          "postEventIdleWaitStartEpoch": 1794802400.175,
+          "panBegan": {
+            "line": 59,
+            "traceSeconds": 7.497,
+            "epoch": 1794802399.8368092,
+            "state": 1,
+            "offset": "0.00,13270.67"
+          },
+          "panEnded": {
+            "line": 75,
+            "traceSeconds": 7.638,
+            "epoch": 1794802399.978355,
+            "state": 3,
+            "offset": "0.00,13312.67"
+          },
+          "panChangedCallbacks": 7,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 1,
+          "kind": "away-nudge",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.50] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.53] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802406.218,
+          "synthesisActivityStartEpoch": 1794802406.715,
+          "postEventIdleWaitStartEpoch": 1794802408.434,
+          "panBegan": {
+            "line": 113,
+            "traceSeconds": 15.87,
+            "epoch": 1794802408.2098432,
+            "state": 1,
+            "offset": "0.00,13282.67"
+          },
+          "panEnded": {
+            "line": 117,
+            "traceSeconds": 15.918,
+            "epoch": 1794802408.258213,
+            "state": 3,
+            "offset": "0.00,13277.33"
+          },
+          "panChangedCallbacks": 1,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 2,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802408.437,
+          "synthesisActivityStartEpoch": 1794802409.057,
+          "postEventIdleWaitStartEpoch": 1794802411.414,
+          "panBegan": {
+            "line": 125,
+            "traceSeconds": 18.73,
+            "epoch": 1794802411.0702682,
+            "state": 1,
+            "offset": "0.00,13282.67"
+          },
+          "panEnded": {
+            "line": 139,
+            "traceSeconds": 18.886,
+            "epoch": 1794802411.226207,
+            "state": 3,
+            "offset": "0.00,13318.67"
+          },
+          "panChangedCallbacks": 6,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 3,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802417.285,
+          "synthesisActivityStartEpoch": 1794802417.859,
+          "postEventIdleWaitStartEpoch": 1794802419.924,
+          "panBegan": {
+            "line": 175,
+            "traceSeconds": 27.247,
+            "epoch": 1794802419.587068,
+            "state": 1,
+            "offset": "0.00,13293.33"
+          },
+          "panEnded": {
+            "line": 191,
+            "traceSeconds": 27.385,
+            "epoch": 1794802419.7254848,
+            "state": 3,
+            "offset": "0.00,13325.33"
+          },
+          "panChangedCallbacks": 7,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 4,
+          "kind": "away-nudge",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.50] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.53] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802425.957,
+          "synthesisActivityStartEpoch": 1794802426.37,
+          "postEventIdleWaitStartEpoch": 1794802428.417,
+          "panBegan": {
+            "line": 229,
+            "traceSeconds": 35.863,
+            "epoch": 1794802428.203347,
+            "state": 1,
+            "offset": "0.00,13282.67"
+          },
+          "panEnded": {
+            "line": 233,
+            "traceSeconds": 35.909,
+            "epoch": 1794802428.249631,
+            "state": 3,
+            "offset": "0.00,13277.33"
+          },
+          "panChangedCallbacks": 1,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 5,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802429.924,
+          "synthesisActivityStartEpoch": 1794802430.346,
+          "postEventIdleWaitStartEpoch": 1794802432.444,
+          "panBegan": {
+            "line": 315,
+            "traceSeconds": 39.764,
+            "epoch": 1794802432.103873,
+            "state": 1,
+            "offset": "0.00,13154.33"
+          },
+          "panEnded": {
+            "line": 331,
+            "traceSeconds": 39.898,
+            "epoch": 1794802432.238426,
+            "state": 3,
+            "offset": "0.00,13215.67"
+          },
+          "panChangedCallbacks": 7,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 6,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802439.392,
+          "synthesisActivityStartEpoch": 1794802440.072,
+          "postEventIdleWaitStartEpoch": 1794802441.801,
+          "panBegan": {
+            "line": 371,
+            "traceSeconds": 49.13,
+            "epoch": 1794802441.470676,
+            "state": 1,
+            "offset": "0.00,13293.33"
+          },
+          "panEnded": {
+            "line": 387,
+            "traceSeconds": 49.266,
+            "epoch": 1794802441.606276,
+            "state": 3,
+            "offset": "0.00,13325.33"
+          },
+          "panChangedCallbacks": 7,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 7,
+          "kind": "away-nudge",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.50] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.53] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802447.961,
+          "synthesisActivityStartEpoch": 1794802448.298,
+          "postEventIdleWaitStartEpoch": 1794802449.903,
+          "panBegan": {
+            "line": 426,
+            "traceSeconds": 57.347,
+            "epoch": 1794802449.686994,
+            "state": 1,
+            "offset": "0.00,13282.67"
+          },
+          "panEnded": {
+            "line": 430,
+            "traceSeconds": 57.387,
+            "epoch": 1794802449.727271,
+            "state": 3,
+            "offset": "0.00,13277.33"
+          },
+          "panChangedCallbacks": 1,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 8,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802451.4,
+          "synthesisActivityStartEpoch": 1794802451.763,
+          "postEventIdleWaitStartEpoch": 1794802453.209,
+          "panBegan": {
+            "line": 513,
+            "traceSeconds": 60.53,
+            "epoch": 1794802452.870133,
+            "state": 1,
+            "offset": "0.00,13155.67"
+          },
+          "panEnded": {
+            "line": 529,
+            "traceSeconds": 60.666,
+            "epoch": 1794802453.005906,
+            "state": 3,
+            "offset": "0.00,13217.00"
+          },
+          "panChangedCallbacks": 7,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "outcome": {
+        "outcome": "passed",
+        "seconds": 74.964
+      },
+      "trace": "<retained-native-root>/iteration-2-printed-trace.log",
+      "outerInteractingSequences": 9,
+      "outerPanBeganCount": 9,
+      "outerPanEndedCount": 9,
+      "cancelledPanCallbacks": 0,
+      "failedPanCallbacks": 0,
+      "nativeFrameWindow": [
+        "0.00,-0.00,402.00,768.00",
+        "0.00,0.00,402.00,768.00"
+      ],
+      "windowBounds": [
+        "0.00,0.00,402.00,874.00"
+      ],
+      "coincidentNativeAndHostedPoints": [
+        "201.00,384.00",
+        "201.00,460.80"
+      ],
+      "hitTestOutsideOuterSampleCount": 0,
+      "anchorCorrections": 0,
+      "viewportRecoveries": 0,
+      "perAction": [
+        {
+          "actionIndex": 0,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802465.833,
+          "synthesisActivityStartEpoch": 1794802466.237,
+          "postEventIdleWaitStartEpoch": 1794802467.973,
+          "panBegan": {
+            "line": 125,
+            "traceSeconds": 6.024,
+            "epoch": 1794802467.638002,
+            "state": 1,
+            "offset": "0.00,19693.33"
+          },
+          "panEnded": {
+            "line": 141,
+            "traceSeconds": 6.158,
+            "epoch": 1794802467.771419,
+            "state": 3,
+            "offset": "0.00,19735.33"
+          },
+          "panChangedCallbacks": 7,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 1,
+          "kind": "away-nudge",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.50] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.53] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802473.532,
+          "synthesisActivityStartEpoch": 1794802473.948,
+          "postEventIdleWaitStartEpoch": 1794802475.611,
+          "panBegan": {
+            "line": 178,
+            "traceSeconds": 13.773,
+            "epoch": 1794802475.387183,
+            "state": 1,
+            "offset": "0.00,19705.33"
+          },
+          "panEnded": {
+            "line": 182,
+            "traceSeconds": 13.813,
+            "epoch": 1794802475.4271011,
+            "state": 3,
+            "offset": "0.00,19700.00"
+          },
+          "panChangedCallbacks": 1,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 2,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802477.115,
+          "synthesisActivityStartEpoch": 1794802477.454,
+          "postEventIdleWaitStartEpoch": 1794802478.887,
+          "panBegan": {
+            "line": 266,
+            "traceSeconds": 16.94,
+            "epoch": 1794802478.554319,
+            "state": 1,
+            "offset": "0.00,19573.33"
+          },
+          "panEnded": {
+            "line": 280,
+            "traceSeconds": 17.076,
+            "epoch": 1794802478.6896129,
+            "state": 3,
+            "offset": "0.00,19634.67"
+          },
+          "panChangedCallbacks": 6,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 3,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802485.355,
+          "synthesisActivityStartEpoch": 1794802485.819,
+          "postEventIdleWaitStartEpoch": 1794802488.118,
+          "panBegan": {
+            "line": 322,
+            "traceSeconds": 26.174,
+            "epoch": 1794802487.787523,
+            "state": 1,
+            "offset": "0.00,19716.00"
+          },
+          "panEnded": {
+            "line": 338,
+            "traceSeconds": 26.308,
+            "epoch": 1794802487.921624,
+            "state": 3,
+            "offset": "0.00,19748.00"
+          },
+          "panChangedCallbacks": 7,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 4,
+          "kind": "away-nudge",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.50] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.53] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802494.819,
+          "synthesisActivityStartEpoch": 1794802495.183,
+          "postEventIdleWaitStartEpoch": 1794802497.549,
+          "panBegan": {
+            "line": 377,
+            "traceSeconds": 35.723,
+            "epoch": 1794802497.337483,
+            "state": 1,
+            "offset": "0.00,19705.33"
+          },
+          "panEnded": {
+            "line": 381,
+            "traceSeconds": 35.763,
+            "epoch": 1794802497.377071,
+            "state": 3,
+            "offset": "0.00,19700.00"
+          },
+          "panChangedCallbacks": 1,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 5,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802499.058,
+          "synthesisActivityStartEpoch": 1794802499.68,
+          "postEventIdleWaitStartEpoch": 1794802502.135,
+          "panBegan": {
+            "line": 463,
+            "traceSeconds": 40.19,
+            "epoch": 1794802501.804358,
+            "state": 1,
+            "offset": "0.00,19578.67"
+          },
+          "panEnded": {
+            "line": 479,
+            "traceSeconds": 40.324,
+            "epoch": 1794802501.938036,
+            "state": 3,
+            "offset": "0.00,19640.00"
+          },
+          "panChangedCallbacks": 7,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 6,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802509.332,
+          "synthesisActivityStartEpoch": 1794802509.948,
+          "postEventIdleWaitStartEpoch": 1794802512.461,
+          "panBegan": {
+            "line": 521,
+            "traceSeconds": 50.507,
+            "epoch": 1794802512.1211982,
+            "state": 1,
+            "offset": "0.00,19716.00"
+          },
+          "panEnded": {
+            "line": 535,
+            "traceSeconds": 50.64,
+            "epoch": 1794802512.2544541,
+            "state": 3,
+            "offset": "0.00,19748.00"
+          },
+          "panChangedCallbacks": 6,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 7,
+          "kind": "away-nudge",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.50] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.53] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802519.621,
+          "synthesisActivityStartEpoch": 1794802520.186,
+          "postEventIdleWaitStartEpoch": 1794802521.881,
+          "panBegan": {
+            "line": 576,
+            "traceSeconds": 60.043,
+            "epoch": 1794802521.656773,
+            "state": 1,
+            "offset": "0.00,19705.33"
+          },
+          "panEnded": {
+            "line": 580,
+            "traceSeconds": 60.079,
+            "epoch": 1794802521.6934152,
+            "state": 3,
+            "offset": "0.00,19700.00"
+          },
+          "panChangedCallbacks": 1,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 8,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802523.371,
+          "synthesisActivityStartEpoch": 1794802523.68,
+          "postEventIdleWaitStartEpoch": 1794802526.034,
+          "panBegan": {
+            "line": 663,
+            "traceSeconds": 64.09,
+            "epoch": 1794802525.704445,
+            "state": 1,
+            "offset": "0.00,19578.00"
+          },
+          "panEnded": {
+            "line": 677,
+            "traceSeconds": 64.226,
+            "epoch": 1794802525.840235,
+            "state": 3,
+            "offset": "0.00,19639.33"
+          },
+          "panChangedCallbacks": 6,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        }
+      ]
+    },
+    {
+      "iteration": 3,
+      "outcome": {
+        "outcome": "passed",
+        "seconds": 77.388
+      },
+      "trace": "<retained-native-root>/iteration-3-printed-trace.log",
+      "outerInteractingSequences": 9,
+      "outerPanBeganCount": 9,
+      "outerPanEndedCount": 9,
+      "cancelledPanCallbacks": 0,
+      "failedPanCallbacks": 0,
+      "nativeFrameWindow": [
+        "0.00,-0.00,402.00,768.00",
+        "0.00,0.00,402.00,768.00"
+      ],
+      "windowBounds": [
+        "0.00,0.00,402.00,874.00"
+      ],
+      "coincidentNativeAndHostedPoints": [
+        "201.00,384.00",
+        "201.00,460.80"
+      ],
+      "hitTestOutsideOuterSampleCount": 0,
+      "anchorCorrections": 0,
+      "viewportRecoveries": 0,
+      "perAction": [
+        {
+          "actionIndex": 0,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802541.469,
+          "synthesisActivityStartEpoch": 1794802542.325,
+          "postEventIdleWaitStartEpoch": 1794802545.672,
+          "panBegan": {
+            "line": 127,
+            "traceSeconds": 8.679,
+            "epoch": 1794802545.338933,
+            "state": 1,
+            "offset": "0.00,19693.33"
+          },
+          "panEnded": {
+            "line": 139,
+            "traceSeconds": 8.805,
+            "epoch": 1794802545.4644141,
+            "state": 3,
+            "offset": "0.00,19735.33"
+          },
+          "panChangedCallbacks": 5,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 1,
+          "kind": "away-nudge",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.50] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.53] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802551.706,
+          "synthesisActivityStartEpoch": 1794802552.556,
+          "postEventIdleWaitStartEpoch": 1794802555.817,
+          "panBegan": {
+            "line": 178,
+            "traceSeconds": 18.945,
+            "epoch": 1794802555.6046891,
+            "state": 1,
+            "offset": "0.00,19705.33"
+          },
+          "panEnded": {
+            "line": 182,
+            "traceSeconds": 19.006,
+            "epoch": 1794802555.665488,
+            "state": 3,
+            "offset": "0.00,19700.00"
+          },
+          "panChangedCallbacks": 1,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 2,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802557.36,
+          "synthesisActivityStartEpoch": 1794802558.26,
+          "postEventIdleWaitStartEpoch": 1794802561.459,
+          "panBegan": {
+            "line": 263,
+            "traceSeconds": 24.462,
+            "epoch": 1794802561.121644,
+            "state": 1,
+            "offset": "0.00,19574.33"
+          },
+          "panEnded": {
+            "line": 277,
+            "traceSeconds": 24.6,
+            "epoch": 1794802561.26014,
+            "state": 3,
+            "offset": "0.00,19635.67"
+          },
+          "panChangedCallbacks": 6,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 3,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802567.016,
+          "synthesisActivityStartEpoch": 1794802567.79,
+          "postEventIdleWaitStartEpoch": 1794802570.814,
+          "panBegan": {
+            "line": 316,
+            "traceSeconds": 33.829,
+            "epoch": 1794802570.488564,
+            "state": 1,
+            "offset": "0.00,19716.00"
+          },
+          "panEnded": {
+            "line": 328,
+            "traceSeconds": 33.966,
+            "epoch": 1794802570.6259499,
+            "state": 3,
+            "offset": "0.00,19748.00"
+          },
+          "panChangedCallbacks": 5,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 4,
+          "kind": "away-nudge",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.50] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.53] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802576.009,
+          "synthesisActivityStartEpoch": 1794802576.703,
+          "postEventIdleWaitStartEpoch": 1794802579.461,
+          "panBegan": {
+            "line": 363,
+            "traceSeconds": 42.578,
+            "epoch": 1794802579.2383451,
+            "state": 1,
+            "offset": "0.00,19705.33"
+          },
+          "panEnded": {
+            "line": 367,
+            "traceSeconds": 42.624,
+            "epoch": 1794802579.283685,
+            "state": 3,
+            "offset": "0.00,19700.00"
+          },
+          "panChangedCallbacks": 1,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 5,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802579.463,
+          "synthesisActivityStartEpoch": 1794802580.268,
+          "postEventIdleWaitStartEpoch": 1794802582.988,
+          "panBegan": {
+            "line": 374,
+            "traceSeconds": 45.995,
+            "epoch": 1794802582.655182,
+            "state": 1,
+            "offset": "0.00,19705.33"
+          },
+          "panEnded": {
+            "line": 388,
+            "traceSeconds": 46.131,
+            "epoch": 1794802582.7909222,
+            "state": 3,
+            "offset": "0.00,19741.33"
+          },
+          "panChangedCallbacks": 6,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 6,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802588.264,
+          "synthesisActivityStartEpoch": 1794802589.092,
+          "postEventIdleWaitStartEpoch": 1794802592.056,
+          "panBegan": {
+            "line": 426,
+            "traceSeconds": 55.061,
+            "epoch": 1794802591.721453,
+            "state": 1,
+            "offset": "0.00,19716.00"
+          },
+          "panEnded": {
+            "line": 438,
+            "traceSeconds": 55.193,
+            "epoch": 1794802591.853436,
+            "state": 3,
+            "offset": "0.00,19748.00"
+          },
+          "panChangedCallbacks": 5,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 7,
+          "kind": "away-nudge",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.50] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.53] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802597.214,
+          "synthesisActivityStartEpoch": 1794802597.741,
+          "postEventIdleWaitStartEpoch": 1794802600.118,
+          "panBegan": {
+            "line": 476,
+            "traceSeconds": 63.245,
+            "epoch": 1794802599.904922,
+            "state": 1,
+            "offset": "0.00,19705.33"
+          },
+          "panEnded": {
+            "line": 480,
+            "traceSeconds": 63.287,
+            "epoch": 1794802599.946813,
+            "state": 3,
+            "offset": "0.00,19700.00"
+          },
+          "panChangedCallbacks": 1,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        },
+        {
+          "actionIndex": 8,
+          "kind": "return-pull",
+          "normalizedActionTitle": "Press \"Chat transcript\" ScrollView[0.50, 0.60] for 0.1 seconds, then drag to \"Chat transcript\" ScrollView[0.50, 0.50] with velocity of 500.00 pixels per second, and then hold for 0.0 seconds ",
+          "activityStartEpoch": 1794802601.602,
+          "synthesisActivityStartEpoch": 1794802602.313,
+          "postEventIdleWaitStartEpoch": 1794802604.673,
+          "panBegan": {
+            "line": 561,
+            "traceSeconds": 67.679,
+            "epoch": 1794802604.338681,
+            "state": 1,
+            "offset": "0.00,19579.67"
+          },
+          "panEnded": {
+            "line": 575,
+            "traceSeconds": 67.814,
+            "epoch": 1794802604.474087,
+            "state": 3,
+            "offset": "0.00,19641.00"
+          },
+          "panChangedCallbacks": 6,
+          "beginObservationWithinSynthesisAndIdleWindow": true,
+          "potentialHitAtBegin": "native-start,host-start@201.00,460.80 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated | native-end,host-end@201.00,384.00 inOuter=true ancestry=UIView{}>UIView{}>WKContentView{UITapAndAHalfRecognizer:5:true,UITextTapRecognizer:5:true,UITextTapRecognizer:5:true}>WKScrollView{UIScrollViewDelayedTouchesBeganGestureRe:0:false,UIPanGestureRecognizer:1:true,UIScrollViewPanGestureRecognizer:0:false}>WKWebView{}>_TtGC7SwiftUI21UIKitPlatformViewHostGVS_{}>truncated"
+        }
+      ]
+    }
+  ],
+  "causalConclusion": "Known hosted missing-return/marker-loss failure did not reproduce. All nine actions in each local iteration have outer pan began/ended and interacting sequences. This does not establish the hosted failure cause.",
+  "timingLimit": "Epoch aligns observation records with XCTest activity timestamps; samples are processing-time snapshots, not actual touch delivery or main-thread-duration measurements. Polls may miss short intervals; instrumentation adds work.",
+  "routingLimit": "Hit-test ancestry is potential routing at snapshot time. New successful-run synthesized-event files/video/AX artifacts were not retained by original generated lifetime defaults. Current actual injected window paths therefore are not independently archived; normalized action titles and native-derived/fixed-host endpoint comparison are retained."
+}

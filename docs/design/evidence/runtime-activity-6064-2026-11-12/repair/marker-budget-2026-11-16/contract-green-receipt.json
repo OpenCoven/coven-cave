@@ -1,0 +1,14 @@
+{
+  "startedAt": "2026-11-16T12:26:59.938117+00:00",
+  "finishedAt": "2026-11-16T12:27:40.441481+00:00",
+  "elapsedSeconds": 40.50291570799891,
+  "command": [
+    "node",
+    "--test",
+    "scripts/ios-native-command.test.mjs"
+  ],
+  "exitCode": 1,
+  "workflowSha256": "8b3ee5dc09502fd224bd22bb3b44d34301ce74cee0e4901f9c1b42e7415d0aa4",
+  "testSha256": "883a5034baa8d51e6120e64de86a06d2705561e6c8f2b4ae33a31319b9e025d1",
+  "purpose": "Same real-shell/helper/owner contract suite after only marker phase reallocation; original30s envelope and all native/UI bytes unchanged."
+}

@@ -1,0 +1,67 @@
+{
+  "preparedAt": "2026-11-16T01:08:13.677772+00:00",
+  "head": "0bd6f189eb788550e3c2c3cf2ed624f4b2549201",
+  "workingSnapshotFilesSHA256": {
+    "scripts/native-harness-teardown.mjs": "6d890bb40c40d51470af4dba3e55fc62f99437356893f370ce0fbcea6719b7cc",
+    "scripts/native-harness-teardown.test.mjs": "30de4da42d5d5a89648b167cf48b15cf7c0927bccb1f6db60cd6e7cbbbc60198",
+    "scripts/runtime-activity-native-transport.mjs": "31f861049f42ab5863c84879b08236c8e1c669c38d7ee10ef36ead4123e5617e"
+  },
+  "buildId": "I9UBVuj3J-4egKiEKItaT",
+  "installedCLI": {
+    "path": "/Users/buns/.nvm/versions/node/v24.22.0/lib/node_modules/@opencoven/cli/node_modules/@opencoven/cli-macos/bin/coven",
+    "sha256": "d8d0d800602cf708d85074c905a55632703aadf2a1f6edcc9ed8f72b063cf684",
+    "version": "coven v0.5.0 (engine coven-code 0.9.0, pinned 0.9.0)",
+    "statSize": 42458400
+  },
+  "command": [
+    "node",
+    "--experimental-strip-types",
+    "--import",
+    "./scripts/test-alias-register.mjs",
+    "scripts/runtime-activity-native-transport.mjs",
+    "--execute",
+    "--destination",
+    "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "--derived-data",
+    "/private/tmp/nova6064-native-teardown-20261116/native-derived-data",
+    "--evidence",
+    "/private/tmp/nova6064-native-teardown-20261116/tcp-evidence",
+    "--transport-only"
+  ],
+  "environment": {
+    "COVEN_BIN": "/Users/buns/.nvm/versions/node/v24.22.0/lib/node_modules/@opencoven/cli/node_modules/@opencoven/cli-macos/bin/coven",
+    "COVEN_HOME": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/coven",
+    "COVEN_CAVE_HOME": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/coven/cave",
+    "COVEN_CAVE_ENV_FILE": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/env.local",
+    "COVEN_VAULT_FILE": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/vault.yaml",
+    "COVEN_CAVE_LOCAL_VAULT_FILE": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/local-vault.enc.json",
+    "COVEN_CAVE_LOCAL_VAULT_KEY_FILE": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/local-vault.key",
+    "COVEN_SOCKET": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/coven/coven.sock",
+    "HOME": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/home",
+    "USERPROFILE": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/home",
+    "XDG_CONFIG_HOME": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/xdg/config",
+    "XDG_CACHE_HOME": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/xdg/cache",
+    "XDG_DATA_HOME": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/xdg/data",
+    "XDG_STATE_HOME": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/xdg/state",
+    "TMPDIR": "/private/tmp/n6064",
+    "TMP": "/private/tmp/n6064",
+    "TEMP": "/private/tmp/n6064",
+    "COVEN_GITHUB_SUBSCRIPTIONS_PATH": "/private/tmp/nova6064-native-teardown-20261116/launcher-state/subscriptions.json",
+    "COVEN_RESEARCH_ENABLED": "0",
+    "CI": "true",
+    "NEXT_TELEMETRY_DISABLED": "1"
+  },
+  "oneInvocationNoRetry": true,
+  "oldCanonicalFailurePreserved": true,
+  "invocationHOMEIsolated": true,
+  "parentEnvironmentUnmodified": true,
+  "priorOwnedWrapperReference": "/private/tmp/nova6064-20261112/run.mjs",
+  "startedAt": "2026-11-16T01:08:43.246283+00:00",
+  "exitCode": 0,
+  "finishedAt": "2026-11-16T01:10:21.530525+00:00",
+  "workingSnapshotFilesStillMatch": {
+    "scripts/native-harness-teardown.mjs": true,
+    "scripts/native-harness-teardown.test.mjs": true,
+    "scripts/runtime-activity-native-transport.mjs": true
+  }
+}

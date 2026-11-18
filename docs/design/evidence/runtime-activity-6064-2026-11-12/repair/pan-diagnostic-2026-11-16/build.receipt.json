@@ -1,0 +1,32 @@
+{
+  "command": [
+    "xcodebuild",
+    "build-for-testing",
+    "-project",
+    "apps/ios/CovenCave/CovenCave.xcodeproj",
+    "-scheme",
+    "CovenCave",
+    "-configuration",
+    "Debug",
+    "-destination",
+    "platform=iOS Simulator,id=F8D29620-D485-475F-9D45-1F2D3925BFB1",
+    "-derivedDataPath",
+    "<retained-native-root>/derived-data",
+    "-parallel-testing-enabled",
+    "NO",
+    "-jobs",
+    "2",
+    "CODE_SIGNING_ALLOWED=YES",
+    "CODE_SIGN_IDENTITY=-",
+    "CODE_SIGN_STYLE=Manual",
+    "DEVELOPMENT_TEAM="
+  ],
+  "pid": 11816,
+  "elapsedSeconds": 201.05064970901003,
+  "timedOut": false,
+  "interruptedSignal": null,
+  "terminal": true,
+  "childExitCode": 0,
+  "exitCode": 0,
+  "failure": null
+}

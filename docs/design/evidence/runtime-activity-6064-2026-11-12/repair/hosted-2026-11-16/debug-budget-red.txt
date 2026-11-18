@@ -1,0 +1,32 @@
+✔ native command preserves its real exit status and output (135.285125ms)
+✔ timeout waits for owned child finalization and cannot become green (734.767959ms)
+✔ operator interruption drains only the owned command and preserves cancellation (284.219125ms)
+✔ frozen evidence survives later movement of xcresult staging files (543.27275ms)
+✔ a second collection cannot overwrite retained evidence (118.2ms)
+✔ incomplete evidence stays available and fails visibly without following links (305.99425ms)
+✖ transcript workflow owns deadlines and uploads logs separately from frozen results (7.092083ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 6
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2292.634375
+
+✖ failing tests:
+
+test at scripts/ios-native-command.test.mjs:132:7
+✖ transcript workflow owns deadlines and uploads logs separately from frozen results (7.092083ms)
+  AssertionError [ERR_ASSERTION]: the complete observed Debug workload and owned shutdown must fit the command allowance
+      at TestContext.<anonymous> (file://<owned-worktree>/scripts/ios-native-command.test.mjs:145:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+      at async file://<owned-worktree>/scripts/ios-native-command.test.mjs:132:1 {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

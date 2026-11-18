@@ -10,6 +10,8 @@
 // not empty instead of throwing, so the run fails with evidence rather than
 // without it. The caller decides how to record the failure.
 import { readdir as readdirDefault, rm as rmDefault } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
+import { setTimeout as waitDefault } from "node:timers/promises";
 
 /** Bounded so a runaway writer cannot turn the report into a directory dump. */
 export const LATE_WRITE_LISTING_LIMIT = 50;
@@ -67,4 +69,45 @@ export function lateWriteRecord(removal) {
     code: removal.code, path: removal.path, message: removal.message,
     entries: removal.entries, truncated: removal.truncated,
   };
+}
+
+/**
+ * Observe only the recorded owned PID, after the caller's stop command succeeds.
+ * Acknowledgement/socket EOF is not process exit. Only ESRCH within one
+ * monotonic five-second budget permits the caller to remove fixture state.
+ * Signal zero observes existence; this helper never terminates a process.
+ */
+export async function observeOwnedProcessExit(pid, {
+  probe = (ownedPid) => process.kill(ownedPid, 0),
+  now = () => performance.now(), wait = waitDefault,
+} = {}) {
+  const budgetMs = 5_000;
+  const pollIntervalMs = 50;
+  const started = now();
+  let probes = 0;
+  const result = (status, error, hasError = false) => ({
+    pid: Number.isSafeInteger(pid) ? pid : null,
+    disappeared: status === "absent", status, budgetMs, pollIntervalMs,
+    probes, elapsedMs: Math.max(0, now() - started),
+    ...(hasError ? { error: {
+      code: typeof error?.code === "string" ? error.code : "UNKNOWN",
+      message: (error instanceof Error ? error.message : String(error)).slice(0, 500),
+    } } : {}),
+  });
+  if (!Number.isSafeInteger(pid) || pid <= 0 || pid > 2_147_483_647) {
+    return result("invalid-pid");
+  }
+  while (now() - started < budgetMs) {
+    let failure;
+    let probeFailed = false;
+    ++probes;
+    try { probe(pid); } catch (error) { failure = error; probeFailed = true; }
+    // Probe and scheduling costs consume the same deadline. A late ESRCH
+    // cannot retroactively establish disappearance within the budget.
+    if (now() - started >= budgetMs) return result("timeout", failure, probeFailed);
+    if (probeFailed) return result(failure?.code === "ESRCH" ? "absent" : "probe-error", failure, true);
+    try { await wait(Math.min(pollIntervalMs, budgetMs - (now() - started))); }
+    catch (error) { return result("observation-error", error, true); }
+  }
+  return result("timeout");
 }

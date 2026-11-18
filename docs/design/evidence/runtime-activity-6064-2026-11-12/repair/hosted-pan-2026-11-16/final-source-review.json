@@ -1,0 +1,38 @@
+{
+  "reviewedAt": "2026-11-16T08:25:51.846328+00:00",
+  "reviewType": "fresh independent read-only source review; no independent execution",
+  "baseHead": "e9465e80c9d062ad579f3d1d24b0e83a2207dc15",
+  "currentHead": "e9465e80c9d062ad579f3d1d24b0e83a2207dc15",
+  "initialHashesMatchedManifest": true,
+  "completionHashes": {
+    ".github/workflows/ios-transcript-regression.yml": "24e4e7bd32a5b8f7a5eb53343f706f05dc0e26cce06fae9b673fbcb56865dc72",
+    "apps/ios/CovenCave/CovenCave/Views/ChatScrollAnchor.swift": "3b0c1317dc96a9c6d996427351a0aaaab9d124c8eab760111b0ebeeb4c4a3cc9",
+    "apps/ios/CovenCave/CovenCave/Views/ChatScrollTrace.swift": "649ca56b6633d9d02e22d507a9a35a8dd1b1efb60a887180ebd90eaef179e946",
+    "scripts/ios-native-command.test.mjs": "efd14c73ba7217024313f784350d4868f588b7a6d279c3a3f4dbb7a4c9ab2880",
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "9c2b740f65ac0759960a4614894cf541966436f0e1c6f7e628de47d715d30a4a",
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "8fb1101c3492817ab52f9561f718b29cdd6d1bc1f13e7284868d2b763d911160"
+  },
+  "originalUITestSha256": "bf2c8ca1e8968cad2e4e11651aa9c881371f97365ffdf3baff0a704d62556211",
+  "changedDuringReview": [],
+  "continuity": {
+    "relationship": "same-work",
+    "coverage": "scoped explicit handoff and supplied plan ledger; no broad discovery or private sessions"
+  },
+  "findings": [],
+  "assessment": "No critical or important concrete source defects found in the frozen six-file implementation. Source review supports continuing the planned verification only; it does not establish runtime correctness, acceptance, publication authority or completion.",
+  "checks": {
+    "scope": "Four tracked modifications and two new design/plan documents; original functional UI test unchanged. Native selectors, gestures, assertions, retries and stage command ceilings unchanged.",
+    "attachment": "Existing recognizer target only; UUID token prevents stale probe teardown stopping replacement observer. Stop removes target and invalidates timer. Coordinator deinit retains only its observer for main-queue teardown when needed.",
+    "bounds": "Open-file and DEBUG gating; process-wide monotonic 240-second deadline, 1600 pan reservations, shared 2097152-byte cap. Metadata consists of bounded class/state/geometry; no text or accessibility payload extraction.",
+    "writeErrors": "Throwing append latches write-error and emits a fixed NSLog marker, including terminal-record write failures. Open/unavailable files remain absent evidence rather than zero-error evidence.",
+    "collector": "Runs immediately after strict when selected destination succeeded and job was not cancelled; validates UUID; fixed process/marker predicate; retains nonzero query status, log and receipt through existing artifact/freeze patterns.",
+    "budget": "Native wrapper bounds total 5670 seconds (1110 + 3630 + 930); marker wrapper 30 seconds; other declared step budgets 720 seconds; sum 6420 seconds = 107 minutes, leaving nominal 60 seconds in unchanged 6480-second job. This is configured accounting, not measured scheduling overhead.",
+    "tests": "Read actual Bash execution test with real wrapper and fake external xcrun. It asserts status 17, terminal receipt and retained marker log, exact selected destination/predicate/window, plus invalid destination rejection. No tests executed by reviewer."
+  },
+  "remainingGates": [
+    "Run current six-file source contracts and normal-signature native build/targeted original UI test; prior observer compilation is not current-head verification.",
+    "Obtain exact-head hosted runtime evidence for iOS26.5/23F77 with all original strict executions and independently retained marker logs/receipts.",
+    "Treat failed marker query, missing or capped traces, attachment interruption and unattributed markers as incomplete evidence. The 70-minute query can contain earlier launches; correlate timestamp/PID with strict launch evidence before causal attribution.",
+    "Passing phase counts and endpoint hit tests do not prove touch delivery. Timer/hit-test/write overhead can change timing; instrumented success does not establish uninstrumented or device acceptance."
+  ]
+}

@@ -1,0 +1,303 @@
+{
+  "at": "2026-11-16T09:56:50.957981+00:00",
+  "iterations": [
+    {
+      "iteration": 1,
+      "synthesizedEvents": 9,
+      "traceEndEpoch": 1794820996.8318539,
+      "lastSynthesisStartEpoch": 1794820988.735,
+      "windows": [
+        {
+          "eventIndex": 1,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794820939.762,
+          "windowEndEpoch": 1794820948.129,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 10,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 2,
+          "directionFromOriginalTest": "nudge-away",
+          "synthesisStartEpoch": 1794820948.129,
+          "windowEndEpoch": 1794820950.47,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 10,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 3,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794820950.47,
+          "windowEndEpoch": 1794820958.804,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 12,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 4,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794820958.804,
+          "windowEndEpoch": 1794820967.147,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 11,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 5,
+          "directionFromOriginalTest": "nudge-away",
+          "synthesisStartEpoch": 1794820967.147,
+          "windowEndEpoch": 1794820969.518,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 10,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 6,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794820969.518,
+          "windowEndEpoch": 1794820978.101,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 11,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 7,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794820978.101,
+          "windowEndEpoch": 1794820986.408,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 11,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 8,
+          "directionFromOriginalTest": "nudge-away",
+          "synthesisStartEpoch": 1794820986.408,
+          "windowEndEpoch": 1794820988.735,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 10,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 9,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794820988.735,
+          "windowEndEpoch": 1794820996.8318539,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 10,
+          "explicitCoverageLimits": []
+        }
+      ],
+      "wholeTraceExplicitCoverageLimits": []
+    },
+    {
+      "iteration": 2,
+      "synthesizedEvents": 9,
+      "traceEndEpoch": 1794821065.537924,
+      "lastSynthesisStartEpoch": 1794821057.088,
+      "windows": [
+        {
+          "eventIndex": 1,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821008.139,
+          "windowEndEpoch": 1794821016.413,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 11,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 2,
+          "directionFromOriginalTest": "nudge-away",
+          "synthesisStartEpoch": 1794821016.413,
+          "windowEndEpoch": 1794821018.747,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 10,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 3,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821018.747,
+          "windowEndEpoch": 1794821027.198,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 11,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 4,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821027.198,
+          "windowEndEpoch": 1794821035.734,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 11,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 5,
+          "directionFromOriginalTest": "nudge-away",
+          "synthesisStartEpoch": 1794821035.734,
+          "windowEndEpoch": 1794821038.086,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 9,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 6,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821038.086,
+          "windowEndEpoch": 1794821046.519,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 10,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 7,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821046.519,
+          "windowEndEpoch": 1794821056.004,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 12,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 8,
+          "directionFromOriginalTest": "nudge-away",
+          "synthesisStartEpoch": 1794821056.004,
+          "windowEndEpoch": 1794821057.088,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 2,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 9,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821057.088,
+          "windowEndEpoch": 1794821065.537924,
+          "panBegan": 0,
+          "panEnded": 0,
+          "pollRecords": 8,
+          "explicitCoverageLimits": []
+        }
+      ],
+      "wholeTraceExplicitCoverageLimits": []
+    },
+    {
+      "iteration": 3,
+      "synthesizedEvents": 9,
+      "traceEndEpoch": 1794821139.550973,
+      "lastSynthesisStartEpoch": 1794821131.936,
+      "windows": [
+        {
+          "eventIndex": 1,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821077.96,
+          "windowEndEpoch": 1794821087.197,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 12,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 2,
+          "directionFromOriginalTest": "nudge-away",
+          "synthesisStartEpoch": 1794821087.197,
+          "windowEndEpoch": 1794821089.531,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 10,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 3,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821089.531,
+          "windowEndEpoch": 1794821098.148,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 11,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 4,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821098.148,
+          "windowEndEpoch": 1794821106.643,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 12,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 5,
+          "directionFromOriginalTest": "nudge-away",
+          "synthesisStartEpoch": 1794821106.643,
+          "windowEndEpoch": 1794821109.101,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 11,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 6,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821109.101,
+          "windowEndEpoch": 1794821117.923,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 12,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 7,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821117.923,
+          "windowEndEpoch": 1794821129.557,
+          "panBegan": 0,
+          "panEnded": 0,
+          "pollRecords": 8,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 8,
+          "directionFromOriginalTest": "nudge-away",
+          "synthesisStartEpoch": 1794821129.557,
+          "windowEndEpoch": 1794821131.936,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 10,
+          "explicitCoverageLimits": []
+        },
+        {
+          "eventIndex": 9,
+          "directionFromOriginalTest": "return-to-latest",
+          "synthesisStartEpoch": 1794821131.936,
+          "windowEndEpoch": 1794821139.550973,
+          "panBegan": 1,
+          "panEnded": 1,
+          "pollRecords": 10,
+          "explicitCoverageLimits": []
+        }
+      ],
+      "wholeTraceExplicitCoverageLimits": []
+    }
+  ],
+  "interpretation": "Temporal grouping by synthesis activity start and next start; not actual delivery acknowledgement. A passing run can omit an outer callback. Initial invalidBounds records and failed independent writer query remain coverage limits; potential hit tests do not establish recipients."
+}

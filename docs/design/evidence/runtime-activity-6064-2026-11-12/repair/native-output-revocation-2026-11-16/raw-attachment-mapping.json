@@ -1,0 +1,173 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "2D5676E4-A80E-4AC3-8FA0-34F98A17CF59.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "tool-output-large-deep-dismissed_0_0C275F4C-063D-45BC-9374-58F1F182A6E5.png",
+        "timestamp" : 1794807229.234
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "A59AEB70-5B9E-4337-BB77-99E9AED16E68.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "tool-output-large-deep-reloaded_0_6E60F804-7BCB-49F7-A2AB-509D4FC84E62.png",
+        "timestamp" : 1794807226.232
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "743A5D02-E14F-461A-8B16-55F4A9162A1E.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "tool-output-large-deep-after-inner-scroll_0_D12B6ECA-6D04-4609-A2AC-567D9E2BFCF5.png",
+        "timestamp" : 1794807220.989
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "94703071-6DAE-4C67-8EE8-29E184DC31EC.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "post-scroll-output-glyph-observations_0_C28156A8-5349-410A-B7E9-4AEB68D8E351.txt",
+        "timestamp" : 1794807220.918
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "D1780C42-1872-474E-887E-E44868ED59F9.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "tool-output-large-deep-verbatim_0_FC2F5DF0-A367-4647-B3AC-5A2EC79CE3E9.png",
+        "timestamp" : 1794807216.237
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "73B7AA14-C117-4D89-A321-C344F84C38CE.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "at-limit-output-geometry_0_2A3E7AD3-0DBB-422E-8D39-2EF9DDB0947B.txt",
+        "timestamp" : 1794807216.147
+      }
+    ],
+    "testIdentifier" : "AgentActivityUITests/testAtLimitDeepToolOutputRendersVerbatimAndSheetRemainsResponsive()",
+    "testIdentifierURL" : "test://com.apple.xcode/CovenCave/CovenCaveUITests/AgentActivityUITests/testAtLimitDeepToolOutputRendersVerbatimAndSheetRemainsResponsive"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "97F73B14-66F3-4060-BA13-6ABE6118713A.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "tool-output-deep-envelope_0_E5190515-247E-4327-BC69-500A4A1D301C.png",
+        "timestamp" : 1794807241.933
+      }
+    ],
+    "testIdentifier" : "AgentActivityUITests/testDeepToolOutputEnvelopeIsWithheldAndSheetRemainsResponsive()",
+    "testIdentifierURL" : "test://com.apple.xcode/CovenCave/CovenCaveUITests/AgentActivityUITests/testDeepToolOutputEnvelopeIsWithheldAndSheetRemainsResponsive"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "A3A7A7AD-A2F2-482F-984D-ECA07EC8DC2B.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "tool-output-denied_0_518E86AB-629B-4C5F-8AED-03F7766995B0.png",
+        "timestamp" : 1794807256.728
+      }
+    ],
+    "testIdentifier" : "AgentActivityUITests/testDeniedToolOutputNeverShowsServerErrorBody()",
+    "testIdentifierURL" : "test://com.apple.xcode/CovenCave/CovenCaveUITests/AgentActivityUITests/testDeniedToolOutputNeverShowsServerErrorBody"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "13DA6AFF-53DC-45CC-A51F-2AF84162A012.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "historical-tool-disclosure-legacy_0_AD7DC3FA-26F3-44C2-BDC8-7412C9EFD223.png",
+        "timestamp" : 1794807300.418
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "94F1F380-1F68-44B0-8966-68B105368D6B.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "historical-tool-disclosure-both_0_11C1B93D-B3CB-4B78-8FC2-878A858B7A4C.png",
+        "timestamp" : 1794807289.591
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "B8FFE343-18E1-4BB6-B037-FE6A346D7E4D.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "historical-tool-disclosure-output_0_F5D39FF2-F0FA-4C54-BCC3-79D3C6B243D8.png",
+        "timestamp" : 1794807279.944
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "7A62372F-0DE1-432D-8708-2226A5229711.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "historical-tool-disclosure-input_0_4AC80A25-12C4-4DE5-BB73-D18504565B3C.png",
+        "timestamp" : 1794807271.088
+      }
+    ],
+    "testIdentifier" : "AgentActivityUITests/testHistoricalWithholdingExplainsInputAndOutputWithoutOfferingUnavailableLoads()",
+    "testIdentifierURL" : "test://com.apple.xcode/CovenCave/CovenCaveUITests/AgentActivityUITests/testHistoricalWithholdingExplainsInputAndOutputWithoutOfferingUnavailableLoads"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "C665069A-55F6-4A94-9D9E-323273DC08D6.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "tool-output-oversized-envelope_0_58590D41-FCA6-4C57-B161-ACD4A30AD001.png",
+        "timestamp" : 1794807322.16
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "D0B5A3B1-3C6B-48E9-8E6D-4092C72E3652.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "tool-output-oversized-output_0_82193C41-6902-4316-9B24-37BC27A708F8.png",
+        "timestamp" : 1794807310.173
+      }
+    ],
+    "testIdentifier" : "AgentActivityUITests/testOversizedToolOutputIsExplicitlyWithheldAndSheetRemainsResponsive()",
+    "testIdentifierURL" : "test://com.apple.xcode/CovenCave/CovenCaveUITests/AgentActivityUITests/testOversizedToolOutputIsExplicitlyWithheldAndSheetRemainsResponsive"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "exportedFileName" : "9B5CB03D-8053-4ED0-BD04-290BEB626050.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "tool-output-detail_0_73DE8CB9-0C0E-4E9A-A53A-7D32B7065B65.png",
+        "timestamp" : 1794807335.228
+      }
+    ],
+    "testIdentifier" : "AgentActivityUITests/testToolOutputCanBeOpenedAndDismissed()",
+    "testIdentifierURL" : "test://com.apple.xcode/CovenCave/CovenCaveUITests/AgentActivityUITests/testToolOutputCanBeOpenedAndDismissed"
+  }
+]

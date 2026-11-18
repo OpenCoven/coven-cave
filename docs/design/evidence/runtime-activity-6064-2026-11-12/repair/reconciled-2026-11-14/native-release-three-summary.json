@@ -1,0 +1,60 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "deviceName" : "cave-6064-nova-20261112",
+        "modelName" : "iPhone 17",
+        "osBuildNumber" : "24B8117",
+        "osVersion" : "27.2",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 2,
+      "passedTests" : 1,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "CovenCavePerformance · Built with macOS 27.2.1",
+  "expectedFailures" : 0,
+  "failedTests" : 2,
+  "finishTime" : 1794654623.453,
+  "passedTests" : 1,
+  "result" : "Failed",
+  "runtimeWarnings" : [
+
+  ],
+  "skippedTests" : 0,
+  "startTime" : 1794654122.943,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+    {
+      "failureText" : "Failed to determine hittability of \"Timeline fixture tail\" Link: Activation point invalid and no suggested hit points based on element frame",
+      "targetName" : "CovenCaveUITests",
+      "testIdentifier" : 1,
+      "testIdentifierString" : "PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney()",
+      "testIdentifierURL" : "test://com.apple.xcode/CovenCave/CovenCaveUITests/PerformanceBaselineUITests/testRetainedChronologicalTimelineRenderJourney",
+      "testName" : "testRetainedChronologicalTimelineRenderJourney()"
+    },
+    {
+      "failureText" : "Test exceeded execution time allowance of 3 minutes",
+      "targetName" : "CovenCaveUITests",
+      "testIdentifier" : 3,
+      "testIdentifierString" : "PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling()",
+      "testIdentifierURL" : "test://com.apple.xcode/CovenCave/CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+      "testName" : "testRetainedRichTimelinePreservesEarlierToolThroughScrolling()"
+    }
+  ],
+  "title" : "Test - CovenCavePerformance",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 3
+}

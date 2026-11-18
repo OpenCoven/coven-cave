@@ -1,0 +1,30 @@
+{
+  "startedAt": "2026-11-15T23:58:43.487Z",
+  "classification": "One isolated CLI start/stop timing diagnostic; no provider, send, tool or shared home",
+  "root": "/private/tmp/n6064/owned-daemon-stop-hEIONl",
+  "binary": "/Users/buns/.nvm/versions/node/v24.22.0/bin/coven",
+  "realBinary": "/Users/buns/.nvm/versions/node/v24.22.0/lib/node_modules/@opencoven/cli/bin/coven.js",
+  "cliVersion": "coven v0.5.0 (engine coven-code 0.9.0, pinned 0.9.0)",
+  "deadlineMs": 5000,
+  "pollIntervalMs": 25,
+  "probes": [
+    {
+      "elapsedMs": 0.0002089999999839165,
+      "state": "absent",
+      "code": "ESRCH"
+    }
+  ],
+  "startOutput": "Coven daemon: running (pid 67277, socket /private/tmp/n6064/owned-daemon-stop-hEIONl/coven/coven.sock)",
+  "pid": 67277,
+  "preStopProcess": "67277     1 /Users/buns/.nvm/versions/node/v24.22.0/lib/node_modules/@opencoven/cli/node_modules/@opencoven/cli-macos/bin/coven",
+  "stopOutput": "Coven daemon: stopped",
+  "stopExit": 0,
+  "stopCommandMs": 81.09691700000002,
+  "definitivelyStopped": true,
+  "stateFiles": {
+    "daemon.json": false,
+    "coven.sock": false
+  },
+  "fixtureRemoved": true,
+  "finishedAt": "2026-11-15T23:58:43.953Z"
+}

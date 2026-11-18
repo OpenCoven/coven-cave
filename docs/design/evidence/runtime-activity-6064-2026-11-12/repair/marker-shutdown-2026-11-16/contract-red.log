@@ -1,0 +1,34 @@
+✔ native command preserves its real exit status and output (81.910167ms)
+✔ timeout waits for owned child finalization and cannot become green (645.936417ms)
+✔ operator interruption drains only the owned command and preserves cancellation (168.7215ms)
+✔ frozen evidence survives later movement of xcresult staging files (64.146292ms)
+✔ a second collection cannot overwrite retained evidence (64.543958ms)
+✔ incomplete evidence stays available and fails visibly without following links (54.840833ms)
+✔ transcript workflow owns deadlines and uploads logs separately from frozen results (7.141417ms)
+✔ hosted pan marker collection preserves query failures without broadening the selected simulator (295.410209ms)
+✖ hosted pan marker collection reads only the selected shutdown store and rejects uncertain metadata (4.0855ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 8
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1496.107292
+
+✖ failing tests:
+
+test at scripts/ios-native-command.test.mjs:249:7
+✖ hosted pan marker collection reads only the selected shutdown store and rejects uncertain metadata (4.0855ms)
+  AssertionError [ERR_ASSERTION]: the collector must handle the selected simulator after XCTest shuts it down
+      at TestContext.<anonymous> (file://<worktree>/scripts/ios-native-command.test.mjs:252:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+      at async file://<worktree>/scripts/ios-native-command.test.mjs:249:1 {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'set -euo pipefail\nexec > >(tee "$RUNNER_TEMP/scroll-pan-marker.log") 2>&1\nudid="${CAVE_TEST_DESTINATION##*,id=}"\nif [[ ! "$udid" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then\n  printf \'%s\\n\' \'Invalid selected simulator id; marker collection is incomplete.\'\n  exit 2\nfi\nprintf \'Marker query started: %s\\n\' "$(date -u \'+%Y-%m-%dT%H:%M:%SZ\')"\nset +e\npython3 scripts/ios-native-command.py run --timeout-seconds 15 \\\n  --grace-seconds 5 --terminate-seconds 5 --kill-seconds 5 \\\n  --receipt "$RUNNER_TEMP/scroll-pan-marker.receipt.json" -- \\\n  xcrun simctl spawn "$udid" log show --style compact --last 70m \\\n  --predicate \'process == "CovenCave" AND eventMessage CONTAINS "CAVE_SCROLL_TRACE_WRITE_ERROR"\'\nstatus=$?\nset -e\nprintf \'Marker query finished: %s status=%d\\n\' "$(date -u \'+%Y-%m-%dT%H:%M:%SZ\')" "$status"\nexit "$status"\n',
+    expected: /scripts\/ios-scroll-marker\.py/,
+    operator: 'match',
+    diff: 'simple'
+  }

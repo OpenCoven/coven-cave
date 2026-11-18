@@ -1,0 +1,10 @@
+{
+  "head": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+  "phase": "Legacy glyph-range text layout; unchanged full selection/privacy/bounds; real post-touch glyph regression",
+  "files": {
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift": "1266f04125cb772284725ac3a2065ae124c7b45fbba6ec2aeb7224d72868fbe2",
+    "apps/ios/CovenCave/CovenCave/Networking/ToolOutputPreview.swift": "975ad369216b95567f9b36135452a9e6b2a9fdef21c06245d1b36dd7d81f3d6b",
+    "apps/ios/CovenCave/CovenCaveTests/ToolOutputTests.swift": "659576a89f3d84b3c342923a929aad79da59cd5e2904e50268da9d358ea914df",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "d4c505c1423a367d894c37a658993aa51686f0d74b75d77291a5eb2d3c006d94"
+  }
+}

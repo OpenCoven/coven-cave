@@ -40,9 +40,14 @@ export function projectDisplayText(value: unknown, policy?: { classification: Di
       .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted email]")
       .replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[redacted identifier]")
       .replace(/(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)|\b\d{3})[ .-]\d{3}[ .-]\d{4}\b/g, "[redacted phone]");
-    // Keep formatting for ordinary tool JSON. Inspection uses the normalized
-    // form too, so escaped JSON cannot conceal an email or signed URL.
-    return signedUrls !== value || opaque || filtered !== redacted || containsSecretText(value) ? filtered : value;
+    // The bounded redactor's result is authoritative, including whole-unit
+    // replacement on inspection-budget exhaustion. Restoring raw JSON here
+    // could revive opaque or shadowed fields discarded during redaction.
+    // Structured display may canonicalize; stored execution bytes are untouched.
+    const disclosed = signedUrls !== value || redacted !== signedUrls || opaque || filtered !== redacted || containsSecretText(value) ? filtered : value;
+    // Replacement labels can grow a complete unit beyond its admitted raw
+    // size. Bound the actual UTF-8 response as well, without truncating it.
+    return Buffer.byteLength(disclosed) <= MAX_UNIT_BYTES ? disclosed : undefined;
   } catch { return undefined; }
 }
 

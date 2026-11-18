@@ -1,0 +1,20 @@
+{
+  "observedAt": "2026-11-16T00:06:41.411761+00:00",
+  "ownedSimulator": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+  "finalOwnedSimulatorState": "Shutdown",
+  "shutdownCommandExitCode": 0,
+  "sourceAudit": "host-diagnostic-final-source-audit.json",
+  "liveOwnedXcodebuilds": [],
+  "metricsCopiedBeforeShutdown": "debug-scroll-host-diagnostic-metrics-provenance.json",
+  "originalHostTraceRetained": true,
+  "traceCopy": "debug-scroll-host-diagnostic-trace.log",
+  "traceBytes": 149599,
+  "traceSHA256": "b47be6e3e4c56c1d24192a62400a5ceaf85dd2dc4e604c4171ebe8c91cd06734",
+  "canonicalTCPFirstFailureRetained": true,
+  "canonicalPreservedRoot": "/private/var/folders/5b/njd1qhwx4h97r9lvy_wpf5lc0000gn/T/cave-native-activity-Qpm6fe",
+  "canonicalPreservedRootStillExists": true,
+  "preservedRootDeletedByVerifier": false,
+  "historyFixtureCleanupOwnedByRoot": true,
+  "foreignSimOrSharedServiceChanged": false,
+  "newTestsStarted": false
+}

@@ -1,0 +1,160 @@
+{
+  "head": "d0e436bdb571133318705c833ff6b30e63a4b9ea",
+  "run": 43371721356,
+  "job": 131709289925,
+  "jobConclusion": "success",
+  "logsArtifact": 14015787561,
+  "resultsArtifact": 14015832536,
+  "artifactSha256": {
+    "final-transcript-ci.zip": "8cd904a0437f21f2907f6c4aa2150220e13e078cb7a9088691d8f721c4f9b8f2",
+    "final-transcript-artifact-logs.zip": "a4f25924435320d61be9516f31ed0d85d1a11bb734e83081d2a0c23c3881a820",
+    "final-transcript-results.zip": "0eaacc77e5020dc05d53670bde0413c45241df3dd128e959913a5eb693f4047f"
+  },
+  "verifiedFrozenResultFiles": 1869,
+  "verifiedFrozenLogFiles": 7,
+  "lanes": [
+    {
+      "name": "debug",
+      "terminalReceipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCave",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-debug.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-retry-tests-on-failure",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveTests/ChatScrollStateTests",
+          "-only-testing:CovenCaveTests/ChatViewportRecoveryTests",
+          "-only-testing:CovenCaveTests/MarkdownReflowTests",
+          "-only-testing:CovenCaveTests/MarkdownPaintedReflowTests",
+          "-only-testing:CovenCaveTests/MessageBubbleAppearanceTests",
+          "-only-testing:CovenCaveUITests/ChatScrollingUITests"
+        ],
+        "pid": 2662,
+        "elapsedSeconds": 683.457925333,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "xcresultSummary": {
+        "result": "Passed",
+        "passedTests": 60,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "totalTestCount": 60
+      },
+      "rawAttemptStarts": 61,
+      "rawAttemptPasses": 60,
+      "rawAttemptFailures": 1,
+      "retryFlagPresent": true,
+      "failureLines": [
+        "/Users/runner/work/coven-cave/coven-cave/apps/ios/CovenCave/CovenCaveTests/MarkdownPaintedReflowTests.swift:47: error: -[CovenCaveTests.MarkdownPaintedReflowTests testWidthReflowKeepsTheLastLinePaintedInsideTheNativeBubble] : XCTAssertNotNil failed",
+        "<unknown>:0: error: -[CovenCaveTests.MarkdownPaintedReflowTests testWidthReflowKeepsTheLastLinePaintedInsideTheNativeBubble] : failed: caught error: \"InvalidTransition { ",
+        "Test Case '-[CovenCaveTests.MarkdownPaintedReflowTests testWidthReflowKeepsTheLastLinePaintedInsideTheNativeBubble]' failed (65.386 seconds)."
+      ]
+    },
+    {
+      "name": "bounce",
+      "terminalReceipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCave",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-bounce.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveUITests/ChatScrollBounceUITests",
+          "-only-testing:CovenCaveUITests/TranscriptAccessibilityUITests"
+        ],
+        "pid": 21737,
+        "elapsedSeconds": 2882.767369875,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "xcresultSummary": {
+        "result": "Passed",
+        "passedTests": 7,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "totalTestCount": 7
+      },
+      "rawAttemptStarts": 21,
+      "rawAttemptPasses": 21,
+      "rawAttemptFailures": 0,
+      "retryFlagPresent": false,
+      "failureLines": []
+    },
+    {
+      "name": "release",
+      "terminalReceipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-release.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-retry-tests-on-failure",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink"
+        ],
+        "pid": 16399,
+        "elapsedSeconds": 569.3687800829994,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "xcresultSummary": {
+        "result": "Passed",
+        "passedTests": 2,
+        "failedTests": 0,
+        "skippedTests": 0,
+        "totalTestCount": 2
+      },
+      "rawAttemptStarts": 2,
+      "rawAttemptPasses": 2,
+      "rawAttemptFailures": 0,
+      "retryFlagPresent": true,
+      "failureLines": []
+    }
+  ],
+  "limits": "Green Debug lane includes one failed painted-reflow case then retry success (two issue records). Bounce has7unique cases x3 repetitions=21attempts, no retries. Release retry flag permits up to3attempts but both cases passed once. These transcript lanes are not the local golden14large-output22case suite, physical-device/human acceptance or native hitch evidence."
+}

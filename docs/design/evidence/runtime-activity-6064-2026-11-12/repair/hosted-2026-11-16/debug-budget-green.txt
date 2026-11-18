@@ -1,0 +1,15 @@
+✔ native command preserves its real exit status and output (86.138083ms)
+✔ timeout waits for owned child finalization and cannot become green (667.751667ms)
+✔ operator interruption drains only the owned command and preserves cancellation (183.441666ms)
+✔ frozen evidence survives later movement of xcresult staging files (176.4015ms)
+✔ a second collection cannot overwrite retained evidence (106.513084ms)
+✔ incomplete evidence stays available and fails visibly without following links (231.77675ms)
+✔ transcript workflow owns deadlines and uploads logs separately from frozen results (7.024709ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1525.203875

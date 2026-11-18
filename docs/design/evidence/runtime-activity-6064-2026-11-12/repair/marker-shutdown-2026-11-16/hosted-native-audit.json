@@ -1,0 +1,904 @@
+{
+  "at": "2026-11-16T09:54:54.716478+00:00",
+  "head": "5d0ff404508441429f623932b4ab90758dc23e20",
+  "run": 43834925406,
+  "job": 133189071692,
+  "workflowConclusion": "failure",
+  "stages": {
+    "scroll-debug": {
+      "uniqueCases": 60,
+      "executions": 61,
+      "results": {
+        "Passed": 60,
+        "Failed": 1
+      },
+      "runs": [
+        {
+          "case": "ChatScrollStateTests/testAdditionalLayoutGrowthUsesThePendingAnchorPosition()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.011s",
+          "nodeIdentifier": "ChatScrollStateTests/testAdditionalLayoutGrowthUsesThePendingAnchorPosition()"
+        },
+        {
+          "case": "ChatScrollStateTests/testAnchorCorrectionSurvivesDelayedNativeContentSize()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0021s",
+          "nodeIdentifier": "ChatScrollStateTests/testAnchorCorrectionSurvivesDelayedNativeContentSize()"
+        },
+        {
+          "case": "ChatScrollStateTests/testAnchorCorrectionSurvivesPartiallyAvailableNativeExtent()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0016s",
+          "nodeIdentifier": "ChatScrollStateTests/testAnchorCorrectionSurvivesPartiallyAvailableNativeExtent()"
+        },
+        {
+          "case": "ChatScrollStateTests/testAnchorIsTheTopmostRowInViewNotOneBelowAGrowingVisibleRow()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00069s",
+          "nodeIdentifier": "ChatScrollStateTests/testAnchorIsTheTopmostRowInViewNotOneBelowAGrowingVisibleRow()"
+        },
+        {
+          "case": "ChatScrollStateTests/testBeginningToReadHistoryNearBottomDoesNotLatchAReturn()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00096s",
+          "nodeIdentifier": "ChatScrollStateTests/testBeginningToReadHistoryNearBottomDoesNotLatchAReturn()"
+        },
+        {
+          "case": "ChatScrollStateTests/testDecelerationDoesNotResetTheSameGestureReturn()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00084s",
+          "nodeIdentifier": "ChatScrollStateTests/testDecelerationDoesNotResetTheSameGestureReturn()"
+        },
+        {
+          "case": "ChatScrollStateTests/testDeferredResourcesWaitForValidViewport()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.011s",
+          "nodeIdentifier": "ChatScrollStateTests/testDeferredResourcesWaitForValidViewport()"
+        },
+        {
+          "case": "ChatScrollStateTests/testExplicitJumpResumesFollowingWithoutPretendingItArrived()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00086s",
+          "nodeIdentifier": "ChatScrollStateTests/testExplicitJumpResumesFollowingWithoutPretendingItArrived()"
+        },
+        {
+          "case": "ChatScrollStateTests/testFollowingLatestCancelsAnUnappliedAnchorCorrection()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0023s",
+          "nodeIdentifier": "ChatScrollStateTests/testFollowingLatestCancelsAnUnappliedAnchorCorrection()"
+        },
+        {
+          "case": "ChatScrollStateTests/testFollowingLeavesTheOffsetToTheFollowPathButKeepsTheBaseline()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00069s",
+          "nodeIdentifier": "ChatScrollStateTests/testFollowingLeavesTheOffsetToTheFollowPathButKeepsTheBaseline()"
+        },
+        {
+          "case": "ChatScrollStateTests/testFreshIdleGeometryCancelsAReturnWhenTheReaderMovesAwayAgain()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0007s",
+          "nodeIdentifier": "ChatScrollStateTests/testFreshIdleGeometryCancelsAReturnWhenTheReaderMovesAwayAgain()"
+        },
+        {
+          "case": "ChatScrollStateTests/testFreshIdleGeometryKeepsAReturnWhenOnlyTheLatestReplyGrew()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00073s",
+          "nodeIdentifier": "ChatScrollStateTests/testFreshIdleGeometryKeepsAReturnWhenOnlyTheLatestReplyGrew()"
+        },
+        {
+          "case": "ChatScrollStateTests/testGeometryTracksRepeatedGrowthWhileStillAwayFromBottom()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0013s",
+          "nodeIdentifier": "ChatScrollStateTests/testGeometryTracksRepeatedGrowthWhileStillAwayFromBottom()"
+        },
+        {
+          "case": "ChatScrollStateTests/testGrowthAboveKeepsAReaderInsideTheLatestReplyInPlace()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00062s",
+          "nodeIdentifier": "ChatScrollStateTests/testGrowthAboveKeepsAReaderInsideTheLatestReplyInPlace()"
+        },
+        {
+          "case": "ChatScrollStateTests/testGrowthBelowTheReaderDoesNotMoveThem()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00066s",
+          "nodeIdentifier": "ChatScrollStateTests/testGrowthBelowTheReaderDoesNotMoveThem()"
+        },
+        {
+          "case": "ChatScrollStateTests/testHistoricalMarkdownStaysBoundedIncludingUnderVoiceOver()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0011s",
+          "nodeIdentifier": "ChatScrollStateTests/testHistoricalMarkdownStaysBoundedIncludingUnderVoiceOver()"
+        },
+        {
+          "case": "ChatScrollStateTests/testIdleReconcilesTheCurrentNativeViewportBeforeLateRowCallbacks()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0019s",
+          "nodeIdentifier": "ChatScrollStateTests/testIdleReconcilesTheCurrentNativeViewportBeforeLateRowCallbacks()"
+        },
+        {
+          "case": "ChatScrollStateTests/testIdleUsesFreshGeometryWhenTheRowCallbackArrivesLate()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00058s",
+          "nodeIdentifier": "ChatScrollStateTests/testIdleUsesFreshGeometryWhenTheRowCallbackArrivesLate()"
+        },
+        {
+          "case": "ChatScrollStateTests/testInitialAndDelayedLayoutKeepFollowing()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.067s",
+          "nodeIdentifier": "ChatScrollStateTests/testInitialAndDelayedLayoutKeepFollowing()"
+        },
+        {
+          "case": "ChatScrollStateTests/testLatestMarkdownAndVoiceOverTimelineStayAvailable()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00095s",
+          "nodeIdentifier": "ChatScrollStateTests/testLatestMarkdownAndVoiceOverTimelineStayAvailable()"
+        },
+        {
+          "case": "ChatScrollStateTests/testMovingAwayAfterReturningCancelsFollowEvenAfterGrowth()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00063s",
+          "nodeIdentifier": "ChatScrollStateTests/testMovingAwayAfterReturningCancelsFollowEvenAfterGrowth()"
+        },
+        {
+          "case": "ChatScrollStateTests/testNativeRowGeometryKeepsViewportBoundsWithBottomContentInsets()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0016s",
+          "nodeIdentifier": "ChatScrollStateTests/testNativeRowGeometryKeepsViewportBoundsWithBottomContentInsets()"
+        },
+        {
+          "case": "ChatScrollStateTests/testNativeRowGeometryUsesPendingLayoutAndResetsItsReportedBaseline()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0012s",
+          "nodeIdentifier": "ChatScrollStateTests/testNativeRowGeometryUsesPendingLayoutAndResetsItsReportedBaseline()"
+        },
+        {
+          "case": "ChatScrollStateTests/testOnePassCorrectsOnceHoweverManyRowsMoved()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00053s",
+          "nodeIdentifier": "ChatScrollStateTests/testOnePassCorrectsOnceHoweverManyRowsMoved()"
+        },
+        {
+          "case": "ChatScrollStateTests/testResetDropsCorrectionsFromThePreviousConversation()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0021s",
+          "nodeIdentifier": "ChatScrollStateTests/testResetDropsCorrectionsFromThePreviousConversation()"
+        },
+        {
+          "case": "ChatScrollStateTests/testReturningToBottomResumesFollowingAfterGesture()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.012s",
+          "nodeIdentifier": "ChatScrollStateTests/testReturningToBottomResumesFollowingAfterGesture()"
+        },
+        {
+          "case": "ChatScrollStateTests/testReturningToBottomSurvivesStreamingGrowthBeforeGestureIdle()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00068s",
+          "nodeIdentifier": "ChatScrollStateTests/testReturningToBottomSurvivesStreamingGrowthBeforeGestureIdle()"
+        },
+        {
+          "case": "ChatScrollStateTests/testRowRemovedAboveMovesTheReaderBackWithTheirContent()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00077s",
+          "nodeIdentifier": "ChatScrollStateTests/testRowRemovedAboveMovesTheReaderBackWithTheirContent()"
+        },
+        {
+          "case": "ChatScrollStateTests/testTheLatestReplyStreamingUnderItsReaderDoesNotMoveThem()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00052s",
+          "nodeIdentifier": "ChatScrollStateTests/testTheLatestReplyStreamingUnderItsReaderDoesNotMoveThem()"
+        },
+        {
+          "case": "ChatScrollStateTests/testUserReadingHistoryIsNotOverriddenByLayout()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00075s",
+          "nodeIdentifier": "ChatScrollStateTests/testUserReadingHistoryIsNotOverriddenByLayout()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testCorrectionWaitsUntilGestureAndDecelerationEnd()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00088s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testCorrectionWaitsUntilGestureAndDecelerationEnd()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testFollowingNeverInterruptsAGesture()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00059s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testFollowingNeverInterruptsAGesture()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testFollowingReaderBeyondTheEndRecoversWithoutShrinkEvidence()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00065s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testFollowingReaderBeyondTheEndRecoversWithoutShrinkEvidence()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testInsetsAndToleranceDoNotCreateFalseOutOfRangeSignals()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00072s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testInsetsAndToleranceDoNotCreateFalseOutOfRangeSignals()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testInvalidTransientGeometryDoesNotErasePendingShrink()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00067s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testInvalidTransientGeometryDoesNotErasePendingShrink()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testLazyHistoryReestimationNeverPullsReaderToLatest()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00053s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testLazyHistoryReestimationNeverPullsReaderToLatest()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testLazyHistoryReestimationStillNeverPullsANonFollowingReader()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00048s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testLazyHistoryReestimationStillNeverPullsANonFollowingReader()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testNewLatestMessageIsAFreshBaselineNotAShrink()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0017s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testNewLatestMessageIsAFreshBaselineNotAShrink()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testNewLatestRowDoesNotInheritPreviousRowsPendingRecovery()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00059s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testNewLatestRowDoesNotInheritPreviousRowsPendingRecovery()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testOrdinaryScrollOffsetsDoNotInvalidateSwiftUIStateEveryFrame()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00054s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testOrdinaryScrollOffsetsDoNotInvalidateSwiftUIStateEveryFrame()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testRemovalWithAValidOffsetDoesNotMoveTheReader()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.032s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testRemovalWithAValidOffsetDoesNotMoveTheReader()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testRemovedLatestMessageRecoversAnOffsetBeyondTheShorterTranscript()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0009s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testRemovedLatestMessageRecoversAnOffsetBeyondTheShorterTranscript()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testResumingFollowWhileAlreadyBeyondTheEndRecovers()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0006s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testResumingFollowWhileAlreadyBeyondTheEndRecovers()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testShortTranscriptOffsetBeyondItsEndRecoversWhileFollowing()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00056s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testShortTranscriptOffsetBeyondItsEndRecoversWhileFollowing()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testShrinkBeyondNewExtentRecoversWithoutLatestRowGeometry()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00069s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testShrinkBeyondNewExtentRecoversWithoutLatestRowGeometry()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testStaleInRangeGeometryDoesNotDiscardLatestRowShrink()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00059s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testStaleInRangeGeometryDoesNotDiscardLatestRowShrink()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testStoppingFollowDropsAFollowOnlyCorrection()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00063s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testStoppingFollowDropsAFollowOnlyCorrection()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testStreamingGrowthAndOrdinaryOverscrollDoNotTriggerRecovery()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0014s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testStreamingGrowthAndOrdinaryOverscrollDoNotTriggerRecovery()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testUIKitSelfCorrectionCancelsPendingRecovery()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00051s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testUIKitSelfCorrectionCancelsPendingRecovery()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testValidHistoryPositionIsNotMovedByShrink()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.00063s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testValidHistoryPositionIsNotMovedByShrink()"
+        },
+        {
+          "case": "ChatViewportRecoveryTests/testViewportReportingBeforeLatestRowStillRecovers()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0064s",
+          "nodeIdentifier": "ChatViewportRecoveryTests/testViewportReportingBeforeLatestRowStillRecovers()"
+        },
+        {
+          "case": "MarkdownPaintedReflowTests/testWidthReflowKeepsTheLastLinePaintedInsideTheNativeBubble()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "17s",
+          "nodeIdentifier": "MarkdownPaintedReflowTests/testWidthReflowKeepsTheLastLinePaintedInsideTheNativeBubble()"
+        },
+        {
+          "case": "MarkdownReflowTests/testWidthReflowPublishesTheNewNativeHeightWithoutRenderingAgain()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.63s",
+          "nodeIdentifier": "MarkdownReflowTests/testWidthReflowPublishesTheNewNativeHeightWithoutRenderingAgain()"
+        },
+        {
+          "case": "MessageBubbleAppearanceTests/testEquivalentResolvedInputsKeepTheBubbleEqual()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0034s",
+          "nodeIdentifier": "MessageBubbleAppearanceTests/testEquivalentResolvedInputsKeepTheBubbleEqual()"
+        },
+        {
+          "case": "MessageBubbleAppearanceTests/testLightModeInvalidatesTheDarkBubble()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.063s",
+          "nodeIdentifier": "MessageBubbleAppearanceTests/testLightModeInvalidatesTheDarkBubble()"
+        },
+        {
+          "case": "MessageBubbleAppearanceTests/testPaletteChangesInvalidateTheBubble()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "0.0006s",
+          "nodeIdentifier": "MessageBubbleAppearanceTests/testPaletteChangesInvalidateTheBubble()"
+        },
+        {
+          "case": "ChatScrollingUITests/testDelayedHistoryLoadsAtLatestReply()",
+          "run": "First Run",
+          "result": "Failed",
+          "duration": "36s",
+          "nodeIdentifier": "1"
+        },
+        {
+          "case": "ChatScrollingUITests/testDelayedHistoryLoadsAtLatestReply()",
+          "run": "Retry 1",
+          "result": "Passed",
+          "duration": "16s",
+          "nodeIdentifier": "2"
+        },
+        {
+          "case": "ChatScrollingUITests/testLatestReplyRemainsStableAfterJump()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "51s",
+          "nodeIdentifier": "ChatScrollingUITests/testLatestReplyRemainsStableAfterJump()"
+        },
+        {
+          "case": "ChatScrollingUITests/testLongUnreadThreadOpensAtLatestReply()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "17s",
+          "nodeIdentifier": "ChatScrollingUITests/testLongUnreadThreadOpensAtLatestReply()"
+        },
+        {
+          "case": "ChatScrollingUITests/testScrollToLatestFromOlderContentShowsNewestReply()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "2m 57s",
+          "nodeIdentifier": "ChatScrollingUITests/testScrollToLatestFromOlderContentShowsNewestReply()"
+        }
+      ],
+      "rawLogStartsAndTerminalsMatch": true,
+      "commandReceipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCave",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-debug.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-retry-tests-on-failure",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveTests/ChatScrollStateTests",
+          "-only-testing:CovenCaveTests/ChatViewportRecoveryTests",
+          "-only-testing:CovenCaveTests/MarkdownReflowTests",
+          "-only-testing:CovenCaveTests/MarkdownPaintedReflowTests",
+          "-only-testing:CovenCaveTests/MessageBubbleAppearanceTests",
+          "-only-testing:CovenCaveUITests/ChatScrollingUITests"
+        ],
+        "pid": 2183,
+        "elapsedSeconds": 603.832219375,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "summary": {
+        "devicesAndConfigurations": [
+          {
+            "device": {
+              "architecture": "arm64",
+              "deviceId": "23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+              "deviceName": "iPhone 17",
+              "modelName": "iPhone 17",
+              "osBuildNumber": "23F77",
+              "osVersion": "26.5",
+              "platform": "iOS Simulator"
+            },
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "passedTests": 60,
+            "skippedTests": 0,
+            "testPlanConfiguration": {
+              "configurationId": "1",
+              "configurationName": "Test Scheme Action"
+            }
+          }
+        ],
+        "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.2",
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "finishTime": 1794819871.686,
+        "passedTests": 60,
+        "result": "Passed",
+        "runtimeWarnings": [],
+        "skippedTests": 0,
+        "startTime": 1794819291.259,
+        "statistics": [
+          {
+            "subtitle": "61 test runs",
+            "title": "1 configuration ran with test repetitions"
+          }
+        ],
+        "testFailures": [],
+        "title": "Test - CovenCave",
+        "topInsights": [
+          {
+            "category": "Longest Test Runs",
+            "impact": "95% of duration",
+            "text": "1 longest test run with outlier durations exceeding 7.08s (three standard deviations)"
+          }
+        ],
+        "totalTestCount": 60
+      }
+    },
+    "scroll-bounce": {
+      "uniqueCases": 7,
+      "executions": 21,
+      "results": {
+        "Passed": 21
+      },
+      "runs": [
+        {
+          "case": "ChatScrollBounceUITests/testFlickingBackToLatestStaysOnLatest()",
+          "run": "Repetition 1",
+          "result": "Passed",
+          "duration": "1m 58s",
+          "nodeIdentifier": "1"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testFlickingBackToLatestStaysOnLatest()",
+          "run": "Repetition 2",
+          "result": "Passed",
+          "duration": "1m 35s",
+          "nodeIdentifier": "2"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testFlickingBackToLatestStaysOnLatest()",
+          "run": "Repetition 3",
+          "result": "Passed",
+          "duration": "1m 42s",
+          "nodeIdentifier": "3"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testFlickingBackToStreamingReplyStaysOnLatest()",
+          "run": "Repetition 1",
+          "result": "Passed",
+          "duration": "2m 26s",
+          "nodeIdentifier": "1"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testFlickingBackToStreamingReplyStaysOnLatest()",
+          "run": "Repetition 2",
+          "result": "Passed",
+          "duration": "2m 18s",
+          "nodeIdentifier": "2"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testFlickingBackToStreamingReplyStaysOnLatest()",
+          "run": "Repetition 3",
+          "result": "Passed",
+          "duration": "2m 26s",
+          "nodeIdentifier": "3"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testSlowDragBackToLatestStaysOnLatest()",
+          "run": "Repetition 1",
+          "result": "Passed",
+          "duration": "58s",
+          "nodeIdentifier": "1"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testSlowDragBackToLatestStaysOnLatest()",
+          "run": "Repetition 2",
+          "result": "Passed",
+          "duration": "1m 7s",
+          "nodeIdentifier": "2"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testSlowDragBackToLatestStaysOnLatest()",
+          "run": "Repetition 3",
+          "result": "Passed",
+          "duration": "1m 14s",
+          "nodeIdentifier": "3"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testSmallDragsAtLatestStayOnLatest()",
+          "run": "Repetition 1",
+          "result": "Passed",
+          "duration": "1m 9s",
+          "nodeIdentifier": "1"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testSmallDragsAtLatestStayOnLatest()",
+          "run": "Repetition 2",
+          "result": "Passed",
+          "duration": "1m 8s",
+          "nodeIdentifier": "2"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testSmallDragsAtLatestStayOnLatest()",
+          "run": "Repetition 3",
+          "result": "Passed",
+          "duration": "1m 14s",
+          "nodeIdentifier": "3"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testStreamingCompletionKeepsTheReflowedTailVisible()",
+          "run": "Repetition 1",
+          "result": "Passed",
+          "duration": "46s",
+          "nodeIdentifier": "1"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testStreamingCompletionKeepsTheReflowedTailVisible()",
+          "run": "Repetition 2",
+          "result": "Passed",
+          "duration": "45s",
+          "nodeIdentifier": "2"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testStreamingCompletionKeepsTheReflowedTailVisible()",
+          "run": "Repetition 3",
+          "result": "Passed",
+          "duration": "45s",
+          "nodeIdentifier": "3"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testThousandMessageConversationKeepsRichRenderingBounded()",
+          "run": "Repetition 1",
+          "result": "Passed",
+          "duration": "2m 47s",
+          "nodeIdentifier": "1"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testThousandMessageConversationKeepsRichRenderingBounded()",
+          "run": "Repetition 2",
+          "result": "Passed",
+          "duration": "2m 34s",
+          "nodeIdentifier": "2"
+        },
+        {
+          "case": "ChatScrollBounceUITests/testThousandMessageConversationKeepsRichRenderingBounded()",
+          "run": "Repetition 3",
+          "result": "Passed",
+          "duration": "2m 38s",
+          "nodeIdentifier": "3"
+        },
+        {
+          "case": "TranscriptAccessibilityUITests/testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible()",
+          "run": "Repetition 1",
+          "result": "Passed",
+          "duration": "44s",
+          "nodeIdentifier": "1"
+        },
+        {
+          "case": "TranscriptAccessibilityUITests/testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible()",
+          "run": "Repetition 2",
+          "result": "Passed",
+          "duration": "40s",
+          "nodeIdentifier": "2"
+        },
+        {
+          "case": "TranscriptAccessibilityUITests/testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible()",
+          "run": "Repetition 3",
+          "result": "Passed",
+          "duration": "42s",
+          "nodeIdentifier": "3"
+        }
+      ],
+      "rawLogStartsAndTerminalsMatch": true,
+      "commandReceipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCave",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-bounce.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveUITests/ChatScrollBounceUITests",
+          "-only-testing:CovenCaveUITests/TranscriptAccessibilityUITests"
+        ],
+        "pid": 21408,
+        "elapsedSeconds": 2008.794453042,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "summary": {
+        "devicesAndConfigurations": [
+          {
+            "device": {
+              "architecture": "arm64",
+              "deviceId": "23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+              "deviceName": "iPhone 17",
+              "modelName": "iPhone 17",
+              "osBuildNumber": "23F77",
+              "osVersion": "26.5",
+              "platform": "iOS Simulator"
+            },
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "passedTests": 21,
+            "skippedTests": 0,
+            "testPlanConfiguration": {
+              "configurationId": "1",
+              "configurationName": "Test Scheme Action"
+            }
+          }
+        ],
+        "environmentDescription": "CovenCave \u00b7 Built with macOS 26.7.2",
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "finishTime": 1794821889.828,
+        "passedTests": 7,
+        "result": "Passed",
+        "runtimeWarnings": [],
+        "skippedTests": 0,
+        "startTime": 1794819888.034,
+        "statistics": [
+          {
+            "subtitle": "21 test runs",
+            "title": "1 configuration ran with test repetitions"
+          }
+        ],
+        "testFailures": [],
+        "title": "Test - CovenCave",
+        "topInsights": [],
+        "totalTestCount": 7
+      }
+    },
+    "scroll-release": {
+      "uniqueCases": 2,
+      "executions": 2,
+      "results": {
+        "Passed": 2
+      },
+      "runs": [
+        {
+          "case": "PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "2m 13s",
+          "nodeIdentifier": "PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink()"
+        },
+        {
+          "case": "PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess()",
+          "run": "First Run",
+          "result": "Passed",
+          "duration": "1m 7s",
+          "nodeIdentifier": "PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess()"
+        }
+      ],
+      "rawLogStartsAndTerminalsMatch": true,
+      "commandReceipt": {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "apps/ios/CovenCave/CovenCave.xcodeproj",
+          "-scheme",
+          "CovenCavePerformance",
+          "-destination",
+          "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+          "-derivedDataPath",
+          "/Users/runner/work/_temp/CaveDerived",
+          "-resultBundlePath",
+          "/Users/runner/work/_temp/scroll-release.xcresult",
+          "CODE_SIGNING_ALLOWED=NO",
+          "-retry-tests-on-failure",
+          "-test-iterations",
+          "3",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptShrinkRecoversAndReopensInSameProcess",
+          "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testTranscriptColdAndRepeatedOpenWithoutShrink"
+        ],
+        "pid": 11905,
+        "elapsedSeconds": 413.808278,
+        "timedOut": false,
+        "interruptedSignal": null,
+        "terminal": true,
+        "childExitCode": 0,
+        "exitCode": 0,
+        "failure": null
+      },
+      "summary": {
+        "devicesAndConfigurations": [
+          {
+            "device": {
+              "architecture": "arm64",
+              "deviceId": "23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+              "deviceName": "iPhone 17",
+              "modelName": "iPhone 17",
+              "osBuildNumber": "23F77",
+              "osVersion": "26.5",
+              "platform": "iOS Simulator"
+            },
+            "expectedFailures": 0,
+            "failedTests": 0,
+            "passedTests": 2,
+            "skippedTests": 0,
+            "testPlanConfiguration": {
+              "configurationId": "1",
+              "configurationName": "Test Scheme Action"
+            }
+          }
+        ],
+        "environmentDescription": "CovenCavePerformance \u00b7 Built with macOS 26.7.2",
+        "expectedFailures": 0,
+        "failedTests": 0,
+        "finishTime": 1794822304.228,
+        "passedTests": 2,
+        "result": "Passed",
+        "runtimeWarnings": [],
+        "skippedTests": 0,
+        "startTime": 1794821898.452,
+        "statistics": [
+          {
+            "subtitle": "2 test runs",
+            "title": "1 configuration ran with test repetitions"
+          }
+        ],
+        "testFailures": [],
+        "title": "Test - CovenCavePerformance",
+        "topInsights": [],
+        "totalTestCount": 2
+      }
+    }
+  },
+  "nativeIntegrity": {
+    "bundles": 3,
+    "filesVerified": 1869,
+    "logsVerified": 9,
+    "globalAndPerBundleIssues": [],
+    "allHashesAndSizesMatch": true
+  },
+  "markerFailure": {
+    "exitCode": 149,
+    "elapsedSeconds": 1.5844233340003484,
+    "timedOut": false,
+    "causeEstablished": "simctl spawn refused because the exact selected/result simulator was not booted after strict completion.",
+    "selectedDeviceEqualsResultDevice": true,
+    "coverage": "No independent writer-error query completed; cannot infer absent writer errors."
+  },
+  "strictDevice": {
+    "architecture": "arm64",
+    "deviceId": "23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+    "deviceName": "iPhone 17",
+    "modelName": "iPhone 17",
+    "osBuildNumber": "23F77",
+    "osVersion": "26.5",
+    "platform": "iOS Simulator"
+  },
+  "limits": [
+    "Debug60 unique cases include a first failure and configured retry;61attempts60passed1failed.",
+    "Strict21/21 passes are timing-perturbing DEBUG diagnostics, not replacement for uninstrumented e946 strict20/21 failure.",
+    "Local Release long-trace failures, frame/main-thread costs, physical/human and owner admission remain unqualified."
+  ],
+  "derivedQueryCaches": {
+    "controlProof": "query-cache-control/cache-creation-proof.json",
+    "firstFileSetFailure": "root-native-audit-first-file-set-failure.json",
+    "caches": [
+      {
+        "bundle": "scroll-bounce.xcresult",
+        "generatedByReadQuery": "database.sqlite3",
+        "sha256": "8bbd1549ca86e75081985a084912a608d5dd9f07864df8d7512265f3d72f9a97"
+      },
+      {
+        "bundle": "scroll-debug.xcresult",
+        "generatedByReadQuery": "database.sqlite3",
+        "sha256": "75f00f57d00d7e2b9ccb594dea93718dbd94797a480162deb647336c9dc9e7f5"
+      },
+      {
+        "bundle": "scroll-release.xcresult",
+        "generatedByReadQuery": "database.sqlite3",
+        "sha256": "12b27e0c2386658252ac7192c260833a07852a9e10e0f827feadc4896b5bc0b6"
+      }
+    ],
+    "originalZIPAndAllFrozenFilesUnchanged": true
+  }
+}

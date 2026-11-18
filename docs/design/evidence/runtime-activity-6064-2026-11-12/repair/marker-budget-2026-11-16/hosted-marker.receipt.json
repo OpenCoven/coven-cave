@@ -1,0 +1,15 @@
+{
+  "command": [
+    "python3",
+    "scripts/ios-scroll-marker.py",
+    "23C8F95C-765D-46A9-AE82-0BEE2921C8D7"
+  ],
+  "pid": 24407,
+  "elapsedSeconds": 15.060701291999976,
+  "timedOut": true,
+  "interruptedSignal": null,
+  "terminal": true,
+  "childExitCode": -2,
+  "exitCode": 124,
+  "failure": null
+}

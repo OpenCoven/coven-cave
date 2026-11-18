@@ -1,0 +1,32 @@
+{
+  "classification": "Actual alternate-ID Release-profile packaged Tauri sidecar HTTP/storage/projection/client-limit proof; rendered UI blocked by Computer Use permission",
+  "head": "9492da1bb",
+  "binarySha256": "ec25370effbd29294869892362c42d36084eaf4c4cb8d56cbe11ac394a9126c3",
+  "uiRenderingVerified": false,
+  "checks": [
+    {
+      "case": "real persisted history",
+      "status": 200,
+      "tools": 503,
+      "deepInput": 80
+    },
+    {
+      "case": "real lazy detail",
+      "status": 200
+    },
+    {
+      "case": "missing",
+      "status": 404
+    },
+    {
+      "case": "ambiguous",
+      "status": 409
+    },
+    {
+      "case": "real oversized output",
+      "rejectedByClient": true
+    }
+  ],
+  "passed": true,
+  "qualificationCorrection": "The generic rejected-call assertion did not identify client byte-limit rejection versus server404withholding. The strengthened built-server probe proves the server projection withholds oversized saved output; no oversized200package response is claimed."
+}

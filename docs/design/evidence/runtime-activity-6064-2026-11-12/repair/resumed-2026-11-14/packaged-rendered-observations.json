@@ -1,0 +1,32 @@
+{
+  "classification": "Actual alternate packaged WKWebView, synthetic persisted legacy/external history; functional observations, no timing budget pass",
+  "sessionId": "golden14-919a07f9-b59a-42c6-97d6-f86f615349bc",
+  "tools": 503,
+  "readGroupCalls": 502,
+  "deepInputLevels": 80,
+  "allowedOutputBytes": 262144,
+  "withholdingNoticesVisible": [
+    "Input withheld from saved history.",
+    "Output withheld from saved history."
+  ],
+  "draftBeforeAfter": "UNSENT_GOLDEN14_DRAFT_6064",
+  "sendActionsPerformed": 0,
+  "providerDispatch": "not requested; ordinary runtime producer path not qualified",
+  "observed": [
+    "expanded complete activity and 502-call group",
+    "known-withheld row showed both notices",
+    "first Read opened through real keyboard focus and displayed nested input plus bounded code controls",
+    "accepted output visibly painted safe result rows; header showed 20162 lines",
+    "Next/Prior paged the inner code scroller",
+    "composer focus then reverse Tab moved to the actual trace tail while retaining draft and withheld row expansion"
+  ],
+  "limits": [
+    "coordinate click and semantic scroll repeatedly returned noWindowsAvailable despite owned PID/window still alive; AX actions and keyboard worked",
+    "deep Read subtree absent from automation AX result; this alone does not diagnose VoiceOver",
+    "AX Latest click removed the control without visible tail travel; keyboard tail movement passed; a separate browser diagnostic investigates the distinction",
+    "first marker line is not visibly qualified by retained code captures; exact complete HTTP payload was separately asserted",
+    "wall times include automation and shared-host scheduling; no render/frame budget claim",
+    "project context remained unverified; no provider dispatch, physical ingress or human acceptance"
+  ],
+  "cleanup": "controller terminal0; exact own app/server/daemon stopped and scratch fixture removed"
+}

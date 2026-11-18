@@ -1,0 +1,62 @@
+{
+  "observedAt": "2026-11-16T01:54:56.946145+00:00",
+  "baseHead": "370dd366a5b8e26e8ed940e20a6bae089d519f43",
+  "resourceChanges": {
+    "strictCommandSeconds": [
+      3300,
+      3600
+    ],
+    "strictStepMinutes": [
+      56,
+      61
+    ],
+    "jobMinutes": [
+      100,
+      105
+    ]
+  },
+  "configuredTotalMinutes": {
+    "before": 98.5,
+    "after": 103.5,
+    "jobAfter": 105,
+    "remainingReserve": 1.5
+  },
+  "unchangedWorkflowASTExceptThreeResourceValues": true,
+  "selectorsIterationsVisibilityWaitsAssertionsRendererBoundsSigningShutdownUploadsUnchanged": true,
+  "localTests": {
+    "red": "Expected measured-matrix allowance assertion fails with old3300 deadline",
+    "focusedPassed": 7,
+    "relatedPassed": 22,
+    "skips": 0,
+    "wiringFiles": 2262
+  },
+  "rawLogHashes": [
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/hosted-603/command-budget-red.log",
+      "bytes": 1625,
+      "sha256": "2f4026e2f0d8324bf34a0910081378ff29345051e2ce8aa579748c6c5d9980e7"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/hosted-603/command-budget-green.log",
+      "bytes": 729,
+      "sha256": "74378224135d6308e78b6d54b5b8b46ca06eb1a3221d5daf4c38bb7853288264"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/hosted-603/command-budget-contracts.log",
+      "bytes": 1893,
+      "sha256": "9e192ecd26e5262527f4696aeb048e961d34b74464da5bf362a2ba84d1c99b18"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/hosted-603/command-budget-wiring.log",
+      "bytes": 38,
+      "sha256": "9f6ba3dc8eb4c4be48fac30d7eb5d72c084bf0f1855953300625abb2c5c24e68"
+    }
+  ],
+  "review": {
+    "type": "Read-only second agent on shared account; not human acceptance or authorization",
+    "result": "No implementation blocker; classify as bounded CI completion resource allowance, not product-performance repair"
+  },
+  "decision": "Nova selected the bounded allowance under the authorized unattended qualification task; no protected-main or release action.",
+  "stopCondition": "If3600seconds is insufficient, investigate instead of automatically extending again.",
+  "newHeadHostedOutcome": "Not yet run; complete21-of21 and all required checks remain necessary."
+}

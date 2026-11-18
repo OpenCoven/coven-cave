@@ -1,0 +1,19 @@
+{
+  "observedAt": "2026-11-16T00:30:29.087064+00:00",
+  "ownedSimulator": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+  "stateBefore": "Shutdown",
+  "shutdownAction": null,
+  "finalState": "Shutdown",
+  "liveOwnedXcodebuilds": [],
+  "onlyOwnedSimulatorChanged": true,
+  "noForeignUserStateSharedServicesOrSecurityChanges": true,
+  "exactlyOneDebugAndOneReleaseInvocation": true,
+  "noRetryOrExtraGUIActions": true,
+  "oneLinePatchLeftUncommittedForRootDecision": true,
+  "priorArtifactsUnmodified": true,
+  "metricsCollectedBeforeFinalCleanup": [
+    "debug/metrics-provenance.json",
+    "release/metrics-provenance.json"
+  ],
+  "metricsCollectionMethod": "Read-only owned simulator container metadata; no app relaunch or taps"
+}

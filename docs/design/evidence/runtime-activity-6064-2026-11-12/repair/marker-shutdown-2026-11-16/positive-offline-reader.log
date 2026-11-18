@@ -1,0 +1,3 @@
+Timestamp               Ty Process[PID:TID]
+2026-11-16 04:08:56.175 Df Cave6064LogProbe[3584:a902c3b] (Foundation) CAVE_SCROLL_TRACE_WRITE_ERROR_CHANNEL_PROBE_4eec368c1c3a48aea8ffcd4635e2a5a5
+Native command receipt: {"command": ["xcrun", "--sdk", "macosx", "log", "show", "--directory", "<owned-simulator-data>/var/db/diagnostics", "--style", "compact", "--last", "70m", "--predicate", "process == \"Cave6064LogProbe\" AND eventMessage CONTAINS \"CAVE_SCROLL_TRACE_WRITE_ERROR_CHANNEL_PROBE_4eec368c1c3a48aea8ffcd4635e2a5a5\""], "pid": 6818, "elapsedSeconds": 0.1180899579776451, "timedOut": false, "interruptedSignal": null, "terminal": true, "childExitCode": 0, "exitCode": 0, "failure": null}

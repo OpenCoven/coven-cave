@@ -1,0 +1,3 @@
+Error: Failed to create a new result bundle reader, underlying error: Info.plist at <retained-raw-root>/hosted-7fd/transcript/results/scroll-debug.xcresult/Info.plist does not exist, the result bundle might be corrupted or the provided path is not a result bundle
+Usage: xcresulttool <subcommand>
+  See 'xcresulttool --help' for more information.

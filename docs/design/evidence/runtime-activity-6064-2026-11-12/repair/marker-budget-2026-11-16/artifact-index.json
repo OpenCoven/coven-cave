@@ -1,0 +1,291 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-16T12:47:17.245942+00:00",
+  "baseHead": "5bbe2df6d484f2e65f25f9e1f10a2c151ed1630e",
+  "scope": "Four reviewed source/design files; native app/UI tests/helper/command owner unchanged. Proposed marker allocation20/1/4/5 retains30totalseconds and60second job reserve.",
+  "sourceCheckSnapshot": {
+    "trackedFiles": 7273,
+    "pathSet": "git ls-files at base5bbe; these pre-existing paths only, four reviewed files modified; packet added after checks",
+    "manifestRetainedLocally": true
+  },
+  "pathAliases": "Only worktree/qualification-evidence/continuity-checkpoint prefixes replaced; source and published hashes are separate. Original local evidence is retained. JSON rawText containers preserve every remaining whitespace byte when decoded.",
+  "historicalInterpretationCorrection": "The first attemptedGREEN and explicit PID-check run failed an unsupported minimum-duration oracle. Their exact reader PID check proved the child already absent; subprocess.run kills/waits on interrupt. No helper or command-owner lifecycle fix was made. Final exact prerequisite10/10 plus renderer passed.",
+  "limits": [
+    "No hosted20second query completion proof; base5bbe15second timeout remains an initial failure.",
+    "No new native app binary/UI acceptance, physical/human acceptance or owner admission.",
+    "Full initial intermediate test-source files were not separately snapshotted; receipts retain their hashes and raw output. Exact final four-file source is pinned in review-manifest and tested by prerequisite-summary.",
+    "Hygiene3/3 was observed in the retained tool transcript, not separately captured as a raw filesystem log; its receipt states this limit."
+  ],
+  "artifacts": [
+    {
+      "file": "hosted-native-audit.json",
+      "role": "Base5bbe terminal frozen native audit;83passes but marker timeout, not full golden14 acceptance",
+      "sourceEvidence": "hosted-5bbe/native/root-native-run-audit.json",
+      "sourceBytes": 4077,
+      "sourceSha256": "2087fe28182e39a7efe22959698af011927e35bb6a7567b2ad8cdcc223acf64a",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "2087fe28182e39a7efe22959698af011927e35bb6a7567b2ad8cdcc223acf64a",
+      "publishedFileSha256": "2087fe28182e39a7efe22959698af011927e35bb6a7567b2ad8cdcc223acf64a"
+    },
+    {
+      "file": "hosted-marker.receipt.json",
+      "role": "Original hosted15s timeout124/child-2 receipt",
+      "sourceEvidence": "hosted-5bbe/native/logs/scroll-pan-marker.receipt.json",
+      "sourceBytes": 303,
+      "sourceSha256": "29e7430334672fe44862173d2cb83b8bfbe2bf6498790ab07a6960cdf793cac0",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "29e7430334672fe44862173d2cb83b8bfbe2bf6498790ab07a6960cdf793cac0",
+      "publishedFileSha256": "29e7430334672fe44862173d2cb83b8bfbe2bf6498790ab07a6960cdf793cac0"
+    },
+    {
+      "file": "hosted-marker.log.json",
+      "role": "Original hosted query output serialized without dropping blank lines",
+      "sourceEvidence": "hosted-5bbe/native/logs/scroll-pan-marker.log",
+      "sourceBytes": 2278,
+      "sourceSha256": "01181c4e45f0914280f18b714109b2e88a89fc2c21a2724e746cd4938063e35f",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "01181c4e45f0914280f18b714109b2e88a89fc2c21a2724e746cd4938063e35f",
+      "publishedFileSha256": "fa948f4148dd3576696200b93e2aa46181cb9c14c80120be7fd6a881f2a57c2f"
+    },
+    {
+      "file": "budget-before.json",
+      "role": "Exact107/108minute accounting and30s marker owner",
+      "sourceEvidence": "hosted-5bbe/marker-budget-readback.json",
+      "sourceBytes": 1241,
+      "sourceSha256": "24d7b9e5be79e47a6b55714bfaee723a81bd90b2855a45fa5ebd4a43ecb22b8c",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "24d7b9e5be79e47a6b55714bfaee723a81bd90b2855a45fa5ebd4a43ecb22b8c",
+      "publishedFileSha256": "24d7b9e5be79e47a6b55714bfaee723a81bd90b2855a45fa5ebd4a43ecb22b8c"
+    },
+    {
+      "file": "local-reader-comparison.json",
+      "role": "Local1.694s comparison, not replay of unavailable hosted store",
+      "sourceEvidence": "marker-offline-proof/after-hosted-timeout-local/proof-summary.json",
+      "sourceBytes": 603,
+      "sourceSha256": "ca3b0be3df5b5689ca2b987d826e5a9b546a7cf364c0e49f58206c4d00bb6024",
+      "pathAliasesApplied": true,
+      "publishedDecodedTextSha256": "350b2a3770b7b7e8cf78362c2a0284d0ff7c117b7e14481a607d7465f5e52289",
+      "publishedFileSha256": "350b2a3770b7b7e8cf78362c2a0284d0ff7c117b7e14481a607d7465f5e52289"
+    },
+    {
+      "file": "contract-red-receipt.json",
+      "role": "Fail-first17s reader under original15s phase",
+      "sourceEvidence": "marker-budget-reallocation/contract-red-receipt.json",
+      "sourceBytes": 505,
+      "sourceSha256": "9f589de991d74d167b55690edc539c501e72cf5066f3da209a5fb389b52cb050",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "9f589de991d74d167b55690edc539c501e72cf5066f3da209a5fb389b52cb050",
+      "publishedFileSha256": "9f589de991d74d167b55690edc539c501e72cf5066f3da209a5fb389b52cb050"
+    },
+    {
+      "file": "contract-red.stdout.json",
+      "role": "Fail-first17s reader under original15s phase raw stdout",
+      "sourceEvidence": "marker-budget-reallocation/contract-red.stdout",
+      "sourceBytes": 2176,
+      "sourceSha256": "e2f9fd534d5a1825a28cc1ef37a8c58a5cf4b1b9312d5e1cd082fcce50901bc2",
+      "pathAliasesApplied": true,
+      "publishedDecodedTextSha256": "cb2a9ef6d68d94b900702297de9a09ea1adaca055d3bf21161891fa29301bd29",
+      "publishedFileSha256": "59ee76f74fe946c35c87c333f0baa510d1eafe80baa2a102d2ef065e27b02e9d"
+    },
+    {
+      "file": "contract-red.stderr.json",
+      "role": "Fail-first17s reader under original15s phase raw stderr",
+      "sourceEvidence": "marker-budget-reallocation/contract-red.stderr",
+      "sourceBytes": 0,
+      "sourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedFileSha256": "57e8a65ad1dd4962ec86e196398f1b86535ecc4439cf4705ca0d6c06cdd55edd"
+    },
+    {
+      "file": "contract-green-receipt.json",
+      "role": "First attemptedGREEN: delayed reader works; unsupported shutdown-duration oracle fails",
+      "sourceEvidence": "marker-budget-reallocation/contract-green-receipt.json",
+      "sourceBytes": 576,
+      "sourceSha256": "f0d6e69a0f4faa903a28183748098d9fcb571bbdf3be4b7eb6e6b141025f9941",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "f0d6e69a0f4faa903a28183748098d9fcb571bbdf3be4b7eb6e6b141025f9941",
+      "publishedFileSha256": "f0d6e69a0f4faa903a28183748098d9fcb571bbdf3be4b7eb6e6b141025f9941"
+    },
+    {
+      "file": "contract-green.stdout.json",
+      "role": "First attemptedGREEN: delayed reader works; unsupported shutdown-duration oracle fails raw stdout",
+      "sourceEvidence": "marker-budget-reallocation/contract-green.stdout",
+      "sourceBytes": 1943,
+      "sourceSha256": "22decb863c96e3fe6a2138c172ba027173af24483e5f43ae360b93a4a63e2ebc",
+      "pathAliasesApplied": true,
+      "publishedDecodedTextSha256": "e0b9a6e39268fca8de12d52241ebe13d5260735bb28d6acbd76352f8888c9a75",
+      "publishedFileSha256": "aa48d6cfa0a7d399e89c3fbb91b93f31ee8a396e2cc04fc6f0f6d7ee0cb46e80"
+    },
+    {
+      "file": "contract-green.stderr.json",
+      "role": "First attemptedGREEN: delayed reader works; unsupported shutdown-duration oracle fails raw stderr",
+      "sourceEvidence": "marker-budget-reallocation/contract-green.stderr",
+      "sourceBytes": 0,
+      "sourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedFileSha256": "57e8a65ad1dd4962ec86e196398f1b86535ecc4439cf4705ca0d6c06cdd55edd"
+    },
+    {
+      "file": "ownership-red-receipt.json",
+      "role": "Explicit reader PID absence check passes; unsupported shutdown-duration oracle still fails",
+      "sourceEvidence": "marker-budget-reallocation/ownership-red-receipt.json",
+      "sourceBytes": 551,
+      "sourceSha256": "5f3d2eaa3bb86c53db069882a6150838c55b396d3b4404c35b3cdbbb49aecd7c",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "5f3d2eaa3bb86c53db069882a6150838c55b396d3b4404c35b3cdbbb49aecd7c",
+      "publishedFileSha256": "5f3d2eaa3bb86c53db069882a6150838c55b396d3b4404c35b3cdbbb49aecd7c"
+    },
+    {
+      "file": "ownership-red.stdout.json",
+      "role": "Explicit reader PID absence check passes; unsupported shutdown-duration oracle still fails raw stdout",
+      "sourceEvidence": "marker-budget-reallocation/ownership-red.stdout",
+      "sourceBytes": 1939,
+      "sourceSha256": "5f4b50a796686a8957fba888b52526712305e2f1f0b19233961b926ffe1bc079",
+      "pathAliasesApplied": true,
+      "publishedDecodedTextSha256": "87dba318639515fc71b1ba70d6644bf91b071d9de26e102767d2139da7638b29",
+      "publishedFileSha256": "2e6e05d7c2722ecde46c6c16399c174952704b200505416d4cc74def35f81e31"
+    },
+    {
+      "file": "ownership-red.stderr.json",
+      "role": "Explicit reader PID absence check passes; unsupported shutdown-duration oracle still fails raw stderr",
+      "sourceEvidence": "marker-budget-reallocation/ownership-red.stderr",
+      "sourceBytes": 0,
+      "sourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedFileSha256": "57e8a65ad1dd4962ec86e196398f1b86535ecc4439cf4705ca0d6c06cdd55edd"
+    },
+    {
+      "file": "prerequisite-summary.json",
+      "role": "Exact current verification receipt",
+      "sourceEvidence": "marker-budget-reallocation/prerequisite-summary.json",
+      "sourceBytes": 659,
+      "sourceSha256": "3e83e88f83c2ede63e978bbfe269691b31568173b777c2141a4c9d981afe134f",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "3e83e88f83c2ede63e978bbfe269691b31568173b777c2141a4c9d981afe134f",
+      "publishedFileSha256": "3e83e88f83c2ede63e978bbfe269691b31568173b777c2141a4c9d981afe134f"
+    },
+    {
+      "file": "prerequisite.stdout.json",
+      "role": "Exact current verification stdout",
+      "sourceEvidence": "marker-budget-reallocation/prerequisite.stdout",
+      "sourceBytes": 1884,
+      "sourceSha256": "abde6bd75eceb7eeaa57e9c3427923be051e37f643b85bc187203776820d2dbe",
+      "pathAliasesApplied": true,
+      "publishedDecodedTextSha256": "e0adb93e9174c324b6929ea5a9adc3380142e458feb69ef9aa67db9ad3fac2e7",
+      "publishedFileSha256": "431a8164fb208cfcacf386d90856e2fdcdca064967301d8b95bd4635c3744d75"
+    },
+    {
+      "file": "prerequisite.stderr.json",
+      "role": "Exact current verification stderr",
+      "sourceEvidence": "marker-budget-reallocation/prerequisite.stderr",
+      "sourceBytes": 0,
+      "sourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedFileSha256": "57e8a65ad1dd4962ec86e196398f1b86535ecc4439cf4705ca0d6c06cdd55edd"
+    },
+    {
+      "file": "lint-receipt.json",
+      "role": "Exact current verification receipt",
+      "sourceEvidence": "marker-budget-reallocation/lint-receipt.json",
+      "sourceBytes": 205,
+      "sourceSha256": "3bc1b2c97ea6aeff777d4e90f3ffcc95e5207dd0e96a14237208b5e620a8524d",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "3bc1b2c97ea6aeff777d4e90f3ffcc95e5207dd0e96a14237208b5e620a8524d",
+      "publishedFileSha256": "3bc1b2c97ea6aeff777d4e90f3ffcc95e5207dd0e96a14237208b5e620a8524d"
+    },
+    {
+      "file": "lint.stdout.json",
+      "role": "Exact current verification stdout",
+      "sourceEvidence": "marker-budget-reallocation/lint.stdout",
+      "sourceBytes": 1366,
+      "sourceSha256": "3a0093b849f2a0f63410cfe155cd2bf3e65b79e633dd44b2fb47885ba89c07dd",
+      "pathAliasesApplied": true,
+      "publishedDecodedTextSha256": "c696c2dd09094e4450ec811d41a9b349ec1dbde6c8fadd462dc9e6117a14fa2e",
+      "publishedFileSha256": "58f89156dc97c62dff09adcc08dea1d68d9ba81cf9468e45e09c059e39d8a7d6"
+    },
+    {
+      "file": "lint.stderr.json",
+      "role": "Exact current verification stderr",
+      "sourceEvidence": "marker-budget-reallocation/lint.stderr",
+      "sourceBytes": 0,
+      "sourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedFileSha256": "57e8a65ad1dd4962ec86e196398f1b86535ecc4439cf4705ca0d6c06cdd55edd"
+    },
+    {
+      "file": "wiring-receipt.json",
+      "role": "Exact current verification receipt",
+      "sourceEvidence": "marker-budget-reallocation/wiring-receipt.json",
+      "sourceBytes": 220,
+      "sourceSha256": "71a8817b2909a988180931a4af322330ca8429e9c127e61cee3ce45f14b1ee39",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "71a8817b2909a988180931a4af322330ca8429e9c127e61cee3ce45f14b1ee39",
+      "publishedFileSha256": "71a8817b2909a988180931a4af322330ca8429e9c127e61cee3ce45f14b1ee39"
+    },
+    {
+      "file": "wiring.stdout.json",
+      "role": "Exact current verification stdout",
+      "sourceEvidence": "marker-budget-reallocation/wiring.stdout",
+      "sourceBytes": 205,
+      "sourceSha256": "591009f5f91a7c9fb385f6a828caecbf22c248f5ad6bfff39ed822d57fa81c9a",
+      "pathAliasesApplied": true,
+      "publishedDecodedTextSha256": "f0f4093fe2919f6447d7f01b44339b53c669e28b48c7d6ac694773469bb38dde",
+      "publishedFileSha256": "918a999fa82781b8306aa86a66a6c5a891ad935197cfff7b247d448b20919d45"
+    },
+    {
+      "file": "wiring.stderr.json",
+      "role": "Exact current verification stderr",
+      "sourceEvidence": "marker-budget-reallocation/wiring.stderr",
+      "sourceBytes": 0,
+      "sourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "publishedFileSha256": "57e8a65ad1dd4962ec86e196398f1b86535ecc4439cf4705ca0d6c06cdd55edd"
+    },
+    {
+      "file": "hygiene-observed-receipt.json",
+      "role": "Current scoped verification/source review and source binding",
+      "sourceEvidence": "marker-budget-reallocation/hygiene-observed-receipt.json",
+      "sourceBytes": 490,
+      "sourceSha256": "c97fe60a0a45766bc92e2bd4a527ffc7e3d9ae21133d4c8d736571608ffc3cd6",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "c97fe60a0a45766bc92e2bd4a527ffc7e3d9ae21133d4c8d736571608ffc3cd6",
+      "publishedFileSha256": "c97fe60a0a45766bc92e2bd4a527ffc7e3d9ae21133d4c8d736571608ffc3cd6"
+    },
+    {
+      "file": "review-manifest.json",
+      "role": "Current scoped verification/source review and source binding",
+      "sourceEvidence": "marker-budget-reallocation/review-manifest.json",
+      "sourceBytes": 1068,
+      "sourceSha256": "e20b7c241909df19fadca283cece0dc74b94aa5994822f564f1fc1b33004eb66",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "e20b7c241909df19fadca283cece0dc74b94aa5994822f564f1fc1b33004eb66",
+      "publishedFileSha256": "e20b7c241909df19fadca283cece0dc74b94aa5994822f564f1fc1b33004eb66"
+    },
+    {
+      "file": "fresh-source-review.json",
+      "role": "Current scoped verification/source review and source binding",
+      "sourceEvidence": "marker-budget-reallocation/fresh-source-review.json",
+      "sourceBytes": 10755,
+      "sourceSha256": "9965aa64ca0c4504e9d0906e4af84484f3b34f739158aaf13e8df16473f4c174",
+      "pathAliasesApplied": true,
+      "publishedDecodedTextSha256": "c84b5cb0e360b5fc2c17bcd3908792762849e7dbe23304917cd74aeba5519332",
+      "publishedFileSha256": "c84b5cb0e360b5fc2c17bcd3908792762849e7dbe23304917cd74aeba5519332"
+    },
+    {
+      "file": "source-after-scoped-checks.json",
+      "role": "Current scoped verification/source review and source binding",
+      "sourceEvidence": "marker-budget-reallocation/source-after-scoped-checks.json",
+      "sourceBytes": 205,
+      "sourceSha256": "25cba99e6efb9ad8aaa05ce4e47feb77eafb911b843b9b53664e6e88850932aa",
+      "pathAliasesApplied": false,
+      "publishedDecodedTextSha256": "25cba99e6efb9ad8aaa05ce4e47feb77eafb911b843b9b53664e6e88850932aa",
+      "publishedFileSha256": "25cba99e6efb9ad8aaa05ce4e47feb77eafb911b843b9b53664e6e88850932aa"
+    }
+  ]
+}

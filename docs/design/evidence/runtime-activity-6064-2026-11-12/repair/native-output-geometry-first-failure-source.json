@@ -1,0 +1,10 @@
+{
+  "head": "9492da1bb0e4492609d15fa11b90a545b4bcafd1",
+  "phase": "existing production Text; geometry/hittability diagnostic and bounded visible viewport regression",
+  "files": {
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift": "4845c093d3daee8c09ad910cd1d242987cde62139f4c643a478e2f07f076bc35",
+    "apps/ios/CovenCave/CovenCave/Networking/ToolOutputPreview.swift": "975ad369216b95567f9b36135452a9e6b2a9fdef21c06245d1b36dd7d81f3d6b",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "fb9ef1676c9a28eb204ef0fbe8bfed7e3d8d302223cbffb17341b2a0e9087611"
+  },
+  "diff_sha256": "ea607f704561576dc02001c59ab383bad74a6b0e50ee1fddb4b068eb2851467d"
+}

@@ -1,0 +1,102 @@
+{
+  "at": "2026-11-16T10:32:10.137502+00:00",
+  "allPassed": true,
+  "sourceCount": 7229,
+  "sourceFingerprint": "82b35a03b75b69a840d320190faad762e8cc643c2e16a626a20892bdf3f89303",
+  "allSourceBytesUnchanged": true,
+  "receipts": [
+    {
+      "phase": "app",
+      "argv": [
+        "node",
+        "<test-harness>/run.mjs",
+        "pnpm",
+        "test:app"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-11-16T10:24:35.609620+00:00",
+      "finishedAt": "2026-11-16T10:31:17.234400+00:00",
+      "elapsedSeconds": 401.62227137497393,
+      "log": "app.log"
+    },
+    {
+      "phase": "mobile",
+      "argv": [
+        "node",
+        "<test-harness>/run.mjs",
+        "pnpm",
+        "test:mobile"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-11-16T10:31:17.234996+00:00",
+      "finishedAt": "2026-11-16T10:31:40.528699+00:00",
+      "elapsedSeconds": 23.293578083976172,
+      "log": "mobile.log"
+    },
+    {
+      "phase": "wiring",
+      "argv": [
+        "node",
+        "<test-harness>/run.mjs",
+        "pnpm",
+        "check:tests-wired"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-11-16T10:31:40.528901+00:00",
+      "finishedAt": "2026-11-16T10:31:40.750622+00:00",
+      "elapsedSeconds": 0.22173504100646824,
+      "log": "wiring.log"
+    },
+    {
+      "phase": "hygiene",
+      "argv": [
+        "node",
+        "<test-harness>/run.mjs",
+        "node",
+        "--test",
+        "scripts/plan-doc-checkbox-hygiene.test.mjs"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-11-16T10:31:40.750865+00:00",
+      "finishedAt": "2026-11-16T10:31:40.873234+00:00",
+      "elapsedSeconds": 0.12237979099154472,
+      "log": "hygiene.log"
+    },
+    {
+      "phase": "lint",
+      "argv": [
+        "node",
+        "<test-harness>/run.mjs",
+        "pnpm",
+        "lint"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-11-16T10:31:40.873449+00:00",
+      "finishedAt": "2026-11-16T10:32:04.509625+00:00",
+      "elapsedSeconds": 23.636049875000026,
+      "log": "lint.log"
+    },
+    {
+      "phase": "typecheck",
+      "argv": [
+        "node",
+        "<test-harness>/run.mjs",
+        "pnpm",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-11-16T10:32:04.509958+00:00",
+      "finishedAt": "2026-11-16T10:32:09.772982+00:00",
+      "elapsedSeconds": 5.263003916013986,
+      "log": "typecheck.log"
+    }
+  ],
+  "reviewedFilesSHA256": {
+    "scripts/ios-scroll-marker.py": "eec8e2f33cf1195e7db6f5692e28660ea713c77070e16177af9037dbfb57b817",
+    "scripts/ios-native-command.test.mjs": "229293fd9e9eb657525e3b9a513725d3f94c642a3a18147b6e5649e962ab3625",
+    ".github/workflows/ios-transcript-regression.yml": "cd6f642ffb9ceffdda3c4047cec9308f112e2b72f8b47cea5a156551528f0668",
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "6cc7617d4aade57029989afaa472c257087e2a8b342a5f891ef237ddc4f2df6e",
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "8a878e896f559bb60a9a0c071756678bdd00daa17a4a7c023f33f8b995b04f8e"
+  },
+  "scope": "Local app/mobile/source checks with recorded host exclusions; no native UI rerun/build or production/provider/physical/human acceptance."
+}

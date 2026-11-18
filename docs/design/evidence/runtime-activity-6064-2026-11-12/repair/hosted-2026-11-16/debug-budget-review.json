@@ -1,0 +1,99 @@
+{
+  "observedAt": "2026-11-16T03:45:48.194497+00:00",
+  "review": "Read-only review of actual bounded Debug resource patch and retained verification; no tests, launches, repository edits, commits or external writes performed.",
+  "baseHead": "7fd1e8daf7117789117453aed91349fb349026ae",
+  "trackedDiffFiles": [
+    ".github/workflows/ios-transcript-regression.yml",
+    "scripts/ios-native-command.test.mjs"
+  ],
+  "blockers": [],
+  "assessment": "No weakening or scope blocker found. This adjusts a bounded CI matrix-completion resource allowance, not a product assertion or responsiveness budget.",
+  "actualWorkflowChange": {
+    "debugCommandSeconds": [
+      900,
+      1080
+    ],
+    "debugStepMinutes": [
+      16,
+      19
+    ],
+    "jobMinutes": [
+      105,
+      108
+    ],
+    "otherWorkflowASTIdentical": "Supported by retained AST audit and scoped source diff."
+  },
+  "preserved": [
+    "Every selector and existing Debug retry/iteration setting",
+    "Every native functional assertion, UI deadline, gesture and renderer bound",
+    "Strict3600-second command and61-minute step, three full iterations without retries",
+    "Release900-second command and16-minute step",
+    "Signing, owned shutdown, conditional launch gates and independent evidence freeze/uploads"
+  ],
+  "regressionReview": {
+    "completeWorkloadEstimateSeconds": 951.453,
+    "estimatePlusShutdownSeconds": 981.453,
+    "derivation": "Independent retained319.142 completed-case seconds +172.598 prior complete final case +459.713 prior wrapper residual; cross-run accounting estimate, not causal proof or guaranteed runtime.",
+    "minimumGuard": "Command budget must exceed981.453 seconds.",
+    "maximumGuard": "Debug command remains capped at1080 seconds; strict3600 ceiling and nested-budget guard remain.",
+    "jobPolicyMinutes": 108,
+    "retainedVerificationObserved": {
+      "red": {
+        "counts": {
+          "tests": 7,
+          "pass": 6,
+          "fail": 1,
+          "cancelled": 0,
+          "skipped": 0
+        },
+        "expectedWorkloadAssertionObserved": true
+      },
+      "green": {
+        "counts": {
+          "tests": 7,
+          "pass": 7,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0
+        }
+      },
+      "contracts": {
+        "counts": {
+          "tests": 22,
+          "pass": 22,
+          "fail": 0,
+          "cancelled": 0,
+          "skipped": 0
+        }
+      },
+      "wiring": {
+        "counts": {},
+        "wired2262": true
+      }
+    },
+    "wrongWiringCommand": "Exit254 from nonexistent pnpm test:wiring retained distinctly; corrected check:tests-wired succeeded. Not presented as a test assertion failure."
+  },
+  "nestedBudgets": {
+    "debugCommandPlusShutdownSeconds": 1110,
+    "debugStepSeconds": 1140,
+    "allNativeCommandsPlusShutdownSeconds": 5670,
+    "otherMinutes": 12,
+    "totalMinutes": 106.5,
+    "jobMinutes": 108,
+    "reserveMinutes": 1.5
+  },
+  "limits": [
+    "Original900-second command remains failed and incomplete59/60; no complete outcome inferred for the interrupted test.",
+    "Strict small-drag assertion failure and physical-device/frame/human/admission gates remain separate unresolved work.",
+    "No new-head hosted execution or passing CI result is established by these local contracts.",
+    "No further automatic resource extension if the reviewed ceiling is insufficient."
+  ],
+  "evidence": [
+    "debug-budget-red.log",
+    "debug-budget-green.log",
+    "debug-budget-contracts.log",
+    "debug-budget-wiring.log",
+    "debug-budget-ast-verification.json",
+    "debug-budget-verification.json"
+  ]
+}

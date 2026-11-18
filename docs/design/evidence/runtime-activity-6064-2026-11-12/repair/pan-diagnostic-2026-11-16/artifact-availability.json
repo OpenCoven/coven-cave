@@ -1,0 +1,61 @@
+{
+  "observedAt": "2026-11-16T04:23:04.924275+00:00",
+  "exportedAttachments": [
+    {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "F8D29620-D485-475F-9D45-1F2D3925BFB1",
+      "deviceName": "cave-6064-pan-diagnostic-20261116",
+      "exportedFileName": "9D345763-567B-4465-BF07-FAF46AF5484F.png",
+      "isAssociatedWithFailure": false,
+      "repetitionNumber": 1,
+      "suggestedHumanReadableName": "Small drag settled_0_DACB43ED-65F1-46F5-A296-5682375D7208.png",
+      "timestamp": 1794802458.78
+    },
+    {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "F8D29620-D485-475F-9D45-1F2D3925BFB1",
+      "deviceName": "cave-6064-pan-diagnostic-20261116",
+      "exportedFileName": "01665364-83EB-409D-95A9-D49586E38941.png",
+      "isAssociatedWithFailure": false,
+      "repetitionNumber": 2,
+      "suggestedHumanReadableName": "Small drag settled_0_0A504F9F-53F3-4D80-A661-1F00303D4DFC.png",
+      "timestamp": 1794802533.441
+    },
+    {
+      "configurationName": "Test Scheme Action",
+      "deviceId": "F8D29620-D485-475F-9D45-1F2D3925BFB1",
+      "deviceName": "cave-6064-pan-diagnostic-20261116",
+      "exportedFileName": "88F8B0B0-C58F-480E-ADB1-FD3A6819628D.png",
+      "isAssociatedWithFailure": false,
+      "repetitionNumber": 3,
+      "suggestedHumanReadableName": "Small drag settled_0_491ABEA1-266A-4E0D-8B02-6A7CB2789EBB.png",
+      "timestamp": 1794802610.337
+    }
+  ],
+  "explicitSettledScreenshots": 3,
+  "synthesizedEventArchivesExported": 0,
+  "videoExported": 0,
+  "AXFailureArtifactsExported": 0,
+  "activityRuns": 3,
+  "activityPressAndSynthesisCounts": [
+    {
+      "iteration": 1,
+      "press": 9,
+      "synthesis": 9
+    },
+    {
+      "iteration": 2,
+      "press": 9,
+      "synthesis": 9
+    },
+    {
+      "iteration": 3,
+      "press": 9,
+      "synthesis": 9
+    }
+  ],
+  "limit": "The original generated SystemAttachmentLifetime deleteOnSuccess defaults were preserved. All available attachments were exported; no new gestures, attachment-policy changes or fallback run was used to invent missing automatic artifacts.",
+  "existingMetricCaptures": [],
+  "metricLimit": "This original method does not tap a metrics capture control. No extra captures were requested; no existing metrics file was observed.",
+  "sandboxBindingMonitor": "sandbox-binding-monitor.json"
+}

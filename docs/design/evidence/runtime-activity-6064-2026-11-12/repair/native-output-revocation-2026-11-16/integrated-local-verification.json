@@ -1,0 +1,93 @@
+[
+  {
+    "phase": "app",
+    "command": [
+      "node",
+      "/private/tmp/nova6064-20261112/run.mjs",
+      "pnpm",
+      "test:app"
+    ],
+    "startedAt": "2026-11-16T04:41:36.470109+00:00",
+    "finishedAt": "2026-11-16T04:49:52.799241+00:00",
+    "exitCode": 0,
+    "log": "app.log"
+  },
+  {
+    "phase": "api",
+    "command": [
+      "node",
+      "/private/tmp/nova6064-20261112/run.mjs",
+      "pnpm",
+      "test:api"
+    ],
+    "startedAt": "2026-11-16T04:49:52.799709+00:00",
+    "finishedAt": "2026-11-16T05:00:16.259226+00:00",
+    "exitCode": 0,
+    "log": "api.log"
+  },
+  {
+    "phase": "mobile",
+    "command": [
+      "node",
+      "/private/tmp/nova6064-20261112/run.mjs",
+      "pnpm",
+      "test:mobile"
+    ],
+    "startedAt": "2026-11-16T05:00:16.259724+00:00",
+    "finishedAt": "2026-11-16T05:00:41.881016+00:00",
+    "exitCode": 0,
+    "log": "mobile.log"
+  },
+  {
+    "phase": "conformance",
+    "command": [
+      "node",
+      "/private/tmp/nova6064-20261112/run.mjs",
+      "pnpm",
+      "test:conformance"
+    ],
+    "startedAt": "2026-11-16T05:00:41.881308+00:00",
+    "finishedAt": "2026-11-16T05:04:32.095442+00:00",
+    "exitCode": 0,
+    "log": "conformance.log"
+  },
+  {
+    "phase": "lint",
+    "command": [
+      "node",
+      "/private/tmp/nova6064-20261112/run.mjs",
+      "pnpm",
+      "lint"
+    ],
+    "startedAt": "2026-11-16T05:04:32.104080+00:00",
+    "finishedAt": "2026-11-16T05:05:08.869718+00:00",
+    "exitCode": 0,
+    "log": "lint.log"
+  },
+  {
+    "phase": "typecheck",
+    "command": [
+      "node",
+      "/private/tmp/nova6064-20261112/run.mjs",
+      "pnpm",
+      "typecheck"
+    ],
+    "startedAt": "2026-11-16T05:05:08.871279+00:00",
+    "finishedAt": "2026-11-16T05:05:58.637076+00:00",
+    "exitCode": 0,
+    "log": "typecheck.log"
+  },
+  {
+    "phase": "wiring",
+    "command": [
+      "node",
+      "/private/tmp/nova6064-20261112/run.mjs",
+      "pnpm",
+      "check:tests-wired"
+    ],
+    "startedAt": "2026-11-16T05:05:58.639324+00:00",
+    "finishedAt": "2026-11-16T05:05:58.988378+00:00",
+    "exitCode": 0,
+    "log": "wiring.log"
+  }
+]

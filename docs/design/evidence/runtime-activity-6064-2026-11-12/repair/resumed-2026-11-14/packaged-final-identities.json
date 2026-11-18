@@ -1,0 +1,19 @@
+{
+  "baseHead": "d0e436bdb571133318705c833ff6b30e63a4b9ea",
+  "workingTreeDiffSha256": "bc7de935dad0c8c07ed70dffe91144a9e2e5e0013d67fb53c964f631930b39f8",
+  "binarySha256": "425c790493875f37d23feda478c15cb8daf88ae60dc0d9f25a010ae90893ea1b",
+  "buildId": "v7RNAU7Q-W3yoMfJg7cOX",
+  "sourceSHA256": {
+    "src/lib/server/chat-display-projection.ts": "f5f7e9e3287adbccbf8ba06aa098130bf0ab20c4e9326c96e8288d3fb9f9ea31",
+    "src/lib/server/conversation-display-projection.ts": "b186ef55bbb030b2e4cd5af82f82b1e876819955c7d17ef9529b3db9595c65f3",
+    "src/lib/chat-turn-state.ts": "9fe2a91acf5495d7b26c461bee3182d75e32545a925ae32ef3035d4854fb0d15",
+    "src/lib/cave-conversations.ts": "052abf01b39999c87162b96694715e71c2fd9672ba12ed680d0b930ee48a9e77",
+    "src/components/chat-view.tsx": "0f66b522aff6d1cf934ee2a6ecbb5fb677a3e99d7ecc4b0e683cc5208f66e2a2"
+  },
+  "fullBundleManifest": {
+    "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/probe3/source-bundle-identity.json",
+    "sha256": "b6f6d6b7beabdbb34ae0de227b46da4fa7475e6bb3889761b424d30d91d6992e",
+    "fileCount": 9724
+  },
+  "qualificationBoundary": "Build preceded source-test pin and test-runner alias refinements; production source hashes remain identical. Base head plus dirty source is not an adopted release tuple."
+}

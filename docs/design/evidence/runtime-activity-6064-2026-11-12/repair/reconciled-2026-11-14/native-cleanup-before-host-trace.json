@@ -1,0 +1,16 @@
+{
+  "observedAt": "2026-11-15T22:34:12.864740+00:00",
+  "ownedSimulator": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+  "finalOwnedSimulatorState": "Shutdown",
+  "shutdownLog": "shutdown-after-diagnostic.log",
+  "canonicalTCPFirstFailureRetained": true,
+  "canonicalPreservedRoot": "/private/var/folders/5b/njd1qhwx4h97r9lvy_wpf5lc0000gn/T/cave-native-activity-Qpm6fe",
+  "canonicalPreservedRootStillExists": true,
+  "canonicalDaemonStateFilesNow": {
+    "daemon.json": false,
+    "coven.sock": false
+  },
+  "canonicalLatePidAudit": "tcp-daemon-teardown-audit.json",
+  "preservedRootDeletedByVerifier": false,
+  "foreignSimOrSharedServiceChanged": false
+}

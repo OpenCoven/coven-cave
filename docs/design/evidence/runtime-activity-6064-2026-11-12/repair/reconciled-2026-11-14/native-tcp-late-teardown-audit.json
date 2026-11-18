@@ -1,0 +1,18 @@
+{
+  "observedAt": "2026-11-14T09:57:11.479407+00:00",
+  "originalCanonicalPassed": false,
+  "originalDaemonStopped": false,
+  "originalNoDaemonState": true,
+  "exactRecordedDaemonPid": 40409,
+  "currentKillZeroExists": false,
+  "psExitCode": 1,
+  "psOutput": "",
+  "preservedRoot": "/private/var/folders/5b/njd1qhwx4h97r9lvy_wpf5lc0000gn/T/cave-native-activity-Qpm6fe",
+  "preservedRootExists": true,
+  "currentDaemonStateFiles": {
+    "daemon.json": false,
+    "coven.sock": false
+  },
+  "processSignalsSent": false,
+  "fixtureDeleted": false
+}

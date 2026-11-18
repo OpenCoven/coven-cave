@@ -1,0 +1,15 @@
+{
+  "startedAt": "2026-11-16T04:06:20.803915+00:00",
+  "command": [
+    "xcrun",
+    "simctl",
+    "create",
+    "cave-6064-pan-diagnostic-20261116",
+    "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+    "com.apple.CoreSimulator.SimRuntime.iOS-26-5"
+  ],
+  "exitCode": 0,
+  "stdout": "F8D29620-D485-475F-9D45-1F2D3925BFB1\n",
+  "stderr": "",
+  "finishedAt": "2026-11-16T04:06:21.015737+00:00"
+}

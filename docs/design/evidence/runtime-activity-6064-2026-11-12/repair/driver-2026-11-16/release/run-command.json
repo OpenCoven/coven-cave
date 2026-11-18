@@ -1,0 +1,45 @@
+{
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/private/tmp/nova6064-native-single-hittable-20261116/release/original-case.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "-parallel-testing-enabled",
+    "NO",
+    "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+    "-resultBundlePath",
+    "/private/tmp/nova6064-native-single-hittable-20261116/release/original-case.xcresult",
+    "-test-timeouts-enabled",
+    "YES",
+    "-default-test-execution-time-allowance",
+    "180",
+    "-maximum-test-execution-time-allowance",
+    "300"
+  ],
+  "environment": {
+    "COVEN_HOME": "/private/tmp/nova6064-native-single-hittable-20261116/release/state/coven",
+    "COVEN_CAVE_HOME": "/private/tmp/nova6064-native-single-hittable-20261116/release/state/coven/cave",
+    "COVEN_CAVE_ENV_FILE": "/private/tmp/nova6064-native-single-hittable-20261116/release/state/env.local",
+    "COVEN_VAULT_FILE": "/private/tmp/nova6064-native-single-hittable-20261116/release/state/vault.yaml",
+    "COVEN_CAVE_LOCAL_VAULT_FILE": "/private/tmp/nova6064-native-single-hittable-20261116/release/state/local-vault.enc.json",
+    "COVEN_CAVE_LOCAL_VAULT_KEY_FILE": "/private/tmp/nova6064-native-single-hittable-20261116/release/state/local-vault.key",
+    "COVEN_SOCKET": "/private/tmp/nova6064-native-single-hittable-20261116/release/state/coven/coven.sock"
+  },
+  "configuration": "release",
+  "traceSourcePath": null,
+  "method": "testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+  "onlyRevisedDriverJourneyQualified": true,
+  "productResponsivenessClaim": false,
+  "originalAssertionsActionsAndGesturesPreserved": true,
+  "defaultAllowanceSeconds": 180,
+  "maximumAllowanceSeconds": 300,
+  "retryCount": 0,
+  "preflightEnabledExactly": [
+    "testRetainedRichTimelinePreservesEarlierToolThroughScrolling()"
+  ],
+  "startedAt": "2026-11-16T00:27:12.788054+00:00",
+  "exitCode": 0,
+  "finishedAt": "2026-11-16T00:29:46.526826+00:00"
+}

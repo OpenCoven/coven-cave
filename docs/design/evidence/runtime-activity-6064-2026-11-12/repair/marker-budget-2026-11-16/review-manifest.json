@@ -1,0 +1,20 @@
+{
+  "at": "2026-11-16T12:37:50.610299+00:00",
+  "baseAndHead": "5bbe2df6d484f2e65f25f9e1f10a2c151ed1630e",
+  "uncommittedScope": [
+    ".github/workflows/ios-transcript-regression.yml",
+    "scripts/ios-native-command.test.mjs",
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md",
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md"
+  ],
+  "sha256": {
+    ".github/workflows/ios-transcript-regression.yml": "8b3ee5dc09502fd224bd22bb3b44d34301ce74cee0e4901f9c1b42e7415d0aa4",
+    "scripts/ios-native-command.test.mjs": "a6b2eadcb6eacb22feb6a477a3c6cf3560d2498ef7147665ac259ea247db32c1",
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "4324fb2309828aa3c64c02439b6ecafcd2a8ad5ed221e72e4ddbad3e95c6b7d1",
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "4f880702a5b9d769e5c33659311a113ff75d0ada833d52766137fcaf159179a6"
+  },
+  "trackedFiles": 7273,
+  "helperUnchanged": true,
+  "nativeOwnerUnchanged": true,
+  "patchSha256": "678580ee3d2b02685ef614b59e56758c04ba94e9eab9179e08b16ccf0e48043f"
+}

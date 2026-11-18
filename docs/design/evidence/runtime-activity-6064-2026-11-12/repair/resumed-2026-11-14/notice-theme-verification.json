@@ -1,0 +1,70 @@
+{
+  "classification": "Rendered production-web notice palette inspection; existing canonical withholding test copied unchanged with added scratch-preferences and capture checks",
+  "sourceCommit": "b20eef0c8f23fe36f256f9314c191953a9ce4fe7",
+  "buildId": "FJ56LSVjtucX8EXCP6UMW",
+  "stats": {
+    "startTime": "2026-11-14T08:17:49.218Z",
+    "duration": 15579.782000000001,
+    "expected": 6,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "retries": 0,
+  "configuredWorkers": 1,
+  "themes": [
+    "coven/dark",
+    "coven/light",
+    "tide/dark"
+  ],
+  "engines": [
+    "Chromium",
+    "WebKit"
+  ],
+  "checks": [
+    "Actual scratch preferences PATCH200",
+    "Effective html data-theme and data-mode",
+    "All original four-card, three input/three output notices, contradictory text absence, zero Retry, accepted-only lazy-fetch assertions",
+    "Two both-withheld cards present; selected card shows both notices"
+  ],
+  "capturesReviewed": 6,
+  "captureLimits": "Chromium default-dark capture includes a synthetic daily-summary toast on the right; both notice strings remain visible. This is not a human accessibility or device pass.",
+  "firstFailures": [
+    "External config lacked module declaration; failed before test startup",
+    "All six added afterEach checks assumed first card was both-withheld; canonical assertions and theme attributes passed, first card was Edit; selector now explicitly matches both notices and asserts count2"
+  ],
+  "rawFiles": {
+    "notices.theme.spec.ts": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/theme-checks/notices.theme.spec.ts",
+      "sha256": "a5ac282f3cb0d9356007eb64f7eab5859f5bb8fe89c8ba51a1edd99319a9472c"
+    },
+    "theme.playwright.ts": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/theme-checks/theme.playwright.ts",
+      "sha256": "09927d2d3a94e6c1227b9af7e4451f9c03fe58c791171b5671e86536d2402277"
+    },
+    "run-scoped-card-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/theme-checks/run-scoped-card-final.log",
+      "sha256": "07dd7bf374ee347f8196cc320fb3a7f4832659f6565c4d885c598de765373fb3"
+    },
+    "report-scoped-card-final.json": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/theme-checks/report-scoped-card-final.json",
+      "sha256": "a59733c07cd1a486819bc94284672cbfebfb1b87269f8aba1037fdd97555502c"
+    },
+    "run-final.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/theme-checks/run-final.log",
+      "sha256": "5915193326555d829e54d0f9db395193f16b4dedc5105e1003362829cce56338"
+    },
+    "module-startup-failure.log": {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/theme-checks/module-startup-failure.log",
+      "sha256": "26d95547e19343fb13d0cf5ec6ba3e27529d4cfb0dc010a5894bd2acbb17ada8"
+    }
+  },
+  "screenshotsSHA256": {
+    "notice-theme-chromium-6064-coven-light.png": "3a0d9c161eb6d7698eea4d69d862b6c31a6073eb3bd6c841831ad70edf64ced4",
+    "notice-theme-chromium-6064-coven-dark.png": "3a7a28b3b36c963fa003869216628fb48ab549c48c306f74ec5af4dd5950a62b",
+    "notice-theme-webkit-6064-coven-light.png": "2045971b52610cc57331cf8fbe57f47cd53f6b29737fdd69fbbbfd5396f0e78a",
+    "notice-theme-webkit-6064-coven-dark.png": "ff7c3cc166000c7b9d3ac40c03217009f4405e80fad463bdfe50622167f5db3d",
+    "notice-theme-chromium-6064-tide-dark.png": "6f75a3607731a7d1f62669d82dc13cd40b2345a1f263f1881d795dcccff90f26",
+    "notice-theme-webkit-6064-tide-dark.png": "ae55d079514b578f5729b312c6d2b915dab36ce6be0bd682040c7233202a77e5"
+  }
+}

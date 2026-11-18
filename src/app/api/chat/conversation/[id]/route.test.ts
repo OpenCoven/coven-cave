@@ -1178,6 +1178,104 @@ test("history and lazy outputs share disclosure without rewriting stored executi
   assert.equal(ambiguous.status, 409, "redaction must not erase raw-output ambiguity");
 });
 
+test("history reports withheld saved units without disclosing raw payloads or lazy lengths", async () => {
+  const id = "sess-withheld-history";
+  const cap = 256 * 1024;
+  const rawOver = "PRIVATE_WITHHELD_SENTINEL" + " ".repeat(cap);
+  const expansion = " ".repeat(cap - 6) + "a@b.co";
+  const exact = " ".repeat(cap);
+  const tools = [
+    { id: "oversized", name: "Read", status: "ok", input: rawOver, output: rawOver },
+    { id: "expansion", name: "Read", status: "ok", input: expansion, output: expansion },
+    { id: "exact", name: "Read", status: "ok", input: exact, output: exact },
+    { id: "multi-over", name: "Read", status: "ok", output: "界".repeat(87381) + "  " },
+    { id: "empty", name: "Read", status: "ok", input: "", output: "" },
+    { id: "missing", name: "Read", status: "ok", inputDisclosure: "withheld", outputDisclosure: "withheld", outputChars: 42, outputSessionId: "forged", reason: "FORGED_REASON" },
+    { id: "safe", name: "Read", status: "ok", input: "safe.ts", output: "Safe output", inputDisclosure: "withheld", outputDisclosure: "withheld", outputChars: 42 },
+    ...["running", "requested", "approval-requested", "cancel-requested", "unknown", "future-status"].map((status) => ({ id: `unfinished-${status}`, name: "Read", status, output: "PRIVATE_UNFINISHED_SENTINEL" })),
+  ];
+  writeConversation(id, [{ id: "a", role: "assistant", text: "Saved answer", createdAt: "2026-10-03T00:00:00Z", tools }]);
+  const before = readFileSync(conversationPath(id), "utf8");
+  for (const query of ["", "?toolOutputs=recent"]) {
+    const response = await GET(new Request(`http://test/api/chat/conversation/${id}${query}`), paramsFor(id));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.doesNotMatch(JSON.stringify(body), /PRIVATE_WITHHELD|PRIVATE_UNFINISHED|FORGED_REASON|a@b.co/);
+    const projected = body.conversation.turns[0].tools;
+    for (const index of [0, 1]) {
+      assert.equal(projected[index].inputDisclosure, "withheld");
+      assert.equal(projected[index].outputDisclosure, "withheld");
+      assert.equal(projected[index].input, undefined);
+      assert.equal(projected[index].output, undefined);
+      assert.equal(projected[index].outputChars, undefined, "policy-withheld content has no retrievable-length hint");
+    }
+    assert.ok(projected[2].input === exact);
+    if (!query) assert.ok(projected[2].output === exact);
+    else {
+      assert.equal(projected[2].output, undefined);
+      assert.equal(projected[2].outputChars, cap, "accepted lazy output retains its existing hint");
+    }
+    assert.equal(projected[2].outputDisclosure, undefined);
+    assert.equal(projected[3].outputDisclosure, "withheld");
+    assert.equal(projected[4].input, "");
+    assert.equal(projected[4].output, "");
+    for (const key of ["inputDisclosure", "outputDisclosure", "outputChars", "outputSessionId", "reason"]) assert.equal(projected[5][key], undefined, `missing payload cannot mint ${key}`);
+    assert.equal(projected[6].input, "safe.ts");
+    assert.equal(projected[6].output, "Safe output");
+    assert.equal(projected[6].inputDisclosure, undefined);
+    assert.equal(projected[6].outputDisclosure, undefined, "forged flags cannot hide admitted content");
+    for (const tool of projected.slice(7)) {
+      assert.equal(tool.output, undefined);
+      assert.equal(tool.outputDisclosure, "withheld");
+      assert.equal(tool.outputChars, undefined);
+      assert.notEqual(tool.status, "ok", "display metadata cannot complete an unresolved observation");
+    }
+  }
+  const { GET: TOOL_OUTPUT } = await import("./tool-output/route.ts");
+  for (const toolId of ["oversized", "expansion", "multi-over", "missing", "unfinished-running"]) {
+    const response = await TOOL_OUTPUT(new Request(`http://test/api/chat/conversation/${id}/tool-output?toolId=${toolId}`), paramsFor(id));
+    assert.equal(response.status, 404);
+    assert.doesNotMatch(await response.text(), /PRIVATE_|a@b.co/);
+  }
+  const exactOutput = await TOOL_OUTPUT(new Request(`http://test/api/chat/conversation/${id}/tool-output?toolId=exact`), paramsFor(id));
+  assert.equal(exactOutput.status, 200);
+  assert.ok((await exactOutput.json()).output === exact);
+  assert.equal(readFileSync(conversationPath(id), "utf8"), before, "read projection leaves original saved bytes unchanged");
+});
+
+test("deep saved history never restores opaque subtrees after redaction budget exhaustion", async () => {
+  const id = "sess-deep-opaque-projection";
+  const privateLeaf = "PRIVATE_DEEP_OPAQUE_LEAF";
+  const raw = '{"nested":'.repeat(80) + JSON.stringify({ _meta: privateLeaf }) + "}".repeat(80);
+  writeConversation(id, [{ id: "a", role: "assistant", text: "Saved answer", createdAt: "2026-10-03T00:00:00Z", tools: [
+    { id: "deep", name: "Read", status: "ok", input: raw, output: raw },
+    ...[1, 2, 3].map(i => ({ id: `safe-${i}`, name: "Read", status: "ok", output: "Safe result" })),
+  ] }]);
+  const before = readFileSync(conversationPath(id), "utf8");
+  let displayOutput;
+  for (const query of ["", "?toolOutputs=recent"]) {
+    const response = await GET(new Request(`http://test/api/chat/conversation/${id}${query}`), paramsFor(id));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.ok(!JSON.stringify(body).includes(privateLeaf), "neither full nor recent history can revive the opaque unit");
+    const tool = body.conversation.turns[0].tools[0];
+    assert.equal(tool.status, "ok");
+    assert.equal(tool.outputChars, undefined, "no private raw-size hint survives a redactor budget replacement");
+    for (const field of ["input", "output"]) {
+      if (tool[field] === undefined) assert.equal(tool[`${field}Disclosure`], "withheld");
+      else assert.match(tool[field], /\[redacted\]|\[withheld provider state\]/, "visible omission remains explicit");
+    }
+    displayOutput = tool.output;
+  }
+  const { GET: TOOL_OUTPUT } = await import("./tool-output/route.ts");
+  const lazy = await TOOL_OUTPUT(new Request(`http://test/api/chat/conversation/${id}/tool-output?toolId=deep`), paramsFor(id));
+  assert.equal(lazy.status, displayOutput === undefined ? 404 : 200);
+  const body = await lazy.json();
+  assert.ok(!JSON.stringify(body).includes(privateLeaf));
+  if (displayOutput !== undefined) assert.equal(body.output, displayOutput, "lazy output uses the same safe projection as history");
+  assert.equal(readFileSync(conversationPath(id), "utf8"), before, "projection never rewrites raw execution history");
+});
+
 test("history projection is idempotent and preserves ambiguity in the stored hash namespace", async () => {
   const { projectConversationDisplay, findDisplayToolOutput } = await import("@/lib/server/conversation-display-projection");
   const { ToolCallTracker, toPersistedTools } = await import("@/lib/chat-tool-events");

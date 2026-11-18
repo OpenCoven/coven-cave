@@ -67,6 +67,8 @@ struct ActivityStep: Codable, Hashable, Identifiable {
     var errorOutput: String?
     var activity: ToolActivity? = nil
     var textOffset: Int? = nil
+    var inputDisclosure: ToolPayloadDisclosure? = nil
+    var outputDisclosure: ToolPayloadDisclosure? = nil
 }
 
 extension ActivityStep {
@@ -75,10 +77,12 @@ extension ActivityStep {
         id = try values.decode(String.self, forKey: .id)
         kind = try values.decode(Kind.self, forKey: .kind)
         title = try values.decode(String.self, forKey: .title)
-        detail = try values.decodeIfPresent(String.self, forKey: .detail)
+        inputDisclosure = try? values.decodeIfPresent(ToolPayloadDisclosure.self, forKey: .inputDisclosure)
+        outputDisclosure = try? values.decodeIfPresent(ToolPayloadDisclosure.self, forKey: .outputDisclosure)
+        detail = inputDisclosure == .withheld ? nil : try values.decodeIfPresent(String.self, forKey: .detail)
         status = try values.decodeIfPresent(Status.self, forKey: .status) ?? .unknown
         durationMs = try values.decodeIfPresent(Int.self, forKey: .durationMs)
-        errorOutput = try values.decodeIfPresent(String.self, forKey: .errorOutput)
+        errorOutput = outputDisclosure == .withheld ? nil : try values.decodeIfPresent(String.self, forKey: .errorOutput)
         activity = kind == .tool ? (try? values.decodeIfPresent(ToolActivity.self, forKey: .activity))?.validated(callId: id, status: status.rawValue) : nil
         if let offset = try? values.decode(Int.self, forKey: .textOffset), offset >= 0, offset <= 9_007_199_254_740_991 {
             textOffset = offset
@@ -160,11 +164,11 @@ enum ActivityFold {
                 step.status = parsedStatus
                 changed = true
             }
-            if step.detail == nil, let detail = argSummary(name: name, input: input) {
+            if step.inputDisclosure != .withheld, step.detail == nil, let detail = argSummary(name: name, input: input) {
                 step.detail = detail
                 changed = true
             }
-            if !knownOutcome, !staleStart, step.status == .error, let failure, step.errorOutput != failure {
+            if step.outputDisclosure != .withheld, !knownOutcome, !staleStart, step.status == .error, let failure, step.errorOutput != failure {
                 step.errorOutput = failure
                 changed = true
             }
@@ -280,12 +284,14 @@ enum ActivityFold {
             let observed = ActivityStep.Status(rawValue: tool.status ?? "") ?? .unknown
             let status: ActivityStep.Status = observed.isKnownOutcome ? observed : .unknown
             return ActivityStep(id: tool.id, kind: .tool, title: tool.name,
-                                detail: argSummary(name: tool.name, input: tool.input),
+                                detail: tool.inputDisclosure == .withheld ? nil : argSummary(name: tool.name, input: tool.input),
                                 status: status,
                                 durationMs: tool.durationMs,
-                                errorOutput: failed ? capErrorOutput(tool.output) : nil,
+                                errorOutput: failed && tool.outputDisclosure != .withheld ? capErrorOutput(tool.output) : nil,
                                 activity: tool.activity?.validated(callId: tool.id, status: status.rawValue),
-                                textOffset: tool.textOffset)
+                                textOffset: tool.textOffset,
+                                inputDisclosure: tool.inputDisclosure,
+                                outputDisclosure: tool.outputDisclosure)
         }
     }
 }

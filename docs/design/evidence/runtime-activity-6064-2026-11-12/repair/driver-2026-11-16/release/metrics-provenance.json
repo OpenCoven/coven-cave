@@ -1,0 +1,11 @@
+{
+  "observedAt": "2026-11-16T00:29:51.661493+00:00",
+  "source": "/Users/buns/Library/Developer/CoreSimulator/Devices/64878DF0-DB73-45A9-8D68-3F22393F7D64/data/Containers/Data/Application/D5DBAECB-7D7A-4744-A851-67473E665968/Library/Application Support/performance-fixture/timeline-metrics.json",
+  "container": "/Users/buns/Library/Developer/CoreSimulator/Devices/64878DF0-DB73-45A9-8D68-3F22393F7D64/data/Containers/Data/Application/D5DBAECB-7D7A-4744-A851-67473E665968",
+  "exists": true,
+  "method": "Read-only owned simulator container metadata; no launch or taps",
+  "limit": "Existing async app spans and counters only; not main-thread, frame, hitch, responsiveness or causal evidence; app footprint excludes WebKit processes",
+  "bytes": 7061,
+  "sha256": "c20a15bc245f3d7a29ee90a3fbdfb95e3bb9d805aadcbef590d62d815d672c7e",
+  "mtimeUTC": "2026-11-16T00:29:40.717055+00:00"
+}

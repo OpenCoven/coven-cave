@@ -1,0 +1,90 @@
+{
+  "at": "2026-11-16T10:05:20.524181+00:00",
+  "type": "AssertionError",
+  "error": "",
+  "records": [
+    {
+      "phase": "compile-probe",
+      "argv": [
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "swiftc",
+        "-target",
+        "arm64-apple-ios27.2-simulator",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.2.sdk",
+        "<qualification>/marker-offline-proof/Cave6064LogProbe.swift",
+        "-o",
+        "<qualification>/marker-offline-proof/Cave6064LogProbe"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.300893417035695,
+      "finishedAt": "2026-11-16T10:05:17.251277+00:00"
+    },
+    {
+      "phase": "sign-probe",
+      "argv": [
+        "codesign",
+        "--force",
+        "--sign",
+        "-",
+        "<qualification>/marker-offline-proof/Cave6064LogProbe"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.020575791015289724,
+      "finishedAt": "2026-11-16T10:05:17.272524+00:00"
+    },
+    {
+      "phase": "verify-probe",
+      "argv": [
+        "codesign",
+        "--verify",
+        "--strict",
+        "--verbose=2",
+        "<qualification>/marker-offline-proof/Cave6064LogProbe"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.013768583012279123,
+      "finishedAt": "2026-11-16T10:05:17.286908+00:00"
+    },
+    {
+      "phase": "boot-owned",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "boot",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.5180399579694495,
+      "finishedAt": "2026-11-16T10:05:17.806328+00:00"
+    },
+    {
+      "phase": "bootstatus-owned",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "bootstatus",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "-b"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.027720167010557,
+      "finishedAt": "2026-11-16T10:05:19.834467+00:00"
+    },
+    {
+      "phase": "emit-once",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "spawn",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "<owned-simulator-data>/tmp/nova6064-log-channel-4eec368c1c3a48aea8ffcd4635e2a5a5/Cave6064LogProbe"
+      ],
+      "exitCode": 111,
+      "elapsedSeconds": 0.2903682920150459,
+      "finishedAt": "2026-11-16T10:05:20.523876+00:00"
+    }
+  ]
+}

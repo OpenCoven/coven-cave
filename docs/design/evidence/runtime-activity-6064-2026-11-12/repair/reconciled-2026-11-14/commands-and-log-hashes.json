@@ -1,0 +1,247 @@
+{
+  "sourceHead": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "wrapper": "/private/tmp/nova6064-20261112/run.mjs",
+  "wrapperIsolation": "Scratch HOME/COVEN state; NOVA6064_UNIT clears fixture home overrides; NOVA6064_PACKAGE selects qualification settings and ordinary local signing. See prior immutable packet for environment contract.",
+  "terminalCommands": [
+    {
+      "command": "node",
+      "args": [
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/chat-history-disclosure.test.ts"
+      ],
+      "started": "2026-11-14T08:24:40.404Z",
+      "ended": "2026-11-14T08:24:40.498Z",
+      "code": 1,
+      "signal": null
+    },
+    {
+      "command": "node",
+      "args": [
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "src/lib/chat-history-disclosure.test.ts"
+      ],
+      "started": "2026-11-14T08:25:12.695Z",
+      "ended": "2026-11-14T08:25:12.811Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "pnpm",
+      "args": [
+        "lint"
+      ],
+      "started": "2026-11-14T08:25:55.779Z",
+      "ended": "2026-11-14T08:26:25.589Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "pnpm",
+      "args": [
+        "typecheck"
+      ],
+      "started": "2026-11-14T08:25:56.942Z",
+      "ended": "2026-11-14T08:26:37.285Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "node",
+      "args": [
+        "scripts/run-tests.mjs",
+        "app",
+        "api",
+        "mobile",
+        "conformance"
+      ],
+      "started": "2026-11-14T08:25:54.815Z",
+      "ended": "2026-11-14T08:53:46.164Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "tauri",
+        "build",
+        "--bundles",
+        "app",
+        "--config",
+        "artifacts/nova6064/tauri.qualify.json"
+      ],
+      "started": "2026-11-14T09:03:41.082Z",
+      "ended": "2026-11-14T09:30:19.775Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "node",
+      "args": [
+        "--experimental-strip-types",
+        "--import",
+        "./scripts/test-alias-register.mjs",
+        "docs/design/evidence/runtime-activity-6064-2026-11-12/repair/live-server-probe.mjs"
+      ],
+      "started": "2026-11-14T09:33:30.393Z",
+      "ended": "2026-11-14T09:33:38.435Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "playwright",
+        "test",
+        "--config=docs/design/evidence/runtime-activity-6064-2026-11-12/repair/qualification.playwright.ts",
+        "--grep-invert=large trace production measurements"
+      ],
+      "started": "2026-11-14T09:33:29.118Z",
+      "ended": "2026-11-14T09:37:32.269Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "playwright",
+        "test",
+        "--config=docs/design/evidence/runtime-activity-6064-2026-11-12/repair/qualification.playwright.ts",
+        "--grep=large trace production measurements"
+      ],
+      "started": "2026-11-14T09:44:01.571Z",
+      "ended": "2026-11-14T09:44:25.708Z",
+      "code": 0,
+      "signal": null
+    },
+    {
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "playwright",
+        "test",
+        "--config=/private/tmp/nova6064-resume-20261114-mo25t69y/theme-checks/theme.playwright.ts"
+      ],
+      "started": "2026-11-14T09:46:15.407Z",
+      "ended": "2026-11-14T09:46:40.397Z",
+      "code": 0,
+      "signal": null
+    }
+  ],
+  "rawLogHashes": [
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/red-main-allowlist-withholding.log",
+      "bytes": 1915,
+      "sha256": "824c4b3f5d372efbed4e1d59d0bf33e12aba49dac34454a35070586cfc4356cf"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/green-main-allowlist-withholding.log",
+      "bytes": 327,
+      "sha256": "99f7f6b848b51e00649bf254157396089de1f8043de63e3f9fb11306c429bcb5"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/integrated-full-canonical.log",
+      "bytes": 1075559,
+      "sha256": "6640694bdceb82381693943e919a793fb9c9c7c3242397baa071f47384012a88"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/integrated-lint.log",
+      "bytes": 1366,
+      "sha256": "34f322eabff1ce42d4fe9be88c2e139945580e4c2a87a9612e8f51c3f8afa6c7"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/integrated-typecheck.log",
+      "bytes": 137,
+      "sha256": "fd6bdcdfdca7a6e5a2d545cc77cdc53f7a1ca008c940c21ec84f22d478a4b969"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/integrated-wiring.log",
+      "bytes": 38,
+      "sha256": "9f6ba3dc8eb4c4be48fac30d7eb5d72c084bf0f1855953300625abb2c5c24e68"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/integrated-package-build.log",
+      "bytes": 40520,
+      "sha256": "8946b162efafe56ab2d95bcb1feb3cbfdea5912d6ea17b21b06a7adf848fba09"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/integrated-live-server.log",
+      "bytes": 1035,
+      "sha256": "c10641ea12f2b43ea99e102e85ef7c5bf207c369ad6633dedff9f7a299e8ff31"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/integrated-browser-functional.log",
+      "bytes": 10594,
+      "sha256": "31ebe0fcc51a5155573ed10039c01eeae4ebea9bffd561ac2e871b87a6320023"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/integrated-browser-measurements.log",
+      "bytes": 1017,
+      "sha256": "33d6b5354f94f5da60dcec2b3e1d26ec1dd0b4c88949c3f7e00a67072c1a91a4"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-integrated-20261114/broad-native-units.log",
+      "bytes": 979329,
+      "sha256": "c8b5aebcf1569ed901dfa81abb8177e9f75b3fba03c6f53e68ff00496f45735c"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-integrated-20261114/focused-native-ui.log",
+      "bytes": 54552,
+      "sha256": "0255b6c4264a6352012cc1ec7c81925428fb5f47d283c250206a982fd555111a"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-integrated-20261114/longtrace-exact.log",
+      "bytes": 52439,
+      "sha256": "76b5514a01fb7912a4b2abccb7d95db564fae5974e0c6a4199f47a1992865c74"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-integrated-20261114/mixed-unchanged-retry.log",
+      "bytes": 17820,
+      "sha256": "e780cee4cd8e5a04478442fe38d68e14a91abdeb82105facce5a3e322281f1ec"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-integrated-20261114/release-build-for-testing.log",
+      "bytes": 611642,
+      "sha256": "e1b52fbb342045d2be5c69a8c511523b63cbfb74f4710383d3f73fdbd61dcef9"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-integrated-20261114/release-exact-three.log",
+      "bytes": 57561,
+      "sha256": "a86925f2b339ae3ff19a7d033c5fb87ffe68d4ec57e214abeff46b00282253ff"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-integrated-20261114/real-server-history.log",
+      "bytes": 7793,
+      "sha256": "77c8458146caf715ea89f61041d29e94f462b0441287b25dcb60698c94422c9e"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/theme-checks/run-integrated.log",
+      "bytes": 2878,
+      "sha256": "74c83484f5084c1a5bdbad57282aa39d68fe81e69de09057e8606c3349459195"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-integrated-20261114/debug-scroll-host-diagnostic.log",
+      "bytes": 20083,
+      "sha256": "0c74d587895e3b36dfcee77b03e86ca9b0c205056ec4af4b7abc85bd3e576915"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-integrated-20261114/debug-scroll-diagnostic.log",
+      "bytes": 26603,
+      "sha256": "7e3bc8e7835a6224acd5237a3d692c381738643a24a7c4996cb89fb86c883dde"
+    },
+    {
+      "path": "/private/tmp/nova6064-resume-20261114-mo25t69y/daemon-stop-probe.mjs",
+      "bytes": 3613,
+      "sha256": "23d641aa6404280739adaf9a29f9b4e4cb76c9b38098bbb8793ae7444ddf870b"
+    }
+  ],
+  "nativeRawRoot": "/private/tmp/nova6064-native-integrated-20261114",
+  "nativeCommands": "Native command receipts are retained under nativeRawRoot, with original Debug/Release failures and both diagnostics separate.",
+  "publicationLimit": "No raw credentials, private conversations, unscoped process trace or provider secrets included."
+}

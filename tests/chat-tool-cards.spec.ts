@@ -10,6 +10,51 @@ const ISO = new Date().toISOString();
 const OUTPUT_MARKER = "lazy-tool-output-marker-5572";
 const DIFF_MARKER = "lazy-edit-diff-marker-5572";
 
+test("withheld saved input and output explain their absence without lazy reads (#6064)", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cave:active-familiar", "nova");
+    window.localStorage.setItem("cave:onboarding:dismissed", "1");
+  });
+  await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", status: "active" }] } }));
+  await page.route("**/api/projects**", (route) => route.fulfill({ json: { ok: true, projects: [{ id: "repo", name: "repo", root: "/repo", createdAt: ISO, updatedAt: ISO }] } }));
+  await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [{ id: "withheld-6064", title: "Saved disclosure", status: "completed", origin: "chat", project_root: "/repo", harness: "claude", familiarId: "nova", exit_code: 0, archived_at: null, created_at: ISO, updated_at: ISO, attention: { state: "none", since: null, reason: null } }] } }));
+  const reads: string[] = [];
+  await page.route("**/api/chat/conversation/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/tool-output")) {
+      reads.push(url.searchParams.get("toolId") ?? "");
+      return route.fulfill({ json: { ok: true, output: "accepted-lazy-output-6064" } });
+    }
+    return route.fulfill({ json: { ok: true, context: { task: null, github: [] }, conversation: { familiarId: "nova", activeLeafId: "a", turns: [{ id: "a", role: "assistant", text: "Saved disclosure checks.", createdAt: ISO, tools: [
+      { id: "both", name: "Read", status: "ok", inputDisclosure: "withheld", outputDisclosure: "withheld" },
+      { id: "conflicting", name: "Bash", status: "ok", inputDisclosure: "withheld", outputDisclosure: "withheld", input: "CONTRADICTORY_INPUT_SENTINEL", output: "CONTRADICTORY_OUTPUT_SENTINEL", outputChars: 100 },
+      { id: "edit", name: "Edit", status: "ok", input: JSON.stringify({ file_path: "/repo/a.ts", old_string: "before", new_string: "after" }), outputDisclosure: "withheld", outputChars: 200 },
+      { id: "accepted", name: "Grep", status: "ok", inputDisclosure: "withheld", outputChars: 500 },
+    ] }] } } });
+  });
+  await page.goto("/#chat-withheld-6064", { waitUntil: "domcontentloaded" });
+  const main = page.getByTestId("chat-main");
+  await expect(main.getByText("Saved disclosure checks.")).toBeVisible({ timeout: 45_000 });
+  await main.locator("details.streaming-turn-activity > summary").first().click();
+  await main.locator(".cave-tool-group > summary").first().click();
+  const cards = main.locator(".cave-tool-block");
+  await expect(cards).toHaveCount(4);
+  for (const card of await cards.all()) await card.locator(":scope > summary").click();
+  await expect(main.getByText("Input withheld from saved history.", { exact: true })).toHaveCount(3);
+  await expect(main.getByText("Output withheld from saved history.", { exact: true })).toHaveCount(3);
+  await expect(main.getByText("accepted-lazy-output-6064")).toBeVisible();
+  await expect(main.getByText(/CONTRADICTORY_(INPUT|OUTPUT)_SENTINEL/)).toHaveCount(0);
+  await expect(main.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+  await expect(main.locator(".cave-edit-card").getByText("Output withheld from saved history.", { exact: true })).toBeVisible();
+  for (const card of await cards.all()) {
+    await card.locator(":scope > summary").click();
+    await card.locator(":scope > summary").click();
+  }
+  await expect(main.getByText("accepted-lazy-output-6064")).toBeVisible();
+  expect(reads.length).toBeGreaterThan(0);
+  expect(reads.every((id) => id === "accepted")).toBe(true);
+});
+
 test("turn activity, tool groups and tool cards mount only once opened (#5572)", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:active-familiar", "nova");

@@ -688,15 +688,17 @@ assert.match(
 {
   let t = 0;
   const tracker = new ToolCallTracker(() => t);
+  const formattedInput = formatToolInputValue({ command: "ls" });
+  assert.equal(formattedInput, '{\n  "command": "ls"\n}', "the protocol formatter keeps its readable representation");
   const running = tracker.envelopeToolUse(
     "toolu_01",
     "Bash",
-    formatToolInputValue({ command: "ls" }),
+    formattedInput,
   );
   assert.ok(running, "envelope tool_use must surface as a tool event");
   assert.equal(running.id, "toolu_01", "envelope events keep the native tool_use id");
   assert.equal(running.status, "requested");
-  assert.match(running.input ?? "", /"command": "ls"/, "envelope input is pretty-printed");
+  assert.equal(running.input, '{"command":"ls"}', "the display redactor owns the projected representation");
 
   assert.equal(
     tracker.envelopeToolUse("toolu_01", "Bash"),
@@ -1348,7 +1350,7 @@ assert.match(
   assert.equal(snap[0].status, "ok");
   assert.equal(snap[0].durationMs, 1500);
   assert.equal(snap[0].textOffset, 12, "offset stamped at start survives the end merge");
-  assert.equal(snap[0].input, '{"command":"ls"}', "input stored verbatim — the route formats before calling");
+  assert.equal(snap[0].input, '{"command":"ls"}', "canonical safe input survives display projection");
   assert.equal(snap[0].output, "file-list");
 }
 
@@ -1447,8 +1449,8 @@ assert.match(
   assert.deepEqual(toPersistedTools(tracker.snapshot(), 4), [{
     id: "openclaw:call-1",
     name: "exec",
-    input: '{\n  "command": "pwd"\n}',
-    output: '{\n  "text": "/repo",\n  "exitCode": 0\n}',
+    input: '{"command":"pwd"}',
+    output: '{"text":"/repo","exitCode":0}',
     status: "ok",
     durationMs: 25,
     textOffset: 5,
@@ -1471,7 +1473,7 @@ assert.match(
     id: "openclaw:result-first",
     name: "exec",
     input: undefined,
-    output: '{\n  "text": "done"\n}',
+    output: '{"text":"done"}',
     status: "ok",
     durationMs: 0,
   });

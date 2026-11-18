@@ -1,0 +1,34 @@
+{
+  "observedAt": "2026-11-14T09:24:34.929694+00:00",
+  "head": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "scheme": "CovenCavePerformance",
+  "configuration": "Release",
+  "appPath": "/private/tmp/nova6064-native-integrated-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app",
+  "appVersion": "0.5.22",
+  "appBuild": "2026111302",
+  "binarySHA256": "ae004e7f9f31c57513b78059fa2480d423588b5030ca3bd3fac7bfe9de51db97",
+  "binaryUUIDs": "UUID: 31045C7B-C3D4-31FD-822D-9CE4C7DFECD3 (x86_64) /private/tmp/nova6064-native-integrated-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app/CovenCave\nUUID: A4D62DB9-91A7-3A83-85F0-A8CB649B94D0 (arm64) /private/tmp/nova6064-native-integrated-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app/CovenCave",
+  "architectures": "x86_64 arm64",
+  "codesignVerifyExitCode": 0,
+  "codesignVerifyOutput": "",
+  "codesign": "Executable=/private/tmp/nova6064-native-integrated-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app/CovenCave\nIdentifier=ai.opencoven.cave\nFormat=app bundle with Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=37322 flags=0x2(adhoc) hashes=1156+7 location=embedded\nSignature=adhoc\nInfo.plist entries=40\nTeamIdentifier=not set\nSealed Resources version=2 rules=10 files=20\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n",
+  "nativeAggregateSHA256": "b7ec6c136bcc8ad7c41aa0dd8ce9696ab6dd205a41f21ee63ad41dc958f1e08b",
+  "allNativeFilesUnchanged": true,
+  "embeddedMarkdownSHA256": {
+    "markdown-mermaid.js": "566fd23702b650509cac94cb57891e56cf9ea2d78c06265e3a4696213c22960f",
+    "markdown.css": "f3a596fd8344e320eacb946e5bd8c467f0a9bd3aec1662d4202b9d2673803b92",
+    "ui-block-readable.js": "d51de34cb5d929756865111571dae7eff5bfacf2c779642c3dced39c9c1b350c",
+    "markdown-highlight.js": "20874a1442293e0db72fcadd8813d086e46eb374181a54cf83084ac2fed8d9f6",
+    "markdown.html": "41ddc96482379bcbe5ae5e4be673d21b58659485f9b5848f1f4a14fb5d8b2e90"
+  },
+  "priorE81BinaryPreserved": true,
+  "buildOnly": true,
+  "testsExecuted": false,
+  "testDriverBinaries": {
+    "CovenCaveUITests": {
+      "path": "/private/tmp/nova6064-native-integrated-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests",
+      "sha256": "4d876b92ee3f8ffda9082a159cbbd6b2b85c00d4469cfa0068df89c71a18e5ad",
+      "uuid": "UUID: 4A5C5C50-20E6-3520-B1DD-A690CB89353D (x86_64) /private/tmp/nova6064-native-integrated-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests\nUUID: 704BB727-DBC7-3F9C-8F12-36C231B54BF1 (arm64) /private/tmp/nova6064-native-integrated-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests"
+    }
+  }
+}

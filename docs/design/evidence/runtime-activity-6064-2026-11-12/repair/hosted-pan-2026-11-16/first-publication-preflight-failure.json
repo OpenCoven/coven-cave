@@ -1,0 +1,23 @@
+{
+  "at": "2026-11-16T08:51:32.044074+00:00",
+  "head": "08d24142d305d4b44abe3e5fdd45e6afb5845190",
+  "localPacketFiles": 34,
+  "committedPacketFiles": 30,
+  "missingCommittedFiles": [
+    "docs/design/evidence/runtime-activity-6064-2026-11-12/repair/hosted-pan-2026-11-16/first-green-setup-failure.log",
+    "docs/design/evidence/runtime-activity-6064-2026-11-12/repair/hosted-pan-2026-11-16/marker-green.log",
+    "docs/design/evidence/runtime-activity-6064-2026-11-12/repair/hosted-pan-2026-11-16/marker-query.log",
+    "docs/design/evidence/runtime-activity-6064-2026-11-12/repair/hosted-pan-2026-11-16/marker-red.log"
+  ],
+  "reviewedHashesMatch": {
+    ".github/workflows/ios-transcript-regression.yml": true,
+    "apps/ios/CovenCave/CovenCave/Views/ChatScrollAnchor.swift": true,
+    "apps/ios/CovenCave/CovenCave/Views/ChatScrollTrace.swift": true,
+    "scripts/ios-native-command.test.mjs": true,
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": true,
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": true
+  },
+  "worktreeStatus": "",
+  "cause": "git add directory followed ignore rules for four .log files; stagedcount36 vs intended40 raisedassertion, but subsequent shellcommit stillran because shell lackedfailfast. No push performed.",
+  "firstCommitPreserved": true
+}

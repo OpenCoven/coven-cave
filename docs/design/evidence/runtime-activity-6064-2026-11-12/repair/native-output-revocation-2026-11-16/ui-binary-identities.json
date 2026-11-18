@@ -1,0 +1,30 @@
+[
+  {
+    "role": "app-stub",
+    "path": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave",
+    "sha256": "722ef5717ec4fa7b22a056763d4e362aa47fe9a3884d866bd785f932aeb88507",
+    "uuid": "UUID: B07EEE3C-11E9-3B70-A326-6097EA0F7327 (arm64) /private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave",
+    "verifyExit": 0
+  },
+  {
+    "role": "app-debug-implementation",
+    "path": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib",
+    "sha256": "8d70a807feb6791f2ffc4cae38a294f34284b88c2d4079d09e89202409146ed9",
+    "uuid": "UUID: 9CEEDA81-6C01-3A6E-9EDD-185296C074E3 (arm64) /private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib",
+    "verifyExit": 0
+  },
+  {
+    "role": "ui-runner",
+    "path": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner",
+    "sha256": "914fd8d51db022e565f1e20ae002b0f944809abf11ccdc0aa664cf7bb988c71d",
+    "uuid": "UUID: CC1BBF6E-4DDE-3789-8413-8995F0EAB902 (arm64) /private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner",
+    "verifyExit": 0
+  },
+  {
+    "role": "ui-test-driver",
+    "path": "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests",
+    "sha256": "f23cdae9af00d6e4da243b27f5608b52c07cae422cb3bb3fcfe86dea97c599f5",
+    "uuid": "UUID: 4C856715-F55B-3F2C-9D3D-33EB6E573455 (arm64) /private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests",
+    "verifyExit": 0
+  }
+]

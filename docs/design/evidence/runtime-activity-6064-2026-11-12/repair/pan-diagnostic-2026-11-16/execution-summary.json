@@ -1,0 +1,186 @@
+{
+  "observedAt": "2026-11-16T04:24:23.629072+00:00",
+  "classification": "Targeted instrumented diagnostic only; no hosted-failure resolution or full-matrix acceptance",
+  "executionBaseHead": "f1b0e48023c2a95adad60d9930309636c0ef7f19",
+  "nativeBytesBaseHead": "7fd1e8daf7117789117453aed91349fb349026ae",
+  "approvedPatchSHA256": "f78f5274be2bc82675b2ac1de0a0cc82e25fac0bb9e1bf073e401d326e332397",
+  "approvedManifestSHA256": "9b88d9611b7610173e5b58798cd69dfe6b32d98f822c5fd220952d0910d34425",
+  "compiledInstrumentedNativeFingerprint": "dfe08b63ff8e8dd525ec82f3113065e1074ade4aa5a96afd1aae7acbe8450000",
+  "restoredCanonicalNativeFingerprint": "e0efb6d29d0c755e4677ddec6770fd8947a9ce13b2f7e3dc0fd798ff5827561c",
+  "sourceRestoration": "postbuild-source-restoration.json",
+  "all300CanonicalNativeHashesRestored": true,
+  "uiTestByteUnchanged": true,
+  "build": {
+    "exitCode": 0,
+    "command": "build-command.json",
+    "receipt": "build.receipt.json",
+    "normalAdHocAppRunnerTestDriverVerified": true,
+    "identity": "instrumented-binary-identities.json",
+    "retainedBinariesStillMatchAfterRun": "postrun-binary-audit.json",
+    "diagnosticSourceWarningLines": 0
+  },
+  "simulator": {
+    "uuid": "F8D29620-D485-475F-9D45-1F2D3925BFB1",
+    "name": "cave-6064-pan-diagnostic-20261116",
+    "runtime": "iOS26.5",
+    "build": "23F73",
+    "hostedBuild": "23F77",
+    "sameHostedRuntime": false,
+    "createdExactlyOnce": "simulator-create.receipt.json",
+    "finalState": "Shutdown",
+    "preservedNotDeleted": true
+  },
+  "tests": {
+    "method": "ChatScrollBounceUITests/testSmallDragsAtLatestStayOnLatest",
+    "wrapperExitCode": 0,
+    "iterationsRequested": 3,
+    "completedExecutions": 3,
+    "outcomes": [
+      {
+        "outcome": "passed",
+        "seconds": 72.569
+      },
+      {
+        "outcome": "passed",
+        "seconds": 74.964
+      },
+      {
+        "outcome": "passed",
+        "seconds": 77.388
+      }
+    ],
+    "retries": 0,
+    "xcresultUniqueIdentifierCount": 1,
+    "xcresultUniquePassedCount": 1,
+    "xcresultUniqueFailedCount": 0,
+    "xcresultUniqueSkippedCount": 0,
+    "xcresultCountsAreUniqueIdentifiersNotRepetitionExecutions": true,
+    "command": "test-command.json",
+    "receipt": "small-drags-pan.receipt.json",
+    "result": "small-drags-pan.xcresult",
+    "originalPerTestDefaultsAndTraceBinding": "test-plan-preserved-defaults.json"
+  },
+  "trace": {
+    "originalSandboxBindings": 3,
+    "bindingMonitorErrors": [],
+    "bindingAndPartialByteProvenance": "sandbox-binding-monitor.json",
+    "runs": [
+      {
+        "iteration": 1,
+        "trace": "<retained-native-root>/iteration-1-printed-trace.log",
+        "bytes": 231219,
+        "sha256": "96a7bcc780eda33615948055da714e6dd047ebe93451e30246e59538342559e7",
+        "originEpoch": 1794802392.340056,
+        "originUptime": 442864.80551070836,
+        "panProbeLines": 162,
+        "panTargetSamples": 62,
+        "pollSamples": 99,
+        "limitMarkers": [],
+        "detachMarkers": []
+      },
+      {
+        "iteration": 2,
+        "trace": "<retained-native-root>/iteration-2-printed-trace.log",
+        "bytes": 258067,
+        "sha256": "384c57cf73bc223d339f77807050866a5f10699e1448c332f11ed64d4f9036c9",
+        "originEpoch": 1794802461.613847,
+        "originUptime": 442934.07891800004,
+        "panProbeLines": 172,
+        "panTargetSamples": 60,
+        "pollSamples": 111,
+        "limitMarkers": [],
+        "detachMarkers": []
+      },
+      {
+        "iteration": 3,
+        "trace": "<retained-native-root>/iteration-3-printed-trace.log",
+        "bytes": 234388,
+        "sha256": "5550c1dd97e1d413d2f0c21e2040b58504060a3722c5d2987d81c8c94722d90f",
+        "originEpoch": 1794802536.6597838,
+        "originUptime": 443009.1244401667,
+        "panProbeLines": 161,
+        "panTargetSamples": 54,
+        "pollSamples": 106,
+        "limitMarkers": [],
+        "detachMarkers": []
+      }
+    ],
+    "unavailableTraceRecords": [],
+    "capOrTruncationRecords": []
+  },
+  "fixedIOErrorMarker": {
+    "collectorExitCode": 0,
+    "matchingEventLines": [],
+    "consoleMarkerLines": [],
+    "actualPIDs": [
+      15018,
+      32914,
+      42766
+    ],
+    "commandAndTimePIDScope": "trace-write-error-marker-command.json",
+    "receipt": "trace-write-error-marker.receipt.json",
+    "informationalRuntimePredicateHelpExit64Retained": "marker-predicate-help.log",
+    "limit": "Successful scoped query with no returned marker is not proof of no I/O error. Complete positive trace records and collection limits must be assessed together."
+  },
+  "observations": {
+    "outerPanBeganEndedAndInteractingCounts": [
+      {
+        "iteration": 1,
+        "panBegan": 9,
+        "panEnded": 9,
+        "interacting": 9
+      },
+      {
+        "iteration": 2,
+        "panBegan": 9,
+        "panEnded": 9,
+        "interacting": 9
+      },
+      {
+        "iteration": 3,
+        "panBegan": 9,
+        "panEnded": 9,
+        "interacting": 9
+      }
+    ],
+    "nativeFrameWindow": "approximately0,0,402,768 points",
+    "windowBounds": "0,0,402,874 points",
+    "nativeAndHostedEndpointQueriesCoincide": [
+      [
+        201,
+        460.8
+      ],
+      [
+        201,
+        384
+      ]
+    ],
+    "potentialHitsStayedInsideOuter": true,
+    "anchorOrViewportCorrections": 0,
+    "detail": "pan-observation-analysis.json",
+    "causeSupported": null,
+    "hostedCauseStillUnproven": true
+  },
+  "automaticArtifacts": {
+    "availability": "artifact-availability.json",
+    "manifest": "attachments/manifest.json",
+    "settledScreenshots": 3,
+    "synthesizedEventArchives": 0,
+    "videoFiles": 0,
+    "AXFailureArtifacts": 0,
+    "limitation": "The original generated SystemAttachmentLifetime deleteOnSuccess defaults were preserved. All available attachments were exported; no new gestures, attachment-policy changes or fallback run was used to invent missing automatic artifacts.",
+    "existingMetricsFiles": 0,
+    "metricLimit": "This original method does not tap a metrics capture control. No extra captures were requested; no existing metrics file was observed."
+  },
+  "limits": [
+    "All3 local iterations passed; the known hosted missing-return and marker-clipping failure did not reproduce.",
+    "Hit testing is potential routing, not delivery acknowledgement. Current synthesized-event archives were not retained, so archived-host versus new actual injected coordinates are not independently equivalent.",
+    "Timer sampling, targets and synchronous logging perturb timing; no frame/main-thread/hitch/responsiveness claim.",
+    "Compiled lifecycle/write-error branches were source-reviewed, but no stale-detach or write-error injection was performed; branch runtime coverage is not claimed.",
+    "Installed23F73 differs from hosted23F77.",
+    "The original unchanged7-method\u00d73 strict acceptance matrix remains mandatory and unresolved by this targeted diagnostic."
+  ],
+  "cleanup": "final-owned-cleanup.json",
+  "noCommitPushGitHubSecurityProfilerOrForeignSessionChanges": true,
+  "noFurtherTestOrRuntimeActionPlanned": true
+}

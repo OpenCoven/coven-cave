@@ -1,0 +1,30 @@
+{
+  "args": [
+    "xcrun",
+    "xctrace",
+    "record",
+    "--template",
+    "Animation Hitches",
+    "--device",
+    "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "--time-limit",
+    "3m",
+    "--output",
+    "/private/tmp/nova6064-native-withholding-20261114/launch-owned-profile/animation-hitches.trace",
+    "--launch",
+    "--",
+    "/private/tmp/nova6064-native-withholding-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app",
+    "--performance-instrumentation",
+    "--performance-fixture",
+    "--timeline-performance-fixture",
+    "--timeline-performance-count",
+    "120",
+    "--timeline-performance-rich"
+  ],
+  "startedAt": "2026-11-14T06:14:29.159127+00:00",
+  "ordinaryAdHocRelease": true,
+  "ownHeavyBuildsStopped": true,
+  "otherHostWorkUncontrolled": true,
+  "code": 2,
+  "endedAt": "2026-11-14T06:14:33.005632+00:00"
+}

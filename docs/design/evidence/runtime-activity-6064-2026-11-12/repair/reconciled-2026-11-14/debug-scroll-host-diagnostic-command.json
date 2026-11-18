@@ -1,0 +1,40 @@
+{
+  "startedAt": "2026-11-15T23:52:03.488744+00:00",
+  "command": [
+    "xcodebuild",
+    "test-without-building",
+    "-xctestrun",
+    "/private/tmp/nova6064-native-integrated-20261114/debug-scroll-host-diagnostic.xctestrun",
+    "-destination",
+    "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "-parallel-testing-enabled",
+    "NO",
+    "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+    "-resultBundlePath",
+    "/private/tmp/nova6064-native-integrated-20261114/debug-scroll-host-diagnostic.xcresult",
+    "-test-timeouts-enabled",
+    "YES",
+    "-default-test-execution-time-allowance",
+    "180",
+    "-maximum-test-execution-time-allowance",
+    "300"
+  ],
+  "configuration": "Debug",
+  "preflightEnabledExactly": [
+    "CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling()"
+  ],
+  "traceSourcePath": "/private/tmp/n6064/earlier-debug-873335963-40d66ffcb76d4555a93dd58c19d2e485.log",
+  "hostDirectoryOwnerUid": 501,
+  "hostDirectoryMode": "drwxr-xr-x",
+  "permissionsOrEntitlementsChanged": false,
+  "appEnvironmentKey": "UITargetAppEnvironmentVariables.CAVE_SCROLL_TRACE_PATH",
+  "diagnosticOnly": true,
+  "noAcceptanceClaim": true,
+  "sourceAssertionsGesturesTimeoutsChanged": false,
+  "exitCode": 65,
+  "finishedAt": "2026-11-15T23:57:18.403417+00:00",
+  "traceExists": true,
+  "traceBytes": 149599,
+  "traceSHA256": "b47be6e3e4c56c1d24192a62400a5ceaf85dd2dc4e604c4171ebe8c91cd06734",
+  "traceCopy": "debug-scroll-host-diagnostic-trace.log"
+}

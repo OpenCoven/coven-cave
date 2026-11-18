@@ -1,0 +1,95 @@
+{
+  "calls": 500,
+  "samples": [
+    {
+      "reloadMs": 1579.8788750000003,
+      "openMs": 230.7054589999998,
+      "nodes": 6869,
+      "scroll": {
+        "elapsedMs": 69,
+        "frameIntervalsMs": [
+          4,
+          5,
+          19,
+          26,
+          15
+        ],
+        "longTasksMs": [],
+        "travelledPx": 39297,
+        "maxScrollPx": 19979
+      }
+    },
+    {
+      "reloadMs": 1184.1287080000002,
+      "openMs": 207.08108299999913,
+      "nodes": 6869,
+      "scroll": {
+        "elapsedMs": 92,
+        "frameIntervalsMs": [
+          4,
+          19,
+          28,
+          27,
+          13
+        ],
+        "longTasksMs": [],
+        "travelledPx": 39297,
+        "maxScrollPx": 19979
+      }
+    },
+    {
+      "reloadMs": 950.9271250000002,
+      "openMs": 162.0139999999992,
+      "nodes": 6869,
+      "scroll": {
+        "elapsedMs": 53,
+        "frameIntervalsMs": [
+          2,
+          3,
+          15,
+          21,
+          12
+        ],
+        "longTasksMs": [],
+        "travelledPx": 39297,
+        "maxScrollPx": 19979
+      }
+    },
+    {
+      "reloadMs": 482.22204200000124,
+      "openMs": 313.1739579999994,
+      "nodes": 6869,
+      "scroll": {
+        "elapsedMs": 73,
+        "frameIntervalsMs": [
+          9,
+          15,
+          15,
+          18,
+          15
+        ],
+        "longTasksMs": [],
+        "travelledPx": 39295,
+        "maxScrollPx": 19977
+      }
+    },
+    {
+      "reloadMs": 953.4896660000013,
+      "openMs": 153.12924999999996,
+      "nodes": 6869,
+      "scroll": {
+        "elapsedMs": 61,
+        "frameIntervalsMs": [
+          2,
+          15,
+          11,
+          18,
+          15
+        ],
+        "longTasksMs": [],
+        "travelledPx": 39297,
+        "maxScrollPx": 19979
+      }
+    }
+  ]
+}

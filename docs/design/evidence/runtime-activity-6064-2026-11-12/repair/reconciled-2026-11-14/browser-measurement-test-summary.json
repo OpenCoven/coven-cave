@@ -1,0 +1,50 @@
+{
+  "sourceHead": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+  "buildId": "I9UBVuj3J-4egKiEKItaT",
+  "rawReport": "/private/tmp/nova6064-resume-20261114-mo25t69y/repair-tests/integrated-browser-measurements.json",
+  "rawReportSHA256": "b41c31843161360171b2a35d2bf3f019d67db1eee2d42abdf305ea0d951b9c77",
+  "stats": {
+    "startTime": "2026-11-14T09:44:03.354Z",
+    "duration": 22320.355,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "tests": [
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "large trace production measurements"
+      ],
+      "project": "chromium-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 8184,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "title": [
+        "chat-activity-acceptance.spec.ts",
+        "large trace production measurements"
+      ],
+      "project": "webkit-6064",
+      "status": "expected",
+      "expectedStatus": "passed",
+      "attempts": [
+        {
+          "status": "passed",
+          "retry": 0,
+          "duration": 8767,
+          "errors": []
+        }
+      ]
+    }
+  ]
+}

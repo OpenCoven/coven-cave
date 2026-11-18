@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-11-14T09:51:17.488Z",
+  "destination": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+  "fixtureId": "3f12b46c-0acd-4e87-8c01-82249d525f5c",
+  "candidate": {
+    "head": "87333596309001e229f58fe64211bd5f6bd1cf2c",
+    "sourceBefore": "84f6354ba5302259377868887c319a824e31cebf6fc21f9ae22dd03ecd293905",
+    "buildId": "I9UBVuj3J-4egKiEKItaT",
+    "sourceAfter": "84f6354ba5302259377868887c319a824e31cebf6fc21f9ae22dd03ecd293905"
+  },
+  "host": {
+    "node": "v24.22.0",
+    "xcode": "Xcode 27.2\nBuild version 27B52"
+  },
+  "scenario": "native-tcp-recovery-only",
+  "classification": "real built Cave and Coven daemon, native TCP recovery; synthetic external Hermes provider",
+  "passed": false,
+  "providerRequests": 1,
+  "toolInvocations": 1,
+  "limitations": [
+    "Loopback HTTP with simulated forwarded-peer headers; not remote HTTPS or managed-device pairing.",
+    "Native tests only; no rendered UI, human VoiceOver, physical-device performance or real provider qualification.",
+    "The invocation counter belongs to the controlled fixture tool; it is not a protected-action approval or committed-effect receipt."
+  ],
+  "scenarioSha256": "be8000dc287ce17fd03a52802b9b4eb54e7421d3ca68ecbeda8a3fc7e7ceda22",
+  "daemon": {
+    "pid": 40409,
+    "version": "coven v0.5.0 (engine coven-code 0.9.0, pinned 0.9.0)"
+  },
+  "serverPid": 41284,
+  "ingressRefusalsVerified": true,
+  "realDaemonRosterVerified": true,
+  "testStages": [
+    {
+      "stage": "start",
+      "elapsedMs": 0.14175
+    },
+    {
+      "stage": "tool-running-wait",
+      "elapsedMs": 13.648916
+    },
+    {
+      "stage": "tool-running-wait-finished",
+      "elapsedMs": 373.152541
+    },
+    {
+      "stage": "send-cancellation-wait",
+      "elapsedMs": 373.181
+    },
+    {
+      "stage": "send-cancelled",
+      "elapsedMs": 373.227291
+    },
+    {
+      "stage": "provider-release-wait",
+      "elapsedMs": 373.266833
+    },
+    {
+      "stage": "provider-released",
+      "elapsedMs": 394.416875
+    },
+    {
+      "stage": "resumed-stream-wait",
+      "elapsedMs": 394.46
+    },
+    {
+      "stage": "resumed-stream-complete",
+      "elapsedMs": 439.297625
+    },
+    {
+      "stage": "initial-history-wait",
+      "elapsedMs": 439.457041
+    },
+    {
+      "stage": "initial-history-loaded",
+      "elapsedMs": 468.151166
+    },
+    {
+      "stage": "completed-replay-0-wait",
+      "elapsedMs": 470.209166
+    },
+    {
+      "stage": "completed-replay-0-loaded",
+      "elapsedMs": 476.185875
+    },
+    {
+      "stage": "completed-replay-1-wait",
+      "elapsedMs": 476.217208
+    },
+    {
+      "stage": "completed-replay-1-loaded",
+      "elapsedMs": 482.329541
+    },
+    {
+      "stage": "initial-tool-output-wait",
+      "elapsedMs": 482.36125
+    },
+    {
+      "stage": "initial-tool-output-loaded",
+      "elapsedMs": 495.19075
+    },
+    {
+      "stage": "server-restart-wait",
+      "elapsedMs": 495.47
+    },
+    {
+      "stage": "server-restarted",
+      "elapsedMs": 1344.5400829999999
+    },
+    {
+      "stage": "lost-replay-0-wait",
+      "elapsedMs": 1344.603916
+    },
+    {
+      "stage": "lost-replay-0-confirmed",
+      "elapsedMs": 1357.487708
+    },
+    {
+      "stage": "lost-replay-1-wait",
+      "elapsedMs": 1357.5178329999999
+    },
+    {
+      "stage": "lost-replay-1-confirmed",
+      "elapsedMs": 1364.7316660000001
+    },
+    {
+      "stage": "saved-history-0-wait",
+      "elapsedMs": 1364.762125
+    },
+    {
+      "stage": "saved-history-0-loaded",
+      "elapsedMs": 1410.901208
+    },
+    {
+      "stage": "saved-tool-output-0-wait",
+      "elapsedMs": 1411.060416
+    },
+    {
+      "stage": "saved-tool-output-0-loaded",
+      "elapsedMs": 1421.272958
+    },
+    {
+      "stage": "saved-history-1-wait",
+      "elapsedMs": 1421.3207499999999
+    },
+    {
+      "stage": "saved-history-1-loaded",
+      "elapsedMs": 1429.6465
+    },
+    {
+      "stage": "saved-tool-output-1-wait",
+      "elapsedMs": 1429.790208
+    },
+    {
+      "stage": "saved-tool-output-1-loaded",
+      "elapsedMs": 1436.985708
+    },
+    {
+      "stage": "empty-thread-reconcile-wait",
+      "elapsedMs": 1437.402625
+    },
+    {
+      "stage": "empty-thread-reconciled",
+      "elapsedMs": 1451.189916
+    },
+    {
+      "stage": "partial-thread-reconcile-wait",
+      "elapsedMs": 1451.3015
+    },
+    {
+      "stage": "partial-thread-reconciled",
+      "elapsedMs": 1462.376875
+    },
+    {
+      "stage": "denied-output-wait",
+      "elapsedMs": 1462.4270000000001
+    },
+    {
+      "stage": "denied-output-returned-error",
+      "elapsedMs": 1478.159416
+    },
+    {
+      "stage": "test-exit",
+      "elapsedMs": 1480.3665409999999
+    }
+  ],
+  "restartStages": [
+    {
+      "stage": "stop-wait",
+      "elapsedMs": 0.06008399999700487
+    },
+    {
+      "stage": "stopped",
+      "elapsedMs": 13.912791999988258
+    },
+    {
+      "stage": "ready",
+      "elapsedMs": 839.6405420000083
+    },
+    {
+      "stage": "ingress-verified",
+      "elapsedMs": 847.4156669999938
+    }
+  ],
+  "restart": {
+    "previousPid": 41284,
+    "newPid": 32646,
+    "previousStopped": true,
+    "sameOrigin": true,
+    "ingressRefusalsVerified": true
+  },
+  "savedConversations": 1,
+  "transportOnlyExecuted": true,
+  "serverStopped": true,
+  "providerStopped": true,
+  "daemonStopped": false,
+  "noDaemonState": true,
+  "preservedRoot": "/private/var/folders/5b/njd1qhwx4h97r9lvy_wpf5lc0000gn/T/cave-native-activity-Qpm6fe",
+  "sourceUnchanged": true,
+  "finishedAt": "2026-11-14T09:55:47.710Z"
+}

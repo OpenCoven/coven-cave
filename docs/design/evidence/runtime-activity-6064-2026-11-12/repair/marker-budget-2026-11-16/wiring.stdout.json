@@ -1,0 +1,4 @@
+{
+  "encoding": "UTF-8 text serialized as JSON; decode rawText to recover published text including all whitespace",
+  "rawText": "\n> coven-cave@0.5.22 check:tests-wired <worktree>\n> node scripts/check-tests-wired.mjs\n\n✓ all 2270 test files wired into CI\n"
+}

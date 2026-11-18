@@ -1,0 +1,73 @@
+{
+  "reviewedAt": "2026-11-16T10:24:18.684652+00:00",
+  "reviewType": "Source-only shared-account sub-agent follow-up review under requesting-code-review; not independent human review or execution acceptance.",
+  "worktree": "<worktree>",
+  "baseHead": "0557dff29063aa64311352fcd882cb1d3e5fe7eb",
+  "observedHead": "0557dff29063aa64311352fcd882cb1d3e5fe7eb",
+  "scope": "Read-only re-review of the same five concrete uncommitted files and R1 repair. No source, Git, GitHub, app, simulator or provider mutation; no tests or native commands executed by this reviewer. Only this follow-up report was written.",
+  "firstReport": {
+    "path": "<qualification>/marker-offline-proof/fresh-source-review.json",
+    "retained": true,
+    "sha256": "36d79784486e2add50e6b86286addcebed395ef755ac64c721ceeb6cc0fd4cbe"
+  },
+  "hashVerification": {
+    "beforeMatchesManifest": true,
+    "afterMatchesManifest": true,
+    "beforeSHA256": {
+      "scripts/ios-scroll-marker.py": "eec8e2f33cf1195e7db6f5692e28660ea713c77070e16177af9037dbfb57b817",
+      "scripts/ios-native-command.test.mjs": "229293fd9e9eb657525e3b9a513725d3f94c642a3a18147b6e5649e962ab3625",
+      ".github/workflows/ios-transcript-regression.yml": "cd6f642ffb9ceffdda3c4047cec9308f112e2b72f8b47cea5a156551528f0668",
+      "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "6cc7617d4aade57029989afaa472c257087e2a8b342a5f891ef237ddc4f2df6e",
+      "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "8a878e896f559bb60a9a0c071756678bdd00daa17a4a7c023f33f8b995b04f8e"
+    },
+    "afterSHA256": {
+      "scripts/ios-scroll-marker.py": "eec8e2f33cf1195e7db6f5692e28660ea713c77070e16177af9037dbfb57b817",
+      "scripts/ios-native-command.test.mjs": "229293fd9e9eb657525e3b9a513725d3f94c642a3a18147b6e5649e962ab3625",
+      ".github/workflows/ios-transcript-regression.yml": "cd6f642ffb9ceffdda3c4047cec9308f112e2b72f8b47cea5a156551528f0668",
+      "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "6cc7617d4aade57029989afaa472c257087e2a8b342a5f891ef237ddc4f2df6e",
+      "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "8a878e896f559bb60a9a0c071756678bdd00daa17a4a7c023f33f8b995b04f8e"
+    }
+  },
+  "resolvedFindings": [
+    {
+      "id": "R1",
+      "previousSeverity": "Important",
+      "status": "Resolved in this candidate",
+      "file": "scripts/ios-scroll-marker.py",
+      "lines": [
+        40,
+        41,
+        42,
+        43,
+        46,
+        47,
+        48,
+        49
+      ],
+      "assessment": "The helper now canonicalizes the declared ancestor root before reconstructing UUID/data, then requires the resolved data directory to equal that exact path. This permits ordinary ancestor canonicalization while rejecting UUID/data redirection, including a target preserving the same UUID/data suffix. The store must equal the literal canonical data/var/db/diagnostics path after resolution, so internal substituted stores and redirected var/db components fail before log reading.",
+      "coverage": "The real-shell/wrapper/helper scenarios at scripts/ios-native-command.test.mjs:309 and :310 exercise an internal diagnostics symlink and a data symlink whose target retains the UUID/data suffix. Both require exit 2 and exactly one xcrun call, proving rejection precedes any log invocation in the retained contract run."
+    }
+  ],
+  "findings": [],
+  "criticalFindings": [],
+  "importantFindings": [],
+  "minorFindings": [],
+  "strengths": [
+    "The concrete repair closes the previously identified mismatch between documented redirection rejection and implemented admission without broadening device or log scope.",
+    "The retained review-path-red.log records 8 passes/1 failure with internal-substituted-store returning 0 instead of required 2 before repair. The retained review-path-green.log records 9 passes/0 failures after repair, including both new scenarios. These are inspected prior execution receipts, not a fresh reviewer execution.",
+    "Exact selected UUID/state admission, original live query, fixed CovenCave/marker predicate, 70-minute lookback, actual query/discovery failure propagation, and no-boot/no-global-store behavior remain preserved.",
+    "The workflow and docs are unchanged from the first review. Discovery and query remain under one 15+5+5+5-second owner; all command/other-step/upload bounds total 107 minutes inside the unchanged 108-minute job, retaining one minute.",
+    "All five v2 manifest hashes match before and after review. Tracked native bytes match the base, no untracked native files exist, and the original bounce UI-test hash still matches the manifest.",
+    "The design continues to distinguish local iOS27.2 positive channel proof from hosted iOS26.5 collection, actual app writer-error absence and acceptance; original failures and diagnostic limits remain preserved."
+  ],
+  "declinedToJudge": [
+    "Hosted exact-revision collection and actual app writer-error absence require future run evidence and are not established by this source review.",
+    "Original uninstrumented strict/local Release failures and frame, physical-device or human acceptance remain unresolved by the local channel probe and instrumented strict result.",
+    "This reviewer did not rerun contracts, operate a simulator or inspect a native app; execution observations are limited to the supplied retained receipts."
+  ],
+  "assessment": {
+    "readyToProceed": "Yes, for the reviewed collector source correction",
+    "importantDefectsMustBeRepaired": false,
+    "reasoning": "R1 is repaired and no remaining important correctness defects were identified within the concrete five-file scope. This is a source-review result, not merge, release, hosted-run success or human/execution acceptance authority."
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "ASTDiffOnly": "Debug command900→1080s, Debug step16→19m, job105→108m; every other workflow AST value identical",
+  "commandAndShutdownSeconds": 5670,
+  "nonNativeStepMinutes": 12,
+  "totalConfiguredMinutes": 106.5,
+  "jobMinutes": 108,
+  "jobReserveMinutes": 1.5
+}

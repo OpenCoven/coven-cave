@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createOnboardingBootstrapState, ONBOARDING_BOOTSTRAP_BOUNDARIES } from "../src/lib/onboarding-bootstrap";
 import { privateSentinelsIn, reasoningStateBlocks, TOOL_PAYLOAD_SENTINELS, toolSentinelsIn } from "./fixtures/reasoning-states";
 import { installCompletedFirstUse } from "./fixtures/first-use";
+import { capLiveToolPayload, LIVE_TOOL_INPUT_CAP, LIVE_TOOL_OUTPUT_CAP } from "../src/lib/chat-tool-events";
 
 test.use({ serviceWorkers: "block" });
 
@@ -214,8 +215,63 @@ test("large trace production measurements", async ({ page }, info) => {
   await info.attach("large-trace-measurements", { body: JSON.stringify({ calls: 500, samples }, null, 2), contentType: "application/json" });
 });
 
+test("large mixed trace keeps capped payloads explicit and draft interactive", async ({ page }, info) => {
+  const deepInput = '{"nested":'.repeat(80) + '{"value":"' + "x".repeat(16_000) + '"}' + "}".repeat(80);
+  const cappedInput = capLiveToolPayload(deepInput, LIVE_TOOL_INPUT_CAP)!;
+  const cappedOutput = capLiveToolPayload("MIXED_OUTPUT_START\n" + "x".repeat(32_000), LIVE_TOOL_OUTPUT_CAP)!;
+  const tools = Array.from({ length: 500 }, (_, index) => ({
+    id: `mixed-${index}`, name: "Read", status: "ok", input: index === 0 ? cappedInput : '{"file_path":"/tmp/mixed"}',
+    ...(index === 2 ? { outputChars: 300_000 } : { output: index === 1 ? cappedOutput : "Bounded output" }),
+    textOffset: 0, activity: activity(`mixed-${index}`, "ok", index + 1),
+  }));
+  const started = performance.now();
+  const { main } = await setup(page, true, true, false, tools);
+  const cards = main.locator(".cave-tool-block");
+  await expect(cards).toHaveCount(500);
+  const mountMs = performance.now() - started;
+  await expect(main.locator(".cave-tool-io")).toHaveCount(0);
+  const composer = main.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Retain this draft across the mixed trace");
+  const samples: Array<{ case: string; openMs: number }> = [];
+  for (const [index, label] of [[0, "deep capped input"], [1, "capped output"]] as const) {
+    const card = cards.nth(index);
+    const opened = performance.now();
+    await card.locator(":scope > summary").click();
+    await expect(card).toContainText("[tool payload truncated]");
+    if (index === 1) await expect(card).toContainText("MIXED_OUTPUT_START");
+    samples.push({ case: label, openMs: performance.now() - opened });
+    await card.locator(":scope > summary").click();
+  }
+  const privateMarker = "MIXED_OVERSIZED_BODY_MUST_NOT_DISPLAY";
+  let requests = 0;
+  await page.route("**/api/chat/conversation/*/tool-output?*", async (route) => {
+    requests++;
+    await route.fulfill({ json: { ok: true, output: privateMarker + "x".repeat(256 * 1024 + 1) } });
+  });
+  await cards.nth(2).locator(":scope > summary").click();
+  await expect(cards.nth(2).getByRole("alert")).toContainText("Couldn't load this output.");
+  await expect(main).not.toContainText(privateMarker);
+  expect(requests).toBe(1);
+  await expect(composer).toHaveValue("Retain this draft across the mixed trace");
+  await composer.fill("Still interactive after the mixed trace");
+  await expect(composer).toHaveValue("Still interactive after the mixed trace");
+  await info.attach("mixed-trace-measurements", { body: JSON.stringify({ calls: 500, inputDepth: 80,
+    inputBytes: Buffer.byteLength(cappedInput), outputBytes: Buffer.byteLength(cappedOutput), mountMs, samples, requests }), contentType: "application/json" });
+});
+
 for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
   test(`lazy output ${refusal} withholds bodies and rechecks or revokes access`, async ({ page }, info) => {
+    await page.addInitScript(() => {
+      const events: object[] = [];
+      Object.assign(window, { lazyOutputPointerEvents: events });
+      for (const type of ["pointerdown", "pointerup", "click"]) {
+        document.addEventListener(type, (event) => {
+          const target = event.target;
+          if (!(target instanceof Element) || !target.closest(".cave-tool-block")) return;
+          events.push({ type, tag: target.tagName, retry: target.closest("button")?.textContent === "Retry" });
+        }, { capture: true, passive: true });
+      }
+    });
     const privateMarker = `PRIVATE_LAZY_BODY_${refusal}`;
     const authorizedMarker = `AUTHORIZED_LAZY_BODY_${refusal}`;
     let deepInput: object = { file_path: "/tmp/deep-input" };
@@ -239,6 +295,8 @@ for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
     const toggle = card.locator(":scope > summary");
     await expect(card).toBeVisible();
     expect(requests).toEqual([]);
+    const composer = main.getByRole("textbox", { name: "Message", exact: true });
+    await composer.fill("Keep this draft after refused output");
     await toggle.click();
     if (refusal === 401 || refusal === 403) {
       // Authorization refusal is request-time revocation (#5764): the whole
@@ -252,8 +310,15 @@ for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
       await expect(main).not.toContainText(privateMarker);
       expect(requests).toHaveLength(1);
       allowed = true;
-      await card.getByRole("button", { name: "Retry", exact: true }).click();
-      await expect(card).toContainText(authorizedMarker);
+      try {
+        await card.getByRole("button", { name: "Retry", exact: true }).click();
+        await expect(card).toContainText(authorizedMarker);
+      } finally {
+        await info.attach("lazy-output-retry-attempt", { body: JSON.stringify({ refusal, requests,
+          events: await page.evaluate(() => (window as unknown as { lazyOutputPointerEvents: object[] }).lazyOutputPointerEvents)
+            .catch(() => ({ unavailable: true, reason: "Page unavailable during diagnostic collection" })),
+        }), contentType: "application/json" });
+      }
       expect(requests).toHaveLength(2);
       await toggle.click();
       allowed = false;
@@ -263,12 +328,68 @@ for (const refusal of [401, 403, 404, 409, "oversized"] as const) {
       await expect(main).not.toContainText(privateMarker);
       expect(requests).toHaveLength(3);
     }
-    const composer = main.getByRole("textbox", { name: "Message", exact: true });
-    await composer.fill("Keep this draft after refused output");
     await expect(composer).toHaveValue("Keep this draft after refused output");
     await info.attach("lazy-output-refusal", { body: JSON.stringify({ refusal, inputDepth: 80, requests }), contentType: "application/json" });
   });
 }
+
+test("Retry keeps a stationary press through deferred input highlighting", async ({ page }, info) => {
+  let releaseHighlighting!: () => void;
+  const highlightingGate = new Promise<void>((resolve) => { releaseHighlighting = resolve; });
+  let holdHighlighting = false;
+  let heldGrammars = 0;
+  await page.route("**/_next/static/chunks/*.js", async (route) => {
+    const response = await route.fetch();
+    const body = await response.body();
+    if (holdHighlighting && body.includes(Buffer.from('"scopeName":"source.json"'))) {
+      heldGrammars += 1;
+      await highlightingGate;
+    }
+    await route.fulfill({ response, body });
+  });
+  try {
+    let input: object = { file_path: "/tmp/deferred-input" };
+    for (let depth = 0; depth < 2; depth++) input = { nested: input };
+    const tool = { id: "deferred-input", name: "Read", status: "ok", input: JSON.stringify(input), outputChars: 64,
+      textOffset: 0, activity: activity("deferred-input", "ok", 1) };
+    const { main, complete } = await setup(page, true, false, false, [tool]);
+    let allowed = false;
+    const requests: boolean[] = [];
+    await page.route("**/api/chat/conversation/*/tool-output?*", async (route) => {
+      requests.push(allowed);
+      await route.fulfill({ status: allowed ? 200 : 404, json: { ok: true, output: allowed ? "AUTHORIZED_AFTER_HIGHLIGHT" : "PRIVATE_REFUSED_OUTPUT" } });
+    });
+    complete();
+    await page.reload();
+    const card = main.locator(".cave-tool-block").first();
+    holdHighlighting = true;
+    await card.locator(":scope > summary").click();
+    await expect(card.getByRole("alert")).toContainText("Couldn't load this output.");
+    await expect.poll(() => heldGrammars).toBeGreaterThan(0);
+    const retry = card.getByRole("button", { name: "Retry", exact: true });
+    await retry.scrollIntoViewIfNeeded();
+    const before = await retry.boundingBox();
+    expect(before).not.toBeNull();
+    // Hold the next animation frame: a real release can arrive after the
+    // highlight commit and before the transcript's rAF scroll correction.
+    const frozen = new Date("2026-11-12T12:00:00.000Z");
+    await page.clock.install({ time: frozen });
+    await page.clock.pauseAt(new Date(frozen.getTime() + 1000));
+    await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
+    allowed = true;
+    await page.mouse.down();
+    releaseHighlighting();
+    await expect(card.locator(".cave-syntax-block").first()).toBeVisible();
+    const after = await retry.boundingBox();
+    await page.mouse.up();
+    await info.attach("deferred-highlight-press", { body: JSON.stringify({ before, after, requests }), contentType: "application/json" });
+    await expect(card).toContainText("AUTHORIZED_AFTER_HIGHLIGHT");
+    expect(requests).toEqual([false, true]);
+    await expect(main).not.toContainText("PRIVATE_REFUSED_OUTPUT");
+  } finally {
+    releaseHighlighting();
+  }
+});
 
 
 test("hostile prose, reasoning and tool results never become execution authority", async ({ page }) => {
@@ -583,3 +704,45 @@ for (const [capability, capabilityLabel] of [["unknown", "not verified on this p
     await verify();
   });
 }
+
+
+// Client behavior from a mocked admitted history response. Server byte/privacy
+// admission is independently exercised by the actual conversation route tests.
+test("accepted saved output at byte limit preserves draft when returning to latest (#6064)", async ({ page }, info) => {
+  const exact = ("SAFE_LIMIT_MARKER\nsafe result \n".repeat(16_000)).slice(0, 262_144).padEnd(262_144, " ");
+  expect(Buffer.byteLength(exact)).toBe(256 * 1024);
+  let deep: object = { file_path: "/tmp/synthetic" };
+  for (let i = 0; i < 32; i++) deep = { nested: deep };
+  const tools = Array.from({ length: 500 }, (_, i) => ({
+    id: `saved-${i}`, name: "Read", status: "ok",
+    input: i === 0 ? JSON.stringify(deep) : '{"path":"fixture.txt"}',
+    output: i === 0 ? exact : "Safe output", textOffset: 0,
+  }));
+  const { main } = await setup(page, true, true, false, tools);
+  await main.locator("details.streaming-turn-activity > summary").click();
+  await main.locator("details.cave-tool-group > summary").click();
+  await main.locator("details.cave-tool-run > summary").click();
+  const cards = main.locator(".cave-tool-block");
+  await expect(cards).toHaveCount(500);
+  const composer = main.getByRole("textbox", { name: "Message", exact: true });
+  await composer.fill("Keep exact-cap draft");
+  await cards.first().locator(":scope > summary").click();
+  await expect(cards.first().locator(".cave-syntax-block").last()).toContainText("SAFE_LIMIT_MARKER");
+  const transcript = main.locator(".cave-chat-transcript");
+  await transcript.hover();
+  await page.mouse.wheel(0, -100_000);
+  const latest = main.getByRole("button", { name: "Latest", exact: true });
+  await expect(latest).toBeVisible();
+  const before = await transcript.evaluate(el => ({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight }));
+  expect(before.height - before.client).toBeGreaterThan(0);
+  expect(before.height - before.client - before.top).toBeGreaterThan(100);
+  await latest.click();
+  await expect.poll(() => transcript.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(4);
+  await expect(composer).toHaveValue("Keep exact-cap draft");
+  expect(await page.evaluate(() => (window as unknown as { activitySendCount: number }).activitySendCount)).toBe(0);
+  await expect(cards.first()).toHaveAttribute("open", "");
+  await info.attach("saved-output-latest", { body: JSON.stringify({
+    before, after: await transcript.evaluate(el => ({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight })),
+    fixtureBytes: Buffer.byteLength(exact),
+  }), contentType: "application/json" });
+});

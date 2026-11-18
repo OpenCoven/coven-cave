@@ -629,7 +629,8 @@ test("the supervisor carries one complete prompt argv and persists stdout as the
     {
       id: "call-1",
       name: "shell",
-      input: '{\n  "command": "pwd"\n}',
+      // The shared display redactor owns the stored tool projection.
+      input: '{"command":"pwd"}',
       output: "/workspace",
       status: "ok",
       textOffset: conv.turns[1].text.length,

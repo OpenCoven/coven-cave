@@ -171,7 +171,12 @@ struct AgentActivityView: View {
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if let detail = step.detail, !detail.isEmpty {
+                if step.inputDisclosure == .withheld {
+                    Text("Input withheld from saved history.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let detail = step.detail, !detail.isEmpty {
                     Text(detail)
                         .font(.caption2.monospaced())
                         .foregroundStyle(.tertiary)
@@ -182,7 +187,12 @@ struct AgentActivityView: View {
                         // a long command its arguments.
                         .truncationMode(.middle)
                 }
-                if let failure = step.errorOutput, !failure.isEmpty {
+                if step.outputDisclosure == .withheld {
+                    Text("Output withheld from saved history.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let failure = step.errorOutput, !failure.isEmpty {
                     // Why it failed. Wraps rather than truncating to one line —
                     // a reason clipped mid-sentence is no reason at all.
                     Text(failure)
@@ -193,7 +203,7 @@ struct AgentActivityView: View {
                         .textSelection(.enabled)
                         .padding(.top, 2)
                 }
-                if step.kind == .tool, let onShowToolOutput {
+                if step.kind == .tool, step.outputDisclosure != .withheld, let onShowToolOutput {
                     Button("Show output") { onShowToolOutput(step) }
                         .font(.caption.weight(.medium))
                         .frame(minHeight: 44)

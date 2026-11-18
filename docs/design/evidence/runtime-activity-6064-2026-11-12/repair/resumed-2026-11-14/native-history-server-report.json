@@ -1,0 +1,25 @@
+{
+  "classification": "Synthetic raw legacy/external saved history through production HTTP server and real native client; no provider dispatch or physical ingress",
+  "root": "/private/tmp/nova6064-resume-20261114-mo25t69y/live-history-launch/tmp/g14-history-SQ6jay",
+  "sessionId": "history6064-be092584-4070-4d85-9522-5be10c097ab8",
+  "storedHash": "107f9a934f79dd1beef5da9635a58acffc808a82c8f84576c50c15801eb26176",
+  "outputMarker": "SAFE_NATIVE_HISTORY_OUTPUT_6064",
+  "startedAt": "2026-11-14T05:48:29.836Z",
+  "origin": "http://127.0.0.1:50859",
+  "serverPid": 85410,
+  "buildId": "ETjYWVIu_WpnqqZih6ypK",
+  "nativeFixture": {
+    "origin": "http://127.0.0.1:50859",
+    "sessionId": "history6064-be092584-4070-4d85-9522-5be10c097ab8",
+    "withheldTool": "BothWithheld6064",
+    "inputOnlyTool": "InputWithheld6064",
+    "legacyTool": "LegacyAbsent6064",
+    "outputMarker": "SAFE_NATIVE_HISTORY_OUTPUT_6064"
+  },
+  "storedBytesUnchanged": true,
+  "serverStopped": true,
+  "cleanup": {
+    "removed": true
+  },
+  "finishedAt": "2026-11-14T05:54:06.190Z"
+}

@@ -1,0 +1,30 @@
+{
+  "verifiedEntries": 1909,
+  "bundles": [
+    {
+      "name": "scroll-bounce.xcresult",
+      "hasInfoPlist": true,
+      "issues": [],
+      "fileCount": 1641
+    },
+    {
+      "name": "scroll-debug.xcresult",
+      "hasInfoPlist": false,
+      "issues": [
+        {
+          "path": "Info.plist",
+          "reason": "result did not finalize; partial evidence retained"
+        }
+      ],
+      "fileCount": 214
+    },
+    {
+      "name": "scroll-release.xcresult",
+      "hasInfoPlist": true,
+      "issues": [],
+      "fileCount": 47
+    }
+  ],
+  "collectionIssues": [],
+  "note": "Immutable snapshots, not a test verdict. hasInfoPlist does not prove xcresult validity."
+}

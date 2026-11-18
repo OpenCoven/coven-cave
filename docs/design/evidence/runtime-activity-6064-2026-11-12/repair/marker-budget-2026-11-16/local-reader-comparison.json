@@ -1,0 +1,11 @@
+{
+  "at": "2026-11-16T12:14:46.030623+00:00",
+  "head": "5bbe2df6d484f2e65f25f9e1f10a2c151ed1630e",
+  "localRuntime": "iOS27.2/ownedShutdownstore",
+  "storeFiles": 264,
+  "storeBytes": 758891794,
+  "elapsedSeconds": 1.6940156660275534,
+  "exitCode": 0,
+  "proofRoot": "<qualification-evidence>/marker-offline-proof/after-hosted-timeout-local",
+  "limits": "Current unchanged helper completes locally, but hosted iOS26.5 store was not retained; local run does not replay or fix hosted timeout. No simulator/app launch, emission or source change."
+}

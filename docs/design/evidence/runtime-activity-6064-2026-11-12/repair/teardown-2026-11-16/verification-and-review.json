@@ -1,0 +1,75 @@
+{
+  "observedAt": "2026-11-16T01:24:03.387337+00:00",
+  "appSuite": {
+    "files": 1525,
+    "receipt": {
+      "command": "pnpm",
+      "args": [
+        "test:app"
+      ],
+      "started": "2026-11-16T01:11:39.379Z",
+      "ended": "2026-11-16T01:18:01.736Z",
+      "code": 0,
+      "signal": null
+    },
+    "buildIdAfter": "I9UBVuj3J-4egKiEKItaT"
+  },
+  "rawLogs": [
+    {
+      "path": "/private/tmp/nova6064-native-teardown-20261116/helper-corrected-red.log",
+      "bytes": 20828,
+      "sha256": "fc5ad88bde244e33c4eadf9fe40fa5dccd71f1bee80df9a53566da4623fd1091"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-teardown-20261116/non-error-first-red.log",
+      "bytes": 4185,
+      "sha256": "cb485cb9d260ad79c6e2db8af7c8a8e92f63ce39a9ab1038f9c658a1323fe7c9"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-teardown-20261116/helper-reviewed-green.log",
+      "bytes": 2678,
+      "sha256": "d9029578d77500f2868af2ffb7cbc29273e406e5657ec778753bc7ef38e1ff55"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-teardown-20261116/reviewed-script-contracts.log",
+      "bytes": 3846,
+      "sha256": "134117ae47e6d8b5f8641d1427ddb54ad4347614e131c4127abf98116dc3712a"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-teardown-20261116/reviewed-wiring.log",
+      "bytes": 38,
+      "sha256": "9f6ba3dc8eb4c4be48fac30d7eb5d72c084bf0f1855953300625abb2c5c24e68"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-teardown-20261116/full-app-suite.log",
+      "bytes": 657878,
+      "sha256": "53534b15e5c6d0aaee80ef7bd7c1aeee8f65495cd37b63bdb16526c35a191748"
+    },
+    {
+      "path": "/private/tmp/nova6064-native-teardown-20261116/tcp-launcher.log",
+      "bytes": 8085,
+      "sha256": "c5dc760484332d1e195ab5e7d1acd4ab1651a8a1033e916d32bb5b4c0a320ccf"
+    }
+  ],
+  "review": {
+    "type": "Second-agent read-only review on shared account, not independent human acceptance",
+    "result": "P2 real-child wait lifecycle issue resolved; no implementation blocker",
+    "invariants": "Successful stop, positive recorded PID, timely ESRCH and existing owner/state checks before removal; no functional/UI/bounds weakening"
+  },
+  "sourceMechanism": {
+    "repository": "OpenCoven/coven",
+    "tag": "v0.5.0",
+    "commit": "d9b9d6a8b9f4775ad7fa0a2d95a9a78004c6d92c",
+    "client": "crates/coven-client/src/lifecycle.rs#L153-L163",
+    "transport": "crates/coven-client/src/transport/unix.rs#L198-L207",
+    "daemon": "crates/coven-cli/src/daemon.rs#L6583-L6592",
+    "exactOldBinaryOrOriginalFailureCauseProven": false
+  },
+  "rawRoot": "/private/tmp/nova6064-native-teardown-20261116",
+  "publicationArtifactEncoding": {
+    "original": "source.patch",
+    "committed": "source-patch.json",
+    "rawBytesPreserved": true,
+    "reason": "Unified-diff blank context lines have intentional trailing prefix spaces; JSON encoding preserves exact bytes while satisfying repository whitespace checks."
+  }
+}

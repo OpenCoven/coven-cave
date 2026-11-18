@@ -1,0 +1,30 @@
+{
+  "sourceCommit": "7eb96638362aa0d7138788f7cbaf6c698d42c863",
+  "rendererSha256": "8b2967c094a5da6364ec9bf4bd8acb4d43a5be170ce2dac7d862f1621ba07928",
+  "startedUnix": 1794546141.985922,
+  "command": [
+    "xcodebuild",
+    "test",
+    "-project",
+    "apps/ios/CovenCave/CovenCave.xcodeproj",
+    "-scheme",
+    "CovenCavePerformance",
+    "-destination",
+    "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+    "-derivedDataPath",
+    "/private/tmp/nova6064-20261112/derived-data-performance",
+    "-resultBundlePath",
+    "/private/tmp/nova6064-20261112/native-current-release-final.xcresult",
+    "-parallel-testing-enabled",
+    "NO",
+    "-only-testing:CovenCaveUITests/PerformanceBaselineUITests/testRetainedRichTimelinePreservesEarlierToolThroughScrolling",
+    "CODE_SIGNING_ALLOWED=YES",
+    "CODE_SIGN_IDENTITY=-"
+  ],
+  "scope": "Ordinary ad-hoc Release signature; owned simulator only; offline rich120 actual earlier-entry scroll journey. App aggregate spans are not frame/hitch measurements.",
+  "processPid": 5873,
+  "retainedCaptures": 5,
+  "exitCode": 0,
+  "finishedUnix": 1794546514.244771,
+  "binarySha256": "88b82acb35fc04cf0983278c9b81d48a0efe9d46b0b731324d25bcb653971fe1"
+}

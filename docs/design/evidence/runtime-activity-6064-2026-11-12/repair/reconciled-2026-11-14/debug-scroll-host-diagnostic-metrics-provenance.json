@@ -1,0 +1,12 @@
+{
+  "observedAt": "2026-11-15T23:59:16.345035+00:00",
+  "ownedSimulator": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+  "currentAppDataContainer": "/Users/buns/Library/Developer/CoreSimulator/Devices/64878DF0-DB73-45A9-8D68-3F22393F7D64/data/Containers/Data/Application/988348F1-704D-4A4D-80B3-A841FB072EA1",
+  "metricsSourcePath": "/Users/buns/Library/Developer/CoreSimulator/Devices/64878DF0-DB73-45A9-8D68-3F22393F7D64/data/Containers/Data/Application/988348F1-704D-4A4D-80B3-A841FB072EA1/Library/Application Support/performance-fixture/timeline-metrics.json",
+  "metricsSourceMtimeUTC": "2026-11-15T23:55:40.909499+00:00",
+  "metricsSHA256": "92384c7a5525166f65a3b8168ce366e81a8e7052f9cf3aa0ba52a27bf277db98",
+  "copy": "debug-scroll-host-diagnostic-timeline-metrics.json",
+  "readOnlyExistingCaptures": true,
+  "extraTapsOrCapture": false,
+  "limitation": "Existing app spans/counters only; not frame, hitch, main-thread, responsiveness or causal evidence"
+}

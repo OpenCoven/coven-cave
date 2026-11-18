@@ -1,0 +1,48 @@
+{
+  "observedAt": "2026-11-16T04:11:16.292943+00:00",
+  "compiledSourceFingerprint": "dfe08b63ff8e8dd525ec82f3113065e1074ade4aa5a96afd1aae7acbe8450000",
+  "runtimeSourceCanonicalRestored": true,
+  "binaries": {
+    "app": {
+      "path": "<retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app",
+      "executable": "<retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave",
+      "sha256": "80cc5312f4f7aef9386fc9acfe6054e709169b804632df007436b7825d775b09",
+      "uuid": "UUID: B07EEE3C-11E9-3B70-A326-6097EA0F7327 (arm64) <retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave\n",
+      "bundleIdentifier": "ai.opencoven.cave",
+      "version": "0.5.22",
+      "build": "2026111302",
+      "codesignVerifyExitCode": 0,
+      "signing": "normal ad-hoc",
+      "fileManifest": "app-files-sha256.json"
+    },
+    "runner": {
+      "path": "<retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app",
+      "executable": "<retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner",
+      "sha256": "40f1bab6dc8c4b7010b167e03b205626b004ca8cf0aeb17369c7c99542f4a38c",
+      "uuid": "UUID: CC1BBF6E-4DDE-3789-8413-8995F0EAB902 (arm64) <retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/CovenCaveUITests-Runner\n",
+      "bundleIdentifier": "ai.opencoven.cave.uitests.xctrunner",
+      "version": "1.0",
+      "build": "1",
+      "codesignVerifyExitCode": 0,
+      "signing": "normal ad-hoc",
+      "fileManifest": "runner-files-sha256.json"
+    },
+    "testDriver": {
+      "path": "<retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest",
+      "executable": "<retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests",
+      "sha256": "0b32e545149e9d14aaa9384bb723fc41b017fa54fb153e95e9ddde1add6b1557",
+      "uuid": "UUID: 81ACB75A-6D6A-3CB1-A5B9-D78A1CB65EB8 (arm64) <retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCaveUITests-Runner.app/PlugIns/CovenCaveUITests.xctest/CovenCaveUITests\n",
+      "bundleIdentifier": "ai.opencoven.cave.uitests",
+      "version": "0.5.22",
+      "build": "2026111302",
+      "codesignVerifyExitCode": 0,
+      "signing": "normal ad-hoc",
+      "fileManifest": "testDriver-files-sha256.json"
+    },
+    "appDebugDylib": {
+      "path": "<retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib",
+      "sha256": "99d0360b9d23064d99de12db38e6affa174d6ff3ddae91fadfcf017b02086179",
+      "uuid": "UUID: 3A7CCC64-0455-3706-9BD8-0557E5B8985E (arm64) <retained-native-root>/derived-data/Build/Products/Debug-iphonesimulator/CovenCave.app/CovenCave.debug.dylib\n"
+    }
+  }
+}

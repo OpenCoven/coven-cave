@@ -1,0 +1,7 @@
+{
+  "binarySha256": "5de64ac5f6fb5694a0334bad26d3cbc29cc4ac1919ebfd9d4617df636be671cd",
+  "rendererSha256": "1266f04125cb772284725ac3a2065ae124c7b45fbba6ec2aeb7224d72868fbe2",
+  "sourceCommit": "40a9ec3e5517f5b13f42eb878e98b4f5cab5dbe5",
+  "originalEntitlements": "native-release-entitlements.plist",
+  "qualification": "Normal ad-hoc Release simulator test passed; next signature adds only local profiling inspection capability to this synthetic app variant."
+}

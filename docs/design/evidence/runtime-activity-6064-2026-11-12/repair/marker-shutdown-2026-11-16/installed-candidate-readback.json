@@ -1,0 +1,21 @@
+{
+  "at": "2026-11-16T10:25:29.597691+00:00",
+  "scope": "Readback only of already-owned installed simulator app after the disposable standalone probe; no app launch/reinstall.",
+  "installedAppImagesMatchRetainedBeforeProbeBuild": [
+    {
+      "name": "CovenCave",
+      "role": "app-stub",
+      "sha256": "2b3e7c67ce52947579f9846489acb8f71dee61e4dac3b03daa9fd3316779e259",
+      "matchesRetainedCompiledIdentity": true
+    },
+    {
+      "name": "CovenCave.debug.dylib",
+      "role": "app-debug-implementation",
+      "sha256": "1573de1ef3ccc55ee8fbb9aff432b32ff4eb5c70b3cf2bfb2362c59193c3e67b",
+      "matchesRetainedCompiledIdentity": true
+    }
+  ],
+  "normalSignatureVerificationExit": 0,
+  "sourceOfKnownHashes": "hosted-pan-preparation/native/binary-identities.json",
+  "limits": "Binary/signature readback, not a newly executed application test or full bundle-before/after manifest."
+}

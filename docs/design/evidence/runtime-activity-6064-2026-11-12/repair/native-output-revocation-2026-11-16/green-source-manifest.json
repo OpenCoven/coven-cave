@@ -1,0 +1,69 @@
+{
+  "preparedAt": "2026-11-16T05:27:51.680722+00:00",
+  "head": "6ace503af163914e2d548496d4e960444ae10bb5",
+  "changedFiles": {
+    "apps/ios/CovenCave/CovenCave/Networking/CaveClient+ToolOutput.swift": "505de1da2cbac79b30c029386a09fa6871ff69edb85bfbc5f44c3fa5b0be370d",
+    "apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift": "93f9aa4f1aca803db2a0b59924f822108ac0f5d1fc4ee443b1f0d40098eef150",
+    "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "b1d363a8e8cec4079bf4f8dd16f91fa90246213014602e32ca7d9c8809352009",
+    "apps/ios/CovenCave/CovenCaveTests/ThreadSnapshotStoreTests.swift": "b0e680399365e6cbcb64aaf3afb610f3587d63bf286fd446c395a64370998ed6",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "e115b1c6d82e0d90bd805a3f7f9ab67179a039ee7481d41dec5a1fd8fe1f92f9"
+  },
+  "nativeFileCount": 300,
+  "selectors": [
+    "CovenCaveTests/ThreadSnapshotStoreTests",
+    "CovenCaveTests/ToolOutputTests"
+  ],
+  "methodNames": {
+    "ThreadSnapshotStoreTests": [
+      "testHydrationStartedBeforeRefusalCannotRestoreRevokedMemory",
+      "testToolOutputAccessDenialsPurgeOnlyTheirConversationAndKeepOtherFailuresCached",
+      "testConversationSpecificRequestsPurgeTheirRefusedSession",
+      "testAnUnsavedRefusedThreadCannotBeCachedAfterRebinding",
+      "testSendAccessDenialPurgesButOperationOnlyRefusalsKeepTheSnapshot",
+      "testPurgeRemovesEverySnapshotReferencingTheConversation",
+      "testReceivedRevocationStillPurgesWhenTheCallerIsCancelled",
+      "testAReplacedConnectionCannotPurgeTheCurrentCache",
+      "testOnlyDefinitiveConversationAccessRefusalsPurgeTheCache",
+      "testConversationRefusalPurgesOnlyRevokedSnapshotAndSurvivesRelaunch",
+      "testLoadDecodesSnapshotsWrittenByTheLegacyPersistencePath",
+      "testSaveThenLoadRoundTripsAndKeepsLegacyDecodableShape",
+      "testProjectRootRoundTripsWithSnapshot",
+      "testLegacySnapshotWithoutProjectRootStillDecodes",
+      "testSaveAtomicallyReplacesThePreviousSnapshot",
+      "testLoadReturnsEmptyWhenFileDoesNotExist",
+      "testLoadThrowsTypedErrorForCorruptFile",
+      "testCancelledSaveDoesNotReplaceTheLastValidSnapshot",
+      "testThreadCacheNeverHoldsAToolResultOrPayloadSignature"
+    ],
+    "ToolOutputTests": [
+      "testHistoryDisclosureSurvivesCodecFoldSnapshotAndDuplicateWithoutInventingEvidence",
+      "testUnknownOrMalformedDisclosureFlagsDoNotBreakLegacyHistoryOrEmptySafeValues",
+      "testWithheldFieldsCannotBecomeArgumentOrFailurePreviews",
+      "testRestoredWithheldStepCannotRecoverStalePreviewsFromSnapshotOrLiveReplay",
+      "testDefensiveWithheldDetailDispatchesZeroOutputLoads",
+      "testLargePlainTextSurfacePreservesSelectionAndClearsPrivateContent",
+      "testOversizedResponseIsCancelledBeforeTheServerFinishes",
+      "testEncodedIdentifiersCannotChangeTheTargetAndOutputIsVerbatim",
+      "testMalformedTargetsNeverDispatch",
+      "testResponseFromAnotherEndpointCannotSupplyToolOutput",
+      "testRefusalsNeverExposeErrorBodiesOrRetryUnauthorizedReads",
+      "testEmptyOutputIsValidButMalformedAndOversizedResponsesAreNot",
+      "testEachReadUsesTheCurrentOriginBoundCredential",
+      "testClearDiscardsALateResultEvenWhenLoaderIgnoresCancellation",
+      "testNewReadWinsOverLateOldRead",
+      "testCancelledReadNeverPublishesOutput",
+      "testLoaderPublishesOnlyFixedTypedFailure",
+      "testTargetUsesRecordedConversationAndRefusesOtherDesktopOrMissingEvidence",
+      "testReferenceNormalizesEndpointWithoutPersistingURLCredentials",
+      "testHistorySnapshotAndDuplicateKeepTheOriginalReference",
+      "testGroupHistoryAdoptsOnlyTheMatchingFamiliarReference"
+    ]
+  },
+  "expectedTests": 40,
+  "normalSigning": true,
+  "buildBudgetSeconds": 900,
+  "testDefaultSeconds": 60,
+  "testMaximumSeconds": 180,
+  "noRetries": true,
+  "redArtifactsPreserved": true
+}

@@ -1,0 +1,18 @@
+{
+  "at": "2026-11-16T10:09:02.132756+00:00",
+  "marker": "CAVE_SCROLL_TRACE_WRITE_ERROR_CHANNEL_PROBE_4eec368c1c3a48aea8ffcd4635e2a5a5",
+  "probePid": 3584,
+  "probePidAbsent": true,
+  "emissionsThisControl": 1,
+  "normalSignatureVerified": true,
+  "binarySHA256": "5c8be7244c165411945a557854d9b2b0f3c7dfeaba2843012fc062e013073676",
+  "probeExecutableRetained": "<qualification>/marker-offline-proof/Cave6064LogProbe",
+  "head": "0557dff29063aa64311352fcd882cb1d3e5fe7eb",
+  "worktreeUnchangedAndClean": true,
+  "finalDeviceState": "Shutdown",
+  "bootedQueryExit": 0,
+  "originalShutdownQueryExit": 149,
+  "offlineShutdownQueryExit": 0,
+  "offlineContainsExactMarkerAndPID": true,
+  "limits": "Local27.2 positive channel only; not hosted26.5 or actual app writer-error absence, native/frame/physical/human acceptance."
+}

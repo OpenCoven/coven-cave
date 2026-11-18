@@ -8,6 +8,7 @@ on:
       - scripts/build-ios-markdown.mjs
       - scripts/ios-native-command.py
       - scripts/ios-native-command.test.mjs
+      - scripts/ios-scroll-marker.py
       - package.json
       - pnpm-lock.yaml
       - .github/workflows/ios-transcript-regression.yml
@@ -24,9 +25,12 @@ jobs:
   transcript:
     runs-on: macos-latest
     # Retained Xcode26.6 run: 15 strict executions take ~28 minutes before
-    # three long-history and three accessibility audits. Keep failure collection
-    # independent while allowing the complete unchanged native test matrix.
-    timeout-minutes: 100
+    # three long-history and three accessibility audits. Run 43778586069
+    # exhausted the 55-minute command with 20/21 executions passed; the last
+    # case had under 40 seconds left versus its preceding 74–78 second executions.
+    # Run 43789410401 also exhausted Debug's 900s after 59/60 cases passed.
+    # Allow the complete unchanged matrices and independent failure collection.
+    timeout-minutes: 108
     steps:
       - timeout-minutes: 1
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -70,13 +74,16 @@ jobs:
       # passed and failed different ChatScrollingUITests cases across runs.
       # A retry re-runs only a failed test, and every assertion must pass in
       # full on the retry, so a consistent regression still fails the job.
+      # Run 43789410401 left its final case ~166s versus a prior complete
+      # 172.598s execution. This bounded completion allowance preserves every
+      # case and UI deadline; it is not an application responsiveness budget.
       - name: Debug scroll state and existing long-chat UI regressions
         if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
-        timeout-minutes: 16
+        timeout-minutes: 19
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ios-native-command.py run --timeout-seconds 900 \
+          python3 scripts/ios-native-command.py run --timeout-seconds 1080 \
             --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-debug.receipt.json" -- \
             xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
@@ -93,12 +100,12 @@ jobs:
       # The latest-reply bounce (#6090) appeared in only some attempts on the
       # same head, so a retry could pass by luck. Every iteration must pass.
       - name: Latest-reply bounce, three full runs without retries
-        timeout-minutes: 56
+        timeout-minutes: 61
         if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ios-native-command.py run --timeout-seconds 3300 \
+          python3 scripts/ios-native-command.py run --timeout-seconds 3600 \
             --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-bounce.receipt.json" -- \
             xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
@@ -108,6 +115,30 @@ jobs:
             -only-testing:CovenCaveUITests/ChatScrollBounceUITests \
             -only-testing:CovenCaveUITests/TranscriptAccessibilityUITests \
             | tee "$RUNNER_TEMP/scroll-bounce.log"
+      - name: Retain independent pan trace write errors after strict completion
+        timeout-minutes: 1
+        if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee "$RUNNER_TEMP/scroll-pan-marker.log") 2>&1
+          udid="${CAVE_TEST_DESTINATION##*,id=}"
+          if [[ ! "$udid" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+            printf '%s\n' 'Invalid selected simulator id; marker collection is incomplete.'
+            exit 2
+          fi
+          printf 'Marker query started: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          set +e
+          # Run 43851100840 admitted the offline reader but exhausted its 15s
+          # query phase. Reallocate the same 30s owner; keep the job reserve.
+          python3 scripts/ios-native-command.py run --timeout-seconds 20 \
+            --grace-seconds 1 --terminate-seconds 4 --kill-seconds 5 \
+            --receipt "$RUNNER_TEMP/scroll-pan-marker.receipt.json" -- \
+            python3 scripts/ios-scroll-marker.py "$udid"
+          status=$?
+          set -e
+          printf 'Marker query finished: %s status=%d\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$status"
+          exit "$status"
       - name: Release shrink and independent no-shrink repeated opens
         timeout-minutes: 16
         if: ${{ !cancelled() && steps.destination.outcome == 'success' }}

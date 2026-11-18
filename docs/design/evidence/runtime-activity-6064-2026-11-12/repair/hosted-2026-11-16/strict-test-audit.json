@@ -1,0 +1,297 @@
+{
+  "stage": "scroll-bounce",
+  "receipt": {
+    "command": [
+      "xcodebuild",
+      "test",
+      "-project",
+      "apps/ios/CovenCave/CovenCave.xcodeproj",
+      "-scheme",
+      "CovenCave",
+      "-destination",
+      "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+      "-derivedDataPath",
+      "/Users/runner/work/_temp/CaveDerived",
+      "-resultBundlePath",
+      "/Users/runner/work/_temp/scroll-bounce.xcresult",
+      "CODE_SIGNING_ALLOWED=NO",
+      "-test-iterations",
+      "3",
+      "-only-testing:CovenCaveUITests/ChatScrollBounceUITests",
+      "-only-testing:CovenCaveUITests/TranscriptAccessibilityUITests"
+    ],
+    "pid": 23562,
+    "elapsedSeconds": 3468.4319772090003,
+    "timedOut": false,
+    "interruptedSignal": null,
+    "terminal": true,
+    "childExitCode": 65,
+    "exitCode": 65,
+    "failure": null
+  },
+  "starts": 21,
+  "terminals": 21,
+  "passed": 20,
+  "failed": 1,
+  "unterminated": {},
+  "events": [
+    {
+      "line": 730,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 1998,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+      "outcome": "passed",
+      "detail": " (189.087 seconds)."
+    },
+    {
+      "line": 1999,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 2 of 3)."
+    },
+    {
+      "line": 3467,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+      "outcome": "passed",
+      "detail": " (162.570 seconds)."
+    },
+    {
+      "line": 3468,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 3 of 3)."
+    },
+    {
+      "line": 4935,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToLatestStaysOnLatest]",
+      "outcome": "passed",
+      "detail": " (152.072 seconds)."
+    },
+    {
+      "line": 4936,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 7095,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+      "outcome": "passed",
+      "detail": " (200.320 seconds)."
+    },
+    {
+      "line": 7096,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 2 of 3)."
+    },
+    {
+      "line": 9212,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+      "outcome": "passed",
+      "detail": " (207.377 seconds)."
+    },
+    {
+      "line": 9213,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 3 of 3)."
+    },
+    {
+      "line": 11445,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testFlickingBackToStreamingReplyStaysOnLatest]",
+      "outcome": "passed",
+      "detail": " (219.563 seconds)."
+    },
+    {
+      "line": 11446,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 11779,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+      "outcome": "passed",
+      "detail": " (99.239 seconds)."
+    },
+    {
+      "line": 11780,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 2 of 3)."
+    },
+    {
+      "line": 12125,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+      "outcome": "passed",
+      "detail": " (80.927 seconds)."
+    },
+    {
+      "line": 12126,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 3 of 3)."
+    },
+    {
+      "line": 12803,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSlowDragBackToLatestStaysOnLatest]",
+      "outcome": "passed",
+      "detail": " (86.144 seconds)."
+    },
+    {
+      "line": 12804,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 13318,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+      "outcome": "passed",
+      "detail": " (114.312 seconds)."
+    },
+    {
+      "line": 13319,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 2 of 3)."
+    },
+    {
+      "line": 13762,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+      "outcome": "passed",
+      "detail": " (110.925 seconds)."
+    },
+    {
+      "line": 13763,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 3 of 3)."
+    },
+    {
+      "line": 14417,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest]",
+      "outcome": "failed",
+      "detail": " (132.189 seconds)."
+    },
+    {
+      "line": 14418,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 14490,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+      "outcome": "passed",
+      "detail": " (88.794 seconds)."
+    },
+    {
+      "line": 14491,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+      "outcome": "started",
+      "detail": " (Iteration 2 of 3)."
+    },
+    {
+      "line": 14554,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+      "outcome": "passed",
+      "detail": " (96.386 seconds)."
+    },
+    {
+      "line": 14555,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+      "outcome": "started",
+      "detail": " (Iteration 3 of 3)."
+    },
+    {
+      "line": 14621,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testStreamingCompletionKeepsTheReflowedTailVisible]",
+      "outcome": "passed",
+      "detail": " (72.707 seconds)."
+    },
+    {
+      "line": 14622,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 14894,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+      "outcome": "passed",
+      "detail": " (234.343 seconds)."
+    },
+    {
+      "line": 14895,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+      "outcome": "started",
+      "detail": " (Iteration 2 of 3)."
+    },
+    {
+      "line": 15179,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+      "outcome": "passed",
+      "detail": " (235.976 seconds)."
+    },
+    {
+      "line": 15180,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+      "outcome": "started",
+      "detail": " (Iteration 3 of 3)."
+    },
+    {
+      "line": 15411,
+      "identity": "-[CovenCaveUITests.ChatScrollBounceUITests testThousandMessageConversationKeepsRichRenderingBounded]",
+      "outcome": "passed",
+      "detail": " (335.857 seconds)."
+    },
+    {
+      "line": 15415,
+      "identity": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 15432,
+      "identity": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+      "outcome": "passed",
+      "detail": " (109.227 seconds)."
+    },
+    {
+      "line": 15433,
+      "identity": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+      "outcome": "started",
+      "detail": " (Iteration 2 of 3)."
+    },
+    {
+      "line": 15450,
+      "identity": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+      "outcome": "passed",
+      "detail": " (109.181 seconds)."
+    },
+    {
+      "line": 15451,
+      "identity": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+      "outcome": "started",
+      "detail": " (Iteration 3 of 3)."
+    },
+    {
+      "line": 15468,
+      "identity": "-[CovenCaveUITests.TranscriptAccessibilityUITests testLargeTranscriptKeepsEveryRowAndHistoricalTextAccessible]",
+      "outcome": "passed",
+      "detail": " (132.567 seconds)."
+    }
+  ],
+  "inlineAssertions": [
+    {
+      "line": 14058,
+      "text": "/Users/runner/work/coven-cave/coven-cave/apps/ios/CovenCave/CovenCaveUITests/ChatScrollBounceUITests.swift:176: error: -[CovenCaveUITests.ChatScrollBounceUITests testSmallDragsAtLatestStayOnLatest] : XCTAssertEqual failed: (\"6\") is not equal to (\"0\") - small drags at the end of the transcript do not move it away"
+    }
+  ]
+}

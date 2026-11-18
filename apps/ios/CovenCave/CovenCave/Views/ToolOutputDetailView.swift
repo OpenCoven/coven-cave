@@ -1,4 +1,65 @@
 import SwiftUI
+import UIKit
+
+/// A fixed viewport lets TextKit lay out and tile large plain-text results
+/// without asking SwiftUI to rasterize a single text surface hundreds of
+/// thousands of points high. The complete result remains selectable.
+struct ToolOutputTextSurface: UIViewRepresentable {
+    let text: String
+
+    static func needsViewport(_ text: String) -> Bool {
+        // Preserve the existing short-result surface, but conservatively bound
+        // both wrapping work and explicit lines in any single SwiftUI Text.
+        // This selects a renderer; it never caps or changes the accepted text.
+        text.utf8.count > 256 || text.lazy.filter(\.isNewline).prefix(9).count > 8
+    }
+
+    static func makePlainTextView() -> UITextView {
+        // TextKit 2 can leave a very long paragraph blank after an inner
+        // scroll. Legacy layout paints its visible glyph ranges instead.
+        let view = UITextView(usingTextLayoutManager: false)
+        view.isEditable = false
+        view.isSelectable = true
+        view.isScrollEnabled = true
+        view.dataDetectorTypes = []
+        view.backgroundColor = .clear
+        view.textColor = .label
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.adjustsFontForContentSizeCategory = true
+        view.accessibilityLabel = "Saved output"
+        view.accessibilityIdentifier = "tool-output-text"
+        return view
+    }
+
+    static func updateText(_ text: String, in view: UITextView) {
+        let body = UIFont.preferredFont(forTextStyle: .body)
+        view.font = UIFont(descriptor: body.fontDescriptor.withDesign(.monospaced) ?? body.fontDescriptor, size: 0)
+        // Swift String equality folds canonically equivalent Unicode. Output
+        // updates must retain the exact projected bytes, including that form.
+        if !(view.text ?? "").utf8.elementsEqual(text.utf8) { view.text = text }
+    }
+
+    static func clear(_ view: UITextView) {
+        view.selectedRange = NSRange(location: 0, length: 0)
+        view.text = ""
+        view.resignFirstResponder()
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = Self.makePlainTextView()
+        Self.updateText(text, in: view)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        Self.updateText(text, in: view)
+    }
+
+    static func dismantleUIView(_ view: UITextView, coordinator: ()) {
+        clear(view)
+    }
+}
 
 /// Included in MessageBubble equality so callbacks cannot retain an old host
 /// or conversation when an otherwise unchanged transcript is reused.
@@ -60,7 +121,10 @@ struct ToolOutputDetailView: View {
                              ?? "Source unavailable for this observation.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    if let detail = target.step.detail, !detail.isEmpty {
+                    if target.step.inputDisclosure == .withheld {
+                        Text("Input withheld from saved history.")
+                            .foregroundStyle(.secondary)
+                    } else if let detail = target.step.detail, !detail.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Argument preview").font(.subheadline.weight(.semibold))
                             Text(detail).font(.body.monospaced()).textSelection(.enabled)
@@ -80,7 +144,7 @@ struct ToolOutputDetailView: View {
             if scenePhase != .active || closeOnReturn { PrivacyShieldView() }
         }
         .task(id: scenePhase == .active ? reload : nil) {
-            guard scenePhase == .active, !closeOnReturn,
+            guard target.step.outputDisclosure != .withheld, scenePhase == .active, !closeOnReturn,
                   let sessionId = target.sessionId, let client = target.client else { return }
             await store.load(sessionId: sessionId, toolId: target.step.id, using: client)
         }
@@ -98,7 +162,9 @@ struct ToolOutputDetailView: View {
     }
 
     @ViewBuilder private var output: some View {
-        if target.client == nil {
+        if target.step.outputDisclosure == .withheld {
+            Text("Output withheld from saved history.").foregroundStyle(.secondary)
+        } else if target.client == nil {
             Text("Connect to your desktop, then reopen this tool to load its output.")
         } else if let reference = target.reference, !reference.matches(target.client?.connection) {
             Text("This output belongs to another desktop connection. Reconnect to that desktop to view it.")
@@ -114,10 +180,16 @@ struct ToolOutputDetailView: View {
                 } else {
                     // Verbatim projected text. Never interpret output as
                     // Markdown, HTML, navigation, or another executable action.
-                    Text(verbatim: text)
-                        .font(.body.monospaced())
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if ToolOutputTextSurface.needsViewport(text) {
+                        ToolOutputTextSurface(text: text)
+                            .containerRelativeFrame(.vertical) { length, _ in length / 2 }
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text(verbatim: text)
+                            .font(.body.monospaced())
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             case .failed(let error):
                 Text(error.message)

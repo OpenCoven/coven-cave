@@ -1,0 +1,762 @@
+{
+  "stage": "scroll-debug",
+  "receipt": {
+    "command": [
+      "xcodebuild",
+      "test",
+      "-project",
+      "apps/ios/CovenCave/CovenCave.xcodeproj",
+      "-scheme",
+      "CovenCave",
+      "-destination",
+      "platform=iOS Simulator,id=23C8F95C-765D-46A9-AE82-0BEE2921C8D7",
+      "-derivedDataPath",
+      "/Users/runner/work/_temp/CaveDerived",
+      "-resultBundlePath",
+      "/Users/runner/work/_temp/scroll-debug.xcresult",
+      "CODE_SIGNING_ALLOWED=NO",
+      "-retry-tests-on-failure",
+      "-test-iterations",
+      "3",
+      "-only-testing:CovenCaveTests/ChatScrollStateTests",
+      "-only-testing:CovenCaveTests/ChatViewportRecoveryTests",
+      "-only-testing:CovenCaveTests/MarkdownReflowTests",
+      "-only-testing:CovenCaveTests/MarkdownPaintedReflowTests",
+      "-only-testing:CovenCaveTests/MessageBubbleAppearanceTests",
+      "-only-testing:CovenCaveUITests/ChatScrollingUITests"
+    ],
+    "pid": 3762,
+    "elapsedSeconds": 926.2029018750001,
+    "timedOut": true,
+    "interruptedSignal": null,
+    "terminal": true,
+    "childExitCode": -9,
+    "exitCode": 124,
+    "failure": null
+  },
+  "starts": 60,
+  "terminals": 59,
+  "passed": 59,
+  "failed": 0,
+  "unterminated": {
+    "-[CovenCaveUITests.ChatScrollingUITests testScrollToLatestFromOlderContentShowsNewestReply]": 1
+  },
+  "events": [
+    {
+      "line": 3099,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testAdditionalLayoutGrowthUsesThePendingAnchorPosition]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3100,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testAdditionalLayoutGrowthUsesThePendingAnchorPosition]",
+      "outcome": "passed",
+      "detail": " (0.061 seconds)."
+    },
+    {
+      "line": 3101,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testAnchorCorrectionSurvivesDelayedNativeContentSize]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3102,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testAnchorCorrectionSurvivesDelayedNativeContentSize]",
+      "outcome": "passed",
+      "detail": " (0.004 seconds)."
+    },
+    {
+      "line": 3103,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testAnchorCorrectionSurvivesPartiallyAvailableNativeExtent]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3104,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testAnchorCorrectionSurvivesPartiallyAvailableNativeExtent]",
+      "outcome": "passed",
+      "detail": " (0.002 seconds)."
+    },
+    {
+      "line": 3105,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testAnchorIsTheTopmostRowInViewNotOneBelowAGrowingVisibleRow]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3106,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testAnchorIsTheTopmostRowInViewNotOneBelowAGrowingVisibleRow]",
+      "outcome": "passed",
+      "detail": " (0.003 seconds)."
+    },
+    {
+      "line": 3107,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testBeginningToReadHistoryNearBottomDoesNotLatchAReturn]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3108,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testBeginningToReadHistoryNearBottomDoesNotLatchAReturn]",
+      "outcome": "passed",
+      "detail": " (0.008 seconds)."
+    },
+    {
+      "line": 3109,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testDecelerationDoesNotResetTheSameGestureReturn]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3110,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testDecelerationDoesNotResetTheSameGestureReturn]",
+      "outcome": "passed",
+      "detail": " (0.005 seconds)."
+    },
+    {
+      "line": 3111,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testDeferredResourcesWaitForValidViewport]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3112,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testDeferredResourcesWaitForValidViewport]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3113,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testExplicitJumpResumesFollowingWithoutPretendingItArrived]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3114,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testExplicitJumpResumesFollowingWithoutPretendingItArrived]",
+      "outcome": "passed",
+      "detail": " (0.000 seconds)."
+    },
+    {
+      "line": 3115,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testFollowingLatestCancelsAnUnappliedAnchorCorrection]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3116,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testFollowingLatestCancelsAnUnappliedAnchorCorrection]",
+      "outcome": "passed",
+      "detail": " (0.005 seconds)."
+    },
+    {
+      "line": 3117,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testFollowingLeavesTheOffsetToTheFollowPathButKeepsTheBaseline]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3118,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testFollowingLeavesTheOffsetToTheFollowPathButKeepsTheBaseline]",
+      "outcome": "passed",
+      "detail": " (2.205 seconds)."
+    },
+    {
+      "line": 3119,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testFreshIdleGeometryCancelsAReturnWhenTheReaderMovesAwayAgain]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3120,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testFreshIdleGeometryCancelsAReturnWhenTheReaderMovesAwayAgain]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3121,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testFreshIdleGeometryKeepsAReturnWhenOnlyTheLatestReplyGrew]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3122,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testFreshIdleGeometryKeepsAReturnWhenOnlyTheLatestReplyGrew]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3123,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testGeometryTracksRepeatedGrowthWhileStillAwayFromBottom]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3124,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testGeometryTracksRepeatedGrowthWhileStillAwayFromBottom]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3125,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testGrowthAboveKeepsAReaderInsideTheLatestReplyInPlace]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3126,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testGrowthAboveKeepsAReaderInsideTheLatestReplyInPlace]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3127,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testGrowthBelowTheReaderDoesNotMoveThem]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3128,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testGrowthBelowTheReaderDoesNotMoveThem]",
+      "outcome": "passed",
+      "detail": " (0.000 seconds)."
+    },
+    {
+      "line": 3129,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testHistoricalMarkdownStaysBoundedIncludingUnderVoiceOver]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3130,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testHistoricalMarkdownStaysBoundedIncludingUnderVoiceOver]",
+      "outcome": "passed",
+      "detail": " (0.002 seconds)."
+    },
+    {
+      "line": 3131,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testIdleReconcilesTheCurrentNativeViewportBeforeLateRowCallbacks]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3132,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testIdleReconcilesTheCurrentNativeViewportBeforeLateRowCallbacks]",
+      "outcome": "passed",
+      "detail": " (0.545 seconds)."
+    },
+    {
+      "line": 3133,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testIdleUsesFreshGeometryWhenTheRowCallbackArrivesLate]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3134,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testIdleUsesFreshGeometryWhenTheRowCallbackArrivesLate]",
+      "outcome": "passed",
+      "detail": " (0.003 seconds)."
+    },
+    {
+      "line": 3135,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testInitialAndDelayedLayoutKeepFollowing]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3136,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testInitialAndDelayedLayoutKeepFollowing]",
+      "outcome": "passed",
+      "detail": " (0.002 seconds)."
+    },
+    {
+      "line": 3137,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testLatestMarkdownAndVoiceOverTimelineStayAvailable]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3138,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testLatestMarkdownAndVoiceOverTimelineStayAvailable]",
+      "outcome": "passed",
+      "detail": " (0.032 seconds)."
+    },
+    {
+      "line": 3139,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testMovingAwayAfterReturningCancelsFollowEvenAfterGrowth]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3140,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testMovingAwayAfterReturningCancelsFollowEvenAfterGrowth]",
+      "outcome": "passed",
+      "detail": " (0.002 seconds)."
+    },
+    {
+      "line": 3141,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testNativeRowGeometryKeepsViewportBoundsWithBottomContentInsets]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3142,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testNativeRowGeometryKeepsViewportBoundsWithBottomContentInsets]",
+      "outcome": "passed",
+      "detail": " (0.004 seconds)."
+    },
+    {
+      "line": 3143,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testNativeRowGeometryUsesPendingLayoutAndResetsItsReportedBaseline]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3144,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testNativeRowGeometryUsesPendingLayoutAndResetsItsReportedBaseline]",
+      "outcome": "passed",
+      "detail": " (0.004 seconds)."
+    },
+    {
+      "line": 3145,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testOnePassCorrectsOnceHoweverManyRowsMoved]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3146,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testOnePassCorrectsOnceHoweverManyRowsMoved]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3147,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testResetDropsCorrectionsFromThePreviousConversation]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3148,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testResetDropsCorrectionsFromThePreviousConversation]",
+      "outcome": "passed",
+      "detail": " (0.004 seconds)."
+    },
+    {
+      "line": 3149,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testReturningToBottomResumesFollowingAfterGesture]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3150,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testReturningToBottomResumesFollowingAfterGesture]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3151,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testReturningToBottomSurvivesStreamingGrowthBeforeGestureIdle]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3152,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testReturningToBottomSurvivesStreamingGrowthBeforeGestureIdle]",
+      "outcome": "passed",
+      "detail": " (0.072 seconds)."
+    },
+    {
+      "line": 3153,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testRowRemovedAboveMovesTheReaderBackWithTheirContent]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3154,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testRowRemovedAboveMovesTheReaderBackWithTheirContent]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3155,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testTheLatestReplyStreamingUnderItsReaderDoesNotMoveThem]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3156,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testTheLatestReplyStreamingUnderItsReaderDoesNotMoveThem]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3157,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testUserReadingHistoryIsNotOverriddenByLayout]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3158,
+      "identity": "-[CovenCaveTests.ChatScrollStateTests testUserReadingHistoryIsNotOverriddenByLayout]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3162,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testCorrectionWaitsUntilGestureAndDecelerationEnd]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3163,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testCorrectionWaitsUntilGestureAndDecelerationEnd]",
+      "outcome": "passed",
+      "detail": " (0.002 seconds)."
+    },
+    {
+      "line": 3164,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testFollowingNeverInterruptsAGesture]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3165,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testFollowingNeverInterruptsAGesture]",
+      "outcome": "passed",
+      "detail": " (0.000 seconds)."
+    },
+    {
+      "line": 3166,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testFollowingReaderBeyondTheEndRecoversWithoutShrinkEvidence]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3167,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testFollowingReaderBeyondTheEndRecoversWithoutShrinkEvidence]",
+      "outcome": "passed",
+      "detail": " (0.129 seconds)."
+    },
+    {
+      "line": 3168,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testInsetsAndToleranceDoNotCreateFalseOutOfRangeSignals]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3169,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testInsetsAndToleranceDoNotCreateFalseOutOfRangeSignals]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3170,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testInvalidTransientGeometryDoesNotErasePendingShrink]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3171,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testInvalidTransientGeometryDoesNotErasePendingShrink]",
+      "outcome": "passed",
+      "detail": " (0.000 seconds)."
+    },
+    {
+      "line": 3172,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testLazyHistoryReestimationNeverPullsReaderToLatest]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3173,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testLazyHistoryReestimationNeverPullsReaderToLatest]",
+      "outcome": "passed",
+      "detail": " (0.000 seconds)."
+    },
+    {
+      "line": 3174,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testLazyHistoryReestimationStillNeverPullsANonFollowingReader]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3175,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testLazyHistoryReestimationStillNeverPullsANonFollowingReader]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3176,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testNewLatestMessageIsAFreshBaselineNotAShrink]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3177,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testNewLatestMessageIsAFreshBaselineNotAShrink]",
+      "outcome": "passed",
+      "detail": " (0.000 seconds)."
+    },
+    {
+      "line": 3178,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testNewLatestRowDoesNotInheritPreviousRowsPendingRecovery]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3179,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testNewLatestRowDoesNotInheritPreviousRowsPendingRecovery]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3180,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testOrdinaryScrollOffsetsDoNotInvalidateSwiftUIStateEveryFrame]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3181,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testOrdinaryScrollOffsetsDoNotInvalidateSwiftUIStateEveryFrame]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3182,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testRemovalWithAValidOffsetDoesNotMoveTheReader]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3183,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testRemovalWithAValidOffsetDoesNotMoveTheReader]",
+      "outcome": "passed",
+      "detail": " (0.003 seconds)."
+    },
+    {
+      "line": 3184,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testRemovedLatestMessageRecoversAnOffsetBeyondTheShorterTranscript]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3185,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testRemovedLatestMessageRecoversAnOffsetBeyondTheShorterTranscript]",
+      "outcome": "passed",
+      "detail": " (0.002 seconds)."
+    },
+    {
+      "line": 3186,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testResumingFollowWhileAlreadyBeyondTheEndRecovers]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3187,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testResumingFollowWhileAlreadyBeyondTheEndRecovers]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3188,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testShortTranscriptOffsetBeyondItsEndRecoversWhileFollowing]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3189,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testShortTranscriptOffsetBeyondItsEndRecoversWhileFollowing]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3190,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testShrinkBeyondNewExtentRecoversWithoutLatestRowGeometry]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3191,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testShrinkBeyondNewExtentRecoversWithoutLatestRowGeometry]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3192,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testStaleInRangeGeometryDoesNotDiscardLatestRowShrink]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3193,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testStaleInRangeGeometryDoesNotDiscardLatestRowShrink]",
+      "outcome": "passed",
+      "detail": " (0.169 seconds)."
+    },
+    {
+      "line": 3194,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testStoppingFollowDropsAFollowOnlyCorrection]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3195,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testStoppingFollowDropsAFollowOnlyCorrection]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3196,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testStreamingGrowthAndOrdinaryOverscrollDoNotTriggerRecovery]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3197,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testStreamingGrowthAndOrdinaryOverscrollDoNotTriggerRecovery]",
+      "outcome": "passed",
+      "detail": " (0.000 seconds)."
+    },
+    {
+      "line": 3198,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testUIKitSelfCorrectionCancelsPendingRecovery]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3199,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testUIKitSelfCorrectionCancelsPendingRecovery]",
+      "outcome": "passed",
+      "detail": " (0.000 seconds)."
+    },
+    {
+      "line": 3200,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testValidHistoryPositionIsNotMovedByShrink]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3201,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testValidHistoryPositionIsNotMovedByShrink]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3202,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testViewportReportingBeforeLatestRowStillRecovers]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3203,
+      "identity": "-[CovenCaveTests.ChatViewportRecoveryTests testViewportReportingBeforeLatestRowStillRecovers]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3207,
+      "identity": "-[CovenCaveTests.MarkdownPaintedReflowTests testWidthReflowKeepsTheLastLinePaintedInsideTheNativeBubble]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3223,
+      "identity": "-[CovenCaveTests.MarkdownPaintedReflowTests testWidthReflowKeepsTheLastLinePaintedInsideTheNativeBubble]",
+      "outcome": "passed",
+      "detail": " (13.932 seconds)."
+    },
+    {
+      "line": 3227,
+      "identity": "-[CovenCaveTests.MarkdownReflowTests testWidthReflowPublishesTheNewNativeHeightWithoutRenderingAgain]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3232,
+      "identity": "-[CovenCaveTests.MarkdownReflowTests testWidthReflowPublishesTheNewNativeHeightWithoutRenderingAgain]",
+      "outcome": "passed",
+      "detail": " (1.624 seconds)."
+    },
+    {
+      "line": 3236,
+      "identity": "-[CovenCaveTests.MessageBubbleAppearanceTests testEquivalentResolvedInputsKeepTheBubbleEqual]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3237,
+      "identity": "-[CovenCaveTests.MessageBubbleAppearanceTests testEquivalentResolvedInputsKeepTheBubbleEqual]",
+      "outcome": "passed",
+      "detail": " (0.015 seconds)."
+    },
+    {
+      "line": 3239,
+      "identity": "-[CovenCaveTests.MessageBubbleAppearanceTests testLightModeInvalidatesTheDarkBubble]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3240,
+      "identity": "-[CovenCaveTests.MessageBubbleAppearanceTests testLightModeInvalidatesTheDarkBubble]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3241,
+      "identity": "-[CovenCaveTests.MessageBubbleAppearanceTests testPaletteChangesInvalidateTheBubble]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3242,
+      "identity": "-[CovenCaveTests.MessageBubbleAppearanceTests testPaletteChangesInvalidateTheBubble]",
+      "outcome": "passed",
+      "detail": " (0.001 seconds)."
+    },
+    {
+      "line": 3255,
+      "identity": "-[CovenCaveUITests.ChatScrollingUITests testDelayedHistoryLoadsAtLatestReply]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3317,
+      "identity": "-[CovenCaveUITests.ChatScrollingUITests testDelayedHistoryLoadsAtLatestReply]",
+      "outcome": "passed",
+      "detail": " (93.798 seconds)."
+    },
+    {
+      "line": 3318,
+      "identity": "-[CovenCaveUITests.ChatScrollingUITests testLatestReplyRemainsStableAfterJump]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3810,
+      "identity": "-[CovenCaveUITests.ChatScrollingUITests testLatestReplyRemainsStableAfterJump]",
+      "outcome": "passed",
+      "detail": " (127.996 seconds)."
+    },
+    {
+      "line": 3811,
+      "identity": "-[CovenCaveUITests.ChatScrollingUITests testLongUnreadThreadOpensAtLatestReply]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    },
+    {
+      "line": 3889,
+      "identity": "-[CovenCaveUITests.ChatScrollingUITests testLongUnreadThreadOpensAtLatestReply]",
+      "outcome": "passed",
+      "detail": " (78.487 seconds)."
+    },
+    {
+      "line": 3890,
+      "identity": "-[CovenCaveUITests.ChatScrollingUITests testScrollToLatestFromOlderContentShowsNewestReply]",
+      "outcome": "started",
+      "detail": " (Iteration 1 of 3)."
+    }
+  ],
+  "inlineAssertions": [],
+  "parserNote": "Search within lines rather than anchoring at start because concurrent WebKit stderr prefixes one test terminal event."
+}

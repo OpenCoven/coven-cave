@@ -1,0 +1,190 @@
+{
+  "startedAt": "2026-11-16T05:28:49.075993+00:00",
+  "wrapperPid": 8878,
+  "head": "6ace503af163914e2d548496d4e960444ae10bb5",
+  "classification": "Focused native GREEN40 unit regression; no server/.next/TCP/UI execution",
+  "phases": [
+    {
+      "phase": "owned-boot",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "boot",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64"
+      ],
+      "budgetSeconds": 60,
+      "startedAt": "2026-11-16T05:28:49.597465+00:00",
+      "pid": 8930,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:28:50.099447+00:00"
+    },
+    {
+      "phase": "owned-bootstatus",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "bootstatus",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "-b"
+      ],
+      "budgetSeconds": 180,
+      "startedAt": "2026-11-16T05:28:50.099897+00:00",
+      "pid": 9008,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:28:51.625437+00:00"
+    },
+    {
+      "phase": "build-for-testing",
+      "argv": [
+        "xcodebuild",
+        "build-for-testing",
+        "-project",
+        "apps/ios/CovenCave/CovenCave.xcodeproj",
+        "-scheme",
+        "CovenCave",
+        "-destination",
+        "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "-derivedDataPath",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-jobs",
+        "2",
+        "CODE_SIGNING_ALLOWED=YES",
+        "CODE_SIGN_IDENTITY=-",
+        "CODE_SIGN_STYLE=Manual",
+        "DEVELOPMENT_TEAM="
+      ],
+      "budgetSeconds": 900,
+      "startedAt": "2026-11-16T05:28:51.625933+00:00",
+      "pid": 9129,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:29:55.169962+00:00"
+    },
+    {
+      "phase": "codesign-CovenCave-app",
+      "argv": [
+        "codesign",
+        "--verify",
+        "--deep",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app"
+      ],
+      "budgetSeconds": 60,
+      "startedAt": "2026-11-16T05:29:55.172772+00:00",
+      "pid": 13772,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:29:55.207430+00:00"
+    },
+    {
+      "phase": "codesign-CovenCaveTests-xctest",
+      "argv": [
+        "codesign",
+        "--verify",
+        "--deep",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app/PlugIns/CovenCaveTests.xctest"
+      ],
+      "budgetSeconds": 60,
+      "startedAt": "2026-11-16T05:29:55.218413+00:00",
+      "pid": 13775,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:29:55.235026+00:00"
+    },
+    {
+      "phase": "install-native-app",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "install",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/Debug-iphonesimulator/CovenCave.app"
+      ],
+      "budgetSeconds": 120,
+      "startedAt": "2026-11-16T05:29:55.251530+00:00",
+      "pid": 13778,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:30:01.172185+00:00"
+    },
+    {
+      "phase": "enumerate-focused",
+      "argv": [
+        "xcodebuild",
+        "test-without-building",
+        "-xctestrun",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/OutputRevocationGreen40.xctestrun",
+        "-destination",
+        "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "-only-testing:CovenCaveTests/ThreadSnapshotStoreTests",
+        "-only-testing:CovenCaveTests/ToolOutputTests",
+        "-enumerate-tests",
+        "-test-enumeration-format",
+        "json",
+        "-test-enumeration-output-path",
+        "/private/tmp/nova6064-native-output-revocation-20261116/green/enumeration.json"
+      ],
+      "budgetSeconds": 120,
+      "startedAt": "2026-11-16T05:30:01.172668+00:00",
+      "pid": 14410,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:30:07.355431+00:00"
+    },
+    {
+      "phase": "focused-green40",
+      "argv": [
+        "xcodebuild",
+        "test-without-building",
+        "-xctestrun",
+        "/private/tmp/nova6064-native-output-revocation-20261116/derived/Build/Products/OutputRevocationGreen40.xctestrun",
+        "-destination",
+        "platform=iOS Simulator,id=64878DF0-DB73-45A9-8D68-3F22393F7D64",
+        "-only-testing:CovenCaveTests/ThreadSnapshotStoreTests",
+        "-only-testing:CovenCaveTests/ToolOutputTests",
+        "-resultBundlePath",
+        "/private/tmp/nova6064-native-output-revocation-20261116/green/focused-green40.xcresult",
+        "-parallel-testing-enabled",
+        "NO",
+        "-enablePerformanceTestsDiagnostics",
+        "NO",
+        "-test-timeouts-enabled",
+        "YES",
+        "-default-test-execution-time-allowance",
+        "60",
+        "-maximum-test-execution-time-allowance",
+        "180"
+      ],
+      "budgetSeconds": 600,
+      "startedAt": "2026-11-16T05:30:07.357293+00:00",
+      "pid": 15146,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:30:15.639526+00:00"
+    },
+    {
+      "phase": "owned-shutdown",
+      "argv": [
+        "xcrun",
+        "simctl",
+        "shutdown",
+        "64878DF0-DB73-45A9-8D68-3F22393F7D64"
+      ],
+      "budgetSeconds": 60,
+      "startedAt": "2026-11-16T05:30:15.643783+00:00",
+      "pid": 15484,
+      "exitCode": 0,
+      "finishedAt": "2026-11-16T05:30:18.804807+00:00"
+    }
+  ],
+  "expectedTests": 40,
+  "testExit": 0,
+  "shutdownExit": 0,
+  "ownedSimulatorShutdown": true,
+  "changedDuringRun": [],
+  "sourceUnchanged": true,
+  "headAfter": "6ace503af163914e2d548496d4e960444ae10bb5",
+  "finishedAt": "2026-11-16T05:30:19.810376+00:00",
+  "passed": true
+}

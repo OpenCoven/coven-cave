@@ -1,0 +1,125 @@
+{
+  "observedAt": "2026-11-14T06:05:48.754669+00:00",
+  "nativeSourceIdentity": "native-source-binary-identity.json",
+  "red": {
+    "codecFoldRestorationAndLoadAdmission": {
+      "log": "red-unit.log",
+      "bundle": "red-unit.xcresult",
+      "executed": 20,
+      "expectedAssertionsFailed": 11
+    },
+    "snapshotReplayAndExpandedRow": {
+      "log": "red-ui-snapshot.log",
+      "bundle": "red-ui-snapshot.xcresult",
+      "expectedFailingCases": 2
+    }
+  },
+  "green": {
+    "focusedUnits": {
+      "log": "green-unit-ui.log",
+      "bundle": "green-unit-ui.xcresult",
+      "executed": 21,
+      "failures": 0
+    },
+    "fourCaseExpandedNativeUI": {
+      "log": "green-unit-ui.log",
+      "bundle": "green-unit-ui.xcresult",
+      "executed": 1,
+      "cases": [
+        "input-only",
+        "output-only",
+        "both",
+        "legacy-absent"
+      ],
+      "failures": 0
+    },
+    "fullNativeUnit": {
+      "log": "full-native-unit.log",
+      "bundle": "full-native-unit.xcresult",
+      "skipped": 1,
+      "failures": 0,
+      "skip": "ActivityTransportTests.testRealHTTPStreamReconnectHistoryAndAuthorizedOutput requires separate built-server TCP harness",
+      "total": 1225,
+      "passed": 1224
+    },
+    "realServerHistoricalNativeUI": {
+      "log": "real-server-history-retry.log",
+      "bundle": "real-server-history-retry.xcresult",
+      "executed": 1,
+      "failures": 0,
+      "serverOrigin": "http://127.0.0.1:50859",
+      "serverBuildId": "ETjYWVIu_WpnqqZih6ypK",
+      "sessionId": "history6064-be092584-4070-4d85-9522-5be10c097ab8",
+      "storedRawHash": "107f9a934f79dd1beef5da9635a58acffc808a82c8f84576c50c15801eb26176",
+      "flow": "Real CaveClient conversation GET -> ChatThread.reload -> ActivityFold.steps -> expanded SwiftUI row -> actual lazy-output GET",
+      "providerRequests": 0
+    },
+    "realBuiltServerTCPTransport": {
+      "launcherLog": "tcp-transport-final-launcher.log",
+      "result": "tcp-transport-final/result.json",
+      "bundle": "tcp-transport-final/native-transport.xcresult",
+      "total": 2,
+      "passed": 2,
+      "skipped": 0,
+      "provider": "Controlled local synthetic Hermes API",
+      "providerRequests": 1,
+      "toolInvocations": 1,
+      "buildId": "v7RNAU7Q-W3yoMfJg7cOX",
+      "sourceFingerprint": "52fb9e3135b7c7ea8b00a8b563e9c3c326159914fe2a4329c697dc5fea36d1dd",
+      "sourceUnchanged": true,
+      "serverStopped": true,
+      "providerStopped": true,
+      "daemonStopped": true,
+      "noDaemonState": true,
+      "fixtureRootRemoved": true
+    }
+  },
+  "additionalBoundsRegression": {
+    "log": "native-bounds-regression.log",
+    "bundle": "native-bounds-regression.xcresult",
+    "passed": [
+      "denied output safe refusal",
+      "deep malformed envelope safe refusal",
+      "oversized output and oversized envelope safe refusal"
+    ],
+    "firstFailure": "At-limit test failed before product assertions: no Agent activity fixture chip after launch; cause unproven. Original failed run preserved; unchanged-source retry subsequently passed (see atLimitRetry).",
+    "atLimitRetry": {
+      "log": "native-at-limit-retry.log",
+      "bundle": "native-at-limit-retry.xcresult",
+      "executed": 1,
+      "failures": 0,
+      "sourceChangedSinceFirstFailure": false,
+      "verified": [
+        "exact accepted UTF-8 limit",
+        "literal deep data and markup",
+        "bounded selectable viewport",
+        "painted glyphs after inner scroll",
+        "dismissal to owning tool row"
+      ]
+    }
+  },
+  "realHistoryFirstAttempt": {
+    "log": "real-server-history.log",
+    "bundle": "real-server-history.xcresult",
+    "outcome": "interrupted before any XCTest test case started",
+    "runnerPid": 26695,
+    "xcodebuildPid": 24264,
+    "deviceObservedAfterInterruption": "Shutdown",
+    "shutdownCommandReceipt": "owned-simulator-shutdown.log",
+    "recovery": "Booted only the owned simulator using simctl boot and bootstatus; no shared services or foreign surfaces touched",
+    "retry": "real-server-history-retry.log"
+  },
+  "limitations": [
+    "Simulator functional evidence is not physical-device, human VoiceOver, managed pairing, release, or TestFlight acceptance",
+    "No speculative historical-unknown-to-live-terminal flag clearing added; supported production path not established by review"
+  ],
+  "releaseProfileBuild": {
+    "identity": "performance-release-identity.json",
+    "log": "performance-release-build.log",
+    "buildPassed": true,
+    "codesignVerifyExitCode": 0,
+    "appPath": "/private/tmp/nova6064-native-withholding-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app",
+    "appLaunched": false,
+    "performanceCaptured": false
+  }
+}

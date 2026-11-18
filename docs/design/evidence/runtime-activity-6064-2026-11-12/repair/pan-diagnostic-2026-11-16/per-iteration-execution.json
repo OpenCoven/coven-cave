@@ -1,0 +1,61 @@
+{
+  "observedAt": "2026-11-16T04:19:46.501963+00:00",
+  "outcomes": [
+    {
+      "outcome": "passed",
+      "seconds": 72.569
+    },
+    {
+      "outcome": "passed",
+      "seconds": 74.964
+    },
+    {
+      "outcome": "passed",
+      "seconds": 77.388
+    }
+  ],
+  "completedRuns": 3,
+  "printedTraces": [
+    {
+      "iteration": 1,
+      "trace": "<retained-native-root>/iteration-1-printed-trace.log",
+      "bytes": 231219,
+      "sha256": "96a7bcc780eda33615948055da714e6dd047ebe93451e30246e59538342559e7",
+      "originEpoch": 1794802392.340056,
+      "originUptime": 442864.80551070836,
+      "panProbeLines": 162,
+      "panTargetSamples": 62,
+      "pollSamples": 99,
+      "limitMarkers": [],
+      "detachMarkers": []
+    },
+    {
+      "iteration": 2,
+      "trace": "<retained-native-root>/iteration-2-printed-trace.log",
+      "bytes": 258067,
+      "sha256": "384c57cf73bc223d339f77807050866a5f10699e1448c332f11ed64d4f9036c9",
+      "originEpoch": 1794802461.613847,
+      "originUptime": 442934.07891800004,
+      "panProbeLines": 172,
+      "panTargetSamples": 60,
+      "pollSamples": 111,
+      "limitMarkers": [],
+      "detachMarkers": []
+    },
+    {
+      "iteration": 3,
+      "trace": "<retained-native-root>/iteration-3-printed-trace.log",
+      "bytes": 234388,
+      "sha256": "5550c1dd97e1d413d2f0c21e2040b58504060a3722c5d2987d81c8c94722d90f",
+      "originEpoch": 1794802536.6597838,
+      "originUptime": 443009.1244401667,
+      "panProbeLines": 161,
+      "panTargetSamples": 54,
+      "pollSamples": 106,
+      "limitMarkers": [],
+      "detachMarkers": []
+    }
+  ],
+  "unavailableTraceLines": [],
+  "assertionErrors": []
+}

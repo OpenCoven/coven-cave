@@ -1,0 +1,212 @@
+{
+  "source": "native-rich120-current-metrics.json",
+  "receipt": "current-performance.xcresult",
+  "measurement": "App recorder cumulative count/latest/max, not XCTest wall time; offline Release simulator; no scroll-frame/hitch metric, WebKit-process footprint or percentile distribution",
+  "phases": [
+    {
+      "phase": "initial capture after opening rich thread",
+      "index": 0,
+      "unixSeconds": 1794522246.994853,
+      "activityCount": 120,
+      "appFootprintMiB": 214.675,
+      "attachedWebViews": 10,
+      "rendererCounters": {
+        "markdown.webview.created": 14,
+        "markdown.webview.failed": 0,
+        "markdown.webview.first-render": 11,
+        "markdown.webview.invalidated": 4
+      },
+      "appSpans": {
+        "chat.first-rich-render": {
+          "count": 11,
+          "latestMilliseconds": 5594.290791,
+          "maximumMilliseconds": 5594.290791
+        },
+        "chat.list-projection": {
+          "count": 4,
+          "latestMilliseconds": 1.811167,
+          "maximumMilliseconds": 12.960417
+        },
+        "drawer.open": {
+          "count": 1,
+          "latestMilliseconds": 632.547875,
+          "maximumMilliseconds": 632.547875
+        },
+        "markdown.render.settled": {
+          "count": 11,
+          "latestMilliseconds": 105.050292,
+          "maximumMilliseconds": 266.430875
+        },
+        "markdown.webview.init": {
+          "count": 14,
+          "latestMilliseconds": 5250.188667,
+          "maximumMilliseconds": 5250.188667
+        }
+      }
+    },
+    {
+      "phase": "rendered-tail capture",
+      "index": 1,
+      "unixSeconds": 1794522251.1283941,
+      "activityCount": 120,
+      "appFootprintMiB": 213.753,
+      "attachedWebViews": 10,
+      "rendererCounters": {
+        "markdown.webview.created": 14,
+        "markdown.webview.failed": 0,
+        "markdown.webview.first-render": 11,
+        "markdown.webview.invalidated": 4
+      },
+      "appSpans": {
+        "chat.first-rich-render": {
+          "count": 11,
+          "latestMilliseconds": 5594.290791,
+          "maximumMilliseconds": 5594.290791
+        },
+        "chat.list-projection": {
+          "count": 4,
+          "latestMilliseconds": 1.811167,
+          "maximumMilliseconds": 12.960417
+        },
+        "drawer.open": {
+          "count": 1,
+          "latestMilliseconds": 632.547875,
+          "maximumMilliseconds": 632.547875
+        },
+        "markdown.render.settled": {
+          "count": 11,
+          "latestMilliseconds": 105.050292,
+          "maximumMilliseconds": 266.430875
+        },
+        "markdown.webview.init": {
+          "count": 14,
+          "latestMilliseconds": 5250.188667,
+          "maximumMilliseconds": 5250.188667
+        }
+      }
+    },
+    {
+      "phase": "expanded last tool",
+      "index": 2,
+      "unixSeconds": 1794522258.745078,
+      "activityCount": 120,
+      "appFootprintMiB": 214.05,
+      "attachedWebViews": 8,
+      "rendererCounters": {
+        "markdown.webview.created": 14,
+        "markdown.webview.failed": 0,
+        "markdown.webview.first-render": 11,
+        "markdown.webview.invalidated": 6
+      },
+      "appSpans": {
+        "chat.first-rich-render": {
+          "count": 11,
+          "latestMilliseconds": 5594.290791,
+          "maximumMilliseconds": 5594.290791
+        },
+        "chat.list-projection": {
+          "count": 4,
+          "latestMilliseconds": 1.811167,
+          "maximumMilliseconds": 12.960417
+        },
+        "drawer.open": {
+          "count": 1,
+          "latestMilliseconds": 632.547875,
+          "maximumMilliseconds": 632.547875
+        },
+        "markdown.render.settled": {
+          "count": 11,
+          "latestMilliseconds": 105.050292,
+          "maximumMilliseconds": 266.430875
+        },
+        "markdown.webview.init": {
+          "count": 14,
+          "latestMilliseconds": 5250.188667,
+          "maximumMilliseconds": 5250.188667
+        }
+      }
+    },
+    {
+      "phase": "different fixture thread",
+      "index": 3,
+      "unixSeconds": 1794522271.39498,
+      "activityCount": 0,
+      "appFootprintMiB": 165.659,
+      "attachedWebViews": 1,
+      "rendererCounters": {
+        "markdown.webview.created": 17,
+        "markdown.webview.failed": 0,
+        "markdown.webview.first-render": 13,
+        "markdown.webview.invalidated": 16
+      },
+      "appSpans": {
+        "chat.first-rich-render": {
+          "count": 13,
+          "latestMilliseconds": 2751.793834,
+          "maximumMilliseconds": 5594.290791
+        },
+        "chat.list-projection": {
+          "count": 6,
+          "latestMilliseconds": 1.47925,
+          "maximumMilliseconds": 12.960417
+        },
+        "drawer.open": {
+          "count": 2,
+          "latestMilliseconds": 682.57025,
+          "maximumMilliseconds": 682.57025
+        },
+        "markdown.render.settled": {
+          "count": 13,
+          "latestMilliseconds": 444.712667,
+          "maximumMilliseconds": 444.712667
+        },
+        "markdown.webview.init": {
+          "count": 17,
+          "latestMilliseconds": 2255.092,
+          "maximumMilliseconds": 5250.188667
+        }
+      }
+    },
+    {
+      "phase": "reopened rich thread with expansion retained",
+      "index": 4,
+      "unixSeconds": 1794522286.4284148,
+      "activityCount": 120,
+      "appFootprintMiB": 205.956,
+      "attachedWebViews": 8,
+      "rendererCounters": {
+        "markdown.webview.created": 26,
+        "markdown.webview.failed": 0,
+        "markdown.webview.first-render": 22,
+        "markdown.webview.invalidated": 18
+      },
+      "appSpans": {
+        "chat.first-rich-render": {
+          "count": 22,
+          "latestMilliseconds": 2713.232375,
+          "maximumMilliseconds": 5594.290791
+        },
+        "chat.list-projection": {
+          "count": 8,
+          "latestMilliseconds": 1.595166,
+          "maximumMilliseconds": 12.960417
+        },
+        "drawer.open": {
+          "count": 3,
+          "latestMilliseconds": 632.486,
+          "maximumMilliseconds": 682.57025
+        },
+        "markdown.render.settled": {
+          "count": 22,
+          "latestMilliseconds": 97.748917,
+          "maximumMilliseconds": 444.712667
+        },
+        "markdown.webview.init": {
+          "count": 26,
+          "latestMilliseconds": 2456.098917,
+          "maximumMilliseconds": 5250.188667
+        }
+      }
+    }
+  ]
+}

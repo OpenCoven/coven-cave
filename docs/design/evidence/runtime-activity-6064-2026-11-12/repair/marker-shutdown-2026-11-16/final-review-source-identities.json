@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-16T10:23:21.148458+00:00",
+  "worktree": "<worktree>",
+  "baseHead": "0557dff29063aa64311352fcd882cb1d3e5fe7eb",
+  "uncommittedFilesSHA256": {
+    "scripts/ios-scroll-marker.py": "eec8e2f33cf1195e7db6f5692e28660ea713c77070e16177af9037dbfb57b817",
+    "scripts/ios-native-command.test.mjs": "229293fd9e9eb657525e3b9a513725d3f94c642a3a18147b6e5649e962ab3625",
+    ".github/workflows/ios-transcript-regression.yml": "cd6f642ffb9ceffdda3c4047cec9308f112e2b72f8b47cea5a156551528f0668",
+    "docs/superpowers/specs/2026-11-16-hosted-pan-diagnostic-design.md": "6cc7617d4aade57029989afaa472c257087e2a8b342a5f891ef237ddc4f2df6e",
+    "docs/superpowers/plans/2026-11-16-hosted-pan-diagnostic.md": "8a878e896f559bb60a9a0c071756678bdd00daa17a4a7c023f33f8b995b04f8e"
+  },
+  "originalBounceUITestSHA256": "bf2c8ca1e8968cad2e4e11651aa9c881371f97365ffdf3baff0a704d62556211",
+  "scope": "Five concrete files; no Swift/app/UI-test change. Positive real-channel proof and contract RED8pass1fail thenGREEN9pass retained.",
+  "followup": "Important path-redirection finding reproduced:internal store returned0when2required. Now data resolution must equal canonical declared root/UUID/data and store resolution must equal exact data/var/db/diagnostics. Both internalstore andmatchingUUIDdata redirects rejected by real workflow fixtures."
+}

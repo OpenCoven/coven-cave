@@ -1,0 +1,29 @@
+{
+  "observedAt": "2026-11-14T06:05:48.754669+00:00",
+  "head": "d0e436bdb571133318705c833ff6b30e63a4b9ea",
+  "scheme": "CovenCavePerformance",
+  "configuration": "Release",
+  "destination": "64878DF0-DB73-45A9-8D68-3F22393F7D64",
+  "appPath": "/private/tmp/nova6064-native-withholding-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app",
+  "binarySHA256": "e81a1006fc106bc590d24fc0e7c121881cebac98bf981590ede298979c6a6abc",
+  "binaryUUIDs": "UUID: 653C8B8E-7871-3BFF-AF33-9414B72A3F84 (x86_64) /private/tmp/nova6064-native-withholding-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app/CovenCave\nUUID: 7597DCB7-1B77-384F-8539-EEF12CB1E723 (arm64) /private/tmp/nova6064-native-withholding-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app/CovenCave",
+  "binaryArchitectures": "x86_64 arm64",
+  "codesignVerifyExitCode": 0,
+  "codesignVerifyOutput": "",
+  "codesign": "Executable=/private/tmp/nova6064-native-withholding-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app/CovenCave\nIdentifier=ai.opencoven.cave\nFormat=app bundle with Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 size=37322 flags=0x2(adhoc) hashes=1156+7 location=embedded\nSignature=adhoc\nInfo.plist entries=40\nTeamIdentifier=not set\nSealed Resources version=2 rules=10 files=20\nInternal requirements count=0 size=12\nTotal signatures=1\nChosen signature=1\n",
+  "entitlements": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"https://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict></dict></plist>\nExecutable=/private/tmp/nova6064-native-withholding-20261114/performance-release-derived-data/Build/Products/Release-iphonesimulator/CovenCave.app/CovenCave\nwarning: Specifying ':' in the path is deprecated and will not work in a future release\n",
+  "nativeSourceSHA256": {
+    "apps/ios/CovenCave/CovenCave/Models/AgentActivity.swift": "3f0710b3c985dab4eff702f69d539949cbee977c2da1817460df7a6a2a20730c",
+    "apps/ios/CovenCave/CovenCave/Models/Models.swift": "650321451fb8c301021f8b495ddcd26ee1693224e13e6a9c82faef830a4abc0b",
+    "apps/ios/CovenCave/CovenCave/State/AppModel.swift": "8e3552c18c66cc026dce506112c49950d5c3be093c8709be845be9bea04dca73",
+    "apps/ios/CovenCave/CovenCave/Views/AgentActivityView.swift": "c7da0dc3e31e3d1fa4c2f13eb8a009185fc2a15c3b541e25d212367658de20cf",
+    "apps/ios/CovenCave/CovenCave/Views/ToolOutputDetailView.swift": "870b519a5c8a0c87541fa4ec9a0fbd184235ca201d7eba9b42556eeb74d16f95",
+    "apps/ios/CovenCave/CovenCaveTests/ToolOutputTests.swift": "f9855dffbfa1dc7b244ff823d7611eab8526f4529ccd88bc97ec912ac41d5648",
+    "apps/ios/CovenCave/CovenCaveUITests/AgentActivityUITests.swift": "6abd8b0fb51038213d6d45cc1b5bc0e30edab1dccbbf13dcdebbfb0444e230a4"
+  },
+  "nativeSourcesUnchangedSinceFunctionalAcceptance": true,
+  "buildLog": "performance-release-build.log",
+  "buildOnly": true,
+  "appLaunched": false,
+  "performanceCaptured": false
+}
