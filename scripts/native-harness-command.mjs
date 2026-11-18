@@ -12,6 +12,14 @@ const shutdownGraceMs = 5000;
 const terminalObservationMs = 1000;
 
 async function groupEmpty(groupId, remainingMs, env) {
+  // Signal zero probes the anchored process group without delivering a signal.
+  // ESRCH proves absence. A present group still needs the zombie-aware census.
+  try {
+    process.kill(-groupId, 0);
+  } catch (error) {
+    if (error.code === 'ESRCH') return true;
+    throw error;
+  }
   const { stdout } = await execute('python3', [anchor, '--inspect-group', String(groupId)],
     { timeout: Math.max(1, Math.floor(remainingMs)), maxBuffer: 8 * 1024 * 1024, env });
   const members = JSON.parse(stdout);

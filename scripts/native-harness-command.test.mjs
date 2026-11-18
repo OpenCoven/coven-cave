@@ -255,8 +255,7 @@ else:
   assert.equal(code, 0, error);
 });
 
-test('terminal inspection failure does not consume unused command time', async (t) => {
-  const options = await fixture(t);
+async function disableTerminalInspector(options) {
   const python = path.join(options.root, 'python3');
   await writeFile(python, [
     '#!/bin/sh',
@@ -265,6 +264,22 @@ test('terminal inspection failure does not consume unused command time', async (
     '',
   ].join('\n'), { mode: 0o700 });
   options.env = { ...process.env, ORIGINAL_PATH: process.env.PATH, PATH: options.root + path.delimiter + process.env.PATH };
+}
+
+test('kernel-confirmed group absence survives an unavailable terminal inspector', async (t) => {
+  const options = await fixture(t);
+  await disableTerminalInspector(options);
+  options.args = ['-e', 'process.exit(0)'];
+  const receipt = await runNativeCommand(options);
+  assert.equal(receipt.cleanupComplete, true);
+  assert.equal(receipt.ownerAcknowledged, true);
+});
+
+test('terminal inspection failure does not consume unused command time', async (t) => {
+  const options = await fixture(t);
+  await disableTerminalInspector(options);
+  const kill = process.kill.bind(process);
+  t.mock.method(process, 'kill', (pid, signal) => pid < -1 && signal === 0 ? true : kill(pid, signal));
   options.timeoutMs = 3000;
   options.args = ['-e', 'process.exit(0)'];
   const receipt = await failedRun(options);
