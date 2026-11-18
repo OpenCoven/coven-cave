@@ -183,7 +183,9 @@ struct ConnectionView: View {
                 await runDevicePairing(operation)
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase != .active { accessOperation = nil }
+                // Local authentication can make the scene inactive while confirming re-pairing.
+                // Backgrounding the app or leaving this view still cancels the operation.
+                if phase == .background { accessOperation = nil }
             }
             .onDisappear { accessOperation = nil }
             .onChange(of: devicePairing.message) { _, message in
