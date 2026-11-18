@@ -797,6 +797,7 @@ test("completed setup leaves Home after conversation use and stays available in 
   await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
   await expect(nudge).toHaveCount(0);
   await page.goto("/settings");
+  await page.locator(".settings-shell__sidebar").getByRole("button", { name: "General", exact: true }).click();
   await page.getByRole("link", { name: "Open assistant and project setup" }).click();
   await expect(page.getByRole("dialog", { name: "Get started with Cave" })).toBeVisible();
 });
