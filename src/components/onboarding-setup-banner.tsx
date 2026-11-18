@@ -8,6 +8,7 @@ import {
   useOnboardingBootstrapStatus,
 } from "@/lib/onboarding-bootstrap-status";
 import {
+  CHAT_REPLY_COMPLETED_EVENT,
   SETUP_BACKGROUNDED_EVENT,
   clearSetupBackgrounded,
   consumeSetupBackgrounded,
@@ -42,6 +43,7 @@ export function SetupProgressBannerTrigger() {
   const { openSetup, setupHost } = useSetupOpener("banner");
   const [phase, setPhase] = useState<Phase>("idle");
   const phaseRef = useRef<Phase>("idle");
+  const [conversationUsed, setConversationUsed] = useState(false);
   const announcedRef = useRef("");
 
   useEffect(() => {
@@ -56,12 +58,15 @@ export function SetupProgressBannerTrigger() {
 
   useEffect(() => {
     if (consumeSetupBackgrounded()) activate();
+    const onReply = () => setConversationUsed(true);
+    window.addEventListener(CHAT_REPLY_COMPLETED_EVENT, onReply);
     const onBackgrounded = () => {
       consumeSetupBackgrounded();
       activate();
     };
     window.addEventListener(SETUP_BACKGROUNDED_EVENT, onBackgrounded);
     return () => {
+      window.removeEventListener(CHAT_REPLY_COMPLETED_EVENT, onReply);
       window.removeEventListener(SETUP_BACKGROUNDED_EVENT, onBackgrounded);
       // A route change swaps shells (Workspace ↔ /settings). Re-arm so the
       // next trigger resumes the same run instead of losing it.
@@ -134,6 +139,12 @@ export function SetupProgressBannerTrigger() {
       return;
     }
     if (state.complete) {
+      if (conversationUsed) {
+        dismissBanner(SETUP_BANNER_ID);
+        clearSetupBackgrounded();
+        setPhase("idle");
+        return;
+      }
       pushBanner({ id: SETUP_BANNER_ID, severity: "info", title: "Cave is set up." });
       announceOnce("complete", "Cave is set up.");
       clearSetupBackgrounded();
@@ -144,7 +155,7 @@ export function SetupProgressBannerTrigger() {
     dismissBanner(SETUP_BANNER_ID);
     clearSetupBackgrounded();
     setPhase("idle");
-  }, [announceOnce, dialogOpen, dismissBanner, openSetup, phase, pushBanner, state]);
+  }, [announceOnce, conversationUsed, dialogOpen, dismissBanner, openSetup, phase, pushBanner, state]);
 
   return setupHost;
 }

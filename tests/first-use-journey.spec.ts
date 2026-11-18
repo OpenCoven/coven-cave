@@ -76,7 +76,7 @@ test("short onboarding resumes and opens an editable real-chat draft without aut
   await page.screenshot({ animations: "disabled", path: testInfo.outputPath("assistant-desktop.png") });
   await guide.getByRole("button", { name: /^Nova/ }).click();
   await guide.getByRole("button", { name: "Choose a project", exact: true }).click();
-  await guide.getByRole("button", { name: "Explore first", exact: true }).click();
+  await guide.getByRole("button", { name: "Close", exact: true }).click();
   expect(f.getState().step).toBe("project");
   await page.reload();
   await page.getByRole("button", { name: "Continue setup", exact: true }).click();
@@ -267,7 +267,7 @@ test("opening the guide at Home send preserves the draft and attachments", async
   const guide = page.getByRole("dialog", { name: "Get started with Cave" });
   await expect(guide).toBeVisible();
   expect(f.sends).toEqual([]);
-  await guide.getByRole("button", { name: "Explore first", exact: true }).click();
+  await guide.getByRole("button", { name: "Close", exact: true }).click();
   await expect(home.getByRole("textbox", { name: "Chat message" })).toHaveValue("Keep this outcome and its evidence");
   await expect(home).toContainText("evidence.txt");
 });
@@ -478,7 +478,7 @@ test("Enhance prompt and Enhance tasks open the introduction without calling a m
   await page.getByRole("menuitem", { name: "Enhance prompt", exact: true }).click();
   const guide = page.getByRole("dialog", { name: "Get started with Cave" });
   await expect(guide).toBeVisible();
-  await guide.getByRole("button", { name: "Explore first", exact: true }).click();
+  await guide.getByRole("button", { name: "Close", exact: true }).click();
   await expect(input).toHaveValue("Keep my original outcome");
   expect(f.sends).toEqual([]);
   if ((page.viewportSize()?.width ?? 0) >= 768) {
@@ -544,7 +544,7 @@ test("an existing conversation keeps its different actor, project, mode and draf
   await input.fill("Keep the existing conversation context");
   await chat.getByRole("button", { name: (page.viewportSize()?.width ?? 0) < 768 ? "Tools" : "Session options", exact: true }).click();
   await page.getByRole("menuitem", { name: "Review default context", exact: true }).click();
-  await page.getByRole("dialog", { name: "Get started with Cave" }).getByRole("button", { name: "Explore first", exact: true }).click();
+  await page.getByRole("dialog", { name: "Get started with Cave" }).getByRole("button", { name: "Close", exact: true }).click();
   await expect(input).toHaveValue("Keep the existing conversation context");
   await page.evaluate(() => { localStorage.setItem("cave:chat-composer-controls:v1", JSON.stringify({ permissionMode: "read" })); window.dispatchEvent(new Event("cave:chat-composer-prefs-changed")); });
   await input.press("Enter");
@@ -650,7 +650,7 @@ test("Home retains its draft and files when a non-acting default-scope member lo
   f.revokeMember("sage"); // Registry/roster remain cached; Nova retains Read access.
   await home.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Get started with Cave" })).toBeVisible();
-  await page.getByRole("dialog", { name: "Get started with Cave" }).getByRole("button", { name: "Explore first", exact: true }).click();
+  await page.getByRole("dialog", { name: "Get started with Cave" }).getByRole("button", { name: "Close", exact: true }).click();
   await expect(input).toHaveValue("Keep the entire saved scope before starting");
   await expect(home).toContainText("scope-evidence.txt");
   expect(f.sends).toEqual([]);
@@ -778,8 +778,26 @@ test("a completed bound chat keeps its transcript space and opens guidance from 
   await expect(guide).toBeVisible();
   await expect(guide).toHaveCSS("opacity", "1");
   await page.screenshot({ animations: "disabled", path: `artifacts/issue-6458/approval-guidance-open-${test.info().project.name}.png` });
-  await guide.getByRole("button", { name: "Explore first", exact: true }).click();
+  await guide.getByRole("button", { name: "Close", exact: true }).click();
   await expect(input).toHaveValue("Retain this bound draft while checking guidance");
   await expect(guidanceMenu).toBeFocused();
   expect(f.sends).toEqual([]);
+});
+
+test("completed setup leaves Home after conversation use and stays available in Settings", async ({ page }) => {
+  const selected = advanceFirstUse(createQuickStartState(), { kind: "choose-assistant", familiarId: "nova" });
+  const state = advanceFirstUse(selected, { kind: "finish-setup", defaults: { projectId: PROJECT.id, familiarIds: ["nova"], actingFamiliarId: "nova" }, permissionMode: "read" });
+  await fixture(page, state);
+  await page.goto("/?mode=home");
+  const nudge = page.getByRole("complementary", { name: "Getting started", exact: true });
+  await expect(nudge).toContainText("Your workspace is ready.");
+  await page.evaluate(() => window.dispatchEvent(new Event("cave:chat-reply-completed")));
+  await expect(nudge).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
+  await expect(nudge).toHaveCount(0);
+  await page.goto("/settings");
+  await page.locator(".settings-shell__sidebar").getByRole("button", { name: "General", exact: true }).click();
+  await page.getByRole("link", { name: "Open assistant and project setup" }).click();
+  await expect(page.getByRole("dialog", { name: "Get started with Cave" })).toBeVisible();
 });
