@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { advanceFirstUse, createFirstUseState, parseFirstUseState, resolveFirstUseContext } from "./first-use.ts";
+import { advanceFirstUse, createFirstUseState, createQuickStartState, parseFirstUseState, resolveFirstUseContext } from "./first-use.ts";
 
 const defaults = { projectId: "project-a", familiarIds: ["nova", "sage"], actingFamiliarId: "nova" };
 const snapshot = {
@@ -9,6 +9,41 @@ const snapshot = {
   eligibleFamiliarIds: ["nova", "sage"],
   runtimeAvailable: true,
 };
+
+test("short setup reaches real work without inventing practice or running a model", () => {
+  const fresh = createQuickStartState();
+  assert.equal(fresh.version, 2);
+  assert.equal(fresh.step, "assistant");
+  const chosen = advanceFirstUse(fresh, { kind: "choose-assistant", familiarId: "nova" });
+  assert.equal(chosen.step, "project");
+  assert.equal(chosen.setupFamiliarId, "nova");
+  const complete = advanceFirstUse(chosen, { kind: "finish-setup", defaults, permissionMode: "read" }, "2026-11-13T00:00:00.000Z");
+  assert.equal(complete.step, "complete");
+  assert.equal(complete.completedAt, "2026-11-13T00:00:00.000Z");
+  assert.deepEqual(complete.practice, fresh.practice, "setup is not verified fictional practice");
+  assert.deepEqual(parseFirstUseState(JSON.parse(JSON.stringify(complete))).defaults, defaults);
+});
+
+test("short setup requires an explicit access choice and the selected actor", () => {
+  const chosen = advanceFirstUse(createQuickStartState(), { kind: "choose-assistant", familiarId: "nova" });
+  assert.throws(() => advanceFirstUse(chosen, { kind: "finish-setup", defaults } as never), /access/i);
+  assert.throws(() => advanceFirstUse(chosen, { kind: "finish-setup", defaults: { ...defaults, actingFamiliarId: "sage" }, permissionMode: "full" }), /familiar|actor/i);
+  assert.throws(() => parseFirstUseState({ ...chosen, step: "complete", completedAt: "2026-11-13T00:00:00Z" }));
+  assert.equal(advanceFirstUse(chosen, { kind: "finish-setup", defaults, permissionMode: "full" }).permissionMode, "full");
+});
+
+test("interrupted legacy progress retains context and practice history when entering short setup", () => {
+  let legacy = advanceFirstUse(createFirstUseState(), { kind: "outcome", outcome: "plan" });
+  legacy = advanceFirstUse(legacy, { kind: "context", defaults });
+  legacy = advanceFirstUse(legacy, { kind: "review-access" });
+  legacy = advanceFirstUse(legacy, { kind: "hold-approval" });
+  const short = advanceFirstUse(legacy, { kind: "choose-assistant", familiarId: "nova" });
+  assert.equal(short.version, 2);
+  assert.deepEqual(short.defaults, defaults);
+  assert.deepEqual(short.practice, legacy.practice);
+  assert.equal(short.completedAt, null);
+  assert.equal(short.step, "project");
+});
 
 test("fresh and existing installations require choices beyond installation or dismissal", () => {
   const state = createFirstUseState();

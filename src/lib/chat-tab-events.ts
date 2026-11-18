@@ -2,7 +2,8 @@
 export const CHAT_OPEN_PROJECTS_EVENT = "cave:chat-open-projects";
 
 /** Window event that asks the Projects tab to expand and scroll a specific
- *  project into view. `detail.root` is the project's (un-normalized) root. */
+ *  project into view. `detail.root` is the project's (un-normalized) root;
+ *  `detail.familiarId`, when present, is whose access to show for it. */
 export const CHAT_FOCUS_PROJECT_EVENT = "cave:chat-focus-project";
 
 /** Window event that asks the chat surface to select its Group Chat (coven) tab.
@@ -150,11 +151,21 @@ export function consumeProjectsTabPending(): boolean {
 // A retained latch covers both: set synchronously before the mode flips, and
 // consumed once ProjectsView actually has rows to scroll to.
 let pendingProjectFocusRoot: string | null = null;
-export function markProjectFocusPending(root: string): void {
+// Whose access the request is about, when it names one: a refused chat can
+// belong to a different familiar from the one the sidebar has active (#6451).
+let pendingProjectFocusFamiliarId: string | null = null;
+export function markProjectFocusPending(root: string, familiarId?: string | null): void {
   pendingProjectFocusRoot = root.trim() || null;
+  pendingProjectFocusFamiliarId = pendingProjectFocusRoot ? familiarId?.trim() || null : null;
 }
 export function consumeProjectFocusPending(): string | null {
-  const pending = pendingProjectFocusRoot;
+  return consumeProjectFocusRequest()?.root ?? null;
+}
+/** The pending root together with the familiar it was asked for, if any. */
+export function consumeProjectFocusRequest(): { root: string; familiarId: string | null } | null {
+  const root = pendingProjectFocusRoot;
+  const familiarId = pendingProjectFocusFamiliarId;
   pendingProjectFocusRoot = null;
-  return pending;
+  pendingProjectFocusFamiliarId = null;
+  return root ? { root, familiarId } : null;
 }

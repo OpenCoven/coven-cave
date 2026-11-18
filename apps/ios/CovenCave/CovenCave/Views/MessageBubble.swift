@@ -133,20 +133,14 @@ struct MessageBubble: View {
     }
 
     /// Swipe a bubble to the right to quote it into the composer. Runs alongside
-    /// the scroll view's pan (simultaneousGesture) and only tracks clearly
-    /// horizontal drags, so vertical scrolling is unaffected.
-    private var replySwipe: some Gesture {
-        DragGesture(minimumDistance: 24)
-            .onChanged { value in
-                guard value.translation.width > 0,
-                      abs(value.translation.width) > abs(value.translation.height),
-                      canReply else { return }
-                replyDrag = min(value.translation.width, 64)
-            }
-            .onEnded { _ in
-                if replyDrag > 48 { Haptics.tap(); fireReply() }
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { replyDrag = 0 }
-            }
+    /// the transcript and begins only on a rightward horizontal drag.
+    private var replySwipe: ReplyPanGesture {
+        ReplyPanGesture(enabled: canReply) { distance in
+            replyDrag = min(max(distance, 0), 64)
+        } onEnd: { completed in
+            if completed && replyDrag > 48 { Haptics.tap(); fireReply() }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { replyDrag = 0 }
+        }
     }
 
     private func fireReply() {
@@ -178,7 +172,7 @@ struct MessageBubble: View {
                     .accessibilityHidden(true)
             }
         }
-        .simultaneousGesture(replySwipe)
+        .gesture(replySwipe)
     }
 
     /// Short one-line feedback ("Model set to Opus 5.5.") as a quiet notice
@@ -783,5 +777,44 @@ private struct ReasoningSummaryView: View {
         .accessibilityValue(expanded ? "Expanded" : "Collapsed")
         .onChange(of: showSummaries) { _, _ in app.reasoningDisclosureState.reset() }
         .onChange(of: expanded) { _, _ in onContentHeightChange?() }
+    }
+}
+
+/// Decide direction before UIKit recognizes the gesture so a vertical drag
+/// on a reply stays available to the enclosing transcript.
+private struct ReplyPanGesture: UIGestureRecognizerRepresentable {
+    var enabled: Bool
+    var onChange: (CGFloat) -> Void
+    var onEnd: (Bool) -> Void
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return velocity.x > abs(velocity.y)
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        pan.maximumNumberOfTouches = 1
+        pan.isEnabled = enabled
+        return pan
+    }
+
+    func updateUIGestureRecognizer(_ pan: UIPanGestureRecognizer, context: Context) {
+        pan.isEnabled = enabled
+    }
+
+    func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context: Context) {
+        switch pan.state {
+        case .began, .changed: onChange(pan.translation(in: pan.view).x)
+        case .ended: onEnd(true)
+        case .cancelled, .failed: onEnd(false)
+        default: break
+        }
     }
 }

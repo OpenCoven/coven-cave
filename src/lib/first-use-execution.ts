@@ -1,7 +1,7 @@
 import { parseFirstUseState, type FirstUseState } from "./first-use.ts";
 
 export const FIRST_USE_OPEN_EVENT = "cave:first-use-open";
-export const FIRST_USE_REQUIRED_MESSAGE = "Complete the introduction before starting a familiar run. Your draft is kept.";
+export const FIRST_USE_REQUIRED_MESSAGE = "Choose an assistant, project and access before starting a familiar run. Your draft is kept.";
 let knownState: FirstUseState | null = null;
 let readInFlight: Promise<void> | null = null;
 

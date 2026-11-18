@@ -30,7 +30,7 @@ const iosJob = workflow.slice(iosJobStart, iosJobEnd);
 assert.match(workflow, /^ {2}release-ios-build:$/m, "release.yml defines the iOS build job");
 assert.match(
   iosJob,
-  /runs-on: macos-15/,
+  /runs-on: xcode-27/,
   "the iOS build runs on macOS — xcodebuild cannot run anywhere else",
 );
 assert.match(
@@ -41,8 +41,22 @@ assert.match(
 assert.match(
   iosJob,
   /sudo xcode-select --switch "\$XCODE_PATH"[\s\S]*grep -q -- '--build-status'[\s\S]*grep -q -- '--api-key-subject'/,
-  "the job pins Xcode 26.3 and proves the required altool commands exist",
+  "the job selects Xcode 27.1 and proves the required altool commands exist",
 );
+assert.match(iosJob, /XCODE_PATH="\/Applications\/Xcode_27\.1\.app"/);
+assert.match(iosJob, /test "\$sdk_version" = "27\.1"/);
+const toolchain = parse(readFileSync(new URL("../.github/workflows/ios-release-toolchain.yml", import.meta.url), "utf8"));
+assert.deepEqual(toolchain.permissions, { contents: "read" });
+const unsigned = toolchain.jobs.compile;
+assert.deepEqual(unsigned.strategy.matrix.include, [
+  { runner: "xcode-27", version: "27.1", sdk: "27.1" },
+  { runner: "macos-15", version: "26.3", sdk: "26.2" },
+]);
+assert.equal(unsigned.steps[0].with.ref, "${{ github.event.pull_request.head.sha }}");
+const compileCommands = unsigned.steps.map((step) => step.run ?? "").join("\n");
+assert.match(compileCommands, /CODE_SIGNING_ALLOWED=NO build/);
+assert.match(compileCommands, /test -x .*CovenCaveWidgets\.appex\/CovenCaveWidgets/);
+assert.doesNotMatch(JSON.stringify(unsigned), /secrets\.|-exportArchive|--upload-app/);
 assert.match(
   workflow,
   /options:[\s\S]{0,200}- ios/,

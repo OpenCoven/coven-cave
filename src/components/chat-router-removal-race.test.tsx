@@ -817,3 +817,43 @@ test("openSession opens an unlisted thread under the familiar the caller names (
   expect(ref.current!.currentSessionId()).toBe("sage-thread");
   expect(ref.current!.currentFamiliarId()).toBe(sage.id);
 });
+
+test("Projects resumes the original blank compose identity and New chat releases it", async () => {
+  const nova = familiar("nova");
+  const ref = { current: null as ChatRouterHandle | null };
+  const props = {
+    ref, familiar: nova, familiars: [nova], sessions: [], onSessionsDeleted: vi.fn(),
+    browseScope: { selection: "current-project", ready: true }, composeProjectRoot: "/work/current-project",
+    initialProjectsRetryRoute: {
+      sessionId: null, familiarId: "nova", projectRoot: "/work/original", composerDraftKey: "side-chat-draft", composeId: "original-compose", runtimeHost: "current-remote",
+    },
+  };
+  await act(async () => { renderer = create(<ChatRouter {...props} />); });
+  expect(chatView.latestProps).toMatchObject({ sessionId: null, projectRoot: "/work/original", composerDraftKey: "side-chat-draft", retryComposeId: "original-compose", initialRetryRuntimeHost: "current-remote" });
+  await act(async () => { ref.current!.newChat("/work/other", undefined, "nova"); });
+  expect(chatView.latestProps!.retryComposeId).toBeUndefined();
+  expect(chatView.latestProps!.projectRoot).toBe("/work/other");
+});
+
+test("Projects restores an established chat before the desktop boot compose runs", async () => {
+  const nova = familiar("nova");
+  const original = sessionRow("original-chat", "nova", "2026-11-14T00:00:00Z");
+  await act(async () => { renderer = create(<ChatRouter familiar={nova} familiars={[nova]} sessions={[original]} onSessionsDeleted={vi.fn()}
+    initialProjectsRetryRoute={{ sessionId: "original-chat", familiarId: "nova", projectRoot: original.project_root, composerDraftKey: "main-draft", composeId: "original-chat" }} />); });
+  expect(chatView.latestProps!.sessionId).toBe("original-chat");
+});
+
+for (const promotion of ["chat", "voice"] as const) {
+  test(`a resumed side compose keeps its instance and draft scope through ${promotion} promotion`, async () => {
+    const nova = familiar("nova");
+    await act(async () => { renderer = create(<ChatRouter familiar={nova} familiars={[nova]} sessions={[]} onSessionsDeleted={vi.fn()}
+      initialProjectsRetryRoute={{ sessionId: null, familiarId: "nova", projectRoot: "/work/original", composerDraftKey: "side-chat-draft", composeId: "original-compose" }} />); });
+    const mounts = chatView.mounts;
+    await act(async () => {
+      if (promotion === "voice") chatView.latestProps!.onVoiceSessionCreated("created-chat");
+      else chatView.latestProps!.onSessionStarted({ newSessionId: "created-chat", expectedSessionId: null, composeInstance: chatView.latestProps!.composeInstance });
+    });
+    expect(chatView.latestProps).toMatchObject({ sessionId: "created-chat", composerDraftKey: "side-chat-draft" });
+    expect(chatView.mounts).toBe(mounts);
+  });
+}

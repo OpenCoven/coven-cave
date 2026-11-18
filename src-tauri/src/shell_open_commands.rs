@@ -1,7 +1,7 @@
 use super::*;
 
 #[cfg(desktop)]
-fn spawn_x_oauth_browser_launcher(url: &str) -> std::io::Result<std::process::Child> {
+fn spawn_system_browser_launcher(url: &str) -> std::io::Result<std::process::Child> {
     #[cfg(target_os = "macos")]
     let mut command = {
         let mut command = std::process::Command::new("open");
@@ -38,13 +38,27 @@ where
     F: FnOnce(&str) -> std::io::Result<std::process::Child>,
 {
     validate_x_oauth_url(url)?;
+    launch_system_browser_url_with_window(url, launch_window, spawner)
+}
 
+/// Spawn the platform URL opener for an already validated URL and report a
+/// launch failure seen within `launch_window`. Errors are fixed strings: the
+/// URL may carry secrets (X OAuth), so OS error text is never forwarded.
+#[cfg(desktop)]
+fn launch_system_browser_url_with_window<F>(
+    url: &str,
+    launch_window: std::time::Duration,
+    spawner: F,
+) -> Result<(), String>
+where
+    F: FnOnce(&str) -> std::io::Result<std::process::Child>,
+{
     // Start the waiter first so every successfully spawned opener is handed to
     // a thread that owns it through wait(), even after launch detection times out.
     let (child_sender, child_receiver) = std::sync::mpsc::sync_channel::<std::process::Child>(1);
     let (status_sender, status_receiver) = std::sync::mpsc::sync_channel(1);
     std::thread::Builder::new()
-        .name("x-oauth-launcher-reaper".to_string())
+        .name("system-browser-launcher-reaper".to_string())
         .spawn(move || {
             let Ok(mut child) = child_receiver.recv() else {
                 return;
@@ -86,7 +100,29 @@ where
 #[tauri::command]
 pub(super) async fn open_x_oauth_url(url: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        launch_x_oauth_url_with(&url, spawn_x_oauth_browser_launcher)
+        launch_x_oauth_url_with(&url, spawn_system_browser_launcher)
+    })
+    .await
+    .map_err(|_| "System browser launcher task did not complete.".to_string())?
+}
+
+#[cfg(desktop)]
+pub(super) fn launch_update_release_url_with<F>(url: &str, spawner: F) -> Result<(), String>
+where
+    F: FnOnce(&str) -> std::io::Result<std::process::Child>,
+{
+    validate_update_release_url(url)?;
+    launch_system_browser_url_with_window(url, std::time::Duration::from_millis(250), spawner)
+}
+
+/// Open only a Coven Cave GitHub release page or release asset in the system
+/// browser. The packaged UI runs on the sidecar's loopback origin, which is not
+/// granted the general `shell_open` (#197); update links use this instead (#5981).
+#[cfg(desktop)]
+#[tauri::command]
+pub(super) async fn open_update_release_url(url: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        launch_update_release_url_with(&url, spawn_system_browser_launcher)
     })
     .await
     .map_err(|_| "System browser launcher task did not complete.".to_string())?

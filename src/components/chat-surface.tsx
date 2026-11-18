@@ -6,6 +6,8 @@ import "@/styles/cave-composer.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
+import { readProjectsRetryRoute, discardProjectsRetry } from "@/components/chat-view";
+import type { ProjectsRetryRoute } from "@/lib/chat-projects-retry";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { CHAT_SESSION_LEVEL, registerSurfaceHistoryGate } from "@/lib/surface-history";
@@ -291,6 +293,15 @@ export function ChatSurface({
   // That ordering is right on the Sessions tab, where the session is what the
   // user sees, and wrong everywhere else: from Projects or Familiar the Back
   // press would walk an invisible session trail and leave the strip alone.
+  const [projectsRetryRoute, setProjectsRetryRoute] = useState<ProjectsRetryRoute | null>(null);
+  const previousRetryFamiliarRef = useRef(activeFamiliarId);
+  useEffect(() => {
+    if (previousRetryFamiliarRef.current !== activeFamiliarId) {
+      setProjectsRetryRoute(null);
+      discardProjectsRetry();
+    }
+    previousRetryFamiliarRef.current = activeFamiliarId;
+  }, [activeFamiliarId]);
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
   useEffect(
@@ -456,6 +467,7 @@ export function ChatSurface({
           pendingChatAction.origin,
           pendingChatAction.initialControls ?? undefined,
           pendingChatAction.initialAttachments ?? undefined,
+          pendingChatAction.initialDraft ?? undefined,
         ),
         0,
       );
@@ -505,8 +517,12 @@ export function ChatSurface({
     // listener isn't mounted yet — consume the retained latch on mount so the
     // Projects tab opens even when the event loses the race (cave-c2zf; same
     // shape as the coven-tab latch below).
-    if (consumeProjectsTabPending()) setScope("projects");
-    const open = () => setScope("projects");
+    const open = () => {
+      consumeProjectsTabPending();
+      setProjectsRetryRoute(readProjectsRetryRoute());
+      setScope("projects");
+    };
+    if (consumeProjectsTabPending()) open();
     window.addEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
     return () => window.removeEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
   }, []);
@@ -632,7 +648,7 @@ export function ChatSurface({
             value={scope}
             onChange={(s) => {
               selectScope(s);
-              if (s === "conversation") {
+              if (s === "conversation" && !(scope === "projects" && projectsRetryRoute && readProjectsRetryRoute() === projectsRetryRoute)) {
                 window.setTimeout(() => routerRef.current?.goToList(), 0);
               }
             }}
@@ -742,6 +758,7 @@ export function ChatSurface({
                   familiarsError={familiarsError}
                   onRetryFamiliars={onRetryFamiliars}
                   onRequestNewChat={onRequestNewChat}
+                  initialProjectsRetryRoute={readProjectsRetryRoute() === projectsRetryRoute ? projectsRetryRoute : null}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionsChanged={onSessionsChanged}
                   onSessionsDeleted={onSessionsDeleted}
@@ -835,7 +852,9 @@ export function ChatSurface({
               onChange={(s) => {
                 setThreadsSheetOpen(false);
                 selectScope(s);
-                window.setTimeout(() => routerRef.current?.goToList(), 0);
+                if (s === "conversation" && !(scope === "projects" && projectsRetryRoute && readProjectsRetryRoute() === projectsRetryRoute)) {
+                  window.setTimeout(() => routerRef.current?.goToList(), 0);
+                }
               }}
               items={CHAT_SECTION_ITEMS}
             />

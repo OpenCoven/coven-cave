@@ -1,5 +1,6 @@
 "use client";
 
+import "@/styles/thread-signal-launch.css";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -21,7 +22,9 @@ import {
   signalIdentity,
   type SignalDismissalMap,
 } from "@/lib/thread-signal-dismissals";
-import { requestAgentsNewChat } from "@/lib/agents-new-chat";
+import { launchSignalSweep } from "@/lib/signal-sweep-launch";
+import { useSignalSweepAccess } from "@/lib/use-signal-sweep-access";
+import { canonicalSignalSweepItem, signalReportScope, signalSweepSource } from "@/lib/signal-sweep-identity";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   aggregateThreadSignals,
@@ -44,6 +47,7 @@ type ThreadSignalTableRow = {
   severity?: "critical" | "warning" | "info";
   /** Review-item kind for launching a resolution thread; omitted for purely informational rows. */
   kind?: ThreadSignalReviewItem["kind"];
+  sourceId?: string;
 };
 
 type ThreadSignalTableSection = {
@@ -68,6 +72,11 @@ function latestReportDate(reports: ThreadSelfReport[]): string {
 }
 
 function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSection[] {
+  const cause = (name: string) => {
+    const linked = aggregate.capabilitiesLacking.find((item) => item.name === name)?.blockerId?.trim();
+    return linked && aggregate.persistentBlockers.some((blocker) => blocker.id === linked)
+      ? { kind: "blocker" as const, sourceId: linked } : { kind: "capability" as const, sourceId: name };
+  };
   return [
     {
       id: "skills-used",
@@ -89,6 +98,7 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
       empty: "No clarity gaps.",
       rows: aggregate.skillsNeedingClarity.map((item) => ({
         id: `skill-clarity-${item.skillId}`,
+        sourceId: item.skillId,
         signal: item.skillId,
         type: "Clarity gap",
         state: "needs definition",
@@ -103,6 +113,7 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
       empty: "No access gaps.",
       rows: aggregate.skillsNeedingAccess.map((item) => ({
         id: `skill-access-${item.skillId}`,
+        sourceId: item.skillId,
         signal: item.skillId,
         type: "Access gap",
         state: "blocked",
@@ -122,7 +133,7 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
         state: item.currentState,
         detail: item.notes || "Reported as necessary for successful work.",
         severity: item.currentState === "missing" ? "critical" : item.currentState === "degraded" ? "warning" : "info",
-        kind: "capability",
+        ...(item.currentState === "available" ? {} : cause(item.name)),
       })),
     },
     {
@@ -136,7 +147,7 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
         state: item.importance,
         detail: item.detail,
         severity: item.importance === "blocking" ? "critical" : "warning",
-        kind: "capability",
+        ...cause(item.name),
       })),
     },
     {
@@ -145,6 +156,7 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
       empty: "No persistent blockers.",
       rows: aggregate.persistentBlockers.map((blocker) => ({
         id: `blocker-${blocker.id}`,
+        sourceId: blocker.id,
         signal: blocker.title,
         type: blocker.category,
         state: blocker.impact,
@@ -161,26 +173,36 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
  *  Uses the cross-page launcher: this section renders on the standalone analytics
  *  routes, where no `cave:agents-new-chat` listener is mounted — a raw dispatch
  *  there would be a silent no-op (cave-hbpb). */
-function launchResolutionThread(familiarId: string, item: ThreadSignalReviewItem) {
+function launchResolutionThread(familiarId: string, item: ThreadSignalReviewItem, retry = false, canDispatch?: () => boolean, source: ThreadSelfReport | null = null) {
+  if (!source) return Promise.resolve({ ok: false as const, error: "This signal is not in its current source report. Refresh thread signals before requesting a fix." });
+  item = canonicalSignalSweepItem(item, source);
   const analyticsPath = `/dashboard/familiars/${encodeURIComponent(familiarId)}/analytics`;
-  return requestAgentsNewChat({
+  return launchSignalSweep(familiarId, [item], {
     destination: "right-panel",
-    familiarId,
-    initialPrompt: `${buildThreadSignalResolutionPrompt(item)}\n\nAnalytics source: ${analyticsPath}`,
     origin: "chat" as const,
-  });
+  }, () => `${buildThreadSignalResolutionPrompt(item)}\n\nAnalytics source: ${analyticsPath}`, retry, canDispatch, signalReportScope(source), source.id);
 }
 
 /** Shape a table row into a review item so it can launch the same resolution thread. */
-function resolveRow(familiarId: string, row: ThreadSignalTableRow) {
+function resolveRow(familiarId: string, row: ThreadSignalTableRow, retry = false, canDispatch?: () => boolean, reports: readonly ThreadSelfReport[] = []) {
   if (!row.kind) return;
-  return launchResolutionThread(familiarId, {
+  const item: ThreadSignalReviewItem = {
     kind: row.kind,
     severity: row.severity ?? "info",
-    sourceId: row.id,
+    sourceId: row.sourceId ?? row.id,
     title: row.signal,
     detail: `${row.detail}${row.count ? ` (reported ${row.count}x)` : ""} — status: ${row.state}.`,
-  });
+  };
+  return launchResolutionThread(familiarId, item, retry, canDispatch, signalSweepSource(item, reports));
+}
+
+function SignalFixAccessNotice({ access }: { access: ReturnType<typeof useSignalSweepAccess> }) {
+  return <div className="tsc-launch-status">
+    {access.checking ? <p role="status">Checking signal fix access…</p> : access.available
+      ? <p>Signal fixes start a Build thread. Current project access is checked again before sending.</p>
+      : <><p role="alert"><strong>Signal fix unavailable. </strong>{access.error}</p>
+        <Button size="xs" variant="secondary" onClick={() => void access.refresh()}>Check again</Button></>}
+  </div>;
 }
 
 /** Shape a signal row into the task card the board API accepts. */
@@ -220,9 +242,11 @@ const TABLE_COLUMNS: { key: SortKey; label: string }[] = [
 function ThreadSignalsTable({
   familiarId,
   sections,
+  reports,
 }: {
   familiarId: string;
   sections: ThreadSignalTableSection[];
+  reports: ThreadSelfReport[];
 }) {
   const { announce } = useAnnouncer();
   const coarsePointer = useIsCoarsePointer();
@@ -232,8 +256,20 @@ function ThreadSignalsTable({
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
   const [launchError, setLaunchError] = useState<string | null>(null);
-  const resolve = (row: ThreadSignalTableRow) => {
-    const result = resolveRow(familiarId, row);
+  const access = useSignalSweepAccess(familiarId);
+  const [lastRow, setLastRow] = useState<ThreadSignalTableRow | null>(null);
+  const liveFamiliar = useRef<string | null>(familiarId);
+  liveFamiliar.current = familiarId;
+  const [renderedFamiliarId, setRenderedFamiliarId] = useState(familiarId);
+  if (renderedFamiliarId !== familiarId) {
+    setRenderedFamiliarId(familiarId); setLastRow(null); setLaunchError(null);
+  }
+  useEffect(() => { liveFamiliar.current = familiarId; return () => { liveFamiliar.current = null; }; }, [familiarId]);
+  const resolve = async (row: ThreadSignalTableRow, retry = false) => {
+    if (!access.available) return;
+    setLastRow(row);
+    const result = await resolveRow(familiarId, row, retry, () => liveFamiliar.current === familiarId, reports);
+    if (liveFamiliar.current !== familiarId) return;
     if (!result) return;
     setLaunchError(result.ok ? null : result.error);
     announce(result.ok ? "Requested a Chat panel thread." : result.error, result.ok ? "polite" : "assertive");
@@ -351,8 +387,8 @@ function ThreadSignalsTable({
             // always-visible pair below.
             <OverflowMenu ariaLabel={`Actions for signal ${row.signal}`} size="sm">
               {row.kind ? (
-                <PopoverItem icon="ph:chat-circle-dots" onSelect={() => resolve(row)}>
-                  Resolve in a thread
+                <PopoverItem icon="ph:chat-circle-dots" disabled={!access.available} onSelect={() => void resolve(row)}>
+                  Resolve in Build
                 </PopoverItem>
               ) : null}
               <PopoverItem
@@ -369,12 +405,13 @@ function ThreadSignalsTable({
                 <Button
                   variant="ghost"
                   size="xs"
+                  disabled={!access.available}
                   leadingIcon="ph:chat-circle-dots"
-                  onClick={() => resolve(row)}
+                  onClick={() => void resolve(row)}
                   aria-label={`Launch a thread to resolve ${row.signal}`}
                   title="Launch a new thread with this familiar, primed to resolve this signal"
                 >
-                  Resolve
+                  Resolve in Build
                 </Button>
               ) : null}
               {isAdded ? (
@@ -439,7 +476,9 @@ function ThreadSignalsTable({
         </Button>
       </div>
       <div className="fa-thread-table-wrap">
+        <SignalFixAccessNotice access={access} />
         {launchError ? <ErrorState compact headline="Couldn't open the Chat panel" subtitle={launchError} /> : null}
+        {access.available && lastRow ? <Button className="tsc-launch-retry" size="xs" variant="secondary" onClick={() => void resolve(lastRow, true)}>Retry fix after changes</Button> : null}
         <table className="board-table board-table--grid fa-thread-table" aria-label="Thread signal summary">
           <colgroup>
             <col className="fa-thread-table__col-select" />
@@ -541,7 +580,7 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
       {/* The metric averages + context-pressure mix live in the "Confidence
           from thread analysis" panel (fa-confidence) — this section stays
           focused on the actionable review queue and the signal table. */}
-      <ThreadSignalsTable familiarId={familiarId} sections={sections} />
+      <ThreadSignalsTable familiarId={familiarId} sections={sections} reports={reports} />
     </div>
   );
 }
@@ -593,6 +632,23 @@ function ThreadSignalReviewQueue({
   const { announce } = useAnnouncer();
   const listRef = useRef<HTMLUListElement>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const access = useSignalSweepAccess(familiarId);
+  const [lastItem, setLastItem] = useState<ThreadSignalReviewItem | null>(null);
+  const liveFamiliar = useRef<string | null>(familiarId);
+  liveFamiliar.current = familiarId;
+  const [renderedFamiliarId, setRenderedFamiliarId] = useState(familiarId);
+  if (renderedFamiliarId !== familiarId) {
+    setRenderedFamiliarId(familiarId); setLastItem(null); setLaunchError(null);
+  }
+  useEffect(() => { liveFamiliar.current = familiarId; return () => { liveFamiliar.current = null; }; }, [familiarId]);
+  const resolve = async (item: ThreadSignalReviewItem, retry = false) => {
+    if (!access.available) return;
+    setLastItem(item);
+    const result = await launchResolutionThread(familiarId, item, retry, () => liveFamiliar.current === familiarId, signalSweepSource(item, reports));
+    if (liveFamiliar.current !== familiarId) return;
+    setLaunchError(result.ok ? null : result.error);
+    announce(result.ok ? "Requested a Chat panel thread." : result.error, result.ok ? "polite" : "assertive");
+  };
   const [kindFilter, setKindFilter] = useState<ThreadSignalReviewItem["kind"] | null>(null);
   // Dismissals load after mount — localStorage isn't SSR-safe.
   const [dismissals, setDismissals] = useState<SignalDismissalMap>({});
@@ -626,6 +682,7 @@ function ThreadSignalReviewQueue({
   useRovingTabIndex({
     containerRef: listRef,
     itemSelector: ".fa-thread-review-item",
+    itemsVersion: JSON.stringify([access.available, shown.map(signalIdentity)]),
     orientation: "vertical",
   });
 
@@ -665,7 +722,9 @@ function ThreadSignalReviewQueue({
 
   return (
     <div className="fa-thread-review">
+      <SignalFixAccessNotice access={access} />
       {launchError ? <ErrorState compact headline="Couldn't open the Chat panel" subtitle={launchError} /> : null}
+      {access.available && lastItem ? <Button className="tsc-launch-retry" size="xs" variant="secondary" onClick={() => void resolve(lastItem, true)}>Retry fix after changes</Button> : null}
       <div className="fa-thread-review-head">
         <div>
           <h3>Review queue</h3>
@@ -753,12 +812,9 @@ function ThreadSignalReviewQueue({
                   variant="ghost"
                   className="fa-thread-review-item"
                   data-signal-identity={signalIdentity(item)}
-                  onClick={() => {
-                    const result = launchResolutionThread(familiarId, item);
-                    setLaunchError(result.ok ? null : result.error);
-                    announce(result.ok ? "Requested a Chat panel thread." : result.error, result.ok ? "polite" : "assertive");
-                  }}
-                  title={`Launch a thread to resolve "${item.title}"`}
+                  disabled={!access.available}
+                  onClick={() => void resolve(item)}
+                  title={`Start a Build thread to resolve "${item.title}"`}
                   aria-label={`Resolve ${item.title}`}
                   leadingIcon={item.severity === "critical" ? "ph:warning-circle" : "ph:info"}
                   trailingIcon="ph:chat-circle-dots"

@@ -498,23 +498,14 @@ export function Workspace() {
   } = useProjects();
   const selectedWorkspaceProject =
     registeredProjects.find((project) => project.id === selectedWorkspaceProjectId) ?? null;
-  // Chat browsing is local and starts at All chats. It never changes the
-  // workspace actor, compose project, saved drafts, or the open chat's identity.
-  const [chatFilterProjectId, setChatFilterProjectId] = useState<string | null>(null);
-  const [chatFilterFamiliarIds, setChatFilterFamiliarIds] = useState<ReadonlySet<string>>(() => new Set());
-  const chatFilterProject = registeredProjects.find((project) => project.id === chatFilterProjectId) ?? null;
-  const chatFilterCrew = useProjectFamiliars({ projectId: chatFilterProject?.id ?? null });
-  const chatFilterWriteCrew = useMemo(
-    () => chatFilterCrew.familiars.filter((familiar) => familiar.projectAccess === "write"),
-    [chatFilterCrew.familiars],
-  );
-  const resolvedChatFilterCrew = useResolvedFamiliars(chatFilterWriteCrew);
+  // Chat uses the same workspace selection as the other pages. Browsing a
+  // new scope does not rebind an established conversation or its draft.
   const chatBrowseScope = useMemo<ChatBrowseScope>(() => ({
-    selection: chatFilterProjectId ?? "all",
-    familiarIds: [...chatFilterFamiliarIds],
-    ready: chatFilterProjectId === null || (projectsLoadedSuccessfully && projectsError === null && chatFilterProject !== null),
-    loading: chatFilterProjectId !== null && projectsError === null && !projectsLoadedSuccessfully,
-  }), [chatFilterProjectId, chatFilterFamiliarIds, projectsLoadedSuccessfully, projectsError, chatFilterProject]);
+    selection: selectedWorkspaceProjectId ?? "all",
+    familiarIds: [...scopeIds],
+    ready: selectedWorkspaceProjectId === null || (projectsLoadedSuccessfully && projectsError === null && selectedWorkspaceProject !== null),
+    loading: selectedWorkspaceProjectId !== null && projectsError === null && !projectsLoadedSuccessfully,
+  }), [selectedWorkspaceProjectId, scopeIds, projectsLoadedSuccessfully, projectsError, selectedWorkspaceProject]);
   // Project-switch latency (#5448): from a project selection change until the
   // chat scope for it is ready. The hydrated initial selection is not timed.
   const projectSwitchSpanRef = useRef<(() => number | null) | null>(null);
@@ -522,10 +513,10 @@ export function Workspace() {
   useEffect(() => {
     if (!workspaceContextHydrated) return;
     const previous = projectSwitchBaselineRef.current;
-    projectSwitchBaselineRef.current = chatFilterProjectId;
-    if (previous === undefined || previous === chatFilterProjectId) return;
+    projectSwitchBaselineRef.current = selectedWorkspaceProjectId;
+    if (previous === undefined || previous === selectedWorkspaceProjectId) return;
     projectSwitchSpanRef.current = startSpan("chat:project-switch");
-  }, [chatFilterProjectId, workspaceContextHydrated]);
+  }, [selectedWorkspaceProjectId, workspaceContextHydrated]);
   useEffect(() => {
     if (!chatBrowseScope.ready || !projectSwitchSpanRef.current) return;
     projectSwitchSpanRef.current();
@@ -3131,6 +3122,34 @@ export function Workspace() {
     }
   }, [nextRouter, openFamiliarSession, openUrlInAppBrowser, openGitHubTarget]);
 
+  // Where a bell row opens (#6483). The bell is a triage list, not a chat
+  // launcher (cave-ipze, #3067): a row lands on Rituals with that item's
+  // detail open. Two kinds have a truer home. A daily report opens the report
+  // page, which is what its Rituals row does too. A waiting reply is built
+  // from the session and never exists in Rituals, so it opens the chat that
+  // is waiting instead of a Rituals page without it.
+  const [inboxFocus, setInboxFocus] = useState<{ id: string; nonce: number } | null>(null);
+  const clearInboxFocus = useCallback(() => setInboxFocus(null), []);
+  const openBellItem = useCallback((item: InboxItem) => {
+    markInboxItemRead(item.id);
+    if (item.kind === "response-needed") {
+      if (item.sessionId) {
+        openFamiliarSession(item.sessionId, item.familiarId);
+      } else {
+        if (item.familiarId) setActiveId(item.familiarId);
+        setMode("chat");
+      }
+      return;
+    }
+    if (item.kind === "daily-summary" && item.link) {
+      openReminderLink(item.link);
+      return;
+    }
+    if (item.familiarId) setActiveId(item.familiarId);
+    setInboxFocus({ id: item.id, nonce: Date.now() });
+    setMode("inbox");
+  }, [markInboxItemRead, openFamiliarSession, openReminderLink, setActiveId, setMode]);
+
   const startFamiliarChat = useCallback((
     familiarId?: string | null,
     projectRoot?: string | null,
@@ -3140,6 +3159,7 @@ export function Workspace() {
     origin?: SessionOrigin,
     actorHasProjectAccess?: boolean,
     destination?: AgentsNewChatRequest["destination"],
+    initialDraft?: string,
   ) => {
     if (!firstUse.ensureIntroduction()) return false;
     if (!familiarId) {
@@ -3185,6 +3205,7 @@ export function Workspace() {
       initialPrompt,
       initialAttachments,
       initialControls,
+      initialDraft,
       origin,
       nonce: Date.now(),
     });
@@ -4615,27 +4636,28 @@ export function Workspace() {
   // even though the nav no longer swaps components when collapsed.
   const [, setNavOpen] = useState(true);
 
-  // One set of browse-filter props for both places Chat shows it: the title
-  // bar at desktop widths, like every other page, and the funnel button in the
-  // Chat header and phone sheet below 1024px, where the title-bar cluster is
-  // hidden (#6478).
-  const chatFilterProps: WorkspaceContextSwitcherProps = {
+  // One context across pages and both responsive placements. A Chat scope
+  // change filters the list while the open conversation keeps its identity.
+  const workspaceContextProps: WorkspaceContextSwitcherProps = {
     projects: registeredProjects,
-    projectId: chatFilterProjectId,
-    project: chatFilterProject,
-    onProjectChange: (id) => { setChatFilterProjectId(id); setChatFilterFamiliarIds(new Set()); announce(id ? "Chats filtered by project" : "Showing all chats"); },
+    projectId: selectedWorkspaceProjectId,
+    project: selectedWorkspaceProject,
+    onProjectChange: selectWorkspaceProject,
     projectLoading: projectsLoading,
     projectError: projectsError,
     reloadProjects,
+    createProjectOrThrow,
     allFamiliars: resolvedFamiliars,
-    projectCrew: resolvedChatFilterCrew,
-    projectCrewLoading: chatFilterCrew.loading,
-    projectCrewError: chatFilterCrew.error,
-    reloadProjectCrew: chatFilterCrew.reload,
-    activeFamiliarId: chatFilterFamiliarIds.size === 1 ? [...chatFilterFamiliarIds][0]! : null,
-    selectedFamiliarIds: chatFilterFamiliarIds,
-    onSelectFamiliar: (id, opts) => { setChatFilterFamiliarIds((previous) => id === null ? new Set() : toggleFamiliarSelection(previous, id, opts?.multi ?? false)); announce(id ? "Chat familiar filter updated" : "Showing all familiars' chats"); },
+    projectCrew: resolvedProjectCrew,
+    projectCrewLoading: effectiveProjectCrewLoading,
+    projectCrewError,
+    reloadProjectCrew,
+    activeFamiliarId: activeId,
+    selectedFamiliarIds: scopeIds,
+    onSelectFamiliar: (id, opts) => selectFamiliarScope(id, { ...opts, preserveSurface: modeRef.current === "chat" }),
     sessions,
+    responseNeeded,
+    projectOpenRequest: projectPickerOpenRequest,
   };
   const sidebar = (
     <SidebarMinimal
@@ -4772,7 +4794,7 @@ export function Workspace() {
       <ChatSurface
         familiars={familiars}
         sessions={sessions}
-        browseFilter={<ChatBrowseFilter {...chatFilterProps} />}
+        browseFilter={<ChatBrowseFilter {...workspaceContextProps} />}
         browseScope={chatBrowseScope}
         composeProjectRoot={selectedWorkspaceProject?.root ?? null}
         activeFamiliar={active}
@@ -4861,6 +4883,8 @@ export function Workspace() {
           showReminderOverlay();
         }}
         onOpenLink={openReminderLink}
+        focusItem={inboxFocus}
+        onFocusItemConsumed={clearInboxFocus}
         calendarSlot={
           <CalendarView
             items={inboxItems}
@@ -5293,33 +5317,7 @@ export function Workspace() {
                   because it swapped the whole sidebar component, it hid the
                   chat list on Home and every non-coding room on Chat. Both are
                   permanent sidebar rows now — see cave-fh9so. */}
-              {mode === "chat" ? (
-                // Same place and form as every other page. The values are
-                // Chat's own browse filter: it starts on All chats and never
-                // changes the chat actor, the open chat or a draft (#6434).
-                <WorkspaceContextSwitcher {...chatFilterProps} variant="titlebar" fullAccessOnly />
-              ) : <WorkspaceContextSwitcher
-                projects={registeredProjects}
-                projectId={selectedWorkspaceProjectId}
-                onProjectChange={selectWorkspaceProject}
-                projectLoading={projectsLoading}
-                projectError={projectsError}
-                reloadProjects={reloadProjects}
-                project={selectedWorkspaceProject}
-                createProjectOrThrow={createProjectOrThrow}
-                allFamiliars={resolvedFamiliars}
-                projectCrew={resolvedProjectCrew}
-                projectCrewLoading={effectiveProjectCrewLoading}
-                projectCrewError={projectCrewError}
-                reloadProjectCrew={reloadProjectCrew}
-                activeFamiliarId={activeId}
-                selectedFamiliarIds={scopeIds}
-                onSelectFamiliar={selectFamiliarScope}
-                sessions={sessions}
-                responseNeeded={responseNeeded}
-                projectOpenRequest={projectPickerOpenRequest}
-                variant="titlebar"
-              />}
+              <WorkspaceContextSwitcher {...workspaceContextProps} variant="titlebar" />
             </div>
             <FamiliarMenuBar
               // Needs you: the bell opens the attention inbox — sessions that
@@ -5355,11 +5353,7 @@ export function Workspace() {
                   prefs={inboxPrefs}
                   badgeCount={notificationUnreadCount}
                   onOpenInbox={() => setMode("inbox")}
-                  onOpenItem={(item) => {
-                    markInboxItemRead(item.id);
-                    if (item.familiarId) setActiveId(item.familiarId);
-                    setMode("inbox");
-                  }}
+                  onOpenItem={openBellItem}
                   onPrefsChanged={refreshPrefs}
                 />
               }
@@ -5399,14 +5393,8 @@ export function Workspace() {
               familiarSwitcherLabeled={mode === "chat"}
               inboxPrefs={inboxPrefs}
               inboxBadgeCount={notificationUnreadCount}
-              // Bell rows open in the Inbox (Schedules) surface — the popover
-              // is a triage list, not a chat launcher. Session jumps stay on
-              // the chat surface and Home needs-you paths.
-              onOpenInboxItem={(item) => {
-                markInboxItemRead(item.id);
-                if (item.familiarId) setActiveId(item.familiarId);
-                setMode("inbox");
-              }}
+              // Same open path as the desktop bell (openBellItem, #6483).
+              onOpenInboxItem={openBellItem}
               onNotificationPrefsChanged={refreshPrefs}
               onToggleNav={() => shellRef.current?.toggleNav()}
               onToggleList={undefined}
@@ -5456,6 +5444,17 @@ export function Workspace() {
         familiars={resolvedFamiliars}
         canShow={onboardingResolved && !onboardingOpen}
         onManageFamiliars={() => setMode("agents")}
+        onFamiliarsChange={() => { void loadFamiliars(); }}
+        onStartChat={async (defaults, draft) => {
+          const current = await firstUse.refresh();
+          if (!current || current.state.step !== "complete" || current.resolution.kind !== "ready"
+            || current.state.defaults?.projectId !== defaults.projectId
+            || current.state.defaults.actingFamiliarId !== defaults.actingFamiliarId
+            || !current.project) return false;
+          const access = await resolveActorProjectAccess(defaults.actingFamiliarId, defaults.projectId, current.project.root);
+          if (access !== true) return false;
+          return startFamiliarChat(defaults.actingFamiliarId, current.project.root, null, { permissionMode: current.state.permissionMode ?? "read" }, null, "chat", true, "main", draft);
+        }}
         onUseDefaults={(defaults) => {
           if (activeChatSessionId) return;
           setSelectedWorkspaceProjectId(defaults.projectId);

@@ -65,8 +65,13 @@ assert.match(
 // ── Read/write levels ─────────────────────────────────────────────────────────
 assert.match(
   section,
-  /currentLevel === null \? "read" : currentLevel === "read" \? "write" : null/,
-  "project access cycles off → read → write → off",
+  /currentLevel === null \? "read" : currentLevel === "read" && !writeBlocked\.has\(projectId\) \? "write" : null/,
+  "project access cycles off → read → write → off, skipping Write on Cave's private state (#6451)",
+);
+assert.match(
+  section,
+  /const refusal = await privateStateRefusal\(res\);\s*if \(refusal\) \{\s*setError\(refusal\);/,
+  "a refused Write grant shows the server's reason, not a generic failure",
 );
 assert.match(section, /accessLevelMeta\(/, "levels render through the shared read/write meta");
 assert.match(

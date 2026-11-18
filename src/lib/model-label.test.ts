@@ -14,6 +14,19 @@ assert.equal(modelLabel("gpt-5-codex"), "Codex", "codex wins over gpt");
 assert.equal(modelLabel("gpt-5"), "GPT-5", "GPT family + version");
 assert.equal(modelLabel("gpt-6-astra"), "GPT-6 Astra", "named GPT variant");
 assert.equal(modelLabel("github/gpt-6-astra"), "GPT-6 Astra", "provider-prefixed named GPT variant");
+for (const [id, label] of [
+  ["gpt-6.2-sol", "GPT-6.2 Sol"],
+  ["gpt-6.2-astra", "GPT-6.2 Astra"],
+  ["gpt-6.1-terra", "GPT-6.1 Terra"],
+  ["gpt-6-luna", "GPT-6 Luna"],
+  ["gpt-5.6-sol", "GPT-5.6 Sol"],
+]) {
+  assert.equal(modelLabel(id), label, "bare named GPT family stays readable");
+  assert.equal(modelLabel(`openai/${id}`), label, "provider-prefixed family stays readable");
+}
+assert.equal(modelLabel("astra-provider/gpt-6.2-sol"), "GPT-6.2 Sol", "provider names cannot supply the model variant");
+assert.equal(modelLabel("gpt-6.2-solar"), "GPT-6.2", "variant names must match a complete model token");
+
 assert.equal(modelLabel("anthropic/some-future-model"), "some-future-model", "provider prefix dropped");
 assert.equal(modelLabel(""), "", "empty input yields empty label");
 assert.equal(modelLabel(null), "", "null input yields empty label");
