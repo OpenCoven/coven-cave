@@ -6,7 +6,7 @@
 import type { IconName } from "@/lib/icon";
 
 const FAMILIES = ["opus", "sonnet", "haiku", "fable"] as const;
-const GPT_VARIANTS = ["astra"] as const;
+const GPT_VARIANTS = ["astra", "sol", "terra", "luna"] as const;
 
 function capitalize(word: string): string {
   return word ? word.charAt(0).toUpperCase() + word.slice(1) : word;
@@ -25,7 +25,9 @@ export function modelLabel(model: string | null | undefined): string {
   }
   if (lower.includes("codex")) return "Codex";
   if (lower.includes("gpt")) {
-    const variant = GPT_VARIANTS.find((candidate) => lower.includes(candidate));
+    const bareModel = lower.slice(lower.lastIndexOf("/") + 1).replace(/\[[^\]]*\]$/, "");
+    const parts = bareModel.split("-");
+    const variant = GPT_VARIANTS.find((candidate) => parts.includes(candidate));
     const base = version ? `GPT-${version}` : "GPT";
     return variant ? `${base} ${capitalize(variant)}` : base;
   }
