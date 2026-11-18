@@ -52,6 +52,8 @@ async function openThread(page: Page) {
     localStorage.setItem("cave:active-familiar", "nova");
     localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     localStorage.setItem("cave:onboarding:dismissed", "1");
+    // Keep this layout contract independent of the first-use Explore default.
+    localStorage.setItem("cave:chat-composer-controls:v1", JSON.stringify({ permissionMode: "full" }));
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({
