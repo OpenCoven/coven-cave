@@ -206,7 +206,17 @@ async function run(label, command, commandArgs, timeoutMs = 10 * 60_000) {
     commandCleanupComplete &&= error.receipt?.cleanupComplete === true;
     (runReport.commands ??= []).push({ label, receiptPath, exitCode: error.receipt?.exitCode ?? null,
       outputComplete: error.receipt?.outputComplete === true,
-      cleanupComplete: error.receipt?.cleanupComplete === true });
+      cleanupComplete: error.receipt?.cleanupComplete === true,
+      timedOut: error.receipt?.timedOut ?? null,
+      elapsedMs: error.receipt?.elapsedMs ?? null,
+      cleanupReadError: error.receipt?.cleanupReadError ?? null,
+      ownerAcknowledged: error.receipt?.ownerAcknowledged ?? null,
+      ownerPhase: error.receipt?.owner?.phase ?? null,
+      ownerReason: error.receipt?.owner?.reason ?? null,
+      ownerError: error.receipt?.owner?.error ?? null,
+      rootExitCode: error.receipt?.owner?.rootExitCode ?? null,
+      killIssued: error.receipt?.owner?.killIssued ?? null,
+      remainingMembers: error.receipt?.owner?.members ?? null });
     throw error;
   }
   console.log(JSON.stringify({ phase: label, passed: true }));
