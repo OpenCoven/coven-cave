@@ -149,8 +149,7 @@ export function nextOwnPrPollDelayMs(outcome: OwnPrPollOutcome): number {
   const ok = outcome.status >= 200 && outcome.status < 300;
   if (ok) return OWN_PR_POLL_MIN_MS;
 
-  if (outcome.retryAfterSec != null && Number.isFinite(outcome.retryAfterSec)) {
-    return clamp(outcome.retryAfterSec * 1000);
+    return Math.max(OWN_PR_POLL_MIN_MS, outcome.retryAfterSec * 1000);
   }
   const limited = outcome.status === 403 || outcome.status === 429;
   if (limited && outcome.rateLimitRemaining === 0 && outcome.rateLimitResetSec != null) {
