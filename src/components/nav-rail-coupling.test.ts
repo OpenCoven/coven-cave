@@ -99,8 +99,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /const step = resolveChatRailNavYield\(\{\s*rail: chatRail,\s*isMobile,\s*navOpen: navIsOpen,\s*yieldNeeded: shouldNavYieldToChatRail\(\{\s*viewportWidth: window\.innerWidth,\s*navWidth: preferredNavWidth,\s*railWidth,\s*\}\),\s*state: chatRailNavRef\.current,\s*\}\);/,
-  "the shell asks the pure policy, measuring the window, the nav's open width and the rendered list",
+  /const step = resolveChatRailNavYield\(\{\s*rail: chatRail,\s*isMobile,\s*navOpen: navIsOpen,\s*yieldNeeded: shouldNavYieldToChatRail\(\{\s*viewportWidth: window\.innerWidth,\s*navWidth: navOpenWidth,\s*railWidth,\s*\}\),\s*state: chatRailNavRef\.current,\s*\}\);/,
+  "the shell asks the pure policy with the effective native/browser nav width and the rendered list",
 );
 assert.match(
   shell,
