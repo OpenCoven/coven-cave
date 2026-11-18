@@ -68,7 +68,7 @@ docs/ios-webrtc-dsym-symbolication.md for the root cause and options.
 
 ## Requirements
 
-- Xcode 16+ (developed against Xcode 26)
+- Xcode 27.1 with the iOS 27.1 SDK for release archives and Duo support. The older-SDK CI build covers the fallback.
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`) — the
   `.xcodeproj` is generated from `project.yml`, not checked in.
 
@@ -168,7 +168,7 @@ keep the list before the hinge and the conversation or task after it
 (`sidebarColumn`/`splitDetailColumn`). The lock, connecting, and connect
 screens move as a unit into one pane (`foldAvoiding`). Scrolling content
 stays where it is. The reader compiles only against the 27.1 SDK
-(`canImport(SwiftUI, _version: 8.0.85)`), so older Xcodes, CI's included,
+(`canImport(SwiftUI, _version: 8.0.85)`), so older Xcodes, including the fallback CI lane,
 still build.
 
 To test, choose the **iPhone Duo** simulator and use Device Hub's controls

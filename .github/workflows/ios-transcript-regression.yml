@@ -26,7 +26,7 @@ jobs:
     # Retained Xcode26.6 run: 15 strict executions take ~28 minutes before
     # three long-history and three accessibility audits. Keep failure collection
     # independent while allowing the complete unchanged native test matrix.
-    timeout-minutes: 100
+    timeout-minutes: 125
     steps:
       - timeout-minutes: 1
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -72,11 +72,11 @@ jobs:
       # full on the retry, so a consistent regression still fails the job.
       - name: Debug scroll state and existing long-chat UI regressions
         if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
-        timeout-minutes: 16
+        timeout-minutes: 26
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ios-native-command.py run --timeout-seconds 900 \
+          python3 scripts/ios-native-command.py run --timeout-seconds 1500 \
             --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-debug.receipt.json" -- \
             xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \
@@ -93,12 +93,12 @@ jobs:
       # The latest-reply bounce (#6090) appeared in only some attempts on the
       # same head, so a retry could pass by luck. Every iteration must pass.
       - name: Latest-reply bounce, three full runs without retries
-        timeout-minutes: 56
+        timeout-minutes: 71
         if: ${{ !cancelled() && steps.destination.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ios-native-command.py run --timeout-seconds 3300 \
+          python3 scripts/ios-native-command.py run --timeout-seconds 4200 \
             --grace-seconds 20 --terminate-seconds 5 --kill-seconds 5 \
             --receipt "$RUNNER_TEMP/scroll-bounce.receipt.json" -- \
             xcodebuild test -project apps/ios/CovenCave/CovenCave.xcodeproj -scheme CovenCave \

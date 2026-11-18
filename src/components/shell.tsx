@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/desktop-titlebar.css";
+
 import { UpdateReleaseNotes } from "@/components/update-release-notes";
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
@@ -403,6 +405,20 @@ function ShellInner({
   useLayoutEffect(() => setMounted(true), []);
   const layoutStorage = mounted ? shellStorage : hydrationShellStorage;
   const isMobile = useIsMobile();
+  // Share the native titlebar owner's marker, including its post-mount setup.
+  // The Panel must own this width: clipping its contents with CSS leaves an
+  // invisible wide allocation and makes measured chrome disagree with the UI.
+  const [nativeTitlebar, setNativeTitlebar] = useState(false);
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setNativeTitlebar(root.hasAttribute("data-tauri-titlebar"));
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-tauri-titlebar"] });
+    return () => observer.disconnect();
+  }, []);
+  const iconRail = nativeTitlebar && !isMobile;
+  const navOpenWidth = iconRail ? 48 : preferredNavWidth;
   const [mobileDrawer, setMobileDrawer] = useState<MobileDrawerSlot>(null);
   const twoPane = !list;
   const hasBottom = !!bottom;
@@ -636,7 +652,8 @@ function ShellInner({
       : listPolicy === "persistent"
         ? `${SHELL_GROUP_ID}.persistent-list`
         : SHELL_GROUP_ID;
-  const groupId = desktopRightChat ? `${baseGroupId}.right-chat` : baseGroupId;
+  const layoutGroupId = desktopRightChat ? `${baseGroupId}.right-chat` : baseGroupId;
+  const groupId = iconRail ? `${layoutGroupId}.icon-nav` : layoutGroupId;
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
@@ -670,7 +687,7 @@ function ShellInner({
   const trafficLightsVisible = isMobile || navOpen;
   useMacTrafficLightsForNavState(trafficLightsVisible);
   const defaultNavSize =
-    chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_COLLAPSED_PX}px`;
+    chatContextual || mounted ? `${iconRail ? navOpenWidth : NAV_OPEN_PX}px` : `${NAV_COLLAPSED_PX}px`;
 
   // Track the detail panel's REAL left/right viewport gaps (side panels +
   // separators + edge rails — everything between the detail box and the
@@ -848,7 +865,7 @@ function ShellInner({
         // of naming a pixel value here would still hand it a nonzero share.
         ...(desktopRightChat && { "right-chat": rightChatOpen ? preferredRightChatWidth : 0 }),
       },
-      preferredNavPixels: preferredNavWidth,
+      preferredNavPixels: navOpenWidth,
       collapsedNavPixels: NAV_COLLAPSED_PX,
       isMobile,
     });
@@ -912,6 +929,7 @@ function ShellInner({
     navPolicy,
     desktopRightChat,
     preferredNavWidth,
+    navOpenWidth,
     preferredRightChatWidth,
     rightChatOpen,
   ]);
@@ -1170,7 +1188,7 @@ function ShellInner({
       navOpen: navIsOpen,
       yieldNeeded: shouldNavYieldToChatRail({
         viewportWidth: window.innerWidth,
-        navWidth: preferredNavWidth,
+        navWidth: navOpenWidth,
         railWidth,
       }),
       state: chatRailNavRef.current,
@@ -1185,7 +1203,7 @@ function ShellInner({
     } else if (step.action === "restore") {
       panel.expand();
     }
-  }, [mounted, chatRail, isMobile, preferredNavWidth]);
+  }, [mounted, chatRail, isMobile, navOpenWidth]);
 
   // Clear coupling bookkeeping when the viewport crosses into mobile: the nav
   // becomes a drawer and the rail-close handler early-returns on mobile, so a
@@ -1299,6 +1317,7 @@ function ShellInner({
         const pixelWidth = navRef.current?.getSize().inPixels;
         if (
           !isMobile &&
+          !iconRail &&
           meta.isUserInteraction &&
           !navCollapsed &&
           Number.isFinite(pixelWidth) &&
@@ -1340,8 +1359,9 @@ function ShellInner({
         // Chat uses list-like sizing for contextual workspace/session content.
         // Normal navigation keeps NAV_OPEN_PX as the ⌘B expansion target.
         defaultSize={defaultNavSize}
-        minSize={`${SHELL_NAV_MIN_PX}px`}
-        maxSize={`${SHELL_NAV_MAX_PX}px`}
+        minSize={`${iconRail ? navOpenWidth : SHELL_NAV_MIN_PX}px`}
+        maxSize={`${iconRail ? navOpenWidth : SHELL_NAV_MAX_PX}px`}
+        groupResizeBehavior={iconRail ? "preserve-pixel-size" : "preserve-relative-size"}
         collapsible
         // Every shell policy closes to zero. Desktop reopens from the persistent
         // title-bar toggle or shortcut; touch layouts also support edge swipe.
