@@ -4,6 +4,7 @@
 // unrelated edits working, and list such projects for the grant screens.
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -19,6 +20,15 @@ Object.assign(process.env, {
   CAVE_SUPREME_FAMILIAR_ID: "supreme",
 });
 delete process.env.COVEN_CAVE_AUTH_TOKEN;
+
+const nativeMock = registerHooks({
+  load(url, context, nextLoad) {
+    if (url.endsWith("/native-folder-authentication.ts")) {
+      return { format: "module", shortCircuit: true, source: "export async function authenticateProjectFolder() { return true; }" };
+    }
+    return nextLoad(url, context);
+  },
+});
 
 try {
   await mkdir(path.join(tmp, "app"), { recursive: true });
@@ -127,5 +137,6 @@ try {
     /await grantProjectToFamiliar\([\s\S]*?\} catch \(error\) \{\s*if \(error instanceof CavePrivateStateGrantError\) \{\s*return NextResponse\.json\(\s*\{ ok: false, code: error\.code, error: error\.message, projectId: error\.project\.id \},\s*\{ status: error\.status \},/,
   );
 } finally {
+  nativeMock.deregister();
   await rm(tmp, { recursive: true, force: true });
 }

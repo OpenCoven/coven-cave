@@ -382,7 +382,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode, gatewaySessionKey\)[\s\S]*spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
+  /const spawnChild = async \(mode: "gateway" \| "local"\) => \{[\s\S]*?await args\.assertLaunchFoldersUnchanged\(\);[\s\S]*?openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode, gatewaySessionKey\)[\s\S]*?spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*?env: openclawEnv,[\s\S]*?shell: false/,
   "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts, carrying the handoff session key into the CLI fallback",
 );
 
