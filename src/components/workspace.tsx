@@ -5005,7 +5005,7 @@ export function Workspace() {
         onRequestProject={requestProjectForHome}
         overview={<Suspense fallback={<p>Loading overview…</p>}><HomeOverview
           key={JSON.stringify([activeId, [...scopeIds].sort(), selectedWorkspaceProject?.root ?? null])}
-          sessions={sessions}
+sessions={homeObservation.loaded && homeObservation.scopeFamiliarId === activeId && sessionsScopeFamiliarId === activeId ? sessions : []}
           observation={homeObservation}
           connection={homeConnection}
           scopeFamiliarId={activeId}
