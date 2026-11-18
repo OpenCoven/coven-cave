@@ -88,7 +88,10 @@ export async function runNativeCommand({ command, args = [], cwd, env = process.
       const owner = receipt.owner;
       const admitted = owner?.anchorPid === child.pid && owner.groupId === child.pid && owner.sessionId === child.pid;
       if (admitted && receipt.outputComplete) {
-        const checkDeadline = started + timeoutMs + shutdownGraceMs + terminalObservationMs;
+        const checkDeadline = Math.min(
+          performance.now() + terminalObservationMs,
+          started + timeoutMs + shutdownGraceMs + terminalObservationMs,
+        );
         do {
           try { receipt.cleanupComplete = await groupEmpty(child.pid, checkDeadline - performance.now(), env); }
           catch (error) { receipt.cleanupReadError = error.code ?? error.message; }

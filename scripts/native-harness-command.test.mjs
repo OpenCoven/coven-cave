@@ -254,3 +254,24 @@ else:
   const [code] = await once(child, 'close');
   assert.equal(code, 0, error);
 });
+
+test('terminal inspection failure does not consume unused command time', async (t) => {
+  const options = await fixture(t);
+  const python = path.join(options.root, 'python3');
+  await writeFile(python, [
+    '#!/bin/sh',
+    'if [ "$2" = "--inspect-group" ]; then exit 1; fi',
+    'PATH="$ORIGINAL_PATH" exec python3 "$@"',
+    '',
+  ].join('\n'), { mode: 0o700 });
+  options.env = { ...process.env, ORIGINAL_PATH: process.env.PATH, PATH: options.root + path.delimiter + process.env.PATH };
+  options.timeoutMs = 3000;
+  options.args = ['-e', 'process.exit(0)'];
+  const receipt = await failedRun(options);
+  assert.equal(receipt.owner.phase, 'finished');
+  assert.equal(receipt.owner.rootExitCode, 0);
+  assert.equal(receipt.exitCode, 125);
+  assert.equal(receipt.cleanupComplete, false);
+  assert.equal(receipt.outputComplete, true);
+  assert.ok(receipt.elapsedMs < options.timeoutMs + 1000, 'terminal inspection exceeded its observation budget');
+});
