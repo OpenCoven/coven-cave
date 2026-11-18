@@ -177,7 +177,7 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /<ChatView[\s\S]*?key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}\s*\n\s*ref=\{viewHandle\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
+  /<ChatView[\s\S]*?key=\{`chat-compose-\$\{viewComposerDraftKey\}-\$\{composeInstance\}`\}\s*\n\s*ref=\{viewHandle\}[\s\S]*?activeFamiliarId=\{activeFamiliarId\}/,
   "the primary ChatView mount should receive Workspace's active list scope",
 );
 assert.match(

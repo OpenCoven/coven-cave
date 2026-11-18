@@ -56,10 +56,17 @@ assert.match(
   "Daily summary popup notifications should carry their report link and generated media",
 );
 
+// The bell folds every daily report into one row that reuses the Rituals
+// inbox's report row (#6483): the same date chip and stats in both places.
 assert.match(
   bell,
-  /it\.kind === "daily-summary"[\s\S]*"ph:newspaper"/,
-  "Notification bell should render daily summaries with the same distinct icon",
+  /isReports \? \([\s\S]{0,200}<InboxDailyReportRow item=\{latest\} showRead=\{false\} \/>/,
+  "Notification bell should render daily reports with the Rituals report row",
+);
+assert.match(
+  bell,
+  /kind === "daily-summary"\) return "ph:newspaper"/,
+  "Any daily summary drawn as a plain row still gets the distinct newspaper icon",
 );
 
 // The old Schedules reminders list (and its isScheduleInboxItem gate) is gone —
@@ -159,18 +166,61 @@ assert.match(
 );
 
 // ── Bell "Open" lands on the Inbox surface (cave-ipze) ──────────────────────
-// The popover is a triage list, not a chat launcher: a row's Open marks the
-// item read, scopes to its familiar, and opens the Inbox (Schedules) view.
-// Session jumps stay on the chat surface and Home needs-you paths.
+// The popover is a triage list, not a chat launcher: opening a row marks it
+// read, scopes to its familiar, and opens Rituals with that item's detail
+// showing (#6483). Both bell mounts share one path. Two kinds have a truer
+// home: a daily report opens its report page (what its Rituals row does),
+// and a waiting reply, which never exists in Rituals, opens its chat.
+const openBellItem = workspace.match(/const openBellItem = useCallback\(\(item: InboxItem\) => \{[\s\S]*?\n  \}, \[/)?.[0] ?? "";
+assert.ok(openBellItem, "workspace defines one openBellItem path for the bell");
+assert.match(
+  openBellItem,
+  /markInboxItemRead\(item\.id\);[\s\S]*if \(item\.familiarId\) setActiveId\(item\.familiarId\);\s*setInboxFocus\(\{ id: item\.id, nonce: Date\.now\(\) \}\);\s*setMode\("inbox"\);\s*\}/,
+  "the bell's Open routes to the Inbox view with the item focused (mark read, scope familiar, mode inbox)",
+);
+assert.match(
+  openBellItem,
+  /if \(item\.kind === "daily-summary" && item\.link\) \{\s*openReminderLink\(item\.link\);\s*return;\s*\}/,
+  "a daily report opens its report page, like its Rituals row",
+);
+// openFamiliarSession is reachable only inside the waiting-reply branch.
+const chatBranch = openBellItem.match(/if \(item\.kind === "response-needed"\) \{[\s\S]*?\n    \}/)?.[0] ?? "";
+assert.match(chatBranch, /openFamiliarSession\(item\.sessionId, item\.familiarId\)/, "a waiting reply opens its chat");
+assert.equal(
+  openBellItem.replace(chatBranch, "").includes("openFamiliarSession"),
+  false,
+  "no other bell row jumps straight into a chat session",
+);
+assert.match(workspace, /<TopBar[\s\S]*?onOpenInboxItem=\{openBellItem\}/, "the mobile bell uses the shared path");
+assert.match(workspace, /<NotificationBell[\s\S]{0,400}?onOpenItem=\{openBellItem\}/, "the desktop bell uses the shared path");
 assert.match(
   workspace,
-  /<TopBar[\s\S]*?onOpenInboxItem=\{\(item\) => \{\s*markInboxItemRead\(item\.id\);\s*if \(item\.familiarId\) setActiveId\(item\.familiarId\);\s*setMode\("inbox"\);\s*\}\}/,
-  "the bell's Open routes to the Inbox view (mark read, scope familiar, mode inbox)",
+  /<InboxEscalationsView[\s\S]{0,800}?focusItem=\{inboxFocus\}\s*onFocusItemConsumed=\{clearInboxFocus\}/,
+  "Rituals receives the bell's focus request",
 );
-assert.doesNotMatch(
-  workspace,
-  /<TopBar[\s\S]*?onOpenInboxItem=\{\(item\) => \{[\s\S]{0,200}?openFamiliarSession/,
-  "the bell's Open never jumps straight into a chat session",
+
+// Rituals applies the bell's focus request once: the detail opens on the
+// Overview tab (without overwriting the stored tab preference), the row
+// scrolls into view, and an item gone by load time is dropped, not waited for.
+assert.match(
+  automations,
+  /if \(!focusItem \|\| appliedFocusNonceRef\.current === focusItem\.nonce\) return;[\s\S]*?if \(!target\) \{\s*if \(initialLoadDone\) \{\s*appliedFocusNonceRef\.current = focusItem\.nonce;\s*onFocusItemConsumed\?\.\(\);/,
+  "a focus request for a missing item is dropped once the list has loaded",
 );
+assert.match(
+  automations,
+  /appliedFocusNonceRef\.current = focusItem\.nonce;\s*setDeepLinkTab\("overview"\);\s*scrollToSelectedRef\.current = true;\s*openInboxItem\(target\);\s*onFocusItemConsumed\?\.\(\);/,
+  "a found item opens on Overview through the same openInboxItem as a click",
+);
+assert.match(
+  inboxFeedList,
+  /<li className="flex items-center" data-inbox-item-id=\{item\.id\}>/,
+  "feed rows carry their id so a focused item can scroll into view",
+);
+{
+  const ritualOverview = await readFile(new URL("./automations/ritual-overview.tsx", import.meta.url), "utf8");
+  assert.match(ritualOverview, /<li className="rituals-overview__need-row" data-inbox-item-id=\{item\.id\}>/, "Needs you rows carry their id too");
+  assert.match(ritualOverview, /rituals-overview__row focus-ring-inset[^\n]*data-inbox-item-id=\{item\.id\}/, "log and agenda rows carry their id too");
+}
 
 console.log("daily-summary-notifications.test.ts: ok");

@@ -795,6 +795,30 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
   assert.equal(await deleteConversation("inline-images-5587"), true);
 }
 
+// ── golden-13 (#6061): history mapping selects the tool display schema ───────
+// The server projects stored tools to a fixed set of fields. The client does
+// the same when it maps a history payload, so opaque provider state from a
+// payload that still carries it never reaches the turn that Debug copy, the
+// reader and the prompt enhancer read.
+{
+  const { readFileSync } = await import("node:fs");
+  const corpus = JSON.parse(readFileSync(new URL("../../apps/ios/CovenCave/CovenCaveTests/Fixtures/runtime-activity-v1.json", import.meta.url), "utf8"));
+  const { argument, result, payloadSignature } = corpus.reasoningPrivacySentinels.tool;
+  const [mapped] = mapConversationHistoryTurns([{
+    id: "golden13-answer", role: "assistant", text: "Done", createdAt: "2026-10-18T12:00:00.000Z",
+    tools: [{
+      id: "golden13-read", name: "Read", status: "ok", input: JSON.stringify({ note: argument }), output: result,
+      outputChars: 64, durationMs: 12, textOffset: 0,
+      signature: payloadSignature, encrypted_content: payloadSignature, providerMetadata: { state: payloadSignature },
+    }],
+  }], "golden13-session");
+  assert.equal(JSON.stringify(mapped).includes(payloadSignature), false, "opaque tool siblings are not carried into the turn");
+  assert.deepEqual(mapped.tools, [{
+    id: "golden13-read", name: "Read", status: "ok", input: JSON.stringify({ note: argument }), output: result,
+    outputChars: 64, durationMs: 12, textOffset: 0, outputSessionId: "golden13-session",
+  }], "the display fields a tool card reads are kept");
+}
+
 // ── CHAT-D9-02: conversation content search ──────────────────────────────────
 // Appended section — searchConversations over fixture transcripts written
 // directly into CONV_DIR (still pointing at the temp HOME from above).
@@ -843,6 +867,17 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
     "utf8",
   );
   await writeFile(path.join(CONV_DIR, "search-corrupt.json"), "{ not json", "utf8");
+  // Legacy <thinking>/<reasoning> content is withheld from the transcript
+  // (projectLegacyAssistantText), so search must not find or quote it either.
+  // A user's own literal tags are their words and stay searchable.
+  await writeFile(
+    path.join(CONV_DIR, "search-legacy.json"),
+    fixture("search-legacy", "2026-06-11T00:30:00.000Z", [
+      "why does <thinking>madeira</thinking> show up",
+      "<thinking>The private lisbon detour stays hidden.</thinking>\nWe settled on the Porto route. <reasoning>lisbon again</reasoning>",
+    ]),
+    "utf8",
+  );
 
   // Body match → one hit per conversation, with snippet + match count;
   // the corrupt file alongside must be skipped, not thrown on.
@@ -853,6 +888,16 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
   assert.match(hits[0].snippet, /Kyoto ryokan/, "snippet centers on the first match");
   assert.doesNotMatch(hits[0].snippet, /\n/, "snippet is single-line");
   assert.ok(hits[0].snippet.length <= 100, "snippet stays excerpt-sized");
+
+  // golden-15 (#6066): withheld legacy reasoning is neither matched nor quoted.
+  assert.deepEqual(await searchConversations("lisbon"), [], "reasoning-only terms do not match");
+  const legacyHits = await searchConversations("porto");
+  assert.equal(legacyHits.length, 1);
+  assert.equal(legacyHits[0].sessionId, "search-legacy");
+  assert.equal(legacyHits[0].matchCount, 1);
+  assert.match(legacyHits[0].snippet, /Porto route/);
+  assert.doesNotMatch(legacyHits[0].snippet, /lisbon|thinking|reasoning/i, "snippet never quotes withheld reasoning");
+  assert.equal((await searchConversations("madeira")).length, 1, "a user's literal tags stay searchable");
 
   // No match → empty; never an error.
   assert.deepEqual(await searchConversations("zanzibar"), []);

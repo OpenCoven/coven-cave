@@ -515,7 +515,11 @@ final class AppModel {
     /// User's preferred familiar order (ids), applied over the server's order
     /// and persisted locally. Unknown/new familiars fall to the end.
 
-    var threads: [ChatThread] = []
+    var threads: [ChatThread] = [] {
+        didSet { removeAccessRevokedThreads() }
+    }
+    @ObservationIgnored private var revokedConversationIDs: Set<String> = []
+    @ObservationIgnored private var revokedThreadIDs: Set<String> = []
     /// Default Chats destination: the newest active conversation. Pinning only
     /// affects list order and never makes an older thread the launch default.
     var mostRecentThread: ChatThread? {
@@ -2199,7 +2203,43 @@ final class AppModel {
 
     var client: CaveClient? {
         guard let connection else { return nil }
-        return CaveClient(connection: connection, session: clientSession)
+        let generation = connectionConfigurationGeneration
+        return CaveClient(connection: connection, session: clientSession,
+                          onConversationAccessDenied: { [weak self] sessionId in
+            guard let self else { return }
+            try await self.purgeDeniedConversation(sessionId, connection: connection, generation: generation)
+        })
+    }
+
+    private func purgeDeniedConversation(_ sessionId: String, connection: CaveConnection,
+                                         generation: UInt64) async throws {
+        // A delayed response from a replaced host cannot invalidate its successor.
+        // Cancellation alone does not undo an access denial already received.
+        guard connectionConfigurationGeneration == generation, self.connection == connection else { return }
+        revokedConversationIDs.insert(sessionId)
+        removeAccessRevokedThreads()
+        let removed = try await threadStore.purgeConversation(sessionId: sessionId,
+                                                              snapshotIDs: revokedThreadIDs)
+        guard connectionConfigurationGeneration == generation, self.connection == connection else { return }
+        revokedThreadIDs.formUnion(removed)
+        removeAccessRevokedThreads()
+    }
+
+    private func removeAccessRevokedThreads() {
+        let affected = threads.filter {
+            $0.isAccessRevoked || revokedThreadIDs.contains($0.id) || revokedConversationIDs.contains($0.id)
+                || $0.sessionIds.values.contains(where: { revokedConversationIDs.contains($0) })
+                || !$0.flowSessionIds.isDisjoint(with: revokedConversationIDs)
+        }
+        guard !affected.isEmpty else { return }
+        for thread in affected {
+            revokedThreadIDs.insert(thread.id)
+            threadDrafts.removeValue(forKey: thread.id)
+            thread.revokeAccess()
+        }
+        // Also runs on late hydration/rollback assignments, so a new instance
+        // created from an old snapshot cannot bypass the held-object fence.
+        threads.removeAll { $0.isAccessRevoked }
     }
 
     /// Drop cached model state for a familiar on the current host. Every model
@@ -2475,6 +2515,52 @@ final class AppModel {
                 id: "ui-preview-long-chat-scroll",
                 title: "Long Scroll Chat",
                 delayedHistory: false
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-large-rich-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-large-rich-chat-scroll", title: "Large Rich Scroll Chat",
+                streamsLatest: false, historyCount: 1_000
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-rich-chat-scroll",
+                title: "Rich Scroll Chat",
+                streamsLatest: false
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-completing-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-rich-completing-chat-scroll", title: "Completing Rich Chat",
+                streamsLatest: true, streamTicks: 4, completionMarker: "Completion marker n8v2"
+            )
+            _ = resolvePendingProjectNavigationIntent()
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-rich-streaming-chat-scroll") {
+            isConnectingPreview = true
+            configureRichChatScrollPreview(
+                id: "ui-preview-rich-streaming-chat-scroll",
+                title: "Rich Streaming Chat",
+                streamsLatest: true
             )
             _ = resolvePendingProjectNavigationIntent()
             ChatTurnNotifier.shared.app = self
@@ -2761,6 +2847,93 @@ final class AppModel {
             }
             self.touch(thread)
         }
+    }
+
+    /// #6090: history whose replies are much taller than the 12-line loading
+    /// placeholder, so rows change height as WebKit measures them while the
+    /// reader scrolls back to the latest reply. Optionally keeps streaming.
+    private func configureRichChatScrollPreview(id: String, title: String, streamsLatest: Bool, historyCount: Int = 40,
+                                                 streamTicks: Int = 240, completionMarker: String? = nil) {
+        configureEmptyChatPreview()
+        let base = Date(timeIntervalSince1970: 1_786_000_000)
+        var messages: [DisplayMessage] = []
+        for index in 0..<historyCount {
+            let created = base.addingTimeInterval(Double(index) * 60)
+            if index.isMultiple(of: 2) {
+                messages.append(DisplayMessage(
+                    id: "rich-user-\(index)", role: .user, familiarId: nil,
+                    text: "Operator checkpoint \(index) in the rich scroll fixture",
+                    createdAt: created
+                ))
+            } else {
+                messages.append(DisplayMessage(
+                    id: "rich-assistant-\(index)", role: .assistant, familiarId: "nyx",
+                    text: Self.richChatScrollPreviewReply(index),
+                    createdAt: created
+                ))
+            }
+        }
+        var latest = DisplayMessage(
+            id: "rich-latest", role: .assistant, familiarId: "nyx",
+            text: """
+            ## The latest rich reply
+
+            \(Array(repeating: "This paragraph keeps the newest reply taller than one screen.", count: 8).joined(separator: "\n\n"))
+
+            Latest bottom marker q3k9z
+            """,
+            createdAt: base.addingTimeInterval(Double(historyCount) * 60)
+        )
+        latest.streaming = streamsLatest
+        messages.append(latest)
+
+        let thread = ChatThread(
+            id: id, title: title, familiarIds: ["nyx"],
+            projectRoot: projects.first?.root, messages: messages
+        )
+        thread.updatedAt = latest.createdAt
+        threads = [thread]
+        threadViews[id] = latest.createdAt
+        projectContextDefaults.set(latest.createdAt, forKey: Self.threadViewKey(id))
+
+        guard streamsLatest else { return }
+        Task { @MainActor [weak thread] in
+            for tick in 0..<streamTicks {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let thread, let last = thread.messages.indices.last else { return }
+                // Keep the sentinel unique to the newest line. Older lines
+                // retain an equal-length token so the fixture's rich workload
+                // and wrapping are not reduced while scrolling through history.
+                thread.messages[last].text = thread.messages[last].text
+                    .replacingOccurrences(of: "tail q3k9z", with: "tail q3k9x")
+                    + "\n\nStreaming tail line \(tick) tail q3k9z"
+            }
+            guard let thread, let last = thread.messages.indices.last else { return }
+            if let completionMarker { thread.messages[last].text += "\n\n" + completionMarker }
+            thread.messages[last].streaming = false
+        }
+    }
+
+    private static func richChatScrollPreviewReply(_ index: Int) -> String {
+        let prose = Array(
+            repeating: "This paragraph is long enough to wrap across several lines on every iPhone width, so the rendered reply is well beyond the twelve lines its loading placeholder shows.",
+            count: 6
+        ).joined(separator: "\n\n")
+        let code = (0..<24).map { "let value\($0) = compute(\($0))" }.joined(separator: "\n")
+        let table = (0..<12).map { "| row \($0) | value \($0 * index) |" }.joined(separator: "\n")
+        return """
+        ### Rich fixture reply \(index)
+
+        \(prose)
+
+        ```swift
+        \(code)
+        ```
+
+        | Name | Value |
+        | --- | --- |
+        \(table)
+        """
     }
 
     private static func longChatScrollPreviewSeenBoundary() -> Date {
@@ -6522,6 +6695,10 @@ final class AppModel {
     /// Keep the observable draft mirror in step with the composer's debounced
     /// UserDefaults persistence; list rows read this to badge drafted threads.
     func setThreadDraft(_ threadId: String, text: String?) {
+        guard !revokedThreadIDs.contains(threadId) else {
+            threadDrafts.removeValue(forKey: threadId)
+            return
+        }
         if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             if threadDrafts[threadId] != text { threadDrafts[threadId] = text }
         } else if threadDrafts[threadId] != nil {

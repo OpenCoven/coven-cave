@@ -27,7 +27,11 @@ The release-runtime test asserts that Windows creates the local startup window b
 
 The release manifest includes GitHub's release body as optional `notes`. The
 native updater exposes this as `Update.body`; the fallback release API carries
-it as optional `notes`. Existing releases without notes remain usable. Empty or
+it as optional `notes`. `updater-manifest` waits for `checksums` and
+`partial-release-notes`, which replace the placeholder body that
+`release-object` creates, and the generator never publishes that placeholder.
+v0.5.18, v0.5.21 and v0.5.22 shipped it as their notes because the manifest
+was read first (#5981). Existing releases without notes remain usable. Empty or
 non-string fallback notes are omitted without changing update availability.
 
 Available updates expose **Release notes** in the shell banner and Settings →
@@ -36,7 +40,8 @@ disclosure; Markdown and HTML are not executed. They belong to the reported
 version and are replaced by a successful new check.
 
 Updater release-page and installer actions open the operating system's default
-browser. A failed native handoff or blocked browser popup shows a warning with
+browser through `open_update_release_url`, which accepts only this repository's
+GitHub release pages and release assets. A failed native handoff or blocked browser popup shows a warning with
 **Retry** and a selectable address under **Details**; it does not silently open
 Cave's embedded Browser. After a signed-updater failure, recovery still uses the
 canonical GitHub release page, never a metadata-derived direct installer link.
@@ -48,6 +53,35 @@ and #5981 for those. The automated browser
 and IPC fixtures do not qualify the real Windows installer or default browser.
 Rollback is a revert of this slice; no stored-data migration is required.
 
+## Packaged origin and IPC grants
+
+A packaged build loads its main UI from the sidecar's loopback origin (for
+example `http://127.0.0.1:3020`), not from bundled local content. The `default`
+capability is local-only, so it reaches only `startup.html`. Every command the
+main UI invokes needs an exact `loopback-*` capability for the `main` webview.
+Dev builds hide a missing grant, because `devUrl` counts as local. Unit tests
+hide it too, because they mock `invoke`.
+
+Packaged Windows acceptance for #5981 found the recovery path rejected with
+`not allowed by ACL` on every release from v0.5.16 to v0.5.22:
+
+- Startup status and Retry, so Retry never restarted services.
+- Install-recovery arming, so **Restart & install** always failed with
+  "couldn't prepare install recovery".
+- `shell_open`, so update links never opened a browser.
+
+`loopback-windows-recovery` now grants the Windows startup and install-recovery
+commands to the `main` webview. `loopback-update-links` grants only
+`open_update_release_url`; `shell_open` stays off loopback (#197). The update UI
+no longer reduces Tauri's string rejections to "unknown error".
+`desktop-permissions.test.mjs` fails whenever the loopback-served UI invokes a
+command that no loopback `main` capability grants. Its short list of known
+exceptions is tracked in #6502.
+
+Clients from v0.5.16 to v0.5.22 cannot install any update in-app, because their
+own arming call is denied. Each such Windows install needs one manual MSI
+install of a release with this fix. Later updates can then use the in-app path.
+
 ## Declined or failed install recovery
 
 The MSI stays per-machine (decision B1 on #5981). Tauri updater 2.14.1 starts
@@ -57,8 +91,12 @@ prompt or a failed install used to leave Cave closed.
 
 Before **Restart & install** on Windows, the webview calls
 `arm_update_install_recovery`, which copies the executable to
-`%LOCALAPPDATA%\ai.opencoven.cave\update-install-watch\`. The copy runs
-outside the install directory, so it never holds a file the MSI replaces. If
+`%LOCALAPPDATA%\ai.opencoven.cave\update-install-watch\cave-recovery-<pid>.exe`.
+The copy runs outside the install directory, so it never holds a file the MSI
+replaces. Its file name must not contain words such as "install", "setup" or
+"update". With UAC on, Windows installer detection refuses to start an
+executable named like that unless its manifest declares a
+`requestedExecutionLevel`, and Tauri's default manifest declares none. If
 arming fails, the install does not start and the banner shows the usual update
 failure with the release page. If `install()` returns an error, the webview
 disarms recovery. Since updater 2.14, a failed `ShellExecuteW` returns that error
@@ -87,6 +125,15 @@ later successful relaunch.
 Rust tests cover exit classification, the watcher's argument contract and the
 outcome record. Component tests cover arm-before-install ordering, refusal when
 arming fails, disarm on install error, and the outcome banner's Retry and
-dismissal. Real-Windows acceptance is still required: declining UAC must
-relaunch a working app showing this banner. It also confirms that the client
-`msiexec.exe` reports the final code on decline.
+dismissal. A Rust test keeps the copy's file name free of installer keywords.
+
+Packaged Windows 11 acceptance on #5981 (v0.5.21 to v0.5.22) found the
+original `install-watch-<pid>.exe` name refused: the copy exited with
+`STATUS_ELEVATION_REQUIRED` within milliseconds, so a declined prompt left Cave
+closed. The same bytes started under a neutral name. Started that way with
+Cave's own arguments, the watcher found the client `msiexec.exe`, read `1602`
+after the decline, recorded *cancelled* and relaunched Cave. The UI banner also
+needs the packaged origin's grant for `update_install_outcome` (#6503). The
+end-to-end UI row, a declined prompt that relaunches a working app showing this
+banner, still needs a release that carries both fixes plus a newer release to
+update to.

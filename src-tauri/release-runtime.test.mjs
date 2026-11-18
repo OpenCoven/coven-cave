@@ -155,7 +155,7 @@ async function readNativeHost(...modules) {
 }
 
 test("release bundle includes and prefers bundled Node and Whisper runtimes", async () => {
-  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, devWhisperEnv, devServerScript, launcher] = await Promise.all([
+  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, devWhisperEnv, devServerScript, launcher, folderAuthentication] = await Promise.all([
     readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
     readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8"),
@@ -163,6 +163,7 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     readFile(new URL("../scripts/whisper-runtime-dev-env.sh", import.meta.url), "utf8"),
     readFile(new URL("../scripts/dev-server-with-whisper.sh", import.meta.url), "utf8"),
     readNativeHost("sidecar_discovery.rs", "sidecar_startup.rs"),
+    readFile(new URL("../src/lib/server/native-folder-authentication.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(
@@ -171,6 +172,7 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     "Tauri resources must include the bundled Node runtime",
   );
   assert.match(tauriConfig, /"resources\/whisper\/\*\*\/\*"/, "Tauri resources must include Whisper runtime files");
+  assert.match(tauriConfig, /"resources\/server\/\*\*\/\*"/, "Tauri resources must include the expanded sidecar server");
   assert.match(windowsConfig, /"resources\/whisper\/\*\*\/\*"/, "Windows bundles must include Whisper runtime files");
   assert.match(
     windowsConfig,
@@ -209,6 +211,16 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     bundleScript,
     /COVEN_CAVE_REFRESH_WHISPER=1 bash "\$ROOT\/scripts\/whisper-runtime-bundle\.sh"/,
     "release packaging must refresh Whisper instead of trusting a local development cache",
+  );
+  assert.match(
+    bundleScript,
+    /CONFIRMATION_HELPER="\$ROOT\/native\/confirm-project-folder"[\s\S]*?cp "\$CONFIRMATION_HELPER" "\$DEST\/native\/confirm-project-folder"/,
+    "macOS sidecars must package the confirmation helper at the server's runtime-relative path",
+  );
+  assert.match(
+    folderAuthentication,
+    /path\.join\(process\.cwd\(\), "native", "confirm-project-folder"\)/,
+    "the sidecar must resolve the helper from its bundled server directory",
   );
   assert.match(whisperBundleScript, /whisper-bin-x64\.zip/, "Windows must stage a pinned Whisper CLI archive");
   assert.match(whisperBundleScript, /MSVCP140\.dll.*VCRUNTIME140\.dll.*VCRUNTIME140_1\.dll.*VCOMP140\.dll/, "Windows must ship Whisper's app-local MSVC runtime");
@@ -415,6 +427,23 @@ test("native updater cleanup stops the sidecar before Windows exits", async () =
     launcher,
     /updater_builder\.installer_args\(msi_verbose_log_installer_args\(&log_path\)\)/,
     "updater-driven MSI installs must use the verbose per-run diagnostic log helper",
+  );
+});
+
+// `tauri dev` runs the bare target/debug/app. Accepting an update there made
+// the macOS installer replace target/debug wholesale (binary and cargo cache
+// gone, "failed to restart app"). Debug builds must not register the updater.
+test("debug builds never register the native updater", async () => {
+  const setup = await readNativeHost("tauri_setup.rs");
+  assert.match(
+    setup,
+    /if cfg!\(debug_assertions\) \{\s*log::info!\("\[cave\] updater disabled: debug builds never install releases"\);\s*\} else \{\s*app\.handle\(\)\.plugin\(updater_builder\.build\(\)\)\?;\s*\}/,
+    "the updater plugin is registered only in release builds",
+  );
+  assert.equal(
+    (setup.match(/updater_builder\.build\(\)/g) ?? []).length,
+    1,
+    "no other path registers the updater",
   );
 });
 
@@ -1013,7 +1042,7 @@ test("Windows first launch paints progress and supports recovery while the sidec
   );
   assert.match(
     launcher,
-    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*NOTCH_WINDOW_LABEL/,
+    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*CHAT_WINDOW_LABEL/,
     "sidecar recovery must rotate auth for already-open auxiliary windows",
   );
   assert.match(
@@ -1230,7 +1259,7 @@ test("Windows startup PRs compile native code without release authority", async 
   assert.match(workflow, /Invoke-NativeTest 'sidecar_archive::tests' 24/);
   assert.match(workflow, /Invoke-NativeTest 'sidecar_runtime_retention::tests' 5/);
   // Declined or failed msiexec recovery (#5981) must compile and run on Windows for every PR.
-  assert.match(workflow, /Invoke-NativeTest 'windows_update_recovery::tests' 6/);
+  assert.match(workflow, /Invoke-NativeTest 'windows_update_recovery::tests' 7/);
   assert.match(workflow, /if \(\$testExitCode -ne 0\) \{ throw/);
   assert.match(workflow, /if \(\(\$output -join "`n"\) -notmatch \$summary\) \{ throw/);
   assert.doesNotMatch(workflow, /pull_request_target|secrets:|contents: write|workflow_dispatch|release\.yml|release-candidate\.yml/);

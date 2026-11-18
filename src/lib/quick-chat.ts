@@ -60,7 +60,6 @@ export function resolveQuickChatTarget(
 
   const fallback =
     (fallbackFamiliarId && familiars.find((familiar) => familiar.id === fallbackFamiliarId)) ??
-    familiars[0] ??
     null;
 
   if (!fallback) {
@@ -68,7 +67,7 @@ export function resolveQuickChatTarget(
       familiarId: null,
       prompt,
       mention: null,
-      error: "No familiars are available.",
+      error: familiars.length ? "Choose an available acting familiar." : "No familiars are available.",
     };
   }
 

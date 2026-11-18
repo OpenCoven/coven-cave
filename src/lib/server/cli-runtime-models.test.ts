@@ -8,13 +8,21 @@ import {
 } from "./cli-runtime-models.ts";
 
 assert.deepEqual(normalizeCliRuntimeModels("codex", [
-  { model: "gpt-6.1-sol", displayName: "GPT-6.1 Sol", hidden: false },
+  { model: "gpt-6.2-sol", displayName: "GPT-6.2 Sol", hidden: false },
+  { model: "gpt-6.2-astra", displayName: "GPT-6.2 Astra", hidden: false },
+  { model: "gpt-6.1-terra", displayName: "GPT-6.1 Terra", hidden: false },
+  { model: "gpt-6-luna", displayName: "GPT-6 Luna", hidden: false },
   { model: "hidden", hidden: true },
   { model: "old", upgrade: "gpt-6.1-sol" },
   { model: "retired", upgradeInfo: { retirementAt: 1 } },
   { model: "unsafe\nmodel" },
   { model: "gpt-6.1-sol" },
-]), [{ id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol" }]);
+]), [
+  { id: "openai/gpt-6.2-sol", label: "GPT-6.2 Sol" },
+  { id: "openai/gpt-6.2-astra", label: "GPT-6.2 Astra" },
+  { id: "openai/gpt-6.1-terra", label: "GPT-6.1 Terra" },
+  { id: "openai/gpt-6-luna", label: "GPT-6 Luna" },
+]);
 assert.deepEqual(normalizeCliRuntimeModels("claude", [
   { value: "default", resolvedModel: "claude-opus-5-5", displayName: "Default (recommended)" },
   { value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus 5.5" },

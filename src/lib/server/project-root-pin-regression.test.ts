@@ -88,3 +88,27 @@ test("forwarded grants stay pinned and the final spawn check rejects a late redi
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test("launch rechecks the current registry pin instead of trusting an authorized snapshot", async () => {
+  const { assertCurrentPinnedLaunchRootIn } = await import("./project-root-pin.ts");
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "pin-registry-")));
+  try {
+    const root = path.join(base, "root");
+    const other = path.join(base, "other");
+    fs.mkdirSync(root);
+    fs.mkdirSync(other);
+    const original = { id: "p", name: "Project", root, rootRealpath: root };
+    assertCurrentPinnedLaunchRootIn([original], "p", root);
+    const edited = { ...original, root: other, rootRealpath: other };
+    assert.throws(
+      () => assertCurrentPinnedLaunchRootIn([edited], "p", root),
+      { code: "project_root_moved", status: 409 },
+    );
+    assert.throws(
+      () => assertCurrentPinnedLaunchRootIn([], "p", root),
+      { code: "project_root_moved", status: 409 },
+    );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

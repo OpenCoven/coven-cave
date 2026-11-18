@@ -1,4 +1,7 @@
-import { assertPinnedLaunchRoot, pinnedProjectRoot } from "@/lib/server/project-root-pin";
+import {
+  assertCurrentPinnedLaunchRootIn,
+  pinnedProjectRoot,
+} from "@/lib/server/project-root-pin";
 import { isMetaRunOrigin } from "@/lib/chat-origins";
 import { projectTextOffsets } from "@/lib/project-text-offsets";
 import { projectProgressDetails } from "@/lib/server/chat-display-projection";
@@ -295,6 +298,7 @@ import {
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
+  describePrivateStateWriteOverlap,
   listAccessibleProjects,
 } from "@/lib/project-permissions";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
@@ -383,6 +387,10 @@ import {
 import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
 export const dynamic = "force-dynamic";
+// Reused from #6450 at 119a775f2: the onboarding access review must match
+// admission on every local runtime, including Codex workspace-write.
+const PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE =
+  "This project's access is read-only. Choose Read-only mode or request write access, then retry.";
 export const runtime = "nodejs";
 
 // A transport drop no longer kills the harness (deliberate Stop goes through
@@ -881,7 +889,7 @@ async function startAdmittedChatStream(
 
 function openClawChatResponse(args: {
   admission: ChatRunAdmission;
-  assertLaunchFoldersUnchanged: () => void;
+  assertLaunchFoldersUnchanged: () => Promise<void>;
   req: Request;
   body: SendBody;
   promptText: string;
@@ -1150,7 +1158,16 @@ function openClawChatResponse(args: {
       const gatewayAuth = openClawGatewayPairedDeviceAuthStatus(
         args.openClawGatewayCredentialStore,
       );
-      args.assertLaunchFoldersUnchanged();
+      try {
+        await args.assertLaunchFoldersUnchanged();
+      } catch (error) {
+        if (!(error instanceof ChatProjectLaunchError)) throw error;
+        push({ kind: "error", code: error.code, message: error.message });
+        push({ kind: "done", durationMs: Date.now() - startedAt, isError: true, responseMetadata });
+        runBuffer?.finish();
+        close();
+        return;
+      }
       const gatewayDispatch = gatewayAuth.available
         ? await dispatchOpenClawGatewayTurn({
         sessionKey: gatewaySessionKey,
@@ -1580,8 +1597,14 @@ function openClawChatResponse(args: {
       let terminal = false;
       let localRecoveryAttempted = false;
       let stopChildOnLaunch = false;
-      const spawnChild = (mode: "gateway" | "local") => {
-        args.assertLaunchFoldersUnchanged();
+      const spawnChild = async (mode: "gateway" | "local") => {
+        try {
+          await args.assertLaunchFoldersUnchanged();
+        } catch (error) {
+          if (!(error instanceof ChatProjectLaunchError)) throw error;
+          failChild(error);
+          return null;
+        }
         const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode, gatewaySessionKey);
         const launched = spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           windowsHide: true,
@@ -1678,11 +1701,13 @@ function openClawChatResponse(args: {
         return created;
       }).catch(() => false);
 
-      const failChild = (err: NodeJS.ErrnoException) => {
+      const failChild = (err: NodeJS.ErrnoException | ChatProjectLaunchError) => {
         if (terminal) return;
         terminal = true;
         markChatRunTransportSettled(runHandle);
-        const failure = localRuntimeLaunchError("openclaw", err.code);
+        const failure = err instanceof ChatProjectLaunchError
+          ? { code: err.code, message: err.message }
+          : localRuntimeLaunchError("openclaw", err.code);
         pushProgress("openclaw-response", "OpenClaw bridge failed", "error", failure.message);
         push({ kind: "error", code: failure.code, message: failure.message });
         push({
@@ -1735,7 +1760,8 @@ function openClawChatResponse(args: {
             "Gateway CLI is unavailable; retrying embedded local OpenClaw",
             "running",
           );
-          child = spawnChild(executionMode);
+          child = await spawnChild(executionMode);
+          if (!child) return;
           attachChild(child);
           pushProgress("openclaw-local-retry", "Embedded local OpenClaw started", "done");
           return;
@@ -1941,7 +1967,8 @@ function openClawChatResponse(args: {
         close();
       }
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", args.cwd);
-      child = spawnChild(executionMode);
+      child = await spawnChild(executionMode);
+      if (!child) return;
       attachChild(child);
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
       pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
@@ -2724,19 +2751,19 @@ async function postAdmittedChat(
     }
     throw error;
   }
-  const assertProjectFoldersUnchanged = () => {
+  const assertProjectFoldersUnchanged = (currentProjects: Awaited<ReturnType<typeof loadProjects>>) => {
     if (sshRuntime) return;
-    const primary = projects.find((project) => project.id === authorizedProjectId);
-    if (primary) {
+    if (authorizedProjectId) {
+      const primary = currentProjects.find((project) => project.id === authorizedProjectId);
       if (cwd !== authorizedProjectRoot) {
         throw new ChatProjectLaunchError("project_root_moved", 409,
           "The project folder changed while preparing this turn. Confirm its folder in project settings and retry.");
       }
-      assertPinnedLaunchRoot(primary, cwd);
+      assertCurrentPinnedLaunchRootIn(currentProjects, authorizedProjectId, cwd, primary?.name);
     }
   };
   try {
-    assertProjectFoldersUnchanged();
+    assertProjectFoldersUnchanged(await loadProjects());
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) {
       return Response.json({ ok: false, code: error.code, error: error.message }, { status: error.status });
@@ -3190,11 +3217,17 @@ async function postAdmittedChat(
     return pin ? [{ ...entry, project: { ...entry.project, root: pin } }] : [];
   });
   const omittedGrantCount = accessibleProjects.length - effectiveAccessibleProjects.length;
-  const assertLaunchFoldersUnchanged = () => {
-    assertProjectFoldersUnchanged();
+  const assertLaunchFoldersUnchanged = async () => {
+    if (sshRuntime) return;
+    const currentProjects = await loadProjects();
+    assertProjectFoldersUnchanged(currentProjects);
     for (const entry of effectiveAccessibleProjects) {
-      const registered = projects.find((project) => project.id === entry.project.id);
-      if (registered) assertPinnedLaunchRoot(registered, entry.project.root);
+      assertCurrentPinnedLaunchRootIn(
+        currentProjects,
+        entry.project.id,
+        entry.project.root,
+        entry.project.name,
+      );
     }
   };
   const grantedProjectRoots = effectiveAccessibleProjects.map((entry) => entry.project.root.trim());
@@ -3205,6 +3238,14 @@ async function postAdmittedChat(
   // #6216's most-permissive merge; a later read grant cannot erase a write grant.
   for (const entry of effectiveAccessibleProjects) {
     if (entry.access === "write") grantedProjectRootAccess[entry.project.root.trim()] = "write";
+  }
+  const primaryProjectAccess = authorizedProjectId
+    ? accessibleProjects.find((entry) => entry.project.id === authorizedProjectId)?.access
+    : undefined;
+  if (!sshRuntime && body.permissionMode !== "read" && primaryProjectAccess === "read") {
+    return Response.json({ ok: false, code: "project_write_access_required",
+      error: PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE }, { status: 403 });
+
   }
   const runtimeResourceRoots = sshRuntime
     ? []
@@ -3418,7 +3459,7 @@ async function postAdmittedChat(
 
   if (binding.harness === "openclaw" && !sshRuntime) {
     try {
-      assertLaunchFoldersUnchanged();
+      await assertLaunchFoldersUnchanged();
     } catch (error) {
       if (error instanceof ChatProjectLaunchError) return Response.json(
         { ok: false, code: error.code, error: error.message }, { status: error.status });
@@ -3496,7 +3537,7 @@ async function postAdmittedChat(
       : projectlessLaunch.kind === "workspace" ? "write" : undefined;
     if (primaryAccess !== "write") {
       return Response.json({ ok: false, code: "project_write_access_required",
-        error: "This project's access is read-only. Choose Read-only mode or request write access, then retry." }, { status: 403 });
+        error: PROJECT_WRITE_ACCESS_REQUIRED_MESSAGE }, { status: 403 });
     }
     try {
       const writeScope = buildClaudeWriteScope({
@@ -3506,6 +3547,22 @@ async function postAdmittedChat(
       });
       // A Coven without the flag refuses this launch below, so credentials never reach disk for it.
       if (claudeWriteScopeSupported) {
+        // Name the folder and the grant behind an overlap, so the person can
+        // narrow the right one. prepareClaudeWriteScopeFile still refuses it.
+        const overlap = await describePrivateStateWriteOverlap({
+          familiarId: body.familiarId,
+          familiarName: binding.display_name?.trim() || body.familiarId,
+          writableProjects: effectiveAccessibleProjects
+            .filter(entry => entry.access === "write")
+            .map(entry => entry.project),
+          primaryProjectId: authorizedProjectId,
+          familiarWorkspace: resolvedFamiliarWorkspace,
+          primaryRoot: cwd,
+        });
+        if (overlap) {
+          return Response.json({ ok: false, code: "scoped_write_unavailable",
+            reason: "cave_private_state_overlap", overlap, error: overlap.message }, { status: 409 });
+        }
         writeScopeFile = prepareClaudeWriteScopeFile(writeScope, await loadClaudeFamiliarMcpServers({
           familiarWorkspace: resolvedFamiliarWorkspace,
           projectRoots: grantedProjectRoots,
@@ -3842,7 +3899,7 @@ async function postAdmittedChat(
   // to `announceSession` without putting it in the temporal dead zone.
   let runHandle!: ChatRunHandle;
   try {
-    assertLaunchFoldersUnchanged();
+    await assertLaunchFoldersUnchanged();
   } catch (error) {
     if (error instanceof ChatProjectLaunchError) return Response.json(
       { ok: false, code: error.code, error: error.message }, { status: error.status });
@@ -5726,8 +5783,18 @@ async function postAdmittedChat(
         }
       };
 
-      const runAttempt = (spawnArgs: string[], apiPrompt = harnessPrompt, authorityVerified = false): Promise<void> => {
-        if (runHandle.stopRequested) return Promise.resolve();
+      const runAttempt = async (spawnArgs: string[], apiPrompt = harnessPrompt, authorityVerified = false): Promise<void> => {
+        if (runHandle.stopRequested) return;
+        try {
+          await assertLaunchFoldersUnchanged();
+        } catch (error) {
+          if (!(error instanceof ChatProjectLaunchError)) throw error;
+          launchFailure = { code: error.code, message: error.message };
+          result.is_error = true;
+          pushProgress("project-root", "Project folder changed", "error", error.message);
+          push({ kind: "error", code: error.code, message: error.message, harness: binding.harness });
+          return;
+        }
         if (hermesApi) return runHermesApiAttempt(apiPrompt);
         // These files decide what a launch may write and what it starts outside
         // the sandbox. A retry reuses them, so each attempt checks them first,
@@ -5829,7 +5896,6 @@ async function postAdmittedChat(
                 });
               })()
             : (() => {
-                assertLaunchFoldersUnchanged();
                 const localPlan = localRuntimePlan;
                 if (!localPlan) {
                   const message =

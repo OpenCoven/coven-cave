@@ -1,0 +1,43 @@
+{
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "deviceScaleFactor": 2,
+  "colorScheme": "dark",
+  "path": "/",
+  "ready": "body",
+  "fixtures": "fixtures.json",
+  "storage": {
+    "cave:shell:nav-open": "1"
+  },
+  "captures": [
+    {
+      "file": "home.png",
+      "alt": "Coven Cave home surface",
+      "mode": "home",
+      "waitFor": "text=What are we casting today?",
+      "storage": {
+        "cave:active-familiar": "cody",
+        "cave:familiar:cody:last-surface": "chat"
+      }
+    },
+    {
+      "file": "chat.png",
+      "alt": "A chat with a familiar, showing its tool activity",
+      "mode": "chat",
+      "path": "/#chat-harbor-1",
+      "waitFor": "text=The suite passes 50 runs in a row.",
+      "storage": {
+        "cave:active-familiar": "cody",
+        "cave:familiar:cody:last-surface": "chat"
+      }
+    },
+    {
+      "file": "tasks.png",
+      "alt": "The Tasks board",
+      "mode": "board",
+      "waitFor": "text=Plan the settings cleanup"
+    }
+  ]
+}

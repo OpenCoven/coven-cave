@@ -1,0 +1,306 @@
+{
+  "/api/daemon/connection": {
+    "ok": true,
+    "running": true,
+    "connected": true,
+    "availability": "online",
+    "target": {
+      "mode": "local"
+    }
+  },
+  "/api/familiars": {
+    "ok": true,
+    "familiars": [
+      {
+        "id": "nova",
+        "display_name": "Nova",
+        "role": "Orchestrator",
+        "status": "active",
+        "icon": "ph:sparkle-fill"
+      },
+      {
+        "id": "cody",
+        "display_name": "Cody",
+        "role": "Code Familiar",
+        "status": "active",
+        "icon": "ph:code"
+      },
+      {
+        "id": "sage",
+        "display_name": "Sage",
+        "role": "Research Familiar",
+        "status": "active",
+        "icon": "ph:book-open"
+      }
+    ]
+  },
+  "/api/projects": {
+    "ok": true,
+    "projects": [
+      {
+        "id": "project-harbor",
+        "name": "harbor",
+        "root": "/demo/harbor",
+        "access": "write",
+        "createdAt": "2026-11-10T09:00:00.000Z",
+        "updatedAt": "2026-11-10T09:00:00.000Z"
+      }
+    ]
+  },
+  "/api/sessions/list": {
+    "ok": true,
+    "sessions": [
+      {
+        "id": "harbor-1",
+        "title": "Fix the flaky upload retry",
+        "status": "completed",
+        "origin": "chat",
+        "project_root": "/demo/harbor",
+        "harness": "claude",
+        "familiarId": "cody",
+        "exit_code": 0,
+        "archived_at": null,
+        "created_at": "2026-11-10T09:05:00.000Z",
+        "updated_at": "2026-11-10T09:21:00.000Z",
+        "attention": {
+          "state": "none",
+          "since": null,
+          "reason": null
+        }
+      },
+      {
+        "id": "harbor-2",
+        "title": "Summarize this week's release notes",
+        "status": "completed",
+        "origin": "chat",
+        "project_root": "/demo/harbor",
+        "harness": "codex",
+        "familiarId": "sage",
+        "exit_code": 0,
+        "archived_at": null,
+        "created_at": "2026-11-09T14:00:00.000Z",
+        "updated_at": "2026-11-09T14:12:00.000Z",
+        "attention": {
+          "state": "none",
+          "since": null,
+          "reason": null
+        }
+      },
+      {
+        "id": "harbor-3",
+        "title": "Plan the settings cleanup",
+        "status": "completed",
+        "origin": "chat",
+        "project_root": "/demo/harbor",
+        "harness": "claude",
+        "familiarId": "nova",
+        "exit_code": 0,
+        "archived_at": null,
+        "created_at": "2026-11-08T10:00:00.000Z",
+        "updated_at": "2026-11-08T10:30:00.000Z",
+        "attention": {
+          "state": "none",
+          "since": null,
+          "reason": null
+        }
+      }
+    ]
+  },
+  "/api/chat/conversation": {
+    "ok": true,
+    "context": {
+      "task": null,
+      "github": []
+    },
+    "conversation": {
+      "familiarId": "cody",
+      "activeLeafId": "t2",
+      "turns": [
+        {
+          "id": "t1",
+          "parentId": null,
+          "role": "user",
+          "text": "The upload retry test fails about one run in five. Can you find out why and fix it?",
+          "createdAt": "2026-11-10T09:05:00.000Z"
+        },
+        {
+          "id": "t2",
+          "parentId": "t1",
+          "role": "assistant",
+          "text": "Found it. The retry timer started before the first request settled, so a slow first attempt and its retry could both succeed and the test saw two uploads.\n\n- The retry now waits for the first attempt to fail before it schedules.\n- I added a test that holds the first request open and checks only one upload lands.\n\nThe suite passes 50 runs in a row.",
+          "createdAt": "2026-11-10T09:21:00.000Z",
+          "tools": [
+            {
+              "id": "tool-read",
+              "name": "Read",
+              "status": "ok",
+              "durationMs": 12,
+              "input": "{\"file_path\":\"/demo/harbor/src/upload/retry.ts\"}",
+              "output": "export function scheduleRetry(attempt) { /* ... */ }"
+            },
+            {
+              "id": "tool-edit",
+              "name": "Edit",
+              "status": "ok",
+              "durationMs": 20,
+              "input": "{\"file_path\":\"/demo/harbor/src/upload/retry.ts\",\"old_string\":\"startTimer()\",\"new_string\":\"await firstAttempt.catch(startTimer)\"}"
+            },
+            {
+              "id": "tool-bash",
+              "name": "Bash",
+              "status": "ok",
+              "durationMs": 8400,
+              "input": "{\"command\":\"pnpm test upload --repeat 50\"}",
+              "output": "50 passed"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "/api/escalations": {
+    "ok": true,
+    "count": 0
+  },
+  "/api/github/assigned": {
+    "ok": true,
+    "configured": false,
+    "items": []
+  },
+  "/api/board": {
+    "ok": true,
+    "cards": [
+      {
+        "id": "card-1",
+        "title": "Fix the flaky upload retry",
+        "notes": "Fails about one run in five.",
+        "status": "review",
+        "lifecycle": "todo",
+        "priority": "high",
+        "familiarId": "cody",
+        "sessionId": "harbor-1",
+        "cwd": "/demo/harbor",
+        "projectId": "project-harbor",
+        "links": [],
+        "github": [],
+        "asana": [],
+        "labels": [
+          "reliability"
+        ],
+        "steps": [],
+        "dependencies": [],
+        "primaryBlockerId": null,
+        "nextStep": null,
+        "retryCount": 0,
+        "maxRetries": 3,
+        "createdAt": "2026-11-10T09:00:00.000Z",
+        "updatedAt": "2026-11-10T09:21:00.000Z"
+      },
+      {
+        "id": "card-2",
+        "title": "Summarize this week's release notes",
+        "notes": "",
+        "status": "running",
+        "lifecycle": "todo",
+        "priority": "medium",
+        "familiarId": "sage",
+        "sessionId": null,
+        "cwd": "/demo/harbor",
+        "projectId": "project-harbor",
+        "links": [],
+        "github": [],
+        "asana": [],
+        "labels": [
+          "docs"
+        ],
+        "steps": [],
+        "dependencies": [],
+        "primaryBlockerId": null,
+        "nextStep": null,
+        "retryCount": 0,
+        "maxRetries": 3,
+        "createdAt": "2026-11-09T14:00:00.000Z",
+        "updatedAt": "2026-11-09T14:12:00.000Z"
+      },
+      {
+        "id": "card-3",
+        "title": "Plan the settings cleanup",
+        "notes": "",
+        "status": "backlog",
+        "lifecycle": "todo",
+        "priority": "medium",
+        "familiarId": "nova",
+        "sessionId": null,
+        "cwd": "/demo/harbor",
+        "projectId": "project-harbor",
+        "links": [],
+        "github": [],
+        "asana": [],
+        "labels": [
+          "planning"
+        ],
+        "steps": [],
+        "dependencies": [],
+        "primaryBlockerId": null,
+        "nextStep": null,
+        "retryCount": 0,
+        "maxRetries": 3,
+        "createdAt": "2026-11-08T10:00:00.000Z",
+        "updatedAt": "2026-11-08T10:30:00.000Z"
+      },
+      {
+        "id": "card-4",
+        "title": "Add keyboard shortcuts to the file list",
+        "notes": "",
+        "status": "backlog",
+        "lifecycle": "todo",
+        "priority": "low",
+        "familiarId": null,
+        "sessionId": null,
+        "cwd": "/demo/harbor",
+        "projectId": "project-harbor",
+        "links": [],
+        "github": [],
+        "asana": [],
+        "labels": [],
+        "steps": [],
+        "dependencies": [],
+        "primaryBlockerId": null,
+        "nextStep": null,
+        "retryCount": 0,
+        "maxRetries": 3,
+        "createdAt": "2026-11-07T10:00:00.000Z",
+        "updatedAt": "2026-11-07T10:30:00.000Z"
+      },
+      {
+        "id": "card-5",
+        "title": "Draft the onboarding checklist",
+        "notes": "",
+        "status": "inbox",
+        "lifecycle": "todo",
+        "priority": "medium",
+        "familiarId": "sage",
+        "sessionId": null,
+        "cwd": "/demo/harbor",
+        "projectId": "project-harbor",
+        "links": [],
+        "github": [],
+        "asana": [],
+        "labels": [
+          "docs"
+        ],
+        "steps": [],
+        "dependencies": [],
+        "primaryBlockerId": null,
+        "nextStep": null,
+        "retryCount": 0,
+        "maxRetries": 3,
+        "createdAt": "2026-11-07T10:00:00.000Z",
+        "updatedAt": "2026-11-07T10:30:00.000Z"
+      }
+    ]
+  },
+  "/api/milestones": {
+    "ok": false
+  }
+}

@@ -1,0 +1,2645 @@
+{
+  "schemaVersion": 1,
+  "note": "Sanitized index of raw run directories. rawSha256 names the unsanitized files kept outside the repository; paths under the scratch, worktree and home directories are replaced.",
+  "runs": [
+    {
+      "label": "cand-58f015cd9-r1",
+      "started": "2026-11-12T11:50:39Z",
+      "checkout": "<scratch>/cand-58f015cd9",
+      "source": "58f015cd9144bad54bce4d720667f9daf27711d0",
+      "tree": "52336ac95e9b2959e97ad0521d006ae9024c1ec0",
+      "dirty": "0 paths (harness config excluded)",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.3.8",
+      "port": "3142",
+      "command": "CI=true COVEN_CAVE_PORT=3142 pnpm exec playwright test --config playwright.golden.config.ts --project=golden-chromium --project=golden-webkit --grep 'reasoning preference|reasoning toggle during streaming|tool payload sentinels' --reporter=list,json",
+      "finished": "2026-11-12T11:52:42Z",
+      "exit": 0,
+      "rawSha256": {
+        "identity.txt": "dd932b9f1993d9d7fdfe3ad8b201ac4c55b03c610e8221865b7d52d454da5264",
+        "report.json": "62e471514592b594eaf9a480005c903926d6683b438ac18e4a51eac95b2110e7",
+        "stdout.log": "bbe79275d6e494ffdcc961afd479bb92e919a1e0033347244df30b5e5217cd5e"
+      },
+      "stats": {
+        "expected": 22,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 121583
+      },
+      "tests": [
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3220
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3243
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1968
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1965
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2148
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2137
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2069
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2059
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2233
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2321
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2678
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2850
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2706
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2656
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2408
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2378
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2353
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2364
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2360
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3679
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3508
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3188
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "head-db435727c-r1",
+      "started": "2026-11-12T11:53:33Z",
+      "checkout": "<worktree>",
+      "source": "db435727c55fbdc3c4d432f6121f0754b3989fdc",
+      "tree": "2a0ba028001605914011200b82fa154df6dbcdef",
+      "dirty": "0 paths (harness config excluded)",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.4.3",
+      "port": "3141",
+      "command": "CI=true COVEN_CAVE_PORT=3141 pnpm exec playwright test --config playwright.golden.config.ts --project=golden-chromium --project=golden-webkit --grep 'reasoning preference|reasoning toggle during streaming|tool payload sentinels' --reporter=list,json",
+      "finished": "2026-11-12T11:57:52Z",
+      "exit": 0,
+      "rawSha256": {
+        "identity.txt": "24f3c73e3ebc1b2c43aa154ee603eedaef3efc9c0f4eb3a344e8e484ac3b29d7",
+        "report.json": "4f7dfd77f7db2da907810f1aeaf26632ad1499b5c3ebde307b88581e55b12d12",
+        "stdout.log": "ebb644abf54f26e19462efea6c8acc6aa91373a0becb83856a258a6049757c62"
+      },
+      "stats": {
+        "expected": 22,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 253914
+      },
+      "tests": [
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3963
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 4000
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1708
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1748
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1316
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2430
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2435
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2104
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2069
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2573
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3252
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2921
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3280
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2611
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2261
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2125
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2114
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1984
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2544
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2647
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2779
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3017
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "cand-sidecar-r1",
+      "started": "2026-11-12T12:09:47Z",
+      "checkout": "<scratch>/cand-58f015cd9",
+      "source": "58f015cd9144bad54bce4d720667f9daf27711d0",
+      "tree": "52336ac95e9b2959e97ad0521d006ae9024c1ec0",
+      "dirty": "6 paths (harness config excluded)",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.3.8",
+      "port": "3142",
+      "config": "playwright.golden-sidecar.config.ts (sha256 3132260471de3c3a)",
+      "sidecar home": "<scratch>/sh1",
+      "bundled node": "v24.22.0",
+      "command": "CI=true COVEN_CAVE_PORT=3142 pnpm exec playwright test --config playwright.golden-sidecar.config.ts --project=sidecar-chromium --project=sidecar-webkit --grep 'reasoning preference|reasoning toggle during streaming|tool payload sentinels' --reporter=list,json",
+      "finished": "2026-11-12T12:10:57Z",
+      "exit": 1,
+      "rawSha256": {
+        "identity.txt": "bb2365136005bc8fa43ffa5827e2c6add4ea6fe0ecfb789daeefb8a63450706e",
+        "report.json": "2de6f8d7adb6bd8d8364e5de3f26915b3c7dd293305ac79a3afad17c7358024e",
+        "stdout.log": "1573a70632cc43280f5aba294c23c07f3472c071fe630f27e56638d3cd68aa11"
+      },
+      "stats": {
+        "expected": 15,
+        "unexpected": 7,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 68419
+      },
+      "tests": [
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2448
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2655
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2273
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2309
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2879
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2879
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2898
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2423
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2786
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3243
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3360
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 7080
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 5129
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3041
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 4482
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 7664
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3243
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 7839
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 7925
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning toggle during streaming persists through history hydration",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 8775
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning toggle during streaming persists through history hydration",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 9077
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 8793
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "cand-sidecar-r2",
+      "started": "2026-11-12T12:12:07Z",
+      "checkout": "<scratch>/cand-58f015cd9",
+      "source": "58f015cd9144bad54bce4d720667f9daf27711d0",
+      "tree": "52336ac95e9b2959e97ad0521d006ae9024c1ec0",
+      "dirty": "6 paths (harness config excluded)",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.3.8",
+      "port": "3142",
+      "config": "playwright.golden-sidecar.config.ts (sha256 cd01ad9b547c57d8)",
+      "sidecar home": "<scratch>/sh2",
+      "bundled node": "v24.22.0",
+      "command": "CI=true COVEN_CAVE_PORT=3142 pnpm exec playwright test --config playwright.golden-sidecar.config.ts --project=sidecar-chromium --project=sidecar-webkit --grep 'reasoning preference|reasoning toggle during streaming|tool payload sentinels' --reporter=list,json",
+      "finished": "2026-11-12T12:12:50Z",
+      "exit": 0,
+      "rawSha256": {
+        "identity.txt": "d7d965165c8e7cfee980738e4e99ca0d2235ea452ef94bb83abeab10e906d704",
+        "report.json": "ec8155fc7497821be08254411ce33148cea3ef546ba1e5f6914d00967c280ef6",
+        "stdout.log": "e160d2217d9688fd093b8f4831e686c568cfa14563ff29ed9a55452230464130"
+      },
+      "stats": {
+        "expected": 22,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 39721
+      },
+      "tests": [
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2680
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2991
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1805
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2284
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2954
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2892
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1632
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1824
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2274
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3076
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3022
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3717
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3569
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2748
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2825
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2667
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2649
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2641
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3087
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 4885
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 5626
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3871
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "head-legacy-route-r1",
+      "started": "2026-11-12T11:58:18Z",
+      "checkout": "<worktree>",
+      "source": "db435727c55fbdc3c4d432f6121f0754b3989fdc",
+      "tree": "2a0ba028001605914011200b82fa154df6dbcdef",
+      "dirty": "1 paths (harness config excluded)",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.4.3",
+      "port": "3141",
+      "command": "CI=true COVEN_CAVE_PORT=3141 pnpm exec playwright test --config playwright.golden.config.ts --project=golden-chromium --project=golden-webkit --grep 'stored legacy transcript' --reporter=list,json",
+      "finished": "2026-11-12T12:01:36Z",
+      "exit": 0,
+      "rawSha256": {
+        "identity.txt": "dc9e56a3ae8d70fa3118b9a1af772f705ad5a36d7aa368954c973c782c629fa0",
+        "report.json": "4064557b83016dd4fbddd4e9d6a32ea47eb3d7c07205e701a2e7e5f3a0aadcdd",
+        "stdout.log": "918d1cc00e2fa169984b4fc4926190805965c99c301b8b9f86f519d49052e342"
+      },
+      "stats": {
+        "expected": 8,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 196605
+      },
+      "tests": [
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 4905
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 4476
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1961
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2256
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2522
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2204
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2596
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2286
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "head-legacy-route-probe-mutated-r1-build-error",
+      "started": "2026-11-12T12:02:01Z",
+      "checkout": "<worktree>",
+      "source": "db435727c55fbdc3c4d432f6121f0754b3989fdc",
+      "tree": "2a0ba028001605914011200b82fa154df6dbcdef",
+      "dirty": "3 paths (harness config excluded)",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.4.3",
+      "port": "3141",
+      "command": "CI=true COVEN_CAVE_PORT=3141 pnpm exec playwright test --config playwright.golden.config.ts --project=golden-chromium --project=golden-webkit --grep 'stored legacy transcript' --reporter=list,json",
+      "finished": "2026-11-12T12:03:00Z",
+      "exit": 1,
+      "rawSha256": {
+        "identity.txt": "f1bf776b5c10abb0db521793501492529b1f3b4bcfc74546f8ec8e30c2991807",
+        "report.json": "f331fcb63ac1d516f54ad79b5ea0b2596b3ad989ad0d44477a7424bf0c483531",
+        "stdout.log": "3c19607ddfe96756532bf86af1473312fb20e8e9766da0747886cbfc86a642bb"
+      },
+      "stats": {
+        "expected": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 46521
+      },
+      "tests": []
+    },
+    {
+      "label": "head-legacy-route-probe-mutated-r2",
+      "started": "2026-11-12T12:03:25Z",
+      "checkout": "<worktree>",
+      "source": "db435727c55fbdc3c4d432f6121f0754b3989fdc",
+      "tree": "2a0ba028001605914011200b82fa154df6dbcdef",
+      "dirty": "3 paths (harness config excluded)",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.4.3",
+      "port": "3141",
+      "command": "CI=true COVEN_CAVE_PORT=3141 pnpm exec playwright test --config playwright.golden.config.ts --project=golden-chromium --project=golden-webkit --grep 'stored legacy transcript' --reporter=list,json",
+      "finished": "2026-11-12T12:09:12Z",
+      "exit": 1,
+      "rawSha256": {
+        "identity.txt": "18c4440071f65478c157c1ed5a9ad01ee372a61691786daeb171222c7ba359d0",
+        "report.json": "a9ba4af97a93f75cae5037798c96397d942b2acc529d2c8b1bafeb2c83ea043c",
+        "stdout.log": "23b759963e6cb99aaed8f054263e1c915eb9ed752d967073002299731bd1d3ca"
+      },
+      "stats": {
+        "expected": 0,
+        "unexpected": 16,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 337926
+      },
+      "tests": [
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 500
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 769
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 427
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 482
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 849
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 940
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 656
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 664
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "PAGE-ONLY PROBE stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 3943
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "PAGE-ONLY PROBE stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 3531
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "PAGE-ONLY PROBE stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 2103
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "PAGE-ONLY PROBE stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 2689
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "PAGE-ONLY PROBE stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 2376
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "PAGE-ONLY PROBE stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 2443
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "PAGE-ONLY PROBE stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 2502
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "PAGE-ONLY PROBE stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 2527
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "cand-legacy-route-r1",
+      "started": "2026-11-12T12:18:48Z",
+      "source": "58f015cd9144bad54bce4d720667f9daf27711d0",
+      "tree": "52336ac95e9b2959e97ad0521d006ae9024c1ec0",
+      "copied in from harness source db435727c": "tests/qualification/playwright.golden.config.ts tests/qualification/playwright.golden-sidecar.config.ts tests/chat-activity-legacy-history.spec.ts",
+      "sha256 tests/qualification/playwright.golden.config.ts": "817a49461c4aa36b8b85a857f05bbf91a4e0468eeab6a60020e16ece7ae350b5",
+      "sha256 tests/chat-activity-legacy-history.spec.ts": "60433feee25f62d886e42e53b2ef24443a20fb728fe5e9157e3c64ac015e0c0e",
+      "sha256 tests/chat-activity-acceptance.spec.ts": "122a201f34c288a1045fa17985145332c52657aa7c711517f48d6363ee238eac",
+      "tracked changes": " D src-tauri/resources/kokoro/placeholder.txt; D src-tauri/resources/node/.cargo-check-placeholder; D src-tauri/resources/node/placeholder.txt; D src-tauri/resources/piper/placeholder.txt; D src-tauri/resources/server/placeholder.txt; D src-tauri/resources/whisper/.gitkeep;",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.3.8",
+      "port": "3142",
+      "command": "CI=true COVEN_CAVE_PORT=3142 pnpm exec playwright test --config tests/qualification/playwright.golden.config.ts --project=golden-chromium --project=golden-webkit --grep 'stored legacy transcript' --reporter=list,json",
+      "finished": "2026-11-12T12:22:09Z",
+      "exit": 0,
+      "rawSha256": {
+        "identity.txt": "d9ffa63a3a618d376c8214ff4047841f7a6cd9f4438cd73db89784d9d4f92c62",
+        "report.json": "805a69244ef52c66db254a3e67ccc5de06094faf89f90f71e6a76babeac1244c",
+        "stdout.log": "f03f38a03b6f8d20c75a2fadbc4b72d51b37b746586ed27b47b5b0e440d82d28"
+      },
+      "stats": {
+        "expected": 8,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 199671
+      },
+      "tests": [
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3671
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3513
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2432
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2397
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3316
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3167
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2874
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2964
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "cand-sidecar-legacy-route-r1",
+      "started": "2026-11-12T12:22:09Z",
+      "source": "58f015cd9144bad54bce4d720667f9daf27711d0",
+      "tree": "52336ac95e9b2959e97ad0521d006ae9024c1ec0",
+      "copied in from harness source db435727c": "tests/qualification/playwright.golden.config.ts tests/qualification/playwright.golden-sidecar.config.ts tests/chat-activity-legacy-history.spec.ts",
+      "sha256 tests/qualification/playwright.golden-sidecar.config.ts": "b929503972452e16a9243120a4e421c112cd801f97dd1632475bf3e92d4fc34d",
+      "sha256 tests/chat-activity-legacy-history.spec.ts": "60433feee25f62d886e42e53b2ef24443a20fb728fe5e9157e3c64ac015e0c0e",
+      "sha256 tests/chat-activity-acceptance.spec.ts": "122a201f34c288a1045fa17985145332c52657aa7c711517f48d6363ee238eac",
+      "tracked changes": " D src-tauri/resources/kokoro/placeholder.txt; D src-tauri/resources/node/.cargo-check-placeholder; D src-tauri/resources/node/placeholder.txt; D src-tauri/resources/piper/placeholder.txt; D src-tauri/resources/server/placeholder.txt; D src-tauri/resources/whisper/.gitkeep;",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.3.8",
+      "bundled node": "v24.22.0",
+      "port": "3142",
+      "command": "CI=true COVEN_CAVE_PORT=3142 GOLDEN_SIDECAR_HOME=<scratch> pnpm exec playwright test --config tests/qualification/playwright.golden-sidecar.config.ts --project=sidecar-chromium --project=sidecar-webkit --grep 'stored legacy transcript' --reporter=list,json",
+      "finished": "2026-11-12T12:22:26Z",
+      "exit": 0,
+      "rawSha256": {
+        "identity.txt": "706e1aa0a992aa732d118e39f896cb406fa9b6d05cfb4ffeeb706836dcedd44e",
+        "report.json": "283041b103c0861c8b595a2f298a3cb898123eb0dcc033f303336b93e6dfbb6e",
+        "stdout.log": "ffdb8d35c31c4cd853048488e901f8c572b186f7a03ffdb96cb582cf607d1b66"
+      },
+      "stats": {
+        "expected": 8,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 14457
+      },
+      "tests": [
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2900
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2787
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2352
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2421
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3050
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3113
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3055
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2930
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "cand-sidecar-legacy-route-search-r1",
+      "started": "2026-11-12T12:29:59Z",
+      "source": "58f015cd9144bad54bce4d720667f9daf27711d0",
+      "tree": "52336ac95e9b2959e97ad0521d006ae9024c1ec0",
+      "copied in from harness source 449c3d469": "tests/qualification/playwright.golden.config.ts tests/qualification/playwright.golden-sidecar.config.ts tests/chat-activity-legacy-history.spec.ts",
+      "sha256 tests/qualification/playwright.golden-sidecar.config.ts": "b929503972452e16a9243120a4e421c112cd801f97dd1632475bf3e92d4fc34d",
+      "sha256 tests/chat-activity-legacy-history.spec.ts": "c9ae7619f4c6b8644fff8bdb30c40bb67f59b98ddb354ef5c1ebafac4faac81b",
+      "sha256 tests/chat-activity-acceptance.spec.ts": "122a201f34c288a1045fa17985145332c52657aa7c711517f48d6363ee238eac",
+      "tracked changes": " D src-tauri/resources/kokoro/placeholder.txt; D src-tauri/resources/node/.cargo-check-placeholder; D src-tauri/resources/node/placeholder.txt; D src-tauri/resources/piper/placeholder.txt; D src-tauri/resources/server/placeholder.txt; D src-tauri/resources/whisper/.gitkeep;",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.3.8",
+      "bundled node": "v24.22.0",
+      "port": "3142",
+      "command": "CI=true COVEN_CAVE_PORT=3142 GOLDEN_SIDECAR_HOME=<scratch> pnpm exec playwright test --config tests/qualification/playwright.golden-sidecar.config.ts --project=sidecar-chromium --project=sidecar-webkit --grep 'stored legacy transcript' --reporter=list,json",
+      "finished": "2026-11-12T12:30:07Z",
+      "exit": 1,
+      "rawSha256": {
+        "identity.txt": "9efba31f846c788d47bd592f1795199ac2902bbd828e5587de6791e7f70d447f",
+        "report.json": "b4c79343f3bb0543f2d540b74bdc5f9ff5441307f28a489ee9fafea141e8c993",
+        "stdout.log": "c04f394dfb46adab4a7630b2ae646a82b7b3fc1f6c464d40f57e224de15d0ac5"
+      },
+      "stats": {
+        "expected": 0,
+        "unexpected": 8,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 6525
+      },
+      "tests": [
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 243
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 257
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 200
+            }
+          ]
+        },
+        {
+          "project": "sidecar-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 225
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 532
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 569
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 450
+            }
+          ]
+        },
+        {
+          "project": "sidecar-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "unexpected",
+          "attempts": [
+            {
+              "status": "failed",
+              "ms": 482
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "head-legacy-route-search-r1",
+      "started": "2026-11-12T12:26:57Z",
+      "source": "449c3d469ffd1c6772d89f7035dddab38bbd075a",
+      "tree": "846d08c8a14408d3bacfa998ee1783a335aed30e",
+      "copied in from harness source 449c3d469": "none",
+      "sha256 tests/qualification/playwright.golden.config.ts": "817a49461c4aa36b8b85a857f05bbf91a4e0468eeab6a60020e16ece7ae350b5",
+      "sha256 tests/chat-activity-legacy-history.spec.ts": "c9ae7619f4c6b8644fff8bdb30c40bb67f59b98ddb354ef5c1ebafac4faac81b",
+      "sha256 tests/chat-activity-acceptance.spec.ts": "122a201f34c288a1045fa17985145332c52657aa7c711517f48d6363ee238eac",
+      "tracked changes": " M src/lib/cave-conversations.ts;",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.4.3",
+      "port": "3141",
+      "command": "CI=true COVEN_CAVE_PORT=3141 pnpm exec playwright test --config tests/qualification/playwright.golden.config.ts --project=golden-chromium --project=golden-webkit --grep 'stored legacy transcript' --reporter=list,json",
+      "finished": "2026-11-12T12:29:18Z",
+      "exit": 0,
+      "rawSha256": {
+        "identity.txt": "231f706380fdaa0b73359d8967506c61d2bf2b64fb8cef4d5f029c6f07b30c4b",
+        "report.json": "6edcf60f601c71912ad92af453e780d2b051096c6f1379833023431c1c5e3ce6",
+        "stdout.log": "e655dbccc9684f57756235d28737cc1bbb4dfab899633fac076ffe4deff3b00c"
+      },
+      "stats": {
+        "expected": 8,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 139626
+      },
+      "tests": [
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3412
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 3283
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2039
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2060
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2301
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2256
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1520
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1958
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "started": "2026-11-12T13:04:21Z",
+      "source": "449c3d469ffd1c6772d89f7035dddab38bbd075a + uncommitted search fix",
+      "command": "CI=true COVEN_CAVE_PORT=3141 pnpm exec playwright test tests/chat-activity-legacy-history.spec.ts --project desktop",
+      "finished": "2026-11-12T13:05:48Z",
+      "exit": 0,
+      "label": "head-legacy-route-desktop-project-r1",
+      "rawSha256": {
+        "identity.txt": "901d3efb52b00a34af9186e5d440d1dffcc59f44ce5cab29027aa1fecdf4d3c3",
+        "stdout.log": "f704f15e393fd9bbb1dbef5cf21b403d8557c53aeff50a47c35213c90bbaa632"
+      },
+      "stats": null
+    },
+    {
+      "label": "head-golden13-fixes-r1",
+      "started": "2026-11-12T13:10:12Z",
+      "source": "337380878f93954635af295cb6d7e76261bfda95",
+      "tree": "44c08a359a280ca03ccf49e7310d9e84fe792d61",
+      "copied in from harness source 337380878": "none",
+      "sha256 tests/qualification/playwright.golden.config.ts": "817a49461c4aa36b8b85a857f05bbf91a4e0468eeab6a60020e16ece7ae350b5",
+      "sha256 tests/chat-activity-legacy-history.spec.ts": "c9ae7619f4c6b8644fff8bdb30c40bb67f59b98ddb354ef5c1ebafac4faac81b",
+      "sha256 tests/chat-activity-acceptance.spec.ts": "122a201f34c288a1045fa17985145332c52657aa7c711517f48d6363ee238eac",
+      "tracked changes": " M src/lib/chat-turn-state.ts; M src/lib/offline-cache.ts;",
+      "os": "macOS 27.2.1 (26B131) arm64",
+      "node": "v24.22.0  pnpm: 10.34.0",
+      "playwright": "Version 1.62.0",
+      "next": "16.4.3",
+      "port": "3141",
+      "command": "CI=true COVEN_CAVE_PORT=3141 pnpm exec playwright test --config tests/qualification/playwright.golden.config.ts --project=golden-chromium --project=golden-webkit --grep 'reasoning preference|reasoning toggle during streaming|tool payload sentinels|stored legacy transcript' --reporter=list,json",
+      "finished": "2026-11-12T13:11:47Z",
+      "exit": 0,
+      "rawSha256": {
+        "identity.txt": "3a19090d0889626908b4f6fe3da9ce8f2b67f118b6351d9159a8375e6d38869a",
+        "report.json": "a19d0a694ea65427b63a518a1dc821258ef9ecfe08b2c03c27032aa865a704c4",
+        "stdout.log": "d338245a6918a8ef4d8b3323c78233e99a434a83428ba0bd02138c70770fc6ce"
+      },
+      "stats": {
+        "expected": 30,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "durationMs": 93976
+      },
+      "tests": [
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 4037
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 4033
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2194
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2190
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2042
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2032
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2108
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2044
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2086
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2426
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2625
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2031
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1912
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1824
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1868
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference default survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1916
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 0 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1826
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference 1 survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1859
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning preference unrecognized survives hydration without hiding failed tools",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1733
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "typed reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2257
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "legacy reasoning toggle during streaming persists through history hydration",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2285
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-acceptance.spec.ts",
+          "title": "tool payload sentinels stay inside the authorized card and leave on revocation",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2550
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2028
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1988
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2068
+            }
+          ]
+        },
+        {
+          "project": "golden-chromium",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1979
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference default)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1810
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 0)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2197
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference 1)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 2227
+            }
+          ]
+        },
+        {
+          "project": "golden-webkit",
+          "file": "chat-activity-legacy-history.spec.ts",
+          "title": "stored legacy transcript hydrates through the real conversation route without its reasoning (preference unrecognized)",
+          "outcome": "expected",
+          "attempts": [
+            {
+              "status": "passed",
+              "ms": 1755
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "started": "2026-11-12T12:26:57Z",
+      "source": "449c3d469ffd1c6772d89f7035dddab38bbd075a + uncommitted search fix",
+      "finished": "2026-11-12T13:03:23Z",
+      "command": "HOME=<scratch> pnpm test:api; HOME=<scratch> pnpm test:app",
+      "exit": 0,
+      "label": "unit",
+      "rawSha256": {
+        "golden13-cave-conversations-red.log": "9d2c178a3e2d74a556e5b579c9e2b9bc5167df7e8c36d7b1f84862c25637495e",
+        "golden13-offline-cache-red.log": "6f7b738dc1be1c70612e7253fffc09968dee3195117fb3c29173d50d0106c141",
+        "identity.txt": "48c7da1cabf5a50d00641365d4d35975df898ffe226f45edc1f9501fed523e77",
+        "search-legacy-green.log": "4ed4d643269888e0625c17eacc1bf45f99a89051a4626d0bc7e6cf81dddc867e",
+        "search-legacy-red.log": "d8834c381af5e43d3a5da73a620c814d02024ffd69897fa2eed3f46df1030776",
+        "suites.identity.txt": "ba6b045a0524b9d639828e79392a5edad30bedf5a2f82cbb7c4e6eb9b1b9a4fd",
+        "test-api.log": "9b4551bb8fb7a2a96b999928a646e52c4fef0220b1517effbd75b2aee6940626",
+        "test-app.log": "8816add87ba9de29f5580b4a42a6b57ddcba0bbfbefa4bb3bd93c9fc8c44e64c",
+        "typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stats": null
+    },
+    {
+      "started": "2026-11-12T13:10:12Z",
+      "source": "337380878f93954635af295cb6d7e76261bfda95 + uncommitted golden-13 fixes (chat-turn-state.ts, offline-cache.ts)",
+      "finished": "2026-11-12T13:31:25Z",
+      "command": "HOME=<scratch> pnpm test:api; HOME=<scratch> pnpm test:app",
+      "exit": 0,
+      "label": "unit2",
+      "rawSha256": {
+        "identity.txt": "8e8812b9a832677291611d5548d6888527b2b1899199dd542644e1701f83e546",
+        "suites.identity.txt": "fb27150fc4d56117eabd8c8fba1ba27caa05a43613af251eabb9b93087bcff7e",
+        "test-api.log": "0ebb6858f6c12010ccc1c09d883d88d0d80cf434406c1beb4c84452076999fd0",
+        "test-app.log": "beaaafdff66305d9e4bb76e35eb4ca760928656c8df916956d11d80b8c44e4f9",
+        "test-mobile.log": "1210d4aea356871315e6f1abb9cd6c2cf7387f50bd2196517b62007dedd8bb03"
+      },
+      "stats": null
+    },
+    {
+      "started": "2026-11-12T13:12:19Z",
+      "source": "58f015cd9144bad54bce4d720667f9daf27711d0",
+      "tracked changes (sidecar bundle placeholders only)": "0 outside src-tauri/resources",
+      "command": "HOME=<scratch> pnpm test:api",
+      "finished": "2026-11-12T13:16:35Z",
+      "exit": 1,
+      "note": "test:api on the candidate is fail-fast and stopped at its 125th file, src/lib/server/client-v1/discovery.test.ts. That test asserts an error stack does not contain 'private'; this clone lives under /private/tmp, so the stack frame path matches. Harness location, not candidate behaviour.",
+      "label": "cand-unit",
+      "rawSha256": {
+        "identity.txt": "ca54b1f7f30b07946a15ce263970e615baced5dd22759b46990573d300011438",
+        "test-api.log": "0d5ba3ed175bd89f334b7b8a81219c17a863a7180b82e9f4d314c6d5235c353c"
+      },
+      "stats": null
+    },
+    {
+      "started": "2026-11-12T13:17:33Z",
+      "source": "58f015cd9144bad54bce4d720667f9daf27711d0",
+      "selection": "test files under src matching /reasoningPrivacySentinels|runtime-activity-v1\\.json|redactedEventFingerprint|projectStoredTool|projectConversationDisplay|projectDisplayText|sentinel/",
+      "command": "node <flags from scripts/run-tests.mjs nodeArgsFor> <file>, one process per file, HOME=<scratch>",
+      "finished": "2026-11-12T13:18:11Z",
+      "files passed": "48",
+      "files failed": "0",
+      "exit": 0,
+      "label": "cand-disclosure-units",
+      "rawSha256": {
+        "identity.txt": "855f2a8d8b3a2f35381a2a9442f60535db0afe78bc898ce02508e5ae5256e4f9",
+        "results.txt": "27f126c50b3b9ba228384b882c83133fbcb6b94ff0227569037fd6efc8da74ab"
+      },
+      "stats": null
+    },
+    {
+      "started": "2026-11-12T13:12:58Z",
+      "source": "58f015cd9144bad54bce4d720667f9daf27711d0",
+      "apps/ios tree": "4fa3cf53f243a8c53ccc513b8b61550812967451",
+      "xcode": "Xcode 27.2 Build version 27B52 ",
+      "host": "macOS 27.2.1 arm64",
+      "simulator": "nova-golden13-8d3389dd nova-golden13-8d3389dd (8D39C07E-07D7-4618-9ECB-B745453F14A3) (Shutdown) ",
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-2",
+      "command": "xcodebuild -scheme CovenCave -destination id=<dedicated simulator> CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build-for-testing; then test-without-building -only-testing:CovenCaveTests/ChatNotificationsTests -only-testing:CovenCaveTests/ActivityCorpusTests -only-testing:CovenCaveTests/ThreadSnapshotStoreTests",
+      "build exit": "0",
+      "finished": "2026-11-12T13:14:30Z",
+      "exit": 0,
+      "simulator deleted": "8D39C07E-07D7-4618-9ECB-B745453F14A3",
+      "label": "cand-native-notifications-r1",
+      "rawSha256": {
+        "build.log": "bd5c4f0ead17c9da80908337097bb2a5d0a3949cb673ae519737a2abcd5122f6",
+        "identity.txt": "4ccf60d206ade8503df6041be6e8709c51f86ef1e403eeeeda3ac9766cc767c1",
+        "test.log": "ffd03fb04c8e9b5934f6a1fc10a8ad487e4ad984dc3910ce0d11f46d9c807e7f",
+        "xcodegen.log": "940930dbb1319718bceb1e2cfb43bcb970915ab706cad68236006163c6eded7c"
+      },
+      "xctest": [
+        "Test Suite 'ActivityCorpusTests' passed",
+        "Executed 5 tests, with 0 failures (0 unexpected)",
+        "Test Suite 'ChatNotificationsTests' passed",
+        "Executed 19 tests, with 0 failures (0 unexpected)",
+        "Test Suite 'ThreadSnapshotStoreTests' passed",
+        "Executed 8 tests, with 0 failures (0 unexpected)",
+        "Executed 32 tests, with 0 failures (0 unexpected)"
+      ],
+      "stats": null
+    },
+    {
+      "started": "2026-11-12T13:15:43Z",
+      "source": "58f015cd9144bad54bce4d720667f9daf27711d0",
+      "apps/ios tree": "4fa3cf53f243a8c53ccc513b8b61550812967451",
+      "xcode": "Xcode 27.2 Build version 27B52 ",
+      "host": "macOS 27.2.1 arm64",
+      "simulator": "nova-golden13-8d3389dd nova-golden13-8d3389dd (D6A1F85F-E7FF-4B42-9091-81605BD48747) (Shutdown) ",
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-2",
+      "command": "xcodebuild -scheme CovenCave -destination id=<dedicated simulator> CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build-for-testing; then test-without-building -only-testing:CovenCaveTests/ThreadSnapshotStoreTests",
+      "build exit": "0",
+      "finished": "2026-11-12T13:16:34Z",
+      "exit": 0,
+      "simulator deleted": "D6A1F85F-E7FF-4B42-9091-81605BD48747",
+      "note": "candidate sources plus one probe test appended to ThreadSnapshotStoreTests.swift (tests only)",
+      "label": "cand-native-thread-cache-probe-r1",
+      "rawSha256": {
+        "build.log": "1cd453950ece5a3e91a150d3a886b554edd4000aa641fc8e2fb1b048ade70cef",
+        "identity.txt": "3aee628e421a0301d664f76dc4cedb4fb00b91d968a13de2cc58b3b31aebbf6f",
+        "test.log": "7a8685784e256b03f0e52f6d413c36a46d0073cb568a022218cfdad0f67a84af",
+        "xcodegen.log": "940930dbb1319718bceb1e2cfb43bcb970915ab706cad68236006163c6eded7c"
+      },
+      "xctest": [
+        "Test Suite 'ThreadSnapshotStoreTests' passed",
+        "Executed 9 tests, with 0 failures (0 unexpected)"
+      ],
+      "stats": null
+    },
+    {
+      "started": "2026-11-12T13:31:49Z",
+      "source": "5ea06918cf01f2aef667e061d6c073c391313bfc",
+      "apps/ios tree": "e0c185071a3643de4a2a0096dc44db8ae2f3a68a",
+      "xcode": "Xcode 27.2 Build version 27B52 ",
+      "host": "macOS 27.2.1 arm64",
+      "simulator": "nova-golden13-8d3389dd nova-golden13-8d3389dd (25FC849B-EA25-4F45-A320-346DD850AF59) (Shutdown) ",
+      "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-2",
+      "command": "xcodebuild -scheme CovenCave -destination id=<dedicated simulator> CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build-for-testing; then test-without-building -only-testing:CovenCaveTests/ThreadSnapshotStoreTests -only-testing:CovenCaveTests/ChatNotificationsTests -only-testing:CovenCaveTests/ActivityCorpusTests",
+      "build exit": "0",
+      "finished": "2026-11-12T13:33:25Z",
+      "exit": 0,
+      "simulator deleted": "25FC849B-EA25-4F45-A320-346DD850AF59",
+      "label": "head-native-golden13-r1",
+      "rawSha256": {
+        "build.log": "996865e4896b67b09db38448e5c0c8d956d791f456acd89c279ee1ab2d3d24d2",
+        "identity.txt": "ff05f8ee85517cec40d76ff40601a4e1111aa74ba1d2a93f38ed21d41a238d15",
+        "test.log": "32a4fcda67848e6ab5007cd785768b8970c20ba14dc10b83a4aa10f85918fb9f",
+        "xcodegen.log": "b2c66efbbebd9e87f43f93f1aa4cd72986755f4dca7eaf05a1971018b3726d9b"
+      },
+      "xctest": [
+        "Test Suite 'ActivityCorpusTests' passed",
+        "Executed 5 tests, with 0 failures (0 unexpected)",
+        "Test Suite 'ChatNotificationsTests' passed",
+        "Executed 19 tests, with 0 failures (0 unexpected)",
+        "Test Suite 'ThreadSnapshotStoreTests' passed",
+        "Executed 9 tests, with 0 failures (0 unexpected)",
+        "Executed 33 tests, with 0 failures (0 unexpected)"
+      ],
+      "stats": null
+    }
+  ]
+}

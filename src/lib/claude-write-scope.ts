@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { lstat, mkdir, open, readdir, readFile, rm, rmdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { caveHome } from "./coven-paths.ts";
+import { cavePrivateStatePath, overlapsCavePrivateState } from "./cave-private-state.ts";
 import { shellQuote } from "./familiar-runtime.ts";
 import type { ProjectAccessLevel } from "./project-access-levels.ts";
 
@@ -196,7 +196,7 @@ export class ClaudeAuthorityRootError extends Error {}
 const nodeFileSystem = { lstat, mkdir, open, readdir, readFile, rm, rmdir, unlink };
 type ClaudeAuthorityFileSystem = typeof nodeFileSystem;
 
-const authorityRootPath = () => path.join(/* turbopackIgnore: true */ caveHome(), "claude-authority");
+const authorityRootPath = cavePrivateStatePath;
 
 /** Shared across bundles and reloads, so every copy of this module sees one process's turns. */
 const OWNED_DIRECTORIES = Symbol.for("opencoven.cave.claudeAuthorityDirectories");
@@ -371,7 +371,7 @@ export function prepareClaudeWriteScopeFile(
   } catch {
     throw new ClaudeAuthorityRootError("Cave couldn't open its private state folder. Check the disk's free space and that folder's permissions, then retry.");
   }
-  if (baseScope.writableRoots.some(root => isWithin(authorityRoot, root) || isWithin(root, authorityRoot))) {
+  if (baseScope.writableRoots.some(root => overlapsCavePrivateState(root, authorityRoot))) {
     throw new ClaudeAuthorityRootError("A folder this familiar can write to overlaps Cave's private state folder. Narrow that access or use Read-only, then retry.");
   }
   const directoryName = `${process.pid}-${randomUUID()}`;

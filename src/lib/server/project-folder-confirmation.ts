@@ -8,7 +8,10 @@ const activeConfirmations = new Set<string>();
 /** Server-owned snapshot + fresh native authentication + locked identity recheck. */
 export async function confirmProjectFolderWithHuman(
   id: string,
-  deps: { authenticate: (reason: string) => Promise<boolean> } = { authenticate: authenticateProjectFolder },
+  deps: {
+    authenticate: (reason: string) => Promise<boolean>;
+    realpath?: (root: string) => string;
+  } = { authenticate: authenticateProjectFolder },
 ) {
   if (activeConfirmations.size) {
     return { ok: false as const, status: 409, code: "project_folder_confirmation_busy", error: "A folder confirmation is already open. Finish it, then retry." };
@@ -19,7 +22,14 @@ export async function confirmProjectFolderWithHuman(
     if (!project) return { ok: false as const, status: 404, code: "project_not_found", error: "not found" };
     const validated = validateCaveProjectRoot(project.root);
     if (!validated.ok) return { ok: false as const, status: 400, code: "project_root_unavailable", error: validated.error };
-    const expected = { root: project.root, realpath: realpathSync.native(/* turbopackIgnore: true */ validated.root) };
+    let realpath: string;
+    try {
+      realpath = deps.realpath?.(validated.root)
+        ?? realpathSync.native(/* turbopackIgnore: true */ validated.root);
+    } catch {
+      return { ok: false as const, status: 400, code: "project_root_unavailable", error: "The project folder is no longer available. Choose it again and retry." };
+    }
+    const expected = { root: project.root, realpath };
     const approved = await deps.authenticate(`Confirm ${project.name}’s project folder:\n${expected.realpath}`);
     if (!approved) {
       return { ok: false as const, status: 403, code: "project_folder_authentication_required", error: "Authenticate on this Mac to confirm the folder. Use Touch ID, then retry." };

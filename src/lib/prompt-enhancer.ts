@@ -61,7 +61,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 // The composer rebuilds its enhance context on every chat render (each
 // keystroke, each step of opening a thread), and that context carries whole
-// recent messages and tool outputs. Redaction is a pure function of the text,
+// recent messages. Redaction is a pure function of the text,
 // so an unchanged text is redacted once rather than on every render. The cache
 // keeps neither raw text nor full redacted copies: the key is a 64-bit hash
 // with the length, and the value is only the bounded prefix callers use, so it
@@ -144,7 +144,7 @@ type InstructionContext = {
   selectedFiles?: string[];
   thread?: string;
   recentMessages?: { role: "user" | "assistant"; text: string }[];
-  toolOutcomes?: { name: string; status?: string; output: string }[];
+  toolOutcomes?: { name: string; status?: string }[];
   linkedTask?: { title?: string; status?: string; notes?: string };
 };
 
@@ -174,15 +174,17 @@ function instructionContext(context: PromptEnhanceContext): InstructionContext |
     })
     .filter((message) => message !== null);
   if (messages.length) result.recentMessages = messages;
+  // Names and outcomes only (#6486, golden-13): a tool's result is shown in
+  // its own card, under that card's authorization, and never leaves it for
+  // the Enhance instruction. Any `output` a caller passes is ignored.
   const outcomes = boundedContextRecords(context.recentToolOutcomes)
     .map((outcome) => {
-      const output = boundedContextText(outcome.output, 320);
-      if (!output) return null;
+      const name = boundedContextText(outcome.name, 96);
       const status = boundedContextText(outcome.status, 32);
+      if (!name && !status) return null;
       return {
-        name: boundedContextText(outcome.name, 96) ?? "Tool",
+        name: name ?? "Tool",
         ...(status ? { status } : {}),
-        output,
       };
     })
     .filter((outcome) => outcome !== null);
@@ -253,7 +255,6 @@ export function promptEnhancementContextFingerprintInput(context: unknown) {
       id: safeEvidenceId(outcome.id),
       name: boundedContextText(outcome.name, 96),
       status: boundedContextText(outcome.status, 32),
-      output: boundedContextText(outcome.output, 320),
     })),
     linkedTask: {
       id: safeEvidenceId(task?.id),

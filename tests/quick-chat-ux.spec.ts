@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installCompletedFirstUse } from "./fixtures/first-use";
 
 // Quick Chat tray UX (#6421): a held send explains itself, the project pick
 // hands focus back to the waiting message, the composer controls share one
@@ -20,7 +21,6 @@ async function seed(page: Page): Promise<Seed> {
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "nova");
-    localStorage.setItem("cave.quick-chat.last-familiar", "nova");
     // The shared announcer clears its polite region 250ms after each message,
     // so record every announcement as it lands instead of racing the clear.
     const announcements: string[] = [];
@@ -58,6 +58,9 @@ async function seed(page: Page): Promise<Seed> {
       body: frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""),
     });
   });
+  // A removed saved project leaves this already-introduced installation in
+  // repair. The held-project cases make a fresh, explicit actor choice below.
+  await installCompletedFirstUse(page, { project: { id: "retired-qc-project", name: "Previous project", root: "/tmp/retired-quick-chat" }, familiarIds: ["nova"], actingFamiliarId: "nova", permissionMode: "full", repairReason: "project" });
   return { sends };
 }
 
@@ -66,9 +69,14 @@ const announcementsOf = (page: Page, text: string) =>
 
 async function openQuickChat(page: Page) {
   await page.goto("/quick-chat", { waitUntil: "domcontentloaded" });
-  const pane = page.locator(".tray-quick-chat__pane");
+  await expect(page.getByRole("complementary", { name: "Compact chat guidance" })).toContainText("The saved project is unavailable.");
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await expect(page.getByRole("tab")).toHaveCount(2);
+  const pane = page.locator(".tray-quick-chat__pane:visible");
   const message = pane.getByRole("combobox", { name: "Message", exact: true });
   await expect(message).toBeVisible({ timeout: 45_000 });
+  await pane.getByRole("button", { name: "Familiar", exact: true }).click();
+  await page.getByRole("menu", { name: "Familiar options", exact: true }).getByRole("menuitemradio", { name: /Nova$/ }).click();
   await expect(pane.locator(".quick-chat-empty__title")).toHaveText("Ask Nova anything", { timeout: 20_000 });
   return { pane, message };
 }

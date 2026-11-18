@@ -558,6 +558,10 @@ async function mockResearchApis(page: Page, options: MockResearchApiOptions = {}
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "researcher");
+    // Keep the room's explicit researcher scope when host defaults hydrate;
+    // this fixture exercises Rida's role across the workspace's projects.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": ["researcher"] }));
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({

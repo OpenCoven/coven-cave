@@ -90,6 +90,11 @@ type Props = {
   calendarSlot?: ReactNode;
   /** Tab to open on mount (deep-link target — e.g. the Calendar nav button). */
   initialTab?: AutomationTab;
+  /** An inbox item to open, from the bell (#6483). Its detail opens on the
+   *  Overview tab once the item has loaded; a new nonce opens it again. */
+  focusItem?: { id: string; nonce: number } | null;
+  /** Called once focusItem has been opened, or found not to exist. */
+  onFocusItemConsumed?: () => void;
 };
 
 // The active Rituals surface: Inbox (the full feed, mostly reminders) plus
@@ -112,7 +117,7 @@ function navigateToMode(mode: string) {
 // ── Ritual overview ──────────────────────────────────────────────────────────
 
 // ── Root ──────────────────────────────────────────────────────────────────────
-export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab }: Props) {
+export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab, focusItem, onFocusItemConsumed }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const ritualNow = useRitualNow();
   const confirm = useConfirm(); // still used by "Run now" (a non-delete action)
@@ -307,6 +312,37 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     window.addEventListener("cave:schedules:reload", onSchedulesReload);
     return () => window.removeEventListener("cave:schedules:reload", onSchedulesReload);
   }, [reloadAfterMutation]);
+
+  // The bell opens one item here (#6483): its detail opens on the Overview
+  // tab and its row scrolls into view. Applied once per nonce, after the item
+  // has loaded; an item gone by then (dismissed elsewhere) is dropped rather
+  // than waited for, so it can't pop open on some later visit.
+  const appliedFocusNonceRef = useRef<number | null>(null);
+  const scrollToSelectedRef = useRef(false);
+  useEffect(() => {
+    if (!focusItem || appliedFocusNonceRef.current === focusItem.nonce) return;
+    const target = items.find((it) => it.id === focusItem.id);
+    if (!target) {
+      if (initialLoadDone) {
+        appliedFocusNonceRef.current = focusItem.nonce;
+        onFocusItemConsumed?.();
+      }
+      return;
+    }
+    appliedFocusNonceRef.current = focusItem.nonce;
+    setDeepLinkTab("overview");
+    scrollToSelectedRef.current = true;
+    openInboxItem(target);
+    onFocusItemConsumed?.();
+  }, [focusItem, items, initialLoadDone, openInboxItem, onFocusItemConsumed]);
+  useEffect(() => {
+    if (!scrollToSelectedRef.current || !selectedItem) return;
+    scrollToSelectedRef.current = false;
+    const id = selectedItem.id;
+    requestAnimationFrame(() =>
+      document.querySelector(`[data-inbox-item-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" }),
+    );
+  }, [selectedItem]);
 
   // Keep the open reminder detail panel in sync after polls — without this it
   // renders the snapshot captured at selection time until reselected.

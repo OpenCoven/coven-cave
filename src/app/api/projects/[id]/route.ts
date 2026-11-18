@@ -4,7 +4,11 @@ import { confirmProjectFolderWithHuman } from "@/lib/server/project-folder-confi
 import { NextResponse } from "next/server";
 
 import { deleteProject, loadProjects, patchProject } from "@/lib/cave-projects";
-import { revokeAllGrantsForProject } from "@/lib/project-permissions";
+import {
+  CavePrivateStateGrantError,
+  privateStateRootChangeGuard,
+  revokeAllGrantsForProject,
+} from "@/lib/project-permissions";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
@@ -85,7 +89,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
     const current = (await loadProjects()).find((entry) => entry.id === id);
     if (!current) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-    const realpath = realpathSync.native(/* turbopackIgnore: true */ validatedRoot.root);
+    let realpath: string;
+    try {
+      realpath = realpathSync.native(/* turbopackIgnore: true */ validatedRoot.root);
+    } catch {
+      return NextResponse.json(
+        { ok: false, code: "project_root_unavailable", error: "The selected folder is no longer available. Choose it again and retry." },
+        { status: 400 },
+      );
+    }
     if (!await authenticateProjectFolder(`Change ${current.name}’s project folder to:\n${realpath}`)) {
       return NextResponse.json({ ok: false, code: "project_folder_authentication_required",
         error: "Authenticate on this Mac with Touch ID to change the folder, then retry." }, { status: 403 });
@@ -124,11 +136,22 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ ok: false, error: "nothing to update" }, { status: 400 });
   }
 
-  const project = await patchProject(id, patch, confirmedChange);
-  if (!project && confirmedChange) return NextResponse.json({ ok: false, code: "project_root_moved",
-    error: "The folder changed during confirmation. Review the folder and retry." }, { status: 409 });
-  if (!project) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  return NextResponse.json({ ok: true, project });
+  try {
+    const project = await patchProject(id, patch, privateStateRootChangeGuard, confirmedChange);
+    if (!project && confirmedChange) return NextResponse.json({ ok: false, code: "project_root_moved",
+      error: "The folder changed during confirmation. Review the folder and retry." }, { status: 409 });
+    if (!project) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+    return NextResponse.json({ ok: true, project });
+  } catch (error) {
+    if (error instanceof CavePrivateStateGrantError) {
+      // The move would hand this project's writers Cave's private state.
+      return NextResponse.json(
+        { ok: false, code: error.code, error: error.message, projectId: error.project.id },
+        { status: error.status },
+      );
+    }
+    throw error;
+  }
 }
 
 // Keep the existing PUT client contract and expose the root PATCH operation

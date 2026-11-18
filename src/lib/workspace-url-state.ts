@@ -1,3 +1,4 @@
+import { replaceHistoryUrl } from "@/lib/history-url";
 import { isWorkspacePageId, type WorkspacePageId } from "@/lib/workspace-page-registry";
 
 const CHAT_HASH_PREFIX = "#chat-";
@@ -13,7 +14,7 @@ export function readChatHash(): string | null {
 
 export function clearChatHash() {
   if (typeof window === "undefined" || !window.location.hash.startsWith(CHAT_HASH_PREFIX)) return;
-  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  replaceHistoryUrl(window.location.pathname + window.location.search);
 }
 
 function readWorkspacePageParam(name: string): WorkspacePageId | null {
@@ -44,5 +45,5 @@ export function clearModeParam() {
   params.delete("split");
   params.delete("splitSide");
   const query = params.toString();
-  window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
+  replaceHistoryUrl(window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
 }

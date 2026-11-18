@@ -2166,6 +2166,8 @@ jobs:
       id-token: write
       attestations: write
     runs-on: ubuntu-24.04
+    # `updater-manifest` waits on this job for the rendered notes (#5981).
+    timeout-minutes: 20
     if: ${{ success() && (github.event_name != 'workflow_dispatch' || (inputs.platform != 'ios' && !inputs.windows_diagnostics_only)) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -2318,6 +2320,8 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
+    # `updater-manifest` waits on this job for the rendered notes (#5981).
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -2349,10 +2353,18 @@ jobs:
   # manifest reflects all platforms that produced a signed artifact.
   updater-manifest:
     name: Publish updater manifest (latest.json)
+    # #5981: the manifest copies the release body into `notes`. `checksums`
+    # (or `partial-release-notes` when it is skipped) replaces release-object's
+    # placeholder body, so wait for both or every client is shown the
+    # placeholder as its release notes. `!cancelled()` below still runs this
+    # job when either one fails or is skipped; both carry short timeouts
+    # because a withheld latest.json 404s the updater for every install.
     needs:
       - build
       - source-version
       - rollback-readiness
+      - checksums
+      - partial-release-notes
     permissions:
       contents: write
     runs-on: ubuntu-24.04

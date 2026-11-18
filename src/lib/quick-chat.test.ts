@@ -32,6 +32,14 @@ describe("resolveQuickChatTarget", () => {
     assert.equal(result.error, null);
   });
 
+  it("does not substitute the first roster member for a missing or unavailable selected actor", () => {
+    for (const id of [null, "removed"]) {
+      const result = resolveQuickChatTarget("Keep this brief", familiars, id);
+      assert.equal(result.familiarId, null);
+      assert.match(result.error ?? "", /Choose an available acting familiar/);
+    }
+  });
+
   it("returns an explicit error for unknown @mentions", () => {
     const result = resolveQuickChatTarget("@ghost ping", familiars, "nova");
 

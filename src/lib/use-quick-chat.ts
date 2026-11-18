@@ -24,19 +24,12 @@ import type {
 import { resolveQuickChatTarget, type QuickChatTarget } from "@/lib/quick-chat";
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import type { Familiar } from "@/lib/types";
+import { CHAT_COMPOSER_PREFS_CHANGED_EVENT, readChatComposerPrefs } from "@/lib/chat-composer-prefs";
+import type { CommandPermissionMode } from "@/lib/command-controls";
+import { useFirstUse } from "@/components/first-use-provider";
 import { useProjects } from "@/lib/use-projects";
 
 const LAST_FAMILIAR_KEY = "cave.quick-chat.last-familiar";
-
-// localStorage can throw (private browsing, storage full) — remembering the
-// last familiar is a nicety and must never take down the send itself.
-function readLastFamiliar(): string | null {
-  try {
-    return typeof window !== "undefined" ? window.localStorage.getItem(LAST_FAMILIAR_KEY) : null;
-  } catch {
-    return null;
-  }
-}
 
 function writeLastFamiliar(id: string): void {
   try {
@@ -74,6 +67,7 @@ export type QuickChatMessage = {
 /** A message parked while a reply streams — auto-sent (in order) when the
  *  in-flight turn settles naturally. Stop parks the queue. */
 export type QueuedQuickChatMessage = {
+  permissionMode?: CommandPermissionMode;
   id: string;
   text: string;
   attachments?: ChatAttachment[];
@@ -83,6 +77,7 @@ export type QueuedQuickChatMessage = {
 };
 
 type QuickChatSendIntent = {
+  permissionMode?: CommandPermissionMode;
   modelOverride: string | null;
   modelControls: ModelControlValues;
 };
@@ -170,6 +165,8 @@ export type UseQuickChat = {
   projectsLoading: boolean;
   projectsError: string | null;
   projectLaunchReady: boolean;
+  permissionMode: CommandPermissionMode;
+  applySavedDefaultContext: () => void;
   /** Why an ordinary message cannot launch yet (no project chosen, access
    *  still loading, …) — the same text a refused send writes to `error`, so
    *  the composer can say it before the person presses Send. */
@@ -189,10 +186,10 @@ export type UseQuickChat = {
   /** Send the draft (plus any staged attachments). While a reply is already
    *  streaming the message is QUEUED instead of dropped, and auto-sends when
    *  the turn settles naturally. */
-  send: (attachments?: ChatAttachment[]) => Promise<void>;
+  send: (attachments?: ChatAttachment[], onAccepted?: () => void) => Promise<void>;
   /** Send an explicit text through the same pipeline as `send` (slash-command
    *  dispatch — e.g. a resolved skill invocation). Clears the draft. */
-  sendText: (raw: string, attachments?: ChatAttachment[], intent?: QuickChatSendIntent) => Promise<void>;
+  sendText: (raw: string, attachments?: ChatAttachment[], intent?: QuickChatSendIntent, onAccepted?: () => void) => Promise<void>;
   /** Messages waiting behind the in-flight turn, in send order. */
   queued: QueuedQuickChatMessage[];
   removeQueued: (id: string) => void;
@@ -219,7 +216,7 @@ export type UseQuickChat = {
 
 export type UseQuickChatOptions = {
   /** Prefer this familiar (e.g. the workspace's active scope) over the
-   *  last-used/first fallback. The user's manual pick in the popover still
+   *  saved default. The user's manual pick in the popover still
    *  wins once made. */
   preferredFamiliarId?: string | null;
   /** Defer the roster fetch until true (latched — flipping back to false does
@@ -230,6 +227,14 @@ export type UseQuickChatOptions = {
 };
 
 export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
+  const firstUse = useFirstUse();
+  const defaultHydratedRef = useRef(false);
+  const threadGenerationRef = useRef(0);
+  const hydratedDefaultsKeyRef = useRef<string | null>(null);
+  const [defaultDerived, setDefaultDerived] = useState(!options?.preferredFamiliarId);
+  const [permissionMode, setPermissionMode] = useState<CommandPermissionMode>("read");
+  const permissionModeRef = useRef(permissionMode);
+  permissionModeRef.current = permissionMode;
   const preferredFamiliarId = options?.preferredFamiliarId ?? null;
   const enabled = options?.enabled ?? true;
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
@@ -295,13 +300,23 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         : null,
     [projects, selectedProjectRoot],
   );
+  const defaultContextReady = Boolean(sessionId) || !defaultDerived || (!firstUse.error && firstUse.payload?.resolution.kind === "ready" && JSON.stringify(firstUse.payload.state.defaults) === hydratedDefaultsKeyRef.current);
   const projectLaunchReady =
+    defaultContextReady &&
+    firstUse.payload?.state.step === "complete" &&
+    Boolean(selectedFamiliarId) &&
     projectsLoadedSuccessfully &&
     !projectsLoading &&
     !projectsError &&
     selectedProject?.access !== undefined &&
     Boolean(selectedProjectRoot);
-  const projectLaunchMessage = projectsLoading
+  const projectLaunchMessage = firstUse.payload?.state.step !== "complete"
+    ? "Complete the introduction in Cave before starting a run. Your draft is kept."
+    : !defaultContextReady
+      ? "Review the saved default context before starting this chat. Your draft is kept."
+      : selectedProjectRoot && projectsLoadedSuccessfully && !selectedProject
+      ? "The selected project is unavailable or access was revoked. Review the default context or choose an accessible project."
+      : projectsLoading
     ? "Checking project access…"
     : projectsError
       ? "Projects are unavailable. Retry before starting chat."
@@ -388,6 +403,9 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
   const settleAcceptedStop = useCallback((activeSend: ActiveQuickChatSend): boolean => {
     if (activeSendRef.current !== activeSend) return false;
+    // Follow-ups may still be validating defaults before a session is known.
+    // An accepted Stop must refuse those pending admissions with the run.
+    threadGenerationRef.current++;
     activeSendRef.current = null;
     activeSend.suppressSettlementUi = true;
     activeSend.controller.abort();
@@ -460,6 +478,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         suppressSettlementUi?: boolean;
       },
     ): ActiveQuickChatSend | null => {
+      threadGenerationRef.current++;
       const activeSend = activeSendRef.current;
       if (!activeSend) return null;
 
@@ -489,6 +508,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
   // Clear the conversation; keeps the familiar + control choices intact.
   const newThread = useCallback(() => {
+    threadGenerationRef.current++;
     terminateActiveSend({
       keepalive: true,
       suppressSettlementUi: true,
@@ -510,6 +530,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     setMessages([]);
     setError(null);
     setSendState("idle");
+    try { setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode); } catch { setPermissionMode("read"); }
   }, [terminateActiveSend]);
 
   useEffect(() => {
@@ -535,19 +556,13 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         const json = await res.json();
         if (controller.signal.aborted) return;
         const next = (json?.familiars ?? []) as Familiar[];
-        const stored = readLastFamiliar();
         const preferred = preferredRef.current;
         rosterLoadedRef.current = true;
         setError(null);
         setFamiliars(next);
-        // Default priority: the workspace's active familiar, then the last
-        // familiar used in quick chat, then the first in the roster.
-        setSelectedFamiliarId(
-          (preferred && next.some((familiar) => familiar.id === preferred) ? preferred : null) ??
-            (stored && next.some((familiar) => familiar.id === stored) ? stored : null) ??
-            next[0]?.id ??
-            null,
-        );
+        // A supplied workspace actor is explicit; recency and roster order
+        // cannot replace an unavailable configured identity.
+        if (preferred) setSelectedFamiliarId(preferred);
       } catch (err) {
         if (!controller.signal.aborted) {
           // Un-latch so closing and reopening retries a failed load (the
@@ -620,7 +635,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   }, [reconcileStopOutcome, terminateActiveSend]);
 
   const selectedFamiliar = useMemo(
-    () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? familiars[0] ?? null,
+    () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? null,
     [familiars, selectedFamiliarId],
   );
 
@@ -677,12 +692,47 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     return () => controller.abort();
   }, [selectedFamiliarId, selectedFamiliar?.harness, selectedFamiliar?.model, modelOverride, sessionId]);
 
+  const applySavedDefaultContext = useCallback(() => {
+    const payload = firstUse.payload;
+    if (!payload || payload.resolution.kind !== "ready" || !payload.project || sessionIdRef.current) return;
+    const defaults = payload.resolution.context;
+    if (!familiars.some((familiar) => familiar.id === defaults.actingFamiliarId)) return;
+    defaultHydratedRef.current = true;
+    hydratedDefaultsKeyRef.current = JSON.stringify(payload.state.defaults);
+    setDefaultDerived(true);
+    try { setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode); } catch { setPermissionMode(payload.state.permissionMode ?? "read"); }
+    selectedIdRef.current = defaults.actingFamiliarId;
+    selectedProjectRootRef.current = payload.project.root;
+    setSelectedFamiliarId(defaults.actingFamiliarId);
+    setSelectedProjectRoot(payload.project.root);
+    setError(null);
+  }, [firstUse.payload, familiars]);
+
   useEffect(() => {
-    if (!selectedProjectRootRef.current) return;
-    if (projects.some((project) => project.root === selectedProjectRootRef.current)) return;
-    selectedProjectRootRef.current = null;
-    setSelectedProjectRoot(null);
-  }, [projects]);
+    if (defaultHydratedRef.current || userPickedRef.current || preferredFamiliarId || sessionId) return;
+    applySavedDefaultContext();
+  }, [preferredFamiliarId, sessionId, applySavedDefaultContext]);
+
+  useEffect(() => {
+    const restoreMode = () => {
+      if (sessionIdRef.current || activeSendRef.current) return;
+      try { setPermissionMode(readChatComposerPrefs(window.localStorage).permissionMode); } catch { /* Keep the acknowledged mode. */ }
+    };
+    restoreMode();
+    window.addEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, restoreMode);
+    window.addEventListener("focus", restoreMode);
+    return () => { window.removeEventListener(CHAT_COMPOSER_PREFS_CHANGED_EVENT, restoreMode); window.removeEventListener("focus", restoreMode); };
+  }, [firstUse.loaded]);
+
+  const validateDefaultContext = useCallback(async () => {
+    if (sessionIdRef.current || !defaultDerived) return true;
+    const latest = await firstUse.refresh();
+    if (!latest || latest.resolution.kind !== "ready" || JSON.stringify(latest.state.defaults) !== hydratedDefaultsKeyRef.current) {
+      setError("Couldn't verify the saved default context. Review it in Cave; your draft is kept.");
+      return false;
+    }
+    return true;
+  }, [defaultDerived, firstUse.refresh]);
 
   // Stream one reply for a resolved target, appending a pending assistant turn
   // and filling it as tokens arrive. `resume` continues the current daemon
@@ -699,7 +749,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         modelControls: modelControlsRef.current,
       },
     ): Promise<"done" | "stopped"> => {
-      if (!target.familiarId) return "stopped";
+      if (!firstUse.ensureIntroduction() || !target.familiarId) return "stopped";
       if (!projectLaunchReady) {
         setError(projectLaunchMessage);
         return "stopped";
@@ -737,6 +787,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
           familiarId: target.familiarId,
           prompt: target.prompt,
           projectRoot: selectedProjectRoot ?? undefined,
+          permissionMode: intent.permissionMode ?? permissionModeRef.current,
           // Staged files: the bridge composes the prompt (text inlined, image
           // payloads written to temp files the harness can Read) — send-body
           // stripping mirrors the main chat composer.
@@ -868,6 +919,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     },
     [
       nextId,
+      firstUse.ensureIntroduction,
+      validateDefaultContext,
       projectLaunchMessage,
       projectLaunchReady,
       selectedProjectRoot,
@@ -884,7 +937,13 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       raw: string,
       attachments: ChatAttachment[] = [],
       requestedIntent?: QuickChatSendIntent,
+      onAccepted?: () => void,
     ) => {
+      const requestedMode = requestedIntent?.permissionMode ?? permissionModeRef.current;
+      const generation = threadGenerationRef.current;
+      const context = `${selectedIdRef.current}\0${selectedProjectRootRef.current}`;
+      if (!firstUse.ensureIntroduction() || !(await validateDefaultContext())) return;
+      if (threadGenerationRef.current !== generation || context !== `${selectedIdRef.current}\0${selectedProjectRootRef.current}`) return;
       const target = resolveQuickChatTarget(raw, familiars, selectedFamiliarId);
       // Attachment-only sends are legal — the bridge builds a "review the
       // attached files" prompt server-side. Only the empty-prompt error is
@@ -900,6 +959,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       // before any optimistic turn or server request exists.
       if (target.familiarId !== selectedFamiliarId && !activeSendRef.current) {
         userPickedRef.current = true;
+        setDefaultDerived(false);
         newThread();
         selectedIdRef.current = target.familiarId;
         setSelectedFamiliarId(target.familiarId);
@@ -915,10 +975,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         setError(projectLaunchMessage);
         return;
       }
-      const intent = requestedIntent ?? {
-        modelOverride: modelOverrideRef.current,
-        modelControls: { ...modelControlsRef.current },
-      };
+      const intent = { ...(requestedIntent ?? { modelOverride: modelOverrideRef.current, modelControls: { ...modelControlsRef.current } }), permissionMode: requestedMode };
       // A turn is already streaming: QUEUE the message instead of dropping it
       // (the old behavior) — it auto-sends, in order, when the reply settles
       // naturally. Stop parks the queue, so a cancel never fires a surprise
@@ -930,6 +987,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
           id: nextId("q"),
           text: raw,
           ...(attachments.length ? { attachments } : {}),
+          permissionMode: intent.permissionMode,
           modelOverride: intent.modelOverride,
           ...(Object.keys(intent.modelControls).length
             ? { modelControls: { ...intent.modelControls } }
@@ -937,7 +995,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         };
         queuedRef.current = [...queuedRef.current, item];
         setQueued(queuedRef.current);
-        setDraft("");
+        setDraft((current) => current === raw ? "" : current);
+        onAccepted?.();
         return;
       }
 
@@ -962,10 +1021,11 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       lastUserPromptRef.current = raw;
       lastUserAttachmentsRef.current = attachments;
       lastUserIntentRef.current = {
+        permissionMode: intent.permissionMode,
         modelOverride: intent.modelOverride,
         modelControls: { ...intent.modelControls },
       };
-      setDraft("");
+      setDraft((current) => current === raw ? "" : current);
       setSelectedFamiliarId(target.familiarId);
       writeLastFamiliar(target.familiarId);
       setMessages((prev) => [
@@ -978,6 +1038,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         },
       ]);
 
+      onAccepted?.();
       const status = await deliver(target, resume, attachments, intent);
       // Natural completion drains the next queued message; a Stop or a failed
       // turn parks the queue (its chips stay visible for remove-or-resume).
@@ -987,6 +1048,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
           queuedRef.current = rest;
           setQueued(rest);
           await sendTextRef.current(next.text, next.attachments ?? [], {
+            permissionMode: next.permissionMode,
             modelOverride: next.modelOverride ?? null,
             modelControls: next.modelControls ?? {},
           });
@@ -998,6 +1060,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       familiars,
       newThread,
       nextId,
+      firstUse.ensureIntroduction,
+      validateDefaultContext,
       projectLaunchMessage,
       projectLaunchReady,
       selectedFamiliarId,
@@ -1006,8 +1070,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   sendTextRef.current = sendText;
 
   const send = useCallback(
-    async (attachments: ChatAttachment[] = []) => {
-      await sendText(draft, attachments);
+    async (attachments: ChatAttachment[] = [], onAccepted?: () => void) => {
+      await sendText(draft, attachments, undefined, onAccepted);
     },
     [draft, sendText],
   );
@@ -1067,6 +1131,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const pickFamiliar = useCallback(
     (id: string | null) => {
       userPickedRef.current = true;
+      setDefaultDerived(false);
       if (selectedIdRef.current !== id) {
         newThread();
         selectedProjectRootRef.current = null;
@@ -1079,6 +1144,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   );
   const pickProjectRoot = useCallback(
     (root: string | null) => {
+      userPickedRef.current = true;
+      setDefaultDerived(false);
       if (selectedProjectRootRef.current !== root) newThread();
       selectedProjectRootRef.current = root;
       setSelectedProjectRoot(root);
@@ -1096,6 +1163,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     projectsError,
     projectLaunchReady,
     projectLaunchMessage,
+    permissionMode,
+    applySavedDefaultContext,
     selectedProjectRoot,
     setSelectedProjectRoot: pickProjectRoot,
     draft,

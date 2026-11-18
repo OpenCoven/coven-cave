@@ -66,6 +66,8 @@ async function openSessionsList(page: Page, seededSessions = sessions) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "nova");
+    // This list fixture explicitly browses all projects using the shared scope.
+    window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
     window.localStorage.setItem("cave:chat:project-selected", JSON.stringify("root:/other"));
   });
   await page.route("**/api/familiars**", (r) => r.fulfill({ json: { ok: true, familiars: [FAMILIAR] } }));

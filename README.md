@@ -46,16 +46,16 @@ persist state offline, and hand a live session off to your phone over Tailscale.
   familiars are working at once.
 - **🗂️ Track work** — Manage tasks on the Board and Gantt surfaces, with bulk
   edits and undo. Browse reminders, calendars, and daily/retro reports.
-- **🧠 Memory & libraries** — Browse project sessions, local libraries, the
-  knowledge vault, and marketplace packages in one place.
+- **🧠 Memory & libraries** — Browse project sessions, local libraries, and the
+  knowledge vault in one place.
 - **🐙 GitHub triage** — Review GitHub activity, PRs, and issues inline and feed
   them straight into familiar work.
 - **🖥️ Local surfaces** — Launch desktop-local **terminal** and **browser**
   panes through the Cave sidecar, right inside the app window.
 - **📱 Mobile handoff** — Hand the app off to a phone over **Tailscale**, or run
-  the dedicated native iOS client with its own chat, code, tasks, and feed tabs.
-- **⚙️ Workflows & automations** — Run and inspect OpenCoven workflows,
-  automations, and marketplace-seeded catalog data.
+  the dedicated native iOS client for chat.
+- **⚙️ Workflows & automations** — Run and inspect OpenCoven workflows and
+  automations.
 
 ### Flow executions and Chat
 
@@ -78,8 +78,8 @@ mission, linking to that exact owner. Its guidance updates as blockers change;
 resolved work clears the notification without generating another completion.
 
 <div align="center">
-<img src="screenshots/canvas-chat.png" alt="Chat canvas" width="405">
-<img src="screenshots/workflows.png" alt="Workflows surface" width="405">
+<img src="screenshots/chat.png" alt="A chat with a familiar, showing its tool activity" width="405">
+<img src="screenshots/tasks.png" alt="The Tasks board" width="405">
 </div>
 
 ---
@@ -148,10 +148,10 @@ integration.
 │   │   Tailwind 4 · TS      │ IPC  │  · window & updater   │  │
 │   │                        │      │  · pty terminal       │  │
 │   │  Surfaces:             │      │  · browser pane       │  │
-│   │  chat · board · gantt  │      │  · speech             │  │
-│   │  familiars · settings  │      │  · sidecar archive    │  │
-│   │  github · libraries    │      └───────────┬───────────┘  │
-│   │  reminders · workflows │                  │              │
+│   │  home · chat · tasks   │      │  · speech             │  │
+│   │  rituals · canvas      │      │  · sidecar archive    │  │
+│   │  memories · dashboard  │      └───────────┬───────────┘  │
+│   │  settings              │                  │              │
 │   └───────────┬────────────┘                  │              │
 │               │                               ▼              │
 │               │                    ┌───────────────────────┐ │

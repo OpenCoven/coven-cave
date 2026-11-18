@@ -79,6 +79,9 @@ async function base(
 ) {
   const sends: Sent[] = [];
   await page.addInitScript(() => {
+    // This Coding Desk fixture intentionally spans projects for its selected Nova actor.
+    localStorage.setItem("cave:workspace:project-scope:v1", "null");
+    localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": ["nova"] }));
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar-scope", JSON.stringify(["nova"]));
     window.localStorage.setItem("cave:onboarding:dismissed", "1");

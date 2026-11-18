@@ -78,19 +78,20 @@ export function sectionModels<T extends { root: string }>(
 }
 
 /** Click cycle on a row: none → read → full (write) → none. */
-export function nextAccessState(current: AccessState): AccessState {
+export function nextAccessState(current: AccessState, writeBlocked = false): AccessState {
   if (current === "none") return "read";
-  if (current === "read") return "write";
+  // A folder holding Cave's private state can't get Write (#6451).
+  if (current === "read") return writeBlocked ? "none" : "write";
   return "none";
 }
 
 /** Pill face per state. `action` narrates what the next click does (titles,
  *  aria-labels), so the cycle is discoverable without documentation. */
-export function accessStateMeta(state: AccessState): {
+export function accessStateMeta(state: AccessState, writeBlocked = false): {
   label: string;
   action: string;
 } {
-  if (state === "read") return { label: "Read", action: "grant full access" };
+  if (state === "read") return { label: "Read", action: writeBlocked ? "remove access" : "grant full access" };
   if (state === "write") return { label: "Full", action: "remove access" };
   return { label: "No access", action: "grant read access" };
 }
@@ -132,12 +133,16 @@ export function setAllOps(
   projectIds: readonly string[],
   direct: ReadonlyMap<string, ProjectAccessLevel>,
   target: AccessState,
+  /** Projects that can't get Write: "Set all to Full" gives them Read at most. */
+  writeBlocked: ReadonlySet<string> = new Set(),
 ): AccessOp[] {
   const ops: AccessOp[] = [];
   for (const projectId of projectIds) {
     const current = direct.get(projectId) ?? null;
     if (target === "none") {
       if (current) ops.push({ projectId, op: "revoke" });
+    } else if (target === "write" && writeBlocked.has(projectId)) {
+      if (!current) ops.push({ projectId, op: "grant", access: "read" });
     } else if (current !== target) {
       ops.push({ projectId, op: "grant", access: target });
     }

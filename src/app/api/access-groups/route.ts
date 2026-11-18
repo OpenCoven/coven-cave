@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createAccessGroup, listAccessGroups } from "@/lib/project-permissions";
+import { CavePrivateStateGrantError, createAccessGroup, listAccessGroups } from "@/lib/project-permissions";
 import {
   invalidShapeResponse,
   memberIdsInput,
@@ -60,14 +60,24 @@ export async function POST(req: Request) {
     return invalidShapeResponse();
   }
 
-  const group = await createAccessGroup({
-    name,
-    ...(typeof payload.description === "string" ? { description: payload.description } : {}),
-    ...(memberFamiliarIds !== undefined ? { memberFamiliarIds } : {}),
-    ...(projectGrants !== undefined ? { projectGrants } : {}),
-    // requireLocalHumanGrantMutation is isLocalOrigin-only — the phone cannot
-    // reach group routes at all, so the actor is unambiguous here.
-    actor: "loopback",
-  });
-  return NextResponse.json({ ok: true, group });
+  try {
+    const group = await createAccessGroup({
+      name,
+      ...(typeof payload.description === "string" ? { description: payload.description } : {}),
+      ...(memberFamiliarIds !== undefined ? { memberFamiliarIds } : {}),
+      ...(projectGrants !== undefined ? { projectGrants } : {}),
+      // requireLocalHumanGrantMutation is isLocalOrigin-only — the phone cannot
+      // reach group routes at all, so the actor is unambiguous here.
+      actor: "loopback",
+    });
+    return NextResponse.json({ ok: true, group });
+  } catch (error) {
+    if (error instanceof CavePrivateStateGrantError) {
+      return NextResponse.json(
+        { ok: false, code: error.code, error: error.message, projectId: error.project.id },
+        { status: error.status },
+      );
+    }
+    throw error;
+  }
 }

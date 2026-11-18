@@ -31,6 +31,20 @@ try {
     assert.equal(response.code, "project_folder_authentication_required");
     assert.equal((await loadProjects())[0].rootRealpath, undefined);
   });
+  await test("a root snapshot failure is structured and happens before authentication", async () => {
+    let authenticated = false;
+    const response = await confirmProjectFolderWithHuman(created.id, {
+      authenticate: async () => {
+        authenticated = true;
+        return true;
+      },
+      realpath: () => { throw new Error("folder moved"); },
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, "project_root_unavailable");
+    assert.equal(response.status, 400);
+    assert.equal(authenticated, false);
+  });
   await test("authentication is bound to the folder and cannot approve a concurrent redirect", async () => {
     const response = await confirmProjectFolderWithHuman(created.id, { authenticate: async (reason) => {
       assert.ok(reason.includes("Project"));
