@@ -6,14 +6,11 @@ const read = (p) => readFile(new URL(`../apps/ios/CovenCave/CovenCave/Views/${p}
 const bubble = await read("MessageBubble.swift");
 // MessageBubble exposes a reply closure, a right-swipe gesture, and a menu item.
 assert.match(bubble, /var onReply: \(\(DisplayMessage\) -> Void\)\? = nil/, "MessageBubble should expose onReply");
-assert.match(bubble, /private var replySwipe: some Gesture/, "MessageBubble should define the reply swipe gesture");
-assert.match(bubble, /DragGesture\(minimumDistance: 24\)/, "reply swipe should be a horizontal drag");
-assert.match(
-  bubble,
-  /abs\(value\.translation\.width\) > abs\(value\.translation\.height\)/,
-  "the swipe should only track clearly-horizontal drags (so scrolling is unaffected)",
-);
-assert.match(bubble, /\.simultaneousGesture\(replySwipe\)/, "the swipe runs alongside the scroll view");
+assert.match(bubble, /ReplyPanGesture\(enabled: canReply\)/, "only reply-capable messages should recognize the gesture");
+assert.match(bubble, /pan\.delegate = context\.coordinator/, "install the direction gate on the native pan recognizer");
+assert.match(bubble, /gestureRecognizerShouldBegin[^{]*\{[^}]*\}\s*let velocity = pan\.velocity\(in: pan\.view\)\s*return velocity\.x > abs\(velocity\.y\)/, "reject leftward and vertical drags before the reply pan begins");
+assert.match(bubble, /\.gesture\(replySwipe\)/, "attach the reply recognizer to the bubble");
+assert.match(bubble, /if completed && replyDrag > 48/, "only a completed drag past the reply threshold should quote");
 assert.match(bubble, /Label\("Reply", systemImage: "arrowshape\.turn\.up\.left"\)/, "Reply should also be in the context menu");
 
 const chat = await read("ChatView.swift");
