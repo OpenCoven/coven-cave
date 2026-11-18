@@ -1,5 +1,7 @@
 "use client";
 
+import { CHAT_REPLY_COMPLETED_EVENT } from "@/lib/setup-events";
+import { FIRST_REPLY_AT_KEY } from "@/lib/first-run-stamps";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { parseFirstUseState, type FirstUseAction, type FirstUseContextResolution, type FirstUseState } from "@/lib/first-use";
 import type { CaveProject } from "@/lib/cave-projects-types";
@@ -26,6 +28,7 @@ type FirstUseContextValue = {
   closeGuide: () => void;
   suppressGuide: () => void;
   suppressed: boolean;
+  conversationUsed: boolean;
   refresh: () => Promise<FirstUsePayload | null>;
   mutate: (action: FirstUseAction, expectedRevision?: number) => Promise<boolean>;
   ensureIntroduction: () => boolean;
@@ -38,6 +41,7 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [conversationUsed, setConversationUsed] = useState(false);
   const [suppressed, setSuppressed] = useState(false);
   const suppressionRef = useRef(false);
   const [open, setOpen] = useState(false);
@@ -46,6 +50,19 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
   const requestId = useRef(0);
   const firstLoad = useRef(true);
   const { announce } = useAnnouncer();
+
+  useEffect(() => {
+    const key = "cave:first-use:conversation-used";
+    try {
+      setConversationUsed(Boolean(localStorage.getItem(key) || localStorage.getItem(FIRST_REPLY_AT_KEY)));
+    } catch { /* The live event still works without storage. */ }
+    const onReply = () => {
+      setConversationUsed(true);
+      try { localStorage.setItem(key, "1"); } catch { /* Keep the current visit. */ }
+    };
+    window.addEventListener(CHAT_REPLY_COMPLETED_EVENT, onReply);
+    return () => window.removeEventListener(CHAT_REPLY_COMPLETED_EVENT, onReply);
+  }, []);
 
   const refresh = useCallback(async () => {
     const generation = ++requestId.current;
@@ -137,7 +154,7 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
     return false;
   }, [announce]);
 
-  return <FirstUseContext.Provider value={{ payload, loaded, error, busy, open, openGuide, closeGuide, suppressGuide, suppressed, refresh, mutate, ensureIntroduction }}>{children}</FirstUseContext.Provider>;
+  return <FirstUseContext.Provider value={{ payload, loaded, error, busy, open, openGuide, closeGuide, suppressGuide, suppressed, conversationUsed, refresh, mutate, ensureIntroduction }}>{children}</FirstUseContext.Provider>;
 }
 
 export function useFirstUse(): FirstUseContextValue {

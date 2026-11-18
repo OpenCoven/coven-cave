@@ -26,7 +26,7 @@ type AccessChoice = "read" | "full";
 export function FirstUseNudge() {
   const firstUse = useFirstUse();
   const repair = firstUse.payload?.resolution.kind === "repair" ? firstUse.payload.resolution.message : null;
-  if (firstUse.suppressed || (firstUse.payload?.state.step === "complete" && !repair && !firstUse.error)) return null;
+  if (firstUse.suppressed || (firstUse.conversationUsed && firstUse.payload?.state.step === "complete" && !repair && !firstUse.error)) return null;
   return <aside className="first-use-nudge" aria-label="Getting started"><span>{firstUse.error ?? (!firstUse.loaded ? "Loading setup…" : firstUse.payload?.state.step !== "complete" ? "Choose an assistant, project and access. Your progress is kept." : repair ?? "Your workspace is ready.")}</span><Button variant="ghost" size="xs" onClick={firstUse.openGuide}>{repair && firstUse.payload?.state.step === "complete" ? "Review default context" : "Continue setup"}</Button></aside>;
 }
 
