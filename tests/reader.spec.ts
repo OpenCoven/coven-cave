@@ -97,6 +97,7 @@ const SESSION = {
   runtime: "local",
   exit_code: 0,
   archived_at: null,
+  attention: { state: "none", since: null, reason: null },
   created_at: ISO,
   updated_at: ISO,
 };

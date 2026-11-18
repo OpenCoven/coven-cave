@@ -398,6 +398,23 @@ async function bootFixThread(page: Page, options: { selectedProjectId?: string |
       detail: "The lookup tool cannot find project files.",
     }],
   };
+  let sweepReceipt: string | null = null;
+  await page.route("**/api/chat/signal-sweeps**", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { ok: true, available: true } });
+    const body = route.request().postDataJSON();
+    if (body.action === "prepare") {
+      expect(body.familiarId).toBe("cody");
+      expect(body.sourceReportId).toBe(report.id);
+      expect(body.identities).toEqual(["blocker:lookup"]);
+      if (sweepReceipt && body.expectedPrevious?.["blocker:lookup"] !== sweepReceipt) {
+        return route.fulfill({ status: 409, json: { ok: false, error: "Review the existing fix before retrying.", receipts: { "blocker:lookup": sweepReceipt } } });
+      }
+      sweepReceipt = crypto.randomUUID();
+      return route.fulfill({ json: { ok: true, requestId: sweepReceipt, accepted: ["blocker:lookup"], receipts: { "blocker:lookup": sweepReceipt } } });
+    }
+    if (body.action === "release" && body.requestId === sweepReceipt) sweepReceipt = null;
+    return route.fulfill({ json: { ok: true } });
+  });
   const fixtureSessionId = "fix-thread-new";
   const fixtureReply = "Fix response complete.";
   await page.addInitScript(({ selectedProjectId }) => {
@@ -489,8 +506,8 @@ test("fix-thread popup opens sidechat and sends once without replacing main Chat
   const card = page.getByRole("article", { name: "Thread Signal" });
   await expect(card).toBeVisible();
   await card.getByRole("button", { name: /Broken lookup/ }).click();
-  await card.getByRole("button", { name: "Fix in new thread", exact: true }).click();
-  await expect(card.getByRole("button", { name: "Fix in new thread", exact: true })).toBeDisabled();
+  await card.getByRole("button", { name: "Fix in Build", exact: true }).click();
+  await expect(card.getByRole("button", { name: "Fix in Build", exact: true })).toBeDisabled();
 
   const panel = page.locator(".right-chat").first();
   await expect(panel).toHaveAttribute("aria-hidden", "false");
@@ -635,7 +652,7 @@ test("mobile fix handoff opens the Chat drawer and restores the main draft on cl
   expect(fixture.sends).toHaveLength(1);
 });
 
-test("fix-thread source lookup failure releases only its launch guard for retry", async ({ page }, testInfo) => {
+test("fix-thread source lookup failure remains unsent and supports explicit retry", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   const fixture = await bootFixThread(page, { selectedProjectId: null });
   let rejectSource = true;
@@ -650,12 +667,12 @@ test("fix-thread source lookup failure releases only its launch guard for retry"
   await page.getByRole("menuitem", { name: "Reflect on this thread", exact: true }).click();
   const card = page.getByRole("article", { name: "Thread Signal" });
   await card.getByRole("button", { name: /Broken lookup/ }).click();
-  const fix = card.getByRole("button", { name: "Fix in new thread", exact: true });
+  const fix = card.getByRole("button", { name: "Fix in Build", exact: true });
   await fix.click();
-  await expect(card.getByText("Couldn't open the Chat panel", { exact: true })).toBeVisible();
+  await expect(card.getByText("Couldn't load the source thread's project. Try again.", { exact: true })).toBeVisible();
   await expect(fix).toBeEnabled();
   expect(fixture.sends).toHaveLength(0);
-  await fix.click();
+  await card.getByRole("button", { name: "Retry fix after changes", exact: true }).click();
   await expect.poll(() => fixture.sends.length).toBe(1);
   await expect(fix).toBeDisabled();
 });
@@ -679,7 +696,7 @@ test("superseding a pending fix request makes its original action retryable", as
     await page.getByRole("menuitem", { name: "Reflect on this thread", exact: true }).click();
     const card = page.getByRole("article", { name: "Thread Signal" });
     await card.getByRole("button", { name: /Broken lookup/ }).click();
-    const fix = card.getByRole("button", { name: "Fix in new thread", exact: true });
+    const fix = card.getByRole("button", { name: "Fix in Build", exact: true });
     await fix.click();
     await expect(fix).toBeDisabled();
     await expect.poll(() => intercepted).toBe(true);
@@ -706,9 +723,10 @@ test("failure from another window releases the originating fix action", async ({
       document.documentElement.dataset.fixRequest = (event as CustomEvent<{ requestId: string }>).detail.requestId;
     }, { capture: true, once: true });
   });
-  const fix = card.getByRole("button", { name: "Fix in new thread", exact: true });
+  const fix = card.getByRole("button", { name: "Fix in Build", exact: true });
   await fix.click();
   await expect(fix).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.fixRequest ?? "")).toMatch(/^[a-f0-9-]{36}$/);
   const requestId = await page.evaluate(() => document.documentElement.dataset.fixRequest!);
   const other = await context.newPage();
   try {

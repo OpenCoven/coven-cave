@@ -7,13 +7,17 @@ const workspace = read("./workspace.tsx");
 const surface = read("./chat-surface.tsx");
 const router = read("./chat-router.tsx");
 const sidebar = read("./workspace-sidebar.tsx");
-assert.match(workspace, /selection: chatFilterProjectId \?\? "all"/);
+assert.match(workspace, /selection: selectedWorkspaceProjectId \?\? "all"/);
 assert.match(workspace, /useState<string \| null>\(null\)/);
-assert.match(workspace, /familiarIds: \[\.\.\.chatFilterFamiliarIds\]/);
-assert.match(workspace, /ready: chatFilterProjectId === null/,
-  "All chats needs no ambient actor or project hydration");
-assert.match(workspace, /familiar\.projectAccess === "write"/,
-  "project filter familiar choices require configured Full access");
+assert.match(workspace, /familiarIds: \[\.\.\.scopeIds\]/);
+assert.match(workspace, /ready: selectedWorkspaceProjectId === null/,
+  "All projects remains an explicit overview");
+assert.match(workspace, /projectCrew: resolvedProjectCrew/,
+  "Chat uses the same project crew as every other page");
+assert.doesNotMatch(workspace, /setChatFilterProjectId|setChatFilterFamiliarIds/,
+  "Chat does not retain a second unsynchronized selection");
+assert.match(workspace, /preserveSurface: modeRef\.current === "chat"/,
+  "shared Chat browsing preserves the open conversation");
 assert.match(workspace, /<ChatSurface[\s\S]*?browseScope=\{chatBrowseScope\}/);
 assert.match(workspace, /composeProjectRoot=\{selectedWorkspaceProject\?\.root \?\? null\}/);
 assert.match(surface, /<SidebarChatsSection[\s\S]*?sessions=\{browseSessions\}/);
@@ -33,7 +37,7 @@ assert.match(chatList, /browseScope \? "all" : normalizeSelection/,
 assert.match(router, /const activeSession = retainOpenChatSession\(retainedSessionRef\.current, sessions, activeSessionId\)/);
 assert.match(router, /if \(browseScope !== undefined\) return;\s*const nextFamiliarId/,
   "async familiar hydration and restored project crew cannot navigate a workspace chat");
-assert.match(router, /key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}/,
+assert.match(router, /key=\{`chat-compose-\$\{viewComposerDraftKey\}-\$\{composeInstance\}`\}/,
   "project browse changes are not part of ChatView's mount identity");
 const paletteSwitch = workspace.slice(workspace.indexOf('if (intent.kind === "switch-familiar")'), workspace.indexOf('if (intent.kind === "open-session")'));
 assert.match(paletteSwitch, /selectFamiliarScope\(intent\.familiarId\)/);
