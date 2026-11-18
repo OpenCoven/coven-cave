@@ -10,7 +10,7 @@ const sheet = await readFile(new URL("../styles/dashboard.css", import.meta.url)
 
 assert.match(
   shell,
-  /<SettingsGroup label="Setup" variant="ruled" panel=\{false\}>\s*<SetupStatusRow \/>\s*<\/SettingsGroup>\s*<BackupSettingsGroup \/>/,
+  /<SettingsGroup label="Setup" variant="ruled" panel=\{false\}>\s*<SetupStatusRow \/>\s*<Link [^>]*href="\/\?firstUse=1">Open assistant and project setup<\/Link>\s*<\/SettingsGroup>\s*<BackupSettingsGroup \/>/,
   "Setup is a ruled General group between Progression and Backup",
 );
 assert.doesNotMatch(shell, /label="Startup"/, "no Startup group returns (#5421)");

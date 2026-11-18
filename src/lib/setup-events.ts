@@ -20,6 +20,8 @@
  */
 
 /** Window event asking a mounted setup host to open the dialog. */
+export const CHAT_REPLY_COMPLETED_EVENT = "cave:chat-reply-completed";
+
 export const SETUP_OPEN_EVENT = "cave:onboarding-open";
 
 /** Window event fired when setup is sent to the background while running. */
