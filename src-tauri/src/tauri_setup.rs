@@ -336,6 +336,7 @@ pub fn run() {
             shell_open,
             open_tailscale_app,
             open_x_oauth_url,
+            open_update_release_url,
             shell_open_path,
             shell_reveal_path,
             shell_pick_directory,

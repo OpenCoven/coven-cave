@@ -9,7 +9,7 @@ import {
   type CommandThinkingEffort,
 } from "./command-controls.ts";
 
-const CHAT_COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
+export const CHAT_COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
 /** Explicit user changes in the guide can update an unsent draft's controls. */
 export const CHAT_COMPOSER_PREFS_CHANGED_EVENT = "cave:chat-composer-prefs-changed";
 

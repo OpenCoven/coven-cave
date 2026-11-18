@@ -11,8 +11,8 @@
  * No React, no Node APIs — shared by the chat UI and unit tests.
  */
 
-import { formatTokens, type TurnUsage } from "./usage-format.ts";
-import { GENERATED_MODEL_CONTEXT_WINDOWS } from "./runtime-model-catalog.gen.ts";
+import { formatTokens, validModelContextWindow, type TurnUsage } from "./usage-format.ts";
+import { GENERATED_ESTIMATED_WINDOWS, GENERATED_MODEL_CONTEXT_WINDOWS } from "./runtime-model-catalog.gen.ts";
 
 /** Fallback window when a model's size isn't catalogued — conservative so the
  *  meter never over-reports headroom for an unknown model. */
@@ -78,7 +78,12 @@ export function computeContextMeter(
 ): ContextMeter | null {
   const usedTokens = contextUsedTokens(usage);
   if (usedTokens <= 0) return null;
-  const { tokens: windowTokens, known } = contextWindowForModel(modelId);
+  const id = typeof modelId === "string" ? modelId.trim() : "";
+  const estimate = GENERATED_ESTIMATED_WINDOWS[id.includes("/") ? id : `openai/${id}`];
+  const reported = validModelContextWindow(usage?.modelContextWindow);
+  const catalog = contextWindowForModel(modelId);
+  const windowTokens = reported ?? estimate ?? catalog.tokens;
+  const known = reported !== undefined || (estimate === undefined && catalog.known);
   if (windowTokens <= 0 || usedTokens > windowTokens) return null;
   const fraction = usedTokens / windowTokens;
   const percent = Math.round(fraction * 100);

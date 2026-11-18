@@ -26,6 +26,8 @@ import { fileURLToPath } from "node:url";
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
   app: [
+    "src/lib/signal-sweep-identity.test.ts",
+    "src/lib/signal-sweep-launch.test.ts",
     "src/lib/first-use-execution.test.ts",
     "src/components/first-use-guide.behavior.test.tsx",
     "src/components/first-use-provider.behavior.test.tsx",
@@ -66,6 +68,7 @@ export const SUITES = {
     "src/lib/split-geometry.test.ts",
     "src/lib/chat-split.test.ts",
     "src/lib/chat-tab-events.test.ts",
+    "src/lib/chat-projects-retry.test.ts",
     "src/lib/chat-creation-refresh.test.ts",
     "src/lib/chat-session-ownership.test.ts",
     "src/lib/right-chat-session.test.ts",
@@ -321,6 +324,8 @@ export const SUITES = {
     "src/lib/session-finished-inbox.test.ts",
     "src/lib/session-finished-inbox-emit.test.ts",
     "src/lib/project-permissions.test.ts",
+    "src/lib/cave-private-state-grants.test.ts",
+    "src/lib/cave-private-state-paths.test.ts",
     "src/lib/project-grant-audit.test.ts",
     "src/lib/project-access-levels.test.ts",
     "src/lib/project-icon-prompt.test.ts",
@@ -750,6 +755,7 @@ export const SUITES = {
     "src/components/notification-bell-mutations.test.ts",
     "src/components/notification-bell-series.test.ts",
     "src/components/notification-bell-glyph-size.test.ts",
+    "src/components/notification-bell.behavior.test.tsx",
     "src/components/surface-error-states.test.ts",
     "src/components/glass-overlay-chrome.test.ts",
     "src/components/github-action-popover-portal.test.ts",
@@ -779,6 +785,8 @@ export const SUITES = {
     "src/components/projects-view.test.ts",
     "src/components/projects-view-repair-behavior.test.tsx",
     "src/components/projects-view-focus-latch.behavior.test.tsx",
+  "src/components/chat-surface-project-handoff.behavior.test.tsx",
+    "src/components/familiar-studio-projects-tab-private-state.behavior.test.tsx",
     "src/components/project-settings-modal.test.ts",
     "src/lib/projects/access-page.test.ts",
     "src/lib/projects/access-views.test.ts",
@@ -1079,6 +1087,7 @@ export const SUITES = {
     "src/lib/server/stuck-created-sweep.test.ts",
     "src/lib/server/stale-running-sweep.test.ts",
     "src/components/thread-signal-card.test.ts",
+    "src/components/thread-signal-card.behavior.test.tsx",
     "src/components/thread-signals-section.test.ts",
     "src/lib/thread-signal-dismissals.test.ts",
     "src/components/chat-view.test.ts",
@@ -1130,6 +1139,8 @@ export const SUITES = {
     "src/lib/automations/use-automation-in-flight.test.ts",
     "src/components/automations/schedule-list-in-flight.test.ts",
     "src/lib/inbox-feed.test.ts",
+    "src/lib/notification-feed.test.ts",
+    "src/lib/snooze-options.test.ts",
     "src/lib/inbox-title.test.ts",
     "src/lib/toast-groups.test.ts",
     "src/components/inbox-toast-stack.test.ts",
@@ -1549,6 +1560,9 @@ export const SUITES = {
     "src/components/settings-multihost.test.ts",
   ],
   api: [
+    "src/app/api/chat/signal-sweeps/route.integration.test.ts",
+    "src/lib/server/signal-sweep-store.test.ts",
+    "src/app/api/chat/send/coven-write-scope-refresh.test.ts",
     "src/app/api/onboarding/journey/route.behavior.test.ts",
     "src/app/api/project-grants/route-chat-grant.integration.test.ts",
     "src/app/api/onboarding/journey/route.integration.test.ts",
@@ -1799,6 +1813,7 @@ export const SUITES = {
     "src/lib/grok-compatibility.test.ts",
     "src/lib/codex-runtime-availability.test.ts",
     "src/app/api/harnesses/route.test.ts",
+    "src/app/api/harnesses/route-path-refresh.test.ts",
     "src/lib/claude-stream.test.ts",
     "src/lib/runtime-compatibility.test.ts",
     "src/lib/server/claude-runtime-compatibility.test.ts",
@@ -2078,6 +2093,7 @@ export const SUITES = {
     "src/app/api/project-file/route-behaviour.test.ts",
     "src/app/api/project-tree/route.test.ts",
     "src/app/api/project-grants/route.test.ts",
+    "src/app/api/project-grants/route-private-state.test.ts",
     "src/lib/server/trusted-grant-mutation.test.ts",
     "src/lib/server/project-permission-symlink.test.ts",
     "src/app/api/flows/runs/route.test.ts",
@@ -2329,9 +2345,13 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  "src/lib/signal-sweep-identity.test.ts",
+  "src/app/api/chat/signal-sweeps/route.integration.test.ts",
+  "src/app/api/chat/send/coven-write-scope-refresh.test.ts",
   "src/app/api/project-grants/route-chat-grant.integration.test.ts",
   "src/app/api/onboarding/journey/route.integration.test.ts",
   "src/app/api/chat/send/route-read-project-admission.integration.test.ts",
+  "src/app/api/project-grants/route-private-state.test.ts",
   "src/app/api/salem/retirement.test.ts",
   "src/components/salem/salem-retirement.test.ts",
   "src/lib/surface-preferences-lifecycle.test.ts",
@@ -2824,6 +2844,9 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/lib/signal-sweep-launch.test.ts",
+  "src/components/thread-signal-card.behavior.test.tsx",
+  "src/components/notification-bell.behavior.test.tsx",
   "src/components/first-use-guide.behavior.test.tsx",
   "src/app/api/onboarding/journey/route.behavior.test.ts",
   "src/components/first-use-provider.behavior.test.tsx",
@@ -2910,6 +2933,8 @@ const VITEST_TESTS = new Set([
   "src/components/dashboard/dashboard-loading.test.tsx",
   "src/components/projects-view-repair-behavior.test.tsx",
   "src/components/projects-view-focus-latch.behavior.test.tsx",
+  "src/components/chat-surface-project-handoff.behavior.test.tsx",
+  "src/components/familiar-studio-projects-tab-private-state.behavior.test.tsx",
   "src/components/familiar-x-section-behavior.test.tsx",
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   // Topic Discovery (Unit 2): rendered JSX + hook through react-test-renderer.

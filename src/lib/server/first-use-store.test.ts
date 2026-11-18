@@ -6,12 +6,25 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFirstUseState, updateFirstUseState } from "./first-use-store.ts";
+import { createFirstUseState } from "../first-use.ts";
+
+test("a missing store starts short setup and keeps an explicitly selected assistant across restart", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "cave-quick-start-"));
+  const file = path.join(root, "first-use.json");
+  try {
+    assert.equal((await readFirstUseState(file)).step, "assistant");
+    const saved = await updateFirstUseState(0, { kind: "choose-assistant", familiarId: "nova" }, file);
+    assert.equal(saved.step, "project");
+    assert.deepEqual(await readFirstUseState(file), saved);
+    await assert.rejects(updateFirstUseState(0, { kind: "choose-assistant", familiarId: "sage" }, file), /changed/i);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test("progress survives reread while stale and concurrent updates cannot overwrite it", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "cave-first-use-"));
   const file = path.join(root, "first-use.json");
   try {
-    assert.equal((await readFirstUseState(file)).step, "outcome");
+    await writeFile(file, JSON.stringify(createFirstUseState()));
     const state = await updateFirstUseState(0, { kind: "outcome", outcome: "inspect" }, file);
     assert.equal(state.revision, 1);
     assert.deepEqual(await readFirstUseState(file), state);
@@ -43,6 +56,7 @@ test("two host processes cannot both commit the same introduction revision", asy
   const root = await mkdtemp(path.join(tmpdir(), "cave-first-use-process-"));
   const file = path.join(root, "first-use.json");
   try {
+    await writeFile(file, JSON.stringify(createFirstUseState()));
     await updateFirstUseState(0, { kind: "outcome", outcome: "plan" }, file);
     const children = Array.from({ length: 6 }, (_, index) => {
       const script = `import { updateFirstUseState } from ${JSON.stringify(new URL("./first-use-store.ts", import.meta.url).href)};

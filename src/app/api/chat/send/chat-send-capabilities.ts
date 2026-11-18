@@ -28,7 +28,6 @@ import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
 
 let modelFlagProbe: Promise<HelpProbeOutcome> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;
-let writeScopeFlagProbe: Promise<boolean> | null = null;
 let addDirFlagProbe: Promise<boolean> | null = null;
 let speedFlagProbe: Promise<boolean> | null = null;
 let openCodeModelFlagProbe: Promise<boolean> | null = null;
@@ -715,19 +714,12 @@ export function covenRunSupportsWriteScope(): Promise<boolean> {
   let launch;
   try { launch = covenLaunchCommand(); } catch { return Promise.resolve(false); }
   const { command, fixedArgs } = launch;
-  if (writeScopeFlagProbe) return writeScopeFlagProbe;
-  const probe = probeHelpOutcome(
-    command, [...fixedArgs, "run", "--help"], covenRunSupportsWriteScopeFlag,
-    covenWrapperSpawnEnv(harnessSpawnEnv()),
-  ).then((outcome) => {
-    if (!outcome.ok) writeScopeFlagProbe = null;
-    return outcome.ok && outcome.matched;
-  }, (error: unknown) => {
-    writeScopeFlagProbe = null;
-    throw error;
-  });
-  writeScopeFlagProbe = probe;
-  return probe;
+  // This answer admits filesystem writes. Re-probe the resolved launcher on
+  // every admission: executable replacement, PATH/shim changes and upgrades
+  // must take effect without restarting Cave. Even a completed negative
+  // answer is unsafe to retain across a later explicit recovery attempt.
+  return probeOutput(command, [...fixedArgs, "run", "--help"], covenWrapperSpawnEnv(harnessSpawnEnv()))
+    .then((outcome) => outcome.complete && covenRunSupportsWriteScopeFlag(outcome.output));
 }
 
 export function covenRunSupportsAddDir(): Promise<boolean> {

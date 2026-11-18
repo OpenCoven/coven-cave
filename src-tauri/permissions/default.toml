@@ -18,6 +18,7 @@ permissions = [
   "allow-shell-open",
   "allow-shell-reveal-path",
   "allow-open-x-oauth-url",
+  "allow-open-update-release-url",
   "allow-set-traffic-lights-visible",
   "allow-open-chat-window",
   "allow-sidecar-startup-status",

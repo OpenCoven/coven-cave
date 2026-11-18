@@ -15,7 +15,7 @@ import { realpathNativeOrResolve } from "./server/canonical-path.ts";
 import { readCachedStore } from "./server/store-read-cache.ts";
 import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
 import { caveHome } from "./coven-paths.ts";
-import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
+import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
 
 type ProjectsFile = {
   version: 1;
@@ -92,10 +92,25 @@ function withWriteMutex<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-function withProjectsStore<T>(operation: () => Promise<T>): Promise<T> {
-  if (process.env.CAVE_PROJECTS_PATH_OVERRIDE) return operation();
-  return withCaveHomeReconciledStore("cave-projects.json", operation);
+function withProjectsStore<T>(operation: () => Promise<T>, alsoStores: readonly string[] = []): Promise<T> {
+  const own = process.env.CAVE_PROJECTS_PATH_OVERRIDE ? [] : ["cave-projects.json"];
+  if (alsoStores.length === 0) {
+    return own.length === 0 ? operation() : withCaveHomeReconciledStore("cave-projects.json", operation);
+  }
+  // The store lock isn't reentrant, so a check that reads another store
+  // shares this one acquisition instead of taking its own inside.
+  return withCaveHomeReconciledStores([...own, ...alsoStores], operation);
 }
+
+/**
+ * A check that runs inside the registry mutex before a project's folder
+ * changes, and throws to refuse the move. `stores` are the other Cave stores
+ * it reads; they are reconciled under the registry's own lock.
+ */
+export type ProjectRootChangeGuard = {
+  stores: () => readonly string[];
+  check: (project: CaveProject, nextRoot: string) => Promise<void>;
+};
 
 async function loadProjectsUnlocked(): Promise<CaveProject[]> {
   const raw = await readFileOrNull(projectsFilePath());
@@ -213,7 +228,9 @@ export function patchProject(
   // root-hash tint); undefined leaves it untouched. repoUrl follows the same
   // string-sets / null-clears / undefined-keeps contract.
   patch: { name?: string; root?: string; color?: string | null; repoUrl?: string | null },
+  rootChangeGuard?: ProjectRootChangeGuard,
 ): Promise<CaveProject | null> {
+  const guarded = rootChangeGuard && patch.root !== undefined ? rootChangeGuard : undefined;
   return withProjectsStore(() => withWriteMutex(async () => {
     const projects = await loadProjectsUnlocked();
     const idx = projects.findIndex((project) => project.id === id);
@@ -231,6 +248,7 @@ export function patchProject(
       );
       if (!collides) nextRoot = candidate;
     }
+    if (guarded && nextRoot !== current.root) await guarded.check(current, nextRoot);
     const updated: CaveProject = {
       ...current,
       name: patch.name !== undefined ? patch.name.trim() : current.name,
@@ -249,7 +267,7 @@ export function patchProject(
     next[idx] = updated;
     await saveProjects(next);
     return updated;
-  }));
+  }), guarded?.stores() ?? []);
 }
 
 export function deleteProject(id: string): Promise<boolean> {

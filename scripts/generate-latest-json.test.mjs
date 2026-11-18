@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isDirectRun, selectSignedArtifact } from "./generate-latest-json.mjs";
+import { parse } from "yaml";
+import {
+  RELEASE_BODY_PLACEHOLDER,
+  isDirectRun,
+  manifestNotes,
+  selectSignedArtifact,
+} from "./generate-latest-json.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./generate-latest-json.mjs", import.meta.url));
 const ROOT = path.dirname(path.dirname(SCRIPT));
@@ -154,4 +160,45 @@ test("notes cannot make an unsigned release an updater manifest", t => {
   const result = runReleaseFixture(t, "Notes exist", false);
   assert.equal(result.status, 2, result.stderr);
   assert.equal(result.stdout, "");
+});
+
+// #5981: v0.5.18, v0.5.21 and v0.5.22 shipped this placeholder as their
+// latest.json notes, because updater-manifest read the release body before
+// checksums replaced it. Updating clients showed it as the release notes.
+test("the release-object placeholder body is never published as release notes", t => {
+  for (const body of [RELEASE_BODY_PLACEHOLDER, `  ${RELEASE_BODY_PLACEHOLDER}\n`]) {
+    assert.equal(manifestNotes(body), undefined);
+    const result = runReleaseFixture(t, body);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).notes, undefined);
+    assert.match(result.stderr, /still the placeholder/);
+  }
+  assert.equal(manifestNotes(`${RELEASE_BODY_PLACEHOLDER} Then the real notes.`), `${RELEASE_BODY_PLACEHOLDER} Then the real notes.`);
+});
+
+test("the manifest waits for the jobs that render release notes, with bounded waits", () => {
+  const workflowSource = readFileSync(path.join(ROOT, ".github/workflows/release.yml"), "utf8");
+  const { jobs } = parse(workflowSource);
+  const createStep = jobs["release-object"].steps.map(step => step.run ?? "").join("\n");
+  assert.ok(
+    createStep.includes(`--notes "${RELEASE_BODY_PLACEHOLDER}"`),
+    "release-object must create the release with exactly the placeholder the generator drops",
+  );
+  const manifest = jobs["updater-manifest"];
+  for (const job of ["checksums", "partial-release-notes"]) {
+    assert.ok(manifest.needs.includes(job), `updater-manifest must wait for ${job}, which sets the release notes`);
+    const minutes = jobs[job]["timeout-minutes"];
+    assert.ok(Number.isInteger(minutes) && minutes <= 20, `${job} must be bounded: latest.json waits on it`);
+  }
+  for (const job of ["build", "source-version", "rollback-readiness"]) {
+    assert.ok(manifest.needs.includes(job), `updater-manifest still needs ${job}`);
+  }
+  assert.match(manifest.if, /^\$\{\{ !cancelled\(\)/, "a failed or skipped notes job must not withhold latest.json");
+  assert.match(manifest.if, /needs\.rollback-readiness\.result == 'success'/, "the rollback gate stays explicit");
+  assert.doesNotMatch(manifest.if, /needs\.checksums\.result/, "notes are best effort; checksums must not gate the manifest");
+  assert.match(
+    jobs.checksums.steps.find(step => step.name === "Set release notes").run,
+    /gh release edit "\$RELEASE_TAG" --notes-file/,
+    "checksums replaces the placeholder body",
+  );
 });

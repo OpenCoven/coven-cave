@@ -1,7 +1,7 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
-import { advanceFirstUse, createFirstUseState, parseFirstUseState, type FirstUseAction, type FirstUseState } from "../first-use.ts";
+import { advanceFirstUse, createQuickStartState, parseFirstUseState, type FirstUseAction, type FirstUseState } from "../first-use.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 import { createKeyedTransactionLock } from "./keyed-transaction-lock.ts";
 import { withProcessIntentLock } from "./process-intent-lock.ts";
@@ -17,7 +17,7 @@ export async function readFirstUseState(file = firstUseFile()): Promise<FirstUse
   let raw: string;
   try { raw = await readFile(/* turbopackIgnore: true */ file, "utf8"); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return createFirstUseState();
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return createQuickStartState();
     throw error;
   }
   return parseFirstUseState(JSON.parse(raw));

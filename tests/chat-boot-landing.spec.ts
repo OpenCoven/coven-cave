@@ -86,6 +86,18 @@ const ACCESSIBLE_PROJECT = {
 };
 
 async function seedWithoutActiveFamiliar(page: Page) {
+  const defaults = { projectId: "p1", familiarIds: ["nova"], actingFamiliarId: "nova" };
+  const state = {
+    version: 2,
+    revision: 1,
+    step: "complete",
+    setupFamiliarId: "nova",
+    outcome: null,
+    defaults,
+    permissionMode: "read",
+    practice: { approvalHeld: false, stopped: false, retried: false, verified: false },
+    completedAt: new Date(NOW).toISOString(),
+  };
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     // An explicit browsing choice keeps this fixture actor-free even when the
@@ -93,6 +105,14 @@ async function seedWithoutActiveFamiliar(page: Page) {
     window.localStorage.setItem("cave:workspace:project-scope:v1", "null");
     window.localStorage.setItem("cave:workspace:familiar-scope-by-project:v1", JSON.stringify({ "__all-projects__": [] }));
   });
+  await page.route("**/api/onboarding/journey", (route) => route.fulfill({ json: {
+    ok: true,
+    state,
+    resolution: { kind: "ready", context: defaults },
+    project: ACCESSIBLE_PROJECT.projects[0],
+    access: [{ familiarId: "nova", level: "write", direct: "write", groups: [], supreme: false }],
+    starterRoot: "/repo/cave-starter",
+  } }));
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: FAMILIARS_TWO }));
   await page.route("**/api/board**", (route) => route.fulfill({ json: BOARD }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
@@ -286,9 +306,7 @@ test("booting with no active familiar asks which one instead of picking", async 
 
   // Let saved introduction state restore before asserting that it did not
   // replace the explicit actor-free browsing choice with its configured actor.
-  await expect(page.getByRole("complementary", { name: "Working with familiars" }).getByRole("button", {
-    name: /^(Working with familiars|Review default context)$/,
-  })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole("complementary", { name: "Getting started" })).toContainText("Your workspace is ready.", { timeout: 45_000 });
 
   // The chat-first landing still happens — we did not fall back to the list.
   const launch = page.locator(".cave-launch");

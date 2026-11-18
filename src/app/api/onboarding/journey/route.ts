@@ -4,6 +4,7 @@ import { parseFirstUseDefaults, type FirstUseAction } from "@/lib/first-use";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { inspectFirstUseContext, inspectFirstUseRuntime } from "@/lib/server/first-use-context";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
+import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
 import { FirstUseRevisionError, readFirstUseState, updateFirstUseState } from "@/lib/server/first-use-store";
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -80,13 +81,24 @@ export async function POST(req: Request) {
   try {
     const current = await readFirstUseState();
     if (current.revision !== body.revision) throw new FirstUseRevisionError();
-    const defaults = action.kind === "context" ? parseFirstUseDefaults(action.defaults) : current.defaults;
+    if (action.kind === "choose-assistant") {
+      if (!isValidFamiliarId(action.familiarId)) return failure(new Error("Choose a valid familiar."), 400);
+      const roster = await loadVisibleFamiliarRoster();
+      if (!roster.ok) return failure(new Error("Couldn't load familiars. Retry."));
+      if (!roster.roster.some((entry) => entry.id === action.familiarId)) return failure(new Error("This familiar is no longer available. Choose another."), 409);
+    }
+    const defaults = action.kind === "context" || action.kind === "finish-setup" ? parseFirstUseDefaults(action.defaults)
+      : action.kind === "choose-assistant" ? null : current.defaults;
     if (defaults) {
       const inspection = await inspectFirstUseContext(defaults);
       if (inspection.resolution.kind !== "ready") return NextResponse.json({ ok: false, code: "first_use_context_required", error: inspection.resolution.message, ...inspection }, { status: 409 });
-      if (action.kind === "review-access" && action.permissionMode === "full"
+      if ((action.kind === "review-access" || action.kind === "finish-setup") && action.permissionMode === "full"
         && inspection.access.find((entry) => entry.familiarId === defaults.actingFamiliarId)?.level !== "write") {
         return failure(new Error("This actor has Read access. Choose Explore or review write access."), 409);
+      }
+      if (action.kind === "finish-setup") {
+        const runtime = await inspectFirstUseRuntime(defaults.actingFamiliarId, defaults.projectId);
+        if (runtime?.state !== "ready") return failure(new Error("The selected assistant's runtime is unavailable. Open setup or choose another assistant."), 409);
       }
     }
     const state = await updateFirstUseState(body.revision as number, action);

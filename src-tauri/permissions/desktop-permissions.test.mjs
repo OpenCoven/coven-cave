@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 const defaultCapability = JSON.parse(readFileSync(new URL("../capabilities/default.json", import.meta.url), "utf8"));
 const browserChildReportingCapability = JSON.parse(
@@ -36,6 +38,12 @@ const loopbackMicrophoneCapability = JSON.parse(
 const loopbackXOAuthCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-x-oauth.json", import.meta.url), "utf8"),
 );
+const loopbackWindowsRecoveryCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-windows-recovery.json", import.meta.url), "utf8"),
+);
+const loopbackUpdateLinksCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-update-links.json", import.meta.url), "utf8"),
+);
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
 const speechPermissions = readFileSync(new URL("./speech.toml", import.meta.url), "utf8");
@@ -57,6 +65,8 @@ const bottomTerminal = readFileSync(new URL("../../src/components/bottom-termina
 const shellTsx = readFileSync(new URL("../../src/components/shell.tsx", import.meta.url), "utf8");
 const trayQuickChat = readFileSync(new URL("../../src/components/tray-quick-chat.tsx", import.meta.url), "utf8");
 const updateAvailable = readFileSync(new URL("../../src/components/update-available.tsx", import.meta.url), "utf8");
+const sidecarRecovery = readFileSync(new URL("../../src/components/sidecar-recovery.tsx", import.meta.url), "utf8");
+const shellOpenCommandsRust = readFileSync(new URL("../src/shell_open_commands.rs", import.meta.url), "utf8");
 const managedMainWebviews = ["main"];
 
 const requiredPermissionIds = [
@@ -76,6 +86,7 @@ const requiredPermissionIds = [
   "allow-browser-reload",
   "allow-shell-open",
   "allow-open-x-oauth-url",
+  "allow-open-update-release-url",
   "allow-sidecar-startup-status",
   "allow-retry-sidecar-startup",
   "allow-cancel-sidecar-startup",
@@ -113,6 +124,7 @@ const requiredCommands = [
   "browser_reload",
   "shell_open",
   "open_x_oauth_url",
+  "open_update_release_url",
   "sidecar_startup_status",
   "retry_sidecar_startup",
   "cancel_sidecar_startup",
@@ -337,6 +349,8 @@ test("secondary main-window authority is granted only to exact native-registered
     loopbackSpeechCapability,
     loopbackMicrophoneCapability,
     loopbackXOAuthCapability,
+    loopbackWindowsRecoveryCapability,
+    loopbackUpdateLinksCapability,
   ]) {
     assert.ok(!capability.webviews.includes("main-*"), `${capability.identifier} must not grant wildcard main authority`);
   }
@@ -358,7 +372,15 @@ test("secondary main-window authority is granted only to exact native-registered
   for (const permission of ["allow-pty-start", "allow-browser-navigate", "core:event:allow-listen"]) {
     assert.match(secondaryPermissions, new RegExp(`"${permission}"`));
   }
-  for (const permission of ["updater:default", "process:default", "allow-open-x-oauth-url", "allow-speech-stt-start"]) {
+  for (const permission of [
+    "updater:default",
+    "process:default",
+    "allow-open-x-oauth-url",
+    "allow-open-update-release-url",
+    "allow-arm-update-install-recovery",
+    "allow-retry-sidecar-startup",
+    "allow-speech-stt-start",
+  ]) {
     assert.doesNotMatch(secondaryPermissions, new RegExp(`"${permission}"`));
   }
 });
@@ -991,4 +1013,173 @@ test("chat links can show a local path in the file manager from the main and Cha
     /identifier = "allow-shell-reveal-path"[\s\S]{0,240}commands\.allow = \["shell_reveal_path"\]/,
     "the permission allows exactly the reveal command",
   );
+});
+
+const loopbackOrigins = [
+  "http://127.0.0.1:3020/",
+  "http://localhost:3020/",
+  "http://[::1]:3020/",
+  "http://127.0.0.1:64203/",
+];
+
+function assertMainLoopbackOnly(capability) {
+  assert.deepEqual(capability.webviews, managedMainWebviews, `${capability.identifier} must cover only the managed main webview`);
+  assert.equal(capability.windows, undefined, "scope by webview label: browser child webviews live inside the main window");
+  assert.deepEqual(capability.remote?.urls, [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "http://[\\:\\:1]:*/*",
+  ]);
+  for (const origin of loopbackOrigins) {
+    assert.ok(capabilityAllowsOrigin(capability, origin), `${capability.identifier} must allow ${origin}`);
+  }
+  assert.equal(capabilityAllowsOrigin(capability, "http://example.com:3020/"), false, "non-loopback origins stay denied");
+}
+
+// The packaged UI is served from the sidecar's loopback origin, where the
+// local-only `default` capability does not apply. #6158's recovery banner and
+// #6183's install recovery invoke these from that UI; packaged Windows
+// acceptance found every one rejected "not allowed by ACL" (#5981).
+test("the packaged main loopback UI can follow and retry Windows startup and arm update install recovery", () => {
+  assertMainLoopbackOnly(loopbackWindowsRecoveryCapability);
+  assert.deepEqual(
+    loopbackWindowsRecoveryCapability.platforms,
+    ["windows"],
+    "these commands are registered only on Windows",
+  );
+  assert.deepEqual(loopbackWindowsRecoveryCapability.permissions, [
+    "allow-sidecar-startup-status",
+    "allow-retry-sidecar-startup",
+    "allow-arm-update-install-recovery",
+    "allow-disarm-update-install-recovery",
+    "allow-update-install-outcome",
+    "allow-clear-update-install-outcome",
+  ], "grant exactly what the loopback UI calls: no cancel, which only the local startup page uses");
+  assertCapabilityDoesNotGrant(loopbackWindowsRecoveryCapability, [
+    "default",
+    "allow-cancel-sidecar-startup",
+    "allow-shell-open",
+    "allow-pty-start",
+    "updater:default",
+    "process:default",
+  ]);
+  for (const command of ["sidecar_startup_status", "retry_sidecar_startup"]) {
+    assert.match(sidecarRecovery, new RegExp(`invoke(?:<[^>]*>)?\\("${command}"`), `the recovery banner invokes ${command}`);
+  }
+  for (const command of [
+    "arm_update_install_recovery",
+    "disarm_update_install_recovery",
+    "update_install_outcome",
+    "clear_update_install_outcome",
+  ]) {
+    assert.match(updateAvailable, new RegExp(`invoke(?:<[^>]*>)?\\("${command}"`), `the update banner invokes ${command}`);
+  }
+});
+
+test("update links open the system browser only through the validated release opener", () => {
+  assertMainLoopbackOnly(loopbackUpdateLinksCapability);
+  assert.deepEqual(loopbackUpdateLinksCapability.platforms, ["linux", "macOS", "windows"]);
+  assert.deepEqual(loopbackUpdateLinksCapability.permissions, ["allow-open-update-release-url"]);
+  assertCapabilityDoesNotGrant(loopbackUpdateLinksCapability, ["allow-shell-open", "allow-open-x-oauth-url", "default"]);
+  assert.match(
+    commandPermissions,
+    /identifier = "allow-open-update-release-url"[\s\S]{0,240}commands\.allow = \["open_update_release_url"\]/,
+    "the permission allows exactly the release opener",
+  );
+  assert.match(
+    shellOpenCommandsRust,
+    /fn launch_update_release_url_with[\s\S]{0,200}validate_update_release_url\(url\)\?;[\s\S]{0,120}launch_system_browser_url_with_window/,
+    "the release opener validates the URL before spawning the platform opener",
+  );
+  assert.match(tauriSetupRust, /open_update_release_url,/, "the release opener is registered");
+  assert.match(
+    updateAvailable,
+    /openSystemBrowserUrl\(url, \{ fallback: \(\) => \{\}, command: "open_update_release_url" \}\)/,
+    "update links use the release opener, never shell_open or the embedded Browser",
+  );
+});
+
+// What a capability grants is tested above; this checks the other direction.
+// Every literal `invoke("<command>")` in the loopback-served UI (src/, minus
+// tests) must be granted to the main webview on a loopback origin. A new
+// caller that only works in dev — where devUrl counts as local — fails here
+// instead of in packaged acceptance (#5981).
+const LOOPBACK_UI_COMMANDS_NOT_GRANTED = new Map([
+  ["shell_open", "#197 keeps arbitrary URL opening off loopback; main-UI links fall back to the in-app Browser and update links use open_update_release_url"],
+  ["shell_pick_directory", "known packaged gap, #6502"],
+  ["shell_open_path", "known packaged gap, #6502"],
+  ["pty_snapshot", "known packaged gap, #6502"],
+  ["open_tailscale_app", "known packaged gap, #6502"],
+]);
+
+function listFiles(dirUrl) {
+  return readdirSync(dirUrl, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(entry.parentPath ?? entry.path, entry.name));
+}
+
+function loopbackMainGrantedCommands() {
+  const permissionCommands = new Map();
+  for (const file of listFiles(new URL("./", import.meta.url)).filter((f) => f.endsWith(".toml"))) {
+    for (const block of readFileSync(file, "utf8").split("[[permission]]").slice(1)) {
+      const identifier = /identifier\s*=\s*"([^"]+)"/.exec(block)?.[1];
+      const commands = [...(/commands\.allow\s*=\s*\[([^\]]*)\]/.exec(block)?.[1] ?? "").matchAll(/"([^"]+)"/g)]
+        .map((match) => match[1]);
+      if (identifier) permissionCommands.set(identifier, commands);
+    }
+  }
+  const granted = new Set();
+  for (const file of listFiles(new URL("../capabilities/", import.meta.url)).filter((f) => f.endsWith(".json"))) {
+    const capability = JSON.parse(readFileSync(file, "utf8"));
+    const labels = [...(capability.windows ?? []), ...(capability.webviews ?? [])];
+    const coversMain = labels.some((label) => new RegExp(`^${label.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}$`).test("main"));
+    if (!coversMain || !capabilityAllowsOrigin(capability, "http://127.0.0.1:3020/")) continue;
+    for (const permission of capability.permissions) {
+      const id = typeof permission === "string" ? permission : permission.identifier;
+      for (const command of permissionCommands.get(id) ?? []) granted.add(command);
+    }
+  }
+  return granted;
+}
+
+function loopbackUiInvokedCommands() {
+  const invoked = new Map();
+  const sourceRoot = new URL("../../src/", import.meta.url);
+  for (const file of listFiles(sourceRoot)) {
+    if (!/\.(?:ts|tsx|mts|mjs)$/.test(file) || /\.(?:test|spec)\.|[\\/]__tests__[\\/]/.test(file)) continue;
+    const source = readFileSync(file, "utf8");
+    for (const match of source.matchAll(/\binvoke\s*(?:<[^>()]*>)?\s*\(\s*["'`]([a-z0-9_]+)["'`]/g)) {
+      const callers = invoked.get(match[1]) ?? new Set();
+      callers.add(path.relative(fileURLToPath(sourceRoot), file));
+      invoked.set(match[1], callers);
+    }
+  }
+  return invoked;
+}
+
+test("every app command the loopback-served UI invokes is granted to the main loopback webview", () => {
+  const granted = loopbackMainGrantedCommands();
+  const invoked = loopbackUiInvokedCommands();
+  assert.ok(invoked.size > 20, "the sweep must find the UI's invoke calls");
+  const ungranted = [...invoked.keys()]
+    .filter((command) => !granted.has(command) && !LOOPBACK_UI_COMMANDS_NOT_GRANTED.has(command))
+    .map((command) => `${command} <- ${[...invoked.get(command)].join(", ")}`);
+  assert.deepEqual(
+    ungranted,
+    [],
+    "the packaged UI runs on a loopback origin; grant these to the main webview there (an exact loopback capability) or keep them out of the UI",
+  );
+  for (const [command, reason] of LOOPBACK_UI_COMMANDS_NOT_GRANTED) {
+    assert.ok(invoked.has(command), `${command} is no longer invoked; drop its exception (${reason})`);
+    assert.ok(!granted.has(command), `${command} is now granted; drop its exception (${reason})`);
+  }
+  for (const command of [
+    "sidecar_startup_status",
+    "retry_sidecar_startup",
+    "arm_update_install_recovery",
+    "update_install_outcome",
+    "open_update_release_url",
+  ]) {
+    assert.ok(granted.has(command), `${command} must be granted to the main loopback webview (#5981)`);
+  }
 });
