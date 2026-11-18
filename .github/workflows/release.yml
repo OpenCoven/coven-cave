@@ -767,7 +767,7 @@ jobs:
       - source-version
       - release-web-validation
       - release-platform-validation
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 90
     # Platform selection belongs to the JOB, not to every step. It used to be
     # repeated verbatim on all 13 steps, so a step added without it would run
@@ -795,14 +795,18 @@ jobs:
           # it installs from the registry rather than trust a shared cache
           # entry that another run could have written (#6367).
 
-      - name: Select Xcode 26.3 and verify App Store tooling
+      - name: Select Xcode 27.1 and verify App Store tooling
         shell: bash
         run: |
           set -euo pipefail
-          XCODE_PATH="/Applications/Xcode_26.3.app"
-          [ -d "$XCODE_PATH" ] || { echo "::error::$XCODE_PATH is unavailable on the macos-15 runner"; exit 1; }
+          XCODE_PATH="/Applications/Xcode_27.1.app"
+          [ -d "$XCODE_PATH" ] || { echo "::error::$XCODE_PATH is unavailable on the xcode-27 runner"; exit 1; }
           sudo xcode-select --switch "$XCODE_PATH"
           xcodebuild -version
+          xcodebuild -version | grep -Fx 'Xcode 27.1'
+          sdk_version=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "Selected iPhoneOS SDK: $sdk_version"
+          test "$sdk_version" = "27.1"
           xcrun altool --help 2>&1 | grep -q -- '--build-status'
           xcrun altool --help 2>&1 | grep -q -- '--api-key-subject'
 
