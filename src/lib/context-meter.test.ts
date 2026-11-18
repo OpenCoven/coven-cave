@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { normalizeTurnUsage, parseStreamJsonUsage } from "./usage-format.ts";
 
 import {
   DEFAULT_CONTEXT_WINDOW_TOKENS,
@@ -49,6 +50,23 @@ test("contextWindowForModel tolerates a bare model id (no provider prefix)", () 
     tokens: 1_000_000,
     known: true,
   });
+});
+
+test("current GPT family context stays measurable above the unknown-model fallback", () => {
+  const defaults = [
+    ["gpt-6.2-sol", 500_000, 50],
+    ["gpt-6.2-astra", 272_000, 92],
+    ["gpt-6.1-terra", 500_000, 50],
+    ["gpt-6-luna", 272_000, 92],
+  ] as const;
+  for (const [model, window, percent] of defaults) {
+    for (const id of [model, `openai/${model}`]) {
+      const meter = computeContextMeter({ inputTokens: 250_000, outputTokens: 100 }, id);
+      assert.equal(meter?.windowTokens, window);
+      assert.equal(meter.known, false);
+      assert.equal(meter.percent, percent);
+    }
+  }
 });
 
 test("contextWindowForModel falls back for unknown / non-string ids", () => {
@@ -161,4 +179,16 @@ test("formatContextMeter renders a compact label", () => {
   );
   assert.equal(formatContextMeter(m), "45% · 90k/200k");
   assert.equal(formatContextMeter(null), null);
+});
+
+test("the effective window survives usage normalization and takes precedence over catalog metadata", () => {
+  const usage = normalizeTurnUsage(parseStreamJsonUsage({
+    input_tokens: 250_000,
+    output_tokens: 100,
+    model_context_window: 272_000,
+  }));
+  const meter = computeContextMeter(usage, "openai/gpt-6.2-astra");
+  assert.equal(meter?.windowTokens, 272_000);
+  assert.equal(meter.percent, 92);
+  assert.equal(meter.level, "high");
 });

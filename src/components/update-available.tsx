@@ -86,7 +86,11 @@ function isUpdaterUnregistered(err: unknown): boolean {
 }
 
 function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
+  if (err instanceof Error && err.message) return err.message;
+  // Tauri rejects a denied or failed command with a plain string, such as
+  // "Command … not allowed by ACL"; keep it rather than hiding the cause.
+  if (typeof err === "string" && err.trim()) return err.trim();
+  return fallback;
 }
 
 /**
@@ -299,7 +303,7 @@ function useUpdateBrowserLink(surface: "settings" | "banner") {
     if (!active.current) return;
     const current = ++attempt.current;
     // Updater failures must not silently navigate into Cave's embedded Browser.
-    const opened = await openSystemBrowserUrl(url, { fallback: () => {} });
+    const opened = await openSystemBrowserUrl(url, { fallback: () => {}, command: "open_update_release_url" });
     if (!active.current || current !== attempt.current) return;
     if (opened) {
       dismissBanner(bannerId);

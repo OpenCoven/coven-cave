@@ -63,6 +63,9 @@ assert.match(
   /if \(dialogOpen\) \{[\s\S]*?if \(state\?\.complete\) \{\s*clearSetupBackgrounded\(\);\s*setPhase\("idle"\);/,
   "a run that completes inside the dialog never echoes as a banner afterwards",
 );
+const chat = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+assert.match(chat, /liveGeneration\.markPersistenceConfirmed\(\);[\s\S]*?window\.dispatchEvent\(new Event\(CHAT_REPLY_COMPLETED_EVENT\)\)/, "a successful conversation signals use");
+assert.match(banner, /if \(state\.complete\) \{\s*if \(conversationUsed\) \{\s*dismissBanner\(SETUP_BANNER_ID\);\s*clearSetupBackgrounded\(\);\s*setPhase\("idle"\);\s*return;/, "conversation use clears only a completed setup notice");
 assert.match(banner, /useAnnouncer\(\)/, "transitions use the shared live region");
 assert.match(banner, /announceOnce\(\s*`failed:[\s\S]*?"assertive",\s*\)/, "failure announces assertively");
 assert.match(banner, /announceOnce\("complete", "Cave is set up\."\)/, "completion is announced once");

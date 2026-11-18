@@ -137,6 +137,7 @@ import {
   readNewSessionDefaults,
   writeNewSessionDefaults,
 } from "@/lib/chat-new-session-defaults";
+import { CHAT_REPLY_COMPLETED_EVENT } from "@/lib/setup-events";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import {
@@ -7217,6 +7218,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // cave-fy1q phase 3: first completed reply ever — no-op unless the
           // first-open anchor exists (fresh installs only).
           stampFirstReplyOnce();
+          window.dispatchEvent(new Event(CHAT_REPLY_COMPLETED_EVENT));
         }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId) {

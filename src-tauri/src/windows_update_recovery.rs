@@ -24,6 +24,20 @@ pub(crate) const WATCH_FLAG: &str = "--coven-update-install-watch";
 pub(crate) const OUTCOME_FILE_NAME: &str = "update-install-outcome.json";
 pub(crate) const WATCH_DIR_NAME: &str = "update-install-watch";
 
+/// The file name of the watcher copy armed by app process `pid`.
+///
+/// It must not look like an installer. With UAC on (the default), Windows
+/// installer detection refuses to start an executable whose file name contains
+/// words such as "install", "setup" or "update" unless its manifest declares a
+/// `requestedExecutionLevel`, and Tauri's default manifest declares none.
+/// The original `install-watch-<pid>.exe` copy was refused this way on packaged
+/// Windows 11: it exited with `STATUS_ELEVATION_REQUIRED` and Cave stayed closed
+/// after a declined UAC prompt. The same bytes under a neutral name started
+/// (#5981). Only the copy's file name matters; the directory name does not.
+pub(crate) fn watcher_copy_file_name(pid: u32) -> String {
+    format!("cave-recovery-{pid}.exe")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum UpdateInstallOutcomeKind {
@@ -343,7 +357,7 @@ mod native {
             })?;
             let copy = self
                 .watch_dir
-                .join(format!("install-watch-{}.exe", std::process::id()));
+                .join(watcher_copy_file_name(std::process::id()));
             fs::copy(&executable, &copy)
                 .map_err(|error| format!("could not prepare install recovery: {error}"))?;
             // A new attempt supersedes any earlier failure the user ignored.
@@ -493,6 +507,33 @@ mod tests {
         drop(UpdateInstallWatchGuard(std::sync::Arc::clone(&watch)));
         assert_eq!(watch.disarm(), InstallTeardown::Unwatched);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_watcher_copy_name_avoids_windows_installer_detection() {
+        // Words Windows installer detection matches in an executable's file
+        // name. A match makes CreateProcess fail with ERROR_ELEVATION_REQUIRED
+        // (740) for a filtered administrator or a standard user (#5981).
+        const INSTALLER_KEYWORDS: [&str; 5] = ["install", "setup", "update", "patch", "upgrade"];
+        for pid in [1, 8428, u32::MAX] {
+            let name = watcher_copy_file_name(pid);
+            let lower = name.to_ascii_lowercase();
+            for keyword in INSTALLER_KEYWORDS {
+                assert!(
+                    !lower.contains(keyword),
+                    "{name} contains {keyword:?}, so Windows refuses to start the watcher"
+                );
+            }
+            assert!(lower.ends_with(".exe"), "{name} must stay an executable");
+            assert!(
+                name.contains(&pid.to_string()),
+                "{name} must be distinct per app process"
+            );
+            assert_eq!(
+                Path::new(&name).file_name().and_then(|n| n.to_str()),
+                Some(name.as_str())
+            );
+        }
     }
 
     #[test]
