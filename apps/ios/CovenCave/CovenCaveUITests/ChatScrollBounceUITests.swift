@@ -148,6 +148,19 @@ final class ChatScrollBounceUITests: XCTestCase {
     }
 
     @MainActor
+    func testHorizontalDragOnLatestRichReplyQuotesIt() {
+        let (app, transcript) = openRich("--ui-preview-rich-chat-scroll",
+                                         thread: "ui-preview-rich-chat-scroll", needle: bottomMarker)
+        let start = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.30, dy: 0.55))
+        let end = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.70, dy: 0.55))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        let cancelReply = app.buttons["Cancel reply"]
+        XCTAssertTrue(cancelReply.waitForExistence(timeout: 5))
+        cancelReply.tap()
+        XCTAssertFalse(cancelReply.exists)
+    }
+
+    @MainActor
     func testSmallDragsAtLatestStayOnLatest() {
         let (_, transcript) = openRich("--ui-preview-rich-chat-scroll",
                                        thread: "ui-preview-rich-chat-scroll", needle: bottomMarker)
