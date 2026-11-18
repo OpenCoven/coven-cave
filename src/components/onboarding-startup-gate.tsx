@@ -12,9 +12,10 @@ const WorkspaceApp = dynamic(
 
 const ONBOARDING_DISMISSED_KEY = "cave:onboarding:dismissed";
 
-function wasDismissed(): boolean {
+function wasDismissed(confirmed: boolean): boolean {
   try {
-    return window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "1";
+    return window.localStorage.getItem("cave:setup:suppressed") === "1" ||
+      (!confirmed && window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "1");
   } catch {
     return false;
   }
@@ -34,7 +35,7 @@ export function OnboardingStartupGate({
   const [showWorkspace, setShowWorkspace] = useState(false);
 
   useEffect(() => {
-    if (!initialState.confirmed && wasDismissed()) {
+    if (wasDismissed(initialState.confirmed)) {
       setShowWorkspace(true);
     }
   }, [initialState.confirmed]);

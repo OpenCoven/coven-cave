@@ -26,6 +26,7 @@ type AccessChoice = "read" | "full";
 export function FirstUseNudge() {
   const firstUse = useFirstUse();
   const repair = firstUse.payload?.resolution.kind === "repair" ? firstUse.payload.resolution.message : null;
+  if (firstUse.suppressed || (firstUse.conversationUsed && firstUse.payload?.state.step === "complete" && !repair && !firstUse.error)) return null;
   return <aside className="first-use-nudge" aria-label="Getting started"><span>{firstUse.error ?? (!firstUse.loaded ? "Loading setup…" : firstUse.payload?.state.step !== "complete" ? "Choose an assistant, project and access. Your progress is kept." : repair ?? "Your workspace is ready.")}</span><Button variant="ghost" size="xs" onClick={firstUse.openGuide}>{repair && firstUse.payload?.state.step === "complete" ? "Review default context" : "Continue setup"}</Button></aside>;
 }
 
@@ -191,7 +192,7 @@ export function FirstUseGuide({ familiars, canShow = true, onManageFamiliars, on
   const accessLabel = accessChoice === "full" ? "Full" : "Read";
   return <Modal open={open && canShow} onClose={firstUse.closeGuide} cycleTabFocus wide ariaLabel="Get started with Cave" dismissOnBackdrop={!disabled} dismissOnEscape={!disabled}>
     <div className="first-use-guide">
-      <header className="first-use-header"><strong><Icon name="ph:compass" aria-hidden />Cave</strong><Button variant="ghost" size="xs" onClick={firstUse.closeGuide} disabled={disabled}>Explore first</Button></header>
+      <header className="first-use-header"><strong><Icon name="ph:compass" aria-hidden />Cave</strong><Button variant="ghost" size="xs" onClick={firstUse.suppressGuide} disabled={disabled}>Don’t show again</Button><Button variant="ghost" size="xs" onClick={firstUse.closeGuide} disabled={disabled}>Close</Button></header>
       <ol className="first-use-progress" aria-label="Setup progress">{["Connect an assistant", "Choose a project", "Start a conversation"].map((label, index) => <li key={label} aria-current={step === index + 1 ? "step" : undefined}><span>{step > index + 1 ? <Icon name="ph:check" aria-hidden /> : `0${index + 1}`}</span>{label}</li>)}</ol>
       {(error || firstUse.error) ? <div role="alert" className="first-use-error"><p>{error ?? firstUse.error}</p><Button variant="ghost" size="xs" onClick={() => { setError(null); setEpoch((value) => value + 1); void refresh(); }}>Retry</Button></div> : null}
       {!payload ? !firstUse.error && !error ? <p role="status">Restoring setup…</p> : null : <>
