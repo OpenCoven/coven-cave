@@ -11,7 +11,12 @@ export type TurnUsage = {
   outputTokens: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  modelContextWindow?: number;
 };
+
+export function validModelContextWindow(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
 
 function finiteNonNegative(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -55,6 +60,7 @@ export function parseStreamJsonUsage(raw: unknown): TurnUsage | undefined {
   const inputTokens = firstFiniteNonNegative(u.input_tokens, u.input);
   const outputTokens = firstFiniteNonNegative(u.output_tokens, u.output);
   if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  const modelContextWindow = validModelContextWindow(u.model_context_window);
   const cacheReadTokens = firstFiniteNonNegative(
     u.cache_read_input_tokens,
     u.cached_input_tokens,
@@ -68,6 +74,7 @@ export function parseStreamJsonUsage(raw: unknown): TurnUsage | undefined {
   return {
     inputTokens: inputTokens ?? 0,
     outputTokens: outputTokens ?? 0,
+    ...(modelContextWindow !== undefined ? { modelContextWindow } : {}),
     ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
     ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
   };
@@ -81,11 +88,13 @@ export function normalizeTurnUsage(raw: unknown): TurnUsage | undefined {
   const inputTokens = finiteNonNegative(u.inputTokens);
   const outputTokens = finiteNonNegative(u.outputTokens);
   if (inputTokens === undefined && outputTokens === undefined) return undefined;
+  const modelContextWindow = validModelContextWindow(u.modelContextWindow);
   const cacheReadTokens = finiteNonNegative(u.cacheReadTokens);
   const cacheCreationTokens = finiteNonNegative(u.cacheCreationTokens);
   return {
     inputTokens: inputTokens ?? 0,
     outputTokens: outputTokens ?? 0,
+    ...(modelContextWindow !== undefined ? { modelContextWindow } : {}),
     ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
     ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
   };

@@ -72,6 +72,24 @@ if (typeof openExternalModule.openSystemBrowserUrl === "function") {
     { url: "https://fleet.omnigent.example/session/123" },
   ]]);
 
+  // Update links name the narrow release opener the loopback main UI is granted.
+  const releaseCalls: Array<[string, unknown]> = [];
+  const releaseOpened = await openExternalModule.openSystemBrowserUrl(
+    "https://github.com/OpenCoven/coven-cave/releases/latest",
+    {
+      tauri: true,
+      command: "open_update_release_url",
+      invoke: async (command, args) => {
+        releaseCalls.push([command, args]);
+      },
+    },
+  );
+  assert.equal(releaseOpened, true);
+  assert.deepEqual(releaseCalls, [[
+    "open_update_release_url",
+    { url: "https://github.com/OpenCoven/coven-cave/releases/latest" },
+  ]]);
+
   const navigated: string[] = [];
   let popupClosed = false;
   const popup = {

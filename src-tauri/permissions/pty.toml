@@ -84,6 +84,11 @@ description = "Allows opening only a validated X OAuth authorization URL."
 commands.allow = ["open_x_oauth_url"]
 
 [[permission]]
+identifier = "allow-open-update-release-url"
+description = "Allows opening only a Coven Cave GitHub release page or release asset in the system browser."
+commands.allow = ["open_update_release_url"]
+
+[[permission]]
 identifier = "allow-set-traffic-lights-visible"
 description = "Allows trusted app chrome to synchronize macOS traffic-light visibility with the navigation rail."
 commands.allow = ["set_traffic_lights_visible"]
@@ -110,12 +115,12 @@ commands.allow = ["browser_report_user_navigation"]
 
 [[permission]]
 identifier = "allow-sidecar-startup-status"
-description = "Allows the bundled local startup page to read sidecar preparation status."
+description = "Allows the bundled local startup page and the trusted main app webview to read sidecar preparation status."
 commands.allow = ["sidecar_startup_status"]
 
 [[permission]]
 identifier = "allow-retry-sidecar-startup"
-description = "Allows the bundled local startup page to retry sidecar preparation."
+description = "Allows the bundled local startup page and the trusted main app webview to retry sidecar preparation."
 commands.allow = ["retry_sidecar_startup"]
 
 [[permission]]
