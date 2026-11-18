@@ -140,6 +140,19 @@ test("Windows install recovery is armed before install and disarmed when install
   expect(order).toEqual(["arm_update_install_recovery", "install", "disarm_update_install_recovery"]);
 });
 
+test("a Tauri string rejection names why install recovery could not be armed", async () => {
+  nativeIpc();
+  native.invoke.mockImplementation(async (command) => {
+    // Tauri rejects denied commands with a plain string, not an Error (#5981).
+    if (command === "arm_update_install_recovery") throw "Command arm_update_install_recovery not allowed by ACL";
+  });
+  const update = { install: vi.fn() };
+  await expect(installPreparedUpdate(update)).rejects.toThrow(
+    "couldn't prepare install recovery: Command arm_update_install_recovery not allowed by ACL",
+  );
+  expect(update.install).not.toHaveBeenCalled();
+});
+
 test("an unarmable Windows install refuses to start rather than risk a closed app", async () => {
   nativeIpc();
   native.invoke.mockImplementation(async (command) => {
@@ -250,7 +263,10 @@ test("native failure uses the canonical release page, with failed shell handoff 
   native.invoke.mockRejectedValue(new Error("shell unavailable"));
   await mount(<UpdateSettingsRow />);
   await act(async () => button("Open release page in system browser").props.onClick());
-  expect(native.invoke).toHaveBeenCalledWith("shell_open", { url: "https://github.com/OpenCoven/coven-cave/releases/latest" });
+  // The packaged main UI runs on a loopback origin without `shell_open`; update
+  // links use the narrow release-URL opener granted there (#5981).
+  expect(native.invoke).toHaveBeenCalledWith("open_update_release_url", { url: "https://github.com/OpenCoven/coven-cave/releases/latest" });
+  expect(native.invoke).not.toHaveBeenCalledWith("shell_open", expect.anything());
   expect(window.dispatchEvent).not.toHaveBeenCalled();
   expect(banners.find(b => b.id === "update-browser-handoff-settings")).toBeDefined();
   native.invoke.mockResolvedValue(undefined);

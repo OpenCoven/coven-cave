@@ -44,8 +44,17 @@ export type SystemBrowserUrlReservation =
   | { kind: "browser"; popup: SystemBrowserPopup }
   | { kind: "unavailable" };
 
+/**
+ * The native opener for desktop. `shell_open` accepts any http(s) URL and is
+ * granted only to local and Chat-window content; the packaged main UI runs on
+ * the sidecar's loopback origin, so update links use the narrow
+ * `open_update_release_url`, which accepts only Cave release pages and assets.
+ */
+export type SystemBrowserCommand = "shell_open" | "open_update_release_url";
+
 type OpenSystemBrowserUrlDependencies = {
   tauri?: boolean;
+  command?: SystemBrowserCommand;
   invoke?: (command: string, args: { url: string }) => Promise<unknown>;
   openWindow?: () => SystemBrowserPopup | null;
   fallback?: (url: string) => void;
@@ -109,7 +118,7 @@ export async function openSystemBrowserUrl(
   if (reservation.kind === "desktop") {
     try {
       const invoke = dependencies.invoke ?? (await import("@tauri-apps/api/core")).invoke;
-      await invoke("shell_open", { url });
+      await invoke(dependencies.command ?? "shell_open", { url });
       return true;
     } catch {
       fallback(url);

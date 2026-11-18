@@ -84,6 +84,58 @@ pub(super) fn validate_x_oauth_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The release URLs update surfaces may open from the loopback-served UI:
+/// `…/releases/latest`, `…/releases/tag/v<version>` and
+/// `…/releases/download/v<version>/<asset>` on github.com, for this repository
+/// only, with no port, credentials, query or fragment.
+#[cfg(desktop)]
+pub(super) fn validate_update_release_url(url: &str) -> Result<(), String> {
+    const RELEASES: &str = "/OpenCoven/coven-cave/releases/";
+    let untrusted = || "Update release URL is not trusted".to_string();
+    let parsed =
+        Url::parse(url).map_err(|_| "Update release link requires a valid URL".to_string())?;
+    if parsed.scheme() != "https"
+        || parsed.host_str() != Some("github.com")
+        || parsed.port().is_some()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(untrusted());
+    }
+    let rest = parsed.path().strip_prefix(RELEASES).ok_or_else(untrusted)?;
+    let tag = |value: &str| {
+        let Some(version) = value.strip_prefix('v') else {
+            return false;
+        };
+        (1..=64).contains(&version.len())
+            && version.as_bytes()[0].is_ascii_digit()
+            && version
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+    };
+    let asset = |value: &str| {
+        (1..=160).contains(&value.len())
+            && !value.starts_with('.')
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    };
+    let segments: Vec<&str> = rest.split('/').collect();
+    let trusted = match segments.as_slice() {
+        ["latest"] => true,
+        ["tag", version] => tag(version),
+        ["download", version, name] => tag(version) && asset(name),
+        _ => false,
+    };
+    if trusted {
+        Ok(())
+    } else {
+        Err(untrusted())
+    }
+}
+
 #[cfg(desktop)]
 pub(super) fn validate_shell_open_path(path: &str) -> Result<PathBuf, String> {
     let path = path.trim();

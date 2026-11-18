@@ -1,4 +1,7 @@
-use super::{launch_x_oauth_url_with_window, validate_shell_open_url, validate_x_oauth_url};
+use super::{
+    launch_update_release_url_with, launch_x_oauth_url_with_window, validate_shell_open_url,
+    validate_update_release_url, validate_x_oauth_url,
+};
 use std::{io, time::Duration};
 
 #[test]
@@ -277,4 +280,72 @@ fn tailscale_launcher_uses_only_fixed_native_commands() {
         src.contains("pub(super) async fn open_tailscale_app() -> Result<(), String>"),
         "the Tauri command must have a zero-argument signature so it cannot accept caller-controlled launch input",
     );
+}
+
+// Update links run from the packaged loopback UI, which has no `shell_open`
+// grant (#197). `open_update_release_url` is the narrow replacement (#5981):
+// only this repository's release pages and assets on github.com.
+#[test]
+fn update_release_links_accept_only_coven_cave_release_pages_and_assets() {
+    for allowed in [
+        "https://github.com/OpenCoven/coven-cave/releases/latest",
+        "https://github.com/OpenCoven/coven-cave/releases/tag/v0.5.22",
+        "https://github.com/OpenCoven/coven-cave/releases/tag/v0.6.0-rc.1",
+        "https://github.com/OpenCoven/coven-cave/releases/download/v0.5.22/CovenCave_0.5.22_x64_en-US.msi",
+        "https://github.com/OpenCoven/coven-cave/releases/download/v0.5.22/CovenCave_0.5.22_aarch64.dmg",
+    ] {
+        assert!(validate_update_release_url(allowed).is_ok(), "{allowed}");
+    }
+}
+
+// Each denied case differs from an accepted URL in exactly one respect.
+#[test]
+fn update_release_links_reject_each_constraint_in_isolation() {
+    for denied in [
+        "http://github.com/OpenCoven/coven-cave/releases/latest",
+        "https://github.com.evil.example/OpenCoven/coven-cave/releases/latest",
+        "https://api.github.com/OpenCoven/coven-cave/releases/latest",
+        "https://github.com:8443/OpenCoven/coven-cave/releases/latest",
+        "https://user@github.com/OpenCoven/coven-cave/releases/latest",
+        "https://github.com/OpenCoven/coven-cave/releases/latest?next=https://evil.example",
+        "https://github.com/OpenCoven/coven-cave/releases/latest#x",
+        "https://github.com/OpenCoven/other-repo/releases/latest",
+        "https://github.com/opencoven/coven-cave/releases/latest",
+        "https://github.com/OpenCoven/coven-cave/releases",
+        "https://github.com/OpenCoven/coven-cave/releases/",
+        "https://github.com/OpenCoven/coven-cave/releases/latest/",
+        "https://github.com/OpenCoven/coven-cave/releases/tag/0.5.22",
+        "https://github.com/OpenCoven/coven-cave/releases/tag/vnext",
+        "https://github.com/OpenCoven/coven-cave/releases/download/v0.5.22",
+        "https://github.com/OpenCoven/coven-cave/releases/download/v0.5.22/.hidden",
+        "https://github.com/OpenCoven/coven-cave/releases/download/v0.5.22/a%20b.msi",
+        "https://github.com/OpenCoven/coven-cave/releases/download/v0.5.22/sub/CovenCave.msi",
+        "https://github.com/OpenCoven/coven-cave/releases/download/v0.5.22/../../../evil",
+        "https://github.com/OpenCoven/coven-cave/issues/5981",
+        "file:///C:/Windows/System32/calc.exe",
+        "not a url",
+    ] {
+        assert!(validate_update_release_url(denied).is_err(), "{denied}");
+    }
+}
+
+#[test]
+fn update_release_launcher_validates_before_spawning_and_hides_os_errors() {
+    let mut spawned = false;
+    let refused = launch_update_release_url_with("https://evil.example/CovenCave.msi", |_| {
+        spawned = true;
+        Err(io::Error::other("unreachable"))
+    });
+    assert!(refused.is_err());
+    assert!(
+        !spawned,
+        "an untrusted URL must never reach the platform opener"
+    );
+
+    let error = launch_update_release_url_with(
+        "https://github.com/OpenCoven/coven-cave/releases/latest",
+        |_| Err(io::Error::new(io::ErrorKind::NotFound, "launcher detail")),
+    )
+    .unwrap_err();
+    assert_eq!(error, "Could not start the system browser launcher.");
 }

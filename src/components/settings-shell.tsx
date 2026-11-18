@@ -388,6 +388,7 @@ function GeneralSection() {
       </SettingsGroup>
       <SettingsGroup label="Setup" variant="ruled" panel={false}>
         <SetupStatusRow />
+        <Link className="ui-btn ui-btn--secondary focus-ring" href="/?firstUse=1">Open assistant and project setup</Link>
       </SettingsGroup>
       <BackupSettingsGroup />
       <SettingsGroup label="Installed capabilities" variant="ruled" panel={false}>
