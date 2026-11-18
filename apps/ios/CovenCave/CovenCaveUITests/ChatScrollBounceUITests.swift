@@ -16,9 +16,6 @@ final class ChatScrollBounceUITests: XCTestCase {
     }
 
     override func tearDown() {
-        let app = XCUIApplication()
-        app.terminate()
-        _ = app.wait(for: .notRunning, timeout: 5)
         if let trace = try? String(contentsOfFile: tracePath, encoding: .utf8) {
             print("=== SCROLL TRACE \(name) ===\n\(trace)\n=== END SCROLL TRACE ===")
         } else {
@@ -42,6 +39,11 @@ final class ChatScrollBounceUITests: XCTestCase {
         app.launchEnvironment["CAVE_SCROLL_TRACE_PATH"] = tracePath
         metricsPath = NSTemporaryDirectory() + "cave-scroll-metrics-\(UUID().uuidString).json"
         app.launchEnvironment["CAVE_SCROLL_METRICS_PATH"] = metricsPath
+        addTeardownBlock { @MainActor in
+            if app.state == .runningForeground { app.sendToBackground() }
+            if app.state != .notRunning { app.terminate() }
+            XCTAssertTrue(app.wait(for: .notRunning, timeout: 5), "the launched fixture must stop before collecting its trace")
+        }
         app.launch()
         return app
     }
