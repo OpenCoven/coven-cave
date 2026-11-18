@@ -24,6 +24,8 @@ type FirstUseContextValue = {
   open: boolean;
   openGuide: () => void;
   closeGuide: () => void;
+  suppressGuide: () => void;
+  suppressed: boolean;
   refresh: () => Promise<FirstUsePayload | null>;
   mutate: (action: FirstUseAction, expectedRevision?: number) => Promise<boolean>;
   ensureIntroduction: () => boolean;
@@ -36,6 +38,8 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [suppressed, setSuppressed] = useState(false);
+  const suppressionRef = useRef(false);
   const [open, setOpen] = useState(false);
   const payloadRef = useRef(payload);
   payloadRef.current = payload;
@@ -57,7 +61,7 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
       setPayload(next);
       setError(null);
       setLoaded(true);
-      if (firstLoad.current && next.state.revision === 0) setOpen(true);
+      if (firstLoad.current && !suppressionRef.current && next.state.revision === 0) setOpen(true);
       firstLoad.current = false;
       return next;
     } catch (cause) {
@@ -69,7 +73,13 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    try {
+      suppressionRef.current = window.localStorage.getItem("cave:first-use:suppressed") === "1";
+      setSuppressed(suppressionRef.current);
+    } catch { /* Storage may be unavailable. */ }
+    void refresh();
+  }, [refresh]);
   useEffect(() => {
     const reload = () => { void refresh(); };
     window.addEventListener("cave:project-access-changed", reload);
@@ -113,6 +123,13 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
 
   const openGuide = useCallback(() => { setOpen(true); void refresh(); }, [refresh]);
   const closeGuide = useCallback(() => { setOpen(false); announce("Setup progress kept. You can continue whenever you’re ready."); }, [announce]);
+  const suppressGuide = useCallback(() => {
+    suppressionRef.current = true;
+    setSuppressed(true);
+    try { window.localStorage.setItem("cave:first-use:suppressed", "1"); } catch { /* Keep this visit's preference. */ }
+    setOpen(false);
+    announce("Automatic setup prompts turned off.");
+  }, [announce]);
   const ensureIntroduction = useCallback(() => {
     if (payloadRef.current?.state.step === "complete") return true;
     setOpen(true);
@@ -120,7 +137,7 @@ export function FirstUseProvider({ children }: { children: ReactNode }) {
     return false;
   }, [announce]);
 
-  return <FirstUseContext.Provider value={{ payload, loaded, error, busy, open, openGuide, closeGuide, refresh, mutate, ensureIntroduction }}>{children}</FirstUseContext.Provider>;
+  return <FirstUseContext.Provider value={{ payload, loaded, error, busy, open, openGuide, closeGuide, suppressGuide, suppressed, refresh, mutate, ensureIntroduction }}>{children}</FirstUseContext.Provider>;
 }
 
 export function useFirstUse(): FirstUseContextValue {
