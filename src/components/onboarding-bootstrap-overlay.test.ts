@@ -72,8 +72,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!state\.confirmed\) persistDismissal\(\)/,
-  "declining setup persists the first-run dismissal",
+  /const suppressAutomaticSetup = useCallback\(\(\) => \{[\s\S]*?localStorage\.setItem\("cave:setup:suppressed", "1"\);[\s\S]*?dismiss\(\);/,
+  "the explicit suppression control persists the preference before leaving",
 );
 assert.match(
   source,
@@ -207,7 +207,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const dismiss = useCallback\(\(\) => \{\s*if \(state\.status === "running"\) \{\s*runInBackground\(\);\s*return;\s*\}\s*if \(!state\.confirmed\) persistDismissal\(\);/,
+  /const dismiss = useCallback\(\(\) => \{\s*if \(state\.status === "running"\) \{\s*runInBackground\(\);\s*return;\s*\}\s*onDismiss\(\);/,
   "the close control and Escape background a running setup instead of abandoning it",
 );
 assert.match(source, /onClick=\{runInBackground\}>\s*Run in background/, "the footer button uses the same path");
