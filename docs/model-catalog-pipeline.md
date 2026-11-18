@@ -78,3 +78,7 @@ it is not the source for the shared model menu.
 When adding a new Claude family name, update `src/lib/model-label.ts` too.
 The catalog test rejects Claude entries that would render as an unrecognized
 raw model ID.
+
+## Current OpenAI model metadata
+
+Verified on 2026-11-17: the local Codex inventory reports GPT-6.2 Sol, GPT-6.2 Astra, GPT-6.1 Terra and GPT-6 Luna. Their context metadata uses the full 1,050,000-token window documented for [Sol](https://developers.openai.com/api/docs/models/gpt-6.2-sol), [Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra), [Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra) and [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna). When a turn omits its effective window, the meter shows an estimate using the observed Codex defaults of 500,000 tokens for Sol and Terra and 272,000 for Astra and Luna. A valid window reported with turn usage takes precedence. These entries remain capability-gated and absent from static harness seed lists; live account-scoped discovery determines availability and newest-family selection.
