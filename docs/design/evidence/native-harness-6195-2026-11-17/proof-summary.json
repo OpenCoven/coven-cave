@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "issue": 6195,
+  "observedAt": "2026-11-17T08:27:59.126112+00:00",
+  "scope": "finite native command ownership; historical Simulator diagnostic-stall cause remains open",
+  "formalLegacyRed": {
+    "deadlineMs": 100,
+    "elapsedMs": 7122.95125,
+    "failure": "Missing expected rejection after root exit with inherited output"
+  },
+  "focused": {
+    "runnerAndTeardown": 23,
+    "existingProcessOwnership": 22,
+    "CIPathClassification": 15,
+    "skippedLocal": 0
+  },
+  "app": {
+    "passedFiles": 1528,
+    "exitCode": 0,
+    "logSHA256": "d6da639b47de40a7555ce75f58b2dbb18dcb639088c42310b5d1f04cc2d52a32"
+  },
+  "lintExitCode": 0,
+  "testWiringFiles": 2269,
+  "ordinaryProductionBuild": "AcfOY-OjhoIhAGKqMOhkt",
+  "toolchain": {
+    "node": "v24.22.0",
+    "coven": "coven v0.5.0 (engine coven-code 0.9.1, pinned 0.9.0)",
+    "xcode": "Xcode 27.2\nBuild version 27B52",
+    "python": "Python 3.15.1"
+  },
+  "native": {
+    "rawUniqueCases": 1229,
+    "rawPassedCases": 1229,
+    "rawFailedCases": 0,
+    "rawSkippedCases": 0,
+    "rawExpectedFailures": 0,
+    "duplicateCaseNodes": 0,
+    "runtimeWarningCount": 15,
+    "runtimeWarnings": {
+      "App Transport Security has blocked a cleartext HTTP connection to cave.test since it is insecure. Use HTTPS instead or add this domain to Exception Domains in your Info.plist.": 15
+    },
+    "sourceBundleFiles": 5062,
+    "sourceBundleBytes": 61645440,
+    "originalIndexedSourceFilesUnchanged": true,
+    "providerRequests": 1,
+    "toolInvocations": 1,
+    "ownedCleanupFlags": {
+      "commandCleanupComplete": true,
+      "serverStopped": true,
+      "providerStopped": true,
+      "daemonStopped": true,
+      "noDaemonState": true,
+      "fixtureRootRemoved": true,
+      "sourceUnchanged": true
+    },
+    "simulatorState": "Shutdown",
+    "actualDeviceMatchesOwnedSelection": true,
+    "compiledDeepSignatureExitCode": 0,
+    "compiledProductsAfterExecution": {
+      "CovenCave": {
+        "bytes": 40416,
+        "sha256": "bf416d3b1f931a487eaefe83850593a9a533df241ea3e676ba4bd5a196e08086"
+      },
+      "CovenCave.debug.dylib": {
+        "bytes": 41865584,
+        "sha256": "0d2a83ba3859b3a3d0e1c87be5d178dfecaafef268950d3a7998d588d94fcab5"
+      },
+      "PlugIns/CovenCaveTests.xctest/CovenCaveTests": {
+        "bytes": 13230912,
+        "sha256": "e918bf1cc99b7bc2d912aa917f2968d21bf82a986963faa4dd73b55732ecdef1"
+      }
+    }
+  },
+  "nativeProfile": {
+    "model": "iPhone17",
+    "platform": "iOS Simulator",
+    "architecture": "arm64",
+    "osVersion": "27.0",
+    "osBuild": "24A434",
+    "host": "macOS27.2.1",
+    "xcode": "27.2/27B52"
+  },
+  "postExecutionInstalledBinaryHashesMatch": true,
+  "firstFailures": [
+    "Formal deadline false-success",
+    "Initial census subprocess sub-limit/fixture-readiness/cleanup-hook failures",
+    "Review graceful-window/log-completeness regressions",
+    "Plan checkbox-disclaimer contract",
+    "libproc zero/EPERM fail-open",
+    "Missing owner-only native CI selection",
+    "Hosted code-scanning test-command construction findings261/262/263"
+  ],
+  "review": {
+    "kind": "Fresh shared-account whole-branch review; reproduced findings repaired with RED/GREEN",
+    "importantFindingsAddressed": 2,
+    "deferredMinors": 0,
+    "additionalBoundaryCorrection": "libproc zero/error handling independently reproduced and tested",
+    "hostedFixtureFindings": {
+      "alerts": [
+        261,
+        262,
+        263
+      ],
+      "priorHead": "bcbd2aafddaabdbc4b44ae677f761658ee269569",
+      "refactor": "All fixture programs static; paths/options passed as argv data",
+      "focusedPass": 23,
+      "appPassedFiles": 1528,
+      "productionExploitClaim": false,
+      "latestHostedVerdict": "See canonical issue exact-head checkpoint after publication"
+    }
+  },
+  "limits": [
+    "Historical collectSimulatorDiagnostics/simCtlDiagnose cause unproven; old raw paths unavailable",
+    "Current runtime matches original iOS27.0; host/Xcode differ",
+    "Binary comparison is post-execution, not contemporaneous PID profiling",
+    "No physical/rendered/human, merge or release acceptance claim"
+  ],
+  "firstHostedQualification": {
+    "head": "bcbd2aafddaabdbc4b44ae677f761658ee269569",
+    "CI": 44042203590,
+    "CodeQL": 44042198534,
+    "bothRunConclusions": "success",
+    "nativeCanonicalVerifier": {
+      "floor": 1229,
+      "executed": 1229,
+      "passed": 1229,
+      "failed": 0,
+      "skipped": 0,
+      "expected": 0,
+      "deferred": 0
+    },
+    "rawHostedBundleArchived": false,
+    "evidenceClass": "Retained job log and canonical hosted verifier; independent raw bundle audit is local only"
+  }
+}
