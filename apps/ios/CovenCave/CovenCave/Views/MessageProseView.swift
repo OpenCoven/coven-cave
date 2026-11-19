@@ -16,6 +16,7 @@ struct MessageProseView: View {
     var onContentHeightChange: (() -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.chrome) private var chrome
+    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @State private var mdHeight: CGFloat = 0
     @State private var markdownFailed = false
@@ -82,6 +83,11 @@ struct MessageProseView: View {
                 TypingIndicator()
                     .padding(.horizontal, 14).padding(.vertical, 11)
                     .background(bubbleBackground, in: bubbleShape)
+                .overlay {
+                    bubbleShape.strokeBorder(message.isError ? chrome.danger : chrome.borderHairline,
+                                             lineWidth: contrast == .increased ? 1.5 : 0.6)
+                        .allowsHitTesting(false)
+                }
                 // While the newest reply gathers itself, surface one rotating
                 // grimoire tip (design's thinking-hint card).
                 if isLast {
@@ -92,12 +98,17 @@ struct MessageProseView: View {
             Text(verbatim: paragraph)
                 .font(.subheadline)
                 .textSelection(.enabled)
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(chrome.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.trailing, canOpenReader(projection) ? 44 : 0)
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .frame(maxWidth: .infinity, minHeight: canOpenReader(projection) ? 56 : 0, alignment: .leading)
                 .background(bubbleBackground, in: bubbleShape)
+                .overlay {
+                    bubbleShape.strokeBorder(message.isError ? chrome.danger : chrome.borderHairline,
+                                             lineWidth: contrast == .increased ? 1.5 : 0.6)
+                        .allowsHitTesting(false)
+                }
                 .overlay(alignment: .topTrailing) { readerControl(projection) }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
                     onContentHeightChange?()
@@ -127,6 +138,11 @@ struct MessageProseView: View {
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .frame(minHeight: canOpenReader(projection) ? 56 : 0)
                 .background(bubbleBackground, in: bubbleShape)
+                .overlay {
+                    bubbleShape.strokeBorder(message.isError ? chrome.danger : chrome.borderHairline,
+                                             lineWidth: contrast == .increased ? 1.5 : 0.6)
+                        .allowsHitTesting(false)
+                }
                 .overlay(alignment: .topTrailing) { readerControl(projection) }
                 .overlay(alignment: .bottomTrailing) {
                     if message.streaming && !isUser { StreamingDot().padding(6) }
@@ -138,9 +154,14 @@ struct MessageProseView: View {
         } else {
             Text(projection.visible.isEmpty ? " " : projection.visible)
                 .textSelection(.enabled)
-                .foregroundStyle(isUser ? chrome.accentForeground : Color.primary)
+                .foregroundStyle(chrome.textPrimary)
                 .padding(.horizontal, 14).padding(.vertical, 9)
                 .background(bubbleBackground, in: bubbleShape)
+                .overlay {
+                    bubbleShape.strokeBorder(message.isError ? chrome.danger : chrome.borderHairline,
+                                             lineWidth: contrast == .increased ? 1.5 : 0.6)
+                        .allowsHitTesting(false)
+                }
                 .overlay(alignment: .bottomTrailing) {
                     if message.streaming {
                         StreamingDot().padding(6)
@@ -175,36 +196,21 @@ struct MessageProseView: View {
     private func markdownLoadingPlaceholder(_ projection: AssistantResponseProjection) -> some View {
         Text(projection.visible)
             .textSelection(.enabled)
-            .foregroundStyle(Color.primary)
+            .foregroundStyle(chrome.textPrimary)
             .lineLimit(12)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(projection.visible)
     }
 
-    private var bubbleShape: UnevenRoundedRectangle {
-        if isUser {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 18, bottomLeadingRadius: 18,
-                bottomTrailingRadius: 6, topTrailingRadius: 18,
-                style: .continuous
-            )
-        } else {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 18, bottomLeadingRadius: 6,
-                bottomTrailingRadius: 18, topTrailingRadius: 18,
-                style: .continuous
-            )
-        }
+    private var bubbleShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: ChatChrome.messageRadius, style: .continuous)
     }
 
-    /// Bubble fills: errors stay red; the user's bubble is a soft vertical
-    /// accent gradient (readable text comes from `chrome.accentForeground`);
-    /// the assistant's bubble sits on the theme's raised surface so it tracks
-    /// the desktop palette — the fallback palette resolves to the same
-    /// `secondarySystemBackground` as before.
+    /// Neutral surfaces retain role and familiar attribution without tinting
+    /// the whole transcript. Errors keep a semantic palette treatment.
     private var bubbleBackground: AnyShapeStyle {
-        if message.isError { return AnyShapeStyle(Color.red.opacity(0.85)) }
-        if isUser { return AnyShapeStyle(chrome.accentGradient) }
+        if message.isError { return AnyShapeStyle(chrome.dangerSoft) }
+        if isUser { return AnyShapeStyle(chrome.bgElevated) }
         return AnyShapeStyle(chrome.bgRaised)
     }
 }

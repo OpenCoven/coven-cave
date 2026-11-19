@@ -14,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startCave, stopCave, freePort } from './client-v1-conformance.mjs';
 import { lateWriteRecord, removeFixtureRoot } from './native-harness-teardown.mjs';
 import { runNativeCommand } from './native-harness-command.mjs';
+import { waitForProcessExit } from './ios-process-exit.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 async function sourceFingerprint() {
@@ -536,8 +537,7 @@ try {
       native(['daemon', 'stop']);
       runReport.daemonStopped = true;
       if (Number.isSafeInteger(runReport.daemon?.pid)) {
-        try { process.kill(runReport.daemon.pid, 0); runReport.daemonStopped = false; }
-        catch (error) { runReport.daemonStopped = error.code === 'ESRCH'; }
+        runReport.daemonStopped = await waitForProcessExit(runReport.daemon.pid);
       }
     } catch { runReport.daemonStopped = false; }
     if (!runReport.daemonStopped) { runReport.passed = false; process.exitCode = 1; }

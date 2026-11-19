@@ -46,7 +46,9 @@ assert.match(bubble, /Label\(message\.isError \? "Retry reply" : "Regenerate rep
 // ── Reusable chrome: every icon-only control is labelled; accent is scarce ──
 assert.match(chrome, /struct CircularIconButton: View/, "circular icon button is a shared component");
 assert.match(chrome, /\.accessibilityLabel\(label\)/, "circular icon buttons always carry an accessibility label");
-assert.match(chrome, /\.accentGlow\(active: active\)/, "the accent halo only appears on active/selected state");
+assert.match(chrome, /strokeBorder\(active \? chrome\.borderStrong : chrome\.borderHairline/,
+  "active chat chrome uses the palette's stronger neutral outline");
+assert.doesNotMatch(chrome, /\.accentGlow\(/, "chat controls do not paint an ambient accent halo");
 assert.match(chrome, /struct PillSelector<Leading: View>: View/, "pill selector is a shared component");
 assert.match(chrome, /struct FloatingActionMenu: View/, "the composer + menu is a shared component");
 assert.match(

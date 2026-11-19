@@ -124,12 +124,26 @@ final class ActivityRecoveryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts[marker].waitForExistence(timeout: 10))
         app.buttons["Close tool output"].tap()
         let summaries = app.buttons.matching(NSPredicate(format: "label == %@", "Reasoning summary"))
-        XCTAssertTrue(tool.isHittable)
-        XCTAssertTrue(summaries.element(boundBy: 0).isHittable)
-        XCTAssertTrue(summaries.element(boundBy: 1).isHittable)
+        // Check order in one coordinate space before any history gestures.
+        // A phone need not fit the whole recovered timeline in one viewport.
         XCTAssertLessThan(summaries.element(boundBy: 0).frame.maxY, tool.frame.minY)
         XCTAssertLessThan(tool.frame.maxY, summaries.element(boundBy: 1).frame.minY)
         XCTAssertLessThan(summaries.element(boundBy: 1).frame.maxY, identity.frame.minY)
+        let transcript = app.scrollViews["Chat transcript"].firstMatch
+        for (index, control) in [summaries.element(boundBy: 0), tool, summaries.element(boundBy: 1)].enumerated() {
+            for _ in 0..<6 {
+                if control.isHittable { break }
+                print("RECOVERY REACH action=\(index) frame=\(control.frame) transcript=\(transcript.frame) navigation=\(app.navigationBars.firstMatch.frame)")
+                // Visit the timeline in reading order: reveal its earliest
+                // summary from above, then advance to the tool and final
+                // summary. The scroll view's frame includes the toolbar's
+                // reserved area, so it is not the visible clipping boundary.
+                if index == 0 { transcript.swipeDown() }
+                else { transcript.swipeUp() }
+            }
+            XCTAssertTrue(control.isHittable, "each recovered activity action is reachable through native scrolling")
+            attachScreenshot("native-recovered-reachable-action-\(index)")
+        }
         attachScreenshot("native-recovered-after-background")
         for sentinel in ["PRIVATE_OPAQUE_STATE", "PRIVATE_PARTIAL_SUMMARY", "PRIVATE_RAW_THOUGHT"] {
             XCTAssertFalse(app.debugDescription.contains(sentinel))

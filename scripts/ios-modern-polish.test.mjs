@@ -97,19 +97,19 @@ assert.doesNotMatch(
   "rendered markdown must retain its accessible links and headings",
 );
 
-// ── 3. Composer: elevated panel + focus halo ─────────────────────────────────
+// ── 3. Composer: one neutral floating panel with a focus outline ─────────────
 assert.match(
   chatView,
-  /\.background\(\s*\n\s*chrome\.bgElevated,\s*\n\s*in: RoundedRectangle\(cornerRadius: 16/,
+  /\.chatSurface\(\.elevated, cornerRadius: ChatChrome\.composerRadius/,
   "the composer controls should share one elevated authored panel",
 );
 assert.match(
   chatView,
-  /\.accentGlow\(active: composerFocused \|\| dictation\.isRecording\)/,
-  "the focused composer earns the accent halo (the design language's active cue)",
+  /active: composerFocused \|\| dictation\.isRecording/,
+  "focus and recording strengthen the shared panel outline",
 );
 
-// ── 4. Bubbles: gradient + luminance-aware contrast + themed assistant ───────
+// ── 4. Bubbles: neutral palette elevations and readable themed text ─────────
 assert.match(
   theme,
   /var accentForeground: Color \{[\s\S]{0,400}?0\.299 \* r \+ 0\.587 \* g \+ 0\.114 \* b/,
@@ -122,8 +122,8 @@ assert.match(
 );
 assert.match(
   prose,
-  /if isUser \{ return AnyShapeStyle\(chrome\.accentGradient\) \}/,
-  "the user bubble should use the accent gradient wash",
+  /if isUser \{ return AnyShapeStyle\(chrome\.bgElevated\) \}/,
+  "the user bubble uses the neutral elevated surface",
 );
 assert.match(
   prose,
@@ -132,9 +132,11 @@ assert.match(
 );
 assert.match(
   prose,
-  /foregroundStyle\(isUser \? chrome\.accentForeground : Color\.primary\)/,
-  "user-bubble text must use the luminance-aware accent foreground, not hard-coded white",
+  /foregroundStyle\(chrome\.textPrimary\)/,
+  "neutral bubbles use the palette's primary text",
 );
+assert.doesNotMatch(prose, /chrome\.accentGradient|chrome\.accentForeground/,
+  "neutral prose surfaces do not inherit accent-fill text contrast");
 assert.match(
   chatView,
   /\.transition\(\.asymmetric\([\s\S]{0,220}?: \.opacity\.combined\(with: \.scale\(scale: 0\.9\d, anchor: \.bottom\)\)/,
@@ -178,12 +180,16 @@ assert.match(
   "the press dip collapses to a dim under Reduce Motion",
 );
 for (const [component, pattern] of [
-  ["CircularIconButton", /struct CircularIconButton: View[\s\S]{0,900}?\.buttonStyle\(\.glassPress\)/],
-  ["PillSelector", /struct PillSelector<Leading: View>: View[\s\S]{0,1400}?\.buttonStyle\(\.glassPress\)/],
-  ["FloatingActionMenu", /struct FloatingActionMenu: View[\s\S]{0,1600}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
-  ["EmptyChatSuggestionRow", /struct EmptyChatSuggestionRow: View[\s\S]{0,2400}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
+  ["CircularIconButton", /\.buttonStyle\(\.glassPress\)/],
+  ["PillSelector", /\.buttonStyle\(\.glassPress\)/],
+  ["FloatingActionMenu", /\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
+  ["EmptyChatSuggestionRow", /\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
 ]) {
-  assert.match(chrome, pattern, `${component} should answer touches with the press style`);
+  const start = chrome.indexOf(`struct ${component}`);
+  assert.notEqual(start, -1, `${component} exists`);
+  const next = chrome.indexOf("\nstruct ", start + 1);
+  const source = chrome.slice(start, next < 0 ? undefined : next);
+  assert.match(source, pattern, `${component} should answer touches with the press style`);
 }
 assert.match(
   bubble,
