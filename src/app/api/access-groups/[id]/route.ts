@@ -12,6 +12,7 @@ import {
   projectGrantsInput,
   requireLocalHumanGrantMutation,
 } from "../access-groups-route-shared";
+import { permissionMutationActor } from "@/lib/server/trusted-grant-mutation";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +84,7 @@ export async function PATCH(
       ...(description !== undefined ? { description } : {}),
       ...(memberFamiliarIds !== undefined ? { memberFamiliarIds } : {}),
       ...(projectGrants !== undefined ? { projectGrants } : {}),
-      actor: "loopback",
+      actor: permissionMutationActor(req),
     });
     return NextResponse.json({ ok: true, group });
   } catch (error) {
@@ -116,7 +117,7 @@ export async function DELETE(
   const rejected = rejectRelayedApproval(payload);
   if (rejected) return rejected;
 
-  const deleted = await deleteAccessGroup(params.id, { actor: "loopback" });
+  const deleted = await deleteAccessGroup(params.id, { actor: permissionMutationActor(req) });
   if (!deleted) {
     return NextResponse.json({ ok: false, error: "access group not found" }, { status: 404 });
   }

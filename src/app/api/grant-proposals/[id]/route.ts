@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { requireTrustedHumanGrantMutation } from "@/lib/server/trusted-grant-mutation";
+import {
+  permissionMutationActor,
+  requireTrustedHumanGrantMutation,
+} from "@/lib/server/trusted-grant-mutation";
 
 import {
   CavePrivateStateGrantError,
@@ -54,12 +57,14 @@ export async function PATCH(
       { status: 400 },
     );
   }
+  const actor = permissionMutationActor(req);
   try {
     const proposal = decision === "undo"
-      ? await undoGrantProposal({ proposalId: params.id })
+      ? await undoGrantProposal({ proposalId: params.id, actor })
       : await resolveGrantProposal({
           proposalId: params.id,
           decision,
+          actor,
         });
     return NextResponse.json({ ok: true, proposal });
   } catch (error) {

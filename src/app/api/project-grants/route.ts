@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveProjectGrantTarget } from "@/lib/server/project-grant-targets";
 import {
-  isVerifiedMobileRequest,
+  permissionMutationActor,
   requireTrustedHumanGrantMutation,
 } from "@/lib/server/trusted-grant-mutation";
 
@@ -14,6 +14,7 @@ import {
   listProjectGrants,
   listRecentGrantChanges,
   listRecentPermissionAudit,
+  listRecentPermissionEvents,
   loadHumanPermissionConfig,
   inspectProjectPermissionIntegrity,
   repairOrphanProjectPermissions,
@@ -94,11 +95,12 @@ function staleGrantResponse(error: StaleGrantError): Response {
 }
 
 export async function GET() {
-  const [grants, config, audit, grantChanges, accessGroups, integrity, privateStateProjectIds] = await Promise.all([
+  const [grants, config, audit, grantChanges, permissionEvents, accessGroups, integrity, privateStateProjectIds] = await Promise.all([
     listProjectGrants(),
     loadHumanPermissionConfig(),
     listRecentPermissionAudit(),
     listRecentGrantChanges(),
+    listRecentPermissionEvents(),
     listAccessGroups(),
     inspectProjectPermissionIntegrity(),
     listPrivateStateProjectIds(),
@@ -120,6 +122,9 @@ export async function GET() {
     // Access CHANGES — who widened or narrowed a grant. Distinct from
     // `audit`, which is the access-CHECK decision log.
     grantChanges,
+    // Other permission changes: proposal decisions (and proposals held for
+    // review), group renames, phone opt-ins, restores.
+    permissionEvents,
     // Projects whose folder holds Cave's private state: Write can't be given
     // there, and an existing Write grant blocks Claude Build turns (#6451).
     privateStateProjectIds,
@@ -135,7 +140,7 @@ export async function POST(req: Request) {
   const rejected = rejectRelayedApproval(payload);
   if (rejected) return rejected;
   if (payload.repairOrphans === true) {
-    const integrity = await repairOrphanProjectPermissions();
+    const integrity = await repairOrphanProjectPermissions({ actor: permissionMutationActor(req) });
     return NextResponse.json({ ok: true, repaired: integrity });
   }
   const input = grantInput(payload);
@@ -167,7 +172,7 @@ export async function POST(req: Request) {
       projectId: target.projectId,
       source: "human",
       access,
-      actor: isVerifiedMobileRequest(req) ? "mobile" : "loopback",
+      actor: permissionMutationActor(req),
       ...expected,
     });
   } catch (error) {
@@ -203,7 +208,7 @@ export async function DELETE(req: Request) {
   try {
     revoked = await revokeProjectFromFamiliar({
       ...input,
-      actor: isVerifiedMobileRequest(req) ? "mobile" : "loopback",
+      actor: permissionMutationActor(req),
       ...expected,
     });
   } catch (error) {

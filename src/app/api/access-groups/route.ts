@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { CavePrivateStateGrantError, createAccessGroup, listAccessGroups } from "@/lib/project-permissions";
+import { permissionMutationActor } from "@/lib/server/trusted-grant-mutation";
 import {
   invalidShapeResponse,
   memberIdsInput,
@@ -67,8 +68,9 @@ export async function POST(req: Request) {
       ...(memberFamiliarIds !== undefined ? { memberFamiliarIds } : {}),
       ...(projectGrants !== undefined ? { projectGrants } : {}),
       // requireLocalHumanGrantMutation is isLocalOrigin-only — the phone cannot
-      // reach group routes at all, so the actor is unambiguous here.
-      actor: "loopback",
+      // reach group routes at all, so this is the desktop or an unverified
+      // dev caller.
+      actor: permissionMutationActor(req),
     });
     return NextResponse.json({ ok: true, group });
   } catch (error) {

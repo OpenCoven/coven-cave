@@ -85,7 +85,15 @@ export type GrantProposal = {
   acceptedAt?: string;
   /** End of the undo window. Absent on legacy/pending/rejected proposals. */
   finalizesAt?: string;
+  /**
+   * Set when the load path refused to finalize this proposal and sent it back
+   * to the human's queue: it said `accepting` with no recorded acceptance, or
+   * its access level was unrecognised. Cleared when the human decides it.
+   */
+  review?: { reason: GrantProposalReviewReason; flaggedAt: string };
 };
+
+export type GrantProposalReviewReason = "missing-acceptance-record" | "unrecognized-access";
 
 /**
  * Delayed acceptance (cave-6mdg): accepting a proposal opens a short undo
@@ -118,9 +126,19 @@ export type PermissionAuditEntry = {
  * allowed to do X"; this answers "who widened this, when, and from what" —
  * a different question the check log structurally cannot serve.
  */
-export type GrantChangeActor = "loopback" | "mobile" | "system";
+export type GrantChangeActor =
+  /** A local request that presented the sidecar token (packaged app, `dev:app`). */
+  | "desktop"
+  /** The human's paired phone, verified by the proxy. */
+  | "mobile"
+  /** A local request in tokenless dev, where any local process could be the caller. */
+  | "dev-unverified"
+  /** The app itself, for jobs no request started. */
+  | "system"
+  /** Legacy: written before actors were verified. Read, never written. */
+  | "loopback";
 
-export type GrantChangeKind = "direct" | "group" | "project-removed" | "bootstrap";
+export type GrantChangeKind = "direct" | "group" | "project-removed" | "bootstrap" | "proposal";
 
 export type GrantChangeEntry = {
   id: string;
@@ -139,6 +157,42 @@ export type GrantChangeEntry = {
   source?: ProjectGrantSource;
   /** Access group id, when kind is "group". */
   groupId?: string;
+  /** Grant proposal id, when kind is "proposal". */
+  proposalId?: string;
+};
+
+/**
+ * Permission changes that are not a familiar's access level moving: proposal
+ * decisions, group renames, phone opt-ins, restores. `grantAudit` answers
+ * "who widened this grant"; this log covers the rest a reviewer needs, and
+ * its proposal records gate finalization.
+ */
+export type PermissionEventKind =
+  | "proposal-created"
+  | "proposal-accepted"
+  | "proposal-rejected"
+  | "proposal-undone"
+  | "proposal-finalized"
+  | "proposal-held"
+  | "proposal-removed-with-project"
+  | "group-renamed"
+  | "group-description-changed"
+  | "orphan-repair"
+  | "mobile-access-changed"
+  | "backup-restored";
+
+export type PermissionEventDetail = string | number | boolean | null | string[];
+
+export type PermissionEventEntry = {
+  id: string;
+  at: string;
+  kind: PermissionEventKind;
+  actor: GrantChangeActor;
+  proposalId?: string;
+  familiarId?: string;
+  projectId?: string;
+  groupId?: string;
+  details?: Record<string, PermissionEventDetail>;
 };
 
 export type ProjectPermissionRepairAudit = {
@@ -170,6 +224,8 @@ type ProjectPermissionsFile = {
    */
   grantAudit: GrantChangeEntry[];
   repairAudit: ProjectPermissionRepairAudit[];
+  /** Non-grant permission changes; see PermissionEventEntry. */
+  permissionEvents: PermissionEventEntry[];
 };
 
 type HumanPermissionConfigFile = {
@@ -226,6 +282,7 @@ function emptyFile(): ProjectPermissionsFile {
     permissionAudit: [],
     grantAudit: [],
     repairAudit: [],
+    permissionEvents: [],
   };
 }
 
@@ -316,7 +373,30 @@ export async function loadMobileWriteAccess(): Promise<MobileWriteAccessConfig> 
  */
 export async function updateMobileWriteAccess(
   patch: Partial<MobileWriteAccessConfig>,
+  /** Who changed the opt-ins; defaults to the app itself. */
+  options: { actor?: GrantChangeActor } = {},
 ): Promise<MobileWriteAccessConfig> {
+  const { before, after } = await writeMobileWriteAccess(patch);
+  const changed = (Object.keys(after) as (keyof MobileWriteAccessConfig)[])
+    .filter((key) => before[key] !== after[key]);
+  if (changed.length > 0) {
+    // The opt-ins live in permission-config.json, so the record is a second
+    // write into the permission store's event log, made after the change.
+    await recordPermissionEvent({
+      kind: "mobile-access-changed",
+      actor: options.actor ?? "system",
+      details: Object.fromEntries(changed.flatMap((key) => [
+        [`${key}From`, before[key]],
+        [`${key}To`, after[key]],
+      ])),
+    });
+  }
+  return after;
+}
+
+async function writeMobileWriteAccess(
+  patch: Partial<MobileWriteAccessConfig>,
+): Promise<{ before: MobileWriteAccessConfig; after: MobileWriteAccessConfig }> {
   const operation = async () => withWriteMutex(async () => {
     const current = await loadHumanPermissionConfigUnlocked();
     const next: HumanPermissionConfigFile = {
@@ -327,11 +407,12 @@ export async function updateMobileWriteAccess(
       allowMobileCanvasWrites: patch.allowMobileCanvasWrites ?? current.allowMobileCanvasWrites,
     };
     await writeJsonFile(humanPermissionConfigPath(), next);
-    return {
-      allowMobileGrantMutations: next.allowMobileGrantMutations,
-      allowMobileFileWrites: next.allowMobileFileWrites,
-      allowMobileCanvasWrites: next.allowMobileCanvasWrites,
-    };
+    const pick = (config: HumanPermissionConfigFile): MobileWriteAccessConfig => ({
+      allowMobileGrantMutations: config.allowMobileGrantMutations,
+      allowMobileFileWrites: config.allowMobileFileWrites,
+      allowMobileCanvasWrites: config.allowMobileCanvasWrites,
+    });
+    return { before: pick(current), after: pick(next) };
   });
   if (process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE) return operation();
   return withCaveHomeReconciledStore("cave-permission-config.json", operation);
@@ -339,11 +420,14 @@ export async function updateMobileWriteAccess(
 
 function normalizeGrant(grant: Partial<ProjectGrant>): ProjectGrant | null {
   if (typeof grant?.familiarId !== "string" || typeof grant?.projectId !== "string") return null;
+  // v1 grants have no `access` and unlocked every surface — migrate as write.
+  // An unrecognised level gives no access, so the row is not loaded.
+  const access = normalizeAccessLevel(grant.access);
+  if (!access) return null;
   return {
     familiarId: grant.familiarId,
     projectId: grant.projectId,
-    // v1 grants have no `access` and unlocked every surface — migrate as write.
-    access: normalizeAccessLevel(grant.access),
+    access,
     source: grant.source === "bootstrap" ? "bootstrap" : "human",
     grantedAt: typeof grant.grantedAt === "string" ? grant.grantedAt : new Date().toISOString(),
   };
@@ -362,13 +446,17 @@ function normalizeAccessGroup(group: Partial<FamiliarAccessGroup>): FamiliarAcce
       ? group.memberFamiliarIds.filter((id): id is string => typeof id === "string" && !!id.trim())
       : [],
     projectGrants: Array.isArray(group.projectGrants)
-      ? group.projectGrants
-          .filter((grant) => typeof grant?.projectId === "string" && !!grant.projectId)
-          .map((grant) => ({
+      ? group.projectGrants.flatMap((grant) => {
+          if (typeof grant?.projectId !== "string" || !grant.projectId) return [];
+          // An unrecognised level gives no access, so the group grant is not loaded.
+          const access = normalizeAccessLevel(grant.access);
+          if (!access) return [];
+          return [{
             projectId: grant.projectId,
-            access: normalizeAccessLevel(grant.access),
+            access,
             grantedAt: typeof grant.grantedAt === "string" ? grant.grantedAt : now,
-          }))
+          }];
+        })
       : [],
     createdAt: typeof group.createdAt === "string" ? group.createdAt : now,
     updatedAt: typeof group.updatedAt === "string" ? group.updatedAt : now,
@@ -398,6 +486,7 @@ async function loadProjectPermissionsUnlocked(): Promise<ProjectPermissionsFile>
     // is the honest answer there, not a reconstruction.
     grantAudit: Array.isArray(parsed.grantAudit) ? parsed.grantAudit : [],
     repairAudit: Array.isArray(parsed.repairAudit) ? parsed.repairAudit : [],
+    permissionEvents: Array.isArray(parsed.permissionEvents) ? parsed.permissionEvents : [],
   };
   materializeDueGrantProposals(file, new Date());
   return file;
@@ -408,9 +497,55 @@ export async function loadProjectPermissions(): Promise<ProjectPermissionsFile> 
 }
 
 /**
+ * The acceptance a proposal in `accepting` claims, if the log backs it: the
+ * newest decision recorded for the proposal must be an acceptance made at the
+ * proposal's own `acceptedAt`. A row written into the file by hand, or flipped
+ * back to `accepting` after an undo or rejection, has no such record.
+ */
+function recordedAcceptance(
+  file: ProjectPermissionsFile,
+  proposal: GrantProposal,
+): PermissionEventEntry | null {
+  for (let index = file.permissionEvents.length - 1; index >= 0; index -= 1) {
+    const event = file.permissionEvents[index];
+    if (event?.proposalId !== proposal.id) continue;
+    if (event.kind === "proposal-accepted") {
+      return proposal.acceptedAt && event.details?.acceptedAt === proposal.acceptedAt ? event : null;
+    }
+    if (event.kind === "proposal-rejected" || event.kind === "proposal-undone") return null;
+  }
+  return null;
+}
+
+/** Send a proposal back to the human's queue, flagged, instead of finalizing it. */
+function holdProposalForReview(
+  file: ProjectPermissionsFile,
+  proposal: GrantProposal,
+  reason: GrantProposalReviewReason,
+  now: Date,
+): void {
+  proposal.status = "pending";
+  delete proposal.acceptedAt;
+  delete proposal.finalizesAt;
+  proposal.review = { reason, flaggedAt: now.toISOString() };
+  recordPermissionEventIn(file, {
+    kind: "proposal-held",
+    actor: "system",
+    proposalId: proposal.id,
+    familiarId: proposal.targetFamiliarId,
+    projectId: proposal.projectId,
+    details: { reason },
+  });
+}
+
+/**
  * Flip `accepting` proposals whose undo window has elapsed to `accepted` and
  * materialize their grants. Runs in-memory on every load — reads converge on
  * the finalized state even if nothing writes; the next save persists it.
+ *
+ * Only a proposal whose acceptance is recorded in `permissionEvents` is
+ * finalized. One without that record (or with an unrecognised level) grants
+ * nothing: it goes back to `pending`, flagged in `review`, for the human.
  * Returns true when anything changed.
  */
 export function materializeDueGrantProposals(
@@ -420,16 +555,50 @@ export function materializeDueGrantProposals(
   let changed = false;
   for (const proposal of file.grantProposals) {
     if (proposal.status !== "accepting") continue;
+    const acceptance = recordedAcceptance(file, proposal);
+    if (!acceptance) {
+      holdProposalForReview(file, proposal, "missing-acceptance-record", now);
+      changed = true;
+      continue;
+    }
     const finalizesAt = proposal.finalizesAt ? Date.parse(proposal.finalizesAt) : NaN;
     // Malformed/missing deadline: fail safe by finalizing (the human already
-    // accepted; losing the undo window beats losing the decision).
+    // accepted, and the log records it; losing the undo window beats losing
+    // the decision).
     if (Number.isFinite(finalizesAt) && finalizesAt > now.getTime()) continue;
+    const access = normalizeAccessLevel(proposal.access);
+    if (!access) {
+      holdProposalForReview(file, proposal, "unrecognized-access", now);
+      changed = true;
+      continue;
+    }
     proposal.status = "accepted";
-    ensureProjectGrant(file, {
+    const from = directAccessIn(file, proposal.targetFamiliarId, proposal.projectId);
+    if (ensureProjectGrant(file, {
       familiarId: proposal.targetFamiliarId,
       projectId: proposal.projectId,
       source: "human",
-      access: normalizeAccessLevel(proposal.access),
+      access,
+    })) {
+      // The human who accepted widened this; the finalizer only ran the clock.
+      recordGrantChange(file, {
+        familiarId: proposal.targetFamiliarId,
+        projectId: proposal.projectId,
+        from,
+        to: access,
+        actor: acceptance.actor,
+        kind: "proposal",
+        source: "human",
+        proposalId: proposal.id,
+      });
+    }
+    recordPermissionEventIn(file, {
+      kind: "proposal-finalized",
+      actor: "system",
+      proposalId: proposal.id,
+      familiarId: proposal.targetFamiliarId,
+      projectId: proposal.projectId,
+      details: { access, acceptedBy: acceptance.actor, acceptanceEventId: acceptance.id },
     });
     changed = true;
   }
@@ -455,6 +624,7 @@ function ensureProjectGrant(
   },
 ): boolean {
   const access = normalizeAccessLevel(input.access);
+  if (!access) throw new Error("unrecognised project access level");
   const existing = file.projectGrants.find(
     (grant) => grant.familiarId === input.familiarId && grant.projectId === input.projectId,
   );
@@ -500,8 +670,8 @@ export async function listRecentPermissionAudit(limit = 200): Promise<Permission
 
 /**
  * A familiar's effective access to one project: union-max of its direct grant
- * and every access-group grant it inherits through membership. Supreme is
- * handled by callers (it bypasses grants entirely).
+ * and every access-group grant it inherits through membership.
+ * Supreme has no bypass: it gets access only through grants, like any familiar.
  */
 export function effectiveProjectAccess(
   file: Pick<ProjectPermissionsFile, "projectGrants" | "accessGroups">,
@@ -763,6 +933,42 @@ function recordGrantChange(
   file.grantAudit.push({ id: randomUUID(), at: new Date().toISOString(), ...entry });
 }
 
+/** As recordGrantChange, for the non-grant event log; same lock+save rule. */
+function recordPermissionEventIn(
+  file: ProjectPermissionsFile,
+  entry: Omit<PermissionEventEntry, "id" | "at">,
+): PermissionEventEntry {
+  const event = { id: randomUUID(), at: new Date().toISOString(), ...entry };
+  file.permissionEvents.push(event);
+  return event;
+}
+
+/**
+ * Append one event on its own, for changes that live outside this store (the
+ * phone opt-ins in permission-config.json, a backup restore). Inside this
+ * store, record within the mutation's own save instead.
+ */
+export async function recordPermissionEvent(
+  entry: Omit<PermissionEventEntry, "id" | "at">,
+): Promise<PermissionEventEntry> {
+  return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    const file = await loadProjectPermissionsUnlocked();
+    const event = recordPermissionEventIn(file, entry);
+    await saveProjectPermissions(file);
+    return event;
+  }));
+}
+
+/** Most-recent permission events, newest first (ties in append order), capped to `limit`. */
+export async function listRecentPermissionEvents(limit = 200): Promise<PermissionEventEntry[]> {
+  const log = (await loadProjectPermissions()).permissionEvents;
+  return log
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => b.entry.at.localeCompare(a.entry.at) || b.index - a.index)
+    .slice(0, Math.max(0, limit))
+    .map(({ entry }) => entry);
+}
+
 /**
  * Effective access for a set of (familiar, project) pairs, as one snapshot.
  *
@@ -976,7 +1182,10 @@ export async function revokeProjectFromFamiliar(input: {
  */
 export async function revokeAllGrantsForProject(
   projectId: string,
+  /** Who removed the project; defaults to the app itself. */
+  options: { actor?: GrantChangeActor } = {},
 ): Promise<{ grants: number; groupGrants: number; proposals: number }> {
+  const actor = options.actor ?? "system";
   return withProjectPermissionsStore(() => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked();
 
@@ -992,7 +1201,7 @@ export async function revokeAllGrantsForProject(
         projectId,
         from: grant.access,
         to: null,
-        actor: "system",
+        actor,
         kind: "project-removed",
         source: grant.source,
       });
@@ -1011,7 +1220,7 @@ export async function revokeAllGrantsForProject(
             projectId,
             from: grant.access,
             to: null,
-            actor: "system",
+            actor,
             kind: "project-removed",
             groupId: group.id,
           });
@@ -1021,6 +1230,17 @@ export async function revokeAllGrantsForProject(
 
     const nextProposals = file.grantProposals.filter((proposal) => proposal.projectId !== projectId);
     const proposals = file.grantProposals.length - nextProposals.length;
+    for (const proposal of file.grantProposals) {
+      if (proposal.projectId !== projectId) continue;
+      recordPermissionEventIn(file, {
+        kind: "proposal-removed-with-project",
+        actor,
+        proposalId: proposal.id,
+        familiarId: proposal.targetFamiliarId,
+        projectId,
+        details: { status: proposal.status, claimedProposedBy: proposal.proposedBy },
+      });
+    }
     file.grantProposals = nextProposals;
 
     if (grants > 0 || groupGrants > 0 || proposals > 0) await saveProjectPermissions(file);
@@ -1066,18 +1286,60 @@ export async function inspectProjectPermissionIntegrity(): Promise<ProjectPermis
  * persisted atomically with the cleanup, making retries after interruption
  * idempotent and reviewable.
  */
-export async function repairOrphanProjectPermissions(): Promise<ProjectPermissionIntegrityReport> {
+export async function repairOrphanProjectPermissions(
+  /** Who asked for the repair; defaults to the app itself. */
+  options: { actor?: GrantChangeActor } = {},
+): Promise<ProjectPermissionIntegrityReport> {
+  const actor = options.actor ?? "system";
   return withRegistryAndGrants(async (projects) => {
     const knownProjectIds = new Set(projects.map((project) => project.id));
     const file = await loadProjectPermissionsUnlocked();
     const report = orphanProjectIntegrity(file, knownProjectIds);
     if (report.directGrants + report.groupGrants + report.proposals === 0) return report;
+    // Each removed grant goes to grantAudit like any other removal, not only
+    // into the repair summary.
+    for (const grant of file.projectGrants) {
+      if (knownProjectIds.has(grant.projectId)) continue;
+      recordGrantChange(file, {
+        familiarId: grant.familiarId,
+        projectId: grant.projectId,
+        from: grant.access,
+        to: null,
+        actor,
+        kind: "project-removed",
+        source: grant.source,
+      });
+    }
     file.projectGrants = file.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
     for (const group of file.accessGroups) {
+      for (const grant of group.projectGrants) {
+        if (knownProjectIds.has(grant.projectId)) continue;
+        for (const familiarId of group.memberFamiliarIds) {
+          recordGrantChange(file, {
+            familiarId,
+            projectId: grant.projectId,
+            from: grant.access,
+            to: null,
+            actor,
+            kind: "project-removed",
+            groupId: group.id,
+          });
+        }
+      }
       group.projectGrants = group.projectGrants.filter((grant) => knownProjectIds.has(grant.projectId));
     }
     file.grantProposals = file.grantProposals.filter((proposal) => knownProjectIds.has(proposal.projectId));
     file.repairAudit.push({ at: new Date().toISOString(), kind: "orphan-project-repair", ...report });
+    recordPermissionEventIn(file, {
+      kind: "orphan-repair",
+      actor,
+      details: {
+        directGrants: report.directGrants,
+        groupGrants: report.groupGrants,
+        proposals: report.proposals,
+        orphanProjectIds: report.orphanProjectIds,
+      },
+    });
     await saveProjectPermissions(file);
     return report;
   });
@@ -1111,7 +1373,11 @@ export async function createGrantProposal(input: {
   projectId: string;
   access?: ProjectAccessLevel;
   claimedHumanApproval?: boolean;
+  /** Who sent the request. `proposedBy` is only what the request claims. */
+  actor?: GrantChangeActor;
 }): Promise<GrantProposal> {
+  const access = normalizeAccessLevel(input.access);
+  if (!access) throw new ProjectAccessDeniedError("unrecognised access level");
   const { supremeFamiliarId } = await loadHumanPermissionConfig();
   if (input.proposedBy !== supremeFamiliarId) {
     throw new ProjectAccessDeniedError("only Supreme can draft grant proposals");
@@ -1124,7 +1390,7 @@ export async function createGrantProposal(input: {
   }
 
   return withRegistryAndGrants(async (projects) => {
-    if (normalizeAccessLevel(input.access) === "write") {
+    if (access === "write") {
       const overlap = privateStateProjects(projects, [input.projectId]).get(input.projectId);
       if (overlap) throw new CavePrivateStateGrantError(overlap);
     }
@@ -1134,11 +1400,20 @@ export async function createGrantProposal(input: {
       proposedBy: input.proposedBy,
       targetFamiliarId: input.targetFamiliarId,
       projectId: input.projectId,
-      access: normalizeAccessLevel(input.access),
+      access,
       status: "pending",
       createdAt: new Date().toISOString(),
     };
     file.grantProposals.push(proposal);
+    recordPermissionEventIn(file, {
+      kind: "proposal-created",
+      actor: input.actor ?? "system",
+      proposalId: proposal.id,
+      familiarId: proposal.targetFamiliarId,
+      projectId: proposal.projectId,
+      // Unproven: the request body names the proposer (brief 2, row 9).
+      details: { access, claimedProposedBy: proposal.proposedBy },
+    });
     await saveProjectPermissions(file);
     return proposal;
   });
@@ -1147,7 +1422,10 @@ export async function createGrantProposal(input: {
 export async function resolveGrantProposal(input: {
   proposalId: string;
   decision: "accepted" | "rejected";
+  /** Who decided; defaults to the app itself. */
+  actor?: GrantChangeActor;
 }): Promise<GrantProposal> {
+  const actor = input.actor ?? "system";
   return withRegistryAndGrants(async (projects) => {
     const file = await loadProjectPermissionsUnlocked();
     const grantProposal = file.grantProposals.find((proposal) => proposal.id === input.proposalId);
@@ -1157,7 +1435,11 @@ export async function resolveGrantProposal(input: {
     if (grantProposal.status !== "pending") {
       throw new ProjectAccessDeniedError("grant proposal is already resolved");
     }
-    if (input.decision === "accepted" && normalizeAccessLevel(grantProposal.access) === "write") {
+    const access = normalizeAccessLevel(grantProposal.access);
+    if (input.decision === "accepted" && !access) {
+      throw new ProjectAccessDeniedError("grant proposal has an unrecognised access level");
+    }
+    if (input.decision === "accepted" && access === "write") {
       const overlap = privateStateProjects(projects, [grantProposal.projectId]).get(grantProposal.projectId);
       if (overlap) throw new CavePrivateStateGrantError(overlap);
     }
@@ -1174,6 +1456,19 @@ export async function resolveGrantProposal(input: {
     } else {
       grantProposal.status = "rejected";
     }
+    delete grantProposal.review;
+    // The acceptance record is what lets the load path finalize the grant
+    // later. It carries `acceptedAt` so an old record can't be reused.
+    recordPermissionEventIn(file, {
+      kind: input.decision === "accepted" ? "proposal-accepted" : "proposal-rejected",
+      actor,
+      proposalId: grantProposal.id,
+      familiarId: grantProposal.targetFamiliarId,
+      projectId: grantProposal.projectId,
+      details: input.decision === "accepted"
+        ? { access, acceptedAt: grantProposal.acceptedAt ?? null, finalizesAt: grantProposal.finalizesAt ?? null }
+        : { access },
+    });
     await saveProjectPermissions(file);
     return grantProposal;
   });
@@ -1184,7 +1479,11 @@ export async function resolveGrantProposal(input: {
  * possible during the undo window — once `finalizesAt` passes, loads have
  * already materialized the grant and the proposal reads as `accepted`.
  */
-export async function undoGrantProposal(input: { proposalId: string }): Promise<GrantProposal> {
+export async function undoGrantProposal(input: {
+  proposalId: string;
+  /** Who undid it; defaults to the app itself. */
+  actor?: GrantChangeActor;
+}): Promise<GrantProposal> {
   return withProjectPermissionsStore(() => withWriteMutex(async () => {
     const file = await loadProjectPermissionsUnlocked();
     const grantProposal = file.grantProposals.find((proposal) => proposal.id === input.proposalId);
@@ -1200,9 +1499,18 @@ export async function undoGrantProposal(input: { proposalId: string }): Promise<
           : "grant proposal is not awaiting finalization",
       );
     }
+    const undoneAcceptedAt = grantProposal.acceptedAt ?? null;
     grantProposal.status = "pending";
     delete grantProposal.acceptedAt;
     delete grantProposal.finalizesAt;
+    recordPermissionEventIn(file, {
+      kind: "proposal-undone",
+      actor: input.actor ?? "system",
+      proposalId: grantProposal.id,
+      familiarId: grantProposal.targetFamiliarId,
+      projectId: grantProposal.projectId,
+      details: { acceptedAt: undoneAcceptedAt },
+    });
     await saveProjectPermissions(file);
     return grantProposal;
   }));
@@ -1250,7 +1558,9 @@ function normalizeGroupGrants(
     const projectId = typeof raw?.projectId === "string" ? raw.projectId.trim() : "";
     if (!projectId || seen.has(projectId)) continue;
     seen.add(projectId);
+    // An unrecognised level gives no access, so it adds no group grant.
     const access = normalizeAccessLevel(raw.access);
+    if (!access) continue;
     const before = previousById.get(projectId);
     next.push({
       projectId,
@@ -1328,6 +1638,8 @@ export async function updateAccessGroup(input: {
       memberFamiliarIds: [...group.memberFamiliarIds],
       projectGrants: group.projectGrants.map((grant) => ({ ...grant })),
     };
+    const priorName = group.name;
+    const priorDescription = group.description ?? null;
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (!name) throw new Error("access group name is required");
@@ -1357,7 +1669,23 @@ export async function updateAccessGroup(input: {
     assertNoNewPrivateStateWrite({
       group, priorGrants: priorShape.projectGrants, priorMembers: priorShape.memberFamiliarIds, overlapping,
     });
-    recordGroupEffectiveChanges(file, pairs, before, group.id, input.actor ?? "system");
+    const actor = input.actor ?? "system";
+    recordGroupEffectiveChanges(file, pairs, before, group.id, actor);
+    // Renames and description edits move no access, but people review groups
+    // by name, so an unlogged rename could disguise one.
+    if (group.name !== priorName) {
+      recordPermissionEventIn(file, {
+        kind: "group-renamed", actor, groupId: group.id, details: { from: priorName, to: group.name },
+      });
+    }
+    if ((group.description ?? null) !== priorDescription) {
+      recordPermissionEventIn(file, {
+        kind: "group-description-changed",
+        actor,
+        groupId: group.id,
+        details: { from: priorDescription, to: group.description ?? null },
+      });
+    }
     await saveProjectPermissions(file);
     return group;
   });

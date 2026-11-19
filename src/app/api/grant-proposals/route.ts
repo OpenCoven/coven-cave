@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { isLocalOrigin } from "@/lib/server/local-origin";
+import {
+  permissionMutationActor,
+  refuseTokenlessPermissionMutation,
+} from "@/lib/server/trusted-grant-mutation";
 
 import {
   CavePrivateStateGrantError,
@@ -22,6 +26,8 @@ export async function POST(req: Request) {
       { status: 403 },
     );
   }
+  const tokenless = refuseTokenlessPermissionMutation();
+  if (tokenless) return tokenless;
   let payload: Record<string, unknown>;
   try {
     payload = (await req.json()) as Record<string, unknown>;
@@ -45,6 +51,7 @@ export async function POST(req: Request) {
       targetFamiliarId: targetFamiliarId,
       projectId: projectId,
       claimedHumanApproval: payload.claimedHumanApproval === true,
+      actor: permissionMutationActor(req),
     });
     return NextResponse.json({ ok: true, proposal }, { status: 201 });
   } catch (error) {

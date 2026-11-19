@@ -139,14 +139,19 @@ assert.match(
 // (grants are mobile-mutable behind allowMobileGrantMutations), so the actor
 // must come from the verified request, never from the payload.
 assert.match(
-  grantsRoute,
-  /actor: isVerifiedMobileRequest\(req\) \? "mobile" : "loopback"/,
-  "grant mutations should record the actor from the verified request",
+  trustedGate,
+  /export function permissionMutationActor\(req: Request\): GrantChangeActor \{\s*if \(isVerifiedMobileRequest\(req\)\) return "mobile";\s*return permissionMutationMode\(\) === "token" \? "desktop" : "dev-unverified";/,
+  "the actor comes from the verified request: phone, token-bearing desktop, or unverified dev",
 );
 assert.equal(
-  (grantsRoute.match(/actor: isVerifiedMobileRequest\(req\)/g) ?? []).length,
+  (grantsRoute.match(/^\s+actor: permissionMutationActor\(req\),$/gm) ?? []).length,
   2,
   "both the grant and the revoke path should record their actor",
+);
+assert.match(
+  grantsRoute,
+  /repairOrphanProjectPermissions\(\{ actor: permissionMutationActor\(req\) \}\)/,
+  "orphan repair records its actor too",
 );
 assert.match(
   grantsRoute,

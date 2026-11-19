@@ -17,6 +17,9 @@ Object.assign(process.env, {
   CAVE_PERMISSION_CONFIG_PATH_OVERRIDE: path.join(tmp, "permission-config.json"),
   CAVE_PROJECTS_PATH_OVERRIDE: path.join(tmp, "projects.json"),
   CAVE_SUPREME_FAMILIAR_ID: "supreme",
+  // Tokenless requests below: the dev escape hatch lets them change
+  // permissions (trusted-grant-mutation.test.ts covers the refusal).
+  CAVE_DEV_ALLOW_PERMISSION_MUTATIONS: "1",
 });
 delete process.env.COVEN_CAVE_AUTH_TOKEN;
 

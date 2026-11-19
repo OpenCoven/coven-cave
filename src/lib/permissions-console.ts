@@ -87,8 +87,9 @@ export type ConsoleGrantChange = {
   from: ProjectAccessLevel | null;
   /** Level after the change; null when access was removed. */
   to: ProjectAccessLevel | null;
-  actor: "loopback" | "mobile" | "system";
-  kind: "direct" | "group" | "project-removed" | "bootstrap";
+  /** `loopback` is legacy: written before actors were verified. */
+  actor: "desktop" | "mobile" | "dev-unverified" | "system" | "loopback";
+  kind: "direct" | "group" | "project-removed" | "bootstrap" | "proposal";
   groupId?: string;
 };
 
@@ -127,10 +128,18 @@ export function grantChangeMeta(change: Pick<ConsoleGrantChange, "from" | "to">)
 /** Where the change came from, in the console's words. */
 export function grantChangeOriginLabel(change: Pick<ConsoleGrantChange, "actor" | "kind">): string {
   const where =
-    change.actor === "mobile" ? "from the phone" : change.actor === "loopback" ? "on this desktop" : "by the app";
+    change.actor === "mobile"
+      ? "from the phone"
+      : change.actor === "desktop" || change.actor === "loopback"
+        ? "on this desktop"
+        : change.actor === "dev-unverified"
+          ? "in dev mode (caller unverified)"
+          : "by the app";
   switch (change.kind) {
     case "group":
       return `via an access group · ${where}`;
+    case "proposal":
+      return `accepted request · ${where}`;
     case "project-removed":
       return "project removed from the registry";
     case "bootstrap":

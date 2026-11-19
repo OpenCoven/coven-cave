@@ -92,15 +92,17 @@ assert.match(
 console.log("access-groups route.test.ts: ok");
 
 // Group mutations feed the grant-change log (cave-8qew1). These routes are
-// isLocalOrigin-only — the phone cannot reach them — so the actor is always
-// loopback; pin it on all three so a later edit can't drop the attribution.
+// isLocalOrigin-only — the phone cannot reach them — so the actor is the
+// desktop or an unverified dev caller, taken from the verified request; pin it
+// on all three so a later edit can't drop the attribution.
 assert.equal(
-  (listRoute.match(/actor: "loopback"/g) ?? []).length,
+  (listRoute.match(/actor: permissionMutationActor\(req\)/g) ?? []).length,
   1,
   "the create route should record its actor",
 );
 assert.equal(
-  (itemRoute.match(/actor: "loopback"/g) ?? []).length,
+  (itemRoute.match(/actor: permissionMutationActor\(req\)/g) ?? []).length,
   2,
   "both the update and delete routes should record their actor",
 );
+assert.doesNotMatch(listRoute + itemRoute, /actor: "loopback"/, "no route writes the legacy loopback actor");

@@ -15,16 +15,22 @@ const tmp = await mkdtemp(path.join(tmpdir(), "trusted-grant-mutation-test-"));
 process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = path.join(tmp, "permissions.json");
 process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE = path.join(tmp, "permission-config.json");
 process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(tmp, "projects.json");
-delete process.env.COVEN_CAVE_AUTH_TOKEN;
+// The desktop is a local request that presents the sidecar token, as in the
+// packaged app and `dev:app`. Tokenless dev is covered at the end.
+const DESKTOP_TOKEN = "desktop-sidecar-token";
+process.env.COVEN_CAVE_AUTH_TOKEN = DESKTOP_TOKEN;
+delete process.env.CAVE_DEV_ALLOW_PERMISSION_MUTATIONS;
 
 try {
-  const { MOBILE_ACCESS_HEADER } = await import("../../proxy-helpers.ts");
+  const { MOBILE_ACCESS_HEADER, TOKEN_HEADER } = await import("../../proxy-helpers.ts");
   const {
     requireTrustedHumanGrantMutation,
     requireTrustedHumanCanvasMutation,
     isVerifiedMobileRequest,
+    permissionMutationActor,
   } = await import("./trusted-grant-mutation.ts");
-  const { updateMobileWriteAccess } = await import("../project-permissions.ts");
+  const { updateMobileWriteAccess, listRecentPermissionEvents } = await import("../project-permissions.ts");
+  const { permissionMutationStartupWarning } = await import("./permission-mutation-mode.ts");
   const { GET: getMobilePermissions, PATCH: patchMobilePermissions } = await import(
     "../../app/api/mobile-permissions/route.ts"
   );
@@ -44,8 +50,9 @@ try {
 
   const request = (headers: Record<string, string>, init: RequestInit = {}) =>
     new Request("http://example.test/api/anything", { ...init, headers });
+  // Without a sidecar token configured, the header is simply ignored.
   const loopback = (extra: Record<string, string> = {}, init: RequestInit = {}) =>
-    request({ host: "127.0.0.1:3000", ...extra }, init);
+    request({ host: "127.0.0.1:3000", [TOKEN_HEADER]: DESKTOP_TOKEN, ...extra }, init);
   const mobile = (extra: Record<string, string> = {}, init: RequestInit = {}) =>
     request({ host: "100.101.102.103:8443", [MOBILE_ACCESS_HEADER]: "1", ...extra }, init);
 
@@ -248,6 +255,102 @@ try {
   assert.equal(relockedSave.status, 403, "relocking the opt-in blocks the route again");
   assert.match((await relockedSave.json()).error, /missing familiarId/);
   assert.equal(await readFile(filePath, "utf8"), "saved from phone\n", "denied save wrote nothing");
+
+  // --- real actors --------------------------------------------------------
+
+  assert.equal(permissionMutationActor(loopback()), "desktop", "a token-bearing local caller is the desktop");
+  assert.equal(permissionMutationActor(mobile()), "mobile");
+  const optInEvents = (await listRecentPermissionEvents())
+    .filter((event) => event.kind === "mobile-access-changed")
+    .reverse();
+  const canvasOptIn = optInEvents.find((event) => event.details.allowMobileCanvasWritesTo === true);
+  assert.equal(canvasOptIn.actor, "desktop", "a route change is logged with the desktop actor");
+  assert.equal(canvasOptIn.details.allowMobileCanvasWritesFrom, false);
+  assert.equal("allowMobileGrantMutationsTo" in canvasOptIn.details, false, "only changed flags are logged");
+  assert.equal(optInEvents.at(-1).actor, "system", "a direct internal call is the app itself");
+  const eventCount = (await listRecentPermissionEvents()).length;
+  await updateMobileWriteAccess({ allowMobileFileWrites: false }, { actor: "desktop" });
+  assert.equal((await listRecentPermissionEvents()).length, eventCount, "a no-op patch logs nothing");
+
+  // --- tokenless dev ------------------------------------------------------
+
+  delete process.env.COVEN_CAVE_AUTH_TOKEN;
+  const tokenless = await requireTrustedHumanGrantMutation(loopback());
+  assert.equal(tokenless?.status, 403, "tokenless dev refuses grant changes from any local caller");
+  const tokenlessBody = await tokenless.json();
+  assert.equal(tokenlessBody.code, "tokenless_permission_change");
+  assert.match(tokenlessBody.error, /CAVE_DEV_ALLOW_PERMISSION_MUTATIONS=1/, "the 403 names the escape hatch");
+  const tokenlessPatch = await patchMobilePermissions(
+    loopback({ "content-type": "application/json" }, { method: "PATCH", body: JSON.stringify({ fileWrites: true }) }),
+  );
+  assert.equal(tokenlessPatch.status, 403, "tokenless dev refuses phone opt-in changes");
+  assert.equal((await (await getMobilePermissions(loopback())).json()).fileWrites, false, "and changed nothing");
+  assert.equal(
+    await requireTrustedHumanGrantMutation(mobile()),
+    null,
+    "the proxy-verified phone is unaffected (its opt-in is still on from above)",
+  );
+  assert.equal(
+    await requireTrustedHumanCanvasMutation(loopback()),
+    null,
+    "canvas edits are not permission changes and are unaffected",
+  );
+  assert.equal(permissionMutationStartupWarning(), null, "no startup warning without the escape hatch");
+
+  // Every permission-changing route refuses, before reading or writing anything.
+  const grantsRoute = await import("../../app/api/project-grants/route.ts");
+  const groupsRoute = await import("../../app/api/access-groups/route.ts");
+  const groupRoute = await import("../../app/api/access-groups/[id]/route.ts");
+  const proposalsRoute = await import("../../app/api/grant-proposals/route.ts");
+  const proposalRoute = await import("../../app/api/grant-proposals/[id]/route.ts");
+  const restoreRoute = await import("../../app/api/backup/restore/route.ts");
+  const { readFile: readStore } = await import("node:fs/promises");
+  const storeBefore = await readStore(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, "utf8");
+  const json = (method, body) => loopback(
+    { "content-type": "application/json" },
+    { method, body: JSON.stringify(body) },
+  );
+  const params = { params: Promise.resolve({ id: "any" }) };
+  const tokenlessCalls = {
+    "project-grants POST": () => grantsRoute.POST(json("POST", { targetFamiliarId: "echo", projectId: "cave" })),
+    "project-grants POST repairOrphans": () => grantsRoute.POST(json("POST", { repairOrphans: true })),
+    "project-grants DELETE": () => grantsRoute.DELETE(json("DELETE", { targetFamiliarId: "echo", projectId: "cave" })),
+    "access-groups POST": () => groupsRoute.POST(json("POST", { name: "G" })),
+    "access-groups PATCH": () => groupRoute.PATCH(json("PATCH", { name: "H" }), params),
+    "access-groups DELETE": () => groupRoute.DELETE(json("DELETE", {}), params),
+    "grant-proposals POST": () => proposalsRoute.POST(json("POST", { proposedBy: "supreme", targetFamiliarId: "echo", projectId: "cave" })),
+    "grant-proposals PATCH": () => proposalRoute.PATCH(json("PATCH", { decision: "accepted" }), params),
+    "backup restore": () => restoreRoute.POST(json("POST", { archiveBase64: "AAAA", passphrase: "x" })),
+  };
+  for (const [label, call] of Object.entries(tokenlessCalls)) {
+    const response = await call();
+    assert.equal(response.status, 403, `${label} is refused in tokenless dev`);
+    assert.equal((await response.json()).code, "tokenless_permission_change", label);
+  }
+  assert.equal(
+    await readStore(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, "utf8"),
+    storeBefore,
+    "refused calls leave the permission store untouched",
+  );
+
+  process.env.CAVE_DEV_ALLOW_PERMISSION_MUTATIONS = "1";
+  assert.equal(await requireTrustedHumanGrantMutation(loopback()), null, "the escape hatch re-allows local changes");
+  assert.equal(permissionMutationActor(loopback()), "dev-unverified", "and they are logged as unverified");
+  assert.match(permissionMutationStartupWarning(), /WARNING: CAVE_DEV_ALLOW_PERMISSION_MUTATIONS=1/);
+  const hatchPatch = await patchMobilePermissions(
+    loopback({ "content-type": "application/json" }, { method: "PATCH", body: JSON.stringify({ fileWrites: true }) }),
+  );
+  assert.equal(hatchPatch.status, 200);
+  const [hatchEvent] = await listRecentPermissionEvents();
+  assert.equal(hatchEvent.kind, "mobile-access-changed");
+  assert.equal(hatchEvent.actor, "dev-unverified");
+  process.env.CAVE_DEV_ALLOW_PERMISSION_MUTATIONS = "true";
+  assert.equal(
+    (await requireTrustedHumanGrantMutation(loopback()))?.status,
+    403,
+    "only the literal value 1 opens the escape hatch",
+  );
+  delete process.env.CAVE_DEV_ALLOW_PERMISSION_MUTATIONS;
 
   console.log("trusted-grant-mutation.test.ts: ok");
 } finally {

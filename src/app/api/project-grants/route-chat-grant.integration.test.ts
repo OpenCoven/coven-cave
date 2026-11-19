@@ -32,7 +32,10 @@ process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(testRoot, "projects.json");
 process.env.COVEN_HOME = covenHome;
 process.env.COVEN_CAVE_HOME = caveHomeDir;
 process.env.COVEN_SOCKET = socketPath;
-delete process.env.COVEN_CAVE_AUTH_TOKEN;
+// The desktop is a local request presenting the sidecar token, as in the
+// packaged app and `dev:app`; tokenless dev refuses grant changes.
+const DESKTOP_TOKEN = "desktop-sidecar-token";
+process.env.COVEN_CAVE_AUTH_TOKEN = DESKTOP_TOKEN;
 await writeFile(
   path.join(covenHome, "familiars.toml"),
   '[[familiar]]\nid = "nova"\ndisplay_name = "Nova"\nemoji = "*"\nrole = "Builder"\ndescription = "test"\nworkspace = "/tmp"\nicon = "ph:sparkle"\n',
@@ -74,7 +77,7 @@ const { grantProjectToFamiliar, revokeProjectFromFamiliar } = await import("../.
 const project = await createProject({ name: "Scratch", root: path.join(testRoot, "proj") });
 
 type Body = Record<string, unknown>;
-const LOCAL = { host: "127.0.0.1:3000" };
+const LOCAL = { host: "127.0.0.1:3000", "x-coven-cave-token": DESKTOP_TOKEN };
 
 function request(method: "POST" | "DELETE", body: Body, headers: Record<string, string> = LOCAL): Request {
   return new Request("http://127.0.0.1:3000/api/project-grants", {
@@ -113,7 +116,7 @@ test("Chat's grant from a local origin is applied and logged as a human desktop 
   const after = await state();
   assert.equal(after.access, "write");
   assert.equal(after.changes.length, before + 1, "exactly one logged change");
-  assert.deepEqual(lastChange(after.changes), { from: "read", to: "write", actor: "loopback", kind: "direct" });
+  assert.deepEqual(lastChange(after.changes), { from: "read", to: "write", actor: "desktop", kind: "direct" });
 });
 
 test("Undo restores the previous grant, or revokes when there was none, and logs each step", async () => {
@@ -122,7 +125,7 @@ test("Undo restores the previous grant, or revokes when there was none, and logs
   assert.equal(res.status, 200);
   let now = await state();
   assert.equal(now.access, "read");
-  assert.deepEqual(lastChange(now.changes), { from: "write", to: "read", actor: "loopback", kind: "direct" });
+  assert.deepEqual(lastChange(now.changes), { from: "write", to: "read", actor: "desktop", kind: "direct" });
 
   await reset("write");
   res = await DELETE(request("DELETE", { ...target(), expectedAccess: "write" }));
@@ -130,7 +133,7 @@ test("Undo restores the previous grant, or revokes when there was none, and logs
   assert.equal((await res.json()).revoked, true);
   now = await state();
   assert.equal(now.access, null);
-  assert.deepEqual(lastChange(now.changes), { from: "write", to: null, actor: "loopback", kind: "direct" });
+  assert.deepEqual(lastChange(now.changes), { from: "write", to: null, actor: "desktop", kind: "direct" });
 });
 
 test("a request that isn't from the local desktop changes nothing", async () => {
@@ -139,6 +142,8 @@ test("a request that isn't from the local desktop changes nothing", async () => 
   const untrusted: Array<Record<string, string>> = [
     { host: "cave.example.com" },
     { host: "192.168.1.20:3000" },
+    // A loopback caller without the sidecar token (a familiar's curl).
+    { host: "127.0.0.1:3000" },
     // The paired phone without the desktop opt-in is refused too.
     { host: "127.0.0.1:3000", [MOBILE_ACCESS_HEADER]: "1" },
   ];

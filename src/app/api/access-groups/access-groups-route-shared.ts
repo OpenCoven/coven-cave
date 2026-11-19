@@ -2,15 +2,17 @@ import { NextResponse } from "next/server";
 
 import type { ProjectAccessLevel } from "@/lib/project-permissions";
 import { isLocalOrigin } from "@/lib/server/local-origin";
+import { refuseTokenlessPermissionMutation } from "@/lib/server/trusted-grant-mutation";
 
 /**
  * Access-group mutations are the same class as direct project grants (a group
  * grant is a real grant to every member), so they get the same PR #3306 gate:
  * only a local desktop request may mutate — mobile/tailnet requests are
- * rejected even if their Host is spoofed to loopback.
+ * rejected even if their Host is spoofed to loopback. Tokenless dev is refused
+ * unless the server was started with the escape hatch.
  */
 export function requireLocalHumanGrantMutation(req: Request): Response | null {
-  if (isLocalOrigin(req)) return null;
+  if (isLocalOrigin(req)) return refuseTokenlessPermissionMutation();
   return NextResponse.json(
     { ok: false, error: "access group changes must be confirmed from the local desktop" },
     { status: 403 },

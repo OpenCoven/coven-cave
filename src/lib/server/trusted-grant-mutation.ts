@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server.js";
 
 import { MOBILE_ACCESS_HEADER } from "../../proxy-helpers.ts";
-import { loadMobileWriteAccess } from "../project-permissions.ts";
+import { loadMobileWriteAccess, type GrantChangeActor } from "../project-permissions.ts";
 import { isLocalOrigin } from "./local-origin.ts";
+import {
+  TOKENLESS_PERMISSION_MUTATION_ERROR,
+  permissionMutationMode,
+} from "./permission-mutation-mode.ts";
 
 /**
  * True when the proxy has marked this request as coming from the human's
@@ -16,8 +20,33 @@ export function isVerifiedMobileRequest(req: Request): boolean {
 }
 
 /**
+ * Refuse a LOCAL permission change when the server has no sidecar token and
+ * was not started with the dev escape hatch (see permission-mutation-mode.ts).
+ * Call it only after the request passed `isLocalOrigin`. The verified phone
+ * is not affected: the proxy authenticates it with its own credential.
+ */
+export function refuseTokenlessPermissionMutation(): Response | null {
+  if (permissionMutationMode() !== "refused") return null;
+  return NextResponse.json(
+    { ok: false, code: "tokenless_permission_change", error: TOKENLESS_PERMISSION_MUTATION_ERROR },
+    { status: 403 },
+  );
+}
+
+/**
+ * What is actually known about who made a permission change, for the audit
+ * log. A local request is the desktop only when it had to present the sidecar
+ * token; without one it is an unverified dev caller.
+ */
+export function permissionMutationActor(req: Request): GrantChangeActor {
+  if (isVerifiedMobileRequest(req)) return "mobile";
+  return permissionMutationMode() === "token" ? "desktop" : "dev-unverified";
+}
+
+/**
  * Gate for human-confirmed grant mutations (direct grants, proposal
- * decisions). The local desktop (loopback) always qualifies. The human's
+ * decisions). The local desktop (loopback) qualifies when it presents the
+ * sidecar token, or in tokenless dev only behind the escape hatch. The human's
  * paired phone qualifies ONLY when the desktop opt-in
  * `allowMobileGrantMutations` is enabled — the flag itself is mutable only
  * from the desktop (/api/mobile-permissions PATCH is loopback-gated), so the
@@ -25,7 +54,7 @@ export function isVerifiedMobileRequest(req: Request): boolean {
  * are rejected separately by each route's rejectRelayedApproval guard.
  */
 export async function requireTrustedHumanGrantMutation(req: Request): Promise<Response | null> {
-  if (isLocalOrigin(req)) return null;
+  if (isLocalOrigin(req)) return refuseTokenlessPermissionMutation();
   if (isVerifiedMobileRequest(req)) {
     const { allowMobileGrantMutations } = await loadMobileWriteAccess();
     if (allowMobileGrantMutations) return null;

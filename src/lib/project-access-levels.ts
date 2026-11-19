@@ -48,10 +48,16 @@ export function accessLevelSatisfies(
   return actual === "write" || required === "read";
 }
 
-/** Coerce an untrusted value to a level; anything unrecognised means "write"
- *  because v1 grants (which predate levels) unlocked every surface. */
-export function normalizeAccessLevel(value: unknown): ProjectAccessLevel {
-  return value === "read" ? "read" : "write";
+/**
+ * Coerce an untrusted value to a level. An ABSENT value means "write": v1
+ * grants predate levels and unlocked every surface, so reading them as
+ * anything less would silently revoke them. Any other value that is not
+ * "read" or "write" is unrecognised and means no access (null).
+ */
+export function normalizeAccessLevel(value: unknown): ProjectAccessLevel | null {
+  if (value === undefined) return "write";
+  if (value === "read" || value === "write") return value;
+  return null;
 }
 
 /** Max of two levels under read < write. */
@@ -117,11 +123,9 @@ export function resolveEffectiveAccess(args: {
     if (!group.memberFamiliarIds.includes(args.familiarId)) continue;
     const grant = group.projectGrants.find((entry) => entry.projectId === args.projectId);
     if (!grant) continue;
-    groups.push({
-      groupId: group.id,
-      groupName: group.name,
-      access: normalizeAccessLevel(grant.access),
-    });
+    const access = normalizeAccessLevel(grant.access);
+    if (!access) continue;
+    groups.push({ groupId: group.id, groupName: group.name, access });
   }
 
   let level = directLevel;

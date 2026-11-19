@@ -8,6 +8,7 @@ import {
 } from "@/lib/project-permissions";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
+import { permissionMutationActor } from "@/lib/server/trusted-grant-mutation";
 import {
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
@@ -115,7 +116,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   // Run both unconditionally; 404 only when neither the row nor any grant/proposal
   // residue existed — so a repeat delete is idempotent and residue is cleanable.
   const deleted = await deleteProject(id);
-  const cleaned = await revokeAllGrantsForProject(id);
+  const cleaned = await revokeAllGrantsForProject(id, { actor: permissionMutationActor(req) });
   if (
     !deleted &&
     cleaned.grants === 0 &&

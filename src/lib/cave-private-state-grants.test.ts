@@ -265,12 +265,17 @@ try {
   // A request accepted before the rule, whose undo window has passed, was
   // already a Write grant on every read. It stays one, for Projects to flag
   // and a person to narrow. Inside the window the folder can't move onto the
-  // private state instead: the route test covers that.
+  // private state instead: the route test covers that. The acceptance is on
+  // record, as for any human accept; without one the row would be held.
   await seed({
     projectGrants: [], accessGroups: [],
     grantProposals: [{
       id: "old", proposedBy: "supreme", targetFamiliarId: "echo", projectId: "home",
       access: "write", status: "accepting", createdAt: at, acceptedAt: at, finalizesAt: at,
+    }],
+    permissionEvents: [{
+      id: "accept-old", at, kind: "proposal-accepted", actor: "desktop", proposalId: "old",
+      details: { access: "write", acceptedAt: at, finalizesAt: at },
     }],
   });
   grants = await listProjectGrants();

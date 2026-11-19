@@ -349,7 +349,8 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     if (!familiar || !grantsData) return map;
     for (const grant of grantsData.grants) {
       if (grant.familiarId !== familiar.id) continue;
-      map.set(grant.projectId, normalizeAccessLevel(grant.access));
+      const level = normalizeAccessLevel(grant.access);
+      if (level) map.set(grant.projectId, level);
     }
     for (const [projectId, level] of optimistic) {
       if (level === null) map.delete(projectId);

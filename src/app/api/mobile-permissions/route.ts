@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server.js";
 
 import { isLocalOrigin } from "@/lib/server/local-origin";
+import {
+  permissionMutationActor,
+  refuseTokenlessPermissionMutation,
+} from "@/lib/server/trusted-grant-mutation";
 import { loadMobileWriteAccess, updateMobileWriteAccess } from "@/lib/project-permissions";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +34,8 @@ export async function PATCH(req: Request) {
       { status: 403 },
     );
   }
+  const tokenless = refuseTokenlessPermissionMutation();
+  if (tokenless) return tokenless;
   let payload: Record<string, unknown>;
   try {
     payload = (await req.json()) as Record<string, unknown>;
@@ -78,7 +84,7 @@ export async function PATCH(req: Request) {
       { status: 400 },
     );
   }
-  const next = await updateMobileWriteAccess(patch);
+  const next = await updateMobileWriteAccess(patch, { actor: permissionMutationActor(req) });
   return NextResponse.json({
     ok: true,
     grantMutations: next.allowMobileGrantMutations,

@@ -48,6 +48,7 @@ import { createDeviceAccessStore } from "./src/lib/server/device-access/store.ts
 import { createDeviceAccessGateway } from "./src/lib/server/device-access/gateway.ts";
 import { deferDeviceAccessStore } from "./src/lib/server/device-access/deferred.ts";
 import { warmHarnessSpawnPath } from "./src/lib/harness-spawn-env.ts";
+import { permissionMutationStartupWarning } from "./src/lib/server/permission-mutation-mode.ts";
 import {
   createRemoteJsonCompression,
   shouldCompressRemoteRequest,
@@ -168,6 +169,12 @@ function accessToken(): string {
   return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
 }
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
+{
+  // Tokenless dev refuses permission changes unless this process was started
+  // with the escape hatch; say so loudly when it was.
+  const warning = permissionMutationStartupWarning();
+  if (warning) console.warn(warning);
+}
 
 const CLIENT_V1_DISCOVERY_FILE = "client-v1-discovery.json";
 const CLIENT_V1_DISCOVERY_STARTED_AT = new Date().toISOString();

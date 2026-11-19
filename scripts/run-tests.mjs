@@ -327,6 +327,7 @@ export const SUITES = {
     "src/lib/cave-private-state-grants.test.ts",
     "src/lib/cave-private-state-paths.test.ts",
     "src/lib/project-grant-audit.test.ts",
+    "src/lib/project-permission-events.test.ts",
     "src/lib/project-access-levels.test.ts",
     "src/lib/project-icon-prompt.test.ts",
     "src/lib/project-icon-image-provider.test.ts",
