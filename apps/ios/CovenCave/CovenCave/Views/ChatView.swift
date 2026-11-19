@@ -92,6 +92,10 @@ struct ChatView: View {
     @State private var dictation = SpeechDictation()
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [PendingImage] = []
+    @State private var composerContentHeight: CGFloat = ChatChrome.composerDraftHeight + 44 + 8 + 24 + 16
+    #if DEBUG
+    @State private var stagedPreviewImage = false
+    #endif
     @State private var draftPersistenceTask: Task<Void, Never>?
     /// "New messages" divider: computed once per visit, *before*
     /// `markThreadViewed` moves the seen boundary, then left in place for
@@ -382,6 +386,17 @@ struct ChatView: View {
         dayChipIdleTask = nil
     }
 
+    private var headerIdentity: String {
+        if thread.isGroup { return "\(thread.familiarIds.count) familiars" }
+        guard let id = thread.familiarIds.first else { return "Conversation" }
+        return app.familiar(id)?.displayName ?? id
+    }
+
+    private func toggleSessionDetails() {
+        Haptics.tap()
+        showSessionDetails.toggle()
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             messageScroll
@@ -397,9 +412,8 @@ struct ChatView: View {
                     }
                 }
             projectContext
-            // Model access moved into the header's agent pill (and /model), so
-            // the composer anchors the screen with nothing between it and the
-            // transcript.
+            // The conversation pill and compact composer model control share
+            // the existing session details owner.
             if thread.isFlowRun {
                 flowReadOnlyComposer
             } else if isRecoveryOnlyThread {
@@ -454,33 +468,23 @@ struct ChatView: View {
                 .accessibilityLabel("Open navigation")
             }
             ToolbarItem(placement: .principal) {
-                HStack(spacing: 9) {
+                PillSelector(label: thread.title, sublabel: headerIdentity,
+                             active: showSessionDetails, action: toggleSessionDetails) {
                     Circle()
                         .fill(chatPresence.color)
                         .frame(width: 7, height: 7)
-                    Text(thread.title)
-                        .font(.headline.weight(.semibold))
-                        .lineLimit(1)
-                        .nativeToolbarTitleScaling()
+                        .accessibilityHidden(true)
                 }
-                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("Session controls")
                 .accessibilityLabel("\(thread.title), \(chatPresence.label)")
+                .accessibilityValue(showSessionDetails ? "Expanded" : "Collapsed")
+                .accessibilityHint("\(headerIdentity). Opens model and conversation controls")
             }
             // iOS 18–25 keep the original order: Call, then Session controls.
             if !NativeToolbar.usesLiquidGlass, let voiceCallLaunch, app.client != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     voiceCallButton(voiceCallLaunch)
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Haptics.tap()
-                    showSessionDetails.toggle()
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                }
-                .accessibilityLabel("Session controls")
-                .accessibilityValue(showSessionDetails ? "Expanded" : "Collapsed")
             }
             // On iOS 26, calling the familiar is the screen's primary action:
             // native toolbars put it last, filled and tinted, in its own
@@ -673,7 +677,7 @@ struct ChatView: View {
     }
 
     private var sessionDetailsCard: some View {
-        VStack(spacing: 0) {
+        let rows = VStack(spacing: 0) {
             sessionControlRow(systemImage: "brain") {
                 Toggle("Show reasoning summaries", isOn: Binding(
                     get: { showReasoningSummaries },
@@ -761,9 +765,21 @@ struct ChatView: View {
         }
         .disabled(thread.isFlowRun)
         .padding(.vertical, 4)
+        .fixedSize(horizontal: false, vertical: true)
+
+        // Keep each row's full Dynamic Type height. In a short window or at
+        // accessibility sizes, scroll the menu instead of compressing its
+        // rows and letting their text paint over neighboring actions.
+        return ViewThatFits(in: .vertical) {
+            rows
+            ScrollView(.vertical) {
+                rows
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
         .frame(maxWidth: 420)
-        .glass(.raised, cornerRadius: 16)
-        .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+        .chatSurface(.elevated, cornerRadius: ChatChrome.menuRadius)
+        .clipShape(RoundedRectangle(cornerRadius: ChatChrome.menuRadius, style: .continuous))
     }
 
     @ViewBuilder
@@ -831,8 +847,10 @@ struct ChatView: View {
     ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: systemImage)
+                .font(.system(size: 18))
                 .foregroundStyle(chrome.accent)
                 .frame(width: 22)
+                .accessibilityHidden(true)
             control()
                 .pickerStyle(.segmented)
         }
@@ -984,7 +1002,7 @@ struct ChatView: View {
                 Text(label).foregroundStyle(.primary)
                 Spacer(minLength: 12)
                 Text(value)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(chrome.textPrimary)
                     .lineLimit(1)
                 sessionDetailChevron(showsChevron)
             }
@@ -995,7 +1013,7 @@ struct ChatView: View {
                     Text(label).foregroundStyle(.primary)
                     Text(value)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(chrome.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
@@ -1011,6 +1029,7 @@ struct ChatView: View {
 
     private func sessionDetailIcon(_ systemImage: String) -> some View {
         Image(systemName: systemImage)
+            .font(.system(size: 18))
             .foregroundStyle(chrome.accent)
             .frame(width: 22)
             .accessibilityHidden(true)
@@ -1139,8 +1158,8 @@ struct ChatView: View {
                 }
             }
             // A fresh thread with no messages shouldn't read as a blank void.
-            .overlay {
-                if thread.messages.isEmpty {
+            .overlay(alignment: .bottom) {
+                if thread.messages.isEmpty && !composerFocused {
                     emptyState
                 }
             }
@@ -1356,103 +1375,62 @@ struct ChatView: View {
 
     // MARK: - Empty state
 
-    /// Cold-start state per the design's "Start a chat" screen: a
-    /// rotated-square sigil with a soft glow, serif headline, a short warded
-    /// line, and "Conjure something" starter cards. Cards FILL the composer
-    /// (focused, ready to tweak) rather than firing a send — same convention
-    /// as the desktop quick-chat suggestions.
+    /// Quiet, bounded suggestions above the composer. Filling a starter keeps
+    /// the existing conversation and draft owner; it never dispatches a send.
     private var emptyState: some View {
-        VStack(spacing: 18) {
-            sigil
-            VStack(spacing: 8) {
-                Text("Start a chat")
-                    .font(.system(size: 26, weight: .medium, design: .serif))
-                    .italic()
-                    .foregroundStyle(.primary)
-                Button {
-                    if thread.isGroup {
-                        showPermissionFamiliarPicker = true
-                        return
-                    }
-                    guard let familiar = permissionsTarget else { return }
-                    permissionsFamiliar = familiar
-                } label: {
-                    (
-                        Text("Write a message or choose a suggestion below. Your familiar works from the desktop. Project access follows \(wardScope) active ")
-                            .foregroundStyle(.secondary)
-                        + Text("ward.")
-                            .foregroundStyle(chrome.accent)
-                            .underline()
-                    )
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .frame(maxWidth: 270)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                .buttonStyle(.plain)
-                .disabled(!canInspectWard)
-                .accessibilityHint("Opens project and tool permissions")
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Conjure something")
-                    .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                    .kerning(0.6)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 4)
-                ForEach(emptySuggestions) { suggestion in
-                    EmptyChatSuggestionRow(systemImage: suggestion.icon,
-                                           label: suggestion.label,
-                                           hint: suggestion.hint) {
-                        draft = suggestion.label
-                        composerFocused = true
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 30)
-        .padding(.vertical, 24)
-    }
-
-    /// Rotated-square moon-stars mark with a radial accent glow (design's
-    /// empty-session sigil).
-    private var sigil: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [chrome.accent.opacity(0.28), .clear],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 48
-                    )
-                )
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(chrome.bgElevated)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [chrome.accent.opacity(0.32), .clear],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+        ScrollView {
+            VStack(spacing: 18) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.title2)
+                    .foregroundStyle(chrome.textMuted)
+                    .accessibilityHidden(true)
+                VStack(spacing: 8) {
+                    Text("Start a chat")
+                        .font(.system(size: 26, weight: .medium, design: .serif))
+                        .italic()
+                        .foregroundStyle(.primary)
+                    Button {
+                        if thread.isGroup {
+                            showPermissionFamiliarPicker = true
+                            return
+                        }
+                        guard let familiar = permissionsTarget else { return }
+                        permissionsFamiliar = familiar
+                    } label: {
+                        (
+                            Text("Write a message or choose a suggestion below. Your familiar works from the desktop. Project access follows \(wardScope) active ")
+                                .foregroundStyle(chrome.textPrimary)
+                            + Text("ward.")
+                                .foregroundStyle(chrome.accent)
+                                .underline()
                         )
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(3)
+                        .frame(maxWidth: 270)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canInspectWard)
+                    .accessibilityHint("Opens project and tool permissions")
                 }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(chrome.accent.opacity(0.5), lineWidth: 1)
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(emptySuggestions) { suggestion in
+                        EmptyChatSuggestionRow(systemImage: suggestion.icon,
+                                               label: suggestion.label,
+                                               hint: suggestion.hint) {
+                            draft = suggestion.label
+                            composerFocused = true
+                        }
+                    }
                 }
-                .frame(width: 74, height: 74)
-                .rotationEffect(.degrees(45))
-                .shadow(color: chrome.accent.opacity(0.45), radius: 24, y: 8)
-            Image(systemName: "moon.stars.fill")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(chrome.accent)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
         }
-        .frame(width: 96, height: 96)
-        .accessibilityHidden(true)
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
+        .defaultScrollAnchor(.bottom, for: .alignment)
     }
 
     private var emptySuggestions: [EmptyChatSuggestion] {
@@ -1491,45 +1469,48 @@ struct ChatView: View {
     // MARK: - Composer
 
     private var composer: some View {
-        VStack(spacing: 8) {
-            if !chatAccessLoaded {
-                HStack(spacing: 12) {
-                    Label("Chat access unavailable", systemImage: "lock.shield")
-                        .font(.footnote)
-                    Spacer(minLength: 8)
-                    Button("Refresh access") {
-                        Task { await app.refreshChatAccess() }
+        // The native parent supplies the available height after keyboard and
+        // safe areas. Normal chat uses the natural height; short windows can
+        // scroll the same live controls instead of clipping staged images.
+        ScrollView(.vertical) {
+            VStack(spacing: 8) {
+                if !chatAccessLoaded {
+                    HStack(spacing: 12) {
+                        Label("Chat access unavailable", systemImage: "lock.shield")
+                            .font(.footnote)
+                        Spacer(minLength: 8)
+                        Button("Refresh access") {
+                            Task { await app.refreshChatAccess() }
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .frame(minHeight: 44)
                     }
-                    .font(.footnote.weight(.semibold))
-                    .frame(minHeight: 44)
+                    .foregroundStyle(chrome.textSecondary)
+                    .padding(.horizontal, 16)
+                    .background(chrome.bgRaised)
                 }
-                .foregroundStyle(chrome.textSecondary)
-                .padding(.horizontal, 16)
-                .background(chrome.bgRaised)
-            }
-            if showActionMenu {
-                FloatingActionMenu(actions: composerActions) { showActionMenu = false }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if showActionMenu {
+                    FloatingActionMenu(actions: composerActions) { showActionMenu = false }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .transition(.scale(scale: 0.94, anchor: .bottomLeading).combined(with: .opacity))
+                }
+                if let suggestionList {
+                    SuggestionMenu(list: suggestionList,
+                                   selection: SuggestionSelection.clamp(suggestionIndex, count: suggestionList.items.count),
+                                   avatarSource: { app.client?.familiarAvatarSource(for: $0) }) { item in
+                        pickSuggestion(item)
+                    }
                     .padding(.horizontal, 12)
-                    .transition(.scale(scale: 0.94, anchor: .bottomLeading).combined(with: .opacity))
-            }
-            if let suggestionList {
-                SuggestionMenu(list: suggestionList,
-                               selection: SuggestionSelection.clamp(suggestionIndex, count: suggestionList.items.count),
-                               avatarSource: { app.client?.familiarAvatarSource(for: $0) }) { item in
-                    pickSuggestion(item)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                .padding(.horizontal, 12)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                composerBar
             }
-            if !pendingImages.isEmpty {
-                attachmentPreviews
-            }
-            if let replyingTo {
-                replyBanner(replyingTo)
-            }
-            composerBar
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerContentHeight = $0 }
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .defaultScrollAnchor(.bottom)
+        .frame(idealHeight: composerContentHeight, maxHeight: composerContentHeight)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showActionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: suggestionList == nil)
         // A different list starts from its first row.
@@ -1548,7 +1529,22 @@ struct ChatView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
         .background(chrome.bgBase)
         // Live dictation streams its running transcript into the draft.
-        .onAppear { dictation.onUpdate = { draft = $0 } }
+        .onAppear {
+            dictation.onUpdate = { draft = $0 }
+            #if DEBUG
+            if app.isConnectingPreview, !stagedPreviewImage,
+               ProcessInfo.processInfo.arguments.contains("--ui-preview-staged-image") {
+                stagedPreviewImage = true
+                // Synthetic geometry fixture through the same staging path as
+                // Photos/Files/Camera; no library access or private image data.
+                let image = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).image { context in
+                    UIColor.systemTeal.setFill()
+                    context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+                }
+                stage(image)
+            }
+            #endif
+        }
         .onChange(of: photoItems) { _, items in
             guard !items.isEmpty else { return }
             let picked = items
@@ -1620,6 +1616,8 @@ struct ChatView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 18))
                                 .foregroundStyle(.white, .black.opacity(0.55))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .offset(x: 6, y: -6)
                         .accessibilityLabel("Remove image")
@@ -1700,35 +1698,19 @@ struct ChatView: View {
     }
 
     private var composerBar: some View {
-        let isEmptyThread = thread.messages.isEmpty
-        let controlSize: CGFloat = isEmptyThread ? 40 : 36
-        return HStack(alignment: .center, spacing: 8) {
-            // The authored composer keeps every control inside one elevated
-            // panel. The plus well remains accent-tinted so attachment/tools
-            // discovery does not depend on text being present.
-            Button {
-                composerFocused = false
-                showActionMenu.toggle()
-            } label: {
-                Image(systemName: showActionMenu ? "xmark" : "plus")
-                    .font(.system(size: isEmptyThread ? 18 : 16, weight: .medium))
-                    .foregroundStyle(chrome.accent)
-                    .frame(width: controlSize, height: controlSize)
-                    .background(
-                        chrome.accent.opacity(showActionMenu ? 0.22 : 0.14),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    )
+        VStack(alignment: .leading, spacing: 8) {
+            if !pendingImages.isEmpty {
+                attachmentPreviews
             }
-            .frame(minWidth: 44, minHeight: 44)
-            .contentShape(Rectangle())
-            .buttonStyle(.glassPress)
-            .accessibilityLabel(showActionMenu ? "Close attach menu" : "Attach or run a tool")
-
+            if let replyingTo {
+                replyBanner(replyingTo)
+            }
             TextField(composerPlaceholder, text: $draft, axis: .vertical)
                 .accessibilityLabel("Message")
-                .font(isEmptyThread ? .body : .callout)
+                .font(.body)
                 .lineLimit(1...6)
-                .padding(.vertical, isEmptyThread ? 8 : 6)
+                .padding(.vertical, 8)
+                .frame(minHeight: ChatChrome.composerDraftHeight, alignment: .topLeading)
                 .focused($composerFocused)
                 // Hardware-keyboard ergonomics (iPad / Mac over Tailscale):
                 // plain Return sends, Shift+Return inserts a newline. The
@@ -1767,68 +1749,84 @@ struct ChatView: View {
                     return .handled
                 }
 
-            Group {
+            HStack(spacing: 8) {
+                CircularIconButton(systemImage: showActionMenu ? "xmark" : "plus",
+                                   active: showActionMenu,
+                                   label: showActionMenu ? "Close attach menu" : "Attach or run a tool") {
+                    composerFocused = false
+                    showActionMenu.toggle()
+                }
+
+                Button(action: toggleSessionDetails) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "slider.horizontal.3")
+                        Text(sessionModelLabel)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2)
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(chrome.textPrimary)
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 44)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.glassPress)
+                .accessibilityIdentifier("Composer session controls")
+                .accessibilityLabel("Model and session controls")
+                .accessibilityValue(sessionModelLabel)
+
+                Spacer(minLength: 0)
+
                 if dictation.isRecording {
                     Button { dictation.stop() } label: {
                         Image(systemName: "stop.fill")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: controlSize, height: controlSize)
-                            .background(Color.red, in: Circle())
-                            .symbolEffect(.pulse, isActive: true)
+                            .foregroundStyle(chrome.textPrimary)
+                            .frame(width: ChatChrome.control, height: ChatChrome.control)
+                            .background(chrome.dangerSoft, in: Circle())
+                            .symbolEffect(.pulse, isActive: !reduceMotion)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
                     .buttonStyle(.glassPress)
                     .transition(.scale.combined(with: .opacity))
                     .accessibilityLabel("Stop dictation")
                 } else {
+                    CircularIconButton(systemImage: "mic", label: "Dictate") {
+                        startDictation()
+                    }
                     Button(action: send) {
                         Image(systemName: "arrow.up")
-                            .font(.system(size: isEmptyThread ? 18 : 16, weight: .bold))
-                            .foregroundStyle(
-                                canSend
-                                    ? (isCommand ? Color.white : chrome.accentForeground)
-                                    : chrome.textMuted
-                            )
-                            .frame(width: controlSize, height: controlSize)
-                            .background(
-                                canSend
-                                    ? (isCommand ? Color.green : chrome.accent)
-                                    : chrome.bgRaised,
-                                in: Circle()
-                            )
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(canSend ? chrome.accentForeground : chrome.textMuted)
+                            .frame(width: ChatChrome.control, height: ChatChrome.control)
+                            .background(canSend ? chrome.accent : chrome.bgRaised, in: Circle())
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
                     .buttonStyle(.glassPress)
                     .disabled(!canSend)
                     .accessibilityLabel(isCommand ? "Run command" : "Send")
                 }
             }
         }
-        .padding(.leading, isEmptyThread ? 12 : 8)
-        .padding(.trailing, isEmptyThread ? 9 : 6)
-        .padding(.vertical, isEmptyThread ? 9 : 6)
-        .background(
-            chrome.bgElevated,
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-        )
+        .padding(12)
+        .chatSurface(.elevated, cornerRadius: ChatChrome.composerRadius,
+                     active: composerFocused || dictation.isRecording)
         .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(dictation.isRecording ? Color.red.opacity(0.5) : borderColor, lineWidth: 1)
+            if dictation.isRecording {
+                RoundedRectangle(cornerRadius: ChatChrome.composerRadius, style: .continuous)
+                    .strokeBorder(chrome.danger, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
         }
-        .shadow(color: .black.opacity(isEmptyThread ? 0.32 : 0.24),
-                radius: isEmptyThread ? 22 : 16, y: 8)
-        // The focused field earns the accent halo — the design language's
-        // one "active" cue — matching the drawer's search treatment.
-        .accentGlow(active: composerFocused || dictation.isRecording)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: canSend)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: isCommand)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: dictation.isRecording)
         .padding(.horizontal, 14)
         .padding(.top, 8)
-        .padding(.bottom, isEmptyThread ? 12 : 8)
+        .padding(.bottom, 8)
     }
 
     private var canSend: Bool {
@@ -1841,15 +1839,10 @@ struct ChatView: View {
         return chatAccessLoaded && thread.canSendMessages
     }
 
-    /// True when the draft is a recognised command — tints the send affordance
-    /// green so the user knows tapping will run a command, not send a message.
+    /// The action label distinguishes a recognised command from a chat send.
     private var isCommand: Bool {
         if case .command = SlashInput.parse(draft) { return true }
         return false
-    }
-
-    private var borderColor: Color {
-        isCommand ? Color.green.opacity(0.5) : Color(.separator)
     }
 
     // MARK: - Send / dispatch

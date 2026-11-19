@@ -3,14 +3,14 @@ import SwiftUI
 // MARK: - Chat chrome — shared tokens + small reusable controls
 //
 // The restyled chat experience is built from a handful of repeated shapes:
-// circular glass icon buttons, capsule pill selectors, floating action menus,
+// circular icon buttons, capsule pill selectors, floating action menus,
 // and icon+label rows. They live here (next to Theme/Glass) so every screen
 // draws them identically instead of hand-rolling paddings per call site.
 //
 // Identity rules (arcane-terminal): near-black canvas comes from the published
-// theme's bgBase; surfaces are the existing glass levels; the accent (violet /
-// cyan depending on theme) appears ONLY on selected or active states via
-// `accentGlow(active:)` — never as ambient decoration.
+// theme's bgBase; chat surfaces reuse the palette's neutral elevation levels.
+// Accent remains available for real state and primary actions, never an
+// ambient wash. Settings and other non-chat glass keeps its existing owner.
 
 enum ChatChrome {
     /// Standard circular control diameter (composer attach, header actions).
@@ -21,6 +21,48 @@ enum ChatChrome {
     static let menuRadius: CGFloat = 20
     /// Circular icon "well" inside menu rows.
     static let iconWell: CGFloat = 34
+    static let composerRadius: CGFloat = 28
+    static let composerDraftHeight: CGFloat = 52
+    static let messageRadius: CGFloat = 22
+}
+
+/// Opaque, palette-owned chat chrome. It remains the same readable surface
+/// under Reduce Transparency, with a stronger outline for Increase Contrast.
+/// Keeping this scoped to chat avoids changing the application's glass system.
+private struct ChatSurfaceBackground<S: InsettableShape>: ViewModifier {
+    let level: GlassLevel
+    let shape: S
+    var active: Bool
+    @Environment(\.chrome) private var chrome
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private var fill: Color {
+        switch level {
+        case .chrome: return chrome.bgBase
+        case .control, .raised: return chrome.bgRaised
+        case .elevated: return chrome.bgElevated
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content.background {
+            shape.fill(fill)
+                .overlay {
+                    shape.strokeBorder(active ? chrome.borderStrong : chrome.borderHairline,
+                                       lineWidth: contrast == .increased ? 1.5 : 0.6)
+                }
+        }
+    }
+}
+
+extension View {
+    func chatSurface<S: InsettableShape>(_ level: GlassLevel, in shape: S, active: Bool = false) -> some View {
+        modifier(ChatSurfaceBackground(level: level, shape: shape, active: active))
+    }
+
+    func chatSurface(_ level: GlassLevel, cornerRadius: CGFloat = ChatChrome.menuRadius, active: Bool = false) -> some View {
+        chatSurface(level, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous), active: active)
+    }
 }
 
 /// Shared editorial title treatment for primary iOS destinations. Large mode
@@ -43,7 +85,7 @@ struct EditorialSurfaceTitle: View {
             if let detail {
                 Text(detail)
                     .font((large ? Font.caption : Font.caption2).weight(.semibold))
-                    .foregroundStyle(chrome.textSecondary)
+                    .foregroundStyle(chrome.textPrimary)
                     .padding(.horizontal, large ? 8 : 6)
                     .padding(.vertical, large ? 3 : 2)
                     .background(chrome.bgElevated, in: Capsule())
@@ -81,10 +123,10 @@ extension ButtonStyle where Self == GlassPressStyle {
 
 // MARK: - CircularIconButton
 
-/// A round glass icon button — the app's standard tap target for icon-only
-/// actions. Always carries an accessibility label; the accent halo appears
-/// only while `active` (selected/recording/etc.), keeping accent usage sparse.
+/// A neutral round button with a labelled, 44-point target. Active controls
+/// use the shared stronger outline without adding a decorative accent wash.
 struct CircularIconButton: View {
+    @Environment(\.chrome) private var chrome
     let systemImage: String
     var size: CGFloat = ChatChrome.control
     var active: Bool = false
@@ -95,10 +137,9 @@ struct CircularIconButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: size * 0.44, weight: .semibold))
-                .foregroundStyle(active ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                .foregroundStyle(active ? chrome.textPrimary : chrome.textSecondary)
                 .scaledControlFrame(size)
-                .glass(.control, in: Circle())
-                .accentGlow(active: active)
+                .chatSurface(.control, in: Circle(), active: active)
         }
         .frame(minWidth: 44, minHeight: 44)
         .contentShape(Rectangle())
@@ -113,6 +154,7 @@ struct CircularIconButton: View {
 /// leading view (avatar/icon), label, optional chevron. Used for the chat
 /// header's agent pill and anywhere a compact "current value" control fits.
 struct PillSelector<Leading: View>: View {
+    @Environment(\.chrome) private var chrome
     var label: String
     var sublabel: String? = nil
     var chevron: Bool = true
@@ -130,10 +172,11 @@ struct PillSelector<Leading: View>: View {
                     Text(label)
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
+                        .nativeToolbarTitleScaling()
                     if let sublabel {
                         Text(sublabel)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(chrome.textPrimary)
                             .lineLimit(1)
                     }
                 }
@@ -143,14 +186,14 @@ struct PillSelector<Leading: View>: View {
                 if chevron {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(chrome.textSecondary)
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .frame(maxWidth: fillsWidth ? .infinity : nil, alignment: .leading)
-            .glass(.control, in: Capsule())
-            .accentGlow(active: active)
+            .frame(minHeight: 44)
+            .chatSurface(.control, in: Capsule(), active: active)
         }
         .buttonStyle(.glassPress)
         .accessibilityLabel(label)
@@ -169,9 +212,10 @@ struct FloatingAction: Identifiable {
 }
 
 /// The rounded menu that floats above the composer when "+" is tapped:
-/// icon-well + label rows on an elevated glass panel. The presenting view owns
+/// icon-well + label rows on an elevated neutral panel. The presenting view owns
 /// the outside-tap scrim; rows dismiss on selection.
 struct FloatingActionMenu: View {
+    @Environment(\.chrome) private var chrome
     let actions: [FloatingAction]
     var onDismiss: () -> Void
 
@@ -185,12 +229,12 @@ struct FloatingActionMenu: View {
                     HStack(spacing: 12) {
                         Image(systemName: item.systemImage)
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(chrome.textPrimary)
                             .frame(width: ChatChrome.iconWell, height: ChatChrome.iconWell)
-                            .glassFill(.raised, in: Circle())
+                            .chatSurface(.raised, in: Circle())
                         Text(item.label)
                             .font(.body)
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(chrome.textPrimary)
                         Spacer(minLength: 12)
                     }
                     .padding(.horizontal, 10)
@@ -203,7 +247,7 @@ struct FloatingActionMenu: View {
         }
         .padding(6)
         .frame(maxWidth: 260, alignment: .leading)
-        .glass(.elevated, in: RoundedRectangle(cornerRadius: ChatChrome.menuRadius, style: .continuous))
+        .chatSurface(.elevated, in: RoundedRectangle(cornerRadius: ChatChrome.menuRadius, style: .continuous))
         .accessibilityAddTraits(.isModal)
     }
 }
@@ -225,40 +269,28 @@ struct EmptyChatSuggestionRow: View {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(chrome.accent)
+                    .foregroundStyle(chrome.textSecondary)
                     .frame(width: 34, height: 34)
-                    .background(
-                        chrome.accent.opacity(0.14),
-                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    )
                 VStack(alignment: .leading, spacing: 1) {
                     Text(label)
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(chrome.textPrimary)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     if let hint {
                         Text(hint)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(chrome.textPrimary)
                             .lineLimit(1)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 8)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .frame(minHeight: 64)
-            .background(
-                chrome.bgRaised,
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(chrome.border, lineWidth: 1)
-            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(GlassPressStyle(scale: 0.98))

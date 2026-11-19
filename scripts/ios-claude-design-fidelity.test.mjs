@@ -75,8 +75,8 @@ assert.match(
 );
 assert.match(
   chrome,
-  /RoundedRectangle\(cornerRadius: 9/,
-  "starter icons use the authored rounded-square well",
+  /struct EmptyChatSuggestionRow:[\s\S]*?\.foregroundStyle\(chrome\.textSecondary\)[\s\S]*?\.frame\(minHeight: 44\)/,
+  "simple starter icon and text rows keep a 44-point target",
 );
 assert.match(
   chrome,
@@ -162,7 +162,7 @@ assert.doesNotMatch(root, /MainTabView/, "RootView mounts the semantically neutr
 assert.match(root, /struct MainShellView/, "the connected root uses MainShellView");
 assert.match(
   root,
-  /ChatsHomeView\(\)[\s\S]*accessibilityHidden\(app\.selectedTab == \.settings\)[\s\S]*if settingsMounted \|\| app\.selectedTab == \.settings \{\s*SettingsView\(\)/s,
+  /ChatsHomeView\(onVisibleThreadChange: \{ visibleThreadId = \$0 \}\)[\s\S]*accessibilityHidden\(app\.selectedTab == \.settings\)[\s\S]*if settingsMounted \|\| app\.selectedTab == \.settings \{\s*SettingsView\(\)/s,
   "Settings preserves the mounted conversation while hiding it from interaction and accessibility",
 );
 assert.match(
@@ -193,7 +193,7 @@ assert.match(
   /geo\.size\.width \* 0\.70/,
   "the drawer keeps enough of the active destination visible to preserve spatial context",
 );
-assert.match(drawer, /accessibilityLabel\("Search chats"\)/,
+assert.match(drawer, /CircularIconButton\(systemImage: "magnifyingglass", label: "Search chats"\)/,
   "drawer search names its chat-only scope");
 assert.match(
   projectSwitcher,
@@ -814,12 +814,16 @@ assert.doesNotMatch(chat, /PluginsPanel|prefillPlugin/,
   "chat no longer opens marketplace management");
 const composerBar = chat.slice(
   chat.indexOf("private var composerBar"),
-  chat.indexOf("\n    private var composerBorderColor"),
+  chat.indexOf("\n    private var canSend"),
 );
 assert.ok(
-  (composerBar.match(/\.frame\(minWidth: 44, minHeight: 44\)/g) ?? []).length >= 3,
-  "composer attach, stop, and send controls keep 44-point minimum hit targets",
+  (composerBar.match(/\.frame\(minWidth: 44, minHeight: 44\)/g) ?? []).length >= 2,
+  "composer stop and send controls keep explicit 44-point minimum hit targets",
 );
+assert.match(composerBar, /CircularIconButton\(systemImage: showActionMenu \? "xmark" : "plus"/,
+  "composer attach uses the shared labelled 44-point control");
+assert.match(composerBar, /CircularIconButton\(\s*systemImage: "mic"/,
+  "composer dictation uses the shared labelled 44-point control");
 
 // Remaining handoff affordances.
 assert.match(

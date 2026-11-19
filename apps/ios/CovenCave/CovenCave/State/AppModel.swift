@@ -2673,6 +2673,7 @@ final class AppModel {
     }
 
     private func configureEmptyChatPreview() {
+        let longIdentity = ProcessInfo.processInfo.arguments.contains("--ui-preview-long-chat-identity")
         connection = ChatSendPreview.isRequested ? CaveConnection(host: ChatSendPreview.origin) : nil
         // The send fixture owns a scratch thread store that is never read
         // back, so its delivery checkpoint may persist without hydration.
@@ -2680,7 +2681,7 @@ final class AppModel {
         familiars = [
             Familiar(
                 id: "nyx",
-                displayName: "Nyx",
+                displayName: longIdentity ? "Nyx, research and engineering companion for the observatory" : "Nyx",
                 role: "Code familiar",
                 description: "Keeps implementation work moving.",
                 pronouns: nil,
@@ -2769,11 +2770,16 @@ final class AppModel {
         threads = [
             ChatThread(
                 id: "ui-preview-empty-chat",
-                title: "Chat with Nyx on Jul 26",
+                title: longIdentity ? "Planning the observatory migration and reviewing the complete research archive" : "Chat with Nyx on Jul 26",
                 familiarIds: ["nyx"],
                 projectRoot: previewProject.root
             ),
         ]
+        if longIdentity {
+            // A real pending-model choice, owned by the same thread state the
+            // composer presents. No model inventory or capability is invented.
+            threads.first?.pendingModelOverride = "preview-lab/observatory-research-model-with-an-extended-context-window"
+        }
         previewChatProjects = [previewProject]
         projects = [previewProject]
         projectsLoaded = true

@@ -2195,6 +2195,7 @@ export const SUITES = {
     // #6359 (end)
   ],
   mobile: [
+    "scripts/ios-process-exit.test.mjs",
     "scripts/ios-release-evidence.test.mjs",
     "src/lib/mobile-access-token.test.ts",
     "src/lib/mobile-handoff.test.ts",

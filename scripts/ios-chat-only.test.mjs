@@ -18,7 +18,7 @@ test("the drawer contains chat navigation without global workspace controls", ()
   for (const retired of ["ProjectContextButton", "openProjectSwitcher", "openFamiliars", 'label: "Tasks"', 'sectionLabel("Workspace")']) {
     assert.ok(!source.includes(retired), `${retired} must not return to the chat-only drawer`);
   }
-  assert.ok(source.includes('accessibilityLabel("Search chats")'));
+  assert.match(source, /CircularIconButton\(systemImage: "magnifyingglass", label: "Search chats"\)/);
 });
 
 test("Chats lists global conversations without scanning transcripts to organize rows", () => {
@@ -46,8 +46,12 @@ test("the largest type sizes keep conversation titles and counts readable", () =
   assert.match(home, /\.lineLimit\(dynamicTypeSize\.isAccessibilitySize \? 2 : 1\)/);
   assert.match(rows, /\.lineLimit\(dynamicTypeSize\.isAccessibilitySize \? 2 : 1\)/,
     "server-only chat titles must also wrap at accessibility sizes");
-  assert.match(home, /isSelected \? chrome\.accentForeground : chrome\.textPrimary/,
-    "selected iPad rows use the accent's contrasting foreground");
+  assert.match(home, /private var primaryColor: Color \{ chrome\.textPrimary \}/,
+    "native list selection retains readable palette-owned primary ink");
+  assert.match(home, /private var secondaryColor: Color \{ chrome\.textPrimary \}/,
+    "small conversation metadata retains readable ink on selected and plain floors");
+  assert.match(home, /if selected \{ return AnyView\(chrome\.bgElevated\) \}/,
+    "selected row colors are paired with the neutral palette-owned floor");
   assert.match(home, /if dynamicTypeSize\.isAccessibilitySize \{\s*projectFilterMenu\(projectChoices\)\s*\} else \{\s*projectFilterStrip\(projectChoices\)/,
     "at accessibility sizes the project strip becomes one menu instead of screen-wide chips");
   assert.match(home, /if dynamicTypeSize\.isAccessibilitySize \{[^}]*?\n\s*ViewThatFits\(in: \.horizontal\) \{\s*HStack\(spacing: 12\) \{\s*navigationButton\s*accessibilityTitle\(oneLine: true\)\s*\.fixedSize\(\)/,
