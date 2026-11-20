@@ -24,6 +24,11 @@ description = "Allows listing active PTY sessions."
 commands.allow = ["pty_list"]
 
 [[permission]]
+identifier = "allow-pty-snapshot"
+description = "Allows replaying recent output of the caller's own PTY session after a terminal view remounts."
+commands.allow = ["pty_snapshot"]
+
+[[permission]]
 identifier = "allow-pty-diagnose"
 description = "Allows running a one-shot PTY diagnostic."
 commands.allow = ["pty_diagnose"]
@@ -72,6 +77,16 @@ commands.allow = ["browser_reload"]
 identifier = "allow-shell-open"
 description = "Allows opening a URL in the system browser."
 commands.allow = ["shell_open"]
+
+[[permission]]
+identifier = "allow-shell-pick-directory"
+description = "Allows asking the person to choose a folder in the system folder picker. Only the folder they choose is returned."
+commands.allow = ["shell_pick_directory"]
+
+[[permission]]
+identifier = "allow-open-tailscale-app"
+description = "Allows opening the installed Tailscale app with fixed, platform-owned arguments."
+commands.allow = ["open_tailscale_app"]
 
 [[permission]]
 identifier = "allow-shell-reveal-path"

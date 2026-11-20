@@ -100,6 +100,9 @@ const requiredPermissionIds = [
   "allow-set-traffic-lights-visible",
   "allow-open-chat-window",
   "allow-shell-reveal-path",
+  "allow-shell-pick-directory",
+  "allow-open-tailscale-app",
+  "allow-pty-snapshot",
   "allow-offline-cache-read",
   "allow-offline-cache-write",
   "allow-offline-cache-clear",
@@ -307,6 +310,8 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     "allow-desktop-reachability-status",
     "allow-desktop-reachability-configure",
     "allow-record-daemon-reliability-measurement",
+    // A reattached bottom terminal replays its own session's output (#6502).
+    "allow-pty-snapshot",
     // The packaged UI is served from the sidecar loopback origin, so the
     // offline cache is unreachable in a real install unless it is granted
     // here as well as in the local default capability.
@@ -1015,6 +1020,43 @@ test("chat links can show a local path in the file manager from the main and Cha
   );
 });
 
+test("the packaged UI can pick a folder, replay its terminal and open Tailscale through exact grants (#6502)", () => {
+  for (const [file, permission, command] of [
+    ["loopback-folder-picker", "allow-shell-pick-directory", "shell_pick_directory"],
+    ["loopback-tailscale-app", "allow-open-tailscale-app", "open_tailscale_app"],
+  ]) {
+    const capability = JSON.parse(readFileSync(new URL(`../capabilities/${file}.json`, import.meta.url), "utf8"));
+    assertMainLoopbackOnly(capability);
+    assert.deepEqual(capability.permissions, [permission], `${file} grants nothing else`);
+    assert.equal(capabilityAllowsOrigin(capability, "http://example.com:3020/"), false, `${file} stays off remote origins`);
+    assert.match(
+      commandPermissions,
+      new RegExp(String.raw`identifier = "${permission}"[\s\S]{0,240}commands\.allow = \["${command}"\]`),
+      `${permission} allows exactly ${command}`,
+    );
+  }
+  assert.match(
+    commandPermissions,
+    /identifier = "allow-pty-snapshot"[\s\S]{0,240}commands\.allow = \["pty_snapshot"\]/,
+    "the snapshot permission allows exactly pty_snapshot",
+  );
+  assert.match(ptyRust, /pub fn pty_snapshot\(webview: Webview[\s\S]{0,160}ensure_trusted_pty_caller\(&webview\)\?/, "snapshot still reads only the caller's own sessions");
+  const quickChat = JSON.parse(readFileSync(new URL("../capabilities/loopback-quick-chat.json", import.meta.url), "utf8"));
+  for (const permission of ["allow-shell-pick-directory", "allow-open-tailscale-app", "allow-pty-snapshot"]) {
+    assert.equal(quickChat.permissions.includes(permission), false, `the tray quick chat does not get ${permission}`);
+  }
+});
+
+test("the loopback UI opens folders by revealing them, so a bundle is never launched (#6502)", () => {
+  const granted = loopbackMainGrantedCommands();
+  assert.equal(granted.has("shell_open_path"), false, "shell_open_path stays local-only");
+  assert.equal(loopbackUiInvokedCommands().has("shell_open_path"), false, "no loopback UI caller opens a path directly");
+  for (const file of ["cave-home-migration-banner.tsx", "settings-shell.tsx"]) {
+    const source = readFileSync(new URL(`../../src/components/${file}`, import.meta.url), "utf8");
+    assert.match(source, /invoke\("shell_reveal_path", \{ path \}\)/, `${file} reveals the folder`);
+  }
+});
+
 const loopbackOrigins = [
   "http://127.0.0.1:3020/",
   "http://localhost:3020/",
@@ -1106,10 +1148,6 @@ test("update links open the system browser only through the validated release op
 // instead of in packaged acceptance (#5981).
 const LOOPBACK_UI_COMMANDS_NOT_GRANTED = new Map([
   ["shell_open", "#197 keeps arbitrary URL opening off loopback; main-UI links fall back to the in-app Browser and update links use open_update_release_url"],
-  ["shell_pick_directory", "known packaged gap, #6502"],
-  ["shell_open_path", "known packaged gap, #6502"],
-  ["pty_snapshot", "known packaged gap, #6502"],
-  ["open_tailscale_app", "known packaged gap, #6502"],
 ]);
 
 function listFiles(dirUrl) {
