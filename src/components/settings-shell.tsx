@@ -1001,7 +1001,8 @@ function WorkspacePathField() {
     setFieldError("");
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("shell_open_path", { path });
+      // Reveal, not open: a bundle-shaped path is selected, never launched (#6502).
+      await invoke("shell_reveal_path", { path });
       announce("Workspace folder opened.");
     } catch {
       setFieldError("Couldn't open the workspace folder.");
