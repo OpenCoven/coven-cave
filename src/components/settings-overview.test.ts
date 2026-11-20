@@ -49,13 +49,13 @@ test("getSectionMeta / settingsSectionLabel resolve, with a safe fallback", () =
 const overview = readFileSync(new URL("./settings-overview.tsx", import.meta.url), "utf8");
 
 
-test("the overview header renders mark, kicker, title, description, and the strip", () => {
+test("the overview header keeps the title and description without repeated navigation labels", () => {
   assert.match(overview, /getSectionMeta\(section\)/, "pulls section metadata");
   assert.match(overview, /settings-overview__mark[\s\S]*backgroundColor[\s\S]*meta\.accent/, "accent-tinted mark");
-  assert.match(overview, /settings-overview__kicker[\s\S]*meta\.label/, "kicker names the section");
+  assert.doesNotMatch(overview, /settings-overview__kicker/);
   assert.match(overview, /settings-overview__title">\{meta\.label\}/, "title is the section label");
   assert.match(overview, /settings-overview__description">\{meta\.description\}/, "one-line description");
-  assert.match(overview, /SECTION_HIGHLIGHTS\[section\]\.map/, "renders the highlight strip");
+  assert.doesNotMatch(overview, /settings-overview-strip/);
 });
 
 test("General can opt into the control-sheet overview without changing other sections", () => {
