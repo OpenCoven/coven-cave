@@ -155,7 +155,7 @@ async function readNativeHost(...modules) {
 }
 
 test("release bundle includes and prefers bundled Node and Whisper runtimes", async () => {
-  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, devWhisperEnv, devServerScript, launcher] = await Promise.all([
+  const [tauriConfig, windowsConfig, bundleScript, whisperBundleScript, devWhisperEnv, devServerScript, launcher, folderAuthentication] = await Promise.all([
     readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
     readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8"),
@@ -163,6 +163,7 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     readFile(new URL("../scripts/whisper-runtime-dev-env.sh", import.meta.url), "utf8"),
     readFile(new URL("../scripts/dev-server-with-whisper.sh", import.meta.url), "utf8"),
     readNativeHost("sidecar_discovery.rs", "sidecar_startup.rs"),
+    readFile(new URL("../src/lib/server/native-folder-authentication.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(
@@ -171,6 +172,7 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     "Tauri resources must include the bundled Node runtime",
   );
   assert.match(tauriConfig, /"resources\/whisper\/\*\*\/\*"/, "Tauri resources must include Whisper runtime files");
+  assert.match(tauriConfig, /"resources\/server\/\*\*\/\*"/, "Tauri resources must include the expanded sidecar server");
   assert.match(windowsConfig, /"resources\/whisper\/\*\*\/\*"/, "Windows bundles must include Whisper runtime files");
   assert.match(
     windowsConfig,
@@ -209,6 +211,16 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     bundleScript,
     /COVEN_CAVE_REFRESH_WHISPER=1 bash "\$ROOT\/scripts\/whisper-runtime-bundle\.sh"/,
     "release packaging must refresh Whisper instead of trusting a local development cache",
+  );
+  assert.match(
+    bundleScript,
+    /CONFIRMATION_HELPER="\$ROOT\/native\/confirm-project-folder"[\s\S]*?cp "\$CONFIRMATION_HELPER" "\$DEST\/native\/confirm-project-folder"/,
+    "macOS sidecars must package the confirmation helper at the server's runtime-relative path",
+  );
+  assert.match(
+    folderAuthentication,
+    /path\.join\(process\.cwd\(\), "native", "confirm-project-folder"\)/,
+    "the sidecar must resolve the helper from its bundled server directory",
   );
   assert.match(whisperBundleScript, /whisper-bin-x64\.zip/, "Windows must stage a pinned Whisper CLI archive");
   assert.match(whisperBundleScript, /MSVCP140\.dll.*VCRUNTIME140\.dll.*VCRUNTIME140_1\.dll.*VCOMP140\.dll/, "Windows must ship Whisper's app-local MSVC runtime");

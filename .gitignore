@@ -160,3 +160,7 @@ __verify-chat-detail.mjs
 # every build; this keeps a killed build's leftover out of commits.
 /trace-walk-probe/
 /.pnpm-store
+
+# Built macOS folder-confirmation helper
+/native/confirm-project-folder
+/native/confirm-project-folder.[0-9]*
