@@ -445,6 +445,31 @@ assert.equal(defaults.appearance.backdrop.style, "image");
   const cleared = applyPreferencesPatch(scoped, { github: { orgScope: [] } });
   assert.deepEqual(cleared.github.orgScope, [], "empty patch clears back to all");
 }
+
+// ── Your own pull requests in Reviews (#5930) ───────────────────────────────
+{
+  // "Include my pull requests in Reviews" defaults ON, normalized `!== false`:
+  // only an explicit false turns it off.
+  assert.equal(createDefaultPreferences(false).github.reviewOwnPrs, true);
+  assert.equal(normalizeCavePreferences({}).github.reviewOwnPrs, true, "absent → own PRs included");
+  assert.equal(normalizeCavePreferences({ github: { reviewOwnPrs: "no" } }).github.reviewOwnPrs, true);
+  assert.equal(normalizeCavePreferences({ github: { reviewOwnPrs: false } }).github.reviewOwnPrs, false);
+}
+{
+  // Patch validation: a boolean only; the automatic-review keys do not exist
+  // until the watcher can ship (#5930 part 2 is blocked), so they are refused.
+  assert.deepEqual(validatePreferencesPatch({ github: { reviewOwnPrs: false } }).github, { reviewOwnPrs: false });
+  assert.throws(() => validatePreferencesPatch({ github: { reviewOwnPrs: "true" } }), PreferencesValidationError);
+  assert.throws(() => validatePreferencesPatch({ github: { autoReviewOwnPrs: true } }), PreferencesValidationError);
+}
+{
+  // A partial github patch leaves the other github keys alone.
+  const off = applyPreferencesPatch(createDefaultPreferences(true), { github: { reviewOwnPrs: false } });
+  assert.equal(off.github.reviewOwnPrs, false);
+  assert.deepEqual(off.github.orgScope, [], "untouched keys keep their values");
+  const scoped = applyPreferencesPatch(off, { github: { orgScope: ["OpenCoven"] } });
+  assert.equal(scoped.github.reviewOwnPrs, false, "an orgScope patch keeps reviewOwnPrs");
+}
 {
   // ── Daemon automation (cave-bqywj) ──────────────────────────────────────
   // These two restart processes and install binaries on the user's machine.

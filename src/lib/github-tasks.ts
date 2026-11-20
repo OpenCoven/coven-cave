@@ -19,6 +19,9 @@ export type GitHubItem = {
   state?: string;
   updatedAt: string;
   draft?: boolean;
+  /** You wrote this pull request (#5930). Set by /api/github/assigned from its
+   *  `author:@me` search, and merged onto an assigned copy of the same PR. */
+  authored?: boolean;
   labels?: string[];
   /** CI rollup for PR rows; only "failing" is surfaced in the UI. See
    *  {@link import("./github-checks").summarizeChecks}. */

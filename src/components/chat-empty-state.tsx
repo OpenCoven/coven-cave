@@ -34,7 +34,7 @@ import {
 } from "@/components/chat-start-from-bands";
 import { queueFollowUpLabel } from "@/lib/chat-queue-followups";
 import { useQueueFollowUps } from "@/lib/use-queue-followups";
-import { reviewRequestLabel } from "@/lib/chat-review-requests";
+import { reviewRequestLabel, reviewRequestSub } from "@/lib/chat-review-requests";
 import { useReviewRequests } from "@/lib/use-review-requests";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
@@ -385,7 +385,7 @@ export function ChatEmptyState({
         id: row.id,
         title: row.title,
         badge: row.badge,
-        sub: startFromSub([row.need]),
+        sub: startFromSub(reviewRequestSub(row)),
         ariaLabel: reviewRequestLabel(row),
         hint: `Review ${row.title}`,
         onPick: () => onPrompt?.(`Review ${row.url}`),

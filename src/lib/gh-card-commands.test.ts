@@ -155,3 +155,31 @@ test("issue lifecycle decodes to the state PATCH", () => {
   const issueTree = buildCommandTree({ ...openPr, isPull: false, checks: null, unresolvedThreads: 0 });
   assert.deepEqual(parseCommand("/close confirm", issueTree), { kind: "state", state: "closed" });
 });
+
+// #5930: GitHub rejects APPROVE and REQUEST_CHANGES from a pull request's
+// author ("Can not approve your own pull request"), so on your own PR the
+// review group offers Comment only, and says why.
+test("your own PR offers a comment review only, and says why", () => {
+  const tree = buildCommandTree({ ...openPr, viewerIsAuthor: true });
+  const review = tree.find((g) => g.name === "review");
+  assert.ok(review, "the review group stays: a comment review is still a review");
+  assert.deepEqual(review.subs.map((s) => s.name), ["comment"]);
+  assert.match(review.desc, /author can only comment/);
+  // Merge is not a review verb: GitHub lets the author merge.
+  assert.ok(tree.some((g) => g.name === "merge"), "merge is still offered");
+});
+
+test("your own PR cannot decode an approve or request-changes command", () => {
+  const tree = buildCommandTree({ ...openPr, viewerIsAuthor: true });
+  assert.equal(parseCommand("/review approve", tree), null);
+  assert.equal(parseCommand("/review request-changes", tree), null);
+  assert.deepEqual(parseCommand("/review comment", tree), { kind: "review", event: "COMMENT" });
+});
+
+test("someone else's PR, or an unknown author, keeps every review verb", () => {
+  for (const viewerIsAuthor of [false, undefined]) {
+    const review = buildCommandTree({ ...openPr, viewerIsAuthor }).find((g) => g.name === "review");
+    assert.ok(review);
+    assert.deepEqual(review.subs.map((s) => s.name), ["approve", "request-changes", "comment"]);
+  }
+});

@@ -10,8 +10,14 @@
 // `configured: false` rather than an error. That is not a failure to report on
 // a brand-new chat, so it resolves to an empty snapshot and the group is
 // simply absent.
+//
+// Since #5930 your own open pull requests join the group while "Include my
+// pull requests in Reviews" is on (default on), read from the app preferences
+// so a Settings change re-renders the group without a refetch.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { useAppPreferences } from "./app-preferences.ts";
 
 import { reviewRequests, type ReviewRequest } from "./chat-review-requests.ts";
 import type { GitHubItem } from "./github-tasks.ts";
@@ -26,7 +32,7 @@ type AssignedResponse = {
 };
 
 export type ReviewRequestsSnapshot = {
-  /** Reviews waiting on you, freshest first. */
+  /** Reviews waiting on you, freshest first, then your own PRs (#5930). */
   rows: ReviewRequest[];
   /** False when no GitHub token is configured — the group stays absent. */
   configured: boolean;
@@ -82,5 +88,6 @@ export function useReviewRequests(enabled = true): ReviewRequestsSnapshot {
   const refresh = useCallback(() => load(true), [load]);
   useRefreshOnFocus(refresh, { enabled });
 
-  return { rows: reviewRequests(items), configured, loading };
+  const includeOwn = useAppPreferences().github.reviewOwnPrs;
+  return { rows: reviewRequests(items, { includeOwn }), configured, loading };
 }
