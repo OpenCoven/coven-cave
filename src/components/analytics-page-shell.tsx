@@ -60,15 +60,14 @@ function DestinationSidebar({ pathname }: { pathname: string }) {
   // shell, and a flat list here made them the two pages whose sidebar did not
   // match the rest of the app.
   //
-  // The rows stay anchors rather than SidebarMinimal's FolderRow buttons: this
-  // shell is a standalone Next route, so a destination is a navigation to
-  // `/?mode=…`, not an in-place mode switch. What has to be shared is the
-  // structure and the registry, and both are.
+  // These client links keep document-owned drafts alive between standalone
+  // routes and the workspace, while retaining ordinary anchor semantics and
+  // the shared navigation registry.
   const primaryRows = VISIBLE_WORKSPACE_NAV_ITEMS.filter((item) => !item.quiet);
   const exploreRows = VISIBLE_WORKSPACE_NAV_ITEMS.filter((item) => item.quiet);
 
   const renderRow = (item: (typeof VISIBLE_WORKSPACE_NAV_ITEMS)[number]) => (
-    <a
+    <Link
       key={item.id}
       // No --quiet-lead here. That class drew the unlabelled step that used to
       // separate Explore from Navigation; the heading carries that meaning now,
@@ -85,7 +84,7 @@ function DestinationSidebar({ pathname }: { pathname: string }) {
         aria-hidden
       />
       <span className="sidebar-folder-label">{item.label}</span>
-    </a>
+    </Link>
   );
 
   return (

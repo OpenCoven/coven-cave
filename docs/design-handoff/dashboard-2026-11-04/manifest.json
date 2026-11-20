@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "issue": 6403,
+  "parentIssue": 6396,
+  "authorization": "Val supplied these three local files in the D0 thread on 2026-11-04. This records source access, not blanket adoption or visual sign-off.",
+  "sourceBase": "29ed5f5a61b5fcff90132bce31a7da9bbaf92e4b",
+  "archiveRevision": {
+    "index.html": 8,
+    "cave.css": 12,
+    "cave.js": 9,
+    "basis": "Archive README; Nov 3 snapshot, not a verified live head"
+  },
+  "sources": [
+    {
+      "file": "OpenCoven_Cave_Optimal_Path_Forward_2026-11-04.pdf",
+      "bytes": 232042,
+      "sha256": "00e25c3b1927f2b62cb220252a0c130c7096495662b8e2117a2157a962bc024d",
+      "role": "Revision 2 scope and inline disclosure requirements; pages 5-8, 12-15, 18-22",
+      "retained": null
+    },
+    {
+      "file": "cave-handoff.zip",
+      "bytes": 788467,
+      "sha256": "a5d7a9840e30b7cd3062f6b13f44c233958f4dda3b1fba3c0f2bb4365134beaf",
+      "role": "Primary inspectable dashboard source snapshot",
+      "retained": "source/cave-handoff.zip"
+    },
+    {
+      "file": "cave-fully-realized.html",
+      "bytes": 539613,
+      "sha256": "fdbe07217ea7c7563c259523fea6a433d94b2bfb6b18d0b3d25785209acbe12c",
+      "role": "Saved Claude host frame; references sibling saved_resource.html, not a self-contained dashboard",
+      "retained": null
+    }
+  ],
+  "entries": [
+    {
+      "archivePath": "cave-handoff/src/cave.css",
+      "bytes": 56148,
+      "sha256": "fa00a2219dfe9e34a4df3f0eb5a19396b3bccefa6a9403da51354c87ba6abb25",
+      "retained": "source/src/cave.css",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/src/index.html",
+      "bytes": 65902,
+      "sha256": "4111fd96658547c546a58987642d4e14ca7634d51da2318fdddb47658124ab1b",
+      "retained": "source/src/index.html",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/src/cave.js",
+      "bytes": 45269,
+      "sha256": "d433d605d1e3de077d907a269ff9bff119e689ca1dc03af6b478f906a3a934de",
+      "retained": "source/src/cave.js",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/README.md",
+      "bytes": 11066,
+      "sha256": "ad6d9cbb2a088e37acdcc919c3d871516635409757092bc476a4d0d43a1bdc25",
+      "retained": null,
+      "archiveOnly": true
+    },
+    {
+      "archivePath": "cave-handoff/data/journey.json",
+      "bytes": 1567,
+      "sha256": "49301aac07ff0037cb07266c7e756cd3b37bf75537b7f584eb3382b25578e78f",
+      "retained": "source/data/journey.json",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/data/connections.json",
+      "bytes": 701,
+      "sha256": "29518c412185675dfeabb3b33daae9e5f0517bebfe2a6356cd74255cbc474227",
+      "retained": "source/data/connections.json",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/data/continuity.json",
+      "bytes": 776,
+      "sha256": "b79c20e79c5e7282833283389629bd83dd0a121a169919466bb316822ad01745",
+      "retained": "source/data/continuity.json",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/data/reliability.json",
+      "bytes": 781,
+      "sha256": "c34556e31cc6e2ba23b86088050911d158c3eae89dcff6c817dc6071b96dee84",
+      "retained": "source/data/reliability.json",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/data/approvals.json",
+      "bytes": 563,
+      "sha256": "360b241265260dabb5f94a7c6eeb53db6a1ff3d37376c95c9ed84cbf754bd844",
+      "retained": "source/data/approvals.json",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/data/steps.json",
+      "bytes": 4358,
+      "sha256": "827081bdb64760c0fdc9af33fbb8b5f0d925226b6e03b7ddfc2db52efdd6f83c",
+      "retained": "source/data/steps.json",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/data/datasets.json",
+      "bytes": 1460,
+      "sha256": "1c211f6f7320c0551379086205e7288426c251394d7a966740b063600753e909",
+      "retained": "source/data/datasets.json",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/data/runs.json",
+      "bytes": 2512,
+      "sha256": "316d67c52a5bd6e452fb3ead50e5b12bfed7c2b49b2cfa67a33897bff47ae857",
+      "retained": "source/data/runs.json",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/docs/dashboard-runtime.md",
+      "bytes": 2597,
+      "sha256": "84006be483fe2643b24c69341c5b5581b88ce660d579f037f2f432507aab838f",
+      "retained": null,
+      "archiveOnly": true
+    },
+    {
+      "archivePath": "cave-handoff/docs/original-brief.txt",
+      "bytes": 10568,
+      "sha256": "a0f41aee16cc251825262051f283ce6102f6f8ba795bf4baf54ddc4cddfec6a8",
+      "retained": null,
+      "archiveOnly": true
+    },
+    {
+      "archivePath": "cave-handoff/docs/design-decisions.md",
+      "bytes": 3489,
+      "sha256": "1faf3f26615c0f51df269735f5c5f24a8bc042d9bc53d22cd50fd16b533f8da1",
+      "retained": null,
+      "archiveOnly": true
+    },
+    {
+      "archivePath": "cave-handoff/docs/production-polish.md",
+      "bytes": 2061,
+      "sha256": "0cdeb896b16e38ca5d357959a27eb8c193ce5d1137d0d85096dcb5e06ba4ffb4",
+      "retained": null,
+      "archiveOnly": true
+    },
+    {
+      "archivePath": "cave-handoff/docs/screenshots/evidence.png",
+      "bytes": 210995,
+      "sha256": "ea4e9562f1d02e1881ee9dde8e7a44275dfebc6082a49aa179e8253cc7f10bfe",
+      "retained": null,
+      "archiveOnly": true
+    },
+    {
+      "archivePath": "cave-handoff/docs/screenshots/overview.png",
+      "bytes": 218646,
+      "sha256": "7bae8d1a21a0572310163715aacbbab2a2b2267dd18bec2edd2455a7d46d027e",
+      "retained": null,
+      "archiveOnly": true
+    },
+    {
+      "archivePath": "cave-handoff/docs/screenshots/approval.png",
+      "bytes": 214739,
+      "sha256": "9986929cc94714a66c6c38f0e9dcbdc3c57bf6e27dbafec82c9e3d00731fea9c",
+      "retained": null,
+      "archiveOnly": true
+    },
+    {
+      "archivePath": "cave-handoff/docs/design-critique.md",
+      "bytes": 2552,
+      "sha256": "e98605d55cbab1028d43cd4110110856bf2f6606cbb9cb22306ac4cc791f5ed2",
+      "retained": null,
+      "archiveOnly": true
+    },
+    {
+      "archivePath": "cave-handoff/preview/tokens.css",
+      "bytes": 2066,
+      "sha256": "6398be0da1f38ee3aa5b499bc06d6369341fc93b58d2714ebc42fc5bb6a81983",
+      "retained": "source/preview/tokens.css",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/preview/index.html",
+      "bytes": 66317,
+      "sha256": "69f8bf7035c41da6036fde88c240140c537f58551eff127840e74c985e9e12bf",
+      "retained": "source/preview/index.html",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/preview/vendor/d3.min.js",
+      "bytes": 279706,
+      "sha256": "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539",
+      "retained": "source/preview/vendor/d3.min.js",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/preview/vendor/d3-LICENSE",
+      "bytes": 731,
+      "sha256": "3e6849627f74ff73c257a3ae1efb574015d94fc1035c05ec3c15805165efcbc4",
+      "retained": "source/preview/vendor/d3-LICENSE",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/preview/data.js",
+      "bytes": 12622,
+      "sha256": "e0007e38b5792db2211b09434d11207260db6727e185d025323e63573b6d937c",
+      "retained": "source/preview/data.js",
+      "archiveOnly": false
+    },
+    {
+      "archivePath": "cave-handoff/preview/dash-shim.js",
+      "bytes": 2510,
+      "sha256": "3b59831c99a9190b164753b09952a609b24ec29ee678f201d13bdead1f7e9405",
+      "retained": "source/preview/dash-shim.js",
+      "archiveOnly": false
+    }
+  ]
+}

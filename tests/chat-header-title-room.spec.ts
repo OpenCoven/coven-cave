@@ -9,6 +9,9 @@ const ISO = "2026-10-15T10:00:00.000Z";
 const PROJECT_ROOT = "/repo";
 
 async function openChatWithLongStatus(page: Page) {
+  // Header captures use fixture sessions; do not turn their synthetic history
+  // into milestone writes/toasts that cover the surface under inspection.
+  await page.route("**/api/milestones", (route) => route.fulfill({ json: { ok: true, awarded: [] } }));
   await page.addInitScript(() => {
     localStorage.setItem("cave:onboarding:dismissed", "1");
     localStorage.setItem("cave:active-familiar", "nova");
@@ -58,6 +61,9 @@ async function openChatWithLongStatus(page: Page) {
     ? page.locator(".cave-mobile-header-identity") : page.locator(".cave-chat-header-row");
   await expect(header).toBeVisible({ timeout: 45_000 });
   await expect(page.locator(".cave-run-activity")).toContainText("Last run needs attention");
+  // D0: the short button name must not hide the observed counts from a reader.
+  await expect(page.getByRole("button", { name: "Last run summary", exact: true }))
+    .toHaveAccessibleDescription("Last run needs attention 2 notices 2 issues 1 done");
   await expect(page.locator(".shell-frame")).toHaveAttribute("data-settled", "");
 }
 
@@ -108,7 +114,7 @@ test.describe("Chat header title room", () => {
         expect(geometry.height).toBeLessThanOrEqual(48);
         expect(geometry.avatarHeight).toBe(44);
         expect(geometry.avatarRadius).toBe("8px");
-        await page.locator(".cave-chat-linear-header").screenshot({ path: test.info().outputPath("header.png") });
+        await page.locator(".cave-chat-linear-header").screenshot({ path: test.info().outputPath("header.png"), animations: "disabled" });
         if (width === 1440) {
           for (const [theme, mode] of [["coven", "light"], ["tide", "dark"]]) {
             await page.evaluate(([theme, mode]) => {
@@ -116,7 +122,7 @@ test.describe("Chat header title room", () => {
               document.documentElement.dataset.mode = mode;
             }, [theme, mode]);
             expect((await headerGeometry(page)).height).toBeLessThanOrEqual(48);
-            await page.locator(".cave-chat-linear-header").screenshot({ path: test.info().outputPath(`header-${theme}-${mode}.png`) });
+            await page.locator(".cave-chat-linear-header").screenshot({ path: test.info().outputPath(`header-${theme}-${mode}.png`), animations: "disabled" });
           }
         }
       });
