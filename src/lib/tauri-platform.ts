@@ -81,13 +81,6 @@ export function useIsTauriDesktop(): boolean {
   return useTauriPlatform() === "desktop";
 }
 
-/** True when running inside Tauri AND on a mobile platform (iOS or
- *  Android). */
-export function useIsTauriMobile(): boolean {
-  const p = useTauriPlatform();
-  return p === "ios" || p === "android";
-}
-
 /**
  * True in the macOS *desktop* Tauri shell — the one place the main window's
  * native title bar is an Overlay (lib.rs) with traffic lights floating over
