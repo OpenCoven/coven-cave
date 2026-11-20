@@ -485,14 +485,6 @@
 .wsch-issue-fields dt { color: var(--text-muted); }
 .wsch-issue-fields dd { margin: 0; color: var(--text-secondary); }
 
-.wsch-issue-label {
-  margin: 0;
-  font-size: var(--text-2xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
 .wsch-issue-body {
   margin: 0;
   font-size: var(--text-xs);
