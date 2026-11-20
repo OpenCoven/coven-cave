@@ -12,6 +12,7 @@ import {
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
+  PROJECT_FOLDER_AUTHENTICATION_UNAVAILABLE_CODE,
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
 } from "@/lib/project-root-guidance";
@@ -98,7 +99,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         { status: 400 },
       );
     }
-    if (!await authenticateProjectFolder(`Change ${current.name}’s project folder to:\n${realpath}`)) {
+    // The containment check above resolved the path once; re-apply it to the
+    // realpath the person is about to authenticate.
+    if (!isAllowedNewProjectRoot(realpath)) {
+      return NextResponse.json(
+        { ok: false, code: PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE, error: PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR },
+        { status: 403 },
+      );
+    }
+    const approved = await authenticateProjectFolder(`Change ${current.name}’s project folder to:\n${realpath}`);
+    if (approved === "unavailable") {
+      return NextResponse.json({ ok: false, code: PROJECT_FOLDER_AUTHENTICATION_UNAVAILABLE_CODE,
+        error: "Touch ID isn’t available on this device, so the folder can’t be changed here. Add the new folder as a separate project instead." }, { status: 409 });
+    }
+    if (approved !== true) {
       return NextResponse.json({ ok: false, code: "project_folder_authentication_required",
         error: "Authenticate on this Mac with Touch ID to change the folder, then retry." }, { status: 403 });
     }

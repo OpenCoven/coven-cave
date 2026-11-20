@@ -25,7 +25,7 @@ process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(base, "projects.json");
 const nativeMock = registerHooks({
   load(url, context, nextLoad) {
     if (url.endsWith("/native-folder-authentication.ts")) {
-      return { format: "module", shortCircuit: true, source: "export async function authenticateProjectFolder() { return globalThis.__folderNativeApprove !== false; }" };
+      return { format: "module", shortCircuit: true, source: "export async function authenticateProjectFolder() { const v = globalThis.__folderNativeApprove; return v === undefined ? true : v; }" };
     }
     return nextLoad(url, context);
   },
@@ -162,6 +162,25 @@ try {
     try {
       assert.equal((await put(created.id, { confirmRoot: true })).status, 403);
       assert.equal((await put(created.id, { root: elsewhere })).status, 403);
+      assert.equal((await stored(created.id)).root, folder);
+      assert.equal((await stored(created.id)).rootRealpath, created.rootRealpath);
+    } finally { delete globalThis.__folderNativeApprove; }
+  });
+
+  await test("a device that cannot show Touch ID gets a truthful unavailable result, not a retry prompt", async () => {
+    const folder = path.join(base, "native-unavailable");
+    fs.mkdirSync(folder);
+    const { project: created } = await (await register({ name: "Native unavailable", root: folder })).json();
+    globalThis.__folderNativeApprove = "unavailable";
+    try {
+      for (const body of [{ confirmRoot: true }, { root: elsewhere }]) {
+        const response = await put(created.id, body);
+        assert.equal(response.status, 409, JSON.stringify(body));
+        const payload = await response.json();
+        assert.equal(payload.code, "project_folder_authentication_unavailable");
+        assert.match(payload.error, /Touch ID isn’t available on this device/);
+        assert.doesNotMatch(payload.error, /then retry/);
+      }
       assert.equal((await stored(created.id)).root, folder);
       assert.equal((await stored(created.id)).rootRealpath, created.rootRealpath);
     } finally { delete globalThis.__folderNativeApprove; }
