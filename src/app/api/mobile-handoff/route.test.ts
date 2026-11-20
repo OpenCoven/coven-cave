@@ -159,7 +159,7 @@ assert.match(
 );
 assert.match(
   mobileHandoff,
-  /const reset = await runTailscale\(\["serve", "reset"\]\);[\s\S]{0,500}?const verified = await readTailscaleServeStatus\(runTailscale\);/,
+  /const reset = await runServeRemovals\(\s*runTailscale,\s*caveServeRemovalCommands\(beforeReset\.status, backendUrl\),\s*\);[\s\S]{0,500}?const verified = await readTailscaleServeStatus\(runTailscale\);/,
   "reset rereads Serve status before reporting success",
 );
 assert.match(
