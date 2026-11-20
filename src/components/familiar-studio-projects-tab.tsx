@@ -29,7 +29,6 @@ import {
   grantKey,
   grantSourceMeta,
   groupsForFamiliar,
-  isSupreme,
   nameResolver,
   proposalStatusMeta,
   rollupAccessLevels,
@@ -130,7 +129,6 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
   const [accessGroups, setAccessGroups] = useState<ConsoleAccessGroup[]>([]);
   // Projects whose folder holds Cave's private state: Read only (#6451).
   const [writeBlocked, setWriteBlocked] = useState<ReadonlySet<string>>(new Set());
-  const [supremeFamiliarId, setSupremeFamiliarId] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ConsoleProposal[]>([]);
   const [audit, setAudit] = useState<ConsoleAuditEntry[]>([]);
   const [grantChanges, setGrantChanges] = useState<ConsoleGrantChange[]>([]);
@@ -155,9 +153,6 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
       setGrantMeta(new Map(grants.map((g) => [grantKey(g.familiarId, g.projectId), g])));
       setAccessGroups(
         Array.isArray(grantRes?.accessGroups) ? (grantRes.accessGroups as ConsoleAccessGroup[]) : [],
-      );
-      setSupremeFamiliarId(
-        typeof grantRes?.supremeFamiliarId === "string" ? grantRes.supremeFamiliarId : null,
       );
       setWriteBlocked(privateStateProjectIdsFrom(grantRes));
       setAudit(Array.isArray(grantRes?.audit) ? (grantRes.audit as ConsoleAuditEntry[]) : []);
@@ -321,8 +316,6 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
 
   const projectName = useMemo(() => nameResolver(projects, (p) => p.name), [projects]);
 
-  const supreme = isSupreme(familiar.id, supremeFamiliarId);
-
   // Effective access = union-max of the direct grant + this familiar's access
   // groups, resolved with the SAME helper the server enforces with.
   const effectiveByProject = useMemo(() => {
@@ -441,15 +434,9 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
           Suppressed in `activity` mode: Chat → Projects already renders this
           map, and two live copies of the same grants is what this variant
           exists to end. */}
-      {!showMatrix ? null : supreme ? (
-        <SettingsGroup label="Project access" description="Supreme · all-access">
-          <p className="flex items-center gap-2 px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-            <ToneIcon tone="positive" icon="ph:seal-check" size={15} />
-            This familiar has access to every project — its grants are managed by the protocol, not
-            toggled here.
-          </p>
-        </SettingsGroup>
-      ) : projects.length === 0 ? (
+      {/* The supreme familiar gets the same matrix: the server gives it no
+          access beyond its real grants (#6473). */}
+      {!showMatrix ? null : projects.length === 0 ? (
         <EmptyState
           icon="ph:folder"
           headline="No projects yet"
@@ -617,7 +604,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
       {/* Activity mode carries no matrix, so an otherwise-silent familiar would
           render as a lone paragraph. Say so explicitly instead. */}
       {!showMatrix &&
-      (supreme || memberGroups.length === 0) &&
+      memberGroups.length === 0 &&
       pendingProposals.length === 0 &&
       resolvedProposals.length === 0 &&
       famChanges.length === 0 &&
@@ -631,7 +618,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
       ) : null}
 
       {/* ── Access groups this familiar belongs to ── */}
-      {!supreme && memberGroups.length > 0 && (
+      {memberGroups.length > 0 && (
         <SettingsGroup
           label={`Access groups (${memberGroups.length})`}
           description="Base project access inherited through group membership — manage groups on the Groups tab"

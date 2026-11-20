@@ -15,7 +15,7 @@ import { useProjects } from "@/lib/use-projects";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { CHAT_FOCUS_PROJECT_EVENT, consumeProjectFocusPending, consumeProjectFocusRequest } from "@/lib/chat-tab-events";
 import { gitHubRepoSlug } from "@/lib/github-repo-link";
-import { isSupreme, type ConsoleAccessGroup, type ConsoleGrant } from "@/lib/permissions-console";
+import { type ConsoleAccessGroup, type ConsoleGrant } from "@/lib/permissions-console";
 import {
   normalizeAccessLevel,
   resolveEffectiveAccess,
@@ -147,7 +147,8 @@ const VIEW_STORAGE_KEY = "cave:projects:view";
  * or reordered into Rows and Tree audits via the persisted toolbar switcher —
  * and click a row to cycle its direct grant — no access → read → full → none
  * — against /api/project-grants. Effective levels fold in access-group grants
- * (union-max), and the supreme familiar renders locked at Full everywhere.
+ * (union-max). The supreme familiar shows and edits its real grants like any
+ * other familiar: the server gives it no access beyond them (#6473).
  */
 export function ProjectsView({ familiars = [], activeFamiliarId = null }: ProjectsViewProps) {
   const { announce } = useAnnouncer();
@@ -215,7 +216,6 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     () => familiars.find((f) => f.id === pickedFamiliarId) ?? familiars[0] ?? null,
     [familiars, pickedFamiliarId],
   );
-  const supreme = familiar ? isSupreme(familiar.id, grantsData?.supremeFamiliarId ?? null) : false;
   const writeBlocked = grantsData?.privateStateProjectIds ?? NO_PROJECT_IDS;
 
   // The Groups and Activity panes render familiar-shaped UI (avatars, glyphs,
@@ -369,13 +369,6 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     }));
     const groups = grantsData?.groups ?? [];
     for (const project of projects) {
-      // The supreme familiar reads as Full everywhere, except on a folder
-      // that holds Cave's private state: there its real grant shows, so a
-      // Read grant isn't flagged as Write and an old Write can be narrowed.
-      if (supreme && !writeBlocked.has(project.id)) {
-        map.set(project.id, { project, state: "write", direct: "write", groupNames: [] });
-        continue;
-      }
       const effective = resolveEffectiveAccess({
         directGrants,
         groups,
@@ -390,7 +383,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       });
     }
     return map;
-  }, [projects, familiar, directByProject, grantsData, supreme, writeBlocked]);
+  }, [projects, familiar, directByProject, grantsData]);
 
   // Toolbar tally always spans the whole map, never the filtered subset.
   const counts = useMemo(
@@ -587,7 +580,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   const cycleRow = useCallback(
     async (row: RowModel) => {
       const blocked = writeBlocked.has(row.project.id);
-      if (!familiar || (supreme && !blocked) || pendingIds.has(row.project.id)) return;
+      if (!familiar || pendingIds.has(row.project.id)) return;
       const next = nextAccessState(row.state, blocked);
       if (next === "none" && !row.direct) {
         // Nothing to revoke — the level is inherited from a group.
@@ -628,7 +621,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         });
       }
     },
-    [familiar, supreme, pendingIds, announce, loadGrants, writeBlocked],
+    [familiar, pendingIds, announce, loadGrants, writeBlocked],
   );
 
   const applyOps = useCallback(
@@ -746,7 +739,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   }, [familiar, projects, directByProject, confirm, applyOps, announce]);
   // ── Render ─────────────────────────────────────────────────────────────
   const isLoading = (projectsLoading && projects.length === 0) || (grantsLoading && !grantsData);
-  const controlsDisabled = !familiar || supreme || busyAll;
+  const controlsDisabled = !familiar || busyAll;
 
   /** One project's full face: registry row + effective access + presentation. */
   const viewRows = useMemo(
@@ -777,9 +770,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     const blocked = writeBlocked.has(row.id);
     const meta = accessStateMeta(row.state, blocked);
     const pending = pendingIds.has(row.id);
-    // Locked at Full for the supreme familiar, except on a private-state folder.
-    const locked = supreme && !blocked;
-    const viaGroups = row.groupNames.length > 0 && !locked ? ` — via ${row.groupNames.join(", ")}` : "";
+    const viaGroups = row.groupNames.length > 0 ? ` — via ${row.groupNames.join(", ")}` : "";
     // An existing Write grant here blocks Claude Build turns (#6451).
     const risky = blocked && row.state === "write";
     const note = risky ? ` ${PRIVATE_STATE_WRITE_NOTE}` : "";
@@ -787,14 +778,10 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       <button
         type="button"
         className={`projects-access-pill is-${row.state}${pending ? " is-pending" : ""}${risky ? " is-private-state" : ""} focus-ring`}
-        disabled={pending || locked}
+        disabled={pending}
         onClick={() => void cycleRow(row)}
-        title={
-          locked
-            ? `${row.name} — Full (supreme familiar)`
-            : `${row.name} — ${meta.label}${viaGroups}. Click to ${meta.action}.${note}`
-        }
-        aria-label={`${row.name}: ${meta.label}${viaGroups}. ${locked ? "Locked for the supreme familiar." : `Click to ${meta.action}.`}${note}`}
+        title={`${row.name} — ${meta.label}${viaGroups}. Click to ${meta.action}.${note}`}
+        aria-label={`${row.name}: ${meta.label}${viaGroups}. Click to ${meta.action}.${note}`}
       >
         {risky ? (
           <Icon name="ph:warning-fill" width={11} className="projects-access-warning" aria-hidden />
@@ -821,9 +808,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         <div>
           <dt>held</dt>
           <dd>
-            {supreme && !writeBlocked.has(row.id)
-              ? "supreme familiar"
-              : row.groupNames.length > 0
+            {row.groupNames.length > 0
                 ? `via ${row.groupNames.join(", ")}`
                 : row.direct
                   ? "direct grant"
@@ -1059,7 +1044,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                         type="button"
                         id={`project-access-row:${row.id}`}
                         className={`projects-access-chip${risky ? " is-private-state" : ""}${flashId === row.id ? " is-flash" : ""} focus-ring`}
-                        disabled={pendingIds.has(row.id) || (supreme && !blocked)}
+                        disabled={pendingIds.has(row.id)}
                         onClick={() => void cycleRow(row)}
                         title={label}
                         aria-label={risky ? label : undefined}
@@ -1087,12 +1072,6 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     // Grid: cards grouped alphabetically by canonical organization.
     body = (
       <>
-        {supreme && familiar ? (
-          <p className="projects-access-supreme" role="note">
-            <Icon name="ph:lock-simple" width={13} aria-hidden />
-            {familiarLabel(familiar)} is the supreme familiar — full access to everything, always.
-          </p>
-        ) : null}
         {organizationSections.map((section) => {
           const organization = section.organization;
           const rows = section.items

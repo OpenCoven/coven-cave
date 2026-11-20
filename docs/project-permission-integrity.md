@@ -68,8 +68,8 @@ it change its own grants or read another turn's credentials.
 - A request accepted before this rule, whose undo window has passed, was
   already a Write grant on every read. It stays one and is flagged like any
   other existing grant. Finalizing a request doesn't check the folder again.
-- The supreme familiar shows as Full everywhere in Projects, except on these
-  folders. There its real grant shows and can be changed.
+- The supreme familiar gets no project access beyond its real grants, and
+  Projects shows and changes those like any other familiar's (#6473).
 - `GET /api/project-grants` lists such projects in `privateStateProjectIds`.
   Projects and Access groups flag a Write grant made before this rule. Nothing
   changes that grant automatically.
