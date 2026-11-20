@@ -12,9 +12,11 @@ import test from "node:test";
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import { expectPatInvalid, expectRateLimited,expectAmbiguousWrite, expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
+import { GITHUB_TOKEN_ENV_KEYS } from "../../../../lib/github-token-env.ts";
 
 const home = isolateCaveHome("github-reactions-anomalies");
 const TOKEN = "ghp_testonly_never_dispatched_0123456789abcdef";
+const TOKEN_ENV_KEYS = ["GITHUB_PAT", ...GITHUB_TOKEN_ENV_KEYS] as const;
 process.env.GITHUB_PAT = TOKEN;
 
 const harness = installUpstreamAnomalyFetch();
@@ -175,7 +177,8 @@ test("a 403 on a write keeps its status and GitHub's reason", async () => {
 });
 
 test("without a token the tally is readable and nothing is `mine`", async () => {
-  delete process.env.GITHUB_PAT;
+  const previousTokens = new Map(TOKEN_ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of TOKEN_ENV_KEYS) delete process.env[key];
   harness.healthy("github", (request) => {
     assert.equal(request.headers.get("authorization"), null, "no bearer travels without a token");
     assert.equal(new URL(request.url).pathname, "/repos/o/r/issues/7/reactions", "no viewer lookup without a token");
@@ -187,7 +190,11 @@ test("without a token the tally is readable and nothing is `mine`", async () => 
     assert.equal(harness.calls("github").length, 1);
     assert.equal((await add()).status, 401, "a write without a token is auth_required");
   } finally {
-    process.env.GITHUB_PAT = TOKEN;
+    for (const key of TOKEN_ENV_KEYS) {
+      const value = previousTokens.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 

@@ -102,7 +102,8 @@ async function openBackupFolder(path: string): Promise<boolean> {
   if (!("__TAURI_INTERNALS__" in window)) return false;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("shell_open_path", { path });
+    // Reveal, not open: a bundle-shaped path is selected, never launched (#6502).
+    await invoke("shell_reveal_path", { path });
     return true;
   } catch {
     return false;

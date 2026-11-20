@@ -216,10 +216,11 @@ test("The supreme familiar's real access shows on a private-state folder and can
   const { grants } = await setup(page, { supreme: true });
   await openProjects(page);
 
-  // Everywhere else the supreme familiar is locked at Full.
+  // No grant elsewhere either: the supreme familiar shows its real access and
+  // can be granted it like any other familiar (#6473).
   const appPill = card(page, "Coven Cave").locator(".projects-access-pill");
-  await expect(appPill).toHaveText(/^Full$/);
-  await expect(appPill).toBeDisabled();
+  await expect(appPill).toHaveText(/No access/);
+  await expect(appPill).toBeEnabled();
   // No grant on this folder: it reads as none, not as a Write to worry about.
   const statePill = card(page, "Cave state").locator(".projects-access-pill");
   await expect(statePill).toHaveText(/No access/);

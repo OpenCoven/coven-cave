@@ -652,24 +652,16 @@ struct ProjectMembershipIndex: Hashable, Sendable {
         projects: [ProjectInfo],
         familiars: [Familiar],
         directGrants: [ProjectGrant],
-        groups: [FamiliarAccessGroup],
-        supremeFamiliarId: String?
+        groups: [FamiliarAccessGroup]
     ) -> ProjectMembershipIndex {
-        let supremeFamiliarId = supremeFamiliarId?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let candidateFamiliarIDs = orderedDistinctFamiliarIDs(
-            familiars.map(\.id) + [supremeFamiliarId].compactMap { $0 }
-        )
+        // Membership is real access only. The supreme familiar has no project
+        // access beyond its direct and group grants (#6473, #6526).
+        let candidateFamiliarIDs = orderedDistinctFamiliarIDs(familiars.map(\.id))
 
         var familiarIDsByProjectID: [String: Set<String>] = [:]
         for project in projects {
             var familiarIDs = Set<String>()
             for familiarId in candidateFamiliarIDs {
-                if familiarId == supremeFamiliarId {
-                    familiarIDs.insert(familiarId)
-                    continue
-                }
-
                 let effective = PermissionModels.resolveEffectiveAccess(
                     directGrants: directGrants,
                     groups: groups,

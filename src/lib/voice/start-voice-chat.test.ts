@@ -58,6 +58,17 @@ test("voiceChatStartErrorMessage translates common codes and preserves unknown c
   assert.equal(voiceChatStartErrorMessage("save_failed"), "Couldn't start a voice chat (save_failed).");
 });
 
+test("voiceChatStartErrorMessage points an unconfirmed or moved folder at project settings (#6215)", () => {
+  assert.equal(
+    voiceChatStartErrorMessage("project_root_unconfirmed"),
+    "Couldn't start a voice chat: confirm this project's folder in project settings first.",
+  );
+  assert.equal(
+    voiceChatStartErrorMessage("project_root_moved"),
+    "Couldn't start a voice chat: this project's folder now resolves somewhere else. If you moved it on purpose, confirm the folder in project settings.",
+  );
+});
+
 test("discardVoiceSessionIfEmpty issues a single ifEmpty DELETE and reports deleted:true", async () => {
   const { impl, calls } = fetchStub([{ json: { ok: true, deleted: true } }]);
   const deleted = await discardVoiceSessionIfEmpty("s-1", impl);

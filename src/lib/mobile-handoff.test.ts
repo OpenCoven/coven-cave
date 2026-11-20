@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  assessServeOwnership,
   buildInviteUrl,
   buildPairingSteps,
+  caveServeRemovalCommands,
+  caveServeScope,
   classifyTailscaleSelf,
   createMobileInvite,
   withChatFragment,
@@ -14,7 +17,9 @@ import {
   OFFICIAL_IOS_INSTALL_URL,
   resolveIosInstallUrl,
   resolveTailscaleBin,
+  resetTailscaleServeRoute,
   serveRouteFailure,
+  serveRouteOwnedByBackend,
   tailnetDiscoveryProof,
   tailscaleIpHost,
   tailscaleSpawnEnv,
@@ -225,8 +230,8 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   };
   assert.equal(
     serveRouteOwnedByBackend(tcpForwardStatus, "http://127.0.0.1:3000"),
-    false,
-    "an unrelated TCP forward prevents global reset ownership",
+    true,
+    "a TCP forward on another port belongs to another app and leaves Cave's :443 route owned (#6518)",
   );
   let tcpForwardProbeCount = 0;
   const tcpForwardAssessment = await assessServeOwnership(
@@ -237,8 +242,17 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       return false;
     },
   );
-  assert.equal(tcpForwardAssessment.kind, "conflict");
-  assert.equal(tcpForwardProbeCount, 0, "protected TCP settings are never probed or taken over");
+  assert.equal(tcpForwardAssessment.kind, "owned");
+  assert.equal(tcpForwardProbeCount, 0, "another app's TCP forward is never probed");
+  const tcpOn443Status = {
+    TCP: { "443": { HTTPS: true, TCPForward: "127.0.0.1:22" } },
+    Web: tcpForwardStatus.Web,
+  };
+  assert.equal(
+    (await assessServeOwnership(tcpOn443Status, "http://127.0.0.1:3000", async () => false)).kind,
+    "conflict",
+    "a TCP forward on Cave's own :443 listener stays protected",
+  );
 
   const httpFallbackStatus = {
     TCP: { "3020": { HTTP: true } },
@@ -291,17 +305,6 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       },
     },
     {
-      TCP: {
-        "443": { HTTPS: true },
-        "8443": { HTTPS: true },
-      },
-      Web: {
-        [`${serveHost}:443`]: {
-          Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } },
-        },
-      },
-    },
-    {
       ...status,
       Services: {
         "svc:database": {
@@ -348,9 +351,20 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     assert.equal(
       serveRouteOwnedByBackend(protectedConfig, "http://127.0.0.1:3000"),
       false,
-      "non-Cave listeners, handler metadata, services, funnel, and foreground settings prevent global reset",
+      "non-Cave settings on Cave's listener, handler metadata, services, funnel, and foreground settings stay protected",
     );
   }
+  assert.equal(
+    serveRouteOwnedByBackend(
+      {
+        TCP: { "443": { HTTPS: true }, "8443": { HTTPS: true } },
+        Web: { [`${serveHost}:443`]: { Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } } } },
+      },
+      "http://127.0.0.1:3000",
+    ),
+    true,
+    "a listener on another port is another app's and does not unseat Cave's :443 route (#6518)",
+  );
   let handlerMetadataProbeCount = 0;
   const handlerMetadataAssessment = await assessServeOwnership(
     handlerMetadataStatus,
@@ -661,8 +675,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
           stdout: JSON.stringify({
             ...status,
             TCP: {
-              ...status.TCP,
-              "2222": { TCPForward: "127.0.0.1:22" },
+              "443": { HTTPS: true, TCPForward: "127.0.0.1:22" },
             },
           }),
         });
@@ -673,6 +686,49 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       commands,
       [["serve", "status", "--json"]],
       "packaged recovery never overwrites protected mixed Serve state",
+    );
+  }
+  {
+    // #6518: another app's listener on a different port neither blocks
+    // packaged recovery of :443 nor is touched by it.
+    const foreign = {
+      TCP: { "9443": { HTTPS: true } },
+      Web: { [`${serveHost}:9443`]: { Handlers: { "/": { Proxy: "http://127.0.0.1:4748" } } } },
+    };
+    const before = {
+      TCP: { ...status.TCP, ...foreign.TCP },
+      Web: { ...status.Web, ...foreign.Web },
+    };
+    const after = {
+      TCP: { ...packagedOwnedStatus.TCP, ...foreign.TCP },
+      Web: { ...packagedOwnedStatus.Web, ...foreign.Web },
+    };
+    const commands: string[][] = [];
+    let mutated = false;
+    const result = await claimTailscaleServeRoute({
+      backendUrl: packagedBackend,
+      env: packagedEnv,
+      acquireLease: async () => lease,
+      probeBackend: async () => true,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        if (args[1] === "--bg") {
+          mutated = true;
+          return commandResult();
+        }
+        return commandResult({ stdout: JSON.stringify(mutated ? after : before) });
+      },
+    });
+    assert.equal(result.kind, "claimed");
+    assert.deepEqual(commands, [
+      ["serve", "status", "--json"],
+      ["serve", "status", "--json"],
+      ["serve", "--bg", packagedBackend],
+      ["serve", "status", "--json"],
+    ]);
+    assert.ok(
+      commands.every((args) => !args.includes("reset") && !args.some((arg) => arg.includes("9443"))),
+      "another app's :9443 listener is never reset or rewritten",
     );
   }
   {
@@ -785,7 +841,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       probeBackend: async () => false,
       runTailscale: async (args: string[]) => {
         commands.push(args);
-        if (args[1] === "reset") return commandResult();
+        if (args[2] === "off") return commandResult();
         statusReads += 1;
         return commandResult({
           stdout: JSON.stringify(statusReads === 1 ? status : healthyDevStatus),
@@ -832,7 +888,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       [
         "serve status --json",
         "serve status --json",
-        "serve reset",
+        "serve --https=443 off",
         "serve status --json",
         "stop-process",
         "release",
@@ -864,7 +920,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
       [
         "serve status --json",
         "serve status --json",
-        "serve reset",
+        "serve --https=443 off",
         "serve status --json",
         "foreign-reassigned",
         "serve status --json",
@@ -2026,4 +2082,137 @@ console.log("pairing checklist: ok");
   // The checked-in default is still the O4 fill-in: null until the TestFlight
   // lane publishes a public link.
   assert.equal(OFFICIAL_IOS_INSTALL_URL, null, "no official link is baked in yet (O4 owns producing one)");
+}
+
+// ── Serve ownership is scoped to Cave's own listeners (#6518) ────────────────
+{
+  // Another app (here, a gateway on :9443) shares the node's Serve config.
+  const installed = "http://127.0.0.1:3020";
+  const dev = "http://127.0.0.1:3000";
+  const foreignTcp = { "9443": { HTTPS: true } };
+  const foreignWeb = {
+    [`${serveHost}:9443`]: { Handlers: { "/": { Proxy: "http://127.0.0.1:4748" } } },
+  };
+  const shared = {
+    TCP: { "443": { HTTPS: true }, ...foreignTcp },
+    Web: {
+      [`${serveHost}:443`]: { Handlers: { "/": { Proxy: installed } } },
+      ...foreignWeb,
+    },
+  };
+  const foreignOnly = { TCP: foreignTcp, Web: foreignWeb };
+  const ok = (stdout = "") => ({ ok: true, status: 0, stdout, stderr: "", cleanupFailed: false });
+  const lease = { release: async () => undefined };
+
+  assert.deepEqual(caveServeScope(shared, installed), {
+    TCP: { "443": { HTTPS: true } },
+    Web: { [`${serveHost}:443`]: { Handlers: { "/": { Proxy: installed } } } },
+  });
+  assert.equal(serveRouteOwnedByBackend(shared, installed), true, "the installed app owns its :443 route");
+  assert.equal((await assessServeOwnership(shared, installed, async () => true)).kind, "owned");
+
+  // The dev server still sees the installed app's :443 route as a real rival,
+  // and the error names only that rival, not the other app's port.
+  assert.deepEqual(await assessServeOwnership(shared, dev, async () => true), {
+    kind: "conflict",
+    targets: [installed],
+  });
+
+  // Removal turns off only :443 and leaves the other app's listener in place.
+  {
+    const commands: string[][] = [];
+    let removed = false;
+    const result = await resetTailscaleServeRoute({
+      backendUrl: installed,
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        if (args[2] === "off") {
+          removed = true;
+          return ok();
+        }
+        return ok(JSON.stringify(removed ? foreignOnly : shared));
+      },
+    });
+    assert.deepEqual(result, { kind: "removed", alreadyAbsent: false });
+    assert.deepEqual(commands, [
+      ["serve", "status", "--json"],
+      ["serve", "status", "--json"],
+      ["serve", "--https=443", "off"],
+      ["serve", "status", "--json"],
+    ]);
+  }
+
+  // With only the other app's listener left, Cave's route is already absent.
+  {
+    const commands: string[][] = [];
+    const result = await resetTailscaleServeRoute({
+      backendUrl: installed,
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) => {
+        commands.push(args);
+        return ok(JSON.stringify(foreignOnly));
+      },
+    });
+    assert.deepEqual(result, { kind: "removed", alreadyAbsent: true });
+    assert.deepEqual(commands, [["serve", "status", "--json"]], "nothing is removed");
+  }
+
+  // A failed removal stops before credential retirement and reports the error.
+  {
+    const result = await resetTailscaleServeRoute({
+      backendUrl: installed,
+      acquireLease: async () => lease,
+      probeBackend: async () => false,
+      runTailscale: async (args: string[]) =>
+        args[2] === "off"
+          ? { ok: false, status: 1, stdout: "", stderr: "serve off failed", cleanupFailed: false }
+          : ok(JSON.stringify(shared)),
+    });
+    assert.equal(result.kind, "reset-failed");
+  }
+
+  // Each listener of Cave's is turned off with its own protocol.
+  assert.deepEqual(
+    caveServeRemovalCommands(
+      {
+        TCP: { "443": { HTTPS: true }, "3020": { HTTP: true }, ...foreignTcp },
+        Web: {
+          [`${serveHost}:443`]: { Handlers: { "/": { Proxy: installed } } },
+          "100.101.102.103:3020": { Handlers: { "/": { Proxy: installed } } },
+          ...foreignWeb,
+        },
+      },
+      installed,
+    ),
+    [
+      ["serve", "--https=443", "off"],
+      ["serve", "--http=3020", "off"],
+    ],
+  );
+  assert.deepEqual(caveServeRemovalCommands(foreignOnly, installed), []);
+
+  // Config Cave can't attribute to a port stays in scope and keeps failing closed.
+  assert.equal(
+    serveRouteOwnedByBackend(
+      {
+        ...shared,
+        Web: { ...shared.Web, [serveHost]: { Handlers: { "/": { Proxy: "http://127.0.0.1:4748" } } } },
+      },
+      installed,
+    ),
+    false,
+  );
+  assert.equal(
+    serveRouteOwnedByBackend({ ...shared, AllowFunnel: { [`${serveHost}:443`]: true } }, installed),
+    false,
+    "Funnel on Cave's own listener stays protected",
+  );
+  assert.equal(
+    serveRouteOwnedByBackend({ ...shared, AllowFunnel: { [`${serveHost}:9443`]: true } }, installed),
+    true,
+    "Funnel on another app's port is that app's",
+  );
 }

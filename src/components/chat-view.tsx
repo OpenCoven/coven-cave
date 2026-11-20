@@ -2628,10 +2628,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // a chat whose cwd sits outside every registered project the familiar can
   // reach. Drives the error strip's "Add project" recovery action.
   const [projectAccessRoot, setProjectAccessRoot] = useState<string | null>(null);
-  // The chat's project folder no longer exists on disk (moved/deleted): the
-  // send 400s with code project_root_unavailable and Retry can never succeed —
-  // the recovery is re-pointing the project, not retrying (cave-ivcc).
-  const [projectRootMissing, setProjectRootMissing] = useState(false);
+  // The fix lives in Projects, and Retry can never succeed: the chat's project
+  // folder no longer exists on disk (400 project_root_unavailable, cave-ivcc),
+  // or a person must confirm the folder in project settings (409
+  // project_root_unconfirmed / project_root_moved, #6215).
+  const [projectsFixNeeded, setProjectsFixNeeded] = useState(false);
   // A project whose Write grant overlaps Cave's private state: Projects is
   // where that grant changes, so the error offers to open it there (#6451).
   const [privateStateProjectRoot, setPrivateStateProjectRoot] = useState<string | null>(null);
@@ -2651,7 +2652,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setPrivateStateProjectRoot(carried?.root ?? null);
     if (carried) announce("Your refused message is ready to retry.");
   }, [familiar.id, retryChatId, projectsRetryPassive, announce]);
-
   // 409 chat_run_active: the server still runs an earlier turn of this chat
   // that this view no longer tracks. Holds that chat's id so the error strip
   // can stop the earlier run; Retry then sends the preserved message.
@@ -3407,8 +3407,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   // Native UI tier: a coven:ui Button may PREFILL the composer for review. It
   // never sends; an existing draft is kept and the text is appended below it.
+  // The browser's undo stack can't hold this edit (React sets the value, and
+  // WebKit would merge it with the typing before it), so the composer keeps
+  // one explicit undo step: the first Cmd/Ctrl+Z while the composer still
+  // holds exactly the pre-filled text restores the earlier draft (#6521).
+  const prefillUndoRef = useRef<{ before: string; after: string } | null>(null);
   const prefillComposerFromUiBlock = useCallback((text: string) => {
-    setInput((current) => (current.trim() ? `${current.replace(/\s+$/, "")}\n\n${text}` : text));
+    const before = inputRef.current?.value ?? "";
+    const after = before.trim() ? `${before.replace(/\s+$/, "")}\n\n${text}` : text;
+    prefillUndoRef.current = { before, after };
+    setInput(after);
     requestAnimationFrame(() => {
       const field = inputRef.current;
       if (!field) return;
@@ -5642,7 +5650,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setDebugError(null);
     setLastFailedSend(null);
     setProjectAccessRoot(null);
-    setProjectRootMissing(false);
+    setProjectsFixNeeded(false);
     setPrivateStateProjectRoot(null);
     setProjectRootRequired(false);
     setEarlierRunSessionId(null);
@@ -5928,11 +5936,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // succeed — swap in actionable copy + an Open-projects fix (cave-ivcc).
         if (res.status === 400 && /project_root_unavailable|projectRoot does not exist/i.test(message)) {
           const missingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
-          setProjectRootMissing(true);
+          setProjectsFixNeeded(true);
           surfacedMessage =
             missingRoot
               ? `This chat's project folder is missing (${missingRoot}) — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.`
               : "This chat's project folder is missing — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.";
+        }
+        // The project's folder needs a person to confirm it (#6215): never
+        // confirmed since folder pinning, or it now resolves somewhere else.
+        // The server's copy names the project and the fix.
+        if (
+          res.status === 409 &&
+          (refusal?.code === "project_root_unconfirmed" || refusal?.code === "project_root_moved")
+        ) {
+          setProjectsFixNeeded(true);
+          surfacedMessage = refusal.code === "project_root_moved"
+            ? "This project’s folder now resolves somewhere else. Confirm its folder in project settings before starting chat."
+            : "Confirm this project’s folder in project settings before starting chat. Projects added before folder pinning need this once.";
         }
         // Missing, unregistered, and newly revoked project contexts all need a
         // fresh choice. Retry alone cannot repair them, so route every stable
@@ -7380,6 +7400,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const onComposerKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // One undo after a coven:ui pre-fill restores the draft it replaced.
+    const prefillUndo = prefillUndoRef.current;
+    if (prefillUndo) {
+      if (e.currentTarget.value !== prefillUndo.after) {
+        prefillUndoRef.current = null;
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        prefillUndoRef.current = null;
+        setInput(prefillUndo.before);
+        const field = e.currentTarget;
+        requestAnimationFrame(() => field.setSelectionRange(field.value.length, field.value.length));
+        announce("Draft restored.");
+        return;
+      }
+    }
     // ⌘⇧A opens the attach picker — the "+" menu's Attach-file shortcut.
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
@@ -9043,7 +9078,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           addingProject={addingProject}
           onAddProject={projectAccessRoot ? handleAddProject : undefined}
           onOpenProjects={
-            projectRootMissing
+            projectsFixNeeded
               ? () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT))
               : privateStateProjectRoot
                 ? () => {
@@ -9103,7 +9138,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setError(null);
             setDebugError(null);
             setProjectAccessRoot(null);
-            setProjectRootMissing(false);
+            setProjectsFixNeeded(false);
             setPrivateStateProjectRoot(null);
             setProjectRootRequired(false);
             setEarlierRunSessionId(null);

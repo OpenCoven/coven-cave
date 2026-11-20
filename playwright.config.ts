@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { resolvePort } from "./scripts/ports.mjs";
@@ -66,6 +66,9 @@ const E2E_AGENTIC_RECOMMENDATIONS =
   process.env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS ?? "false";
 
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
+// #6521: composer pre-fill rows must pass in WebKit too (the macOS app runs
+// in WKWebView, whose undo grouping differs from Chromium's).
+const COMPOSER_PREFILL_TESTS = /pre-fill into|undo no longer restores the earlier draft/;
 const SETUP_FOCUS_VISIBILITY_TEST =
   /keeps setup (?:controls focus-visible|diagnostics focus contained) in WebKit$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
@@ -95,6 +98,9 @@ writeFileSync(
       id: "e2e-project",
       name: "E2E Project",
       root: process.cwd(),
+      // This disposable baseline models an explicitly registered folder;
+      // legacy confirmation is exercised by its own regression fixtures.
+      rootRealpath: realpathSync.native(process.cwd()),
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     }],
@@ -249,6 +255,13 @@ export default defineConfig({
       name: "voice-webkit",
       dependencies: ["preferences-iphone-13"],
       testMatch: /voice-call\.spec\.ts/,
+      use: { ...devices["Desktop Safari"] },
+    },
+    {
+      name: "composer-prefill-webkit",
+      dependencies: ["preferences-iphone-13"],
+      testMatch: /chat-ui-block\.spec\.ts/,
+      grep: COMPOSER_PREFILL_TESTS,
       use: { ...devices["Desktop Safari"] },
     },
     {

@@ -159,6 +159,16 @@ assert.match(
   /body\.repoUrl === null[\s\S]{0,80}patch\.repoUrl = null/,
   "PUT /api/projects/[id] should accept null to unlink the repository",
 );
+assert.match(
+  itemRoute,
+  /try\s*\{\s*realpath = realpathSync\.native[\s\S]*?catch\s*\{[\s\S]*?code:\s*"project_root_unavailable"[\s\S]*?status:\s*400/,
+  "root edit realpath races should return a structured unavailable error",
+);
+assert.match(
+  itemRoute,
+  /Authenticate on this Mac with Touch ID to change the folder/,
+  "root-edit API copy should describe the Touch ID authentication ceremony",
+);
 assert.match(itemRoute, /not found/, "project item route should return not-found errors");
 assert.match(itemRoute, /rejectNonLocalRequest/, "project item route must enforce loopback before mutating project roots");
 // cave-eonxy: cascade must run even when the registry row is already gone, so

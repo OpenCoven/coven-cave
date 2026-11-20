@@ -590,7 +590,7 @@ assert.match(
 );
 assert.match(
   source,
-  /shell_open_path[\s\S]{0,220}Workspace folder opened/,
+  /shell_reveal_path[\s\S]{0,220}Workspace folder opened/,
   "Browse truthfully opens the current workspace directory",
 );
 assert.match(
