@@ -13,9 +13,11 @@ import test from "node:test";
 import { installUpstreamAnomalyFetch } from "../../../../lib/testing/upstream-anomaly-fetch.ts";
 import { expectErrorStatus, runUpstreamAnomalyMatrix, type MatrixOutcome } from "../../../../lib/testing/upstream-anomaly-matrix.ts";
 import { isolateCaveHome } from "../../../../lib/testing/scratch-cave-home.ts";
+import { GITHUB_TOKEN_ENV_KEYS } from "../../../../lib/github-token-env.ts";
 
 const home = isolateCaveHome("canvas-github-source-anomalies");
 const TOKEN = "ghp_testonly_never_dispatched_0123456789abcdef";
+const TOKEN_ENV_KEYS = ["GITHUB_PAT", ...GITHUB_TOKEN_ENV_KEYS] as const;
 process.env.GITHUB_PAT = TOKEN;
 delete process.env.COVEN_CAVE_AUTH_TOKEN;
 
@@ -123,7 +125,8 @@ test("a non-local origin is refused before GitHub is contacted", async () => {
 });
 
 test("without a token the read is anonymous and still works", async () => {
-  delete process.env.GITHUB_PAT;
+  const previousTokens = new Map(TOKEN_ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of TOKEN_ENV_KEYS) delete process.env[key];
   harness.healthy("github", (request) => {
     assert.equal(request.headers.get("authorization"), null);
     return new Response("<main>hi</main>", { status: 200 });
@@ -133,7 +136,11 @@ test("without a token the read is anonymous and still works", async () => {
     assert.equal(body.ok, true);
     assert.equal(body.kind, "html");
   } finally {
-    process.env.GITHUB_PAT = TOKEN;
+    for (const key of TOKEN_ENV_KEYS) {
+      const value = previousTokens.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 
