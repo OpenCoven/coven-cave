@@ -230,7 +230,8 @@ if (noPermission) {
     assert.equal(refusal.reason, "cave_private_state_overlap");
     assert.equal(refusal.overlap.source, "project");
     assert.equal(refusal.overlap.projectId, stateProject.id);
-    assert.equal(refusal.overlap.root, stateProject.root);
+    // The route reports the canonical root; on macOS tmpdir() is under /var -> /private/var (#6530).
+    assert.equal(await realpath(refusal.overlap.root), await realpath(stateProject.root));
     assert.equal(refusal.overlap.relation, "contains");
     assert.equal(refusal.overlap.direct, Boolean(seedWith.direct));
     assert.deepEqual(refusal.overlap.groups, seedWith.group ? [{ id: "coders", name: "Coders" }] : []);
